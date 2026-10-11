@@ -4,9 +4,9 @@
 このアプリを少しずつ育てて、最終的に「ローカルでバイブコーディングできるエージェント」と「MCP」まで進みます。
 
 ```
-ウィンドウ(_cmd/aibow/frontend/index.html) ⇄ Wails ⇄ aibow ⇄ 関数呼び出し ⇄ llama.cpp(DLL)⇄ GPU
+ウィンドウ(_cmd/aibow/frontend/index.html) ⇄ Wails ⇄ aibow ⇄ 関数呼び出し ⇄ llama.cpp(_cmd/aibow/lib の DLL)⇄ GPU
                                                               ↑
-                                            models\*.gguf  または  Ollama が保存したモデル
+                                  _cmd/aibow/models\*.gguf  または  Ollama が保存したモデル
 ```
 
 画面は [Wails v3](https://v3.wails.io/) のデスクトップアプリです。Wails は OS に入っている WebView(Windows なら WebView2)で HTML の画面を出し、
@@ -32,24 +32,29 @@ Ollama が保存したファイルを aibow が直接読むので、Ollama は�
 | `_cmd/aibow/service.go` | 画面から呼ばれる Go のメソッド(モデルの一覧・切り替え・チャット) |
 | `_cmd/aibow/frontend/index.html` | チャット画面。実行ファイルに埋め込まれる |
 | `go.work` | ルートと `_cmd/aibow` の2つのモジュールをまとめる(下の説明を参照) |
-| `lib\` | llama.cpp の DLL(自分で取得。Git には入れない) |
-| `models\` | 自分でダウンロードしたモデル(Git には入れない) |
+| `_cmd/aibow/lib\` | llama.cpp の DLL(自分で取得。Git には入れない) |
+| `_cmd/aibow/models\` | 自分でダウンロードしたモデル(Git には入れない) |
 
 llama.cpp の呼び出しには [yzma](https://github.com/hybridgroup/yzma) という Go のライブラリを使っています。
 llama.cpp の C の関数を Go から呼べるようにするだけの薄い層で、C コンパイラ(cgo)は不要です。
 
 Wails に依存するのは `_cmd/aibow` だけです。`_cmd/aibow` は自分の `go.mod` を持つ別のモジュールにしてあり、
 ルートの `go.mod` は yzma だけに依存します。`go.work` は「この2つのモジュールを一緒に扱う」という Go のワークスペースの設定で、
-これがあるのでリポジトリのルートから `go run ./_cmd/aibow` で起動できます。
+これがあるので、`_cmd/aibow` の中で `go run .` すると、ルートの `aibow` パッケージ(手元のコード)が使われます。
 (`_` で始まるフォルダは `go test ./...` などの `./...` に含まれないので、ルートのテストは Wails なしで動きます)
 
 ## 準備(最初の1回だけ)
 
-bash(Git Bash など)で、プロジェクトのフォルダに移動して作業します。
+bash(Git Bash など)で、アプリのフォルダ `_cmd/aibow` に移動して作業します。
+llama.cpp の DLL(`lib\`)とモデル(`models\`)は、モデルを動かすこのアプリの持ち物なので、アプリのフォルダに置きます。
 
 ```bash
-cd /d/Go/Projects/aibow
+cd /d/Go/Projects/aibow/_cmd/aibow
 ```
+以降のコマンドは、すべてこのフォルダで実行します。
+
+以前の版(ブラウザ版)でリポジトリのルートに `lib\` と `models\` を置いていた場合は、ダウンロードし直さなくても、
+ルートの `lib\` と `models\` をフォルダごと `_cmd\aibow\` へ移せば準備の 3・4 は済みます。
 
 ### 1. Go のバージョン確認
 
@@ -64,7 +69,7 @@ Go のバージョンを表示します。yzma が Go 1.26 以上を必要とす
 ```bash
 go mod tidy
 ```
-`go.mod` に書いてあるライブラリ(yzma など)をダウンロードし、改ざん検知用のチェックサムを `go.sum` に書き出します。
+`_cmd/aibow/go.mod` に書いてあるライブラリ(Wails と yzma など)をダウンロードし、改ざん検知用のチェックサムを `go.sum` に書き出します。
 
 ### 3. llama.cpp の取得
 
@@ -75,10 +80,13 @@ yzma に付属しているインストーラーを、インストールせずに
 
 - `go run パッケージ@バージョン` … 指定したプログラムをダウンロードしてビルドし、そのまま実行する
 - `install` … llama.cpp のビルド済み DLL を GitHub からダウンロードする
-- `--lib lib` … 置き場所(このフォルダの中の `lib\`)
+- `--lib lib` … 置き場所。相対パスはコマンドを実行したフォルダが基準なので、`_cmd\aibow\lib\` にできる
 - `--processor cuda` … NVIDIA GPU 用のビルドを選ぶ。CUDA の実行に必要な DLL(cudart)も一緒に入る
 
-GitHub の llama.cpp のリリースページから zip を手で落として `lib\` に展開しても同じです。
+`go run パッケージ@バージョン` は今いるフォルダの `go.mod` / `go.work` を見ないので、`_cmd/aibow` で実行しても問題ありません。
+バージョン(`@v1.29.1`)は、ルートの `go.mod` に書いてある yzma のバージョンと合わせてください。yzma と llama.cpp は組み合わせが決まっています。
+
+GitHub の llama.cpp のリリースページから zip を手で落として `_cmd\aibow\lib\` に展開しても同じです。
 
 ### 4. モデルの用意
 
@@ -97,7 +105,7 @@ aibow は Ollama の保存フォルダ(既定は `C:\Users\<ユーザー>\.ollam
 
 **B. GGUF ファイルを自分で置く**
 
-GGUF は llama.cpp 用のモデルファイルの形式です。ダウンロードして `models\` フォルダに置くだけです。例えば Qwen3.5 4B なら、次の URL をブラウザで開くとダウンロードが始まります(約3GB)。
+GGUF は llama.cpp 用のモデルファイルの形式です。ダウンロードして `_cmd\aibow\models\` フォルダに置くだけです。例えば Qwen3.5 4B なら、次の URL をブラウザで開くとダウンロードが始まります(約3GB)。
 
 https://huggingface.co/bartowski/Qwen_Qwen3.5-4B-GGUF/resolve/main/Qwen_Qwen3.5-4B-Q4_K_M.gguf
 
@@ -106,10 +114,14 @@ https://huggingface.co/bartowski/Qwen_Qwen3.5-4B-GGUF/resolve/main/Qwen_Qwen3.5-
 ## 起動
 
 ```bash
-go run ./_cmd/aibow
+cd /d/Go/Projects/aibow/_cmd/aibow
 ```
-デスクトップアプリ(`_cmd/aibow`)をビルドして実行します。初回は Wails のダウンロードとビルドに時間がかかります。
-リポジトリのルートで実行してください(`lib\` と `models\` はカレントフォルダから探します)。起動すると、次のようなログが出ます。
+アプリのフォルダに移動します。`lib\` と `models\` はカレントフォルダから探すので、必ずここで起動します。
+
+```bash
+go run .
+```
+デスクトップアプリをビルドして実行します。初回は Wails のダウンロードとビルドに時間がかかります。起動すると、次のようなログが出ます。
 
 ```
 計算装置: CPU [CPU] <CPU の名前>
@@ -134,7 +146,7 @@ aibow 起動
 もう一度起きたら、llama.cpp 自身のログを出して起動し、落ちる直前のログと、そのとき動いていた他のアプリ(Ollama、ゲームなど)を記録してください。
 
 ```bash
-AIBOW_LLAMA_LOG=1 go run ./_cmd/aibow 2>&1 | tee aibow.log
+AIBOW_LLAMA_LOG=1 go run . 2>&1 | tee aibow.log
 ```
 `2>&1` でエラー出力も含めて、`tee` で画面に出しつつ `aibow.log` にも保存します。
 
@@ -153,9 +165,9 @@ aibow を起動したまま `ollama pull` した場合は、aibow のウィン�
 | 環境変数 | 既定値 | 内容 |
 |---|---|---|
 | `AIBOW_MODEL` | 一覧の先頭 | 起動時に読み込むモデル。`ollama:qwen3.5:4b` のような Ollama の名前か、GGUF ファイルのパス |
-| `AIBOW_MODELS_DIR` | `models` | GGUF ファイルを探すフォルダ |
+| `AIBOW_MODELS_DIR` | `models` | GGUF ファイルを探すフォルダ(相対パスはカレントフォルダが基準) |
 | `OLLAMA_MODELS` | `%USERPROFILE%\.ollama\models` | Ollama の保存フォルダ(Ollama 自身と同じ変数) |
-| `AIBOW_LIB` | `lib` | llama.cpp の DLL があるフォルダ |
+| `AIBOW_LIB` | `lib` | llama.cpp の DLL があるフォルダ(相対パスはカレントフォルダが基準) |
 | `AIBOW_CTX` | `16384` | コンテキスト長(一度に扱えるトークン数 = プロンプト + 返事)。増やすと長い会話ができるが VRAM を使う(Qwen3.5 4B で 1 トークンあたり約 32KB) |
 | `AIBOW_GPU_LAYERS` | `999` | GPU に載せる層の数。VRAM に入りきらないモデルは減らす(残りは CPU で計算) |
 | `AIBOW_MAX_TOKENS` | `8192` | 1回の返事で生成するトークン数の上限(思考 + 答えの合計) |
@@ -163,7 +175,13 @@ aibow を起動したまま `ollama pull` した場合は、aibow のウィン�
 | `AIBOW_LLAMA_LOG` | なし | `1` にすると llama.cpp 自身の詳しいログ(どの層をどこに置いたか、読めない理由など)を出す。起動時に数千行出る |
 
 ```bash
-AIBOW_MODEL=ollama:qwen3.5:4b go run ./_cmd/aibow
+AIBOW_MODEL=ollama:qwen3.5:4b go run .
+```
+
+Git の worktree など、別の場所にあるコードから起動するときは、`lib\` と `models\` は Git に入っていないので、本体の場所を指定します。
+
+```bash
+AIBOW_LIB=/d/Go/Projects/aibow/_cmd/aibow/lib AIBOW_MODELS_DIR=/d/Go/Projects/aibow/_cmd/aibow/models go run .
 ```
 
 ## このステップで観察してほしいこと

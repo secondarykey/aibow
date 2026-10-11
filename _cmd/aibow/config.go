@@ -43,8 +43,9 @@ func getenvFloat(key string, def float64) float64 {
 }
 
 // 既定では、カレントフォルダの中の lib フォルダ(llama.cpp)と models フォルダ(モデル)を使う。
-// リポジトリのルートで `go run ./_cmd/aibow` すると、ルートの lib / models が使われる。
-// 別の場所に置いたときだけ環境変数で指定する。
+// _cmd/aibow で `go run .` すると、_cmd/aibow/lib と _cmd/aibow/models が使われる。
+// lib と models はモデルを動かすこのアプリの持ち物なので、アプリのフォルダに置く。
+// 別の場所に置いたとき(worktree から本体の lib を使うときなど)だけ環境変数で指定する。
 type appConfig struct {
 	engine       aibow.EngineConfig
 	catalog      aibow.ModelCatalog

@@ -15,8 +15,8 @@ aibow は、ローカルLLMを使ったアプリを**自分で作りながら仕
 ## 現在の構成(ステップ1: チャット)
 
 ```
-ウィンドウ(_cmd/aibow/frontend/index.html) ⇄ Wails v3 ⇄ aibow ⇄ yzma ⇄ llama.cpp(lib\ の DLL)⇄ GPU
-                                                                    ↑ models\*.gguf / Ollama の保存フォルダ
+ウィンドウ(_cmd/aibow/frontend/index.html) ⇄ Wails v3 ⇄ aibow ⇄ yzma ⇄ llama.cpp(_cmd/aibow/lib\ の DLL)⇄ GPU
+                                                                    ↑ _cmd/aibow/models\*.gguf / Ollama の保存フォルダ
 ```
 
 **Ollama などの外部 LLM サーバーは使わない**。aibow のプロセスの中で llama.cpp を直接動かす。
@@ -41,7 +41,7 @@ Ollama のサーバーや API は使わない。Ollama のモデルの一部は 
 | `_cmd/aibow/service.go` | `ChatService`。画面から呼ばれるメソッド(`Models` / `SwitchModel` / `Chat`) |
 | `_cmd/aibow/frontend/index.html` | チャット画面。`go:embed` で実行ファイルに埋め込まれる |
 | `_cmd/aibow/go.mod` / `go.work` | `_cmd/aibow` は別モジュール(Wails に依存)。`go.work` でルートとまとめる |
-| `lib\` / `models\` | llama.cpp の DLL とモデル。Git には入れない |
+| `_cmd/aibow/lib\` / `_cmd/aibow/models\` | llama.cpp の DLL とモデル。Git には入れない。モデルを動かすのはこのアプリだけなので(VRAM 8GB に2プロセス分は載らない)、アプリのフォルダに置く。起動・準備は `_cmd/aibow` で行う(カレントフォルダから探すため) |
 
 - 画面 → Go は `/wails/runtime.js` の `Call.ByName("main.ChatService.<メソッド>", ...)`。npm もバインディング生成も使わない
 - Go → 画面は Wails のイベント。`chat` イベントの `type` は `prompt` / `thinking` / `content` / `stats` / `error` / `done`。
@@ -137,7 +137,8 @@ go test ./...                    # テンプレート、思考の振り分け、
 go build -o /dev/null ./_cmd/aibow   # デスクトップアプリのビルドが通るか
 ```
 
-実際の生成は `go run ./_cmd/aibow` で起動し、開いたウィンドウで送受信して確認します。
+実際の生成は `_cmd/aibow` で `go run .` して起動し、開いたウィンドウで送受信して確認します。
+worktree には `lib\` / `models\` が無いので、`AIBOW_LIB` / `AIBOW_MODELS_DIR` で本体(`/d/Go/Projects/aibow/_cmd/aibow/`)の場所を指定します。
 `frontend/` の変更は実行ファイルに埋め込まれるため、**アプリの再起動が必要**です。
 画面を外から操作して確かめるときは、一時ビルドで `application.Options.Windows.AdditionalBrowserArgs` に
 `--remote-debugging-port=9222` を足し、CDP(`http://localhost:9222/json`)で `Runtime.evaluate` する(この変更はコミットしない)。
