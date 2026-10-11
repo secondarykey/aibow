@@ -137,11 +137,24 @@
   </form>
 </footer>
 
-<script>
+<script type="module">
+// ---- Go との橋渡し ---------------------------------------------------------
+// /wails/runtime.js は Wails が配信している JavaScript(npm もビルドも不要)。
+//   Call.ByName("main.ChatService.Xxx", ...) … Go のメソッドを呼ぶ。戻り値は Promise
+//   Events.On("名前", ...)                    … Go から送られてくるイベントを受け取る
+import { Call, CancelError, Events } from "/wails/runtime.js";
+
+const service = "main.ChatService."; // service.go の ChatService(main パッケージ)
+const callGo = (method, ...args) => Call.ByName(service + method, ...args);
+
 // ---- 会話履歴 -------------------------------------------------------------
-// これが「LLMの記憶」の正体。ブラウザ側でこの配列を持ち、毎回まるごと送る。
+// これが「LLMの記憶」の正体。画面側でこの配列を持ち、毎回まるごと送る。
 let history = [];
-let controller = null;
+let controller = null;   // 生成中の呼び出し(stop() で停止できる)。生成中でなければ null
+let chatListener = null; // 生成中の返事に chat イベントを渡す関数
+
+// Go の Chat が送ってくる途中経過(service.go の ChatEvent)
+Events.On("chat", e => chatListener && chatListener(e.data));
 
 const $ = (id) => document.getElementById(id);
 const inner = $("inner"), chat = $("chat"), input = $("input");
@@ -149,11 +162,14 @@ const inner = $("inner"), chat = $("chat"), input = $("input");
 // ---- モデルの選択 ---------------------------------------------------------
 // 一覧は models フォルダの GGUF と、Ollama が保存したモデル。
 // 選ぶと aibow が今のモデルを解放して、新しいモデルを読み込む(数秒〜十数秒)。
-let currentModel = null; // 今読み込まれているモデルの情報(サーバーの ModelInfo)
+let currentModel = null; // 今読み込まれているモデルの情報(Go の ModelInfo)
 let hasGPU = false;
 
+let startupLoading = false; // 起動時のモデルを Go が裏で読み込み中か
+let startupDone = false;    // 起動時の読み込みが終わった合図(models イベント)を受け取ったか
+
 async function loadModels() {
-  const d = await (await fetch("/api/models")).json();
+  const d = await callGo("Models");
   currentModel = d.current;
   hasGPU = d.gpu;
 
@@ -179,6 +195,15 @@ async function loadModels() {
   }
   sel.value = currentModel ? currentModel.id : "";
   showModelInfo();
+
+  // 起動直後は Go がモデルを読み込んでいる最中のことがある。終わると models イベントが来る。
+  if (d.loading && !startupLoading && !startupDone) {
+    startupLoading = true;
+    setBusy(true);
+    $("stopBtn").disabled = true;
+    $("model").textContent = "読み込み中…";
+    addNote(`${d.loading} を読み込み中…`);
+  }
 }
 
 function showModelInfo() {
@@ -189,6 +214,25 @@ function showModelInfo() {
   $("model").title = c ? c.desc : "";
 }
 
+// 起動時のモデルの読み込みが終わった
+// (Models の戻り値とイベントは別の経路で届くので、イベントが先に着いても大丈夫なようにしている)
+Events.On("models", async () => {
+  startupDone = true;
+  const wasLoading = startupLoading;
+  startupLoading = false;
+  await loadModels();
+  if (!wasLoading) return;
+  addNote(currentModel
+    ? `${currentModel.name} を読み込みました(${currentModel.load_sec.toFixed(1)} 秒)`
+    : "モデルを読み込めませんでした。上で選び直してください");
+  setBusy(false);
+});
+
+// ウィンドウに戻ってきたら一覧を作り直す(aibow を起動したまま ollama pull したときのため)
+window.addEventListener("focus", () => {
+  if (!controller && !startupLoading && !$("modelSelect").disabled) loadModels().catch(() => {});
+});
+
 $("modelSelect").addEventListener("change", async e => {
   const sel = e.target;
   const name = sel.options[sel.selectedIndex].text;
@@ -197,28 +241,25 @@ $("modelSelect").addEventListener("change", async e => {
   $("stopBtn").disabled = true;
   $("model").textContent = "読み込み中…";
   addNote(`${name} を読み込み中…`);
+  let failed = false;
   try {
-    const res = await fetch("/api/model", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: sel.value }),
-    });
-    const d = await res.json();
-    if (res.ok) {
-      addNote(`モデルを ${d.current.name} に切り替えました(読み込み ${d.current.load_sec.toFixed(1)} 秒)`);
-    } else {
-      addMessage("error", d.error);
-      if (d.current) addNote(`元のモデル ${d.current.name} に戻しました`);
-    }
+    const info = await callGo("SwitchModel", sel.value); // 読み込み終わるまで返らない
+    addNote(`モデルを ${info.name} に切り替えました(読み込み ${info.load_sec.toFixed(1)} 秒)`);
   } catch (err) {
-    addMessage("error", `通信エラー: ${err.message}`);
+    // Go が error を返すと、ここに来る。err.message が Go のエラーの文
+    addMessage("error", err.message);
+    failed = true;
   }
   await loadModels(); // 失敗したときは元のモデルの表示に戻る
+  if (failed && currentModel) addNote(`元のモデル ${currentModel.name} に戻しました`);
   sel.disabled = false;
   setBusy(false);
 });
 
-loadModels().catch(() => { $("model").textContent = "モデル一覧を取得できません"; });
+loadModels().catch(err => {
+  $("model").textContent = "モデル一覧を取得できません";
+  addMessage("error", err.message);
+});
 
 $("temp").addEventListener("input", e => $("tempVal").textContent = e.target.value);
 
@@ -299,77 +340,68 @@ async function send(text) {
   const startAt = performance.now();
 
   setBusy(true);
-  controller = new AbortController();
 
-  try {
-    const res = await fetch("/api/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
-
-    // サーバーから "data: {...}\n\n" が順に流れてくるので、少しずつ読む
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const events = buffer.split("\n\n");
-      buffer = events.pop(); // 途中までしか届いていない最後の塊は次回へ
-
-      for (const ev of events) {
-        if (!ev.startsWith("data: ")) continue;
-        const data = JSON.parse(ev.slice(6));
-
-        if (data.type === "prompt") {
-          $("lastPrompt").textContent = data.text; // モデルに実際に渡した文字列
-          continue;
-        }
-        if (data.type === "stats") {
-          serverStats = data.stats;
-          continue;
-        }
-        if (data.type === "thinking" || data.type === "content") {
-          if (firstAt === null) {
-            firstAt = performance.now();
-            bodyEl.innerHTML = ""; // 「応答待ち…」を消す
-          }
-        }
-        if (data.type === "thinking") {
-          // 思考は畳んだ状態で出し、クリックで開いたときだけ中身を見せる
-          if (!thinkEl) {
-            thinkEl = document.createElement("details");
-            thinkEl.className = "thinking";
-            thinkEl.innerHTML = `<summary>思考中…</summary><div></div>`;
-            el.insertBefore(thinkEl, bodyEl);
-            thinkStart = performance.now();
-          }
-          thinking += data.text;
-          const box = thinkEl.querySelector("div");
-          box.textContent = thinking;
-          if (thinkEl.open) box.scrollTop = box.scrollHeight;
-          if (!content) thinkEl.querySelector("summary").textContent = `思考中… ${secSince(thinkStart)}秒`;
-        } else if (data.type === "content") {
-          if (thinkEl && !content) {
-            thinkEl.querySelector("summary").textContent = `思考の過程(${secSince(thinkStart)}秒)`;
-          }
-          content += data.text;
-          bodyEl.innerHTML = render(content);
-        } else if (data.type === "error") {
-          addMessage("error", data.message);
-        }
-        scrollDown();
+  // 返事は Chat の戻り値ではなく、chat イベントで少しずつ届く。done が来たら終わり。
+  let finish;
+  const finished = new Promise(resolve => finish = resolve);
+  chatListener = (data) => {
+    if (data.type === "done") {
+      finish();
+      return;
+    }
+    if (data.type === "prompt") {
+      $("lastPrompt").textContent = data.text; // モデルに実際に渡した文字列
+      return;
+    }
+    if (data.type === "stats") {
+      serverStats = data.stats;
+      return;
+    }
+    if (data.type === "thinking" || data.type === "content") {
+      if (firstAt === null) {
+        firstAt = performance.now();
+        bodyEl.innerHTML = ""; // 「応答待ち…」を消す
       }
     }
-  } catch (e) {
-    if (e.name !== "AbortError") addMessage("error", `通信エラー: ${e.message}`);
-  }
+    if (data.type === "thinking") {
+      // 思考は畳んだ状態で出し、クリックで開いたときだけ中身を見せる
+      if (!thinkEl) {
+        thinkEl = document.createElement("details");
+        thinkEl.className = "thinking";
+        thinkEl.innerHTML = `<summary>思考中…</summary><div></div>`;
+        el.insertBefore(thinkEl, bodyEl);
+        thinkStart = performance.now();
+      }
+      thinking += data.text;
+      const box = thinkEl.querySelector("div");
+      box.textContent = thinking;
+      if (thinkEl.open) box.scrollTop = box.scrollHeight;
+      if (!content) thinkEl.querySelector("summary").textContent = `思考中… ${secSince(thinkStart)}秒`;
+    } else if (data.type === "content") {
+      if (thinkEl && !content) {
+        thinkEl.querySelector("summary").textContent = `思考の過程(${secSince(thinkStart)}秒)`;
+      }
+      content += data.text;
+      bodyEl.innerHTML = render(content);
+    } else if (data.type === "error") {
+      addMessage("error", data.message);
+    }
+    scrollDown();
+  };
 
-  // 統計: 最初の文字が出るまでの時間と、サーバーから届いたトークン数・速度
+  // Go の Chat を呼ぶ。戻り値の Promise の cancel() を呼ぶと、Go 側の ctx がキャンセルされる
+  const call = callGo("Chat", body);
+  controller = { stopped: false, stop() { this.stopped = true; call.cancel(); } };
+  call.catch(err => {
+    if (err instanceof CancelError) return; // 停止ボタン。done イベントは Go から届く
+    // Go のメソッドを呼べなかった(done イベントは来ない)
+    addMessage("error", `呼び出しエラー: ${err.message}`);
+    finish();
+  });
+  await finished;
+  chatListener = null;
+
+  // 統計: 最初の文字が出るまでの時間と、Go から届いたトークン数・速度
   if (firstAt !== null) {
     const parts = [modelName, `初回応答 ${((firstAt - startAt) / 1000).toFixed(2)}s`];
     if (serverStats) {
@@ -378,7 +410,7 @@ async function send(text) {
       const rate = s.gen_sec > 0 ? (s.gen_tokens / s.gen_sec).toFixed(1) : "-";
       parts.push(`生成 ${s.gen_tokens} tok ・ ${rate} tok/s`);
       if (s.stop_reason !== "eos") parts.push(STOP_REASONS[s.stop_reason] || s.stop_reason);
-    } else if (controller.signal.aborted) {
+    } else if (controller.stopped) {
       parts.push("停止");
     }
     const stats = document.createElement("div");
@@ -397,7 +429,7 @@ async function send(text) {
     // 何も残さないと、モデルからは「質問に返事をしていない」ように見えるので、
     // 何が起きたかを返事として履歴に残す。
     thinkEl.querySelector("summary").textContent = `思考の過程(${secSince(thinkStart)}秒)`;
-    const reason = serverStats ? serverStats.stop_reason : (controller.signal.aborted ? "cancel" : "");
+    const reason = serverStats ? serverStats.stop_reason : (controller.stopped ? "cancel" : "");
     const note = NO_ANSWER[reason] || "(考えている途中で終わったため、答えを出せませんでした)";
     bodyEl.innerHTML = `<p class="cutoff">${escapeHtml(note)}</p>` +
       (reason === "cancel" ? "" : `<p class="hint">「思考する」をオフにするか、AIBOW_MAX_TOKENS / AIBOW_CTX を増やすと答えまで届きやすくなります。</p>`);
@@ -437,10 +469,10 @@ input.addEventListener("input", () => {
   input.style.height = Math.min(input.scrollHeight, 200) + "px";
 });
 
-$("stopBtn").addEventListener("click", () => controller && controller.abort());
+$("stopBtn").addEventListener("click", () => controller && controller.stop());
 
 $("clearBtn").addEventListener("click", () => {
-  if (controller) controller.abort();
+  if (controller) controller.stop();
   history = [];
   inner.innerHTML = "";
   $("lastPrompt").textContent = "(まだ送信していません)";

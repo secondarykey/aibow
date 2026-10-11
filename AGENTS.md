@@ -15,13 +15,13 @@ aibow は、ローカルLLMを使ったアプリを**自分で作りながら仕
 ## 現在の構成(ステップ1: チャット)
 
 ```
-ブラウザ(static/index.html) ⇄ HTTP ⇄ aibow ⇄ yzma ⇄ llama.cpp(lib\ の DLL)⇄ GPU
-                                                         ↑ models\*.gguf / Ollama の保存フォルダ
+ウィンドウ(_cmd/aibow/frontend/index.html) ⇄ Wails v3 ⇄ aibow ⇄ yzma ⇄ llama.cpp(lib\ の DLL)⇄ GPU
+                                                                    ↑ models\*.gguf / Ollama の保存フォルダ
 ```
 
 **Ollama などの外部 LLM サーバーは使わない**。aibow のプロセスの中で llama.cpp を直接動かす。
 これはユーザーの明確な方針なので、LLM サーバーを別プロセスで立てる構成を提案・導入しないこと。
-HTTP はブラウザの画面と aibow をつなぐためだけに使う。
+画面は Wails v3 のデスクトップアプリ。HTTP サーバーは立てない(以前のブラウザ版から移行した)。
 
 ただし **Ollama を「モデルの管理係」として使うのは OK**(ユーザーの方針)。
 Ollama が `ollama pull` で保存したファイル(`manifests\` の目録と `blobs\` の GGUF)を aibow が直接読む。
@@ -30,28 +30,35 @@ Ollama のサーバーや API は使わない。Ollama のモデルの一部は 
 
 | ファイル | 役割 |
 |---|---|
-| `main.go` | 環境変数の読み込み、画面の配信、`/api/chat` で SSE を返す |
+| `aibow.go` | パッケージの説明。ルートは `aibow` パッケージ(ライブラリ)で、Wails を import しない |
 | `engine.go` | llama.cpp の呼び出し。モデルの読み込み・入れ替え、KV キャッシュ再利用、decode、サンプリングの生成ループ |
 | `models.go` | モデルの一覧(`models\` の *.gguf と Ollama の保存フォルダ)。ID は `file:<パス>` / `ollama:<名前>` |
 | `prompt.go` | 会話 → ChatML 文字列(Qwen3.5 の公式チャットテンプレートを Go で書き直したもの) |
 | `stream.go` | UTF-8 の切れ目の処理と、`</think>` で思考と答えを振り分ける処理 |
 | `*_test.go` | テンプレート、思考の振り分け、Ollama の目録の読み取りのテスト(モデル不要で実行できる) |
-| `static/index.html` | チャット画面。`go:embed` で実行ファイルに埋め込まれる |
+| `_cmd/aibow/main.go` | Wails のアプリとウィンドウを作る。Wails に依存するコードは `_cmd/aibow` だけに置く |
+| `_cmd/aibow/config.go` | 環境変数の読み込み |
+| `_cmd/aibow/service.go` | `ChatService`。画面から呼ばれるメソッド(`Models` / `SwitchModel` / `Chat`) |
+| `_cmd/aibow/frontend/index.html` | チャット画面。`go:embed` で実行ファイルに埋め込まれる |
+| `_cmd/aibow/go.mod` / `go.work` | `_cmd/aibow` は別モジュール(Wails に依存)。`go.work` でルートとまとめる |
 | `lib\` / `models\` | llama.cpp の DLL とモデル。Git には入れない |
 
-- ブラウザ ⇄ サーバー間は SSE。イベントは `prompt` / `thinking` / `content` / `stats` / `error` / `done`
-- 会話履歴はブラウザ側が持ち、毎回全件を送る(モデルはステートレス)
+- 画面 → Go は `/wails/runtime.js` の `Call.ByName("main.ChatService.<メソッド>", ...)`。npm もバインディング生成も使わない
+- Go → 画面は Wails のイベント。`chat` イベントの `type` は `prompt` / `thinking` / `content` / `stats` / `error` / `done`。
+  `Chat` の戻り値とイベントは別経路で届き順序が保証されないので、終わりは必ず `done` イベントで判定する
+- 停止は `Call` の Promise の `cancel()` → Go の `ctx` がキャンセルされる。アプリ終了時は `ServiceShutdown` で生成を止める
+- 起動時のモデルはウィンドウを出してから裏で読み込み、終わったら `models` イベントで画面に知らせる
+- 会話履歴は画面側が持ち、毎回全件を送る(モデルはステートレス)
 - 過去のアシスタント発言は答えだけを履歴に残す(思考は捨てる。公式テンプレートと同じ)
 - 思考の ON/OFF は、プロンプト末尾を `<think>\n` にするか `<think>\n\n</think>\n\n` にするかで切り替える
 - 生成とモデルの入れ替えは同時に1つだけ(コンテキストが1つのため)。`Engine.mu` で排他している
-- API: `GET /api/models`(一覧と現在のモデル)、`POST /api/model`(切り替え。読み込み終わるまで返らない)、`POST /api/chat`(SSE)
 - モデルの切り替えは「今のモデルを解放 → 新しいモデルを読み込む」の順(VRAM 8GB に2つは載らないため)。失敗したら元のモデルを読み直す
 
 ## ロードマップ
 
 1. チャット(完了)
 2. 会話管理とツール呼び出し
-   1. 会話履歴を画面からサーバー側の「会話管理層」(画面とエンジンの間の層)に移す
+   1. 会話履歴を画面からGo 側の「会話管理層」(画面とエンジンの間の層)に移す
    2. compact:履歴のトークン数がコンテキストの上限に近づいたら、古い発言を捨てる/要約する。まず「古い発言から捨てる」、次に「要約」の順で作り、違いを観察できるようにする。
       compact の方針は会話管理層に持たせ、エンジンには「トークン数を数える」機能だけを足す
    3. ツール呼び出し:モデルが書く `<tool_call><function=...>` を読み取って実行し、結果を返して続きを書かせる「エージェントループ」。
@@ -65,7 +72,7 @@ Ollama のサーバーや API は使わない。Ollama のモデルの一部は 
 
 ## この後やること(ユーザーと合意済み。まだ着手しない)
 
-- **設定を画面から変えられるようにする**(ステップ2で会話をサーバー側に移すときに合わせて行う)。
+- **設定を画面から変えられるようにする**(ステップ2で会話をGo 側に移すときに合わせて行う)。
   環境変数は起動時の初期値にとどめ、普段の調整は画面で行う。設定ごとに必要な処理が違う:
 
   | 設定 | 変えたときに必要なこと |
@@ -76,18 +83,19 @@ Ollama のサーバーや API は使わない。Ollama のモデルの一部は 
   | lib / モデルの置き場所 / 待ち受けアドレス | 再起動が必要。環境変数のまま |
 
   打ち切り時のヒント文(今は「AIBOW_MAX_TOKENS / AIBOW_CTX を増やす」と案内)も、画面の設定を案内する文に変える。
-  画面で変えた設定の保存先(ブラウザかサーバー側の設定ファイルか)はそのときに決める。会話と一緒にサーバー側で持つのが有力
+  画面で変えた設定の保存先(画面側か Go 側の設定ファイルか)はそのときに決める。会話と一緒に Go 側で持つのが有力
 
 ## 技術方針
 
 - **言語は Go**(1.26 以上。yzma の要求)。Python など別言語の実装を持ち込まない
-- 外部パッケージは **yzma(github.com/hybridgroup/yzma)のみ**。それ以外は標準ライブラリで書く。
+- 外部パッケージは **yzma(github.com/hybridgroup/yzma)と、画面用の Wails v3(`_cmd/aibow` のみ)**。それ以外は標準ライブラリで書く。
+  Wails は現在 v3.0.0-beta.26(`wails3` CLI と同じ版)。ルートの `go.mod` には Wails を入れない
   追加が必要な場合は、理由と代替案を示してユーザーに確認してから追加する(MCP の公式 Go SDK はステップ4以降で検討してよい)
 - yzma と llama.cpp はバージョンの組み合わせが決まっている。現在は yzma v1.29.1 + llama.cpp v0.6.0(ビルド b11429)。
   yzma を上げるときは、yzma の README の対応表を確認し、`lib\` の入れ直しも README に書く
 - チャットテンプレートはライブラリ任せにせず、`prompt.go` に自分で書く(書式を理解することが学習目的のため)
-- フロントエンドは素の HTML / CSS / JavaScript。フレームワークやビルドツールは使わない
-- 設定は環境変数(`AIBOW_MODEL` / `AIBOW_MODELS_DIR` / `AIBOW_LIB` / `AIBOW_CTX` / `AIBOW_GPU_LAYERS` / `AIBOW_MAX_TOKENS` / `AIBOW_PRESENCE_PENALTY` / `AIBOW_LLAMA_LOG` / `ADDR`、Ollama の保存先は Ollama と同じ `OLLAMA_MODELS`)。
+- フロントエンドは素の HTML / CSS / JavaScript。フレームワークやビルドツール(npm / Vite / `wails3 generate bindings`)は使わない
+- 設定は環境変数(`AIBOW_MODEL` / `AIBOW_MODELS_DIR` / `AIBOW_LIB` / `AIBOW_CTX` / `AIBOW_GPU_LAYERS` / `AIBOW_MAX_TOKENS` / `AIBOW_PRESENCE_PENALTY` / `AIBOW_LLAMA_LOG`、Ollama の保存先は Ollama と同じ `OLLAMA_MODELS`)。
   新しい設定も `AIBOW_` で始まる環境変数にし、README の表に追加する
 
 ## コードの書き方
@@ -123,14 +131,16 @@ Ollama のサーバーや API は使わない。Ollama のモデルの一部は 
 変更後は最低限、次を実行してください。
 
 ```bash
-gofmt -l .        # 整形が必要なファイルを表示(何も出なければ OK)
-go vet ./...      # よくある間違いを静的チェック
-go test ./...     # テンプレート、思考の振り分け、Ollama の目録のテスト(モデル不要)
-go build          # ビルドが通るか
+gofmt -l .                       # 整形が必要なファイルを表示(何も出なければ OK。_cmd も含む)
+go vet ./... ./_cmd/aibow        # よくある間違いを静的チェック(./... は _cmd を含まないので並べる)
+go test ./...                    # テンプレート、思考の振り分け、Ollama の目録のテスト(モデル不要)
+go build -o /dev/null ./_cmd/aibow   # デスクトップアプリのビルドが通るか
 ```
 
-実際の生成は `go run .` で起動して http://localhost:8000 を開き、送受信して確認します。
-`static/` の変更は実行ファイルに埋め込まれるため、**サーバーの再起動が必要**です。
+実際の生成は `go run ./_cmd/aibow` で起動し、開いたウィンドウで送受信して確認します。
+`frontend/` の変更は実行ファイルに埋め込まれるため、**アプリの再起動が必要**です。
+画面を外から操作して確かめるときは、一時ビルドで `application.Options.Windows.AdditionalBrowserArgs` に
+`--remote-debugging-port=9222` を足し、CDP(`http://localhost:9222/json`)で `Runtime.evaluate` する(この変更はコミットしない)。
 
 GPU や本物のモデルがない環境では、llama.cpp の CPU 版と小さな GGUF(重みがランダムな極小モデルでもよい)で
 「読み込み → 生成 → 停止 → 2回目の送信で KV キャッシュが再利用される → モデルの切り替え → 壊れたモデルを選んだら元に戻る」までを確認してください。

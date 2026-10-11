@@ -1,4 +1,4 @@
-package main
+package aibow
 
 // engine.go: llama.cpp を直接呼んで文章を生成する部分。
 //
@@ -24,7 +24,7 @@ import (
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
-// EngineConfig はエンジンの設定。main.go で環境変数から作る。
+// EngineConfig はエンジンの設定。_cmd/aibow/config.go で環境変数から作る。
 type EngineConfig struct {
 	LibPath   string // llama.cpp の DLL が入っているフォルダ
 	NCtx      int    // コンテキスト長: 一度に扱えるトークン数(プロンプト + 返事)

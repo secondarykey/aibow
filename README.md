@@ -4,10 +4,13 @@
 このアプリを少しずつ育てて、最終的に「ローカルでバイブコーディングできるエージェント」と「MCP」まで進みます。
 
 ```
-ブラウザ(static/index.html) ⇄ HTTP ⇄ aibow ⇄ 関数呼び出し ⇄ llama.cpp(DLL)⇄ GPU
-                                       ↑
-                     models\*.gguf  または  Ollama が保存したモデル
+ウィンドウ(_cmd/aibow/frontend/index.html) ⇄ Wails ⇄ aibow ⇄ 関数呼び出し ⇄ llama.cpp(DLL)⇄ GPU
+                                                              ↑
+                                            models\*.gguf  または  Ollama が保存したモデル
 ```
+
+画面は [Wails v3](https://v3.wails.io/) のデスクトップアプリです。Wails は OS に入っている WebView(Windows なら WebView2)で HTML の画面を出し、
+画面の JavaScript から Go のメソッドを呼べるようにする枠組みです。画面は素の HTML / CSS / JavaScript のままで、npm やビルドツールは使いません。
 
 aibow が llama.cpp(LLM を計算するライブラリ)を直接読み込み、モデルの読み込みから1トークンずつの生成まで、自分で行います。
 Ollama のサーバーは使いません。ただし、**Ollama で `ollama pull` したモデルはそのまま使えます**。
@@ -18,18 +21,27 @@ Ollama が保存したファイルを aibow が直接読むので、Ollama は�
 
 | ファイル | 役割 |
 |---|---|
-| `main.go` | 設定の読み込み、画面の配信、ブラウザとのやり取り |
+| `aibow.go` | パッケージの説明。リポジトリのルートは LLM を動かす部分(`aibow` パッケージ)で、画面のことは知らない |
 | `engine.go` | llama.cpp を呼んで文章を生成する部分(モデルの読み込み・入れ替え、トークン化、計算、選択の繰り返し) |
 | `models.go` | 使えるモデルの一覧を作る(`models\` フォルダと Ollama の保存フォルダ) |
 | `prompt.go` | 会話を、モデルが理解する書式(ChatML)の1本の文字列にする |
 | `stream.go` | 生成された文字を「思考」と「答え」に振り分ける |
 | `*_test.go` | テスト(モデルなしで実行できる) |
-| `static/index.html` | チャット画面 |
+| `_cmd/aibow/main.go` | デスクトップアプリの起動(Wails のアプリとウィンドウを作る) |
+| `_cmd/aibow/config.go` | 環境変数から設定を読む |
+| `_cmd/aibow/service.go` | 画面から呼ばれる Go のメソッド(モデルの一覧・切り替え・チャット) |
+| `_cmd/aibow/frontend/index.html` | チャット画面。実行ファイルに埋め込まれる |
+| `go.work` | ルートと `_cmd/aibow` の2つのモジュールをまとめる(下の説明を参照) |
 | `lib\` | llama.cpp の DLL(自分で取得。Git には入れない) |
 | `models\` | 自分でダウンロードしたモデル(Git には入れない) |
 
 llama.cpp の呼び出しには [yzma](https://github.com/hybridgroup/yzma) という Go のライブラリを使っています。
 llama.cpp の C の関数を Go から呼べるようにするだけの薄い層で、C コンパイラ(cgo)は不要です。
+
+Wails に依存するのは `_cmd/aibow` だけです。`_cmd/aibow` は自分の `go.mod` を持つ別のモジュールにしてあり、
+ルートの `go.mod` は yzma だけに依存します。`go.work` は「この2つのモジュールを一緒に扱う」という Go のワークスペースの設定で、
+これがあるのでリポジトリのルートから `go run ./_cmd/aibow` で起動できます。
+(`_` で始まるフォルダは `go test ./...` などの `./...` に含まれないので、ルートのテストは Wails なしで動きます)
 
 ## 準備(最初の1回だけ)
 
@@ -94,9 +106,10 @@ https://huggingface.co/bartowski/Qwen_Qwen3.5-4B-GGUF/resolve/main/Qwen_Qwen3.5-
 ## 起動
 
 ```bash
-go run .
+go run ./_cmd/aibow
 ```
-このフォルダの Go コードをビルドして実行します。起動すると、次のようなログが出ます。
+デスクトップアプリ(`_cmd/aibow`)をビルドして実行します。初回は Wails のダウンロードとビルドに時間がかかります。
+リポジトリのルートで実行してください(`lib\` と `models\` はカレントフォルダから探します)。起動すると、次のようなログが出ます。
 
 ```
 計算装置: CPU [CPU] <CPU の名前>
@@ -106,10 +119,11 @@ go run .
   ollama   qwen3.5:9b                               ○ GB
 モデルを読み込み中: qwen3.5:4b (...)
 読み込み完了 (○ 秒): <モデルの種類> / ○B パラメータ / ○ GB / ○ 層 / GPU に載せる層: 999 / コンテキスト長: 16384
-aibow 起動: http://localhost:8000
+aibow 起動
 ```
 
-ブラウザで http://localhost:8000 を開いてください。止めるときはターミナルで `Ctrl+C` を押します(VRAM も解放されます)。
+ウィンドウが開きます。モデルはウィンドウが出てから裏で読み込むので、読み終わるまでは送信できません。
+止めるときはウィンドウを閉じます(VRAM も解放されます)。生成中に閉じても、生成を止めてから終了します。
 
 - `計算装置` に GPU が出てこない場合は、GPU 用ではない llama.cpp が入っているか、ドライバーが古い可能性があります(手順3の `--processor cuda` を確認)。
 - Ollama のモデルが一覧に出てこない場合は、ログの `Ollama:` の場所が正しいか確認してください。違う場所に保存しているなら、環境変数 `OLLAMA_MODELS` で指定します。
@@ -120,7 +134,7 @@ aibow 起動: http://localhost:8000
 もう一度起きたら、llama.cpp 自身のログを出して起動し、落ちる直前のログと、そのとき動いていた他のアプリ(Ollama、ゲームなど)を記録してください。
 
 ```bash
-AIBOW_LLAMA_LOG=1 go run . 2>&1 | tee aibow.log
+AIBOW_LLAMA_LOG=1 go run ./_cmd/aibow 2>&1 | tee aibow.log
 ```
 `2>&1` でエラー出力も含めて、`tee` で画面に出しつつ `aibow.log` にも保存します。
 
@@ -130,7 +144,7 @@ AIBOW_LLAMA_LOG=1 go run . 2>&1 | tee aibow.log
 会話はそのまま続けられるので、同じ質問を 4B と 9B で比べる、といった使い方ができます。
 回答の下の統計行の先頭に、どのモデルの返事かが表示されます。
 
-aibow を起動したまま `ollama pull` した場合は、ブラウザを再読み込みすると一覧に出てきます。
+aibow を起動したまま `ollama pull` した場合は、aibow のウィンドウに戻ると一覧に出てきます(ウィンドウにフォーカスが戻るたびに一覧を作り直しています)。
 
 ### 設定の変更
 
@@ -147,10 +161,9 @@ aibow を起動したまま `ollama pull` した場合は、ブラウザを再�
 | `AIBOW_MAX_TOKENS` | `8192` | 1回の返事で生成するトークン数の上限(思考 + 答えの合計) |
 | `AIBOW_PRESENCE_PENALTY` | `1.5` | すでに生成した言葉を選ばれにくくする強さ。思考の堂々巡りを抑える。`0` で無効 |
 | `AIBOW_LLAMA_LOG` | なし | `1` にすると llama.cpp 自身の詳しいログ(どの層をどこに置いたか、読めない理由など)を出す。起動時に数千行出る |
-| `ADDR` | `localhost:8000` | aibow が待ち受けるアドレス |
 
 ```bash
-AIBOW_MODEL=ollama:qwen3.5:4b go run .
+AIBOW_MODEL=ollama:qwen3.5:4b go run ./_cmd/aibow
 ```
 
 ## このステップで観察してほしいこと

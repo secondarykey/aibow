@@ -1,4 +1,4 @@
-package main
+package aibow
 
 // models.go: 使えるモデルの一覧を作る部分。
 //
@@ -59,9 +59,9 @@ func fileEntry(path string) ModelEntry {
 // その中で mediaType が "application/vnd.ollama.image.model" のものが GGUF 本体。
 // (ほかにチャットテンプレートやライセンスの blob もあるが、aibow は使わない)
 
-// ollamaModelsDir は Ollama の保存フォルダを返す。
+// OllamaModelsDir は Ollama の保存フォルダを返す。
 // Ollama と同じく、環境変数 OLLAMA_MODELS があればそちらを使う。
-func ollamaModelsDir() string {
+func OllamaModelsDir() string {
 	if d := os.Getenv("OLLAMA_MODELS"); d != "" {
 		return d
 	}
