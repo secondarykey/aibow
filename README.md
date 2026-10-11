@@ -70,7 +70,8 @@ Go のバージョンを表示します。yzma が Go 1.26 以上を必要とす
 ```bash
 node --version
 ```
-Node.js のバージョンを表示します。画面(React)のビルドに使う npm は Node.js に付いてきます。入っていなければ https://nodejs.org/ から入れてください。
+Node.js のバージョンを表示します。画面のビルドに使う Vite が **Node.js 20.19 以上(または 22.12 以上)** を必要とします。
+画面(React)のパッケージを入れる npm は Node.js に付いてきます。入っていなければ https://nodejs.org/ から入れてください。
 
 ```bash
 go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.26
@@ -153,22 +154,30 @@ wails3 dev
 - アプリを起動する。`_cmd/aibow` の Go のコードを保存すると、ビルドし直して起動し直す
 
 リポジトリのルートの `aibow` パッケージ(`engine.go` など)は見張っていないので、そちらを変えたときは `Ctrl+C` で止めて起動し直してください。
+初回は Go のライブラリのダウンロードとビルドがあるので、ウィンドウが出るまでしばらくかかります。
 
-起動すると、次のようなログが出ます。
+起動すると、ターミナルに次のようなログが出ます(Wails 自身のログも混ざります)。
 
 ```
-計算装置: CPU [CPU] <CPU の名前>
 計算装置: CUDA0 [GPU] <GPU の名前>(VRAM 空き ○ / ○ GB)
-モデルの置き場所: models / Ollama: C:\Users\<ユーザー>\.ollama\models
+計算装置: CPU [CPU] <CPU の名前>
+モデルの置き場所: D:\Go\Projects\aibow\_cmd\aibow\models / Ollama: C:\Users\<ユーザー>\.ollama\models
   ollama   qwen3.5:4b                               ○ GB
   ollama   qwen3.5:9b                               ○ GB
+aibow 起動
 モデルを読み込み中: qwen3.5:4b (...)
 読み込み完了 (○ 秒): <モデルの種類> / ○B パラメータ / ○ GB / ○ 層 / GPU に載せる層: 999 / コンテキスト長: 16384
-aibow 起動
 ```
 
 ウィンドウが開きます。モデルはウィンドウが出てから裏で読み込むので、読み終わるまでは送信できません。
 止めるときはウィンドウを閉じます(VRAM も解放され、`wails3 dev` も終わります)。生成中に閉じても、生成を止めてから終了します。
+
+うまく動かないとき:
+
+- ウィンドウに「起動できません: llama.cpp のフォルダが見つかりません: …」と出る場合は、表示されたフォルダに `lib\` がありません。
+  `_cmd/aibow` で起動しているか、`AIBOW_LIB` の指定が正しいかを確認してください。環境変数の値が不正なときも、同じようにウィンドウに理由が出ます。
+- `計算装置` に GPU が出てこない場合は、GPU 用ではない llama.cpp が入っているか、ドライバーが古い可能性があります(準備の3の `--processor cuda` を確認)。
+- Ollama のモデルが一覧に出てこない場合は、ログの `Ollama:` の場所が正しいか確認してください。違う場所に保存しているなら、環境変数 `OLLAMA_MODELS` で指定します。
 
 ### 実行ファイルを作る
 
@@ -183,9 +192,7 @@ wails3 task run
 `bin\aibow.exe` を、`_cmd/aibow` をカレントフォルダにして起動します。`bin\aibow.exe` をエクスプローラーからダブルクリックすると
 カレントフォルダが `bin\` になり、`lib\` が見つかりません。その場合は、起動できない理由がウィンドウに表示されます
 (`AIBOW_LIB` / `AIBOW_MODELS_DIR` を絶対パスで設定しておけば、どこから起動しても動きます)。
-
-- `計算装置` に GPU が出てこない場合は、GPU 用ではない llama.cpp が入っているか、ドライバーが古い可能性があります(手順3の `--processor cuda` を確認)。
-- Ollama のモデルが一覧に出てこない場合は、ログの `Ollama:` の場所が正しいか確認してください。違う場所に保存しているなら、環境変数 `OLLAMA_MODELS` で指定します。
+`bin\aibow.exe` はコンソールを持たないので、ログは出ません。ログを見たいときは `wails3 dev` で起動します。
 
 ### 起動時に落ちた場合
 
@@ -226,11 +233,20 @@ AIBOW_MODEL=ollama:qwen3.5:4b wails3 dev
 ```
 
 Git の worktree など、別の場所にあるコードから起動するときは、`lib\` と `models\` は Git に入っていないので、本体の場所を指定します。
-`frontend/node_modules/` も Git に入っていないので、worktree の `_cmd/aibow/frontend` で `npm install` するか、本体の `node_modules` へのジャンクションを作ります。
-
 ```bash
 AIBOW_LIB=/d/Go/Projects/aibow/_cmd/aibow/lib AIBOW_MODELS_DIR=/d/Go/Projects/aibow/_cmd/aibow/models wails3 dev
 ```
+
+`frontend/node_modules/` も Git に入っていません。worktree の `_cmd/aibow` で次を実行すると、本体の `node_modules` を共有できます
+(本体で先に `npm install` しておきます)。
+
+```bash
+powershell -NoProfile -Command "New-Item -ItemType Junction -Path frontend/node_modules -Target D:/Go/Projects/aibow/_cmd/aibow/frontend/node_modules"
+```
+PowerShell を呼び出して、Windows のジャンクション(フォルダの別名)を作ります。管理者権限は要りません。
+(Git Bash から `cmd //c mklink /J` を使うと、引数の変換で失敗します)
+ジャンクションを作った worktree では `npm install` を実行しないでください(ジャンクションが実際のフォルダに置き換わります)。
+パッケージの増減は本体で行います。
 
 ## このステップで観察してほしいこと
 
@@ -246,7 +262,7 @@ AIBOW_LIB=/d/Go/Projects/aibow/_cmd/aibow/lib AIBOW_MODELS_DIR=/d/Go/Projects/ai
   Qwen3.5 は一部の層が途中まで巻き戻せない仕組みのため、多くの場合 0 になります。
 - **モデルの切り替え**
   読み込み時間、生成速度、答えの質がモデルの大きさでどう変わるか。VRAM に載りきらないモデルで `AIBOW_GPU_LAYERS` を減らすと、どれくらい遅くなるか。
-- **ターミナルのログ**
+- **ターミナルのログ**(`wails3 dev` で起動したとき)
   起動時の計算装置とモデル一覧、1回ごとのトークン数・速度・終了理由が出ます。
 
 ## ロードマップ
