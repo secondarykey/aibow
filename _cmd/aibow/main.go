@@ -49,7 +49,7 @@ func main() {
 
 	// 使えるモデルの一覧
 	models := cfg.catalog.List()
-	log.Printf("モデルの置き場所: %s / Ollama: %s", cfg.catalog.ModelsDir, cfg.catalog.OllamaDir)
+	log.Printf("モデルの置き場所: %s / Ollama: %s", absPath(cfg.catalog.ModelsDir), absPath(cfg.catalog.OllamaDir))
 	for _, m := range models {
 		log.Printf("  %-8s %-40s %.1f GB", m.Source, m.Name, m.SizeGB)
 	}

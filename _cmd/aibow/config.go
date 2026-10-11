@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"strconv"
 
 	"aibow"
@@ -69,9 +70,24 @@ func loadConfig() appConfig {
 		initialModel: os.Getenv("AIBOW_MODEL"),
 	}
 	if _, err := os.Stat(c.engine.LibPath); err != nil {
-		log.Fatalf("llama.cpp のフォルダ %q が見つかりません。README.md の「llama.cpp の取得」を参照してください", c.engine.LibPath)
+		// 相対パスのままだと「どこを探したのか」が分からないので、絶対パスで出す
+		log.Fatalf("llama.cpp のフォルダが見つかりません: %s\n"+
+			"(相対パスはカレントフォルダが基準です。_cmd/aibow で起動するか、AIBOW_LIB で場所を指定してください。"+
+			"取得方法は README.md の「llama.cpp の取得」を参照)", absPath(c.engine.LibPath))
 	}
 	return c
+}
+
+// absPath はログに出すためにパスを絶対パスにする。空や変換できないときはそのまま返す
+// (空のまま Abs に渡すとカレントフォルダになり、設定されているように見えてしまう)。
+func absPath(p string) string {
+	if p == "" {
+		return p
+	}
+	if a, err := filepath.Abs(p); err == nil {
+		return a
+	}
+	return p
 }
 
 func pickInitialModel(cfg appConfig, models []aibow.ModelEntry) (aibow.ModelEntry, error) {
