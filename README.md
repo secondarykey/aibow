@@ -4,13 +4,14 @@
 このアプリを少しずつ育てて、最終的に「ローカルでバイブコーディングできるエージェント」と「MCP」まで進みます。
 
 ```
-ウィンドウ(_cmd/aibow/frontend/index.html) ⇄ Wails ⇄ aibow ⇄ 関数呼び出し ⇄ llama.cpp(_cmd/aibow/lib の DLL)⇄ GPU
+ウィンドウ(_cmd/aibow/frontend の React) ⇄ Wails ⇄ aibow ⇄ 関数呼び出し ⇄ llama.cpp(_cmd/aibow/lib の DLL)⇄ GPU
                                                               ↑
                                   _cmd/aibow/models\*.gguf  または  Ollama が保存したモデル
 ```
 
 画面は [Wails v3](https://v3.wails.io/) のデスクトップアプリです。Wails は OS に入っている WebView(Windows なら WebView2)で HTML の画面を出し、
-画面の JavaScript から Go のメソッドを呼べるようにする枠組みです。画面は素の HTML / CSS / JavaScript のままで、npm やビルドツールは使いません。
+画面の JavaScript から Go のメソッドを呼べるようにする枠組みです。画面は React + TypeScript で書き、Vite でビルドして実行ファイルに埋め込みます。
+Go のメソッドを呼ぶための TypeScript の関数と型(バインディング)は、`wails3 generate bindings` が Go のコードから自動で作ります。
 
 aibow が llama.cpp(LLM を計算するライブラリ)を直接読み込み、モデルの読み込みから1トークンずつの生成まで、自分で行います。
 Ollama のサーバーは使いません。ただし、**Ollama で `ollama pull` したモデルはそのまま使えます**。
@@ -30,7 +31,9 @@ Ollama が保存したファイルを aibow が直接読むので、Ollama は�
 | `_cmd/aibow/main.go` | デスクトップアプリの起動(Wails のアプリとウィンドウを作る) |
 | `_cmd/aibow/config.go` | 環境変数から設定を読む |
 | `_cmd/aibow/service.go` | 画面から呼ばれる Go のメソッド(モデルの一覧・切り替え・チャット) |
-| `_cmd/aibow/frontend/index.html` | チャット画面。実行ファイルに埋め込まれる |
+| `_cmd/aibow/frontend/src/` | チャット画面(React + TypeScript)。`App.tsx` が全体、`useChat.ts` / `useModels.ts` が Go とのやり取り |
+| `_cmd/aibow/frontend/bindings/` | `wails3 generate bindings` が作る、Go のメソッドを呼ぶ関数と型(自動生成。手で直さない) |
+| `_cmd/aibow/build/` / `Taskfile.yml` | `wails3 dev` / `wails3 build` の設定(アプリ名、アイコン、OS ごとのビルド手順) |
 | `go.work` | ルートと `_cmd/aibow` の2つのモジュールをまとめる(下の説明を参照) |
 | `_cmd/aibow/lib\` | llama.cpp の DLL(自分で取得。Git には入れない) |
 | `_cmd/aibow/models\` | 自分でダウンロードしたモデル(Git には入れない) |
@@ -40,7 +43,7 @@ llama.cpp の C の関数を Go から呼べるようにするだけの薄い層
 
 Wails に依存するのは `_cmd/aibow` だけです。`_cmd/aibow` は自分の `go.mod` を持つ別のモジュールにしてあり、
 ルートの `go.mod` は yzma だけに依存します。`go.work` は「この2つのモジュールを一緒に扱う」という Go のワークスペースの設定で、
-これがあるので、`_cmd/aibow` の中で `go run .` すると、ルートの `aibow` パッケージ(手元のコード)が使われます。
+これがあるので、`_cmd/aibow` でビルドすると、ルートの `aibow` パッケージ(手元のコード)が使われます。
 (`_` で始まるフォルダは `go test ./...` などの `./...` に含まれないので、ルートのテストは Wails なしで動きます)
 
 ## 準備(最初の1回だけ)
@@ -56,13 +59,28 @@ cd /d/Go/Projects/aibow/_cmd/aibow
 以前の版(ブラウザ版)でリポジトリのルートに `lib\` と `models\` を置いていた場合は、ダウンロードし直さなくても、
 ルートの `lib\` と `models\` をフォルダごと `_cmd\aibow\` へ移せば準備の 3・4 は済みます。
 
-### 1. Go のバージョン確認
+### 1. 道具の確認
 
 ```bash
 go version
 ```
 Go のバージョンを表示します。yzma が Go 1.26 以上を必要とするため、`go.mod` に `go 1.26.0` と書いてあります。
-手元の Go が古い場合でも、次の手順で Go が必要なバージョンを自動でダウンロードして使います(Go 1.21 以降の機能)。
+手元の Go が古い場合でも、Go が必要なバージョンを自動でダウンロードして使います(Go 1.21 以降の機能)。
+
+```bash
+node --version
+```
+Node.js のバージョンを表示します。画面(React)のビルドに使う npm は Node.js に付いてきます。入っていなければ https://nodejs.org/ から入れてください。
+
+```bash
+go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.26
+```
+Wails の CLI(`wails3` コマンド)を入れます。バージョンは `_cmd/aibow/go.mod` の Wails と合わせます。
+
+```bash
+wails3 doctor
+```
+Wails でビルドするのに必要なもの(Windows なら WebView2 など)がそろっているかを確認します。
 
 ### 2. 依存ライブラリの取得
 
@@ -70,6 +88,12 @@ Go のバージョンを表示します。yzma が Go 1.26 以上を必要とす
 go mod tidy
 ```
 `_cmd/aibow/go.mod` に書いてあるライブラリ(Wails と yzma など)をダウンロードし、改ざん検知用のチェックサムを `go.sum` に書き出します。
+
+```bash
+cd frontend && npm install && cd ..
+```
+画面で使うパッケージ(React、Vite、Wails の JavaScript 用ランタイムなど)を `frontend/node_modules/` にダウンロードします。
+`wails3 dev` / `wails3 build` は `node_modules` が無いときだけ自動で `npm install` するので、パッケージを増減したときは手で実行します。
 
 ### 3. llama.cpp の取得
 
@@ -119,9 +143,18 @@ cd /d/Go/Projects/aibow/_cmd/aibow
 アプリのフォルダに移動します。`lib\` と `models\` はカレントフォルダから探すので、必ずここで起動します。
 
 ```bash
-go run .
+wails3 dev
 ```
-デスクトップアプリをビルドして実行します。初回は Wails のダウンロードとビルドに時間がかかります。起動すると、次のようなログが出ます。
+開発モードで起動します。中では次のことが順に行われます。
+
+- Go のコードからバインディング(`frontend/bindings/`)を作り直す
+- Go をビルドする(`bin/aibow.exe`)
+- 画面の開発サーバー(Vite)を起動する。画面のコードを保存すると、ウィンドウにすぐ反映される
+- アプリを起動する。`_cmd/aibow` の Go のコードを保存すると、ビルドし直して起動し直す
+
+リポジトリのルートの `aibow` パッケージ(`engine.go` など)は見張っていないので、そちらを変えたときは `Ctrl+C` で止めて起動し直してください。
+
+起動すると、次のようなログが出ます。
 
 ```
 計算装置: CPU [CPU] <CPU の名前>
@@ -135,7 +168,21 @@ aibow 起動
 ```
 
 ウィンドウが開きます。モデルはウィンドウが出てから裏で読み込むので、読み終わるまでは送信できません。
-止めるときはウィンドウを閉じます(VRAM も解放されます)。生成中に閉じても、生成を止めてから終了します。
+止めるときはウィンドウを閉じます(VRAM も解放され、`wails3 dev` も終わります)。生成中に閉じても、生成を止めてから終了します。
+
+### 実行ファイルを作る
+
+```bash
+wails3 build
+```
+画面をビルドして埋め込み、アイコン付きの実行ファイル `bin\aibow.exe` を作ります。コンソールは出ません。
+
+```bash
+wails3 task run
+```
+`bin\aibow.exe` を、`_cmd/aibow` をカレントフォルダにして起動します。`bin\aibow.exe` をエクスプローラーからダブルクリックすると
+カレントフォルダが `bin\` になり、`lib\` が見つかりません。その場合は、起動できない理由がウィンドウに表示されます
+(`AIBOW_LIB` / `AIBOW_MODELS_DIR` を絶対パスで設定しておけば、どこから起動しても動きます)。
 
 - `計算装置` に GPU が出てこない場合は、GPU 用ではない llama.cpp が入っているか、ドライバーが古い可能性があります(手順3の `--processor cuda` を確認)。
 - Ollama のモデルが一覧に出てこない場合は、ログの `Ollama:` の場所が正しいか確認してください。違う場所に保存しているなら、環境変数 `OLLAMA_MODELS` で指定します。
@@ -146,7 +193,7 @@ aibow 起動
 もう一度起きたら、llama.cpp 自身のログを出して起動し、落ちる直前のログと、そのとき動いていた他のアプリ(Ollama、ゲームなど)を記録してください。
 
 ```bash
-AIBOW_LLAMA_LOG=1 go run . 2>&1 | tee aibow.log
+AIBOW_LLAMA_LOG=1 wails3 dev 2>&1 | tee aibow.log
 ```
 `2>&1` でエラー出力も含めて、`tee` で画面に出しつつ `aibow.log` にも保存します。
 
@@ -175,13 +222,14 @@ aibow を起動したまま `ollama pull` した場合は、aibow のウィン�
 | `AIBOW_LLAMA_LOG` | なし | `1` にすると llama.cpp 自身の詳しいログ(どの層をどこに置いたか、読めない理由など)を出す。起動時に数千行出る |
 
 ```bash
-AIBOW_MODEL=ollama:qwen3.5:4b go run .
+AIBOW_MODEL=ollama:qwen3.5:4b wails3 dev
 ```
 
 Git の worktree など、別の場所にあるコードから起動するときは、`lib\` と `models\` は Git に入っていないので、本体の場所を指定します。
+`frontend/node_modules/` も Git に入っていないので、worktree の `_cmd/aibow/frontend` で `npm install` するか、本体の `node_modules` へのジャンクションを作ります。
 
 ```bash
-AIBOW_LIB=/d/Go/Projects/aibow/_cmd/aibow/lib AIBOW_MODELS_DIR=/d/Go/Projects/aibow/_cmd/aibow/models go run .
+AIBOW_LIB=/d/Go/Projects/aibow/_cmd/aibow/lib AIBOW_MODELS_DIR=/d/Go/Projects/aibow/_cmd/aibow/models wails3 dev
 ```
 
 ## このステップで観察してほしいこと

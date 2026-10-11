@@ -15,7 +15,7 @@ aibow は、ローカルLLMを使ったアプリを**自分で作りながら仕
 ## 現在の構成(ステップ1: チャット)
 
 ```
-ウィンドウ(_cmd/aibow/frontend/index.html) ⇄ Wails v3 ⇄ aibow ⇄ yzma ⇄ llama.cpp(_cmd/aibow/lib\ の DLL)⇄ GPU
+ウィンドウ(_cmd/aibow/frontend の React) ⇄ Wails v3 ⇄ aibow ⇄ yzma ⇄ llama.cpp(_cmd/aibow/lib\ の DLL)⇄ GPU
                                                                     ↑ _cmd/aibow/models\*.gguf / Ollama の保存フォルダ
 ```
 
@@ -39,15 +39,20 @@ Ollama のサーバーや API は使わない。Ollama のモデルの一部は 
 | `_cmd/aibow/main.go` | Wails のアプリとウィンドウを作る。Wails に依存するコードは `_cmd/aibow` だけに置く |
 | `_cmd/aibow/config.go` | 環境変数の読み込み |
 | `_cmd/aibow/service.go` | `ChatService`。画面から呼ばれるメソッド(`Models` / `SwitchModel` / `Chat`) |
-| `_cmd/aibow/frontend/index.html` | チャット画面。`go:embed` で実行ファイルに埋め込まれる |
+| `_cmd/aibow/frontend/src/` | チャット画面(React + TypeScript)。`useModels.ts` / `useChat.ts` が Go とのやり取り、`components/` が表示。Vite でビルドした `frontend/dist` を `go:embed` で埋め込む |
+| `_cmd/aibow/frontend/bindings/` | `wails3 generate bindings` の生成物(コミットする。手で直さない) |
+| `_cmd/aibow/build/` / `Taskfile.yml` | `wails3 init`(react テンプレート)由来のビルド設定。ios / android / docker は削除して `.gitignore` 済み |
 | `_cmd/aibow/go.mod` / `go.work` | `_cmd/aibow` は別モジュール(Wails に依存)。`go.work` でルートとまとめる |
 | `_cmd/aibow/lib\` / `_cmd/aibow/models\` | llama.cpp の DLL とモデル。Git には入れない。モデルを動かすのはこのアプリだけなので(VRAM 8GB に2プロセス分は載らない)、アプリのフォルダに置く。起動・準備は `_cmd/aibow` で行う(カレントフォルダから探すため) |
 
-- 画面 → Go は `/wails/runtime.js` の `Call.ByName("main.ChatService.<メソッド>", ...)`。npm もバインディング生成も使わない
-- Go → 画面は Wails のイベント。`chat` イベントの `type` は `prompt` / `thinking` / `content` / `stats` / `error` / `done`。
+- 画面 → Go は生成されたバインディング(`ChatService.Models()` など)で呼ぶ。Go のメソッドを変えたら `wails3 generate bindings -f '' -clean=true -ts -i` で作り直す
+  (Taskfile と同じフラグ。`-i` は interface 生成なので、画面で `new` しない)。`wails3 dev` / `wails3 build` は自動で作り直す
+- Go → 画面は Wails のイベント。`chat` イベントは `RegisterEvent[ChatEvent]` で型を登録してあり、画面では `ev.data` が `ChatEvent` 型になる。`type` は `prompt` / `thinking` / `content` / `stats` / `error` / `done`。
   `Chat` の戻り値とイベントは別経路で届き順序が保証されないので、終わりは必ず `done` イベントで判定する
 - 停止は `Call` の Promise の `cancel()` → Go の `ctx` がキャンセルされる。アプリ終了時は `ServiceShutdown` で生成を止める
 - 起動時のモデルはウィンドウを出してから裏で読み込み、終わったら `models` イベントで画面に知らせる
+- 起動に失敗しても(lib が無い、環境変数の値が不正など)ウィンドウは出し、`Models()` の `error` で理由を画面に出す。
+  リリース版(`wails3 build`)はコンソールが無く、`log.Fatal` だと何も見えずに終わるため。起動時のエラーで `log.Fatal` しない
 - 会話履歴は画面側が持ち、毎回全件を送る(モデルはステートレス)
 - 過去のアシスタント発言は答えだけを履歴に残す(思考は捨てる。公式テンプレートと同じ)
 - 思考の ON/OFF は、プロンプト末尾を `<think>\n` にするか `<think>\n\n</think>\n\n` にするかで切り替える
@@ -88,13 +93,14 @@ Ollama のサーバーや API は使わない。Ollama のモデルの一部は 
 ## 技術方針
 
 - **言語は Go**(1.26 以上。yzma の要求)。Python など別言語の実装を持ち込まない
-- 外部パッケージは **yzma(github.com/hybridgroup/yzma)と、画面用の Wails v3(`_cmd/aibow` のみ)**。それ以外は標準ライブラリで書く。
+- Go の外部パッケージは **yzma(github.com/hybridgroup/yzma)と、画面用の Wails v3(`_cmd/aibow` のみ)**。それ以外は標準ライブラリで書く。
   Wails は現在 v3.0.0-beta.26(`wails3` CLI と同じ版)。ルートの `go.mod` には Wails を入れない
   追加が必要な場合は、理由と代替案を示してユーザーに確認してから追加する(MCP の公式 Go SDK はステップ4以降で検討してよい)
 - yzma と llama.cpp はバージョンの組み合わせが決まっている。現在は yzma v1.29.1 + llama.cpp v0.6.0(ビルド b11429)。
   yzma を上げるときは、yzma の README の対応表を確認し、`lib\` の入れ直しも README に書く
 - チャットテンプレートはライブラリ任せにせず、`prompt.go` に自分で書く(書式を理解することが学習目的のため)
-- フロントエンドは素の HTML / CSS / JavaScript。フレームワークやビルドツール(npm / Vite / `wails3 generate bindings`)は使わない
+- フロントエンドは React + TypeScript + Vite(`wails3 init -t react` のテンプレート)。npm のパッケージは react / react-dom / @wailsio/runtime と開発用の vite / typescript など。
+  それ以外を足すときも、理由と代替案を示してユーザーに確認する。Wails の構成はユーザーの wails3 スキルの標準(`_cmd/<名前>/build/config.yml`・Taskfile・`wails3 dev`)に従う
 - 設定は環境変数(`AIBOW_MODEL` / `AIBOW_MODELS_DIR` / `AIBOW_LIB` / `AIBOW_CTX` / `AIBOW_GPU_LAYERS` / `AIBOW_MAX_TOKENS` / `AIBOW_PRESENCE_PENALTY` / `AIBOW_LLAMA_LOG`、Ollama の保存先は Ollama と同じ `OLLAMA_MODELS`)。
   新しい設定も `AIBOW_` で始まる環境変数にし、README の表に追加する
 
@@ -132,14 +138,16 @@ Ollama のサーバーや API は使わない。Ollama のモデルの一部は 
 
 ```bash
 gofmt -l .                       # 整形が必要なファイルを表示(何も出なければ OK。_cmd も含む)
-go vet ./... ./_cmd/aibow        # よくある間違いを静的チェック(./... は _cmd を含まないので並べる)
 go test ./...                    # テンプレート、思考の振り分け、Ollama の目録のテスト(モデル不要)
-go build -o /dev/null ./_cmd/aibow   # デスクトップアプリのビルドが通るか
+(cd _cmd/aibow && wails3 build)  # バインディング生成 → 画面の型チェックとビルド(tsc + vite)→ Go のビルド
+go vet ./... ./_cmd/aibow        # よくある間違いを静的チェック(./... は _cmd を含まないので並べる)
 ```
 
-実際の生成は `_cmd/aibow` で `go run .` して起動し、開いたウィンドウで送受信して確認します。
-worktree には `lib\` / `models\` が無いので、`AIBOW_LIB` / `AIBOW_MODELS_DIR` で本体(`/d/Go/Projects/aibow/_cmd/aibow/`)の場所を指定します。
-`frontend/` の変更は実行ファイルに埋め込まれるため、**アプリの再起動が必要**です。
+`_cmd/aibow` は `frontend/dist` を埋め込むので、画面を一度もビルドしていないと `go vet` / `go build` が「パターンに一致するファイルが無い」で失敗します。先に `wails3 build` を実行します。
+
+実際の生成は `_cmd/aibow` で `wails3 dev`(または `wails3 build` してから `wails3 task run`)で起動し、開いたウィンドウで送受信して確認します。
+worktree には `lib\` / `models\` / `frontend/node_modules` が無いので、`AIBOW_LIB` / `AIBOW_MODELS_DIR` で本体(`/d/Go/Projects/aibow/_cmd/aibow/`)の場所を指定し、
+`node_modules` は本体へのジャンクションを作る(本体に無ければ worktree で `npm install`)。
 画面を外から操作して確かめるときは、一時ビルドで `application.Options.Windows.AdditionalBrowserArgs` に
 `--remote-debugging-port=9222` を足し、CDP(`http://localhost:9222/json`)で `Runtime.evaluate` する(この変更はコミットしない)。
 

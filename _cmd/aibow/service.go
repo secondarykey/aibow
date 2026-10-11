@@ -1,15 +1,15 @@
 package main
 
-// service.go: 画面(frontend/index.html)から呼ばれる Go のメソッド。
+// service.go: 画面(frontend)から呼ばれる Go のメソッド。
 //
 // Wails では、Service として登録した構造体の「大文字で始まるメソッド」を、
 // 画面の JavaScript から関数のように呼べる(中身は Wails が仲立ちする RPC)。
 //
-//	JavaScript: Call.ByName("main.ChatService.Chat", req)
+//	TypeScript: ChatService.Chat(req)      ← wails3 generate bindings が frontend/bindings に作る関数
 //	        ↓  Wails が引数を JSON にして Go に渡す
 //	Go:         (*ChatService).Chat(ctx, req)
 //
-// 名前の "main" はこの構造体があるパッケージ、"ChatService" は型名。
+// メソッドのコメントと構造体の json タグは、バインディングの TypeScript の型とコメントにもなる。
 // Web サーバー版の /api/models・/api/model・/api/chat が、それぞれ Models・SwitchModel・Chat になった。
 
 import (
@@ -23,8 +23,11 @@ import (
 )
 
 type ChatService struct {
-	engine  *aibow.Engine
+	engine  *aibow.Engine // 起動に失敗したときは nil
 	catalog aibow.ModelCatalog
+
+	// startupErr は起動に失敗した理由(lib が無いなど)。画面に表示する
+	startupErr error
 
 	// initial は起動時に読み込むモデル。nil なら読み込まない(画面で選ぶ)。
 	initial *aibow.ModelEntry
@@ -38,9 +41,12 @@ type ChatService struct {
 	cancelQuit context.CancelFunc
 }
 
-func NewChatService(engine *aibow.Engine, catalog aibow.ModelCatalog, initial *aibow.ModelEntry) *ChatService {
+func NewChatService(engine *aibow.Engine, catalog aibow.ModelCatalog, initial *aibow.ModelEntry, startupErr error) *ChatService {
 	quit, cancel := context.WithCancel(context.Background())
-	return &ChatService{engine: engine, catalog: catalog, initial: initial, quit: quit, cancelQuit: cancel}
+	return &ChatService{
+		engine: engine, catalog: catalog, initial: initial, startupErr: startupErr,
+		quit: quit, cancelQuit: cancel,
+	}
 }
 
 // ServiceStartup はアプリの起動時に Wails から呼ばれる(画面からは呼べない特別な名前)。
@@ -79,10 +85,14 @@ type ModelsResult struct {
 	Current *aibow.ModelInfo   `json:"current"`           // 未読み込みなら null
 	Loading string             `json:"loading,omitempty"` // 起動時に読み込み中のモデルの名前
 	GPU     bool               `json:"gpu"`
+	Error   string             `json:"error,omitempty"` // 起動に失敗した理由。あれば何もできない
 }
 
 // Models は使えるモデルの一覧と、今読み込んでいるモデルを返す。
 func (s *ChatService) Models() ModelsResult {
+	if s.startupErr != nil {
+		return ModelsResult{Models: []aibow.ModelEntry{}, Error: s.startupErr.Error()}
+	}
 	r := ModelsResult{
 		Models:  s.catalog.List(),
 		Current: s.engine.Info(),
@@ -98,6 +108,9 @@ func (s *ChatService) Models() ModelsResult {
 // 失敗したときは元のモデルに戻っている(画面は Models を呼び直して確認する)。
 // Go で error を返すと、JavaScript 側では Promise が reject される。
 func (s *ChatService) SwitchModel(id string) (*aibow.ModelInfo, error) {
+	if s.startupErr != nil {
+		return nil, s.startupErr
+	}
 	m, err := s.catalog.Find(id)
 	if err != nil {
 		return nil, err
@@ -156,6 +169,10 @@ type ChatEvent struct {
 func (s *ChatService) Chat(ctx context.Context, req ChatRequest) {
 	emit := func(ev ChatEvent) { application.Get().Event.Emit(chatEventName, ev) }
 	defer emit(ChatEvent{Type: "done"})
+	if s.startupErr != nil {
+		emit(ChatEvent{Type: "error", Message: s.startupErr.Error()})
+		return
+	}
 
 	// 画面の停止ボタンか、アプリの終了のどちらかで止める
 	ctx, cancel := context.WithCancel(ctx)

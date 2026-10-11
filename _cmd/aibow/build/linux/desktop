@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Name=aibow
+Comment=aibow
+# The Exec line includes %u to pass the URL to the application
+Exec=/usr/local/bin/aibow %u
+Terminal=false
+Type=Application
+Icon=aibow
+Categories=Utility;
+StartupWMClass=aibow
+
+ 

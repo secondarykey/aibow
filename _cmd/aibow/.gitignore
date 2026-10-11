@@ -1,0 +1,11 @@
+.task
+bin
+frontend/dist
+frontend/node_modules
+build/linux/appimage/build
+build/windows/nsis/MicrosoftEdgeWebview2Setup.exe
+
+# wails3 update build-assets が再生成するが、デスクトップアプリなので使わない
+build/ios/
+build/android/
+build/docker/

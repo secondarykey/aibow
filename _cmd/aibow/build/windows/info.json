@@ -1,0 +1,15 @@
+{
+	"fixed": {
+		"file_version": "0.1.0"
+	},
+	"info": {
+		"0000": {
+			"ProductVersion": "0.1.0",
+			"CompanyName": "secondarykey",
+			"FileDescription": "aibow",
+			"LegalCopyright": "(c) 2026, secondarykey",
+			"ProductName": "aibow",
+			"Comments": "ローカルLLMを自分で動かして仕組みを学ぶチャット"
+		}
+	}
+}
