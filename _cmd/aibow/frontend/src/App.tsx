@@ -15,6 +15,7 @@ import { Header } from "./components/Header";
 import { ChatView } from "./components/ChatView";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { Composer } from "./components/Composer";
+import { ImeFocusRelay } from "./imeFocus";
 
 const defaultSettings: ChatSettings = {
   system: "あなたは親切なアシスタントです。日本語で簡潔に答えてください。",
@@ -53,6 +54,7 @@ export default function App() {
         onSend={chat.send}
         onStop={chat.stop}
       />
+      <ImeFocusRelay />
     </>
   );
 }

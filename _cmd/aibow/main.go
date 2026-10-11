@@ -26,7 +26,11 @@ import (
 	"aibow"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
+	"github.com/wailsapp/wails/v3/pkg/events"
 )
+
+// windowFocusEventName は、ウィンドウがアクティブに戻ったことを画面に知らせるイベントの名前。
+const windowFocusEventName = "aibow:window:focus"
 
 // Vite でビルドした画面(frontend/dist)を実行ファイルに埋め込む。
 // all: を付けないと、_ や . で始まるファイルが埋め込まれない。
@@ -70,11 +74,19 @@ func main() {
 		},
 	})
 
-	app.Window.NewWithOptions(application.WebviewWindowOptions{
+	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:  "aibow",
 		Width:  1280,
 		Height: 820,
 		URL:    "/",
+	})
+
+	// Windows の WebView2 は、別のウィンドウから戻ってきたときに IME(日本語入力)の状態が
+	// 戻らず、入力欄で変換できなくなることがある。戻ってきたことを画面に知らせ、
+	// 画面側(frontend/src/imeFocus.ts)で入力欄のフォーカスを付け直して直す。
+	// events.Common.WindowFocus は Windows では発火しないので、Windows 用のイベントを使う。
+	window.OnWindowEvent(events.Windows.WindowSetFocus, func(*application.WindowEvent) {
+		app.Event.Emit(windowFocusEventName)
 	})
 
 	log.Printf("aibow 起動")

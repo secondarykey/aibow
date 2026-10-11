@@ -12,6 +12,7 @@ interface Props {
 export function Composer({ canSend, canStop, onSend, onStop }: Props) {
   const [text, setText] = useState("");
   const input = useRef<HTMLTextAreaElement>(null);
+  const composing = useRef(false); // IME で変換中か
 
   // 入力に合わせて高さを伸ばす(最大 200px)
   useEffect(() => {
@@ -35,8 +36,11 @@ export function Composer({ canSend, canStop, onSend, onStop }: Props) {
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    // IME で変換中の Enter は確定なので送信しない
-    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+    // IME で変換中の Enter は確定なので送信しない。
+    // isComposing だけだと確定の Enter の直後を取りこぼすことがあるので、
+    // compositionstart〜end の記録と、IME 処理中のキーに付く keyCode 229 でも確かめる
+    if (composing.current || e.nativeEvent.isComposing || e.keyCode === 229) return;
+    if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       submit();
     }
@@ -52,6 +56,8 @@ export function Composer({ canSend, canStop, onSend, onStop }: Props) {
           placeholder="メッセージを入力(Enterで送信 / Shift+Enterで改行)"
           onChange={e => setText(e.target.value)}
           onKeyDown={onKeyDown}
+          onCompositionStart={() => (composing.current = true)}
+          onCompositionEnd={() => (composing.current = false)}
         />
         <button className="primary" type="submit" disabled={!canSend}>送信</button>
         <button type="button" disabled={!canStop} onClick={onStop}>停止</button>
