@@ -26,7 +26,7 @@ aibow は、ローカルLLMを使ったアプリを**自分で作りながら仕
   これはユーザーの明確な方針なので、LLM サーバーを別プロセスで立てる構成を提案・導入しないこと
 - ただし **Ollama を「モデルの管理係」として使うのは OK**(ユーザーの方針)。Ollama が保存したファイルを aibow が直接読む。Ollama のサーバーや API は使わない
 - 画面は Wails v3 のデスクトップアプリ。HTTP サーバーは立てない(以前のブラウザ版から移行した)。
-  GUI の無い環境で確かめるための Wails の server モードは、確認用の一時ビルドだけで使う([_docs/testing.md](_docs/testing.md))
+  GUI の無い環境で確かめるための Wails の server モードは、確認用の一時ビルドだけで使う([_docs/env-cloud.md](_docs/env-cloud.md))
 
 | 場所 | 中身 |
 |---|---|
@@ -47,7 +47,9 @@ aibow は、ローカルLLMを使ったアプリを**自分で作りながら仕
 | アプリの起動・`ChatService`・環境変数の読み込み・Go と画面のやり取り | [_cmd/aibow/AGENTS.md](_cmd/aibow/AGENTS.md) |
 | 画面(レイアウト・フォーカス・スクロール・ウィンドウの移動とリサイズ・IME) | [_docs/ui.md](_docs/ui.md) |
 | バージョン・ローカルデプロイ | [_docs/deploy.md](_docs/deploy.md) |
-| アプリを起動して動作を確かめる | [_docs/testing.md](_docs/testing.md) |
+| アプリを起動して動作を確かめる(共通の手順と確認する項目) | [_docs/testing.md](_docs/testing.md) |
+| ユーザーの Windows 環境(worktree)で起動して確かめる | [_docs/env-windows.md](_docs/env-windows.md) |
+| クラウドセッション(GUI の無い Linux)で起動して確かめる | [_docs/env-cloud.md](_docs/env-cloud.md) |
 | パラメータの調整・実際に動かして分かったことの記録 | [_docs/tuning.md](_docs/tuning.md) |
 | 不具合の調査 | [_docs/known-issues.md](_docs/known-issues.md) |
 
@@ -100,5 +102,7 @@ go vet ./... ./_cmd/aibow        # よくある間違いを静的チェック(./
 
 `_cmd/aibow` は `frontend/dist` を埋め込むので、画面を一度もビルドしていないと `go vet` / `go build` が「パターンに一致するファイルが無い」で失敗します。先に `wails3 build` を実行します。
 
-アプリを起動して確かめるときは、**先に必ず [_docs/testing.md](_docs/testing.md) を読んでください**。
-worktree でやってはいけないこと(`lib\` / `models\` を作る、本体へのリンクを張る、ユーザーの DB やアプリに触れる)が書いてあります。
+アプリを起動して確かめるときは、**先に必ず [_docs/testing.md](_docs/testing.md) と、今いる環境のファイルを読んでください**。
+
+- ユーザーの Windows 環境: [_docs/env-windows.md](_docs/env-windows.md)。worktree でやってはいけないこと(`lib\` / `models\` を作る、本体へのリンクを張る、ユーザーの DB やアプリに触れる)が書いてあります
+- クラウドセッション(GUI の無い Linux): [_docs/env-cloud.md](_docs/env-cloud.md)。画面を server モードで確かめる方法が書いてあります

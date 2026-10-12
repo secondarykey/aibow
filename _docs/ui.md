@@ -66,4 +66,5 @@ Go とのやり取り(バインディング・イベント・停止)とアプリ
 
 ## 画面を外から操作して確かめる
 
-CDP や Wails の server モード + Playwright を使う方法は [testing.md](testing.md) にあります。
+- Windows で CDP を使う方法: [env-windows.md](env-windows.md)
+- GUI の無い Linux で Wails の server モード + Playwright を使う方法: [env-cloud.md](env-cloud.md)
