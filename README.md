@@ -1,12 +1,12 @@
-# aibow — ステップ1: 自作チャット
+# aibow — 自作チャット(ステップ2-1: 会話の保存まで)
 
 ローカルLLMを自分のプログラムの中で直接動かす、最小のチャットアプリです。
 このアプリを少しずつ育てて、最終的に「ローカルでバイブコーディングできるエージェント」と「MCP」まで進みます。
 
 ```
 ウィンドウ(_cmd/aibow/frontend の React) ⇄ Wails ⇄ aibow ⇄ 関数呼び出し ⇄ llama.cpp(_cmd/aibow/lib の DLL)⇄ GPU
-                                                              ↑
-                                  _cmd/aibow/models\*.gguf  または  Ollama が保存したモデル
+                                                  ⇅                           ↑
+                                  会話の保存(SQLite)   _cmd/aibow/models\*.gguf  または  Ollama が保存したモデル
 ```
 
 画面は [Wails v3](https://v3.wails.io/) のデスクトップアプリです。Wails は OS に入っている WebView(Windows なら WebView2)で HTML の画面を出し、
@@ -38,7 +38,7 @@ Ollama が保存したファイルを aibow が直接読むので、Ollama は�
 | `_cmd/aibow/frontend/src/` | チャット画面(React + TypeScript)。`App.tsx` が全体、`use*.ts` が Go とのやり取り、`components/` が表示 |
 | `_cmd/aibow/frontend/bindings/` | `wails3 generate bindings` が作る、Go のメソッドを呼ぶ関数と型(自動生成。手で直さない) |
 | `_cmd/aibow/build/` / `Taskfile.yml` | `wails3 dev` / `wails3 build` の設定(アプリ名、アイコン、OS ごとのビルド手順) |
-| `_cmd/aibow/version` | アプリのバージョン(唯一の正)。exe に埋め込まれ、ウィンドウのタイトルに出る |
+| `_cmd/aibow/version` | アプリのバージョン(唯一の正)。exe に埋め込まれ、タスクバーなどに出るウィンドウ名に入る |
 | `_cmd/version.go` | `version` の値を `build/config.yml` / `frontend/package.json` に書き写す・上げるスクリプト |
 | `go.work` | ルートと `_cmd/aibow` の2つのモジュールをまとめる(下の説明を参照) |
 | `_cmd/aibow/lib\` | llama.cpp の DLL(自分で取得。Git には入れない) |
@@ -50,7 +50,7 @@ llama.cpp の C の関数を Go から呼べるようにするだけの薄い層
 SQLite の C のコードを Go に変換したもので、こちらも C コンパイラは不要です。
 
 Wails に依存するのは `_cmd/aibow` だけです。`_cmd/aibow` は自分の `go.mod` を持つ別のモジュールにしてあり、
-ルートの `go.mod` は yzma だけに依存します。`go.work` は「この2つのモジュールを一緒に扱う」という Go のワークスペースの設定で、
+ルートの `go.mod` は yzma と SQLite のドライバーだけに依存します。`go.work` は「この2つのモジュールを一緒に扱う」という Go のワークスペースの設定で、
 これがあるので、`_cmd/aibow` でビルドすると、ルートの `aibow` パッケージ(手元のコード)が使われます。
 (`_` で始まるフォルダは `go test ./...` などの `./...` に含まれないので、ルートのテストは Wails なしで動きます)
 
@@ -101,7 +101,7 @@ go mod tidy
 ```bash
 cd frontend && npm install && cd ..
 ```
-画面で使うパッケージ(React、Vite、Wails の JavaScript 用ランタイムなど)を `frontend/node_modules/` にダウンロードします。
+画面で使うパッケージ(React、Vite、Wails の JavaScript 用ランタイム、アイコンの react-icons など)を `frontend/node_modules/` にダウンロードします。
 `wails3 dev` / `wails3 build` は `node_modules` が無いときだけ自動で `npm install` するので、パッケージを増減したときは手で実行します。
 
 ### 3. llama.cpp の取得
@@ -167,6 +167,7 @@ wails3 dev
 起動すると、ターミナルに次のようなログが出ます(Wails 自身のログも混ざります)。
 
 ```
+会話の保存先: C:\Users\<ユーザー>\AppData\Roaming\aibow\aibow.db
 計算装置: CUDA0 [GPU] <GPU の名前>(VRAM 空き ○ / ○ GB)
 計算装置: CPU [CPU] <CPU の名前>
 モデルの置き場所: D:\Go\Projects\aibow\_cmd\aibow\models / Ollama: C:\Users\<ユーザー>\.ollama\models
@@ -333,10 +334,14 @@ worktree を消すツールによっては、ジャンクションの先(本体�
 
 ## ロードマップ
 
+進み具合の詳細は `TODO.md` にあります。
+
 | ステップ | 作るもの | 学べること |
 |---|---|---|
-| **1. チャット(今ここ)** | llama.cpp を直接動かすチャット | トークン化、生成ループ、サンプリング、チャットテンプレート、思考の仕組み |
-| 2. ツール呼び出し | 時刻取得・計算などの簡単なツール | モデルが書く `<tool_call>` を読み取って実行し、結果を返して続きを書かせる「エージェントループ」 |
+| 1. チャット(済み) | llama.cpp を直接動かすチャット | トークン化、生成ループ、サンプリング、チャットテンプレート、思考の仕組み |
+| **2-1. 会話の保存(今ここ)** | 会話を Go 側に持たせて SQLite に保存。会話は複数。設定を画面から変える | モデルは何も覚えておらず、「記憶」はアプリが管理していること |
+| 2-2. compact | 会話が長くなったら古い発言を捨てる・要約する | コンテキスト長の限界との付き合い方 |
+| 2-3. ツール呼び出し | 時刻取得・計算などの簡単なツール | モデルが書く `<tool_call>` を読み取って実行し、結果を返して続きを書かせる「エージェントループ」 |
 | 3. ミニコーディングエージェント | ファイル読み書き・一覧・コマンド実行ツール(作業フォルダ限定・実行前に確認) | バイブコーディングツールの中身。安全策の必要性 |
 | 4. MCPクライアント | ステップ3のツールを MCP サーバー経由に置き換え、既存の MCP サーバーもつなぐ | MCP が「ツールの差し込み口の共通規格」であること |
 | 5. MCPサーバー自作 | Go で自作サーバー | 同じサーバーを aibow と Claude Desktop の両方から使える |
