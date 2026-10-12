@@ -79,8 +79,13 @@ type Engine struct {
 	// 生成とモデルの入れ替えは同時にできない(作業領域が1つしかないため)
 	mu    sync.Mutex
 	model llama.Model // 0 なら未読み込み
-	vocab llama.Vocab
+	vocab llama.Vocab // 書き換えるときは mu と vocabMu の両方を持つ
 	lctx  llama.Context
+
+	// vocabMu は、トークン数を数える(CountTokens)ときに、モデルが解放されないようにするためのロック。
+	// 語彙(vocab)は生成中も読み取りしかされないので、数えるのは生成と同時にしてよい。
+	// mu で守ると、生成中は数えられなくなる(別の会話を開いたときのメーターが出ない)ので、分けている。
+	vocabMu sync.RWMutex
 
 	// info は読み込み中のモデルの情報。生成中でも画面から読めるよう、別に持つ。
 	info atomic.Pointer[ModelInfo]
@@ -93,6 +98,9 @@ type Engine struct {
 
 // 一度に decode するトークン数の上限。長いプロンプトはこの単位に区切って読ませる。
 const batchSize = 512
+
+// ErrNoModel は、モデルが読み込まれていないときのエラー。
+var ErrNoModel = errors.New("モデルが読み込まれていません。入力欄の下でモデルを選んでください")
 
 // ErrBusy は、生成中やモデルの読み込み中に、別の依頼が来たときのエラー。
 var ErrBusy = errors.New("生成中、またはモデルの読み込み中です。終わるまで待つか、停止してください")
@@ -249,7 +257,10 @@ func (e *Engine) load(m ModelEntry) (*ModelInfo, error) {
 		return nil, err
 	}
 
-	e.lctx, e.vocab = lctx, llama.ModelGetVocab(model)
+	e.lctx = lctx
+	e.vocabMu.Lock()
+	e.vocab = llama.ModelGetVocab(model)
+	e.vocabMu.Unlock()
 	e.cached = nil // 新しい作業領域なので KV キャッシュは空
 	info := &ModelInfo{
 		ID:        m.ID,
@@ -296,11 +307,29 @@ func (e *Engine) unload() {
 		e.lctx = 0
 	}
 	if e.model != 0 {
+		// 数えている途中のトークン化が終わるのを待ってから、語彙ごとモデルを解放する
+		e.vocabMu.Lock()
+		e.vocab = 0
 		llama.ModelFree(e.model)
 		e.model = 0
+		e.vocabMu.Unlock()
 	}
 	e.cached = nil
 	e.info.Store(nil)
+}
+
+// CountTokens は文字列のトークン数を数える。モデルが読み込まれていないと数えられない。
+//
+// 同じ文章でも、モデル(の語彙)が変わればトークン数は変わる。会話の仕組みは、上限に収まっているかを
+// この数で判断する(数を保存して使い回さず、毎回、今のモデルで数え直す)。
+// 特別なトークン(<|im_start|> など)は1トークンとして数える(Generate と同じ数え方)。
+func (e *Engine) CountTokens(text string) (int, error) {
+	e.vocabMu.RLock()
+	defer e.vocabMu.RUnlock()
+	if e.vocab == 0 {
+		return 0, ErrNoModel
+	}
+	return len(llama.Tokenize(e.vocab, text, true, true)), nil
 }
 
 // Close はモデルとライブラリを解放する。
@@ -327,7 +356,7 @@ func (e *Engine) Generate(
 	}
 	defer e.mu.Unlock()
 	if e.model == 0 {
-		return st, errors.New("モデルが読み込まれていません。入力欄の下でモデルを選んでください")
+		return st, ErrNoModel
 	}
 
 	// 3. 会話 → 文字列 → トークン列

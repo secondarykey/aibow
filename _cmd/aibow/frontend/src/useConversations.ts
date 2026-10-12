@@ -7,7 +7,7 @@
 import { useCallback, useRef, useState } from "react";
 import { ChatService } from "../bindings/aibow/cmd/aibow";
 import type { ConversationDetail } from "../bindings/aibow/cmd/aibow";
-import type { Conversation, ConversationSettings } from "../bindings/aibow";
+import type { Conversation, ConversationSettings, Usage } from "../bindings/aibow";
 import { errorMessage } from "./errors";
 
 // 設定を変えてから Go に保存するまで待つ時間。
@@ -28,6 +28,8 @@ export interface Conversations {
   reloadList(): Promise<void>;
   updateSettings(patch: Partial<ConversationSettings>): void; // 開いている会話(または draft)の設定を変える
   flushSettings(): Promise<void>;     // まだ Go に送っていない設定を送る(送信の前に呼ぶ)
+  setUsage(id: string, usage: Usage | null): void; // 開いている会話のメーターを書き換える(chat イベントの usage)
+  refreshUsage(): Promise<void>;      // メーターを Go に数え直してもらう(モデル・上限・会話の設定を変えたあと)
 }
 
 // onError は、設定の保存のように裏で行う処理が失敗したときに呼ぶ
@@ -88,7 +90,7 @@ export function useConversations(onError: (text: string) => void): Conversations
 
   const adopt = useCallback((c: Conversation) => {
     ++openSeq.current;
-    setCurrent({ conversation: c, messages: [], generating: false });
+    setCurrent({ conversation: c, messages: [], generating: false, usage: null });
     setDraft(null);
     reloadList().catch(() => {});
   }, [setCurrent, setDraft, reloadList]);
@@ -114,6 +116,18 @@ export function useConversations(onError: (text: string) => void): Conversations
     await reloadList();
   }, [reloadList]);
 
+  const setUsage = useCallback((id: string, usage: Usage | null) => {
+    const cur = currentRef.current;
+    if (cur?.conversation.id === id) setCurrent({ ...cur, usage });
+  }, [setCurrent]);
+
+  // トークン数は今のモデルで数えるので、モデルや上限、会話の設定(システムプロンプト・思考・compact)が変わると変わる
+  const refreshUsage = useCallback(async () => {
+    const id = currentRef.current?.conversation.id;
+    if (!id) return;
+    setUsage(id, await ChatService.Usage(id));
+  }, [setUsage]);
+
   const updateSettings = useCallback((patch: Partial<ConversationSettings>) => {
     const cur = currentRef.current;
     if (!cur) {
@@ -126,12 +140,15 @@ export function useConversations(onError: (text: string) => void): Conversations
 
     if (pending.current) window.clearTimeout(pending.current.timer);
     const timer = window.setTimeout(() => {
-      flushSettings().catch(err => onError(`設定を保存できません: ${errorMessage(err)}`));
+      flushSettings()
+        .then(refreshUsage)
+        .catch(err => onError(`設定を保存できません: ${errorMessage(err)}`));
     }, SAVE_DELAY_MS);
     pending.current = { id: cur.conversation.id, settings, timer };
-  }, [flushSettings, setCurrent, setDraft, onError]);
+  }, [flushSettings, refreshUsage, setCurrent, setDraft, onError]);
 
   return {
     list, current, draft, openCount, init, open, goHome, adopt, remove, rename, reloadList, updateSettings, flushSettings,
+    setUsage, refreshUsage,
   };
 }

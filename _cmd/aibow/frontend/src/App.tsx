@@ -21,6 +21,7 @@ import { useConversations } from "./useConversations";
 import { useChat } from "./useChat";
 import { useAppSettings } from "./useAppSettings";
 import { ModelBar } from "./components/ModelBar";
+import { Meter } from "./components/Meter";
 import { TitleBar } from "./components/TitleBar";
 import { ConversationList } from "./components/ConversationList";
 import { ChatView } from "./components/ChatView";
@@ -66,6 +67,11 @@ export default function App() {
     })();
   }, [convs.init, models.reload, app.reload, addError]);
 
+  // モデルや上限が変わると、同じ会話でもトークン数(メーター)が変わるので数え直す
+  useEffect(() => {
+    convs.refreshUsage().catch(() => {});
+  }, [models.current?.id, models.current?.n_ctx, app.settings, convs.refreshUsage]);
+
   // ウィンドウに戻ってきたら一覧を作り直す(aibow を起動したまま ollama pull したときのため)
   useEffect(() => {
     const onFocus = () => {
@@ -100,7 +106,9 @@ export default function App() {
   const input = (
     <>
       <Composer canSend={canSend} blockedReason={blockedReason} home={home} focusKey={focusKey} onSend={chat.send} />
-      <ModelBar models={models} disabled={busy !== "idle"} />
+      <ModelBar models={models} disabled={busy !== "idle"}>
+        {convs.current && <Meter usage={convs.current.usage} />}
+      </ModelBar>
     </>
   );
   // 設定パネルの「この会話の設定」。新しい会話の画面では、これから作る会話の設定(既定の写し)

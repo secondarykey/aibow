@@ -25,6 +25,8 @@ import (
 type Generator interface {
 	Generate(ctx context.Context, messages []Message, opt GenerateOptions,
 		onPrompt func(prompt string), onThinking, onContent func(text string)) (GenerateStats, error)
+	// CountTokens は文字列のトークン数を数える。会話の上限に収まっているかの判断に使う(compact.go)
+	CountTokens(text string) (int, error)
 	Info() *ModelInfo
 }
 
@@ -33,6 +35,7 @@ type Generator interface {
 //	prompt   : モデルに渡した文字列(学習用に画面に表示する)
 //	thinking : 思考の断片
 //	content  : 答えの断片
+//	usage    : メーターの値(モデルに渡す文字列のトークン数 / 会話の上限)。生成の前と、返事を保存したあとに送る
 //	error    : エラー
 //	done     : 終わり。必ず最後に1回だけ送る。保存した返事があれば Reply に入る
 type ChatEvent struct {
@@ -41,6 +44,7 @@ type ChatEvent struct {
 	Text           string         `json:"text,omitempty"`
 	Error          string         `json:"error,omitempty"`
 	Reply          *StoredMessage `json:"reply,omitempty"`
+	Usage          *Usage         `json:"usage,omitempty"`
 }
 
 // ErrGenerating は、別の送信の生成中に送信されたときのエラー。
@@ -210,8 +214,16 @@ func (cs *Conversations) Send(ctx context.Context, id uuid.UUID, text string, em
 	}
 	history = append(history, user)
 
-	// 2. 生成する。モデルに渡すのは、システムプロンプトと各発言の「答え」だけ
-	r, err := cs.generate(ctx, conv, history, emit)
+	// 2. モデルに渡す内容を決める。モデルに渡すのは、システムプロンプトと各発言の「答え」だけ
+	p, err := cs.plan(conv.Settings, history)
+	if err != nil {
+		fail(err)
+		return
+	}
+	cs.emitUsage(emit, id, p.usage(history, cs.currentLimits().history))
+
+	// 3. 生成する
+	r, err := cs.generate(ctx, conv, p.messages, emit)
 	if err != nil {
 		fail(err)
 		return
@@ -220,12 +232,21 @@ func (cs *Conversations) Send(ctx context.Context, id uuid.UUID, text string, em
 		return // 何も生成されなかった(すぐに停止した、など)
 	}
 
-	// 3. 返事を保存する
+	// 4. 返事を保存する
 	if err := cs.save(*r, ""); err != nil {
 		fail(err)
 		return
 	}
 	reply = r
+
+	// 5. 返事が増えたあとのメーター。次の送信では、この返事もモデルに渡る
+	if u, err := cs.usage(conv.Settings, append(history, *r)); err == nil {
+		cs.emitUsage(emit, id, u)
+	}
+}
+
+func (cs *Conversations) emitUsage(emit func(ChatEvent), id uuid.UUID, u Usage) {
+	emit(ChatEvent{ConversationID: id, Type: "usage", Usage: &u})
 }
 
 // save は発言を1件保存し、会話の更新日時(一覧の並び順に使う)を進める。
@@ -242,7 +263,7 @@ func (cs *Conversations) save(m StoredMessage, autoTitle string) error {
 
 // generate は返事を生成して、保存する形(StoredMessage)にして返す。
 // 何も生成されなかったときは nil を返す。
-func (cs *Conversations) generate(ctx context.Context, conv Conversation, history []StoredMessage, emit func(ChatEvent)) (*StoredMessage, error) {
+func (cs *Conversations) generate(ctx context.Context, conv Conversation, messages []Message, emit func(ChatEvent)) (*StoredMessage, error) {
 	set := conv.Settings
 	opt := GenerateOptions{
 		Think:           set.Think,
@@ -277,7 +298,7 @@ func (cs *Conversations) generate(ctx context.Context, conv Conversation, histor
 		}
 	}
 
-	st, err := cs.gen.Generate(ctx, promptMessages(set.System, history), opt,
+	st, err := cs.gen.Generate(ctx, messages, opt,
 		func(p string) { emit(ChatEvent{ConversationID: conv.ID, Type: "prompt", Text: p}) },
 		onText("thinking", &thinking), onText("content", &content),
 	)

@@ -48,6 +48,17 @@ body {
   font-size: 12px; color: var(--muted); font-family: ui-monospace, Consolas, monospace;
   min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; /* 狭いときは1行に収めて省略 */
 }
+.model-bar-end { margin-left: auto; display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+/* メーター: モデルに渡す文字列のトークン数 / 会話の上限。90% を超えたら橙、超えたら赤 */
+.meter {
+  display: flex; align-items: center; gap: 6px; white-space: nowrap;
+  font-size: 12px; color: var(--muted); font-family: ui-monospace, Consolas, monospace;
+  --meter: var(--accent);
+}
+.meter.warn { --meter: #d97706; color: #d97706; }
+.meter.over { --meter: var(--error); color: var(--error); }
+.meter-bar { width: 64px; height: 5px; border-radius: 3px; background: var(--border); overflow: hidden; }
+.meter-bar span { display: block; height: 100%; background: var(--meter); }
 .model-select {
   font: inherit; font-size: 13px; padding: 4px 6px; border-radius: 6px; max-width: 320px;
   border: 1px solid var(--border); background: var(--bg); color: var(--text);

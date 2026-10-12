@@ -10,5 +10,6 @@ export type {
     ModelInfo,
     ReplyStats,
     StoredMessage,
+    Usage,
     WorkspaceSettings
 } from "./models.js";

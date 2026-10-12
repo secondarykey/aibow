@@ -6,33 +6,65 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 // fakeGen はテスト用の Generator。決めておいた思考と答えを返し、渡された内容を記録する。
+// トークン数は1文字を1トークンとして数える(本物のトークン化はモデルが無いとできないため)。
 type fakeGen struct {
 	thinking, content, stopReason string
 	block                         chan struct{} // nil でなければ、閉じられるまで生成を終えない
 
+	// replies があれば、thinking / content / stopReason の代わりに、呼ばれた順に1つずつ返す
+	// (要約 → 返事、のように1回の送信で何度も生成するときに使う)
+	replies []fakeReply
+
 	gotMessages []Message
 	gotOpt      GenerateOptions
+	calls       []fakeCall // 呼ばれたすべての生成
+}
+
+type fakeReply struct {
+	thinking, content, stopReason string
+	err                           error
+	waitCancel                    bool // ctx がキャンセルされるまで待ち、停止された扱いで終わる
+}
+
+type fakeCall struct {
+	messages []Message
+	opt      GenerateOptions
 }
 
 func (g *fakeGen) Info() *ModelInfo { return &ModelInfo{ID: "file:fake", Name: "fake-model"} }
 
+func (g *fakeGen) CountTokens(text string) (int, error) { return utf8.RuneCountInString(text), nil }
+
 func (g *fakeGen) Generate(ctx context.Context, messages []Message, opt GenerateOptions,
 	onPrompt func(string), onThinking, onContent func(string)) (GenerateStats, error) {
 	g.gotMessages, g.gotOpt = messages, opt
+	g.calls = append(g.calls, fakeCall{messages, opt})
 	onPrompt(buildPrompt(messages, opt.Think))
 	if g.block != nil {
 		<-g.block
 	}
-	if g.thinking != "" {
-		onThinking(g.thinking)
+	r := fakeReply{thinking: g.thinking, content: g.content, stopReason: g.stopReason}
+	if len(g.replies) > 0 {
+		r, g.replies = g.replies[0], g.replies[1:]
 	}
-	if g.content != "" {
-		onContent(g.content)
+	if r.err != nil {
+		return GenerateStats{}, r.err
 	}
-	reason := g.stopReason
+	if r.waitCancel {
+		<-ctx.Done()
+		r.stopReason = "cancel"
+	}
+	if r.thinking != "" {
+		onThinking(r.thinking)
+	}
+	if r.content != "" {
+		onContent(r.content)
+	}
+	reason := r.stopReason
 	if reason == "" {
 		reason = "eos"
 	}

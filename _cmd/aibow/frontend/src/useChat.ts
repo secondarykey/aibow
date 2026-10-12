@@ -32,7 +32,7 @@ export interface Chat {
 
 export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conversations): Chat {
   const { addUser, addError, addAssistant, updateAssistant, remove, reset } = t;
-  const { current, draft, openCount, open, adopt, flushSettings, reloadList } = convs;
+  const { current, draft, openCount, open, adopt, flushSettings, reloadList, setUsage } = convs;
   const [generatingId, setGeneratingId] = useState<string | null>(null);
   // モデルに渡した文字列は保存しないので、会話ごとにここで覚えておく(再起動すると消える)
   const [prompts, setPrompts] = useState<Record<string, string>>({});
@@ -139,6 +139,9 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
           setPrompts(p => ({ ...p, [id]: ev.text ?? "" }));
           reloadList().catch(() => {});
           return;
+        case "usage":
+          setUsage(id, ev.usage ?? null);
+          return;
         case "error":
           if (viewing.current === id) addError(ev.error ?? "");
           else console.warn(`別の会話でのエラー: ${ev.error}`);
@@ -180,7 +183,7 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
     setGeneratingId(null);
     setBusy("idle");
     reloadList().catch(() => {}); // タイトルと並び順(更新の新しい順)が変わる
-  }, [target, open, reloadList, addUser, addError, addAssistant, updateAssistant, remove, setBusy]);
+  }, [target, open, reloadList, setUsage, addUser, addError, addAssistant, updateAssistant, remove, setBusy]);
 
   const stop = useCallback(() => controller.current?.stop(), []);
 

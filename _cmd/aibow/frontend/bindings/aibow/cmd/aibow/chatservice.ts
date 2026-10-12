@@ -122,3 +122,12 @@ export function SwitchModel(id: string): $CancellablePromise<aibow$0.ModelInfo |
 export function UpdateConversationSettings(id: uuid$0.UUID, settings: aibow$0.ConversationSettings): $CancellablePromise<void> {
     return $Call.ByID(1660834684, id, settings);
 }
+
+/**
+ * Usage は、会話がモデルに渡す文字列で、会話の上限をどれだけ使っているか(メーター)を返す。
+ * トークン数は今のモデルで数えるので、モデルが読み込まれていなければ null を返す。
+ * 画面は、モデル・上限・会話の設定を変えたあとに呼び直す。
+ */
+export function Usage(id: uuid$0.UUID): $CancellablePromise<aibow$0.Usage | null> {
+    return $Call.ByID(118846370, id);
+}

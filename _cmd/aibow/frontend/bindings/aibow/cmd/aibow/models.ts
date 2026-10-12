@@ -16,6 +16,11 @@ export interface ConversationDetail {
      * この会話で返事を生成中か
      */
     "generating": boolean;
+
+    /**
+     * メーター。モデルが読み込まれていなければ null
+     */
+    "usage": aibow$0.Usage | null;
 }
 
 /**

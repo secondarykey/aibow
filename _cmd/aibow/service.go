@@ -249,6 +249,7 @@ type ConversationDetail struct {
 	Conversation aibow.Conversation    `json:"conversation"`
 	Messages     []aibow.StoredMessage `json:"messages"`
 	Generating   bool                  `json:"generating"` // この会話で返事を生成中か
+	Usage        *aibow.Usage          `json:"usage"`      // メーター。モデルが読み込まれていなければ null
 }
 
 // Conversation は会話1つと、その発言を古い順に返す。
@@ -261,7 +262,28 @@ func (s *ChatService) Conversation(id uuid.UUID) (ConversationDetail, error) {
 		return ConversationDetail{}, err
 	}
 	g := s.convs.Generating()
-	return ConversationDetail{Conversation: c, Messages: ms, Generating: g != nil && *g == id}, nil
+	u, err := s.Usage(id)
+	if err != nil {
+		return ConversationDetail{}, err
+	}
+	return ConversationDetail{Conversation: c, Messages: ms, Generating: g != nil && *g == id, Usage: u}, nil
+}
+
+// Usage は、会話がモデルに渡す文字列で、会話の上限をどれだけ使っているか(メーター)を返す。
+// トークン数は今のモデルで数えるので、モデルが読み込まれていなければ null を返す。
+// 画面は、モデル・上限・会話の設定を変えたあとに呼び直す。
+func (s *ChatService) Usage(id uuid.UUID) (*aibow.Usage, error) {
+	if s.startupErr != nil {
+		return nil, s.startupErr
+	}
+	u, err := s.convs.Usage(id)
+	if errors.Is(err, aibow.ErrNoModel) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &u, nil
 }
 
 // NewConversation は新しい会話を作る。settings が null なら「新しい会話の既定の設定」のコピーで始まる。

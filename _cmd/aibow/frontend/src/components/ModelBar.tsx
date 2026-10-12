@@ -1,13 +1,15 @@
-// チャットの入力欄の下: モデルの選択と、読み込み中のモデルの情報
+// チャットの入力欄の下: モデルの選択と、読み込み中のモデルの情報。右端に会話のメーター
+import type { ReactNode } from "react";
 import type { Models } from "../useModels";
 
 interface Props {
   models: Models;
   disabled: boolean;
+  children?: ReactNode; // 右端に出すもの(会話を開いているときのメーター)
 }
 
 // モデルはアプリ全体で1つ(VRAM に1つしか載らない)。会話を切り替えてもモデルは変わらない
-export function ModelBar({ models, disabled }: Props) {
+export function ModelBar({ models, disabled, children }: Props) {
   const { current, gpu, loading } = models;
   const groups = [
     { source: "file", label: "models フォルダ" },
@@ -44,6 +46,7 @@ export function ModelBar({ models, disabled }: Props) {
         {outside && <option value={current.id}>{current.name}</option>}
       </select>
       <span className="model-info" title={current?.desc ?? ""}>{info}</span>
+      {children && <span className="model-bar-end">{children}</span>}
     </div>
   );
 }

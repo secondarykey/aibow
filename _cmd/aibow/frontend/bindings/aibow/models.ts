@@ -23,6 +23,7 @@ export interface AppSettings {
  * 	prompt   : モデルに渡した文字列(学習用に画面に表示する)
  * 	thinking : 思考の断片
  * 	content  : 答えの断片
+ * 	usage    : メーターの値(モデルに渡す文字列のトークン数 / 会話の上限)。生成の前と、返事を保存したあとに送る
  * 	error    : エラー
  * 	done     : 終わり。必ず最後に1回だけ送る。保存した返事があれば Reply に入る
  */
@@ -35,6 +36,7 @@ export interface ChatEvent {
     "text"?: string;
     "error"?: string;
     "reply"?: StoredMessage | null;
+    "usage"?: Usage | null;
 }
 
 /**
@@ -248,6 +250,27 @@ export interface StoredMessage {
      */
     "stats": ReplyStats | null;
     "created_at": string;
+}
+
+/**
+ * Usage は、会話がモデルに渡す文字列で、会話の上限をどれだけ使っているか(画面のメーター)。
+ */
+export interface Usage {
+    /**
+     * モデルに渡す文字列のトークン数
+     */
+    "tokens": number;
+
+    /**
+     * 会話の上限
+     */
+    "limit": number;
+
+    /**
+     * FirstID はモデルに渡す最初の発言。これより前の発言はモデルに渡していない(画面で薄く表示する)。
+     * 発言が無ければ null。
+     */
+    "first_id": uuid$0.UUID | null;
 }
 
 /**
