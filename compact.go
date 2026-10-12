@@ -289,7 +289,7 @@ const (
 // summaryHeading は、モデルに渡すときに要約の前に付ける見出し(システムプロンプトの後ろに付ける)。
 const summaryHeading = "# これまでの会話の要約(古い部分は省略されています)"
 
-// summaryInstruction は要約を作るときのシステムプロンプト(docs/features/0002-compact.md で決めた文面)。
+// summaryInstruction は要約を作るときのシステムプロンプト(_docs/features/0002-compact.md で決めた文面)。
 var summaryInstruction = fmt.Sprintf(`あなたは会話の要約係です。「前回までの要約」と「その続きの会話」を、1つの要約にまとめ直してください。
 この要約は、このあと会話を続けるときに、これまでの会話の代わりとしてアシスタントに渡されます。
 

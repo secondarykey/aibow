@@ -88,7 +88,7 @@ function ConversationSettingsForm({ settings, onChange, onMakeDefault }: {
   );
 }
 
-// compact の方式ごとの説明(docs/features/0002-compact.md)
+// compact の方式ごとの説明(_docs/features/0002-compact.md)
 const COMPACT_HINTS: Record<string, string> = {
   summary: "古い部分をモデル自身に要約させ、「要約 + 最近の発言」を渡します。要約を作る分だけ待ち時間がかかります。",
   truncate: "古い発言から順に、モデルに渡すのをやめます(保存した発言は消えません)。渡さなかった内容はモデルには完全に消えます。",
