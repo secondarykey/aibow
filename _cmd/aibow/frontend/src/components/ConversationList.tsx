@@ -1,9 +1,11 @@
 // 左側: 会話の一覧(更新の新しい順)。新規作成・切り替え・名前の変更・削除。下に設定の画面の開閉ボタン。
 // ウィンドウの上から下までの列。上のハンバーガーで一覧を畳める。畳んだときもアイコンだけの細い列を残し、
-// ハンバーガー・新規・設定はそこに集める。上の空いているところはタイトルバーと同じくドラッグでウィンドウを動かせる
+// ハンバーガー・新規・設定はそこに集める。上の空いているところはタイトルバーと同じくドラッグでウィンドウを動かせる。
+// 「+ 新規」は一覧の一番上の行に置く(スクロールしても隠れないよう、一覧の外に固定する)。
+// 開いているときも畳んだときも同じアイコンを使い、開いているときだけ文字を添える(設定と同じ)
 import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
-import { LuMenu, LuSettings, LuSquarePen } from "react-icons/lu";
+import { LuMenu, LuPlus, LuSettings } from "react-icons/lu";
 import { toggleMaximiseOnDoubleClick } from "./TitleBar";
 import type { Conversation } from "../../bindings/aibow";
 
@@ -43,7 +45,7 @@ export function ConversationList({
     return (
       <nav className="conversations collapsed" onDoubleClick={toggleMaximiseOnDoubleClick}>
         {menu}
-        <button className="icon-btn" title="新しい会話" disabled={disabled} onClick={onNew}><LuSquarePen /></button>
+        <button className="icon-btn" title="新しい会話" disabled={disabled} onClick={onNew}><LuPlus /></button>
         <span className="spacer" />
         <button className={"icon-btn " + settingsCls} title="設定" onClick={onToggleSettings}><LuSettings /></button>
       </nav>
@@ -54,8 +56,8 @@ export function ConversationList({
     <nav className="conversations" style={{ width }}>
       <div className="nav-top" onDoubleClick={toggleMaximiseOnDoubleClick}>
         {menu}
-        <button className="new" disabled={disabled} onClick={onNew}>+ 新規</button>
       </div>
+      <button className="new" title="新しい会話" disabled={disabled} onClick={onNew}><LuPlus /> 新規</button>
       <ul>
         {list.map(c => {
           const title = c.title || "新しい会話";

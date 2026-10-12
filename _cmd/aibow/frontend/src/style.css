@@ -192,8 +192,13 @@ nav.conversations .nav-top {
 }
 nav.conversations.collapsed { --wails-draggable: drag; }
 nav.conversations button, nav.conversations input { --wails-draggable: no-drag; }
-nav.conversations .nav-top .new { padding: 4px 12px; }
-nav.conversations .new { flex: 1; }
+/* 「+ 新規」は一覧の一番上の行。会話の行(.conversation .title)と同じ形にして、一覧の一部に見せる */
+nav.conversations .new {
+  flex-shrink: 0; display: flex; align-items: center; gap: 6px; margin: 0 6px 6px; padding: 7px 8px;
+  border: none; border-radius: 6px; background: transparent; text-align: left;
+}
+nav.conversations .new:hover:not(:disabled) { background: var(--bg); }
+nav.conversations .new svg { font-size: 15px; flex-shrink: 0; }
 nav.conversations.collapsed { width: 48px; align-items: center; padding: 2px 0 10px; gap: 6px; }
 nav.conversations.collapsed .spacer { flex: 1; }
 .icon-btn {
