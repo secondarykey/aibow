@@ -97,10 +97,10 @@ func main() {
 	// Title は画面には出ないが、タスクバーや Alt+Tab に出る。
 	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:     "aibow " + strings.TrimSpace(version),
-		Width:     720, // 起動時の幅は最小幅と同じ(広げたいときは最大化かリサイズ)
+		Width:     720, // 起動時の大きさ(広げたいときは最大化かリサイズ)
 		Height:    820,
-		MinWidth:  720,
-		MinHeight: 480,
+		MinWidth:  360, // 最小の大きさ。画面の端に小さく置いておけるよう、起動時の幅の半分まで縮められる
+		MinHeight: 240,
 		Frameless: true,
 		URL:       "/",
 	})
