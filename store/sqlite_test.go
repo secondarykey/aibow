@@ -222,6 +222,7 @@ func TestMigrationFromVersion1(t *testing.T) {
 	}
 	s.Close()
 	s, _ = Open(path)
+	defer s.Close() // 開き直した方も閉じる(閉じないと Windows では一時フォルダを消せずにテストが失敗する)
 	list, err := s.Compactions(old)
 	if err != nil || len(list) != 1 {
 		t.Fatalf("要約: %+v %v", list, err)
