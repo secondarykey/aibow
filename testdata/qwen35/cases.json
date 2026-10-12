@@ -1,0 +1,116 @@
+{
+  "tools": [
+    {
+      "name": "get_current_time",
+      "description": "Get the current date, day of the week and time.",
+      "parameters": {"type": "object", "properties": {"timezone": {"type": "string", "description": "IANA time zone name such as Asia/Tokyo. Defaults to the PC's time zone."}}, "required": []}
+    },
+    {
+      "name": "calculate",
+      "description": "Evaluate an arithmetic expression with + - * / and parentheses (e.g. (1+2)*3 & 7/2 < 4).",
+      "parameters": {"type": "object", "properties": {"expression": {"type": "string", "description": "数式"}}, "required": ["expression"]}
+    }
+  ],
+  "cases": [
+    {
+      "name": "plain",
+      "think": true,
+      "messages": [
+        {"role": "system", "content": "  あなたは親切なアシスタントです。\n"},
+        {"role": "user", "content": "こんにちは\n\n"}
+      ]
+    },
+    {
+      "name": "no_system_think_off",
+      "think": false,
+      "messages": [
+        {"role": "user", "content": "やあ"}
+      ]
+    },
+    {
+      "name": "history_drops_old_thinking",
+      "think": true,
+      "messages": [
+        {"role": "system", "content": "S"},
+        {"role": "user", "content": "U1"},
+        {"role": "assistant", "content": "A1", "thinking": "古い思考"},
+        {"role": "user", "content": "U2"}
+      ]
+    },
+    {
+      "name": "tools_first_turn",
+      "think": true,
+      "tools": true,
+      "messages": [
+        {"role": "system", "content": "あなたは親切なアシスタントです。"},
+        {"role": "user", "content": "今何時?"}
+      ]
+    },
+    {
+      "name": "tools_without_system",
+      "think": false,
+      "tools": true,
+      "messages": [
+        {"role": "user", "content": "今何時?"}
+      ]
+    },
+    {
+      "name": "tool_loop_keeps_thinking",
+      "think": true,
+      "tools": true,
+      "messages": [
+        {"role": "system", "content": "S"},
+        {"role": "user", "content": "1234 × 5678 は?"},
+        {"role": "assistant", "content": "", "thinking": "\n計算ツールを使おう。\n", "tool_calls": [
+          {"name": "calculate", "args": [["expression", "1234 * 5678"]]}
+        ]},
+        {"role": "tool", "content": "7006652"}
+      ]
+    },
+    {
+      "name": "tool_loop_think_off",
+      "think": false,
+      "tools": true,
+      "messages": [
+        {"role": "user", "content": "今何時?"},
+        {"role": "assistant", "content": "", "tool_calls": [
+          {"name": "get_current_time", "args": []}
+        ]},
+        {"role": "tool", "content": "2026-10-13 15:04:05 Tuesday (Asia/Tokyo, UTC+09:00)"}
+      ]
+    },
+    {
+      "name": "two_calls_then_next_question",
+      "think": true,
+      "tools": true,
+      "messages": [
+        {"role": "system", "content": "S"},
+        {"role": "user", "content": "今日の日付と、365 / 7 を教えて"},
+        {"role": "assistant", "content": "調べます。\n\n", "thinking": "2つ呼ぶ", "tool_calls": [
+          {"name": "get_current_time", "args": [["timezone", "Asia/Tokyo"]]},
+          {"name": "calculate", "args": [["expression", "365 /\n7"]]}
+        ]},
+        {"role": "tool", "content": "2026-10-13"},
+        {"role": "tool", "content": "52.142857142857146\n"},
+        {"role": "assistant", "content": "今日は 2026-10-13、365 / 7 は約 52.14 です。", "thinking": "まとめる"},
+        {"role": "user", "content": "ありがとう"}
+      ]
+    },
+    {
+      "name": "loop_after_answer_with_content",
+      "think": true,
+      "tools": true,
+      "messages": [
+        {"role": "user", "content": "1+1 と 2*3"},
+        {"role": "assistant", "content": "まず1つ目。", "thinking": "順に", "tool_calls": [
+          {"name": "calculate", "args": [["expression", "1+1"]]}
+        ]},
+        {"role": "tool", "content": "2"},
+        {"role": "assistant", "content": "", "thinking": "次", "tool_calls": [
+          {"name": "calculate", "args": [["expression", "2*3"]]}
+        ]},
+        {"role": "tool", "content": "エラー: 引数 expression がありません"}
+      ]
+    }
+  ]
+}

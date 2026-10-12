@@ -1,0 +1,6 @@
+<|im_start|>system
+あなたは親切なアシスタントです。<|im_end|>
+<|im_start|>user
+こんにちは<|im_end|>
+<|im_start|>assistant
+<think>

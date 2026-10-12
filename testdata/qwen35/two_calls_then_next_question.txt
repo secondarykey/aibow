@@ -1,0 +1,67 @@
+<|im_start|>system
+# Tools
+
+You have access to the following functions:
+
+<tools>
+{"type": "function", "function": {"name": "get_current_time", "description": "Get the current date, day of the week and time.", "parameters": {"type": "object", "properties": {"timezone": {"type": "string", "description": "IANA time zone name such as Asia/Tokyo. Defaults to the PC's time zone."}}, "required": []}}}
+{"type": "function", "function": {"name": "calculate", "description": "Evaluate an arithmetic expression with + - * / and parentheses (e.g. (1+2)*3 & 7/2 < 4).", "parameters": {"type": "object", "properties": {"expression": {"type": "string", "description": "数式"}}, "required": ["expression"]}}}
+</tools>
+
+If you choose to call a function ONLY reply in the following format with NO suffix:
+
+<tool_call>
+<function=example_function_name>
+<parameter=example_parameter_1>
+value_1
+</parameter>
+<parameter=example_parameter_2>
+This is the value for the second parameter
+that can span
+multiple lines
+</parameter>
+</function>
+</tool_call>
+
+<IMPORTANT>
+Reminder:
+- Function calls MUST follow the specified format: an inner <function=...></function> block must be nested within <tool_call></tool_call> XML tags
+- Required parameters MUST be specified
+- You may provide optional reasoning for your function call in natural language BEFORE the function call, but NOT after
+- If there is no function call available, answer the question like normal with your current knowledge and do not tell the user about function calls
+</IMPORTANT>
+
+S<|im_end|>
+<|im_start|>user
+今日の日付と、365 / 7 を教えて<|im_end|>
+<|im_start|>assistant
+調べます。
+
+<tool_call>
+<function=get_current_time>
+<parameter=timezone>
+Asia/Tokyo
+</parameter>
+</function>
+</tool_call>
+<tool_call>
+<function=calculate>
+<parameter=expression>
+365 /
+7
+</parameter>
+</function>
+</tool_call><|im_end|>
+<|im_start|>user
+<tool_response>
+2026-10-13
+</tool_response>
+<tool_response>
+52.142857142857146
+</tool_response><|im_end|>
+<|im_start|>assistant
+今日は 2026-10-13、365 / 7 は約 52.14 です。<|im_end|>
+<|im_start|>user
+ありがとう<|im_end|>
+<|im_start|>assistant
+<think>

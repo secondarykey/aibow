@@ -1,0 +1,10 @@
+<|im_start|>system
+S<|im_end|>
+<|im_start|>user
+U1<|im_end|>
+<|im_start|>assistant
+A1<|im_end|>
+<|im_start|>user
+U2<|im_end|>
+<|im_start|>assistant
+<think>
