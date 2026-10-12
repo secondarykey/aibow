@@ -1,5 +1,6 @@
-// 画面下部: 入力欄と送信ボタン(停止ボタンは生成中の返事の吹き出しの中にある)
+// 入力欄。送信ボタンは枠の中の右下に Enter のマークで置く(停止ボタンは生成中の返事の吹き出しの中にある)
 import { useEffect, useRef, useState } from "react";
+import { LuCornerDownLeft } from "react-icons/lu";
 import type { FormEvent, KeyboardEvent } from "react";
 
 interface Props {
@@ -59,7 +60,14 @@ export function Composer({ canSend, blockedReason, home, onSend }: Props) {
           onCompositionStart={() => (composing.current = true)}
           onCompositionEnd={() => (composing.current = false)}
         />
-        <button className="primary" type="submit" disabled={!canSend} title={canSend ? undefined : blockedReason}>送信</button>
+        <button
+          className="send"
+          type="submit"
+          disabled={!canSend || !text.trim()}
+          title={canSend ? "送信(Enter)" : blockedReason}
+        >
+          <LuCornerDownLeft />
+        </button>
       </form>
     </footer>
   );
