@@ -65,7 +65,7 @@ func (p passing) usage(history []StoredMessage, limit int) Usage {
 
 // count は、発言の列にチャットテンプレートを当てた文字列(= 実際にモデルに渡す文字列)のトークン数を数える。
 func (cs *Conversations) count(messages []Message, think bool) (int, error) {
-	return cs.gen.CountTokens(buildPrompt(messages, think))
+	return cs.gen.CountTokens(Prompt{Messages: messages, Think: think})
 }
 
 // passFrom は、要約(nil なら無し)と history[first:] を渡すときの内容を組み立てて数える。
@@ -499,16 +499,15 @@ func (cs *Conversations) generateSummary(ctx context.Context, id uuid.UUID, msgs
 	}()
 
 	emit(ChatEvent{ConversationID: id, Type: "summarizing"})
-	var b strings.Builder
-	opt := GenerateOptions{Think: false, Temperature: summaryTemperature, MaxTokens: summaryMaxTokens}
-	st, err := cs.gen.Generate(sctx, msgs, opt, func(string) {}, func(string) {}, func(t string) {
-		b.WriteString(t)
+	opt := GenerateOptions{Temperature: summaryTemperature, MaxTokens: summaryMaxTokens}
+	out, err := cs.gen.Generate(sctx, Prompt{Messages: msgs, Think: false}, opt, func(string) {}, func(string) {}, func(t string) {
 		emit(ChatEvent{ConversationID: id, Type: "summary", Text: t})
 	})
+	st := out.Stats
 	if err != nil {
 		return "", st, err
 	}
-	text := strings.TrimSpace(b.String())
+	text := strings.TrimSpace(out.Content)
 	switch {
 	case st.StopReason == "cancel":
 		return "", st, errors.New("要約を停止しました")

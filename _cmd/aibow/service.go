@@ -14,6 +14,7 @@ package main
 // 会話の履歴や設定を持つのは aibow パッケージの Conversations で、ChatService は画面との中継をするだけ。
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"log"
@@ -150,13 +151,16 @@ func (s *ChatService) loadModel(m aibow.ModelEntry) (*aibow.ModelInfo, error) {
 		return nil, err
 	}
 	logModel("読み込み完了", i)
+	if i.Format == "" {
+		log.Printf("※ このモデルの書式(種類: %s)には未対応です。送信するとエラーになります", i.Arch)
+	}
 	s.saveAppSetting(aibow.SettingLastModel, m.ID, func(a *aibow.AppSettings) { a.Workspace.Model = m.ID })
 	return i, nil
 }
 
 func logModel(what string, i *aibow.ModelInfo) {
-	log.Printf("%s (%.1f 秒): %s / %.2fB パラメータ / %.2f GB / %d 層 / GPU に載せる層: %d / 作業領域: %d トークン",
-		what, i.LoadSec, i.Desc, i.ParamsB, i.SizeGB, i.Layers, i.GPULayers, i.NCtx)
+	log.Printf("%s (%.1f 秒): %s / %.2fB パラメータ / %.2f GB / %d 層 / GPU に載せる層: %d / 作業領域: %d トークン / 書式: %s",
+		what, i.LoadSec, i.Desc, i.ParamsB, i.SizeGB, i.Layers, i.GPULayers, i.NCtx, cmp.Or(i.Format, "未対応("+i.Arch+")"))
 }
 
 // ---- アプリ全体の設定 -------------------------------------------------------------------

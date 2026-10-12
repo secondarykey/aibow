@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -21,6 +22,7 @@ type fakeGen struct {
 
 	gotMessages []Message
 	gotOpt      GenerateOptions
+	gotThink    bool
 	calls       []fakeCall // 呼ばれたすべての生成
 }
 
@@ -33,17 +35,25 @@ type fakeReply struct {
 type fakeCall struct {
 	messages []Message
 	opt      GenerateOptions
+	think    bool
 }
 
-func (g *fakeGen) Info() *ModelInfo { return &ModelInfo{ID: "file:fake", Name: "fake-model"} }
+// fakeGen の書式は本物と同じ Qwen3.5(トークン数を数えるとき、プロンプトを画面に渡すときに使う)
+var testFormat = qwen35{}
 
-func (g *fakeGen) CountTokens(text string) (int, error) { return utf8.RuneCountInString(text), nil }
+func (g *fakeGen) Info() *ModelInfo {
+	return &ModelInfo{ID: "file:fake", Name: "fake-model", Arch: "qwen35", Format: testFormat.Name()}
+}
 
-func (g *fakeGen) Generate(ctx context.Context, messages []Message, opt GenerateOptions,
-	onPrompt func(string), onThinking, onContent func(string)) (GenerateStats, error) {
-	g.gotMessages, g.gotOpt = messages, opt
-	g.calls = append(g.calls, fakeCall{messages, opt})
-	onPrompt(buildPrompt(messages, opt.Think))
+func (g *fakeGen) CountTokens(p Prompt) (int, error) {
+	return utf8.RuneCountInString(testFormat.BuildPrompt(p)), nil
+}
+
+func (g *fakeGen) Generate(ctx context.Context, p Prompt, opt GenerateOptions,
+	onPrompt func(string), onThinking, onContent func(string)) (Output, error) {
+	g.gotMessages, g.gotOpt, g.gotThink = p.Messages, opt, p.Think
+	g.calls = append(g.calls, fakeCall{p.Messages, opt, p.Think})
+	onPrompt(testFormat.BuildPrompt(p))
 	if g.block != nil {
 		<-g.block
 	}
@@ -52,7 +62,7 @@ func (g *fakeGen) Generate(ctx context.Context, messages []Message, opt Generate
 		r, g.replies = g.replies[0], g.replies[1:]
 	}
 	if r.err != nil {
-		return GenerateStats{}, r.err
+		return Output{}, r.err
 	}
 	if r.waitCancel {
 		<-ctx.Done()
@@ -68,8 +78,11 @@ func (g *fakeGen) Generate(ctx context.Context, messages []Message, opt Generate
 	if reason == "" {
 		reason = "eos"
 	}
-	return GenerateStats{GenTokens: 10, StopReason: reason}, nil
+	return Output{Thinking: r.thinking, Content: r.content, Stats: GenerateStats{GenTokens: 10, StopReason: reason}}, nil
 }
+
+// sameMessages は、モデルに渡した発言が want と同じかを返す。
+func sameMessages(got, want []Message) bool { return reflect.DeepEqual(got, want) }
 
 var testDefaults = ConversationSettings{System: "あなたはテスト用です。", Temperature: 0.7, Think: true, PresencePenalty: 1.5, Compact: CompactSummary}
 
@@ -134,20 +147,15 @@ func TestSendSavesThinkingButDoesNotPassIt(t *testing.T) {
 	g.thinking, g.content = "", "元気です。"
 	send(t, cs, c, "元気?")
 	want := []Message{
-		{"system", "あなたはテスト用です。"},
-		{"user", "やあ"},
-		{"assistant", "こんにちは!"},
-		{"user", "元気?"},
+		{Role: "system", Content: "あなたはテスト用です。"},
+		{Role: "user", Content: "やあ"},
+		{Role: "assistant", Content: "こんにちは!", Thinking: "挨拶だな。"},
+		{Role: "user", Content: "元気?"},
 	}
-	if len(g.gotMessages) != len(want) {
-		t.Fatalf("モデルに渡した発言の数が違います: %+v", g.gotMessages)
+	if !sameMessages(g.gotMessages, want) {
+		t.Fatalf("モデルに渡した発言が違います:\n%+v\n期待: %+v", g.gotMessages, want)
 	}
-	for i := range want {
-		if g.gotMessages[i] != want[i] {
-			t.Errorf("%d 件目: %+v(期待: %+v)", i, g.gotMessages[i], want[i])
-		}
-	}
-	if p := buildPrompt(g.gotMessages, true); strings.Contains(p, "挨拶だな") {
+	if p := testFormat.BuildPrompt(Prompt{Messages: g.gotMessages, Think: true}); strings.Contains(p, "挨拶だな") {
 		t.Errorf("モデルに渡した文字列に過去の思考が入っています:\n%s", p)
 	}
 }
@@ -200,15 +208,15 @@ func TestSettingsArePerConversation(t *testing.T) {
 
 	send(t, cs, a, "x")
 	// 返事の上限は会話ごとではなく、アプリ全体の設定
-	if g.gotOpt != (GenerateOptions{Think: false, Temperature: 0, MaxTokens: 100, PresencePenalty: 0}) {
-		t.Errorf("a の設定が効いていません: %+v", g.gotOpt)
+	if g.gotOpt != (GenerateOptions{Temperature: 0, MaxTokens: 100, PresencePenalty: 0}) || g.gotThink {
+		t.Errorf("a の設定が効いていません: %+v think=%v", g.gotOpt, g.gotThink)
 	}
 	if g.gotMessages[0].Role != "user" {
 		t.Errorf("システムプロンプトが空なら付けないはずです: %+v", g.gotMessages)
 	}
 
 	send(t, cs, b, "x")
-	if g.gotOpt.Temperature != 0.7 || !g.gotOpt.Think || g.gotMessages[0].Role != "system" {
+	if g.gotOpt.Temperature != 0.7 || !g.gotThink || g.gotMessages[0].Role != "system" {
 		t.Errorf("b は既定の設定のままのはずです: %+v %+v", g.gotOpt, g.gotMessages)
 	}
 

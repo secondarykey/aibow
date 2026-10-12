@@ -11,7 +11,7 @@ import (
 
 // promptLen は、発言の列を実際にモデルに渡す文字列にしたときのトークン数(fakeGen の数え方)。
 func promptLen(msgs []Message, think bool) int {
-	return utf8.RuneCountInString(buildPrompt(msgs, think))
+	return utf8.RuneCountInString(testFormat.BuildPrompt(Prompt{Messages: msgs, Think: think}))
 }
 
 // usages は送信のイベントから usage だけを取り出す。
@@ -78,9 +78,9 @@ func TestUsageWithoutModel(t *testing.T) {
 type noModelGen struct{}
 
 func (noModelGen) Info() *ModelInfo                { return nil }
-func (noModelGen) CountTokens(string) (int, error) { return 0, ErrNoModel }
-func (noModelGen) Generate(context.Context, []Message, GenerateOptions, func(string), func(string), func(string)) (GenerateStats, error) {
-	return GenerateStats{}, ErrNoModel
+func (noModelGen) CountTokens(Prompt) (int, error) { return 0, ErrNoModel }
+func (noModelGen) Generate(context.Context, Prompt, GenerateOptions, func(string), func(string), func(string)) (Output, error) {
+	return Output{}, ErrNoModel
 }
 
 // longTalk は、組(ユーザーの発言 + 返事)を n 個持つ会話を作る。返事は同じ長さにする。
@@ -144,14 +144,9 @@ func TestTruncateDropsOldTurnsAsPairs(t *testing.T) {
 	g.content = "ok"
 	evs := send(t, cs, c, "質問4")
 
-	want := append([]Message{{"system", c.Settings.System}}, promptMessages("", "", append(ms[4:], next))...)
-	if len(g.gotMessages) != len(want) {
-		t.Fatalf("モデルに渡した発言: %+v", g.gotMessages)
-	}
-	for i := range want {
-		if g.gotMessages[i] != want[i] {
-			t.Errorf("%d 件目: %+v(期待: %+v)", i, g.gotMessages[i], want[i])
-		}
+	want := append([]Message{{Role: "system", Content: c.Settings.System}}, promptMessages("", "", append(ms[4:], next))...)
+	if !sameMessages(g.gotMessages, want) {
+		t.Fatalf("モデルに渡した発言: %+v\n期待: %+v", g.gotMessages, want)
 	}
 	if g.gotMessages[1].Role != "user" {
 		t.Errorf("モデルに渡す履歴が返事から始まっています: %+v", g.gotMessages[1])
@@ -262,8 +257,8 @@ func TestSummaryRunsBeforeTheReply(t *testing.T) {
 
 	// 要約の生成: 思考オフ・temperature 低め・上限 1024。前回の要約は無く、古い発言が文章で渡る
 	sum := g.calls[len(g.calls)-2]
-	if sum.opt != (GenerateOptions{Think: false, Temperature: summaryTemperature, MaxTokens: summaryMaxTokens}) {
-		t.Errorf("要約の生成の設定: %+v", sum.opt)
+	if sum.opt != (GenerateOptions{Temperature: summaryTemperature, MaxTokens: summaryMaxTokens}) || sum.think {
+		t.Errorf("要約の生成の設定: %+v think=%v", sum.opt, sum.think)
 	}
 	if systemOf(sum.messages) != summaryInstruction || !strings.Contains(sum.messages[1].Content, "## 前回までの要約\n(なし)") ||
 		!strings.Contains(sum.messages[1].Content, "ユーザー: 質問0\nアシスタント: 返返") {

@@ -23,11 +23,14 @@ import (
 )
 
 // Generator は返事を生成するもの。本物は Engine。テストでは偽物に差し替える。
+//
+// 会話の仕組みは、モデルに渡す内容を「構造」(Prompt)のまま渡し、結果も構造(Output)で受け取る。
+// 文字列への書式の当て方・出力の振り分け方(モデルの系統ごとに違う)は Generator の側が持つ(format.go)。
 type Generator interface {
-	Generate(ctx context.Context, messages []Message, opt GenerateOptions,
-		onPrompt func(prompt string), onThinking, onContent func(text string)) (GenerateStats, error)
-	// CountTokens は文字列のトークン数を数える。会話の上限に収まっているかの判断に使う(compact.go)
-	CountTokens(text string) (int, error)
+	Generate(ctx context.Context, p Prompt, opt GenerateOptions,
+		onPrompt func(prompt string), onThinking, onContent func(text string)) (Output, error)
+	// CountTokens は、p に書式を当てた文字列のトークン数を数える。会話の上限に収まっているかの判断に使う(compact.go)
+	CountTokens(p Prompt) (int, error)
 	Info() *ModelInfo
 }
 
@@ -287,7 +290,6 @@ func (cs *Conversations) save(m StoredMessage, autoTitle string) error {
 func (cs *Conversations) generate(ctx context.Context, conv Conversation, messages []Message, emit func(ChatEvent)) (*StoredMessage, error) {
 	set := conv.Settings
 	opt := GenerateOptions{
-		Think:           set.Think,
 		Temperature:     float32(set.Temperature),
 		MaxTokens:       cs.currentLimits().reply,
 		PresencePenalty: float32(set.PresencePenalty),
@@ -298,10 +300,9 @@ func (cs *Conversations) generate(ctx context.Context, conv Conversation, messag
 	}
 
 	// 思考と答えを受け取りながら、時間を測る(画面の統計行と「思考の過程(N秒)」に使う)
-	var thinking, content strings.Builder
 	start := time.Now()
 	var firstAt, thinkStart, thinkEnd time.Time
-	onText := func(kind string, b *strings.Builder) func(string) {
+	onText := func(kind string) func(string) {
 		return func(t string) {
 			now := time.Now()
 			if firstAt.IsZero() {
@@ -314,21 +315,21 @@ func (cs *Conversations) generate(ctx context.Context, conv Conversation, messag
 			} else if thinkEnd.IsZero() {
 				thinkEnd = now
 			}
-			b.WriteString(t)
 			emit(ChatEvent{ConversationID: conv.ID, Type: kind, Text: t})
 		}
 	}
 
-	st, err := cs.gen.Generate(ctx, messages, opt,
+	out, err := cs.gen.Generate(ctx, Prompt{Messages: messages, Think: set.Think}, opt,
 		func(p string) { emit(ChatEvent{ConversationID: conv.ID, Type: "prompt", Text: p}) },
-		onText("thinking", &thinking), onText("content", &content),
+		onText("thinking"), onText("content"),
 	)
 	if err != nil {
 		return nil, err
 	}
-	if thinking.Len() == 0 && content.Len() == 0 {
+	if out.Thinking == "" && out.Content == "" {
 		return nil, nil
 	}
+	st := out.Stats
 
 	now := time.Now()
 	stats := &ReplyStats{GenerateStats: st, FirstSec: firstAt.Sub(start).Seconds()}
@@ -340,7 +341,7 @@ func (cs *Conversations) generate(ctx context.Context, conv Conversation, messag
 	}
 	m := &StoredMessage{
 		ID: uuid.NewV7(), ConversationID: conv.ID, Role: "assistant",
-		Content: content.String(), Thinking: thinking.String(),
+		Content: out.Content, Thinking: out.Thinking,
 		Model: model, Stats: stats, CreatedAt: now,
 	}
 	if m.Content == "" {
@@ -354,7 +355,7 @@ func (cs *Conversations) generate(ctx context.Context, conv Conversation, messag
 }
 
 // promptMessages は保存した発言を、モデルに渡す形にする。
-// 過去の返事は「答え」だけを入れ、思考は入れない(Qwen3.5 の公式テンプレートと同じ)。
+// 返事の思考も渡す。プロンプトに入れるかどうかは書式が決める(Qwen3.5 は、ツールのループの途中の返事だけ入れる)。
 // システムプロンプトは発言としては保存せず、会話の設定から毎回先頭に付ける。
 //
 // summary はこれまでの会話の要約(compact.go)。システムプロンプトの後ろに見出しを付けて足す。
@@ -372,7 +373,7 @@ func promptMessages(system, summary string, history []StoredMessage) []Message {
 		out = append(out, Message{Role: "system", Content: s})
 	}
 	for _, m := range history {
-		out = append(out, Message{Role: m.Role, Content: m.Content})
+		out = append(out, Message{Role: m.Role, Content: m.Content, Thinking: m.Thinking})
 	}
 	return out
 }
