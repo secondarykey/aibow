@@ -33,6 +33,9 @@ export default function App() {
   const [busy, setBusy] = useState<Busy>("idle");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [listOpen, setListOpen] = useState(true);
+  // 入力欄にフォーカスを移す合図。会話を開いた・「+ 新規」を押したあとに進める(Composer の focusKey)
+  const [focusKey, setFocusKey] = useState(0);
+  const focusInput = () => setFocusKey(n => n + 1);
 
   const transcript = useTranscript();
   const { addError } = transcript;
@@ -75,8 +78,11 @@ export default function App() {
   // 「+ 新規」: 新しい会話の画面に移る。会話そのものは、そこで最初に送信したときに作る
   const home = convs.current === null;
   const onNew = () => {
-    if (home) return;
-    convs.goHome().catch(err => addError(errorMessage(err)));
+    if (home) {
+      focusInput(); // すでに新しい会話の画面なら、入力欄に戻すだけ
+      return;
+    }
+    convs.goHome().then(focusInput, err => addError(errorMessage(err)));
   };
 
   // 送信できない理由。別の会話で生成中なら、会話を読むことはできるが送信はできない
@@ -90,7 +96,7 @@ export default function App() {
   const canSend = busy === "idle" && (convs.current !== null || convs.draft !== null);
   const input = (
     <>
-      <Composer canSend={canSend} blockedReason={blockedReason} home={home} onSend={chat.send} />
+      <Composer canSend={canSend} blockedReason={blockedReason} home={home} focusKey={focusKey} onSend={chat.send} />
       <ModelBar models={models} disabled={busy !== "idle"} />
     </>
   );
@@ -107,9 +113,9 @@ export default function App() {
         currentId={currentId}
         generatingId={chat.generatingId}
         disabled={unavailable}
-        onOpen={id => convs.open(id).catch(err => addError(errorMessage(err)))}
+        onOpen={id => convs.open(id).then(focusInput, err => addError(errorMessage(err)))}
         onNew={onNew}
-        onDelete={id => convs.remove(id).catch(err => addError(errorMessage(err)))}
+        onDelete={id => convs.remove(id).then(focusInput, err => addError(errorMessage(err)))}
         onRename={(id, title) => convs.rename(id, title).catch(err => addError(errorMessage(err)))}
         settingsOpen={settingsOpen}
         onToggleSettings={() => setSettingsOpen(o => !o)}
