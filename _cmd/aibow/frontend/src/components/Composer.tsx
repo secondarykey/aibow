@@ -7,10 +7,11 @@ interface Props {
   canSend: boolean;
   blockedReason?: string; // 送信できない理由(ボタンのツールチップに出す)
   home?: boolean;         // 新しい会話の画面(真ん中に出す。上の区切り線と背景を付けない)
+  focusKey?: number;      // 変わるたびに入力欄にフォーカスを移す(会話を開いた・「+ 新規」を押した、など)
   onSend(text: string): void;
 }
 
-export function Composer({ canSend, blockedReason, home, onSend }: Props) {
+export function Composer({ canSend, blockedReason, home, focusKey, onSend }: Props) {
   const [text, setText] = useState("");
   const input = useRef<HTMLTextAreaElement>(null);
   const composing = useRef(false); // IME で変換中か
@@ -27,6 +28,12 @@ export function Composer({ canSend, blockedReason, home, onSend }: Props) {
   useEffect(() => {
     if (canSend) input.current?.focus();
   }, [canSend]);
+
+  // 一覧で会話を選んだり「+ 新規」を押したりしたあと、すぐ打てるように入力欄に戻る。
+  // 押したボタンにフォーカスが残るので、こちらから移す(生成中で送れなくても、打つことはできる)
+  useEffect(() => {
+    input.current?.focus();
+  }, [focusKey]);
 
   const submit = (e?: FormEvent) => {
     e?.preventDefault();
