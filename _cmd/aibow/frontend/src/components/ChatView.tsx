@@ -1,5 +1,5 @@
 // 会話の表示: 吹き出し・エラー・要約の区切り
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { LuChevronDown, LuChevronRight, LuCircleStop } from "react-icons/lu";
 import { CopyButton } from "./CopyButton";
 import type { Compaction } from "../../bindings/aibow";
@@ -79,12 +79,11 @@ function AssistantMessage({ view, faded, onStop }: { view: AssistantView; faded:
 // 詳細情報はふだんは使わないので畳んでおき、「詳細」を押したときだけ出す。生成中は出さない(停止ボタンだけ)
 function ReplyActions({ content, stats, createdAt }: { content: string; stats?: string; createdAt?: string }) {
   const [open, setOpen] = useState(false);
-  const time = replyTime(createdAt);
   return (
     <>
       <div className="reply-actions">
         {content && <CopyButton text={content} />}
-        {time && <span className="reply-time" title={time.full}>{time.short}</span>}
+        {createdAt && <ReplyTime createdAt={createdAt} />}
         {stats && (
           <button className="reply-action" onClick={() => setOpen(o => !o)} aria-expanded={open} title="モデル名・速さ・トークン数など">
             {open ? <LuChevronDown /> : <LuChevronRight />} 詳細
@@ -96,20 +95,39 @@ function ReplyActions({ content, stats, createdAt }: { content: string; stats?: 
   );
 }
 
-// 返事の時刻の表示。今日なら「14:05」、今年なら「10/12 14:05」、それより前は「2025/10/12 14:05」。
-// マウスを乗せると秒まで出す。今日かどうかは表示するときに決める(日をまたいで開いたままでも合うように)
-function replyTime(createdAt?: string): { short: string; full: string } | null {
-  if (!createdAt) return null;
+// 返事の時刻。ふだんは今からどれくらい前か(「3分前」「2時間前」「4日前」)で出し、マウスを乗せると実際の時刻を秒まで出す。
+// 5日以上前は「前」で数えても分かりにくいので、日時(「2025/10/12 14:05」)で出す。
+// 開いたままでも「たった今」→「1分前」と進むよう、30 秒ごとに描き直す
+function ReplyTime({ createdAt }: { createdAt: string }) {
+  const now = useNow(30_000);
   const t = new Date(createdAt);
   if (Number.isNaN(t.getTime())) return null;
-  const now = new Date();
+  return <span className="reply-time" title={formatDateTime(t, true)}>{ago(t, now)}</span>;
+}
+
+function useNow(intervalMs: number): Date {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), intervalMs);
+    return () => window.clearInterval(timer);
+  }, [intervalMs]);
+  return now;
+}
+
+function ago(t: Date, now: Date): string {
+  const sec = (now.getTime() - t.getTime()) / 1000; // 時計のずれで未来になったときは「たった今」
+  if (sec < 60) return "たった今";
+  if (sec < 60 * 60) return `${Math.floor(sec / 60)}分前`;
+  if (sec < 24 * 60 * 60) return `${Math.floor(sec / (60 * 60))}時間前`;
+  if (sec < 5 * 24 * 60 * 60) return `${Math.floor(sec / (24 * 60 * 60))}日前`;
+  return formatDateTime(t, false);
+}
+
+// 「2025/10/12 14:05」。withSeconds なら「2025/10/12 14:05:09」
+function formatDateTime(t: Date, withSeconds: boolean): string {
   const pad = (n: number) => String(n).padStart(2, "0");
-  const hm = `${pad(t.getHours())}:${pad(t.getMinutes())}`;
-  const md = `${t.getMonth() + 1}/${t.getDate()}`;
-  const full = `${t.getFullYear()}/${md} ${hm}:${pad(t.getSeconds())}`;
-  if (t.toDateString() === now.toDateString()) return { short: hm, full };
-  if (t.getFullYear() === now.getFullYear()) return { short: `${md} ${hm}`, full };
-  return { short: `${t.getFullYear()}/${md} ${hm}`, full };
+  const time = `${pad(t.getHours())}:${pad(t.getMinutes())}` + (withSeconds ? `:${pad(t.getSeconds())}` : "");
+  return `${t.getFullYear()}/${t.getMonth() + 1}/${t.getDate()} ${time}`;
 }
 
 // 停止のボタン。赤い停止のアイコンだけを出し、何を止めるか(停止 / 要約を停止)はマウスを乗せると出る。
