@@ -17,6 +17,22 @@ body {
 }
 #root { height: 100vh; display: flex; flex-direction: column; }
 
+/* タイトルバー(Frameless)。--wails-draggable: drag の場所をつかむとウィンドウが動く。
+   子要素にも受け継がれるので、ボタンには no-drag を付けて押せるようにする */
+.titlebar {
+  height: 36px; flex-shrink: 0; display: flex; align-items: center; padding-left: 8px;
+  background: var(--panel); border-bottom: 1px solid var(--border);
+  --wails-draggable: drag; user-select: none; -webkit-user-select: none;
+}
+.titlebar button { --wails-draggable: no-drag; }
+.window-controls { margin-left: auto; display: flex; align-self: stretch; }
+.window-controls button {
+  width: 46px; border: none; border-radius: 0; background: transparent; font-size: 15px;
+  display: flex; align-items: center; justify-content: center;
+}
+.window-controls button:hover { background: var(--bg); }
+.window-controls button.close:hover { background: #e81123; color: #fff; }
+
 /* 入力欄の下: モデルの選択と情報。入力欄(.composer)と左端・幅をそろえる */
 .model-bar {
   display: flex; align-items: center; gap: 12px; background: var(--panel);

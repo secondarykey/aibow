@@ -1,4 +1,5 @@
-// App.tsx: 画面全体。左に会話の一覧(左上のハンバーガーで開閉)、中央にチャット(下に入力欄とモデルの選択)。
+// App.tsx: 画面全体。上にタイトルバー(Frameless のため自前。左端のハンバーガーで一覧を開閉)、
+// 左に会話の一覧、中央にチャット(下に入力欄とモデルの選択)。
 // 右の設定パネルは一覧の下の「設定」で開閉する。
 //
 //	useTranscript    … 画面に並べる表示(吹き出し・メモ・エラー)
@@ -17,6 +18,7 @@ import { useConversations } from "./useConversations";
 import { useChat } from "./useChat";
 import { useAppSettings } from "./useAppSettings";
 import { ModelBar } from "./components/ModelBar";
+import { TitleBar } from "./components/TitleBar";
 import { ConversationList } from "./components/ConversationList";
 import { ChatView } from "./components/ChatView";
 import { SettingsPanel } from "./components/SettingsPanel";
@@ -83,6 +85,7 @@ export default function App() {
 
   return (
     <>
+      <TitleBar listOpen={listOpen} onToggleList={() => setListOpen(o => !o)} />
       <main>
         <ConversationList
           list={convs.list}
@@ -96,7 +99,6 @@ export default function App() {
           settingsOpen={settingsOpen}
           onToggleSettings={() => setSettingsOpen(o => !o)}
           open={listOpen}
-          onToggleOpen={() => setListOpen(o => !o)}
         />
         <section className="center">
           <ChatView items={transcript.items} onStop={chat.stop} />

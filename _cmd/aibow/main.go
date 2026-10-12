@@ -90,11 +90,16 @@ func main() {
 		},
 	})
 
+	// Frameless: OS のタイトルバーと枠を消し、画面(frontend/src/components/TitleBar.tsx)で作る。
+	// Title は画面には出ないが、タスクバーや Alt+Tab に出る。
 	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Title:  "aibow " + strings.TrimSpace(version),
-		Width:  1280,
-		Height: 820,
-		URL:    "/",
+		Title:     "aibow " + strings.TrimSpace(version),
+		Width:     1280,
+		Height:    820,
+		MinWidth:  720,
+		MinHeight: 480,
+		Frameless: true,
+		URL:       "/",
 	})
 
 	// Windows の WebView2 は、別のウィンドウから戻ってきたときに IME(日本語入力)の状態が
