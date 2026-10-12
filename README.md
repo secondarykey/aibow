@@ -102,7 +102,7 @@ go mod tidy
 ```bash
 cd frontend && npm install && cd ..
 ```
-画面で使うパッケージ(React、Vite、Wails の JavaScript 用ランタイム、アイコンの react-icons、Markdown を HTML にする marked など)を `frontend/node_modules/` にダウンロードします。
+画面で使うパッケージ(React、Vite、Wails の JavaScript 用ランタイム、アイコンの react-icons、Markdown を HTML にする marked、コードの色付けの highlight.js、図の mermaid など)を `frontend/node_modules/` にダウンロードします。
 `wails3 dev` / `wails3 build` は `node_modules` が無いときだけ自動で `npm install` するので、パッケージを増減したときは手で実行します。
 
 ### 3. llama.cpp の取得
@@ -268,6 +268,7 @@ aibow を起動したまま `ollama pull` した場合は、aibow のウィン�
 一覧の右の境目をドラッグすると一覧の幅を変えられます(ダブルクリックで元の幅。幅は次の起動でも同じ)。
 
 返事と要約の文は Markdown として表示します(太字・見出し・箇条書き・表・コードなど)。リンクはふだんのブラウザで開きます。
+コードブロックは言語が書かれていれば色が付き、言語が `mermaid` なら図になります(図とコードは切り替えられます)。
 返事の最後のコピーのアイコンで答えの文を(思考は含めない)、コードブロックの右上のアイコンでそのコードだけをコピーできます。
 返事の最後の「詳細」を押すと、統計行(モデル名・速さ・トークン数)が開きます。
 生成中でも、上にスクロールすれば過去の発言を読めます(一番下にいるときだけ、届いた文を追いかけて下へ送ります)。

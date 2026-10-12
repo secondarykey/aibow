@@ -11,7 +11,9 @@
   },
   "dependencies": {
     "@wailsio/runtime": "latest",
+    "highlight.js": "11.12.0",
     "marked": "18.0.14",
+    "mermaid": "12.1.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-icons": "^5.7.0"
@@ -22,5 +24,11 @@
     "@vitejs/plugin-react": "^6.0.0",
     "typescript": "^5.2.2",
     "vite": "^8.0.5"
+  },
+  "overrides": {
+    "dompurify": "3.4.16",
+    "uuid": "14.0.2",
+    "package-manager-detector": "1.8.0",
+    "@types/d3-zoom": "3.0.8"
   }
 }

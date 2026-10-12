@@ -3,6 +3,9 @@
   --border: #e3e1dc; --user: #e8f0fe; --accent: #2f6fde; --think: #fbf7e9;
   --code: #f1f1ef; --error: #b42318;
   --scrollbar: rgba(0, 0, 0, .18); --scrollbar-hover: rgba(0, 0, 0, .32);
+  /* コードの色付け(highlight.js)。GitHub の配色を元にしている */
+  --hl-keyword: #cf222e; --hl-string: #0a3069; --hl-comment: #6e7781; --hl-number: #0550ae;
+  --hl-title: #8250df; --hl-type: #953800; --hl-attr: #0550ae; --hl-add: #116329; --hl-del: #82071e;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -10,6 +13,8 @@
     --border: #2e3034; --user: #1f2b44; --accent: #6ea0ff; --think: #2a2717;
     --code: #2a2b2f; --error: #ff8a80;
     --scrollbar: rgba(255, 255, 255, .16); --scrollbar-hover: rgba(255, 255, 255, .30);
+    --hl-keyword: #ff7b72; --hl-string: #a5d6ff; --hl-comment: #8b949e; --hl-number: #79c0ff;
+    --hl-title: #d2a8ff; --hl-type: #ffa657; --hl-attr: #79c0ff; --hl-add: #7ee787; --hl-del: #ffa198;
   }
 }
 /* --edge-gap: ウィンドウの右端に接してスクロールする場所(.chat / .settings-view)の、スクロールバーの外側に空ける幅。
@@ -148,6 +153,27 @@ footer.home .composer textarea { line-height: 1.5; min-height: calc(3 * 1.5em + 
 .md table { border-collapse: collapse; margin: 0 0 .7em; font-size: .93em; display: block; overflow-x: auto; }
 .md th, .md td { border: 1px solid var(--border); padding: 4px 10px; text-align: left; }
 .md th { background: var(--bg); font-weight: 600; }
+/* コードの色付け(highlight.ts)。色はテーマの変数(--hl-*)から取る */
+.hljs-keyword, .hljs-selector-tag, .hljs-meta .hljs-keyword { color: var(--hl-keyword); }
+.hljs-string, .hljs-regexp, .hljs-meta .hljs-string { color: var(--hl-string); }
+.hljs-comment, .hljs-quote { color: var(--hl-comment); font-style: italic; }
+.hljs-number, .hljs-literal, .hljs-symbol, .hljs-bullet, .hljs-variable.constant_ { color: var(--hl-number); }
+.hljs-title, .hljs-section, .hljs-title.function_ { color: var(--hl-title); }
+.hljs-type, .hljs-built_in, .hljs-title.class_, .hljs-selector-class, .hljs-selector-id { color: var(--hl-type); }
+.hljs-attr, .hljs-attribute, .hljs-property, .hljs-variable, .hljs-template-variable, .hljs-meta, .hljs-name { color: var(--hl-attr); }
+.hljs-addition { color: var(--hl-add); }
+.hljs-deletion { color: var(--hl-del); }
+.hljs-emphasis { font-style: italic; }
+.hljs-strong { font-weight: 600; }
+/* mermaid の図(CodeBlock.tsx)。図が吹き出しより広いときは横にスクロールする */
+/* 切り替えとコピーのボタンは図に重ならないよう、図の上の1行に置く */
+.mermaid-block { margin: 8px 0; padding: 4px 12px 10px; border: 1px solid var(--border); border-radius: 6px; }
+.mermaid-tools { display: flex; justify-content: flex-end; gap: 2px; margin-right: -8px; }
+.mermaid-svg { overflow-x: auto; text-align: center; }
+.mermaid-svg svg { max-width: 100%; height: auto; }
+.mermaid-note { margin: 0 0 4px; font-size: 12.5px; color: var(--muted); }
+.mermaid-note.error { color: var(--error); }
+.mermaid-block pre { margin-bottom: 0; }
 /* コードブロックの右上の「コピー」。ふだんは薄く出し、ブロックにマウスを乗せると濃くする。
    コードの1行目と重なっても読めるよう、コードと同じ背景を付ける */
 .code-block { position: relative; }
