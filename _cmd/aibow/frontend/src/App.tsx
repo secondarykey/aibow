@@ -1,4 +1,5 @@
-// App.tsx: 画面全体。左に会話の一覧、中央にチャット。右の設定パネルは一覧の下の「設定」で開閉する。
+// App.tsx: 画面全体。左に会話の一覧、中央にチャット(下に入力欄とモデルの選択)。
+// 右の設定パネルは一覧の下の「設定」で開閉する。
 //
 //	useTranscript    … 画面に並べる表示(吹き出し・メモ・エラー)
 //	useModels        … モデルの一覧と切り替え(Go の ChatService.Models / SwitchModel)
@@ -15,7 +16,7 @@ import type { Busy } from "./useModels";
 import { useConversations } from "./useConversations";
 import { useChat } from "./useChat";
 import { useAppSettings } from "./useAppSettings";
-import { Header } from "./components/Header";
+import { ModelBar } from "./components/ModelBar";
 import { ConversationList } from "./components/ConversationList";
 import { ChatView } from "./components/ChatView";
 import { SettingsPanel } from "./components/SettingsPanel";
@@ -81,7 +82,6 @@ export default function App() {
 
   return (
     <>
-      <Header models={models} disabled={busy !== "idle"} />
       <main>
         <ConversationList
           list={convs.list}
@@ -103,6 +103,7 @@ export default function App() {
             onSend={chat.send}
             onStop={chat.stop}
           />
+          <ModelBar models={models} disabled={busy !== "idle"} />
         </section>
         {settingsOpen && <SettingsPanel
           settings={convs.current?.conversation.settings ?? null}
