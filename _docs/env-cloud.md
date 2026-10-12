@@ -19,7 +19,7 @@ Claude Code のクラウドセッションなど、画面も GPU も無い Linux
 - バインディングは `_cmd/aibow` で `CGO_ENABLED=0 go run github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.26 generate bindings -f '' -clean=true -ts -i` で作り直せる
   (GTK が無いので cgo を切る。Go の版の違いなどの警告は出るが、コミット済みのものと同じ結果になることを確かめた。2026-10-12)
 - 画面だけの変更なら、`_cmd/aibow/frontend` で `npx tsc --noEmit` と `npx vite build` で型チェックとビルドを確かめられる(`wails3 build` の画面の部分と同じ)
-- `go vet ./_cmd/aibow` と `wails3 build` は GTK が無いと通らない。Go の画面側を変えたときは、server モードのビルド(下)か、ユーザーの Windows で確かめてもらう
+- `go vet ./_cmd/aibow` と `wails3 build` は GTK が無いと通らない。Go の画面側を変えたときは、server モードのビルド(上)か、ユーザーの Windows で確かめてもらう
 
 ## Go を動かさずに画面の部品を確かめる
 
