@@ -210,6 +210,28 @@ footer.home .composer textarea { line-height: 1.5; min-height: calc(3 * 1.5em + 
 }
 .thinking summary { cursor: pointer; }
 .thinking div { white-space: pre-wrap; margin-top: 6px; max-height: 240px; overflow-y: auto; }
+/* ツールを呼んだ回と、ツールのカード。カードは「思考の過程」と同じく畳んだ1行で、開くと引数と結果が読める */
+.step { margin-bottom: 8px; }
+.step .body { margin-bottom: 6px; }
+.tool-card {
+  border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; margin-bottom: 6px;
+  font-size: 12.5px; color: var(--muted);
+}
+.tool-card summary { cursor: pointer; display: flex; align-items: center; gap: 6px; }
+.tool-card summary code { color: var(--text); font-size: 12.5px; }
+.tool-card .tool-status { display: inline-flex; align-items: center; gap: 3px; margin-left: auto; }
+.tool-card.ok .tool-status { color: var(--muted); }
+.tool-card.error { border-color: color-mix(in srgb, var(--error) 40%, var(--border)); }
+.tool-card.error .tool-status { color: var(--error); }
+.tool-body { margin-top: 6px; }
+.tool-label { font-size: 11.5px; margin: 6px 0 2px; }
+.tool-body pre {
+  margin: 0; padding: 6px 8px; border-radius: 5px; background: var(--code); color: var(--text);
+  white-space: pre-wrap; word-break: break-word; max-height: 240px; overflow-y: auto;
+  font-family: ui-monospace, Consolas, monospace; font-size: 12px;
+}
+.tool-body pre.tool-none { color: var(--muted); }
+.tool-card .spin { animation: spin 1s linear infinite; } /* @keyframes spin はトーストのものを使う */
 .waiting { color: var(--muted); font-size: 13px; }
 .cutoff { color: var(--muted); font-style: italic; }
 .msg .hint { color: var(--muted); font-size: 12px; margin-top: 4px; }

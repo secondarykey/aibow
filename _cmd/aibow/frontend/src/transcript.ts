@@ -4,10 +4,31 @@
 // 表示にはエラーも出すが、これは保存しない(会話を開き直すと消える)。
 // モデルの読み込みなどのお知らせは、会話の表示ではなくトースト(toast.tsx)に出す。
 import { useCallback, useRef, useState } from "react";
-import type { Compaction, StoredMessage } from "../bindings/aibow";
+import type { Compaction, ReplyStats, StoredMessage, ToolArg } from "../bindings/aibow";
 
-// アシスタントの返事1件の表示。生成中は少しずつ書き換わる。
+// ツールの呼び出し1つの表示(カード)。結果がまだ無ければ実行中
+export interface ToolView {
+  name: string;
+  args: ToolArg[];
+  raw?: string;     // 書式が崩れて読み取れなかったときの、モデルが書いたままの呼び出し
+  result?: string;  // 結果の文(エラーなら「エラー: …」。モデルにもこの文が渡る)
+  error?: boolean;
+  sec?: number;     // 実行にかかった秒数
+}
+
+// ツールを呼んだ回(エージェントループの途中の1回分)の表示: 思考 → 答え → カード
+export interface StepView {
+  thinking: string;
+  thinkLabel: string;
+  content: string;
+  tools: ToolView[];
+}
+
+// アシスタントの返事の表示。1回の送信につき吹き出し1つ。生成中は少しずつ書き換わる。
+// ツールを使うと1回の送信で何回も生成するので、ツールを呼んだ回は steps に入れて前に並べ、
+// thinking / content には最後の回(ツールを呼ばずに答えた回、または生成中の回)を入れる。
 export interface AssistantView {
+  steps?: StepView[];    // ツールを呼んだ回(古い順)
   generating?: boolean;  // 生成中か(吹き出しの中に停止ボタンを出す)
   waiting: boolean;      // 最初の文字が届くまでの「応答待ち…」
   thinking: string;      // 思考(ない場合は空)
@@ -90,11 +111,43 @@ const STOP_REASONS: Record<string, string> = {
   length: "返事の上限で打ち切り",
   context: "コンテキストがいっぱいで打ち切り",
   cancel: "停止",
+  stop: "ツールの結果を書き始めたので打ち切り",
 };
 
 export const thinkLabel = (sec: number) => `思考の過程(${Math.round(sec)}秒)`;
 
-// replyView は保存された返事を表示に変える。思考の秒数や統計も保存されているので、再起動後も同じ表示になる。
+// turnView は、1回の送信で保存された返事とツールの結果(ユーザーの発言の後ろから、次のユーザーの発言の前まで)を、
+// 吹き出し1つの表示に変える。再起動して会話を開き直しても、生成中と同じ並びになる。
+export function turnView(ms: StoredMessage[]): AssistantView {
+  const steps: StepView[] = [];
+  let final: StoredMessage | null = null;
+  for (const m of ms) {
+    if (m.role === "assistant" && m.tool_calls?.length) {
+      steps.push({
+        thinking: m.thinking,
+        thinkLabel: thinkLabel(m.stats?.think_sec ?? 0),
+        content: m.content,
+        tools: m.tool_calls.map(c => ({ name: c.name, args: c.args ?? [], raw: c.raw || undefined })),
+      });
+    } else if (m.role === "assistant") {
+      final = m;
+    } else if (m.role === "tool") {
+      // 結果は呼び出しと同じ順に保存されている。まだ結果の無い最初のカードに付ける
+      const card = steps[steps.length - 1]?.tools.find(t => t.result === undefined);
+      if (card) Object.assign(card, { result: m.content, error: m.tool_result?.error, sec: m.tool_result?.sec });
+    }
+  }
+  // 最後の回が無い(ツールの上限や停止で、答える前に止めた)ときは、カードだけの吹き出しになる
+  const view: AssistantView = final
+    ? replyView(final)
+    : { generating: false, waiting: false, thinking: "", thinkLabel: "", content: "" };
+  view.steps = steps;
+  view.stats = statsLine(ms.filter(m => m.role === "assistant"));
+  view.createdAt = ms[ms.length - 1]?.created_at;
+  return view;
+}
+
+// replyView は保存された返事1件(ツールを呼ばなかった回)を表示に変える。思考の秒数や統計も保存されているので、再起動後も同じ表示になる。
 export function replyView(m: StoredMessage): AssistantView {
   const s = m.stats;
   const view: AssistantView = {
@@ -111,29 +164,54 @@ export function replyView(m: StoredMessage): AssistantView {
     view.cutoff = m.content;
     view.cutoffHint = s.stop_reason !== "cancel";
   }
-  if (s) {
-    const parts = [m.model || "(モデル不明)", `初回応答 ${s.first_sec.toFixed(2)}s`];
-    parts.push(`プロンプト ${s.prompt_tokens} tok(再利用 ${s.reused_tokens})${s.prompt_sec.toFixed(2)}s`);
-    const rate = s.gen_sec > 0 ? (s.gen_tokens / s.gen_sec).toFixed(1) : "-";
-    parts.push(`生成 ${s.gen_tokens} tok ・ ${rate} tok/s`);
-    if (s.stop_reason !== "eos") parts.push(STOP_REASONS[s.stop_reason] ?? s.stop_reason);
-    view.stats = parts.join(" ・ ");
-  }
+  view.stats = statsLine([m]);
   return view;
 }
 
-// messageItems は会話の発言の列を表示の列に変える。要約した発言の後ろには区切りを入れる。
+// statsLine は統計行。ツールを使って何回も生成したときは、全部の回の合計にする
+// (プロンプトは回ごとに読ませた分の合計。2回目からは KV キャッシュの再利用が多いので、再利用の数で効き目が見える)。
+function statsLine(replies: StoredMessage[]): string | undefined {
+  const rs = replies.filter(r => r.stats);
+  if (rs.length === 0) return undefined;
+  const sum = (f: (s: ReplyStats) => number) => rs.reduce((a, r) => a + f(r.stats!), 0);
+  const first = rs[0].stats!, last = rs[rs.length - 1];
+  const parts = [last.model || "(モデル不明)", `初回応答 ${first.first_sec.toFixed(2)}s`];
+  parts.push(`プロンプト ${sum(s => s.prompt_tokens)} tok(再利用 ${sum(s => s.reused_tokens)})${sum(s => s.prompt_sec).toFixed(2)}s`);
+  const gen = sum(s => s.gen_tokens), genSec = sum(s => s.gen_sec);
+  parts.push(`生成 ${gen} tok ・ ${genSec > 0 ? (gen / genSec).toFixed(1) : "-"} tok/s`);
+  if (rs.length > 1) parts.push(`${rs.length}回生成`);
+  const stop = last.stats!.stop_reason;
+  if (stop !== "eos") parts.push(STOP_REASONS[stop] ?? stop);
+  return parts.join(" ・ ");
+}
+
+// messageItems は会話の発言の列を表示の列に変える。ユーザーの発言から次のユーザーの発言までの返事とツールの結果は、
+// 吹き出し1つにまとめる(turnView)。要約した発言の後ろには区切りを入れる。
 // 古い要約も消さずに残っているので、要約を積み重ねた回数だけ区切りが出る。
 export function messageItems(messages: StoredMessage[], compactions: Compaction[]): NewItem[] {
   const out: NewItem[] = [];
-  for (const m of messages) {
-    out.push(m.role === "assistant"
-      ? { kind: "assistant", msgId: m.id, ...replyView(m) }
-      : { kind: "user", text: m.content, msgId: m.id, createdAt: m.created_at });
+  const dividers = (m: StoredMessage) => {
     for (const c of compactions) {
       if (c.upto_message_id === m.id) out.push({ kind: "divider", compaction: c });
     }
+  };
+  let turn: StoredMessage[] = [];
+  const flush = () => {
+    if (turn.length === 0) return;
+    out.push({ kind: "assistant", msgId: turn[0].id, ...turnView(turn) });
+    turn.forEach(dividers);
+    turn = [];
+  };
+  for (const m of messages) {
+    if (m.role !== "user") {
+      turn.push(m);
+      continue;
+    }
+    flush();
+    out.push({ kind: "user", text: m.content, msgId: m.id, createdAt: m.created_at });
+    dividers(m);
   }
+  flush();
   return out;
 }
 

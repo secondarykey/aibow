@@ -8,7 +8,7 @@ import { CancelError, Events } from "@wailsio/runtime";
 import type { CancellablePromise } from "@wailsio/runtime";
 import { ChatService } from "../bindings/aibow/cmd/aibow";
 import type { ChatEvent, StoredMessage } from "../bindings/aibow";
-import { messageItems, replyView, thinkLabel } from "./transcript";
+import { messageItems, thinkLabel, turnView } from "./transcript";
 import type { AssistantView, Transcript } from "./transcript";
 import type { Conversations } from "./useConversations";
 import type { Busy } from "./useModels";
@@ -24,6 +24,9 @@ interface Live {
   userItemId: number | null; // 送信した発言の表示の id(会話を開き直したら、保存された発言から作り直すので null)
   view: AssistantView;
   thinkStart: number;
+  // saved はこの送信で Go が保存し終えた返事とツールの結果(reply / tool_result イベント)。
+  // ツールを使うと1回の送信で何件も保存されるので、吹き出しはここから作り直す(開き直したときと同じ並びになる)
+  saved: StoredMessage[];
 }
 
 export interface Chat {
@@ -67,8 +70,10 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
     }
     const id = current.conversation.id;
     viewing.current = id;
-    reset(messageItems(current.messages ?? [], current.compactions ?? []));
     const l = live.current;
+    // 生成中の送信で保存済みの返事とツールの結果は、生成中の吹き出しの中に出すので、保存された発言の側からは外す
+    const inLive = new Set(l && l.convId === id ? l.saved.map(m => m.id) : []);
+    reset(messageItems((current.messages ?? []).filter(m => !inLive.has(m.id)), current.compactions ?? []));
     if (l) {
       l.itemId = l.convId === id && current.generating ? addAssistant(l.view) : null;
       l.userItemId = null;
@@ -95,7 +100,7 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
   // manual は「今すぐ要約」(返事は生成しない。終わったら吹き出しを消して、区切りが出るように開き直す)
   const run = useCallback(async (id: string, start: () => CancellablePromise<void>, manual: boolean, userItemId: number | null) => {
     const l: Live = {
-      convId: id, itemId: null, userItemId, thinkStart: 0,
+      convId: id, itemId: null, userItemId, thinkStart: 0, saved: [],
       view: { generating: true, waiting: true, thinking: "", thinkLabel: "", content: "", summarizing: manual, summary: "" },
     };
     l.itemId = addAssistant(l.view);
@@ -114,14 +119,15 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
       if (viewing.current === id) open(id).catch(err => addError(errorMessage(err)));
     };
 
-    // 終わったら、Go が保存した返事で吹き出しを置き換える(統計や「思考の過程(N秒)」も付く)
-    const done = (reply: StoredMessage | null) => {
+    // 終わったら、Go が保存した返事とツールの結果で吹き出しを置き換える(統計や「思考の過程(N秒)」も付く)
+    const done = () => {
+      const first = l.saved[0], last = l.saved[l.saved.length - 1];
       if (l.itemId !== null) {
-        if (reply) {
-          updateAssistant(l.itemId, replyView(reply));
-          setSaved(l.itemId, reply);
+        if (first) {
+          updateAssistant(l.itemId, turnView(l.saved));
+          setSaved(l.itemId, { id: first.id, created_at: last.created_at });
         } else remove(l.itemId); // 何も生成されなかった(今すぐ要約もここ)
-      } else if (reply && viewing.current === id) {
+      } else if (first && viewing.current === id) {
         // 会話を開き直している最中に終わった。保存された返事が読めるように開き直す
         open(id).catch(() => {});
       }
@@ -135,7 +141,7 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
       if (ev.conversation_id !== id) return;
       switch (ev.type) {
         case "done":
-          done(ev.reply ?? null);
+          done();
           live.current = null; // 開き直しても、もう生成中の吹き出しは足さない
           if (manual && compacted) reopen();
           finish();
@@ -169,6 +175,20 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
           else reopen(); // 返事を書いている間に、区切りと薄い表示が見えるように
           return;
         }
+        case "reply":
+          // 返事を1件保存した。ツールを呼んだ回なら、カードの並ぶ「回」にして、次の回の思考と答えを空から書き始める
+          if (!ev.reply) return;
+          l.saved.push(ev.reply);
+          if (ev.reply.tool_calls?.length) {
+            show({ steps: turnView(l.saved).steps, thinking: "", thinkLabel: "", content: "", waiting: true });
+          }
+          return;
+        case "tool_result":
+          // ツールの結果を保存した。結果の無いカードは「実行中」と出ている
+          if (!ev.message) return;
+          l.saved.push(ev.message);
+          show({ steps: turnView(l.saved).steps });
+          return;
         case "error":
           if (viewing.current === id) addError(ev.error ?? "");
           else console.warn(`別の会話でのエラー: ${ev.error}`);
@@ -207,7 +227,7 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
       if (err instanceof CancelError) return; // 停止ボタン。done イベントは Go から届く
       // Go のメソッドを呼べなかった(done イベントは来ない)
       addError(`呼び出しエラー: ${errorMessage(err)}`);
-      done(null);
+      done();
       finish();
     });
     await finished;

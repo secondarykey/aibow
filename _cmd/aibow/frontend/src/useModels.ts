@@ -25,6 +25,11 @@ export interface Models {
   reload(): Promise<boolean>; // 一覧を取り直す。起動に失敗していたら false
 }
 
+// formatWarning は、書式(チャットテンプレート)に対応していない種類のモデルのときのお知らせ。対応していれば null
+function formatWarning(info: ModelInfo): string | null {
+  return info.format ? null : `${info.name} の書式(種類: ${info.arch || "不明"})には未対応です。送信するとエラーになります`;
+}
+
 // 読み込みのお知らせはトースト(n)に出す。「読み込み中…」は出したままにし、終わったら同じ key で置き換える
 export function useModels(n: Notifier, t: Pick<Transcript, "addError">, setBusy: (b: Busy) => void): Models {
   const { notify, dismissKey } = n;
@@ -81,7 +86,7 @@ export function useModels(n: Notifier, t: Pick<Transcript, "addError">, setBusy:
       setCurrent(d.current);
       if (!wasLoading) return;
       if (d.current) {
-        notify(`${d.current.name} を読み込みました(${d.current.load_sec.toFixed(1)} 秒)`, { key: "model" });
+        notify(formatWarning(d.current) ?? `${d.current.name} を読み込みました(${d.current.load_sec.toFixed(1)} 秒)`, { key: "model" });
       } else {
         dismissKey("model");
         addError("モデルを読み込めませんでした。入力欄の下で選び直してください");
@@ -100,7 +105,7 @@ export function useModels(n: Notifier, t: Pick<Transcript, "addError">, setBusy:
     let failed = false;
     try {
       const info = await ChatService.SwitchModel(id); // 読み込み終わるまで返らない
-      if (info) notify(`モデルを ${info.name} に切り替えました(読み込み ${info.load_sec.toFixed(1)} 秒)`, { key: "model" });
+      if (info) notify(formatWarning(info) ?? `モデルを ${info.name} に切り替えました(読み込み ${info.load_sec.toFixed(1)} 秒)`, { key: "model" });
     } catch (err) {
       // Go が error を返すと、ここに来る
       addError(errorMessage(err));

@@ -1,4 +1,4 @@
-// 会話の表示: 吹き出し・エラー・要約の区切り
+// 会話の表示: 吹き出し(ツールのカードを含む)・エラー・要約の区切り
 import { useEffect, useState } from "react";
 import { LuChevronDown, LuChevronRight, LuCircleStop } from "react-icons/lu";
 import { CopyButton } from "./CopyButton";
@@ -6,6 +6,7 @@ import type { Compaction } from "../../bindings/aibow";
 import { compactionStats } from "../transcript";
 import type { AssistantView, Item } from "../transcript";
 import { RenderedText } from "./RenderedText";
+import { ToolCard } from "./ToolCard";
 import { useStickToBottom } from "../stickToBottom";
 
 const FADED_TITLE = "この発言はモデルに渡していません(要約に入ったか、会話の上限に収めるために外しました)";
@@ -54,8 +55,18 @@ export function ChatView({ items, firstId, conversationId, onStop }: {
 }
 
 function AssistantMessage({ view, faded, onStop }: { view: AssistantView; faded: boolean; onStop(): void }) {
+  // コピーするのは答えの文だけ(ツールを使った送信では、各回の答えをつなげる)
+  const answer = [...(view.steps ?? []).map(s => s.content), view.content].filter(Boolean).join("\n\n");
   return (
     <div className={"msg assistant" + (faded ? " faded" : "")} title={faded ? FADED_TITLE : undefined}>
+      {/* ツールを呼んだ回: 思考 → 答え → カード の順に、生成した順で並べる */}
+      {view.steps?.map((s, i) => (
+        <div key={i} className="step">
+          {s.thinking && <Thinking label={s.thinkLabel} text={s.thinking} />}
+          {s.content && <div className="body"><RenderedText text={s.content} /></div>}
+          {s.tools.map((t, j) => <ToolCard key={j} tool={t} generating={!!view.generating} />)}
+        </div>
+      ))}
       {view.summarizing && <Summarizing text={view.summary ?? ""} />}
       {view.compactNote && <p className="compact-note">{view.compactNote}</p>}
       {view.thinking && <Thinking label={view.thinkLabel} text={view.thinking} />}
@@ -67,8 +78,8 @@ function AssistantMessage({ view, faded, onStop }: { view: AssistantView; faded:
           <p className="hint">「思考する」をオフにするか、アプリ全体の設定の「返事の上限」を増やすと答えまで届きやすくなります。</p>
         )}
       </div>
-      {!view.generating && (view.content || view.stats) && (
-        <ReplyActions content={view.content} stats={view.stats} createdAt={view.createdAt} />
+      {!view.generating && (answer || view.stats) && (
+        <ReplyActions content={answer} stats={view.stats} createdAt={view.createdAt} />
       )}
       {view.generating && (
         <div className="stop-row">

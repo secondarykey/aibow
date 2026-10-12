@@ -24,13 +24,16 @@ export interface AppSettings {
  * 	prompt   : モデルに渡した文字列(学習用に画面に表示する)
  * 	thinking : 思考の断片
  * 	content  : 答えの断片
+ * 	reply    : 返事を1件保存した(Reply)。ツールを使うと1回の送信で何件も保存する(呼び出しは Reply.ToolCalls)
+ * 	tool_start  : ツールの実行を始めた(ToolCall)
+ * 	tool_result : ツールの結果を保存した(Message。role tool の発言)
  * 	summarizing : 要約を作り始めた(compact の summary。返事の前か「今すぐ要約」)
  * 	summary  : 要約の断片
  * 	compact  : 会話の上限に収めるために compact した(方式・前後のトークン数・保存した要約など)。
  * 	           要約に失敗したときも Compact.Error に理由を入れて送る
  * 	usage    : メーターの値(モデルに渡す文字列のトークン数 / 会話の上限)。生成の前と、返事を保存したあとに送る
  * 	error    : エラー
- * 	done     : 終わり。必ず最後に1回だけ送る。保存した返事があれば Reply に入る
+ * 	done     : 終わり。必ず最後に1回だけ送る。保存した最後の返事があれば Reply に入る
  */
 export interface ChatEvent {
     /**
@@ -44,6 +47,7 @@ export interface ChatEvent {
     "message"?: StoredMessage | null;
     "usage"?: Usage | null;
     "compact"?: CompactInfo | null;
+    "tool_call"?: ToolCall | null;
 }
 
 /**
@@ -117,7 +121,7 @@ export interface CompactStats {
     "gen_sec": number;
 
     /**
-     * eos / length / context / cancel
+     * eos / length / context / cancel / stop(書式が決めた位置で止めた)
      */
     "stop_reason": string;
 
@@ -222,6 +226,12 @@ export interface ConversationSettings {
      * 会話の上限を超えたときの方式: none / truncate / summary
      */
     "compact": string;
+
+    /**
+     * Tools はツールを使うか。OFF ならツールの説明をプロンプトに入れない(説明だけで毎回 500 トークンほど増えるため、比べられるように)。
+     * この項目より前に保存された会話は値が無いので OFF のまま。新しい会話の既定は ON
+     */
+    "tools": boolean;
 }
 
 /**
@@ -267,6 +277,16 @@ export interface ModelInfo {
      * llama.cpp が返す説明。例: "qwen35 4B Q4_K - Medium"
      */
     "desc": string;
+
+    /**
+     * モデルの種類(GGUF の general.architecture)。例: "qwen35"
+     */
+    "arch": string;
+
+    /**
+     * 使う書式の名前。空なら未対応の種類のモデル(生成できない)
+     */
+    "format": string;
 
     /**
      * パラメータ数(十億単位)
@@ -330,7 +350,7 @@ export interface ReplyStats {
     "gen_sec": number;
 
     /**
-     * eos / length / context / cancel
+     * eos / length / context / cancel / stop(書式が決めた位置で止めた)
      */
     "stop_reason": string;
 
@@ -353,8 +373,12 @@ export interface ReplyStats {
 /**
  * StoredMessage は保存された発言1件。
  * 
- * モデルに渡すのは Role と Content だけ(prompt.go の Message)。
- * Thinking・Model・Stats は、画面で後から見返すために残している。
+ * モデルに渡すのは Role・Content・Thinking・ToolCalls(format.go の Message)。思考をプロンプトに入れるかは書式が決める。
+ * Model・Stats・ToolResult は、画面で後から見返すために残している。
+ * 
+ * 1回の送信でツールを使うと、発言は次のように並ぶ(どれも1件ずつ保存する):
+ * 
+ * 	user → assistant(ToolCalls あり)→ tool → tool → assistant(ToolCalls あり)→ tool → assistant(答え)
  */
 export interface StoredMessage {
     /**
@@ -364,17 +388,17 @@ export interface StoredMessage {
     "conversation_id": uuid$0.UUID;
 
     /**
-     * system / user / assistant
+     * system / user / assistant / tool
      */
     "role": string;
 
     /**
-     * 答え。答えが出なかった回は理由の文
+     * 答え。答えが出なかった回は理由の文。tool はツールの結果の文
      */
     "content": string;
 
     /**
-     * 思考。モデルには渡さない
+     * 思考
      */
     "thinking": string;
 
@@ -387,7 +411,64 @@ export interface StoredMessage {
      * 生成の記録(assistant のみ)
      */
     "stats": ReplyStats | null;
+
+    /**
+     * その回のツール呼び出し(assistant のみ)
+     */
+    "tool_calls"?: ToolCall[] | null;
+
+    /**
+     * どの呼び出しの結果か(tool のみ)
+     */
+    "tool_result"?: ToolResult | null;
     "created_at": string;
+}
+
+/**
+ * ToolArg は引数1つ。値は文字列のまま持つ(Qwen3.5 の書式は値を文字列で書くため。
+ * 数や真偽値の引数が要るツール(ステップ4 の MCP)を足すときに、JSON Schema の型で変換する)。
+ */
+export interface ToolArg {
+    "name": string;
+    "value": string;
+}
+
+/**
+ * ToolCall はモデルが書いたツール呼び出し1つ。書式に依存しない形にしたもの。
+ * 
+ * 書式が崩れて読み取れなかった呼び出しは、Raw にモデルが書いた生の文字列、Error に理由を持つ。
+ * 実行はせず、エラーの結果としてモデルに返して立て直させる。次のプロンプトには Raw をそのまま入れ、
+ * モデルが自分の書いたものを見られるようにする。
+ */
+export interface ToolCall {
+    "name": string;
+
+    /**
+     * 書いた順(プロンプトに書き戻すときも同じ順にするため)
+     */
+    "args": ToolArg[] | null;
+    "raw"?: string;
+    "error"?: string;
+}
+
+/**
+ * ToolResult はツールの結果1件の記録(結果の文そのものは StoredMessage.Content)。
+ */
+export interface ToolResult {
+    /**
+     * どの呼び出しの結果か(書式に依存しない形。名前・引数)
+     */
+    "call": ToolCall;
+
+    /**
+     * エラーだったか(Content は「エラー: …」)
+     */
+    "error": boolean;
+
+    /**
+     * 実行にかかった秒数
+     */
+    "sec": number;
 }
 
 /**
