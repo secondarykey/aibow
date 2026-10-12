@@ -21,7 +21,7 @@ func openTemp(t *testing.T) (*SQLite, string) {
 	return s, path
 }
 
-var settings = aibow.ConversationSettings{System: "sys", MaxTokens: 100, Temperature: 0.7, Think: true, PresencePenalty: 1.5}
+var settings = aibow.ConversationSettings{System: "sys", Temperature: 0.7, Think: true, PresencePenalty: 1.5, Compact: aibow.CompactSummary}
 
 func newConv(t *testing.T, s *SQLite, at time.Time) aibow.Conversation {
 	t.Helper()
@@ -134,22 +134,23 @@ func TestDeleteCascadesMessages(t *testing.T) {
 
 func TestAppSettings(t *testing.T) {
 	s, _ := openTemp(t)
-	if _, ok, err := s.AppSetting("n_ctx"); ok || err != nil {
+	if _, ok, err := s.AppSetting("history_tokens"); ok || err != nil {
 		t.Fatalf("まだ無いはずです: ok=%v err=%v", ok, err)
 	}
 	for _, v := range []string{"4096", "8192"} { // 2回目は上書き
-		if err := s.SetAppSetting("n_ctx", v); err != nil {
+		if err := s.SetAppSetting("history_tokens", v); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if v, ok, err := s.AppSetting("n_ctx"); !ok || err != nil || v != "8192" {
+	if v, ok, err := s.AppSetting("history_tokens"); !ok || err != nil || v != "8192" {
 		t.Errorf("値: %q ok=%v err=%v", v, ok, err)
 	}
 
 	// aibow.LoadAppSettings と組み合わせて使えること
 	aibow.SaveAppSetting(s, aibow.SettingDefaults, settings)
-	app, err := aibow.LoadAppSettings(s, aibow.AppSettings{GPULayers: 999})
-	if err != nil || app.NCtx != 8192 || app.GPULayers != 999 || app.Defaults != settings {
+	app, _, err := aibow.LoadAppSettings(s, aibow.AppSettings{Workspace: aibow.WorkspaceSettings{GPULayers: 999, ReplyTokens: 100}})
+	w := app.Workspace
+	if err != nil || w.HistoryTokens != 8192 || w.ReplyTokens != 100 || w.GPULayers != 999 || app.Defaults != settings {
 		t.Errorf("アプリ設定: %+v %v", app, err)
 	}
 }

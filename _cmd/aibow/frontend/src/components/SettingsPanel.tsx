@@ -1,6 +1,6 @@
 // 右側の設定パネル: この会話の設定 / アプリ全体の設定 / モデルに渡した文字列
 import { useEffect, useState } from "react";
-import type { AppSettings, ConversationSettings } from "../../bindings/aibow";
+import type { AppSettings, ConversationSettings, WorkspaceSettings } from "../../bindings/aibow";
 
 interface Props {
   settings: ConversationSettings | null; // 開いている会話の設定
@@ -8,7 +8,7 @@ interface Props {
   onMakeDefault(): void;
   app: AppSettings | null;
   appDisabled: boolean; // 生成中・読み込み中は変えられない(エンジンが1つのため)
-  onApplyApp(nCtx: number, gpuLayers: number): void;
+  onApplyApp(w: WorkspaceSettings): void;
   lastPrompt: string;
 }
 
@@ -41,8 +41,15 @@ function ConversationSettingsForm({ settings, onChange, onMakeDefault }: {
       <label htmlFor="system">システムプロンプト</label>
       <textarea id="system" rows={4} value={settings.system} onChange={e => onChange({ system: e.target.value })} />
 
-      <label htmlFor="max-tokens" title="1回の返事で生成するトークン数の上限(思考 + 答え)">返事の上限トークン数</label>
-      <NumberInput id="max-tokens" value={settings.max_tokens} min={1} step={256} onChange={v => onChange({ max_tokens: v })} />
+      <label htmlFor="compact" title="会話がアプリ全体の設定の「会話の上限」を超えたときに、モデルに渡す履歴をどう収めるか">
+        会話が長くなったら(compact)
+      </label>
+      <select id="compact" value={settings.compact} onChange={e => onChange({ compact: e.target.value })}>
+        <option value="summary">要約する(summary)</option>
+        <option value="truncate">古い発言を捨てる(truncate)</option>
+        <option value="none">何もしない(none)</option>
+      </select>
+      <p className="hint">{COMPACT_HINTS[settings.compact] ?? ""}</p>
 
       <label htmlFor="temp">temperature: {settings.temperature.toFixed(1)}</label>
       <input
@@ -80,33 +87,59 @@ function ConversationSettingsForm({ settings, onChange, onMakeDefault }: {
   );
 }
 
+// compact の方式ごとの説明(docs/features/0002-compact.md)
+const COMPACT_HINTS: Record<string, string> = {
+  summary: "古い部分をモデル自身に要約させ、「要約 + 最近の発言」を渡します。要約を作る分だけ待ち時間がかかります。",
+  truncate: "古い発言から順に、モデルに渡すのをやめます(保存した発言は消えません)。渡さなかった内容はモデルには完全に消えます。",
+  none: "何もしません。会話の上限を超えたら、生成する前に止まります。",
+};
+
 function AppSettingsForm({ app, disabled, onApply }: {
   app: AppSettings;
   disabled: boolean;
-  onApply(nCtx: number, gpuLayers: number): void;
+  onApply(w: WorkspaceSettings): void;
 }) {
   // 変えるとエンジンの作り直しになるので、入力しただけでは反映せず「適用」で反映する
-  const [nCtx, setNCtx] = useState(app.n_ctx);
-  const [gpu, setGpu] = useState(app.gpu_layers);
+  const w = app.workspace;
+  const [history, setHistory] = useState(w.history_tokens);
+  const [reply, setReply] = useState(w.reply_tokens);
+  const [gpu, setGpu] = useState(w.gpu_layers);
   useEffect(() => {
-    setNCtx(app.n_ctx);
-    setGpu(app.gpu_layers);
-  }, [app.n_ctx, app.gpu_layers]);
-  const changed = nCtx !== app.n_ctx || gpu !== app.gpu_layers;
+    setHistory(w.history_tokens);
+    setReply(w.reply_tokens);
+    setGpu(w.gpu_layers);
+  }, [w.history_tokens, w.reply_tokens, w.gpu_layers]);
+  const changed = history !== w.history_tokens || reply !== w.reply_tokens || gpu !== w.gpu_layers;
 
   return (
     <>
-      <label htmlFor="n-ctx" title="一度に扱えるトークン数(プロンプト + 返事)。変えるとコンテキストだけ作り直す(モデルは読み直さない)">
-        コンテキスト長
+      <label htmlFor="history-tokens" title="モデルに渡す文字列(これまでの会話)のトークン数の上限。超えたら会話の設定の compact で収める">
+        会話の上限
       </label>
-      <NumberInput id="n-ctx" value={nCtx} min={256} step={1024} onChange={setNCtx} />
+      <NumberInput id="history-tokens" value={history} min={512} step={1024} onChange={setHistory} />
+
+      <label htmlFor="reply-tokens" title="1回の返事で生成するトークン数の上限(思考 + 答え)">
+        返事の上限
+      </label>
+      <NumberInput id="reply-tokens" value={reply} min={256} step={1024} onChange={setReply} />
+
+      <p className="hint">
+        作業領域: <strong>{(history + reply).toLocaleString()}</strong> トークン(会話の上限 + 返事の上限)。
+        会話を上限まで詰めても、返事を上限まで書ける大きさを確保します。変えても、モデルは読み直しません。
+      </p>
 
       <label htmlFor="gpu-layers" title="GPU に載せる層の数。モデルの層数以上なら全部 GPU。変えるとモデルを読み直す">
         GPU に載せる層の数
       </label>
       <NumberInput id="gpu-layers" value={gpu} min={0} step={1} onChange={setGpu} />
 
-      <button className="apply" disabled={disabled || !changed} onClick={() => onApply(nCtx, gpu)}>適用</button>
+      <button
+        className="apply"
+        disabled={disabled || !changed}
+        onClick={() => onApply({ ...w, history_tokens: history, reply_tokens: reply, gpu_layers: gpu })}
+      >
+        適用
+      </button>
     </>
   );
 }

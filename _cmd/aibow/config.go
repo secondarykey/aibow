@@ -67,6 +67,9 @@ type appConfig struct {
 	// app は、画面で変えられるアプリ全体の設定の初期値。
 	// DB にまだ値が無いときだけ使う(画面で一度変えると DB の値が優先される)。
 	app aibow.AppSettings
+
+	// notices は起動時に画面のトーストで伝えること(使われなくなった環境変数など)。ログにも出す
+	notices []string
 }
 
 // defaultSystemPrompt は新しい会話の既定のシステムプロンプト(画面で変えられる)。
@@ -86,16 +89,33 @@ func loadConfig() (appConfig, error) {
 		dbPath:       env.str("AIBOW_DB", defaultDBPath()),
 		initialModel: os.Getenv("AIBOW_MODEL"),
 		app: aibow.AppSettings{
-			NCtx:      env.int("AIBOW_CTX", 16384),
-			GPULayers: env.int("AIBOW_GPU_LAYERS", 999), // 999 = 全部 GPU に載せる
+			Workspace: aibow.WorkspaceSettings{
+				GPULayers:     env.int("AIBOW_GPU_LAYERS", 999), // 999 = 全部 GPU に載せる
+				HistoryTokens: env.int("AIBOW_HISTORY_TOKENS", 8192),
+				ReplyTokens:   env.int("AIBOW_MAX_TOKENS", 8192),
+			},
 			Defaults: aibow.ConversationSettings{
 				System:          defaultSystemPrompt,
-				MaxTokens:       env.int("AIBOW_MAX_TOKENS", 8192),
 				Temperature:     0.7,
 				Think:           true,
 				PresencePenalty: env.float("AIBOW_PRESENCE_PENALTY", 1.5),
+				Compact:         aibow.CompactSummary,
 			},
 		},
+	}
+	// AIBOW_CTX(コンテキスト長)は、会話の上限 + 返事の上限から aibow が計算するようになったので使わない
+	if v := os.Getenv("AIBOW_CTX"); v != "" {
+		c.notices = append(c.notices, fmt.Sprintf("環境変数 AIBOW_CTX(%s)は使われなくなりました。"+
+			"作業領域の大きさは「会話の上限 + 返事の上限」から計算します。"+
+			"会話の上限は AIBOW_HISTORY_TOKENS、返事の上限は AIBOW_MAX_TOKENS か、画面の設定で変えてください", v))
+	}
+	for _, n := range []struct {
+		key string
+		v   int
+	}{{"AIBOW_HISTORY_TOKENS", c.app.Workspace.HistoryTokens}, {"AIBOW_MAX_TOKENS", c.app.Workspace.ReplyTokens}} {
+		if n.v <= 0 {
+			env.errs = append(env.errs, fmt.Errorf("%s は 1 以上で指定してください: %d", n.key, n.v))
+		}
 	}
 	if _, err := os.Stat(c.engine.LibPath); err != nil {
 		// 相対パスのままだと「どこを探したのか」が分からないので、絶対パスで出す
@@ -138,8 +158,8 @@ func pickInitialModel(cfg appConfig, app aibow.AppSettings, models []aibow.Model
 	if cfg.initialModel != "" {
 		return cfg.catalog.Find(cfg.initialModel)
 	}
-	if app.LastModel != "" {
-		m, err := cfg.catalog.Find(app.LastModel)
+	if app.Workspace.Model != "" {
+		m, err := cfg.catalog.Find(app.Workspace.Model)
 		if err == nil {
 			return m, nil
 		}

@@ -3,6 +3,7 @@ package aibow
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -38,12 +39,15 @@ func (g *fakeGen) Generate(ctx context.Context, messages []Message, opt Generate
 	return GenerateStats{GenTokens: 10, StopReason: reason}, nil
 }
 
-var testDefaults = ConversationSettings{System: "あなたはテスト用です。", MaxTokens: 100, Temperature: 0.7, Think: true, PresencePenalty: 1.5}
+var testDefaults = ConversationSettings{System: "あなたはテスト用です。", Temperature: 0.7, Think: true, PresencePenalty: 1.5, Compact: CompactSummary}
+
+// testWorkspace は会話の上限と返事の上限。fakeGen は1文字を1トークンと数えるので、上限は文字数で考える
+var testWorkspace = WorkspaceSettings{HistoryTokens: 100000, ReplyTokens: 100}
 
 func newTestConversations(t *testing.T, g *fakeGen) (*Conversations, *memStore) {
 	t.Helper()
 	st := newMemStore()
-	return NewConversations(st, g, testDefaults), st
+	return NewConversations(st, g, AppSettings{Workspace: testWorkspace, Defaults: testDefaults}), st
 }
 
 // send は Send を呼び、渡されたイベントを返す。
@@ -157,13 +161,14 @@ func TestSettingsArePerConversation(t *testing.T) {
 
 	// a の設定だけを変える
 	changed := testDefaults
-	changed.System, changed.MaxTokens, changed.Temperature, changed.Think, changed.PresencePenalty = "", 42, 0, false, 0
+	changed.System, changed.Temperature, changed.Think, changed.PresencePenalty, changed.Compact = "", 0, false, 0, CompactNone
 	if err := cs.UpdateSettings(a.ID, changed); err != nil {
 		t.Fatal(err)
 	}
 
 	send(t, cs, a, "x")
-	if g.gotOpt != (GenerateOptions{Think: false, Temperature: 0, MaxTokens: 42, PresencePenalty: 0}) {
+	// 返事の上限は会話ごとではなく、アプリ全体の設定
+	if g.gotOpt != (GenerateOptions{Think: false, Temperature: 0, MaxTokens: 100, PresencePenalty: 0}) {
 		t.Errorf("a の設定が効いていません: %+v", g.gotOpt)
 	}
 	if g.gotMessages[0].Role != "user" {
@@ -171,7 +176,7 @@ func TestSettingsArePerConversation(t *testing.T) {
 	}
 
 	send(t, cs, b, "x")
-	if g.gotOpt.MaxTokens != 100 || !g.gotOpt.Think || g.gotMessages[0].Role != "system" {
+	if g.gotOpt.Temperature != 0.7 || !g.gotOpt.Think || g.gotMessages[0].Role != "system" {
 		t.Errorf("b は既定の設定のままのはずです: %+v %+v", g.gotOpt, g.gotMessages)
 	}
 
@@ -198,7 +203,7 @@ func TestSettingsArePerConversation(t *testing.T) {
 	if b2, _, _ := cs.Get(b.ID); b2.Settings != testDefaults {
 		t.Errorf("既定を変えたら今ある会話まで変わりました: %+v", b2.Settings)
 	}
-	app, err := LoadAppSettings(st, AppSettings{Defaults: testDefaults})
+	app, _, err := LoadAppSettings(st, AppSettings{Defaults: testDefaults})
 	if err != nil || app.Defaults != changed {
 		t.Errorf("既定が保存されていません: %+v %v", app.Defaults, err)
 	}
@@ -277,21 +282,67 @@ func TestOnlyOneGenerationAtATime(t *testing.T) {
 
 func TestLoadAppSettingsPrefersStoredValues(t *testing.T) {
 	st := newMemStore()
-	initial := AppSettings{NCtx: 16384, GPULayers: 999, Defaults: testDefaults}
-
-	got, err := LoadAppSettings(st, initial)
-	if err != nil || got != initial {
-		t.Fatalf("保存が空なら初期値のまま: %+v %v", got, err)
+	initial := AppSettings{
+		Workspace: WorkspaceSettings{GPULayers: 999, HistoryTokens: 8192, ReplyTokens: 8192},
+		Defaults:  testDefaults,
 	}
 
-	SaveAppSetting(st, SettingNCtx, 4096)
+	got, notes, err := LoadAppSettings(st, initial)
+	if err != nil || got != initial || len(notes) != 0 {
+		t.Fatalf("保存が空なら初期値のまま: %+v %v %v", got, notes, err)
+	}
+
+	SaveAppSetting(st, SettingHistoryTokens, 4096)
 	SaveAppSetting(st, SettingLastModel, "ollama:qwen3.5:4b")
-	got, err = LoadAppSettings(st, initial)
+	got, _, err = LoadAppSettings(st, initial)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.NCtx != 4096 || got.LastModel != "ollama:qwen3.5:4b" || got.GPULayers != 999 {
+	w := got.Workspace
+	if w.HistoryTokens != 4096 || w.ReplyTokens != 8192 || w.Model != "ollama:qwen3.5:4b" || w.GPULayers != 999 {
 		t.Errorf("保存した値が優先されていません: %+v", got)
+	}
+	if w.ContextSize() != 4096+8192 {
+		t.Errorf("作業領域は会話の上限 + 返事の上限: %d", w.ContextSize())
+	}
+}
+
+// 古い版の DB: コンテキスト長(n_ctx)と、会話ごとの max_tokens が入った既定の設定
+func TestLoadAppSettingsMigratesNCtx(t *testing.T) {
+	initial := AppSettings{Workspace: WorkspaceSettings{HistoryTokens: 8192, ReplyTokens: 8192}, Defaults: testDefaults}
+	for _, tc := range []struct {
+		name                string
+		nCtx, maxTokens     int // maxTokens が 0 なら既定の設定を保存しない
+		wantHistory, wantRe int
+	}{
+		{"n_ctx − 返事の上限", 16384, 4096, 12288, 4096},
+		{"最低 2048", 8192, 8192, 2048, 8192},
+		{"既定の設定が無ければ初期値の返事の上限", 20000, 0, 20000 - 8192, 8192},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			st := newMemStore()
+			SaveAppSetting(st, SettingNCtx, tc.nCtx)
+			if tc.maxTokens > 0 {
+				st.SetAppSetting(SettingDefaults, fmt.Sprintf(`{"system":"古い","max_tokens":%d,"temperature":0.5,"think":true}`, tc.maxTokens))
+			}
+			got, notes, err := LoadAppSettings(st, initial)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.Workspace.HistoryTokens != tc.wantHistory || got.Workspace.ReplyTokens != tc.wantRe || len(notes) != 1 {
+				t.Errorf("引き継ぎ: %+v %v(期待: %d + %d)", got.Workspace, notes, tc.wantHistory, tc.wantRe)
+			}
+			// 古い既定の設定は compact が無いので summary になる
+			if tc.maxTokens > 0 && (got.Defaults.System != "古い" || got.Defaults.Compact != CompactSummary) {
+				t.Errorf("古い既定の設定: %+v", got.Defaults)
+			}
+			// 引き継いだ値は保存されていて、次の起動では引き継ぎ直さない(返事の上限だけ変えても会話の上限がずれない)
+			SaveAppSetting(st, SettingReplyTokens, 1000)
+			again, notes, _ := LoadAppSettings(st, initial)
+			if again.Workspace.HistoryTokens != tc.wantHistory || again.Workspace.ReplyTokens != 1000 || len(notes) != 0 {
+				t.Errorf("2回目の起動: %+v %v", again.Workspace, notes)
+			}
+		})
 	}
 }
 
@@ -345,7 +396,7 @@ func TestChangesDuringGenerationAreKept(t *testing.T) {
 
 	// 生成中に画面で名前と設定を変える
 	changed := testDefaults
-	changed.MaxTokens = 7
+	changed.Temperature = 0.1
 	if err := cs.Rename(c.ID, "生成中に変えた名前"); err != nil {
 		t.Fatal(err)
 	}

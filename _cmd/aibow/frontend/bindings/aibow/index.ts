@@ -9,5 +9,6 @@ export type {
     ModelEntry,
     ModelInfo,
     ReplyStats,
-    StoredMessage
+    StoredMessage,
+    WorkspaceSettings
 } from "./models.js";

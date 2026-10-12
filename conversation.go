@@ -57,20 +57,51 @@ type Conversations struct {
 
 	mu       sync.Mutex
 	defaults ConversationSettings // 新しい会話の既定の設定
+	limits   limits               // 会話の上限と返事の上限(アプリ全体の設定)
 }
 
-func NewConversations(store Store, gen Generator, defaults ConversationSettings) *Conversations {
-	return &Conversations{store: store, gen: gen, defaults: defaults}
+// limits は会話の上限と返事の上限。WorkspaceSettings のうち、会話の仕組みが使う2つ。
+type limits struct {
+	history int // 会話の上限: モデルに渡す文字列のトークン数の上限
+	reply   int // 返事の上限: 1回の返事で生成するトークン数の上限
+}
+
+// NewConversations は会話の仕組みを作る。app からは新しい会話の既定の設定と、会話の上限・返事の上限を使う。
+func NewConversations(store Store, gen Generator, app AppSettings) *Conversations {
+	return &Conversations{
+		store: store, gen: gen, defaults: app.Defaults.normalized(),
+		limits: limits{history: app.Workspace.HistoryTokens, reply: app.Workspace.ReplyTokens},
+	}
+}
+
+// SetLimits は会話の上限と返事の上限を変える。次の送信から効く。
+// エンジンの作業領域の作り直し(合計の大きさ)は、呼ぶ側(_cmd/aibow)が先に行う。
+func (cs *Conversations) SetLimits(history, reply int) {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+	cs.limits = limits{history: history, reply: reply}
+}
+
+func (cs *Conversations) currentLimits() limits {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+	return cs.limits
 }
 
 // List は会話の一覧を、更新の新しい順に返す。
 func (cs *Conversations) List() ([]Conversation, error) {
-	return cs.store.ListConversations()
+	list, err := cs.store.ListConversations()
+	for i := range list {
+		list[i].Settings = list[i].Settings.normalized()
+	}
+	return list, err
 }
 
 // Get は会話1つと、その発言を古い順に返す。
 func (cs *Conversations) Get(id uuid.UUID) (Conversation, []StoredMessage, error) {
-	return cs.store.Conversation(id)
+	c, ms, err := cs.store.Conversation(id)
+	c.Settings = c.Settings.normalized()
+	return c, ms, err
 }
 
 // Create は新しい会話を作る。settings が nil なら「新しい会話の既定の設定」をコピーする。
@@ -79,7 +110,7 @@ func (cs *Conversations) Get(id uuid.UUID) (Conversation, []StoredMessage, error
 func (cs *Conversations) Create(settings *ConversationSettings) (Conversation, error) {
 	s := cs.Defaults()
 	if settings != nil {
-		s = *settings
+		s = settings.normalized()
 	}
 	now := time.Now()
 	c := Conversation{
@@ -123,7 +154,7 @@ func (cs *Conversations) UpdateSettings(id uuid.UUID, s ConversationSettings) er
 	if err != nil {
 		return err
 	}
-	c.Settings = s
+	c.Settings = s.normalized()
 	return cs.store.UpdateConversation(c)
 }
 
@@ -136,6 +167,7 @@ func (cs *Conversations) Defaults() ConversationSettings {
 
 // SetDefaults は新しい会話の既定の設定を変えて保存する。今ある会話には効かない。
 func (cs *Conversations) SetDefaults(s ConversationSettings) error {
+	s = s.normalized()
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 	if err := SaveAppSetting(cs.store, SettingDefaults, s); err != nil {
@@ -164,7 +196,7 @@ func (cs *Conversations) Send(ctx context.Context, id uuid.UUID, text string, em
 	}
 	defer cs.generating.Store(nil)
 
-	conv, history, err := cs.store.Conversation(id)
+	conv, history, err := cs.Get(id)
 	if err != nil {
 		fail(err)
 		return
@@ -215,7 +247,7 @@ func (cs *Conversations) generate(ctx context.Context, conv Conversation, histor
 	opt := GenerateOptions{
 		Think:           set.Think,
 		Temperature:     float32(set.Temperature),
-		MaxTokens:       set.MaxTokens,
+		MaxTokens:       cs.currentLimits().reply,
 		PresencePenalty: float32(set.PresencePenalty),
 	}
 	model := ""

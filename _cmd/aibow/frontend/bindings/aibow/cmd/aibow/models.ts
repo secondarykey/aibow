@@ -39,4 +39,9 @@ export interface ModelsResult {
      * 起動に失敗した理由。あれば何もできない
      */
     "error"?: string;
+
+    /**
+     * 起動時に伝えること(使われなくなった環境変数など)
+     */
+    "notices": string[] | null;
 }

@@ -9,9 +9,11 @@ import * as uuid$0 from "../uuid/models.js";
  * AppSettings はアプリ全体の設定。
  */
 export interface AppSettings {
-    "n_ctx": number;
-    "gpu_layers": number;
-    "last_model": string;
+    "workspace": WorkspaceSettings;
+
+    /**
+     * 新しい会話の既定の設定
+     */
     "defaults": ConversationSettings;
 }
 
@@ -51,17 +53,15 @@ export interface Conversation {
 
 /**
  * ConversationSettings は会話ごとの設定。変えると次の送信から効く。
+ * 
+ * 返事の上限(以前の max_tokens)はアプリ全体の設定に移した(WorkspaceSettings)。
+ * 古い会話の JSON に max_tokens が残っていても、読むときに無視される。
  */
 export interface ConversationSettings {
     /**
      * システムプロンプト。空なら付けない
      */
     "system": string;
-
-    /**
-     * 1回の返事で生成するトークン数の上限(思考 + 答え)
-     */
-    "max_tokens": number;
 
     /**
      * 0 なら毎回一番点数の高いトークンを選ぶ
@@ -77,6 +77,11 @@ export interface ConversationSettings {
      * 同じ言葉を繰り返しにくくする強さ。0 で無効
      */
     "presence_penalty": number;
+
+    /**
+     * 会話の上限を超えたときの方式: none / truncate / summary
+     */
+    "compact": string;
 }
 
 /**
@@ -144,7 +149,7 @@ export interface ModelInfo {
     "gpu_layers": number;
 
     /**
-     * コンテキスト長
+     * 作業領域の大きさ(コンテキスト長)
      */
     "n_ctx": number;
 
@@ -243,4 +248,35 @@ export interface StoredMessage {
      */
     "stats": ReplyStats | null;
     "created_at": string;
+}
+
+/**
+ * WorkspaceSettings は作業領域(コンテキスト)に関わる設定の塊。
+ * 
+ * どれも変えるとエンジンに手を入れる必要がある(モデルの読み直しか、作業領域の作り直し)。
+ * あとで「プロファイル」(設定に名前を付けて切り替える)を作るときは、この塊をそのままプロファイルの中に移す。
+ * 今のアプリ全体の設定は「名前のない既定のプロファイル」という位置づけ。
+ */
+export interface WorkspaceSettings {
+    /**
+     * 最後に使ったモデルの ID(app_settings のキーは last_model)
+     */
+    "model": string;
+
+    /**
+     * GPU に載せる層の数
+     */
+    "gpu_layers": number;
+
+    /**
+     * 利用者が気にするのは「会話をどれだけ続けられるか」なので、それを直接設定させる。
+     * 作業領域の大きさは、この2つの合計を aibow が計算して確保する(ContextSize)。
+     * 会話の上限: モデルに渡す文字列のトークン数の上限。compact の基準
+     */
+    "history_tokens": number;
+
+    /**
+     * 返事の上限: 1回の返事で生成するトークン数の上限(思考 + 答え)
+     */
+    "reply_tokens": number;
 }

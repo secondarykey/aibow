@@ -15,8 +15,14 @@ export interface ToastItem {
   sticky?: boolean; // 消さずに出したままにする(終わるまで時間がかかる処理。くるくる回るアイコンを付ける)
 }
 
+export interface NotifyOptions {
+  key?: string;
+  sticky?: boolean;
+  ms?: number; // 消えるまでの時間(既定 TOAST_MS)。読む量が多いお知らせは長くする。クリックでも消える
+}
+
 export interface Notifier {
-  notify(text: string, opts?: { key?: string; sticky?: boolean }): void;
+  notify(text: string, opts?: NotifyOptions): void;
   dismissKey(key: string): void; // 出したままのトーストを、置き換えずに消す(失敗したときなど)
 }
 
@@ -31,7 +37,7 @@ export function useToasts(): Notifier & { toasts: ToastItem[]; dismiss(id: numbe
     setToasts(prev => prev.filter(t => t.id !== id));
   }, []);
 
-  const notify = useCallback((text: string, opts: { key?: string; sticky?: boolean } = {}) => {
+  const notify = useCallback((text: string, opts: NotifyOptions = {}) => {
     const id = nextId.current++;
     setToasts(prev => {
       // 同じ key のものは消して、新しいものに置き換える
@@ -43,7 +49,7 @@ export function useToasts(): Notifier & { toasts: ToastItem[]; dismiss(id: numbe
       }
       return [...prev.filter(t => !(opts.key && t.key === opts.key)), { id, text, ...opts }];
     });
-    if (!opts.sticky) timers.current.set(id, window.setTimeout(() => dismiss(id), TOAST_MS));
+    if (!opts.sticky) timers.current.set(id, window.setTimeout(() => dismiss(id), opts.ms ?? TOAST_MS));
   }, [dismiss]);
 
   const dismissKey = useCallback((key: string) => {

@@ -17,7 +17,7 @@ import * as uuid$0 from "../../../uuid/models.js";
 import * as $models from "./models.js";
 
 /**
- * AppSettings はアプリ全体の設定(コンテキスト長・GPU の層数・新しい会話の既定の設定)を返す。
+ * AppSettings はアプリ全体の設定(会話の上限・返事の上限・GPU の層数・新しい会話の既定の設定)を返す。
  */
 export function AppSettings(): $CancellablePromise<aibow$0.AppSettings> {
     return $Call.ByID(1212015075);
@@ -82,14 +82,6 @@ export function Send(id: uuid$0.UUID, text: string): $CancellablePromise<void> {
 }
 
 /**
- * SetContextSize はコンテキスト長を変える。モデルは読み直さず、コンテキスト(KV キャッシュ)だけ作り直す。
- * モデルが未読み込みなら nil を返す(次に読み込むときから効く)。
- */
-export function SetContextSize(n: number): $CancellablePromise<aibow$0.ModelInfo | null> {
-    return $Call.ByID(3021476409, n);
-}
-
-/**
  * SetDefaultSettings は新しい会話の既定の設定を変える。今ある会話には効かない。
  */
 export function SetDefaultSettings(settings: aibow$0.ConversationSettings): $CancellablePromise<void> {
@@ -102,6 +94,15 @@ export function SetDefaultSettings(settings: aibow$0.ConversationSettings): $Can
  */
 export function SetGPULayers(n: number): $CancellablePromise<aibow$0.ModelInfo | null> {
     return $Call.ByID(128737747, n);
+}
+
+/**
+ * SetLimits は会話の上限と返事の上限を変える。
+ * 作業領域(コンテキスト)を「会話の上限 + 返事の上限」の大きさで作り直す。モデルは読み直さない。
+ * モデルが未読み込みなら nil を返す(次に読み込むときから効く)。
+ */
+export function SetLimits(history: number, reply: number): $CancellablePromise<aibow$0.ModelInfo | null> {
+    return $Call.ByID(2159064713, history, reply);
 }
 
 /**

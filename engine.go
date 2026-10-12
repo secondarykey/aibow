@@ -28,7 +28,7 @@ import (
 // NCtx と GPULayers は、あとから SetContextSize / SetGPULayers で変えられる。
 type EngineConfig struct {
 	LibPath   string // llama.cpp の DLL が入っているフォルダ
-	NCtx      int    // コンテキスト長: 一度に扱えるトークン数(プロンプト + 返事)
+	NCtx      int    // 作業領域の大きさ: 一度に扱えるトークン数(プロンプト + 返事)。会話の上限 + 返事の上限
 	GPULayers int    // GPU に載せる層の数。モデルの層数以上なら全部 GPU
 	LlamaLog  bool   // llama.cpp 自身のログ(GPU への割り当てなど)を表示するか
 }
@@ -53,7 +53,7 @@ type ModelInfo struct {
 	SizeGB    float64 `json:"size_gb"`    // 重みのサイズ
 	Layers    int32   `json:"layers"`     // 層の数
 	GPULayers int     `json:"gpu_layers"` // GPU に載せる層の数(指定値)
-	NCtx      uint32  `json:"n_ctx"`      // コンテキスト長
+	NCtx      uint32  `json:"n_ctx"`      // 作業領域の大きさ(コンテキスト長)
 	LoadSec   float64 `json:"load_sec"`   // 読み込みにかかった秒数
 
 	path string // GGUF ファイルの場所(読み込みに失敗したとき、元に戻すために使う)
@@ -184,7 +184,7 @@ func (e *Engine) replace(m ModelEntry, undo func()) (*ModelInfo, error) {
 	return info, nil
 }
 
-// SetContextSize はコンテキスト長を変える。モデル本体(重み)は読み直さず、作業領域だけを作り直す。
+// SetContextSize は作業領域の大きさ(コンテキスト長)を変える。モデル本体(重み)は読み直さず、作業領域だけを作り直す。
 //
 // コンテキスト = 推論用の作業領域で、KV キャッシュもここにある。重みとは別に確保されるので、
 // 長さを変えるときは作業領域だけ作り直せばよい(重みの読み込みより速い)。
@@ -214,7 +214,7 @@ func (e *Engine) SetContextSize(n int) (*ModelInfo, error) {
 		if rerr != nil {
 			// 元の長さでも作れないなら、モデルごと解放して「未読み込み」にする
 			e.unload()
-			return nil, fmt.Errorf("%w(元のコンテキスト長にも戻せなかったので、モデルを解放しました: %v)", err, rerr)
+			return nil, fmt.Errorf("%w(元の大きさにも戻せなかったので、モデルを解放しました: %v)", err, rerr)
 		}
 		e.lctx = back
 		return nil, err
@@ -279,7 +279,7 @@ func (e *Engine) newContext() (llama.Context, error) {
 	lctx, err := llama.InitFromModel(e.model, cp)
 	if err != nil || lctx == 0 {
 		return 0, fmt.Errorf("コンテキスト(長さ %d)を作れません。VRAM が足りない可能性があります。"+
-			"設定のコンテキスト長か、GPU に載せる層の数を減らしてください", e.cfg.NCtx)
+			"設定の会話の上限・返事の上限か、GPU に載せる層の数を減らしてください", e.cfg.NCtx)
 	}
 	return lctx, nil
 }
@@ -338,7 +338,8 @@ func (e *Engine) Generate(
 
 	nCtx := int(llama.NCtx(e.lctx))
 	if len(tokens) >= nCtx {
-		return st, fmt.Errorf("会話が長すぎます(%d トークン / 上限 %d)。新しい会話で始め直すか、設定のコンテキスト長を増やしてください", len(tokens), nCtx)
+		// 会話の仕組み(compact.go)が会話の上限に収めてから渡すので、ふつうはここに来ない
+		return st, fmt.Errorf("会話が長すぎます(%d トークン / 作業領域 %d)。新しい会話で始め直すか、設定の会話の上限を増やしてください", len(tokens), nCtx)
 	}
 
 	// 4. プロンプトをモデルに読ませる。KV キャッシュに残っている部分は飛ばす。

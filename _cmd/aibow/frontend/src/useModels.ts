@@ -10,6 +10,9 @@ import type { Transcript } from "./transcript";
 import type { Notifier } from "./toast";
 import { errorMessage } from "./errors";
 
+// 起動時のお知らせ(使われなくなった環境変数など)を出しておく時間。文が長いので普通のトーストより長くする
+const NOTICE_MS = 20000;
+
 // unavailable は起動に失敗した状態(lib が無いなど)。何もできないので、ずっと操作できなくする
 export type Busy = "idle" | "generating" | "loading" | "unavailable";
 
@@ -36,6 +39,7 @@ export function useModels(n: Notifier, t: Pick<Transcript, "addError">, setBusy:
   const startupLoading = useRef(false);
   const startupDone = useRef(false);
   const unavailable = useRef(false);
+  const noticesShown = useRef(false);
 
   const reload = useCallback(async () => {
     const d = await ChatService.Models();
@@ -43,6 +47,7 @@ export function useModels(n: Notifier, t: Pick<Transcript, "addError">, setBusy:
       // リリース版はコンソールが無いので、起動に失敗した理由はここでしか見えない
       if (!unavailable.current) {
         unavailable.current = true;
+        for (const text of d.notices ?? []) notify(text, { ms: NOTICE_MS });
         setBusy("unavailable");
         addError(`起動できません: ${d.error}`);
       }
@@ -51,6 +56,11 @@ export function useModels(n: Notifier, t: Pick<Transcript, "addError">, setBusy:
     setModels(d.models ?? []);
     setCurrent(d.current);
     setGpu(d.gpu);
+    // 起動時のお知らせ(使われなくなった環境変数など)。一覧は何度も取り直すので、最初の1回だけ出す
+    if (!noticesShown.current) {
+      noticesShown.current = true;
+      for (const text of d.notices ?? []) notify(text, { ms: NOTICE_MS });
+    }
     if (d.loading && !startupLoading.current && !startupDone.current) {
       startupLoading.current = true;
       setLoading(true);

@@ -19,7 +19,7 @@ export function ModelBar({ models, disabled }: Props) {
   const info = loading
     ? "読み込み中…"
     : current
-      ? `${current.params_b.toFixed(1)}B ・ ${gpu ? "GPU" : "CPU"} ・ コンテキスト ${current.n_ctx} ・ 読み込み ${current.load_sec.toFixed(1)}s`
+      ? `${current.params_b.toFixed(1)}B ・ ${gpu ? "GPU" : "CPU"} ・ 作業領域 ${current.n_ctx.toLocaleString()} ・ 読み込み ${current.load_sec.toFixed(1)}s`
       : "モデル未読み込み";
 
   return (

@@ -47,12 +47,32 @@ type Conversation struct {
 }
 
 // ConversationSettings は会話ごとの設定。変えると次の送信から効く。
+//
+// 返事の上限(以前の max_tokens)はアプリ全体の設定に移した(WorkspaceSettings)。
+// 古い会話の JSON に max_tokens が残っていても、読むときに無視される。
 type ConversationSettings struct {
 	System          string  `json:"system"`           // システムプロンプト。空なら付けない
-	MaxTokens       int     `json:"max_tokens"`       // 1回の返事で生成するトークン数の上限(思考 + 答え)
 	Temperature     float64 `json:"temperature"`      // 0 なら毎回一番点数の高いトークンを選ぶ
 	Think           bool    `json:"think"`            // 思考させるか
 	PresencePenalty float64 `json:"presence_penalty"` // 同じ言葉を繰り返しにくくする強さ。0 で無効
+	Compact         string  `json:"compact"`          // 会話の上限を超えたときの方式: none / truncate / summary
+}
+
+// compact の方式(compact.go)
+const (
+	CompactNone     = "none"     // 何もしない。上限を超えたら生成する前に止める
+	CompactTruncate = "truncate" // 古い発言から順に、モデルに渡すのをやめる
+	CompactSummary  = "summary"  // 古い部分をモデル自身に要約させ、「要約 + 最近の発言」を渡す
+)
+
+// normalized は、この機能より前に保存された設定(compact が空)を、新しい会話の既定と同じ summary にする。
+func (s ConversationSettings) normalized() ConversationSettings {
+	switch s.Compact {
+	case CompactNone, CompactTruncate, CompactSummary:
+	default:
+		s.Compact = CompactSummary
+	}
+	return s
 }
 
 // StoredMessage は保存された発言1件。

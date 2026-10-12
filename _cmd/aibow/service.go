@@ -15,6 +15,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 	"sync"
 	"sync/atomic"
@@ -34,9 +35,12 @@ type ChatService struct {
 	// startupErr は起動に失敗した理由(lib が無いなど)。画面に表示する
 	startupErr error
 
-	// app はアプリ全体の設定(コンテキスト長・GPU の層数)。画面で変えると DB にも保存する
+	// app はアプリ全体の設定(作業領域に関わる設定)。画面で変えると DB にも保存する
 	appMu sync.Mutex
 	app   aibow.AppSettings
+
+	// notices は起動時に画面のトーストで伝えること(使われなくなった環境変数など)
+	notices []string
 
 	// initial は起動時に読み込むモデル。nil なら読み込まない(画面で選ぶ)。
 	initial *aibow.ModelEntry
@@ -51,15 +55,15 @@ type ChatService struct {
 }
 
 func NewChatService(engine *aibow.Engine, st aibow.Store, app aibow.AppSettings, catalog aibow.ModelCatalog,
-	initial *aibow.ModelEntry, startupErr error) *ChatService {
+	initial *aibow.ModelEntry, notices []string, startupErr error) *ChatService {
 	quit, cancel := context.WithCancel(context.Background())
 	s := &ChatService{
-		engine: engine, catalog: catalog, app: app, initial: initial, startupErr: startupErr,
+		engine: engine, catalog: catalog, app: app, initial: initial, notices: notices, startupErr: startupErr,
 		quit: quit, cancelQuit: cancel,
 	}
 	if startupErr == nil {
 		s.store = st
-		s.convs = aibow.NewConversations(st, engine, app.Defaults)
+		s.convs = aibow.NewConversations(st, engine, app)
 	}
 	return s
 }
@@ -101,17 +105,19 @@ type ModelsResult struct {
 	Loading string             `json:"loading,omitempty"` // 起動時に読み込み中のモデルの名前
 	GPU     bool               `json:"gpu"`
 	Error   string             `json:"error,omitempty"` // 起動に失敗した理由。あれば何もできない
+	Notices []string           `json:"notices"`         // 起動時に伝えること(使われなくなった環境変数など)
 }
 
 // Models は使えるモデルの一覧と、今読み込んでいるモデルを返す。
 func (s *ChatService) Models() ModelsResult {
 	if s.startupErr != nil {
-		return ModelsResult{Models: []aibow.ModelEntry{}, Error: s.startupErr.Error()}
+		return ModelsResult{Models: []aibow.ModelEntry{}, Error: s.startupErr.Error(), Notices: s.notices}
 	}
 	r := ModelsResult{
 		Models:  s.catalog.List(),
 		Current: s.engine.Info(),
 		GPU:     s.engine.HasGPU,
+		Notices: s.notices,
 	}
 	if name := s.loading.Load(); name != nil {
 		r.Loading = *name
@@ -144,18 +150,18 @@ func (s *ChatService) loadModel(m aibow.ModelEntry) (*aibow.ModelInfo, error) {
 		return nil, err
 	}
 	logModel("読み込み完了", i)
-	s.saveAppSetting(aibow.SettingLastModel, m.ID, func(a *aibow.AppSettings) { a.LastModel = m.ID })
+	s.saveAppSetting(aibow.SettingLastModel, m.ID, func(a *aibow.AppSettings) { a.Workspace.Model = m.ID })
 	return i, nil
 }
 
 func logModel(what string, i *aibow.ModelInfo) {
-	log.Printf("%s (%.1f 秒): %s / %.2fB パラメータ / %.2f GB / %d 層 / GPU に載せる層: %d / コンテキスト長: %d",
+	log.Printf("%s (%.1f 秒): %s / %.2fB パラメータ / %.2f GB / %d 層 / GPU に載せる層: %d / 作業領域: %d トークン",
 		what, i.LoadSec, i.Desc, i.ParamsB, i.SizeGB, i.Layers, i.GPULayers, i.NCtx)
 }
 
 // ---- アプリ全体の設定 -------------------------------------------------------------------
 
-// AppSettings はアプリ全体の設定(コンテキスト長・GPU の層数・新しい会話の既定の設定)を返す。
+// AppSettings はアプリ全体の設定(会話の上限・返事の上限・GPU の層数・新しい会話の既定の設定)を返す。
 func (s *ChatService) AppSettings() (aibow.AppSettings, error) {
 	if s.startupErr != nil {
 		return aibow.AppSettings{}, s.startupErr
@@ -167,21 +173,27 @@ func (s *ChatService) AppSettings() (aibow.AppSettings, error) {
 	return a, nil
 }
 
-// SetContextSize はコンテキスト長を変える。モデルは読み直さず、コンテキスト(KV キャッシュ)だけ作り直す。
+// SetLimits は会話の上限と返事の上限を変える。
+// 作業領域(コンテキスト)を「会話の上限 + 返事の上限」の大きさで作り直す。モデルは読み直さない。
 // モデルが未読み込みなら nil を返す(次に読み込むときから効く)。
-func (s *ChatService) SetContextSize(n int) (*aibow.ModelInfo, error) {
+func (s *ChatService) SetLimits(history, reply int) (*aibow.ModelInfo, error) {
 	if s.startupErr != nil {
 		return nil, s.startupErr
 	}
-	i, err := s.engine.SetContextSize(n)
+	if history <= 0 || reply <= 0 {
+		return nil, errors.New("会話の上限と返事の上限は 1 以上にしてください")
+	}
+	w := aibow.WorkspaceSettings{HistoryTokens: history, ReplyTokens: reply}
+	i, err := s.engine.SetContextSize(w.ContextSize())
 	if err != nil {
 		log.Printf("※ %v", err)
 		return nil, err
 	}
-	if i != nil {
-		log.Printf("コンテキスト長を %d にしました(モデルは読み直していません)", i.NCtx)
-	}
-	s.saveAppSetting(aibow.SettingNCtx, n, func(a *aibow.AppSettings) { a.NCtx = n })
+	s.convs.SetLimits(history, reply)
+	log.Printf("会話の上限 %d + 返事の上限 %d = 作業領域 %d トークンにしました(モデルは読み直していません)",
+		history, reply, w.ContextSize())
+	s.saveAppSetting(aibow.SettingHistoryTokens, history, func(a *aibow.AppSettings) { a.Workspace.HistoryTokens = history })
+	s.saveAppSetting(aibow.SettingReplyTokens, reply, func(a *aibow.AppSettings) { a.Workspace.ReplyTokens = reply })
 	return i, nil
 }
 
@@ -199,7 +211,7 @@ func (s *ChatService) SetGPULayers(n int) (*aibow.ModelInfo, error) {
 	if i != nil {
 		logModel("GPU に載せる層を変えて読み直しました", i)
 	}
-	s.saveAppSetting(aibow.SettingGPULayers, n, func(a *aibow.AppSettings) { a.GPULayers = n })
+	s.saveAppSetting(aibow.SettingGPULayers, n, func(a *aibow.AppSettings) { a.Workspace.GPULayers = n })
 	return i, nil
 }
 

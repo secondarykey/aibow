@@ -58,6 +58,9 @@ func main() {
 	// 起動に失敗しても(lib が無いなど)ウィンドウは出し、理由を画面に表示する。
 	// リリース版(wails3 build)はコンソールが無く、ログだけでは何も見えずに終わってしまうため。
 	cfg, err := loadConfig()
+	for _, n := range cfg.notices {
+		log.Printf("※ %s", n)
+	}
 	var st *store.SQLite
 	var settings aibow.AppSettings
 	var engine *aibow.Engine
@@ -80,7 +83,7 @@ func main() {
 		Name:        "aibow",
 		Description: "ローカルLLMを自分で動かして仕組みを学ぶチャット",
 		Services: []application.Service{
-			application.NewService(NewChatService(engine, st, settings, cfg.catalog, initial, err)),
+			application.NewService(NewChatService(engine, st, settings, cfg.catalog, initial, cfg.notices, err)),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
@@ -124,11 +127,16 @@ func openStore(cfg appConfig) (*store.SQLite, aibow.AppSettings, error) {
 		return nil, cfg.app, err
 	}
 	log.Printf("会話の保存先: %s", absPath(cfg.dbPath))
-	app, err := aibow.LoadAppSettings(st, cfg.app)
+	app, notes, err := aibow.LoadAppSettings(st, cfg.app)
 	if err != nil {
 		st.Close()
 		return nil, cfg.app, err
 	}
+	for _, n := range notes {
+		log.Printf("%s", n)
+	}
+	w := app.Workspace
+	log.Printf("会話の上限 %d + 返事の上限 %d = 作業領域 %d トークン", w.HistoryTokens, w.ReplyTokens, w.ContextSize())
 	return st, app, nil
 }
 
@@ -136,7 +144,8 @@ func openStore(cfg appConfig) (*store.SQLite, aibow.AppSettings, error) {
 // モデルの読み込み自体は、ウィンドウを出してから ChatService が裏で行う。
 func startEngine(cfg appConfig, app aibow.AppSettings) (*aibow.Engine, *aibow.ModelEntry, error) {
 	ec := cfg.engine
-	ec.NCtx, ec.GPULayers = app.NCtx, app.GPULayers // 画面で変えた値(DB)か、環境変数の値
+	// 画面で変えた値(DB)か、環境変数の値。作業領域は会話の上限 + 返事の上限
+	ec.NCtx, ec.GPULayers = app.Workspace.ContextSize(), app.Workspace.GPULayers
 	engine, err := aibow.NewEngine(ec)
 	if err != nil {
 		return nil, nil, err
