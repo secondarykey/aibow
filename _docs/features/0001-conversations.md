@@ -6,7 +6,7 @@
 
 > **0002(compact)で変わったこと**: 返事の上限トークン数は会話ごとの設定からアプリ全体の設定に移った。
 > アプリ全体の「コンテキスト長」は「会話の上限 + 返事の上限」から計算するようになり、`AIBOW_CTX` は廃止(`AIBOW_HISTORY_TOKENS` を追加)。
-> この仕様の本文は、決めた当時のまま残している。今の決まりは [0002-compact.md](0002-compact.md) と `AGENTS.md` を見る。
+> この仕様の本文は、決めた当時のまま残している。今の決まりは [0002-compact.md](0002-compact.md) と [conversations.md](../conversations.md) を見る。
 
 ## 目的
 

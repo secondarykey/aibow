@@ -1,0 +1,59 @@
+# _cmd/aibow(デスクトップアプリ)
+
+Wails v3 のデスクトップアプリです。ルートの `aibow` パッケージ(ライブラリ)を画面につなぎます。
+画面そのもの(レイアウト・フォーカス・スクロール・ウィンドウ・IME)は [_docs/ui.md](../../_docs/ui.md) にあります。
+
+## ファイル
+
+| ファイル | 役割 |
+|---|---|
+| `main.go` | Wails のアプリとウィンドウを作る(Frameless。タイトルバーは画面の `TitleBar.tsx`)。ウィンドウは起動時 720×820、最小 480×480 |
+| `config.go` | 環境変数の読み込み |
+| `service.go` | `ChatService`。画面と `aibow.Conversations` / `Engine` の中継だけをする(モデル・会話・設定(`SetLimits` など)・メーター(`Usage`)・`Send` / `Compact` / `StopSummary`)。compact のログもここで出す |
+| `frontend/src/` | チャット画面(React + TypeScript)。Vite でビルドした `frontend/dist` を `go:embed` で埋め込む。中身は [_docs/ui.md](../../_docs/ui.md) |
+| `frontend/bindings/` | `wails3 generate bindings` の生成物(コミットする。手で直さない) |
+| `build/` / `Taskfile.yml` | `wails3 init`(react テンプレート)由来のビルド設定。ios / android / docker は削除して `.gitignore` 済み |
+| `version` | バージョンの唯一の正。`//go:embed` で exe に入る。扱いは [_docs/deploy.md](../../_docs/deploy.md) |
+| `Taskfile.local.yml` | ローカルデプロイ用の個人のファイル。**Git に入れない(ひな形もコミットしない)**。[_docs/deploy.md](../../_docs/deploy.md) |
+| `go.mod` / ルートの `go.work` | `_cmd/aibow` は別モジュール(Wails に依存)。`go.work` でルートとまとめる |
+| `lib\` / `models\` | llama.cpp の DLL とモデル。Git には入れない |
+
+- Wails に依存するコードは `_cmd/aibow` だけに置く。会話や生成の仕組みはルートの `aibow` パッケージに置き、`ChatService` は中継に徹する
+- `lib\` / `models\` をアプリのフォルダに置くのは、モデルを動かすのがこのアプリだけだから(VRAM 8GB に2プロセス分は載らない)。
+  カレントフォルダから探すので、起動・準備は `_cmd/aibow` で行う
+
+## 環境変数
+
+`AIBOW_MODEL` / `AIBOW_MODELS_DIR` / `AIBOW_LIB` / `AIBOW_DB` / `AIBOW_HISTORY_TOKENS` / `AIBOW_MAX_TOKENS` / `AIBOW_GPU_LAYERS` / `AIBOW_PRESENCE_PENALTY` / `AIBOW_LLAMA_LOG`、
+Ollama の保存先は Ollama と同じ `OLLAMA_MODELS`。意味と既定値は README の表にある。
+
+- `AIBOW_CTX` は 0002 で廃止(設定されていたらログとトーストで伝える)
+- 新しい設定も `AIBOW_` で始まる環境変数にし、README の表に追加する
+- 画面で変えられる設定(会話の上限・返事の上限・GPU の層数・presence penalty)の環境変数は「DB にまだ値が無いときの初期値」で、画面で変えたら DB の値が優先
+
+## Wails とフロントエンドの方針
+
+- Wails は現在 v3.0.0-beta.26(`wails3` CLI と同じ版)。構成はユーザーの wails3 スキルの標準(`_cmd/<名前>/build/config.yml`・Taskfile・`wails3 dev`)に従う
+- フロントエンドは React + TypeScript + Vite(`wails3 init -t react` のテンプレート)。npm のパッケージは react / react-dom / @wailsio/runtime / react-icons(アイコン。Lucide の `react-icons/lu` を使う)と開発用の vite / typescript など。
+  それ以外を足すときは、理由と代替案を示してユーザーに確認する
+
+## 起動と終了
+
+- 起動時のモデルはウィンドウを出してから裏で読み込み、終わったら `models` イベントで画面に知らせる
+- 起動に失敗しても(lib が無い、環境変数の値が不正など)ウィンドウは出し、`Models()` の `error` で理由を画面に出す。
+  リリース版(`wails3 build`)はコンソールが無く、`log.Fatal` だと何も見えずに終わるため。起動時のエラーで `log.Fatal` しない
+- アプリ終了時は `ServiceShutdown` で生成を止める
+
+## Go と画面のやり取り
+
+- 画面 → Go は生成されたバインディング(`ChatService.Models()` など)で呼ぶ。Go のメソッドを変えたら `wails3 generate bindings -f '' -clean=true -ts -i` で作り直す
+  (Taskfile と同じフラグ。`-i` は interface 生成なので、画面で `new` しない)。`wails3 dev` / `wails3 build` は自動で作り直す
+- Go → 画面は Wails のイベント。`chat` イベントは `RegisterEvent[aibow.ChatEvent]` で型を登録してあり、画面では `ev.data` が `ChatEvent` 型になる。
+  `type` は `user`(保存したユーザーの発言。画面は ID を表示に付ける)/ `summarizing` / `summary`(要約の断片)/ `compact`(compact した・要約に失敗した)/
+  `usage`(メーター)/ `prompt` / `thinking` / `content` / `error` / `done`
+- `conversation_id` が付いていて、画面は表示中の会話のものだけを出す。`done` には Go が保存した返事(`reply`)が入る
+- `Send` の戻り値とイベントは別経路で届き順序が保証されないので、終わりは必ず `done` イベントで判定する(`Compact` も同じ)
+- 停止は `Call` の Promise の `cancel()` → Go の `ctx` がキャンセルされる。
+  送信の途中の要約中だけは `ChatService.StopSummary()` で要約だけを止める(その回は truncate で返事に進む。[_docs/compact.md](../../_docs/compact.md))
+- 会話は、新しい会話の画面で最初に送信したときに `ChatService.NewConversation(settings)` で作る(空の会話を作らない)
+- IME の問題のため、Go が `events.Windows.WindowSetFocus` で `aibow:window:focus` を送っている([_docs/ui.md](../../_docs/ui.md))
