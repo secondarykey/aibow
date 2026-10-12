@@ -36,7 +36,7 @@ Ollama のサーバーや API は使わない。Ollama のモデルの一部は 
 | `models.go` | モデルの一覧(`models\` の *.gguf と Ollama の保存フォルダ)。ID は `file:<パス>` / `ollama:<名前>` |
 | `prompt.go` | 会話 → ChatML 文字列(Qwen3.5 の公式チャットテンプレートを Go で書き直したもの) |
 | `stream.go` | UTF-8 の切れ目の処理と、`</think>` で思考と答えを振り分ける処理 |
-| `conversation.go` | 会話の仕組み(`Conversations`)。発言の保存、タイトルの自動付与、思考を除いた履歴での生成、答えが出なかった回の理由の文、生成は同時に1つ |
+| `conversation.go` | 会話の仕組み(`Conversations`)。発言の保存、タイトルの自動付与と名前の変更、思考を除いた履歴での生成、答えが出なかった回の理由の文、生成は同時に1つ |
 | `store.go` | 保存先の約束(`Store` interface)と、会話・発言の型(`Conversation` / `StoredMessage` / `ReplyStats`) |
 | `appsettings.go` | アプリ全体の設定(`app_settings` の読み書き)。環境変数は DB に値が無いときの初期値 |
 | `store/sqlite.go` | `Store` の SQLite 実装(`modernc.org/sqlite`)。`PRAGMA user_version` でマイグレーションを管理する(版を足すときは `migrations` の末尾に追加) |
@@ -68,6 +68,7 @@ Ollama のサーバーや API は使わない。Ollama のモデルの一部は 
 - 過去のアシスタント発言の思考は保存して画面で見られるが、モデルに渡すのは答えだけ(公式テンプレートと同じ)。システムプロンプトは発言として保存せず、会話の設定から毎回先頭に付ける
 - 会話ごとの設定(システムプロンプト・上限トークン数・temperature・思考・presence penalty)は `conversations.settings`(JSON)。
   新しい会話は `app_settings` の既定をコピーする。アプリ全体の設定(コンテキスト長・GPU の層数・最後に使ったモデル)も `app_settings`
+- 発言の保存では会話を丸ごと書き戻さない(`Store.TouchConversation` で更新日時と空のときだけのタイトル)。生成中に画面で変えた名前や設定を古い値で上書きしないため
 - ID は `uuid.NewV7()`(作成順に並ぶ)。DB には TEXT で入れ、発言の順番は ID の並びで決める(順番用の列は持たない)
 - 思考の ON/OFF は、プロンプト末尾を `<think>\n` にするか `<think>\n\n</think>\n\n` にするかで切り替える
 - 生成とモデルの入れ替えは同時に1つだけ(コンテキストが1つのため)。`Engine.mu` で排他している。会話の側でも生成中の会話を1つだけ持ち(`Conversations.generating`)、生成中の会話は削除できない

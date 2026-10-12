@@ -22,6 +22,9 @@ type Store interface {
 	CreateConversation(c Conversation) error
 	// UpdateConversation はタイトル・設定・更新日時を書き換える。無ければ ErrNotFound。
 	UpdateConversation(c Conversation) error
+	// TouchConversation は発言が増えたときに呼ぶ。更新日時を at にし、タイトルが空のときだけ autoTitle を入れる。
+	// 会話を丸ごと書き戻さないのは、生成中に画面で変えたタイトルや設定を古い値で上書きしないため。無ければ ErrNotFound。
+	TouchConversation(id uuid.UUID, at time.Time, autoTitle string) error
 	// DeleteConversation は会話を消す。発言もいっしょに消える。
 	DeleteConversation(id uuid.UUID) error
 	AddMessage(m StoredMessage) error

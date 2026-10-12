@@ -59,6 +59,13 @@ export function NewConversation(): $CancellablePromise<aibow$0.Conversation> {
 }
 
 /**
+ * RenameConversation は会話のタイトルを変える。空にはできない。
+ */
+export function RenameConversation(id: uuid$0.UUID, title: string): $CancellablePromise<void> {
+    return $Call.ByID(2233376402, id, title);
+}
+
+/**
  * Send は会話にユーザーの発言を足し、返事を生成する。
  * 返事の中身は戻り値ではなく、chat イベントで少しずつ送る。
  * 

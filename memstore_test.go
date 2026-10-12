@@ -6,6 +6,7 @@ package aibow
 import (
 	"slices"
 	"sync"
+	"time"
 	"uuid"
 )
 
@@ -62,6 +63,21 @@ func (s *memStore) UpdateConversation(c Conversation) error {
 		return ErrNotFound
 	}
 	s.convs[c.ID] = c
+	return nil
+}
+
+func (s *memStore) TouchConversation(id uuid.UUID, at time.Time, autoTitle string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c, ok := s.convs[id]
+	if !ok {
+		return ErrNotFound
+	}
+	c.UpdatedAt = at
+	if c.Title == "" {
+		c.Title = autoTitle
+	}
+	s.convs[id] = c
 	return nil
 }
 

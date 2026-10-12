@@ -230,6 +230,21 @@ func (s *SQLite) UpdateConversation(c aibow.Conversation) error {
 	return nil
 }
 
+func (s *SQLite) TouchConversation(id uuid.UUID, at time.Time, autoTitle string) error {
+	// タイトルは空のときだけ書く。読んでから書くのではなく1つの UPDATE で行うので、
+	// 同じときに画面から名前を変えられても、どちらかが半端に消えることがない
+	res, err := s.db.Exec(`UPDATE conversations
+		SET updated_at = ?, title = CASE WHEN title = '' THEN ? ELSE title END
+		WHERE id = ?`, formatTime(at), autoTitle, id.String())
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return aibow.ErrNotFound
+	}
+	return nil
+}
+
 func (s *SQLite) DeleteConversation(id uuid.UUID) error {
 	// 発言は ON DELETE CASCADE でいっしょに消える
 	_, err := s.db.Exec("DELETE FROM conversations WHERE id = ?", id.String())

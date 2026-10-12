@@ -284,3 +284,73 @@ func TestLoadAppSettingsPrefersStoredValues(t *testing.T) {
 		t.Errorf("保存した値が優先されていません: %+v", got)
 	}
 }
+
+func TestRename(t *testing.T) {
+	g := &fakeGen{content: "ok"}
+	cs, _ := newTestConversations(t, g)
+
+	// 最初の送信の前に付けた名前は、自動のタイトルで上書きされない
+	a := mustCreate(t, cs)
+	if err := cs.Rename(a.ID, "  買い物メモ  "); err != nil {
+		t.Fatal(err)
+	}
+	send(t, cs, a, "牛乳を買う")
+	if got, _, _ := cs.Get(a.ID); got.Title != "買い物メモ" {
+		t.Errorf("付けた名前が上書きされました: %q", got.Title)
+	}
+
+	// 自動で付いたタイトルも、あとから変えられる。名前を変えても更新日時(一覧の並び)は変わらない
+	b := mustCreate(t, cs)
+	send(t, cs, b, "自動のタイトル")
+	before, _, _ := cs.Get(b.ID)
+	if err := cs.Rename(b.ID, "変えた名前"); err != nil {
+		t.Fatal(err)
+	}
+	after, _, _ := cs.Get(b.ID)
+	if after.Title != "変えた名前" || !after.UpdatedAt.Equal(before.UpdatedAt) {
+		t.Errorf("名前の変更: %q / 更新日時 %v → %v", after.Title, before.UpdatedAt, after.UpdatedAt)
+	}
+
+	if err := cs.Rename(b.ID, "   "); err == nil {
+		t.Errorf("空のタイトルにできてしまいました")
+	}
+}
+
+func TestChangesDuringGenerationAreKept(t *testing.T) {
+	g := &fakeGen{content: "ok", block: make(chan struct{})}
+	cs, _ := newTestConversations(t, g)
+	c := mustCreate(t, cs)
+
+	started := make(chan struct{})
+	finished := make(chan struct{})
+	go func() {
+		cs.Send(context.Background(), c.ID, "質問", func(ev ChatEvent) {
+			if ev.Type == "prompt" {
+				close(started)
+			}
+		})
+		close(finished)
+	}()
+	<-started
+
+	// 生成中に画面で名前と設定を変える
+	changed := testDefaults
+	changed.MaxTokens = 7
+	if err := cs.Rename(c.ID, "生成中に変えた名前"); err != nil {
+		t.Fatal(err)
+	}
+	if err := cs.UpdateSettings(c.ID, changed); err != nil {
+		t.Fatal(err)
+	}
+	close(g.block)
+	<-finished
+
+	// 返事を保存したときに、生成を始めたときの古い値で書き戻されていないこと
+	got, ms, _ := cs.Get(c.ID)
+	if got.Title != "生成中に変えた名前" || got.Settings != changed {
+		t.Errorf("生成中の変更が消えました: %q %+v", got.Title, got.Settings)
+	}
+	if len(ms) != 2 {
+		t.Errorf("発言の数: %d", len(ms))
+	}
+}
