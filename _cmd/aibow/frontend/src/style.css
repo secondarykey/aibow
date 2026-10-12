@@ -172,6 +172,8 @@ footer.home .composer textarea { line-height: 1.5; min-height: calc(3 * 1.5em + 
 /* 切り替えとコピーのボタンは図に重ならないよう、図の上の1行に置く */
 .mermaid-block { margin: 8px 0; padding: 4px 12px 10px; border: 1px solid var(--border); border-radius: 6px; }
 .mermaid-tools { display: flex; justify-content: flex-end; gap: 2px; margin-right: -8px; }
+/* 図 / コードの切り替え。押している(コードを見せている)間は、アクセントの色と背景で分かるようにする */
+.mermaid-tools .code-toggle.on { color: var(--accent); background: var(--bg); }
 .mermaid-svg { overflow-x: auto; text-align: center; }
 .mermaid-svg svg { max-width: 100%; height: auto; }
 .mermaid-note { margin: 0 0 4px; font-size: 12.5px; color: var(--muted); }

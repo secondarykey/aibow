@@ -1,9 +1,11 @@
 // 返事の中のコードブロック。右上にそのコードだけをコピーするボタンを出す。
 //   - 言語が書かれていれば、highlight.js で色を付ける(highlight.ts)
 //   - 言語が mermaid なら図にする(mermaid.ts)。図とコードは切り替えられる
+// 図とコードの切り替えは、コードのアイコンのトグル(押している間はコードを見せる)。
 // 生成中はコードブロックが途中のことがあるので、図にするのは閉じる記号(```)が届いてから。
 // それまでと、図の書き方が間違っていたときはコードのまま見せる
 import { useEffect, useState } from "react";
+import { LuCode } from "react-icons/lu";
 import { CopyButton } from "./CopyButton";
 import { highlight, isHighlighterLoaded, loadHighlighter } from "../highlight";
 import { renderMermaid, usePrefersDark } from "../mermaid";
@@ -58,7 +60,15 @@ function MermaidBlock({ code }: { code: string }) {
     <div className="mermaid-block">
       <div className="mermaid-tools">
         {diagram.state === "done" && (
-          <button className="reply-action" onClick={() => setShowCode(v => !v)}>{showCode ? "図" : "コード"}</button>
+          <button
+            className={"reply-action code-toggle" + (showCode ? " on" : "")}
+            onClick={() => setShowCode(v => !v)}
+            aria-pressed={showCode}
+            title={showCode ? "図に戻す" : "コードを表示"}
+            aria-label={showCode ? "図に戻す" : "コードを表示"}
+          >
+            <LuCode />
+          </button>
         )}
         <CopyButton text={code} />
       </div>
