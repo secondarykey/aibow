@@ -46,7 +46,7 @@ Ollama のサーバーや API は使わない。Ollama のモデルの一部は 
 | `_cmd/aibow/main.go` | Wails のアプリとウィンドウを作る(Frameless。タイトルバーは画面の `TitleBar.tsx`)。Wails に依存するコードは `_cmd/aibow` だけに置く |
 | `_cmd/aibow/config.go` | 環境変数の読み込み |
 | `_cmd/aibow/service.go` | `ChatService`。画面と `aibow.Conversations` / `Engine` の中継だけをする(モデル・会話・設定(`SetLimits` など)・メーター(`Usage`)・`Send` / `Compact` / `StopSummary`)。compact のログもここで出す |
-| `_cmd/aibow/frontend/src/` | チャット画面(React + TypeScript。左: 会話の一覧(ウィンドウの上から下まで。上のハンバーガーで開閉、閉じるとアイコンだけの細い列。右の仕切り `Splitter.tsx` で幅を変えられ、幅は localStorage に覚える)/ 右上: タイトルバー(Frameless のため自前。開いている会話の名前、右端に最小化・最大化・閉じる。一覧の上の空いているところと合わせてドラッグで移動)/ 中央: チャット(入力欄の下にモデルの選択、右端に「今すぐ要約」とメーター)/ 設定の画面(`SettingsView.tsx`。一覧の下の「設定」で開閉。別の画面として扱い、チャットの代わりに会話の場所に出す。一覧で会話を選ぶ・「+ 新規」でも閉じる。入力欄の打ちかけの文は App が持つので消えない))。`useModels.ts` / `useConversations.ts` / `useChat.ts` / `useAppSettings.ts` が Go とのやり取り、`components/` が表示。Vite でビルドした `frontend/dist` を `go:embed` で埋め込む |
+| `_cmd/aibow/frontend/src/` | チャット画面(React + TypeScript。左: 会話の一覧(ウィンドウの上から下まで。上のハンバーガーで開閉、閉じるとアイコンだけの細い列。右の仕切り `Splitter.tsx` で幅を変えられ、幅は localStorage に覚える)/ 右上: タイトルバー(Frameless のため自前。開いている会話の名前、右端に最小化・最大化・閉じる。一覧の上の空いているところと合わせてドラッグで移動)/ 中央: チャット(返事の最後にコピー(アイコンだけ)と「詳細」(統計行。ふだんは畳む)、コードブロックの右上にそのコードだけのコピー(`CopyButton.tsx`)。入力欄の下にモデルの選択、右端に「今すぐ要約」とメーター)/ 設定の画面(`SettingsView.tsx`。一覧の下の「設定」で開閉。別の画面として扱い、チャットの代わりに会話の場所に出す。一覧で会話を選ぶ・「+ 新規」でも閉じる。入力欄の打ちかけの文は App が持つので消えない))。`useModels.ts` / `useConversations.ts` / `useChat.ts` / `useAppSettings.ts` が Go とのやり取り、`components/` が表示、`stickToBottom.ts` が「一番下にいるときだけ追いかける」スクロール。Vite でビルドした `frontend/dist` を `go:embed` で埋め込む |
 | `_cmd/aibow/frontend/bindings/` | `wails3 generate bindings` の生成物(コミットする。手で直さない) |
 | `_cmd/aibow/build/` / `Taskfile.yml` | `wails3 init`(react テンプレート)由来のビルド設定。ios / android / docker は削除して `.gitignore` 済み |
 | `_cmd/aibow/version` / `_cmd/version.go` | バージョンの唯一の正と、それを config.yml / package.json に書き写すスクリプト(リポジトリのルートで `go run _cmd/version.go`)。version は `//go:embed` で exe に入る |
@@ -66,6 +66,13 @@ Ollama のサーバーや API は使わない。Ollama のモデルの一部は 
 - モデルの読み込み・設定の変更などのお知らせは、会話の表示ではなく右上のトースト(`toast.tsx`)に出す。時間のかかる処理は出したままにし、同じ key で置き換える。エラーは会話の表示に出す
 - 起動時と「+ 新規」は新しい会話の画面(`NewChat.tsx`、入力欄が真ん中)。会話はそこで最初に送信したときに作る(`ChatService.NewConversation(settings)`。空の会話を作らない)
 - 起動時のモデルはウィンドウを出してから裏で読み込み、終わったら `models` イベントで画面に知らせる
+- ウィンドウは起動時 720×820、最小 480×480(`main.go`)
+- 入力欄へ自動でフォーカスを移すとき(会話を開いた・「+ 新規」・返事が終わった)は、ほかの入力欄で打っている最中なら移さない(`Composer.tsx` の `focusUnlessTyping`)。
+  会話の名前の変更(一覧のダブルクリック)の入力欄からフォーカスを奪って、編集が閉じてしまったため
+- 生成中に届く断片で一番下へ送るのは、一番下にいるときだけ(`useStickToBottom`。チャット・思考の箱・要約中の箱)。上にスクロールして読んでいる間は送らない。
+  「一番下にいたか」は scroll イベントではなく描画のたびのスクロール位置で決める(イベントは次のフレームに届くので、数ミリ秒ごとの断片に間に合わない)
+- スクロールバーは `::-webkit-scrollbar` でつまみだけのフラットな形にし、色はテーマの `--scrollbar` / `--scrollbar-hover`。
+  標準の `scrollbar-color` は使わない(指定すると Chromium は `::-webkit-scrollbar` を無視する)
 - ウィンドウは Frameless。ドラッグできる場所は CSS の `--wails-draggable: drag`(`.titlebar`)、ボタンは `no-drag`。`main.tsx` で `@wailsio/runtime` を import しておく(ドラッグとリサイズはランタイムがページ全体のマウス操作を見て行う)。
   リサイズの判定はマウスの座標だけで行われるので、ルート要素に余白は要らない(wails3 スキルの「5px の余白が必須」は beta.26 では不要)。
   ただし、ウィンドウの端に接してスクロールする要素(`.chat` / `.settings-view`)は、スクロールバーが端の数 px(Windows の SM_CXSIZEFRAME)の
@@ -195,6 +202,12 @@ GUI の無い Linux(クラウドのセッションなど)では、Wails の serv
 `WAILS_SERVER_PORT` のポートで画面が HTTP で配信され、Playwright などのブラウザから操作して確かめられる(Go のメソッドもイベントも動く)。
 Linux でビルドするには GTK4 / WebKitGTK 6 の開発用パッケージ(`libgtk-4-dev` / `libwebkitgtk-6.0-dev`)が要る。
 Wails が作る `build/linux/aibow.desktop` や、`_cmd/aibow` に出来た実行ファイルはコミットしない。
+Playwright で確かめるときの注意:
+- Chromium はインストール済み(`/opt/pw-browsers/chromium-*/chrome-linux/chrome` を `executablePath` に渡す)。`playwright-core` は一時フォルダに入れる
+- ヘッドレスの Chromium は既定でスクロールバーを隠す。スクロールバーを見るときは `ignoreDefaultArgs: ["--hide-scrollbars"]`
+- コピーを確かめるときは `grantPermissions(["clipboard-read", "clipboard-write"])` して `navigator.clipboard.readText()` で読む。
+  server モードでは Wails の `Clipboard.SetText` は成功を返しても OS のクリップボードに書かない
+- 長く生成し続けるモデルが要るとき(スクロールの確認など)は、重みがランダムな極小モデルの語彙に、空白で始まるふつうのトークンを数万個足すと、終わりのトークンが選ばれにくくなる
 
 GPU や本物のモデルがない環境では、llama.cpp の CPU 版と小さな GGUF(重みがランダムな極小モデルでもよい)で
 「読み込み → 生成 → 停止 → 2回目の送信で KV キャッシュが再利用される → モデルの切り替え → 壊れたモデルを選んだら元に戻る → 再起動しても会話が残る」までを確認してください。
