@@ -9,3 +9,6 @@ build/windows/nsis/MicrosoftEdgeWebview2Setup.exe
 build/ios/
 build/android/
 build/docker/
+
+# 個人用のタスク(コピー先など環境ごとの設定が入る)。Taskfile.local.example.yml から作る
+Taskfile.local.yml

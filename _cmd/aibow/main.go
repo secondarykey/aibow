@@ -22,6 +22,7 @@ import (
 	"embed"
 	"io/fs"
 	"log"
+	"strings"
 
 	"aibow"
 
@@ -31,6 +32,12 @@ import (
 
 // windowFocusEventName は、ウィンドウがアクティブに戻ったことを画面に知らせるイベントの名前。
 const windowFocusEventName = "aibow:window:focus"
+
+// version はアプリのバージョン。_cmd/aibow/version(唯一の正)を埋め込む。
+// 上げ方は _cmd/version.go を参照。
+//
+//go:embed version
+var version string
 
 // Vite でビルドした画面(frontend/dist)を実行ファイルに埋め込む。
 // all: を付けないと、_ や . で始まるファイルが埋め込まれない。
@@ -75,7 +82,7 @@ func main() {
 	})
 
 	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Title:  "aibow",
+		Title:  "aibow " + strings.TrimSpace(version),
 		Width:  1280,
 		Height: 820,
 		URL:    "/",
@@ -89,7 +96,7 @@ func main() {
 		app.Event.Emit(windowFocusEventName)
 	})
 
-	log.Printf("aibow 起動")
+	log.Printf("aibow %s 起動", strings.TrimSpace(version))
 	// Run はウィンドウが閉じられるまで返らない。返ったら defer で VRAM を解放する。
 	if err := app.Run(); err != nil {
 		log.Fatal(err)
