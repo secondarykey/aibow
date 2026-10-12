@@ -71,7 +71,10 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
     }
 
     addUser(text);
-    const l: Live = { convId: id, itemId: null, thinkStart: 0, view: { waiting: true, thinking: "", thinkLabel: "", content: "" } };
+    const l: Live = {
+      convId: id, itemId: null, thinkStart: 0,
+      view: { generating: true, waiting: true, thinking: "", thinkLabel: "", content: "" },
+    };
     l.itemId = addAssistant(l.view);
     live.current = l;
     setGeneratingId(id);
