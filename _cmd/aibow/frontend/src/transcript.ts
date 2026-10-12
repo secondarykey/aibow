@@ -18,10 +18,12 @@ export interface AssistantView {
   stats?: string;        // 統計行
 }
 
+// msgId は保存された発言の ID(UUIDv7。文字列の順 = 作った順)。モデルに渡していない発言を薄く表示するのに使う。
+// 送信したばかりで、まだ会話を開き直していない発言には無い(最新の発言は必ずモデルに渡るので困らない)
 export type Item =
-  | { id: number; kind: "user"; text: string }
+  | { id: number; kind: "user"; text: string; msgId?: string }
   | { id: number; kind: "error"; text: string }
-  | ({ id: number; kind: "assistant" } & AssistantView);
+  | ({ id: number; kind: "assistant"; msgId?: string } & AssistantView);
 
 // id を除いた Item(種類ごとに Omit する。union にそのまま Omit を使うと共通の項目しか残らないため)
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
@@ -106,6 +108,8 @@ export function replyView(m: StoredMessage): AssistantView {
 // messageItems は会話の発言の列を表示の列に変える。
 export function messageItems(messages: StoredMessage[]): NewItem[] {
   return messages.map(m =>
-    m.role === "assistant" ? { kind: "assistant", ...replyView(m) } : { kind: "user", text: m.content },
+    m.role === "assistant"
+      ? { kind: "assistant", msgId: m.id, ...replyView(m) }
+      : { kind: "user", text: m.content, msgId: m.id },
   );
 }

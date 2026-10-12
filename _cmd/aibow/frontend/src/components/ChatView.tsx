@@ -3,8 +3,15 @@ import { useEffect, useRef, useState } from "react";
 import type { AssistantView, Item } from "../transcript";
 import { RenderedText } from "./RenderedText";
 
-// onStop は生成中の返事を止める。生成中の返事は1つだけ(生成は同時に1つ)なので、どの返事かは渡さない
-export function ChatView({ items, onStop }: { items: Item[]; onStop(): void }) {
+const FADED_TITLE = "この発言はモデルに渡していません(要約に入ったか、会話の上限に収めるために外しました)";
+
+// onStop は生成中の返事を止める。生成中の返事は1つだけ(生成は同時に1つ)なので、どの返事かは渡さない。
+// firstId はモデルに渡す最初の発言(Go の Usage.first_id)。これより前の発言は、要約に入ったか
+// truncate で外れて、モデルに渡していないので薄く表示する(発言そのものは保存されている)
+export function ChatView({ items, firstId, onStop }: { items: Item[]; firstId: string | null; onStop(): void }) {
+  const faded = (msgId?: string) => (msgId && firstId && msgId < firstId ? " faded" : "");
+  const fadedTitle = (msgId?: string) => (faded(msgId) ? FADED_TITLE : undefined);
+
   const ref = useRef<HTMLDivElement>(null);
 
   // 何か増えたり書き換わったりしたら、一番下までスクロールする
@@ -18,11 +25,11 @@ export function ChatView({ items, onStop }: { items: Item[]; onStop(): void }) {
         {items.map(it => {
           switch (it.kind) {
             case "user":
-              return <div key={it.id} className="msg user">{it.text}</div>;
+              return <div key={it.id} className={"msg user" + faded(it.msgId)} title={fadedTitle(it.msgId)}>{it.text}</div>;
             case "error":
               return <div key={it.id} className="msg error">{it.text}</div>;
             case "assistant":
-              return <AssistantMessage key={it.id} view={it} onStop={onStop} />;
+              return <AssistantMessage key={it.id} view={it} faded={!!faded(it.msgId)} onStop={onStop} />;
           }
         })}
       </div>
@@ -30,11 +37,11 @@ export function ChatView({ items, onStop }: { items: Item[]; onStop(): void }) {
   );
 }
 
-function AssistantMessage({ view, onStop }: { view: AssistantView; onStop(): void }) {
+function AssistantMessage({ view, faded, onStop }: { view: AssistantView; faded: boolean; onStop(): void }) {
   // 停止を押してから、Go が止まって done が届くまでの間は押せなくする
   const [stopping, setStopping] = useState(false);
   return (
-    <div className="msg assistant">
+    <div className={"msg assistant" + (faded ? " faded" : "")} title={faded ? FADED_TITLE : undefined}>
       {view.thinking && <Thinking label={view.thinkLabel} text={view.thinking} />}
       <div className="body">
         {view.waiting && <p className="waiting">応答待ち…</p>}

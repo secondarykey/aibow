@@ -23,6 +23,7 @@ export interface AppSettings {
  * 	prompt   : モデルに渡した文字列(学習用に画面に表示する)
  * 	thinking : 思考の断片
  * 	content  : 答えの断片
+ * 	compact  : 会話の上限に収めるために compact した(方式・前後のトークン数など)
  * 	usage    : メーターの値(モデルに渡す文字列のトークン数 / 会話の上限)。生成の前と、返事を保存したあとに送る
  * 	error    : エラー
  * 	done     : 終わり。必ず最後に1回だけ送る。保存した返事があれば Reply に入る
@@ -37,6 +38,37 @@ export interface ChatEvent {
     "error"?: string;
     "reply"?: StoredMessage | null;
     "usage"?: Usage | null;
+    "compact"?: CompactInfo | null;
+}
+
+/**
+ * CompactInfo は compact したことの知らせ(chat イベントの compact)。ログと画面に使う。
+ */
+export interface CompactInfo {
+    /**
+     * truncate / summary
+     */
+    "method": string;
+
+    /**
+     * compact する前の、モデルに渡す文字列のトークン数
+     */
+    "before_tokens": number;
+
+    /**
+     * compact したあとの、モデルに渡す文字列のトークン数
+     */
+    "after_tokens": number;
+
+    /**
+     * モデルに渡さなかった(truncate)/ 要約に入れた(summary)発言の数
+     */
+    "dropped": number;
+
+    /**
+     * かかった秒数
+     */
+    "sec": number;
 }
 
 /**

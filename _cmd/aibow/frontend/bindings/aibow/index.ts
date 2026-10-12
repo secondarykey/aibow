@@ -4,6 +4,7 @@
 export type {
     AppSettings,
     ChatEvent,
+    CompactInfo,
     Conversation,
     ConversationSettings,
     ModelEntry,

@@ -35,6 +35,7 @@ type Generator interface {
 //	prompt   : モデルに渡した文字列(学習用に画面に表示する)
 //	thinking : 思考の断片
 //	content  : 答えの断片
+//	compact  : 会話の上限に収めるために compact した(方式・前後のトークン数など)
 //	usage    : メーターの値(モデルに渡す文字列のトークン数 / 会話の上限)。生成の前と、返事を保存したあとに送る
 //	error    : エラー
 //	done     : 終わり。必ず最後に1回だけ送る。保存した返事があれば Reply に入る
@@ -45,6 +46,7 @@ type ChatEvent struct {
 	Error          string         `json:"error,omitempty"`
 	Reply          *StoredMessage `json:"reply,omitempty"`
 	Usage          *Usage         `json:"usage,omitempty"`
+	Compact        *CompactInfo   `json:"compact,omitempty"`
 }
 
 // ErrGenerating は、別の送信の生成中に送信されたときのエラー。
@@ -206,16 +208,22 @@ func (cs *Conversations) Send(ctx context.Context, id uuid.UUID, text string, em
 		return
 	}
 
-	// 1. ユーザーの発言を保存する。タイトルがまだ無ければ(最初の発言なら)、その先頭をタイトルにする
+	// 1. 会話の上限に収められるかを確かめてから、ユーザーの発言を保存する。
+	// タイトルがまだ無ければ(最初の発言なら)、その先頭をタイトルにする
 	user := StoredMessage{ID: uuid.NewV7(), ConversationID: id, Role: "user", Content: text, CreatedAt: time.Now()}
+	history = append(history, user)
+	if err := cs.checkFits(conv.Settings, history); err != nil {
+		fail(err)
+		return
+	}
 	if err := cs.save(user, titleFrom(text)); err != nil {
 		fail(err)
 		return
 	}
-	history = append(history, user)
 
-	// 2. モデルに渡す内容を決める。モデルに渡すのは、システムプロンプトと各発言の「答え」だけ
-	p, err := cs.plan(conv.Settings, history)
+	// 2. モデルに渡す内容を決める。会話の上限を超えていたら compact で収める(compact.go)。
+	// モデルに渡すのは、システムプロンプトと各発言の「答え」だけ
+	p, err := cs.prepare(conv, history, emit)
 	if err != nil {
 		fail(err)
 		return

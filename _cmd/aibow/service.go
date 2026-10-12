@@ -350,6 +350,8 @@ func (s *ChatService) Send(ctx context.Context, id uuid.UUID, text string) {
 
 	s.convs.Send(ctx, id, text, func(ev aibow.ChatEvent) {
 		switch ev.Type {
+		case "compact":
+			logCompact(ev.Compact)
 		case "error":
 			log.Printf("エラー: %s", ev.Error)
 		case "done":
@@ -368,4 +370,15 @@ func tokPerSec(st aibow.GenerateStats) float64 {
 		return 0
 	}
 	return float64(st.GenTokens) / st.GenSec
+}
+
+// logCompact は compact したことをログに出す(学習用: 方式・前後のトークン数・かかった秒数)。
+func logCompact(c *aibow.CompactInfo) {
+	switch c.Method {
+	case aibow.CompactTruncate:
+		log.Printf("compact(truncate): %d → %d トークン(古い発言 %d 件をモデルに渡しません)",
+			c.BeforeTokens, c.AfterTokens, c.Dropped)
+	default:
+		log.Printf("compact(%s): %d → %d トークン", c.Method, c.BeforeTokens, c.AfterTokens)
+	}
 }
