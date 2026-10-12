@@ -3,6 +3,7 @@
 // 会話を開いていないとき(起動時・「+ 新規」)は、チャットの代わりに新しい会話の画面(入力欄が真ん中)を出す。
 // 設定は別の画面として扱い、一覧の下の「設定」で開くと、チャットの代わりに会話の場所に出す(SettingsView)。
 // 「会話に戻る」・一覧で会話を選ぶ・「+ 新規」で閉じる。
+// 一覧と会話の間の仕切り(Splitter)をドラッグすると、一覧の幅が変わる。
 //
 //	useTranscript    … 画面に並べる表示(吹き出し・エラー)
 //	useToasts        … 右上に出して数秒で消えるお知らせ(モデルの読み込みなど)
@@ -25,6 +26,7 @@ import { ModelBar } from "./components/ModelBar";
 import { Meter } from "./components/Meter";
 import { TitleBar } from "./components/TitleBar";
 import { ConversationList } from "./components/ConversationList";
+import { Splitter, useListWidth } from "./components/Splitter";
 import { ChatView } from "./components/ChatView";
 import { NewChat } from "./components/NewChat";
 import { SettingsView } from "./components/SettingsView";
@@ -42,6 +44,7 @@ export default function App() {
   // 入力欄に打っている文。設定の画面を開くと入力欄は消えるので、戻ったときに続きを打てるようにここで持つ
   const [text, setText] = useState("");
   const [listOpen, setListOpen] = useState(true);
+  const listWidth = useListWidth(); // 会話の一覧の幅(一覧の右の仕切りで変える)
   // 入力欄にフォーカスを移す合図。会話を開いた・「+ 新規」を押したあとに進める(Composer の focusKey)
   const [focusKey, setFocusKey] = useState(0);
   const focusInput = () => setFocusKey(n => n + 1);
@@ -201,7 +204,11 @@ export default function App() {
         onToggleSettings={toggleSettings}
         open={listOpen}
         onToggleOpen={() => setListOpen(o => !o)}
+        width={listWidth.width}
       />
+      {listOpen && (
+        <Splitter width={listWidth.width} onResize={listWidth.set} onCommit={listWidth.commit} onReset={listWidth.reset} />
+      )}
       <div className="workspace">
         <TitleBar title={title} />
         <main>{content}</main>

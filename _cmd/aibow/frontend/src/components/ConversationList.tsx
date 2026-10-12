@@ -20,11 +20,12 @@ interface Props {
   onToggleSettings(): void;
   open: boolean; // 一覧を開いているか
   onToggleOpen(): void;
+  width: number; // 開いているときの幅(px)。一覧の右の仕切り(Splitter)で変えられる
 }
 
 export function ConversationList({
   list, currentId, generatingId, disabled, onOpen, onNew, onDelete, onRename, settingsOpen, onToggleSettings,
-  open, onToggleOpen,
+  open, onToggleOpen, width,
 }: Props) {
   // 削除の確認を出している会話。消すと戻せないので、もう一度押してもらう
   const [confirming, setConfirming] = useState<string | null>(null);
@@ -50,7 +51,7 @@ export function ConversationList({
   }
 
   return (
-    <nav className="conversations">
+    <nav className="conversations" style={{ width }}>
       <div className="nav-top" onDoubleClick={toggleMaximiseOnDoubleClick}>
         {menu}
         <button className="new" disabled={disabled} onClick={onNew}>+ 新規</button>
