@@ -15,16 +15,22 @@ body {
   margin: 0; background: var(--bg); color: var(--text);
   font-family: system-ui, "Segoe UI", "Hiragino Sans", "Yu Gothic UI", sans-serif;
 }
-#root { height: 100vh; display: flex; flex-direction: column; }
+/* 左に会話の一覧(上から下まで)、右に .workspace(タイトルバー + main) */
+#root { height: 100vh; display: flex; }
+.workspace { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 
 /* タイトルバー(Frameless)。--wails-draggable: drag の場所をつかむとウィンドウが動く。
    子要素にも受け継がれるので、ボタンには no-drag を付けて押せるようにする */
 .titlebar {
-  height: 36px; flex-shrink: 0; display: flex; align-items: center; padding-left: 8px;
+  height: 36px; flex-shrink: 0; display: flex; align-items: center; padding-left: 16px;
   background: var(--panel); border-bottom: 1px solid var(--border);
   --wails-draggable: drag; user-select: none; -webkit-user-select: none;
 }
 .titlebar button { --wails-draggable: no-drag; }
+.conversation-title {
+  min-width: 0; font-size: 13px; font-weight: 600;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 .window-controls { margin-left: auto; display: flex; align-self: stretch; }
 .window-controls button {
   width: 46px; border: none; border-radius: 0; background: transparent; font-size: 15px;
@@ -38,7 +44,10 @@ body {
   display: flex; align-items: center; gap: 12px; background: var(--panel);
   padding: 0 max(16px, calc((100% - 820px) / 2)) 10px;
 }
-.model-info { font-size: 12px; color: var(--muted); font-family: ui-monospace, Consolas, monospace; }
+.model-info {
+  font-size: 12px; color: var(--muted); font-family: ui-monospace, Consolas, monospace;
+  min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; /* 狭いときは1行に収めて省略 */
+}
 .model-select {
   font: inherit; font-size: 13px; padding: 4px 6px; border-radius: 6px; max-width: 320px;
   border: 1px solid var(--border); background: var(--bg); color: var(--text);
@@ -82,9 +91,16 @@ nav.conversations {
   width: 230px; flex-shrink: 0; border-right: 1px solid var(--border); background: var(--panel);
   display: flex; flex-direction: column; font-size: 13px; min-height: 0;
 }
-nav.conversations .nav-top { display: flex; align-items: center; gap: 6px; padding: 10px; }
+/* 一覧の上(タイトルバーと同じ高さ)と、畳んだときの細い列は、空いているところをつかむとウィンドウが動く */
+nav.conversations .nav-top {
+  height: 36px; flex-shrink: 0; display: flex; align-items: center; gap: 6px; padding: 0 6px; margin-bottom: 6px;
+  --wails-draggable: drag;
+}
+nav.conversations.collapsed { --wails-draggable: drag; }
+nav.conversations button, nav.conversations input { --wails-draggable: no-drag; }
+nav.conversations .nav-top .new { padding: 4px 12px; }
 nav.conversations .new { flex: 1; }
-nav.conversations.collapsed { width: 48px; align-items: center; padding: 10px 0; gap: 6px; }
+nav.conversations.collapsed { width: 48px; align-items: center; padding: 2px 0 10px; gap: 6px; }
 nav.conversations.collapsed .spacer { flex: 1; }
 .icon-btn {
   display: flex; align-items: center; justify-content: center; flex-shrink: 0;
@@ -153,4 +169,3 @@ footer { border-top: 1px solid var(--border); background: var(--panel); padding:
   border: 1px solid var(--border); background: var(--bg); color: var(--text);
   resize: none; min-height: 42px; max-height: 200px;
 }
-@media (max-width: 700px) { nav.conversations { display: none; } }

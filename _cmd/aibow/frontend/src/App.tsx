@@ -1,5 +1,5 @@
-// App.tsx: 画面全体。上にタイトルバー(Frameless のため自前。左端のハンバーガーで一覧を開閉)、
-// 左に会話の一覧、中央にチャット(下に入力欄とモデルの選択)。
+// App.tsx: 画面全体。左に会話の一覧(ウィンドウの上から下まで。上のハンバーガーで開閉)、
+// 右に「タイトルバー(Frameless のため自前。開いている会話の名前)+ チャット(下に入力欄とモデルの選択)」。
 // 右の設定パネルは一覧の下の「設定」で開閉する。
 //
 //	useTranscript    … 画面に並べる表示(吹き出し・メモ・エラー)
@@ -83,42 +83,48 @@ export default function App() {
         : busy === "loading" ? "モデルを読み込み中です"
           : undefined;
 
+  // タイトルバーに出す名前は一覧から取る(名前の変更や最初の送信で付いたタイトルが、すぐ反映されるように)
+  const title = convs.list.find(c => c.id === currentId)?.title || "新しい会話";
+
   return (
     <>
-      <TitleBar listOpen={listOpen} onToggleList={() => setListOpen(o => !o)} />
-      <main>
-        <ConversationList
-          list={convs.list}
-          currentId={currentId}
-          generatingId={chat.generatingId}
-          disabled={unavailable}
-          onOpen={id => convs.open(id).catch(err => addError(errorMessage(err)))}
-          onNew={onNew}
-          onDelete={id => convs.remove(id).catch(err => addError(errorMessage(err)))}
-          onRename={(id, title) => convs.rename(id, title).catch(err => addError(errorMessage(err)))}
-          settingsOpen={settingsOpen}
-          onToggleSettings={() => setSettingsOpen(o => !o)}
-          open={listOpen}
-        />
-        <section className="center">
-          <ChatView items={transcript.items} onStop={chat.stop} />
-          <Composer
-            canSend={busy === "idle" && currentId !== null}
-            blockedReason={blockedReason}
-            onSend={chat.send}
-          />
-          <ModelBar models={models} disabled={busy !== "idle"} />
-        </section>
-        {settingsOpen && <SettingsPanel
-          settings={convs.current?.conversation.settings ?? null}
-          onChange={convs.updateSettings}
-          onMakeDefault={() => convs.current && app.setDefaults(convs.current.conversation.settings)}
-          app={app.settings}
-          appDisabled={busy !== "idle"}
-          onApplyApp={app.apply}
-          lastPrompt={chat.lastPrompt}
-        />}
-      </main>
+      <ConversationList
+        list={convs.list}
+        currentId={currentId}
+        generatingId={chat.generatingId}
+        disabled={unavailable}
+        onOpen={id => convs.open(id).catch(err => addError(errorMessage(err)))}
+        onNew={onNew}
+        onDelete={id => convs.remove(id).catch(err => addError(errorMessage(err)))}
+        onRename={(id, title) => convs.rename(id, title).catch(err => addError(errorMessage(err)))}
+        settingsOpen={settingsOpen}
+        onToggleSettings={() => setSettingsOpen(o => !o)}
+        open={listOpen}
+        onToggleOpen={() => setListOpen(o => !o)}
+      />
+      <div className="workspace">
+        <TitleBar title={title} />
+        <main>
+          <section className="center">
+            <ChatView items={transcript.items} onStop={chat.stop} />
+            <Composer
+              canSend={busy === "idle" && currentId !== null}
+              blockedReason={blockedReason}
+              onSend={chat.send}
+            />
+            <ModelBar models={models} disabled={busy !== "idle"} />
+          </section>
+          {settingsOpen && <SettingsPanel
+            settings={convs.current?.conversation.settings ?? null}
+            onChange={convs.updateSettings}
+            onMakeDefault={() => convs.current && app.setDefaults(convs.current.conversation.settings)}
+            app={app.settings}
+            appDisabled={busy !== "idle"}
+            onApplyApp={app.apply}
+            lastPrompt={chat.lastPrompt}
+          />}
+        </main>
+      </div>
       <ImeFocusRelay />
     </>
   );
