@@ -80,7 +80,7 @@ function ReplyActions({ content, stats }: { content: string; stats?: string }) {
   return (
     <>
       <div className="reply-actions">
-        {content && <CopyButton text={content} title="答えの文をコピーする(思考は含めない)" />}
+        {content && <CopyButton text={content} />}
         {stats && (
           <button className="reply-action" onClick={() => setOpen(o => !o)} aria-expanded={open} title="モデル名・速さ・トークン数など">
             {open ? <LuChevronDown /> : <LuChevronRight />} 詳細

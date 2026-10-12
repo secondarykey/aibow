@@ -13,7 +13,7 @@ export function RenderedText({ text }: { text: string }) {
           return (
             <div key={i} className="code-block">
               <pre><code>{code}</code></pre>
-              <CopyButton text={code.replace(/\n$/, "")} title="このコードをコピーする" className="code-copy" />
+              <CopyButton text={code.replace(/\n$/, "")} className="code-copy" />
             </div>
           );
         }
