@@ -45,7 +45,8 @@ aibow は、ローカルLLMを使ったアプリを**自分で作りながら仕
 | 会話の上限・compact(truncate / summary)・メーター | [_docs/compact.md](_docs/compact.md) |
 | SQLite の実装・マイグレーション | [store/AGENTS.md](store/AGENTS.md) |
 | アプリの起動・`ChatService`・環境変数の読み込み・Go と画面のやり取り | [_cmd/aibow/AGENTS.md](_cmd/aibow/AGENTS.md) |
-| 画面(レイアウト・フォーカス・スクロール・ウィンドウの移動とリサイズ・IME) | [_docs/ui.md](_docs/ui.md) |
+| 画面(配置・会話の一覧・発言と返事の操作・フォーカス・スクロール・ウィンドウの移動とリサイズ・IME) | [_docs/ui.md](_docs/ui.md) |
+| 返事の表示(Markdown・コードの色付け・mermaid の図と書き出し) | [_docs/rendering.md](_docs/rendering.md) |
 | バージョン・ローカルデプロイ | [_docs/deploy.md](_docs/deploy.md) |
 | アプリを起動して動作を確かめる(共通の手順と確認する項目) | [_docs/testing.md](_docs/testing.md) |
 | ユーザーの Windows 環境(worktree)で起動して確かめる | [_docs/env-windows.md](_docs/env-windows.md) |

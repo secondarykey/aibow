@@ -1,7 +1,8 @@
 # _cmd/aibow(デスクトップアプリ)
 
 Wails v3 のデスクトップアプリです。ルートの `aibow` パッケージ(ライブラリ)を画面につなぎます。
-画面そのもの(レイアウト・フォーカス・スクロール・ウィンドウ・IME)は [_docs/ui.md](../../_docs/ui.md) にあります。
+画面そのもの(配置・操作・フォーカス・スクロール・ウィンドウ・IME)は [_docs/ui.md](../../_docs/ui.md)、
+返事の表示(Markdown・コードの色付け・mermaid の図)は [_docs/rendering.md](../../_docs/rendering.md) にあります。
 
 ## ファイル
 
@@ -10,7 +11,7 @@ Wails v3 のデスクトップアプリです。ルートの `aibow` パッケ�
 | `main.go` | Wails のアプリとウィンドウを作る(Frameless。タイトルバーは画面の `TitleBar.tsx`)。ウィンドウは起動時 720×820、最小 480×480 |
 | `config.go` | 環境変数の読み込み |
 | `service.go` | `ChatService`。画面と `aibow.Conversations` / `Engine` の中継だけをする(モデル・会話・設定(`SetLimits` など)・メーター(`Usage`)・`Send` / `Compact` / `StopSummary`)。compact のログもここで出す |
-| `frontend/src/` | チャット画面(React + TypeScript)。Vite でビルドした `frontend/dist` を `go:embed` で埋め込む。中身は [_docs/ui.md](../../_docs/ui.md) |
+| `frontend/src/` | チャット画面(React + TypeScript)。Vite でビルドした `frontend/dist` を `go:embed` で埋め込む。中身は [_docs/ui.md](../../_docs/ui.md) と [_docs/rendering.md](../../_docs/rendering.md) |
 | `frontend/bindings/` | `wails3 generate bindings` の生成物(コミットする。手で直さない) |
 | `build/` / `Taskfile.yml` | `wails3 init`(react テンプレート)由来のビルド設定。ios / android / docker は削除して `.gitignore` 済み |
 | `version` | バージョンの唯一の正。`//go:embed` で exe に入る。扱いは [_docs/deploy.md](../../_docs/deploy.md) |
@@ -34,7 +35,7 @@ Ollama の保存先は Ollama と同じ `OLLAMA_MODELS`。意味と既定値は 
 ## Wails とフロントエンドの方針
 
 - Wails は現在 v3.0.0-beta.26(`wails3` CLI と同じ版)。構成はユーザーの wails3 スキルの標準(`_cmd/<名前>/build/config.yml`・Taskfile・`wails3 dev`)に従う
-- フロントエンドは React + TypeScript + Vite(`wails3 init -t react` のテンプレート)。npm のパッケージは react / react-dom / @wailsio/runtime / react-icons(アイコン。Lucide の `react-icons/lu` を使う)/ marked(返事の Markdown の表示)/ highlight.js(コードの色付け)/ mermaid(図)と開発用の vite / typescript など。使い方は [_docs/ui.md](../../_docs/ui.md)。
+- フロントエンドは React + TypeScript + Vite(`wails3 init -t react` のテンプレート)。npm のパッケージは react / react-dom / @wailsio/runtime / react-icons(アイコン。Lucide の `react-icons/lu` を使う)/ marked(返事の Markdown の表示)/ highlight.js(コードの色付け)/ mermaid(図)と開発用の vite / typescript など。使い方は [_docs/rendering.md](../../_docs/rendering.md)。
   marked・highlight.js・mermaid は版を固定している。上げるときは、出てから2週間以上たった版にする(ユーザーがメジャーアップデート直後の版を避けて選ぶこともある)。
   mermaid が使うパッケージのうち、入れたときに出てから2週間たっていなかったものは `package.json` の `overrides` で1つ前の版に固定している。
   npm は lockfile の書き方が版で違う(npm 10 は `libc` の欄を消す)ので、パッケージを足すときは `npx npm@11.20.0 install …` を使い、関係ない差分を出さない
