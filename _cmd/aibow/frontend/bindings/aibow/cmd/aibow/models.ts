@@ -13,6 +13,11 @@ export interface ConversationDetail {
     "messages": aibow$0.StoredMessage[] | null;
 
     /**
+     * 要約(古い順)。画面の区切りに使う
+     */
+    "compactions": aibow$0.Compaction[] | null;
+
+    /**
      * この会話で返事を生成中か
      */
     "generating": boolean;

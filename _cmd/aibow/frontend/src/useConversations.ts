@@ -90,7 +90,7 @@ export function useConversations(onError: (text: string) => void): Conversations
 
   const adopt = useCallback((c: Conversation) => {
     ++openSeq.current;
-    setCurrent({ conversation: c, messages: [], generating: false, usage: null });
+    setCurrent({ conversation: c, messages: [], compactions: [], generating: false, usage: null });
     setDraft(null);
     reloadList().catch(() => {});
   }, [setCurrent, setDraft, reloadList]);

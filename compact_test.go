@@ -2,6 +2,7 @@ package aibow
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -134,12 +135,12 @@ func TestTruncateDropsOldTurnsAsPairs(t *testing.T) {
 	// 会話の上限を「最近の2組 + 新しい発言」がちょうど入る大きさにする。
 	// 組の途中(返事だけ)を残すと1組より少なく収まるが、組ごとに外すので、外れるのは古い2組まるごと
 	next := StoredMessage{Role: "user", Content: "質問4"}
-	fit := promptLen(promptMessages(c.Settings.System, append(ms[4:], next)), true)
+	fit := promptLen(promptMessages(c.Settings.System, "", append(ms[4:], next)), true)
 	cs.SetLimits(fit+30, 100) // +30: 返事1件分(50文字以上)は入らない
 	g.content = "ok"
 	evs := send(t, cs, c, "質問4")
 
-	want := append([]Message{{"system", c.Settings.System}}, promptMessages("", append(ms[4:], next))...)
+	want := append([]Message{{"system", c.Settings.System}}, promptMessages("", "", append(ms[4:], next))...)
 	if len(g.gotMessages) != len(want) {
 		t.Fatalf("モデルに渡した発言: %+v", g.gotMessages)
 	}
@@ -173,7 +174,7 @@ func TestTruncateKeepsTheLatestMessage(t *testing.T) {
 
 	// 最新の発言だけを渡すのがちょうど収まる上限: 過去の組は全部外れる
 	long := strings.Repeat("長", 200)
-	only := promptLen(promptMessages(c.Settings.System, []StoredMessage{{Role: "user", Content: long}}), true)
+	only := promptLen(promptMessages(c.Settings.System, "", []StoredMessage{{Role: "user", Content: long}}), true)
 	cs.SetLimits(only, 100)
 	g.content = "ok"
 	send(t, cs, c, long)
@@ -217,5 +218,247 @@ func TestNoneStopsBeforeGenerating(t *testing.T) {
 	cs.SetLimits(u.Tokens-1, 100)
 	if over, _ := cs.Usage(c.ID); over.Tokens != u.Tokens || *over.FirstID != *u.FirstID {
 		t.Errorf("none のメーター: %+v", over)
+	}
+}
+
+// summaryReply は要約のテストの返事の上限。作業領域(会話の上限 + 返事の上限)に、
+// 要約の指示と要約の上限(summaryMaxTokens)が入る大きさにする
+const summaryReply = summaryMaxTokens + 2000
+
+// overLimit は、今の会話がちょうど入り、新しい発言を足すと超える会話の上限にする。
+func overLimit(t *testing.T, cs *Conversations, c Conversation) Usage {
+	t.Helper()
+	u, err := cs.Usage(c.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cs.SetLimits(u.Tokens, summaryReply)
+	return u
+}
+
+// systemOf は、モデルに渡した発言の system を返す。
+func systemOf(msgs []Message) string {
+	if len(msgs) > 0 && msgs[0].Role == "system" {
+		return msgs[0].Content
+	}
+	return ""
+}
+
+func TestSummaryRunsBeforeTheReply(t *testing.T) {
+	g := &fakeGen{}
+	cs, _ := newTestConversations(t, g)
+	c := longTalk(t, cs, g, CompactSummary, 6)
+	before := overLimit(t, cs, c)
+
+	g.replies = []fakeReply{{content: "- 要約1"}, {content: "返事"}}
+	evs := send(t, cs, c, "次の質問")
+	if len(g.calls) < 2 {
+		t.Fatal("生成が足りません")
+	}
+
+	// 要約の生成: 思考オフ・temperature 低め・上限 1024。前回の要約は無く、古い発言が文章で渡る
+	sum := g.calls[len(g.calls)-2]
+	if sum.opt != (GenerateOptions{Think: false, Temperature: summaryTemperature, MaxTokens: summaryMaxTokens}) {
+		t.Errorf("要約の生成の設定: %+v", sum.opt)
+	}
+	if systemOf(sum.messages) != summaryInstruction || !strings.Contains(sum.messages[1].Content, "## 前回までの要約\n(なし)") ||
+		!strings.Contains(sum.messages[1].Content, "ユーザー: 質問0\nアシスタント: 返返") {
+		t.Errorf("要約に渡した内容: %+v", sum.messages)
+	}
+	if strings.Contains(sum.messages[1].Content, "次の質問") {
+		t.Errorf("最新の発言は要約に入れないはずです")
+	}
+
+	// 保存された要約と、返事の生成に渡した内容
+	list, _ := cs.Compactions(c.ID)
+	if len(list) != 1 || list[0].Summary != "- 要約1" || list[0].Model != "fake-model" || list[0].Stats == nil {
+		t.Fatalf("保存された要約: %+v", list)
+	}
+	_, ms, _ := cs.Get(c.ID)
+	keep := 0
+	for i, m := range ms {
+		if m.ID == list[0].UptoMessageID {
+			keep = i + 1
+		}
+	}
+	if keep == 0 || ms[keep].Role != "user" {
+		t.Fatalf("要約の区切りが組の切れ目ではありません: upto=%v", list[0].UptoMessageID)
+	}
+	reply := g.calls[len(g.calls)-1]
+	wantSystem := c.Settings.System + "\n\n" + summaryHeading + "\n- 要約1"
+	if systemOf(reply.messages) != wantSystem || len(reply.messages) != 1+len(ms)-keep-1 {
+		t.Errorf("返事に渡した内容: %+v", reply.messages)
+	}
+	// 残した最近の発言は、会話の上限の半分以下
+	if kept := promptLen(promptMessages(c.Settings.System, "", ms[keep:len(ms)-1]), true); kept > before.Tokens/2 {
+		t.Errorf("残した発言が上限の半分を超えています: %d > %d", kept, before.Tokens/2)
+	}
+
+	// イベント: 要約中 → 要約の文 → compact(保存した要約つき)→ 返事。メーターは要約で下がる
+	var types []string
+	for _, ev := range evs {
+		types = append(types, ev.Type)
+	}
+	if got := strings.Join(types, ","); !strings.HasPrefix(got, "summarizing,summary,compact,usage,prompt,content,usage") {
+		t.Errorf("イベントの順番: %s", got)
+	}
+	cp := compacts(evs)[0]
+	if cp.Compaction == nil || cp.Error != "" || cp.AfterTokens >= cp.BeforeTokens || cp.Dropped != keep {
+		t.Errorf("compact イベント: %+v", cp)
+	}
+	us := usages(evs)
+	if us[0].Tokens > us[0].Limit || us[0].FirstID == nil || *us[0].FirstID != ms[keep].ID {
+		t.Errorf("要約のあとのメーター: %+v", us[0])
+	}
+	// 開き直したときも、最新の要約 + 要約に入っていない発言で数える
+	u, _ := cs.Usage(c.ID)
+	if *u.FirstID != ms[keep].ID {
+		t.Errorf("Usage の最初の発言: %v", u.FirstID)
+	}
+}
+
+func TestSummaryStacks(t *testing.T) {
+	g := &fakeGen{}
+	cs, _ := newTestConversations(t, g)
+	c := longTalk(t, cs, g, CompactSummary, 6)
+	overLimit(t, cs, c)
+	g.replies = []fakeReply{{content: "- 要約1"}, {content: strings.Repeat("返", 50)}}
+	send(t, cs, c, "質問6")
+
+	// もう一度、上限を超えるまで話す
+	for i := 7; ; i++ {
+		g.replies = []fakeReply{{content: "- 要約2"}, {content: strings.Repeat("返", 50)}}
+		calls := len(g.calls)
+		send(t, cs, c, fmt.Sprintf("質問%d", i))
+		if len(g.calls)-calls == 2 {
+			break // 要約 + 返事
+		}
+		g.replies = nil
+		if i > 30 {
+			t.Fatal("2回目の要約が起きません")
+		}
+	}
+
+	sum := g.calls[len(g.calls)-2]
+	if !strings.Contains(sum.messages[1].Content, "## 前回までの要約\n- 要約1\n") {
+		t.Errorf("2回目の要約に前回の要約が入っていません: %s", sum.messages[1].Content)
+	}
+	if strings.Contains(sum.messages[1].Content, "ユーザー: 質問0\n") {
+		t.Errorf("前回までに要約した発言を、また要約しています")
+	}
+	reply := g.calls[len(g.calls)-1]
+	if s := systemOf(reply.messages); !strings.HasSuffix(s, "\n- 要約2") || strings.Contains(s, "要約1") {
+		t.Errorf("返事に渡すのは最新の要約だけ: %q", s)
+	}
+	if list, _ := cs.Compactions(c.ID); len(list) != 2 || list[0].UptoMessageID.Compare(list[1].UptoMessageID) >= 0 {
+		t.Errorf("要約は古いものも残り、新しいほど後ろまで要約している: %+v", list)
+	}
+}
+
+func TestSummaryFailureFallsBackToTruncate(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		summary fakeReply
+		stop    bool // 要約中に StopSummary を押す
+		want    string
+	}{
+		{"エラー", fakeReply{err: errors.New("decode に失敗")}, false, "decode に失敗"},
+		{"空", fakeReply{thinking: "考えただけ"}, false, "要約が空でした"},
+		{"途中で切れた", fakeReply{content: "- 途中", stopReason: "length"}, false, "途中で切れました"},
+		{"停止", fakeReply{content: "- 途中", waitCancel: true}, true, "要約を停止しました"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			g := &fakeGen{}
+			cs, _ := newTestConversations(t, g)
+			c := longTalk(t, cs, g, CompactSummary, 6)
+			before := overLimit(t, cs, c)
+
+			g.replies = []fakeReply{tc.summary, {content: "返事"}}
+			var evs []ChatEvent
+			cs.Send(context.Background(), c.ID, "次の質問", func(ev ChatEvent) {
+				evs = append(evs, ev)
+				if tc.stop && ev.Type == "summarizing" {
+					cs.StopSummary() // 要約だけが止まり、返事は生成される
+				}
+			})
+
+			if list, _ := cs.Compactions(c.ID); len(list) != 0 {
+				t.Errorf("失敗した要約が保存されました: %+v", list)
+			}
+			cps := compacts(evs)
+			if len(cps) != 2 || cps[0].Method != CompactSummary || !strings.Contains(cps[0].Error, tc.want) ||
+				!strings.Contains(cps[0].Error, "truncate") || cps[1].Method != CompactTruncate {
+				t.Fatalf("compact イベント: %+v", cps)
+			}
+			done := evs[len(evs)-1]
+			if done.Reply == nil || done.Reply.Content != "返事" || len(errorsOf(evs)) != 0 {
+				t.Fatalf("返事が生成されていません: %+v %v", done.Reply, errorsOf(evs))
+			}
+			reply := g.calls[len(g.calls)-1]
+			if strings.Contains(systemOf(reply.messages), summaryHeading) || promptLen(reply.messages, true) > before.Tokens {
+				t.Errorf("truncate で収めた内容ではありません: %+v", reply.messages)
+			}
+		})
+	}
+}
+
+func TestCompactNow(t *testing.T) {
+	g := &fakeGen{}
+	cs, _ := newTestConversations(t, g)
+	c := longTalk(t, cs, g, CompactSummary, 6)
+	u := overLimit(t, cs, c)
+	cs.SetLimits(u.Tokens+10, summaryReply) // 上限を超えていなくても(半分より長ければ)要約できる
+
+	g.replies = []fakeReply{{content: "- 今すぐの要約"}}
+	var evs []ChatEvent
+	cs.Compact(context.Background(), c.ID, func(ev ChatEvent) { evs = append(evs, ev) })
+	if errs := errorsOf(evs); len(errs) != 0 || evs[len(evs)-1].Type != "done" {
+		t.Fatalf("エラー: %v", errs)
+	}
+	list, _ := cs.Compactions(c.ID)
+	if len(list) != 1 || list[0].Summary != "- 今すぐの要約" {
+		t.Fatalf("要約: %+v", list)
+	}
+	after := usages(evs)
+	if len(after) != 1 || after[0].Tokens >= u.Tokens {
+		t.Errorf("要約のあとのメーターが下がっていません: %+v → %+v", u, after)
+	}
+	if _, ms, _ := cs.Get(c.ID); len(ms) != 12 {
+		t.Errorf("今すぐ要約で発言が増減しました: %d", len(ms))
+	}
+
+	// 最近の発言が上限の半分に収まっていれば、要約できる古い発言は無い
+	short := longTalk(t, cs, g, CompactSummary, 1)
+	evs = nil
+	cs.Compact(context.Background(), short.ID, func(ev ChatEvent) { evs = append(evs, ev) })
+	if errs := errorsOf(evs); len(errs) != 1 || errs[0] != errNothingToSummarize.Error() {
+		t.Errorf("要約できる発言が無いときのエラー: %v", errs)
+	}
+}
+
+func TestSummaryInSeveralPartsWhenTooLong(t *testing.T) {
+	g := &fakeGen{}
+	cs, _ := newTestConversations(t, g)
+	c := longTalk(t, cs, g, CompactSummary, 10)
+	u, _ := cs.Usage(c.ID)
+	// 会話の上限をとても小さくし、要約したい部分が作業領域(上限 + 返事の上限 − 要約の上限)に一度に入らないようにする
+	cs.SetLimits(u.Tokens/3, summaryMaxTokens+u.Tokens/6)
+
+	g.replies = []fakeReply{{content: "- 1"}, {content: "- 2"}, {content: "- 3"}, {content: "- 4"}, {content: "- 5"}}
+	var evs []ChatEvent
+	cs.Compact(context.Background(), c.ID, func(ev ChatEvent) { evs = append(evs, ev) })
+	if errs := errorsOf(evs); len(errs) != 0 {
+		t.Fatalf("エラー: %v", errs)
+	}
+	list, _ := cs.Compactions(c.ID)
+	if len(list) < 2 {
+		t.Fatalf("何回かに分けて要約するはずです: %d 回", len(list))
+	}
+	// 2回目以降は、直前の要約を「前回までの要約」として受け取っている
+	for i := 1; i < len(list); i++ {
+		in := g.calls[len(g.calls)-len(list)+i].messages[1].Content
+		if !strings.Contains(in, "## 前回までの要約\n"+list[i-1].Summary+"\n") {
+			t.Errorf("%d 回目に前回の要約が入っていません: %s", i+1, in)
+		}
 	}
 }

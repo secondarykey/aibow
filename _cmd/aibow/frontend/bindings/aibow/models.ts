@@ -23,7 +23,10 @@ export interface AppSettings {
  * 	prompt   : モデルに渡した文字列(学習用に画面に表示する)
  * 	thinking : 思考の断片
  * 	content  : 答えの断片
- * 	compact  : 会話の上限に収めるために compact した(方式・前後のトークン数など)
+ * 	summarizing : 要約を作り始めた(compact の summary。返事の前か「今すぐ要約」)
+ * 	summary  : 要約の断片
+ * 	compact  : 会話の上限に収めるために compact した(方式・前後のトークン数・保存した要約など)。
+ * 	           要約に失敗したときも Compact.Error に理由を入れて送る
  * 	usage    : メーターの値(モデルに渡す文字列のトークン数 / 会話の上限)。生成の前と、返事を保存したあとに送る
  * 	error    : エラー
  * 	done     : 終わり。必ず最後に1回だけ送る。保存した返事があれば Reply に入る
@@ -69,6 +72,107 @@ export interface CompactInfo {
      * かかった秒数
      */
     "sec": number;
+
+    /**
+     * summary: 保存した要約
+     */
+    "compaction"?: Compaction | null;
+
+    /**
+     * summary: 要約を作れなかった理由(保存していない)
+     */
+    "error"?: string;
+}
+
+/**
+ * CompactStats は要約1件の記録。画面の区切りを開いたときに見せる。
+ * トークン数は、そのときのモデルで数えた値(モデルが変わると変わるので、判断には使わない)。
+ */
+export interface CompactStats {
+    /**
+     * プロンプトのトークン数
+     */
+    "prompt_tokens": number;
+
+    /**
+     * そのうち KV キャッシュを再利用できた数
+     */
+    "reused_tokens": number;
+
+    /**
+     * プロンプトを読み込むのにかかった秒数
+     */
+    "prompt_sec": number;
+
+    /**
+     * 生成したトークン数(思考 + 答え)
+     */
+    "gen_tokens": number;
+
+    /**
+     * 生成にかかった秒数
+     */
+    "gen_sec": number;
+
+    /**
+     * eos / length / context / cancel
+     */
+    "stop_reason": string;
+
+    /**
+     * 要約する前の、モデルに渡す文字列のトークン数
+     */
+    "before_tokens": number;
+
+    /**
+     * 要約したあとの、モデルに渡す文字列のトークン数
+     */
+    "after_tokens": number;
+
+    /**
+     * 今回の要約に入れた発言の数
+     */
+    "messages": number;
+
+    /**
+     * 要約にかかった秒数
+     */
+    "sec": number;
+}
+
+/**
+ * Compaction は要約1件(compact の summary)。
+ * 
+ * 保存するのは「どの発言までを要約したか」と「要約の文」だけ。会話の上限に依存する値(どこから渡すか)は
+ * 保存せず、毎回その時点の上限とモデルで計算し直す。
+ */
+export interface Compaction {
+    /**
+     * UUIDv7。最新の要約はこの並びで決まる
+     */
+    "id": uuid$0.UUID;
+    "conversation_id": uuid$0.UUID;
+
+    /**
+     * この発言(を含む)までを要約した
+     */
+    "upto_message_id": uuid$0.UUID;
+
+    /**
+     * 要約の文。前回までの要約も含んだ、積み重ねた結果
+     */
+    "summary": string;
+
+    /**
+     * 要約を作ったモデル
+     */
+    "model": string;
+
+    /**
+     * 記録用。判断には使わない
+     */
+    "stats": CompactStats | null;
+    "created_at": string;
 }
 
 /**

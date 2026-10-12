@@ -24,6 +24,14 @@ export function AppSettings(): $CancellablePromise<aibow$0.AppSettings> {
 }
 
 /**
+ * Compact は「今すぐ要約」。会話の上限を超えていなくても、古い発言を要約する。
+ * Send と同じく、途中経過(要約の文)と終わり(done)は chat イベントで送る。
+ */
+export function Compact(id: uuid$0.UUID): $CancellablePromise<void> {
+    return $Call.ByID(3308527564, id);
+}
+
+/**
  * Conversation は会話1つと、その発言を古い順に返す。
  */
 export function Conversation(id: uuid$0.UUID): $CancellablePromise<$models.ConversationDetail> {
@@ -103,6 +111,15 @@ export function SetGPULayers(n: number): $CancellablePromise<aibow$0.ModelInfo |
  */
 export function SetLimits(history: number, reply: number): $CancellablePromise<aibow$0.ModelInfo | null> {
     return $Call.ByID(2159064713, history, reply);
+}
+
+/**
+ * StopSummary は生成中の要約だけを止める(要約中に出る停止ボタン)。
+ * 送信の途中の要約なら、その回は古い発言を外して(truncate)返事の生成に進む。
+ * Promise の cancel() だと送信全体が止まってしまうので、別のメソッドにしている。
+ */
+export function StopSummary(): $CancellablePromise<void> {
+    return $Call.ByID(3855430149);
 }
 
 /**

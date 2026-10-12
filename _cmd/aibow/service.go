@@ -248,8 +248,9 @@ func (s *ChatService) Conversations() ([]aibow.Conversation, error) {
 type ConversationDetail struct {
 	Conversation aibow.Conversation    `json:"conversation"`
 	Messages     []aibow.StoredMessage `json:"messages"`
-	Generating   bool                  `json:"generating"` // この会話で返事を生成中か
-	Usage        *aibow.Usage          `json:"usage"`      // メーター。モデルが読み込まれていなければ null
+	Compactions  []aibow.Compaction    `json:"compactions"` // 要約(古い順)。画面の区切りに使う
+	Generating   bool                  `json:"generating"`  // この会話で返事を生成中か
+	Usage        *aibow.Usage          `json:"usage"`       // メーター。モデルが読み込まれていなければ null
 }
 
 // Conversation は会話1つと、その発言を古い順に返す。
@@ -261,12 +262,16 @@ func (s *ChatService) Conversation(id uuid.UUID) (ConversationDetail, error) {
 	if err != nil {
 		return ConversationDetail{}, err
 	}
+	comps, err := s.convs.Compactions(id)
+	if err != nil {
+		return ConversationDetail{}, err
+	}
 	g := s.convs.Generating()
 	u, err := s.Usage(id)
 	if err != nil {
 		return ConversationDetail{}, err
 	}
-	return ConversationDetail{Conversation: c, Messages: ms, Generating: g != nil && *g == id, Usage: u}, nil
+	return ConversationDetail{Conversation: c, Messages: ms, Compactions: comps, Generating: g != nil && *g == id, Usage: u}, nil
 }
 
 // Usage は、会話がモデルに渡す文字列で、会話の上限をどれだけ使っているか(メーター)を返す。
@@ -335,6 +340,30 @@ const chatEventName = "chat"
 // 画面で「停止」を押すと、JavaScript 側で Promise の cancel() が呼ばれ、
 // Wails がこの ctx をキャンセルする。エンジンはそれを見て生成を止める。
 func (s *ChatService) Send(ctx context.Context, id uuid.UUID, text string) {
+	s.run(ctx, id, func(ctx context.Context, emit func(aibow.ChatEvent)) {
+		s.convs.Send(ctx, id, text, emit)
+	})
+}
+
+// Compact は「今すぐ要約」。会話の上限を超えていなくても、古い発言を要約する。
+// Send と同じく、途中経過(要約の文)と終わり(done)は chat イベントで送る。
+func (s *ChatService) Compact(ctx context.Context, id uuid.UUID) {
+	s.run(ctx, id, func(ctx context.Context, emit func(aibow.ChatEvent)) {
+		s.convs.Compact(ctx, id, emit)
+	})
+}
+
+// StopSummary は生成中の要約だけを止める(要約中に出る停止ボタン)。
+// 送信の途中の要約なら、その回は古い発言を外して(truncate)返事の生成に進む。
+// Promise の cancel() だと送信全体が止まってしまうので、別のメソッドにしている。
+func (s *ChatService) StopSummary() {
+	if s.startupErr == nil {
+		s.convs.StopSummary()
+	}
+}
+
+// run は Send / Compact の共通部分: 停止とアプリの終了で止める ctx を作り、chat イベントを画面に送りながらログに出す。
+func (s *ChatService) run(ctx context.Context, id uuid.UUID, f func(ctx context.Context, emit func(aibow.ChatEvent))) {
 	emit := func(ev aibow.ChatEvent) { application.Get().Event.Emit(chatEventName, ev) }
 	if s.startupErr != nil {
 		emit(aibow.ChatEvent{ConversationID: id, Type: "error", Error: s.startupErr.Error()})
@@ -348,8 +377,10 @@ func (s *ChatService) Send(ctx context.Context, id uuid.UUID, text string) {
 	stop := context.AfterFunc(s.quit, cancel)
 	defer stop()
 
-	s.convs.Send(ctx, id, text, func(ev aibow.ChatEvent) {
+	f(ctx, func(ev aibow.ChatEvent) {
 		switch ev.Type {
+		case "summarizing":
+			log.Printf("要約を作っています…")
 		case "compact":
 			logCompact(ev.Compact)
 		case "error":
@@ -378,7 +409,13 @@ func logCompact(c *aibow.CompactInfo) {
 	case aibow.CompactTruncate:
 		log.Printf("compact(truncate): %d → %d トークン(古い発言 %d 件をモデルに渡しません)",
 			c.BeforeTokens, c.AfterTokens, c.Dropped)
-	default:
-		log.Printf("compact(%s): %d → %d トークン", c.Method, c.BeforeTokens, c.AfterTokens)
+	case aibow.CompactSummary:
+		if c.Error != "" {
+			log.Printf("※ compact(summary): %s", c.Error)
+			return
+		}
+		st := c.Compaction.Stats
+		log.Printf("compact(summary): %d → %d トークン(発言 %d 件を要約)/ 要約: 読ませた %d トークン(再利用 %d)・生成 %d トークン / %.1f 秒",
+			c.BeforeTokens, c.AfterTokens, c.Dropped, st.PromptTokens, st.ReusedTokens, st.GenTokens, c.Sec)
 	}
 }

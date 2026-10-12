@@ -1,6 +1,7 @@
 package store
 
 import (
+	"database/sql"
 	"errors"
 	"path/filepath"
 	"testing"
@@ -177,5 +178,66 @@ func TestTouchConversation(t *testing.T) {
 	}
 	if err := s.TouchConversation(uuid.NewV7(), base, "x"); !errors.Is(err, aibow.ErrNotFound) {
 		t.Errorf("無い会話は ErrNotFound のはずです: %v", err)
+	}
+}
+
+// 版 1 の DB(compact の機能より前)を開くと、要約の表が足され、今ある会話はそのまま残る
+func TestMigrationFromVersion1(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "old.db")
+	db, err := sql.Open("sqlite", path+"?_pragma=foreign_keys(1)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(migrations[0] + "PRAGMA user_version = 1;"); err != nil {
+		t.Fatal(err)
+	}
+	// 古い版の設定: max_tokens があり、compact が無い
+	old := uuid.NewV7()
+	now := formatTime(time.Now())
+	if _, err := db.Exec(`INSERT INTO conversations VALUES (?, '古い会話', '{"system":"sys","max_tokens":4096,"temperature":0.7,"think":true}', ?, ?)`,
+		old.String(), now, now); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	c, _, err := s.Conversation(old)
+	if err != nil || c.Title != "古い会話" || c.Settings.System != "sys" {
+		t.Fatalf("今ある会話: %+v %v", c, err)
+	}
+
+	// 要約を保存して読める。開き直しても残っている
+	msg := uuid.NewV7()
+	comp := aibow.Compaction{
+		ID: uuid.NewV7(), ConversationID: old, UptoMessageID: msg, Summary: "- 要約", Model: "qwen3.5:4b",
+		Stats:     &aibow.CompactStats{BeforeTokens: 900, AfterTokens: 300, Messages: 4, Sec: 1.5},
+		CreatedAt: time.Now(),
+	}
+	if err := s.AddCompaction(comp); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+	s, _ = Open(path)
+	list, err := s.Compactions(old)
+	if err != nil || len(list) != 1 {
+		t.Fatalf("要約: %+v %v", list, err)
+	}
+	got := list[0]
+	if got.UptoMessageID != msg || got.Summary != "- 要約" || got.Model != "qwen3.5:4b" || *got.Stats != *comp.Stats {
+		t.Errorf("読み戻した要約: %+v", got)
+	}
+
+	// 会話を消すと要約も消える(ON DELETE CASCADE)
+	if err := s.DeleteConversation(old); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	s.db.QueryRow("SELECT count(*) FROM compactions").Scan(&n)
+	if n != 0 {
+		t.Errorf("会話を消しても要約が %d 件残っています", n)
 	}
 }

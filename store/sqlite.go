@@ -89,6 +89,19 @@ CREATE TABLE app_settings (
 	value TEXT NOT NULL               -- JSON
 );
 `,
+	// 版 2: 要約(compact の summary)。発言は消さずに、要約を別の表に積み重ねる
+	`
+CREATE TABLE compactions (
+	id              TEXT PRIMARY KEY, -- UUIDv7。最新の要約もこの並びで決まる
+	conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+	upto_message_id TEXT NOT NULL,    -- この発言(を含む)までを要約した
+	summary         TEXT NOT NULL,    -- 要約の文。前回までの要約も含んだ、積み重ねた結果
+	model           TEXT NOT NULL,    -- 要約を作ったモデル
+	stats           TEXT,             -- 要約前後のトークン数・かかった秒数など(JSON。記録用で、判断には使わない)
+	created_at      TEXT NOT NULL
+);
+CREATE INDEX compactions_by_conversation ON compactions(conversation_id, id);
+`,
 }
 
 func migrate(db *sql.DB) error {
@@ -246,7 +259,7 @@ func (s *SQLite) TouchConversation(id uuid.UUID, at time.Time, autoTitle string)
 }
 
 func (s *SQLite) DeleteConversation(id uuid.UUID) error {
-	// 発言は ON DELETE CASCADE でいっしょに消える
+	// 発言と要約は ON DELETE CASCADE でいっしょに消える
 	_, err := s.db.Exec("DELETE FROM conversations WHERE id = ?", id.String())
 	return err
 }
@@ -299,6 +312,58 @@ func (s *SQLite) AddMessage(m aibow.StoredMessage) error {
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		m.ID.String(), m.ConversationID.String(), m.Role, m.Content, m.Thinking, m.Model, stats, formatTime(m.CreatedAt))
 	return err
+}
+
+// ---- 要約 -------------------------------------------------------------------------------
+
+func (s *SQLite) AddCompaction(c aibow.Compaction) error {
+	var stats sql.NullString
+	if c.Stats != nil {
+		b, err := json.Marshal(c.Stats)
+		if err != nil {
+			return err
+		}
+		stats = sql.NullString{String: string(b), Valid: true}
+	}
+	_, err := s.db.Exec(`INSERT INTO compactions (id, conversation_id, upto_message_id, summary, model, stats, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		c.ID.String(), c.ConversationID.String(), c.UptoMessageID.String(), c.Summary, c.Model, stats, formatTime(c.CreatedAt))
+	return err
+}
+
+func (s *SQLite) Compactions(conv uuid.UUID) ([]aibow.Compaction, error) {
+	rows, err := s.db.Query(`SELECT id, upto_message_id, summary, model, stats, created_at
+		FROM compactions WHERE conversation_id = ? ORDER BY id`, conv.String())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []aibow.Compaction{}
+	for rows.Next() {
+		c := aibow.Compaction{ConversationID: conv}
+		var id, upto, created string
+		var stats sql.NullString
+		if err := rows.Scan(&id, &upto, &c.Summary, &c.Model, &stats, &created); err != nil {
+			return nil, err
+		}
+		if c.ID, err = parseID(id); err != nil {
+			return nil, err
+		}
+		if c.UptoMessageID, err = parseID(upto); err != nil {
+			return nil, err
+		}
+		if c.CreatedAt, err = parseTime(created); err != nil {
+			return nil, err
+		}
+		if stats.Valid {
+			c.Stats = &aibow.CompactStats{}
+			if err := json.Unmarshal([]byte(stats.String), c.Stats); err != nil {
+				return nil, fmt.Errorf("要約 %s の記録が読めません: %w", id, err)
+			}
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
 }
 
 // ---- アプリ設定 -------------------------------------------------------------------------

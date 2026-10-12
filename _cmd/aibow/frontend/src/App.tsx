@@ -7,8 +7,8 @@
 //	useToasts        … 右上に出して数秒で消えるお知らせ(モデルの読み込みなど)
 //	useModels        … モデルの一覧と切り替え(Go の ChatService.Models / SwitchModel)
 //	useConversations … 会話の一覧・開いている会話・会話ごとの設定
-//	useChat          … 送信と停止(Go の ChatService.Send と chat イベント)
-//	useAppSettings   … アプリ全体の設定(コンテキスト長・GPU の層数・新しい会話の既定)
+//	useChat          … 送信・今すぐ要約・停止(Go の ChatService.Send / Compact と chat イベント)
+//	useAppSettings   … アプリ全体の設定(会話の上限・返事の上限・GPU の層数・新しい会話の既定)
 //
 // 会話の履歴と設定は Go が SQLite に保存している。画面は表示と入力に専念する。
 // Go のメソッドは、wails3 generate bindings が作った frontend/bindings の関数として呼ぶ。
@@ -107,7 +107,21 @@ export default function App() {
     <>
       <Composer canSend={canSend} blockedReason={blockedReason} home={home} focusKey={focusKey} onSend={chat.send} />
       <ModelBar models={models} disabled={busy !== "idle"}>
-        {convs.current && <Meter usage={convs.current.usage} />}
+        {convs.current && (
+          <>
+            {convs.current.conversation.settings.compact === "summary" && (
+              <button
+                className="compact-now"
+                disabled={busy !== "idle"}
+                onClick={chat.compact}
+                title="会話の上限を超えていなくても、古い発言を今すぐ要約する(最近の発言は会話の上限の半分まで残す)"
+              >
+                今すぐ要約
+              </button>
+            )}
+            <Meter usage={convs.current.usage} />
+          </>
+        )}
       </ModelBar>
     </>
   );

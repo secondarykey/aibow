@@ -11,10 +11,11 @@ import (
 )
 
 type memStore struct {
-	mu       sync.Mutex
-	convs    map[uuid.UUID]Conversation
-	messages []StoredMessage
-	settings map[string]string
+	mu          sync.Mutex
+	convs       map[uuid.UUID]Conversation
+	messages    []StoredMessage
+	compactions []Compaction
+	settings    map[string]string
 }
 
 func newMemStore() *memStore {
@@ -86,7 +87,28 @@ func (s *memStore) DeleteConversation(id uuid.UUID) error {
 	defer s.mu.Unlock()
 	delete(s.convs, id)
 	s.messages = slices.DeleteFunc(s.messages, func(m StoredMessage) bool { return m.ConversationID == id })
+	s.compactions = slices.DeleteFunc(s.compactions, func(c Compaction) bool { return c.ConversationID == id })
 	return nil
+}
+
+func (s *memStore) AddCompaction(c Compaction) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.compactions = append(s.compactions, c)
+	return nil
+}
+
+func (s *memStore) Compactions(conv uuid.UUID) ([]Compaction, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := []Compaction{}
+	for _, c := range s.compactions {
+		if c.ConversationID == conv {
+			out = append(out, c)
+		}
+	}
+	slices.SortFunc(out, func(a, b Compaction) int { return a.ID.Compare(b.ID) })
+	return out, nil
 }
 
 func (s *memStore) AddMessage(m StoredMessage) error {

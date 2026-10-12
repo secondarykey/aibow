@@ -29,6 +29,11 @@ type Store interface {
 	DeleteConversation(id uuid.UUID) error
 	AddMessage(m StoredMessage) error
 
+	// AddCompaction は要約を1件保存する(compact の summary)。
+	AddCompaction(c Compaction) error
+	// Compactions は会話の要約を古い順に返す。モデルに渡すのは最新の1件だけで、古いものは画面の区切りに使う。
+	Compactions(conv uuid.UUID) ([]Compaction, error)
+
 	// AppSetting はアプリ全体の設定を1つ読む。まだ保存されていなければ ok=false。
 	AppSetting(key string) (value string, ok bool, err error)
 	SetAppSetting(key, value string) error
@@ -88,6 +93,30 @@ type StoredMessage struct {
 	Model          string      `json:"model"`    // どのモデルの返事か(assistant のみ)
 	Stats          *ReplyStats `json:"stats"`    // 生成の記録(assistant のみ)
 	CreatedAt      time.Time   `json:"created_at"`
+}
+
+// Compaction は要約1件(compact の summary)。
+//
+// 保存するのは「どの発言までを要約したか」と「要約の文」だけ。会話の上限に依存する値(どこから渡すか)は
+// 保存せず、毎回その時点の上限とモデルで計算し直す。
+type Compaction struct {
+	ID             uuid.UUID     `json:"id"` // UUIDv7。最新の要約はこの並びで決まる
+	ConversationID uuid.UUID     `json:"conversation_id"`
+	UptoMessageID  uuid.UUID     `json:"upto_message_id"` // この発言(を含む)までを要約した
+	Summary        string        `json:"summary"`         // 要約の文。前回までの要約も含んだ、積み重ねた結果
+	Model          string        `json:"model"`           // 要約を作ったモデル
+	Stats          *CompactStats `json:"stats"`           // 記録用。判断には使わない
+	CreatedAt      time.Time     `json:"created_at"`
+}
+
+// CompactStats は要約1件の記録。画面の区切りを開いたときに見せる。
+// トークン数は、そのときのモデルで数えた値(モデルが変わると変わるので、判断には使わない)。
+type CompactStats struct {
+	GenerateStats         // 要約の生成の記録(要約を作るのに読ませたトークン数・生成したトークン数など)
+	BeforeTokens  int     `json:"before_tokens"` // 要約する前の、モデルに渡す文字列のトークン数
+	AfterTokens   int     `json:"after_tokens"`  // 要約したあとの、モデルに渡す文字列のトークン数
+	Messages      int     `json:"messages"`      // 今回の要約に入れた発言の数
+	Sec           float64 `json:"sec"`           // 要約にかかった秒数
 }
 
 // ReplyStats は返事1件の記録。エンジンの GenerateStats に、会話の仕組みで測った値を足したもの。

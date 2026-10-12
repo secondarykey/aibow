@@ -1,11 +1,13 @@
-// 会話の表示: 吹き出し・エラー
+// 会話の表示: 吹き出し・エラー・要約の区切り
 import { useEffect, useRef, useState } from "react";
+import type { Compaction } from "../../bindings/aibow";
+import { compactionStats } from "../transcript";
 import type { AssistantView, Item } from "../transcript";
 import { RenderedText } from "./RenderedText";
 
 const FADED_TITLE = "この発言はモデルに渡していません(要約に入ったか、会話の上限に収めるために外しました)";
 
-// onStop は生成中の返事を止める。生成中の返事は1つだけ(生成は同時に1つ)なので、どの返事かは渡さない。
+// onStop は生成中の返事(要約中なら要約だけ)を止める。生成中の返事は1つだけ(生成は同時に1つ)なので、どの返事かは渡さない。
 // firstId はモデルに渡す最初の発言(Go の Usage.first_id)。これより前の発言は、要約に入ったか
 // truncate で外れて、モデルに渡していないので薄く表示する(発言そのものは保存されている)
 export function ChatView({ items, firstId, onStop }: { items: Item[]; firstId: string | null; onStop(): void }) {
@@ -28,6 +30,8 @@ export function ChatView({ items, firstId, onStop }: { items: Item[]; firstId: s
               return <div key={it.id} className={"msg user" + faded(it.msgId)} title={fadedTitle(it.msgId)}>{it.text}</div>;
             case "error":
               return <div key={it.id} className="msg error">{it.text}</div>;
+            case "divider":
+              return <Divider key={it.id} compaction={it.compaction} />;
             case "assistant":
               return <AssistantMessage key={it.id} view={it} faded={!!faded(it.msgId)} onStop={onStop} />;
           }
@@ -38,13 +42,13 @@ export function ChatView({ items, firstId, onStop }: { items: Item[]; firstId: s
 }
 
 function AssistantMessage({ view, faded, onStop }: { view: AssistantView; faded: boolean; onStop(): void }) {
-  // 停止を押してから、Go が止まって done が届くまでの間は押せなくする
-  const [stopping, setStopping] = useState(false);
   return (
     <div className={"msg assistant" + (faded ? " faded" : "")} title={faded ? FADED_TITLE : undefined}>
+      {view.summarizing && <Summarizing text={view.summary ?? ""} />}
+      {view.compactNote && <p className="compact-note">{view.compactNote}</p>}
       {view.thinking && <Thinking label={view.thinkLabel} text={view.thinking} />}
       <div className="body">
-        {view.waiting && <p className="waiting">応答待ち…</p>}
+        {view.waiting && !view.summarizing && <p className="waiting">応答待ち…</p>}
         <RenderedText text={view.content} />
         {view.cutoff && <p className="cutoff">{view.cutoff}</p>}
         {view.cutoffHint && (
@@ -54,10 +58,44 @@ function AssistantMessage({ view, faded, onStop }: { view: AssistantView; faded:
       {view.stats && <div className="stats">{view.stats}</div>}
       {view.generating && (
         <div className="stop-row">
-          <button disabled={stopping} onClick={() => { setStopping(true); onStop(); }}>停止</button>
+          {/* 要約中の停止は要約だけを止める(返事は truncate で生成する)ので、要約が終わったらまた押せる */}
+          <StopButton key={view.summarizing ? "summary" : "reply"} label={view.summarizing ? "要約を停止" : "停止"} onStop={onStop} />
         </div>
       )}
     </div>
+  );
+}
+
+// 停止を押してから、Go が止まるまでの間は押せなくする
+function StopButton({ label, onStop }: { label: string; onStop(): void }) {
+  const [stopping, setStopping] = useState(false);
+  return <button disabled={stopping} onClick={() => { setStopping(true); onStop(); }}>{label}</button>;
+}
+
+// 要約を作っている途中: 要約の文が流れてくる様子を見せる
+function Summarizing({ text }: { text: string }) {
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (box.current) box.current.scrollTop = box.current.scrollHeight;
+  }, [text]);
+  return (
+    <div className="summarizing">
+      <div className="summarizing-label">古い発言を要約しています…</div>
+      {text && <div className="summarizing-text" ref={box}>{text}</div>}
+    </div>
+  );
+}
+
+// 要約した位置の区切り。開くと要約の文(モデルに渡しているもの)と記録が読める
+function Divider({ compaction }: { compaction: Compaction }) {
+  return (
+    <details className="divider">
+      <summary>― ここまでを要約しました ―</summary>
+      <div className="divider-body">
+        <RenderedText text={compaction.summary} />
+        <div className="stats">{compactionStats(compaction)}</div>
+      </div>
+    </details>
   );
 }
 

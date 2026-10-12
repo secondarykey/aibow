@@ -4,6 +4,7 @@
 // Go が履歴を保存し、全部を並べ直してモデルに渡す(モデル自身は何も覚えていない)。
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CancelError, Events } from "@wailsio/runtime";
+import type { CancellablePromise } from "@wailsio/runtime";
 import { ChatService } from "../bindings/aibow/cmd/aibow";
 import type { ChatEvent, StoredMessage } from "../bindings/aibow";
 import { messageItems, replyView, thinkLabel } from "./transcript";
@@ -24,9 +25,10 @@ interface Live {
 }
 
 export interface Chat {
-  generatingId: string | null; // 返事を生成中の会話の ID
+  generatingId: string | null; // 返事(か要約)を生成中の会話の ID
   lastPrompt: string;          // 開いている会話で、モデルに実際に渡した文字列
   send(text: string): Promise<void>;
+  compact(): Promise<void>;    // 今すぐ要約(開いている会話)
   stop(): void;
 }
 
@@ -63,7 +65,7 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
     }
     const id = current.conversation.id;
     viewing.current = id;
-    reset(messageItems(current.messages ?? []));
+    reset(messageItems(current.messages ?? [], current.compactions ?? []));
     const l = live.current;
     if (l) l.itemId = l.convId === id && current.generating ? addAssistant(l.view) : null;
     // 開くたびに増える openCount だけを見る(設定の変更で current が変わっても作り直さない)
@@ -84,23 +86,12 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
     return c.id;
   }, [current, draft, flushSettings, adopt, reset]);
 
-  const send = useCallback(async (text: string) => {
-    if (controller.current || starting.current) return;
-    starting.current = true;
-    let id: string;
-    try {
-      id = await target();
-    } catch (err) {
-      addError(`送信できません: ${errorMessage(err)}`);
-      return;
-    } finally {
-      starting.current = false;
-    }
-
-    addUser(text);
+  // run は送信と「今すぐ要約」の共通部分。生成中の吹き出しを出し、chat イベントで書き換え、done で終わる。
+  // manual は「今すぐ要約」(返事は生成しない。終わったら吹き出しを消して、区切りが出るように開き直す)
+  const run = useCallback(async (id: string, start: () => CancellablePromise<void>, manual: boolean) => {
     const l: Live = {
       convId: id, itemId: null, thinkStart: 0,
-      view: { generating: true, waiting: true, thinking: "", thinkLabel: "", content: "" },
+      view: { generating: true, waiting: true, thinking: "", thinkLabel: "", content: "", summarizing: manual, summary: "" },
     };
     l.itemId = addAssistant(l.view);
     live.current = l;
@@ -112,12 +103,17 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
       l.view = { ...l.view, ...patch };
       if (l.itemId !== null) updateAssistant(l.itemId, patch);
     };
+    // 表示している会話なら開き直す(要約の区切りと薄い表示を、保存された内容から作り直す)。
+    // 生成中なら、開き直したあとに生成中の吹き出しが末尾に足し直される
+    const reopen = () => {
+      if (viewing.current === id) open(id).catch(err => addError(errorMessage(err)));
+    };
 
     // 終わったら、Go が保存した返事で吹き出しを置き換える(統計や「思考の過程(N秒)」も付く)
     const done = (reply: StoredMessage | null) => {
       if (l.itemId !== null) {
         if (reply) updateAssistant(l.itemId, replyView(reply));
-        else remove(l.itemId); // 何も生成されなかった
+        else remove(l.itemId); // 何も生成されなかった(今すぐ要約もここ)
       } else if (reply && viewing.current === id) {
         // 会話を開き直している最中に終わった。保存された返事が読めるように開き直す
         open(id).catch(() => {});
@@ -125,6 +121,7 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
     };
 
     // 返事は Send の戻り値ではなく、chat イベントで少しずつ届く。done が来たら終わり。
+    let compacted = false; // 今すぐ要約で、要約が保存された
     let finish = () => {};
     const finished = new Promise<void>(resolve => (finish = resolve));
     listener.current = ev => {
@@ -132,6 +129,8 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
       switch (ev.type) {
         case "done":
           done(ev.reply ?? null);
+          live.current = null; // 開き直しても、もう生成中の吹き出しは足さない
+          if (manual && compacted) reopen();
           finish();
           return;
         case "prompt":
@@ -142,6 +141,22 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
         case "usage":
           setUsage(id, ev.usage ?? null);
           return;
+        case "summarizing":
+          // 要約を作り始めた(何回かに分けて要約するときは、そのたびに来る)
+          show({ summarizing: true, summary: "", waiting: true });
+          return;
+        case "summary":
+          show({ summary: (l.view.summary ?? "") + (ev.text ?? "") });
+          return;
+        case "compact": {
+          const c = ev.compact;
+          if (!c || c.method !== "summary") return; // truncate は、メーターと薄い表示で分かる
+          show({ summarizing: false, summary: "", waiting: true, compactNote: c.error || undefined });
+          if (c.error) return;
+          if (manual) compacted = true;
+          else reopen(); // 返事を書いている間に、区切りと薄い表示が見えるように
+          return;
+        }
         case "error":
           if (viewing.current === id) addError(ev.error ?? "");
           else console.warn(`別の会話でのエラー: ${ev.error}`);
@@ -166,9 +181,16 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
       }
     };
 
-    // Go の Send を呼ぶ。戻り値の Promise の cancel() を呼ぶと、Go 側の ctx がキャンセルされる
-    const call = ChatService.Send(id, text);
-    controller.current = { stop: () => call.cancel() };
+    // Go のメソッドを呼ぶ。戻り値の Promise の cancel() を呼ぶと、Go 側の ctx がキャンセルされる(送信全体が止まる)。
+    // 送信の途中の要約は、要約だけを止めて返事に進みたいので、別のメソッド(StopSummary)を呼ぶ。
+    // 今すぐ要約は返事が無いので、全体を止めればよい
+    const call = start();
+    controller.current = {
+      stop: () => {
+        if (l.view.summarizing && !manual) ChatService.StopSummary().catch(err => addError(errorMessage(err)));
+        else call.cancel();
+      },
+    };
     call.catch(err => {
       if (err instanceof CancelError) return; // 停止ボタン。done イベントは Go から届く
       // Go のメソッドを呼べなかった(done イベントは来ない)
@@ -183,10 +205,32 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
     setGeneratingId(null);
     setBusy("idle");
     reloadList().catch(() => {}); // タイトルと並び順(更新の新しい順)が変わる
-  }, [target, open, reloadList, setUsage, addUser, addError, addAssistant, updateAssistant, remove, setBusy]);
+  }, [open, reloadList, setUsage, addError, addAssistant, updateAssistant, remove, setBusy]);
+
+  const send = useCallback(async (text: string) => {
+    if (controller.current || starting.current) return;
+    starting.current = true;
+    let id: string;
+    try {
+      id = await target();
+    } catch (err) {
+      addError(`送信できません: ${errorMessage(err)}`);
+      return;
+    } finally {
+      starting.current = false;
+    }
+    addUser(text);
+    await run(id, () => ChatService.Send(id, text), false);
+  }, [target, run, addUser, addError]);
+
+  const compact = useCallback(async () => {
+    if (controller.current || starting.current || !current) return;
+    const id = current.conversation.id;
+    await run(id, () => ChatService.Compact(id), true);
+  }, [current, run]);
 
   const stop = useCallback(() => controller.current?.stop(), []);
 
   const lastPrompt = current ? prompts[current.conversation.id] ?? "" : "";
-  return { generatingId, lastPrompt, send, stop };
+  return { generatingId, lastPrompt, send, compact, stop };
 }

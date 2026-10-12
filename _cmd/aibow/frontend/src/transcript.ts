@@ -4,7 +4,7 @@
 // 表示にはエラーも出すが、これは保存しない(会話を開き直すと消える)。
 // モデルの読み込みなどのお知らせは、会話の表示ではなくトースト(toast.tsx)に出す。
 import { useCallback, useRef, useState } from "react";
-import type { StoredMessage } from "../bindings/aibow";
+import type { Compaction, StoredMessage } from "../bindings/aibow";
 
 // アシスタントの返事1件の表示。生成中は少しずつ書き換わる。
 export interface AssistantView {
@@ -16,13 +16,20 @@ export interface AssistantView {
   cutoff?: string;       // 答えが出ないまま終わったときの理由の文
   cutoffHint?: boolean;  // 打ち切りの対処のヒントを出すか
   stats?: string;        // 統計行
+
+  // 要約(compact の summary)。返事の前や「今すぐ要約」で、同じ吹き出しの中に要約の文を流す
+  summarizing?: boolean; // 要約を作っている途中か(停止ボタンは要約だけを止める)
+  summary?: string;      // 生成中の要約の文
+  compactNote?: string;  // 要約できなかった理由など(この回は truncate で収めた)。保存はしない
 }
 
 // msgId は保存された発言の ID(UUIDv7。文字列の順 = 作った順)。モデルに渡していない発言を薄く表示するのに使う。
 // 送信したばかりで、まだ会話を開き直していない発言には無い(最新の発言は必ずモデルに渡るので困らない)
+// divider は要約した位置の区切り。開くと要約の文が読める
 export type Item =
   | { id: number; kind: "user"; text: string; msgId?: string }
   | { id: number; kind: "error"; text: string }
+  | { id: number; kind: "divider"; compaction: Compaction }
   | ({ id: number; kind: "assistant"; msgId?: string } & AssistantView);
 
 // id を除いた Item(種類ごとに Omit する。union にそのまま Omit を使うと共通の項目しか残らないため)
@@ -105,11 +112,30 @@ export function replyView(m: StoredMessage): AssistantView {
   return view;
 }
 
-// messageItems は会話の発言の列を表示の列に変える。
-export function messageItems(messages: StoredMessage[]): NewItem[] {
-  return messages.map(m =>
-    m.role === "assistant"
+// messageItems は会話の発言の列を表示の列に変える。要約した発言の後ろには区切りを入れる。
+// 古い要約も消さずに残っているので、要約を積み重ねた回数だけ区切りが出る。
+export function messageItems(messages: StoredMessage[], compactions: Compaction[]): NewItem[] {
+  const out: NewItem[] = [];
+  for (const m of messages) {
+    out.push(m.role === "assistant"
       ? { kind: "assistant", msgId: m.id, ...replyView(m) }
-      : { kind: "user", text: m.content, msgId: m.id },
-  );
+      : { kind: "user", text: m.content, msgId: m.id });
+    for (const c of compactions) {
+      if (c.upto_message_id === m.id) out.push({ kind: "divider", compaction: c });
+    }
+  }
+  return out;
+}
+
+// compactionStats は区切りを開いたときに出す、要約の記録の1行。
+export function compactionStats(c: Compaction): string {
+  const s = c.stats;
+  const parts = [c.model || "(モデル不明)"];
+  if (s) {
+    parts.push(`${s.before_tokens.toLocaleString()} → ${s.after_tokens.toLocaleString()} tok`);
+    parts.push(`発言 ${s.messages} 件を要約`);
+    parts.push(`読ませた ${s.prompt_tokens.toLocaleString()} tok(再利用 ${s.reused_tokens})・生成 ${s.gen_tokens} tok`);
+    parts.push(`${s.sec.toFixed(1)}s`);
+  }
+  return parts.join(" ・ ");
 }

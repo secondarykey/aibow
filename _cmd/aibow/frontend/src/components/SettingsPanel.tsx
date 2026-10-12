@@ -23,7 +23,8 @@ export function SettingsPanel({ settings, onChange, onMakeDefault, app, appDisab
 
       <h2 className="section">モデルに渡した文字列</h2>
       <p className="hint">
-        モデルは会話を覚えていません。送信のたびに、これまでの会話を全部この書式の1本の文字列にして読ませています。
+        モデルは会話を覚えていません。送信のたびに、これまでの会話をこの書式の1本の文字列にして読ませています
+        (会話の上限を超えたら、compact で収めたもの。要約があれば system の後ろに入ります)。
         最後の <code>&lt;|im_start|&gt;assistant</code> の続きを書かせることで返事になります。
       </p>
       <pre className="last-prompt">{lastPrompt || "(まだ送信していません)"}</pre>

@@ -35,7 +35,10 @@ type Generator interface {
 //	prompt   : モデルに渡した文字列(学習用に画面に表示する)
 //	thinking : 思考の断片
 //	content  : 答えの断片
-//	compact  : 会話の上限に収めるために compact した(方式・前後のトークン数など)
+//	summarizing : 要約を作り始めた(compact の summary。返事の前か「今すぐ要約」)
+//	summary  : 要約の断片
+//	compact  : 会話の上限に収めるために compact した(方式・前後のトークン数・保存した要約など)。
+//	           要約に失敗したときも Compact.Error に理由を入れて送る
 //	usage    : メーターの値(モデルに渡す文字列のトークン数 / 会話の上限)。生成の前と、返事を保存したあとに送る
 //	error    : エラー
 //	done     : 終わり。必ず最後に1回だけ送る。保存した返事があれば Reply に入る
@@ -64,6 +67,10 @@ type Conversations struct {
 	mu       sync.Mutex
 	defaults ConversationSettings // 新しい会話の既定の設定
 	limits   limits               // 会話の上限と返事の上限(アプリ全体の設定)
+
+	// stopSummary は生成中の要約だけを止める関数(StopSummary)。要約していなければ nil
+	summaryMu   sync.Mutex
+	stopSummary context.CancelFunc
 }
 
 // limits は会話の上限と返事の上限。WorkspaceSettings のうち、会話の仕組みが使う2つ。
@@ -223,9 +230,11 @@ func (cs *Conversations) Send(ctx context.Context, id uuid.UUID, text string, em
 
 	// 2. モデルに渡す内容を決める。会話の上限を超えていたら compact で収める(compact.go)。
 	// モデルに渡すのは、システムプロンプトと各発言の「答え」だけ
-	p, err := cs.prepare(conv, history, emit)
+	p, err := cs.prepare(ctx, conv, history, emit)
 	if err != nil {
-		fail(err)
+		if ctx.Err() == nil { // 止められた(アプリの終了など)ときは、エラーを出さずに終わる
+			fail(err)
+		}
 		return
 	}
 	cs.emitUsage(emit, id, p.usage(history, cs.currentLimits().history))
@@ -248,7 +257,7 @@ func (cs *Conversations) Send(ctx context.Context, id uuid.UUID, text string, em
 	reply = r
 
 	// 5. 返事が増えたあとのメーター。次の送信では、この返事もモデルに渡る
-	if u, err := cs.usage(conv.Settings, append(history, *r)); err == nil {
+	if u, err := cs.usage(conv, append(history, *r)); err == nil {
 		cs.emitUsage(emit, id, u)
 	}
 }
@@ -343,9 +352,19 @@ func (cs *Conversations) generate(ctx context.Context, conv Conversation, messag
 // promptMessages は保存した発言を、モデルに渡す形にする。
 // 過去の返事は「答え」だけを入れ、思考は入れない(Qwen3.5 の公式テンプレートと同じ)。
 // システムプロンプトは発言としては保存せず、会話の設定から毎回先頭に付ける。
-func promptMessages(system string, history []StoredMessage) []Message {
+//
+// summary はこれまでの会話の要約(compact.go)。システムプロンプトの後ろに見出しを付けて足す。
+// システムプロンプトが空でも、要約があれば system を作る。
+func promptMessages(system, summary string, history []StoredMessage) []Message {
 	var out []Message
-	if s := strings.TrimSpace(system); s != "" {
+	s := strings.TrimSpace(system)
+	if summary != "" {
+		if s != "" {
+			s += "\n\n"
+		}
+		s += summaryHeading + "\n" + summary
+	}
+	if s != "" {
 		out = append(out, Message{Role: "system", Content: s})
 	}
 	for _, m := range history {
