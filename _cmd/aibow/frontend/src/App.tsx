@@ -1,7 +1,8 @@
 // App.tsx: 画面全体。左に会話の一覧(ウィンドウの上から下まで。上のハンバーガーで開閉)、
 // 右に「タイトルバー(Frameless のため自前。開いている会話の名前)+ チャット(下に入力欄とモデルの選択)」。
 // 会話を開いていないとき(起動時・「+ 新規」)は、チャットの代わりに新しい会話の画面(入力欄が真ん中)を出す。
-// 右の設定パネルは一覧の下の「設定」で開閉する。
+// 設定は別の画面として扱い、一覧の下の「設定」で開くと、チャットの代わりに会話の場所に出す(SettingsView)。
+// 「会話に戻る」・一覧で会話を選ぶ・「+ 新規」で閉じる。
 //
 //	useTranscript    … 画面に並べる表示(吹き出し・エラー)
 //	useToasts        … 右上に出して数秒で消えるお知らせ(モデルの読み込みなど)
@@ -26,7 +27,7 @@ import { TitleBar } from "./components/TitleBar";
 import { ConversationList } from "./components/ConversationList";
 import { ChatView } from "./components/ChatView";
 import { NewChat } from "./components/NewChat";
-import { SettingsPanel } from "./components/SettingsPanel";
+import { SettingsView } from "./components/SettingsView";
 import { Composer } from "./components/Composer";
 import { ImeFocusRelay } from "./imeFocus";
 import { errorMessage } from "./errors";
@@ -34,7 +35,12 @@ import { errorMessage } from "./errors";
 export default function App() {
   // 生成とモデルの読み込みは同時にできない(Go 側のコンテキストが1つしかないため)
   const [busy, setBusy] = useState<Busy>("idle");
+  // 設定の画面を開いているか。開いている間は、チャット(か新しい会話の画面)の代わりに設定を出す
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // 設定の画面を開いたときの、表示の最後の id。これより後に出たエラー(設定の適用の失敗など)は設定の画面にも出す
+  const [settingsFrom, setSettingsFrom] = useState(0);
+  // 入力欄に打っている文。設定の画面を開くと入力欄は消えるので、戻ったときに続きを打てるようにここで持つ
+  const [text, setText] = useState("");
   const [listOpen, setListOpen] = useState(true);
   // 入力欄にフォーカスを移す合図。会話を開いた・「+ 新規」を押したあとに進める(Composer の focusKey)
   const [focusKey, setFocusKey] = useState(0);
@@ -87,6 +93,7 @@ export default function App() {
   // 「+ 新規」: 新しい会話の画面に移る。会話そのものは、そこで最初に送信したときに作る
   const home = convs.current === null;
   const onNew = () => {
+    setSettingsOpen(false); // 設定の画面を開いていたら閉じて、新しい会話の画面に戻る
     if (home) {
       focusInput(); // すでに新しい会話の画面なら、入力欄に戻すだけ
       return;
@@ -105,7 +112,15 @@ export default function App() {
   const canSend = busy === "idle" && (convs.current !== null || convs.draft !== null);
   const input = (
     <>
-      <Composer canSend={canSend} blockedReason={blockedReason} home={home} focusKey={focusKey} onSend={chat.send} />
+      <Composer
+        text={text}
+        onTextChange={setText}
+        canSend={canSend}
+        blockedReason={blockedReason}
+        home={home}
+        focusKey={focusKey}
+        onSend={chat.send}
+      />
       <ModelBar models={models} disabled={busy !== "idle"}>
         {convs.current && (
           <>
@@ -125,11 +140,51 @@ export default function App() {
       </ModelBar>
     </>
   );
-  // 設定パネルの「この会話の設定」。新しい会話の画面では、これから作る会話の設定(既定の写し)
+  // 設定の画面の「この会話の設定」。新しい会話の画面では、これから作る会話の設定(既定の写し)
   const settings = convs.current?.conversation.settings ?? convs.draft;
 
   // タイトルバーに出す名前は一覧から取る(名前の変更や最初の送信で付いたタイトルが、すぐ反映されるように)
-  const title = convs.list.find(c => c.id === currentId)?.title || "新しい会話";
+  const convTitle = convs.list.find(c => c.id === currentId)?.title || "新しい会話";
+  const title = settingsOpen ? "設定" : convTitle;
+
+  const toggleSettings = () => {
+    if (!settingsOpen) setSettingsFrom(transcript.items.reduce((m, it) => Math.max(m, it.id), 0));
+    setSettingsOpen(o => !o);
+  };
+  // 一覧で会話を選んだら、設定の画面を閉じてその会話を出す
+  const onOpen = (id: string) => {
+    setSettingsOpen(false);
+    convs.open(id).then(focusInput, err => addError(errorMessage(err)));
+  };
+  const settingsErrors = transcript.items.filter(it => it.kind === "error" && it.id > settingsFrom);
+
+  // 会話の場所に出すもの: 設定の画面 / 新しい会話の画面 / チャット
+  let content;
+  if (settingsOpen) {
+    content = (
+      <SettingsView
+        settings={settings}
+        conversationTitle={home ? null : convTitle}
+        errors={settingsErrors.map(it => ({ id: it.id, text: it.kind === "error" ? it.text : "" }))}
+        onClose={() => setSettingsOpen(false)}
+        onChange={convs.updateSettings}
+        onMakeDefault={() => settings && app.setDefaults(settings)}
+        app={app.settings}
+        appDisabled={busy !== "idle"}
+        onApplyApp={app.apply}
+        lastPrompt={chat.lastPrompt}
+      />
+    );
+  } else if (home) {
+    content = <NewChat items={transcript.items}>{input}</NewChat>;
+  } else {
+    content = (
+      <section className="center">
+        <ChatView items={transcript.items} firstId={convs.current?.usage?.first_id ?? null} onStop={chat.stop} />
+        {input}
+      </section>
+    );
+  }
 
   return (
     <>
@@ -138,36 +193,18 @@ export default function App() {
         currentId={currentId}
         generatingId={chat.generatingId}
         disabled={unavailable}
-        onOpen={id => convs.open(id).then(focusInput, err => addError(errorMessage(err)))}
+        onOpen={onOpen}
         onNew={onNew}
         onDelete={id => convs.remove(id).then(focusInput, err => addError(errorMessage(err)))}
         onRename={(id, title) => convs.rename(id, title).catch(err => addError(errorMessage(err)))}
         settingsOpen={settingsOpen}
-        onToggleSettings={() => setSettingsOpen(o => !o)}
+        onToggleSettings={toggleSettings}
         open={listOpen}
         onToggleOpen={() => setListOpen(o => !o)}
       />
       <div className="workspace">
         <TitleBar title={title} />
-        <main>
-          {home ? (
-            <NewChat items={transcript.items}>{input}</NewChat>
-          ) : (
-            <section className="center">
-              <ChatView items={transcript.items} firstId={convs.current?.usage?.first_id ?? null} onStop={chat.stop} />
-              {input}
-            </section>
-          )}
-          {settingsOpen && <SettingsPanel
-            settings={settings}
-            onChange={convs.updateSettings}
-            onMakeDefault={() => settings && app.setDefaults(settings)}
-            app={app.settings}
-            appDisabled={busy !== "idle"}
-            onApplyApp={app.apply}
-            lastPrompt={chat.lastPrompt}
-          />}
-        </main>
+        <main>{content}</main>
       </div>
       <Toasts toasts={toasts.toasts} onDismiss={toasts.dismiss} />
       <ImeFocusRelay />

@@ -1,9 +1,16 @@
-// 右側の設定パネル: この会話の設定 / アプリ全体の設定 / モデルに渡した文字列
+// 設定の画面: この会話の設定 / アプリ全体の設定 / モデルに渡した文字列
+//
+// 会話の一覧の下の「設定」で開き、チャットの代わりに会話の場所に出す(別の画面として扱う)。
+// 「会話に戻る」か、一覧で会話を選ぶ・「+ 新規」を押すと閉じる。
 import { useEffect, useState } from "react";
+import { LuArrowLeft } from "react-icons/lu";
 import type { AppSettings, ConversationSettings, WorkspaceSettings } from "../../bindings/aibow";
 
 interface Props {
-  settings: ConversationSettings | null; // 開いている会話の設定
+  settings: ConversationSettings | null; // 開いている会話の設定(新しい会話の画面では、これから作る会話の設定)
+  conversationTitle: string | null;      // 開いている会話の名前。新しい会話の画面なら null
+  onClose(): void;                       // 会話に戻る
+  errors: { id: number; text: string }[]; // 設定の画面を開いてから出たエラー(ふだんは会話の表示に出るもの)
   onChange(patch: Partial<ConversationSettings>): void;
   onMakeDefault(): void;
   app: AppSettings | null;
@@ -12,23 +19,37 @@ interface Props {
   lastPrompt: string;
 }
 
-export function SettingsPanel({ settings, onChange, onMakeDefault, app, appDisabled, onApplyApp, lastPrompt }: Props) {
+export function SettingsView({
+  settings, conversationTitle, onClose, errors, onChange, onMakeDefault, app, appDisabled, onApplyApp, lastPrompt,
+}: Props) {
   return (
-    <aside>
-      <h2>この会話の設定</h2>
-      {settings && <ConversationSettingsForm settings={settings} onChange={onChange} onMakeDefault={onMakeDefault} />}
+    <section className="settings-view">
+      <div className="settings-inner">
+        <div className="settings-header">
+          <h1>設定</h1>
+          <button className="back" onClick={onClose} title="設定を閉じて、会話に戻る"><LuArrowLeft /> 会話に戻る</button>
+        </div>
+        {errors.map(e => <div key={e.id} className="msg error">{e.text}</div>)}
 
-      <h2 className="section">アプリ全体の設定</h2>
-      {app && <AppSettingsForm app={app} disabled={appDisabled} onApply={onApplyApp} />}
+        <h2>
+          {conversationTitle === null ? "新しい会話の設定" : "この会話の設定"}
+          {conversationTitle && <span className="settings-target">{conversationTitle}</span>}
+        </h2>
+        {conversationTitle === null && <p className="hint">これから作る会話の設定です。最初に送信したときに、この設定で会話を作ります。</p>}
+        {settings && <ConversationSettingsForm settings={settings} onChange={onChange} onMakeDefault={onMakeDefault} />}
 
-      <h2 className="section">モデルに渡した文字列</h2>
-      <p className="hint">
-        モデルは会話を覚えていません。送信のたびに、これまでの会話をこの書式の1本の文字列にして読ませています
-        (会話の上限を超えたら、compact で収めたもの。要約があれば system の後ろに入ります)。
-        最後の <code>&lt;|im_start|&gt;assistant</code> の続きを書かせることで返事になります。
-      </p>
-      <pre className="last-prompt">{lastPrompt || "(まだ送信していません)"}</pre>
-    </aside>
+        <h2 className="section">アプリ全体の設定</h2>
+        {app && <AppSettingsForm app={app} disabled={appDisabled} onApply={onApplyApp} />}
+
+        <h2 className="section">モデルに渡した文字列</h2>
+        <p className="hint">
+          モデルは会話を覚えていません。送信のたびに、これまでの会話をこの書式の1本の文字列にして読ませています
+          (会話の上限を超えたら、compact で収めたもの。要約があれば system の後ろに入ります)。
+          最後の <code>&lt;|im_start|&gt;assistant</code> の続きを書かせることで返事になります。
+        </p>
+        <pre className="last-prompt">{lastPrompt || "(まだ送信していません)"}</pre>
+      </div>
+    </section>
   );
 }
 

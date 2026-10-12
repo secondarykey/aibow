@@ -1,9 +1,11 @@
 // 入力欄。送信ボタンは枠の中の右下に Enter のマークで置く(停止ボタンは生成中の返事の吹き出しの中にある)
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { LuCornerDownLeft } from "react-icons/lu";
 import type { FormEvent, KeyboardEvent } from "react";
 
 interface Props {
+  text: string;           // 打っている文。設定の画面を開いている間は入力欄が消えるので、文は App が持っておく
+  onTextChange(text: string): void;
   canSend: boolean;
   blockedReason?: string; // 送信できない理由(ボタンのツールチップに出す)
   home?: boolean;         // 新しい会話の画面(真ん中に出す。上の区切り線と背景を付けない)
@@ -22,7 +24,7 @@ function isTextInput(el: Element | null): boolean {
 // 会話の名前の変更は、一覧のダブルクリックで入力欄を出す。ダブルクリックの1回目・2回目のクリックで
 // 「会話を開く → 開き終わったら入力欄へ」が動くので、開き終わるのが入力欄を出したあとになり、
 // 名前の入力欄からフォーカスを奪って(blur で確定扱いになり)編集が閉じてしまっていた。
-// 返事が終わったときに、設定パネルでシステムプロンプトを打っている最中だった場合も同じ。
+// 返事が終わったときに、会話の名前を打っている最中だった場合も同じ。
 function focusUnlessTyping(el: HTMLTextAreaElement | null) {
   if (!el) return;
   const active = document.activeElement;
@@ -30,8 +32,7 @@ function focusUnlessTyping(el: HTMLTextAreaElement | null) {
   el.focus();
 }
 
-export function Composer({ canSend, blockedReason, home, focusKey, onSend }: Props) {
-  const [text, setText] = useState("");
+export function Composer({ text, onTextChange: setText, canSend, blockedReason, home, focusKey, onSend }: Props) {
   const input = useRef<HTMLTextAreaElement>(null);
   const composing = useRef(false); // IME で変換中か
 

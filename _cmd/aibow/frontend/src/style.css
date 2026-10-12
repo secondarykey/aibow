@@ -177,22 +177,29 @@ nav.conversations.collapsed .settings.active { color: var(--accent); }
 .conversation.confirming button { border: 1px solid var(--border); padding: 3px 8px; }
 .conversation button.danger { color: #fff; background: var(--error); border-color: var(--error); }
 
-aside {
-  width: 340px; flex-shrink: 0; border-left: 1px solid var(--border); background: var(--panel);
-  padding: 14px; overflow-y: auto; font-size: 13px;
+/* 設定の画面: チャットの代わりに会話の場所に出す。中身はチャットと同じく真ん中の列にそろえる */
+.settings-view { flex: 1; min-width: 0; overflow-y: auto; background: var(--panel); font-size: 13px; }
+.settings-inner { max-width: 720px; margin: 0 auto; padding: 16px 16px 32px; }
+.settings-header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.settings-header h1 { font-size: 16px; margin: 0; flex: 1; }
+.settings-header .back { display: flex; align-items: center; gap: 6px; }
+.settings-view .msg.error { margin-bottom: 10px; }
+.settings-view h2 { font-size: 14px; margin: 8px 0 6px; display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.settings-view h2.section { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border); }
+.settings-target {
+  font-weight: normal; font-size: 12.5px; color: var(--muted); min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-aside h2 { font-size: 13px; margin: 0 0 6px; }
-aside h2.section { margin-top: 18px; }
-aside label { display: block; margin: 12px 0 4px; color: var(--muted); }
-aside label.check { display: flex; align-items: center; gap: 6px; color: var(--text); }
-aside code { font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; }
-aside textarea, aside input[type=range], aside input[type=number], aside select { width: 100%; }
-aside input[type=number], aside select {
+.settings-view label { display: block; margin: 12px 0 4px; color: var(--muted); }
+.settings-view label.check { display: flex; align-items: center; gap: 6px; color: var(--text); }
+.settings-view code { font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; }
+.settings-view textarea, .settings-view input[type=range], .settings-view input[type=number], .settings-view select { width: 100%; }
+.settings-view input[type=number], .settings-view select {
   font: inherit; font-size: 13px; padding: 5px 6px; border-radius: 6px;
   border: 1px solid var(--border); background: var(--bg); color: var(--text);
 }
-aside button.make-default, aside button.apply { margin-top: 12px; }
-aside textarea {
+.settings-view button.make-default, .settings-view button.apply { margin-top: 12px; }
+.settings-view textarea {
   font: inherit; font-size: 13px; padding: 6px; border-radius: 6px;
   border: 1px solid var(--border); background: var(--bg); color: var(--text); resize: vertical;
 }

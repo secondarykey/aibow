@@ -46,7 +46,7 @@ Ollama のサーバーや API は使わない。Ollama のモデルの一部は 
 | `_cmd/aibow/main.go` | Wails のアプリとウィンドウを作る(Frameless。タイトルバーは画面の `TitleBar.tsx`)。Wails に依存するコードは `_cmd/aibow` だけに置く |
 | `_cmd/aibow/config.go` | 環境変数の読み込み |
 | `_cmd/aibow/service.go` | `ChatService`。画面と `aibow.Conversations` / `Engine` の中継だけをする(モデル・会話・設定(`SetLimits` など)・メーター(`Usage`)・`Send` / `Compact` / `StopSummary`)。compact のログもここで出す |
-| `_cmd/aibow/frontend/src/` | チャット画面(React + TypeScript。左: 会話の一覧(ウィンドウの上から下まで。上のハンバーガーで開閉、閉じるとアイコンだけの細い列)/ 右上: タイトルバー(Frameless のため自前。開いている会話の名前、右端に最小化・最大化・閉じる。一覧の上の空いているところと合わせてドラッグで移動)/ 中央: チャット(入力欄の下にモデルの選択、右端に「今すぐ要約」とメーター)/ 右: 設定パネル(一覧の下の「設定」で開閉、初期は閉じている))。`useModels.ts` / `useConversations.ts` / `useChat.ts` / `useAppSettings.ts` が Go とのやり取り、`components/` が表示。Vite でビルドした `frontend/dist` を `go:embed` で埋め込む |
+| `_cmd/aibow/frontend/src/` | チャット画面(React + TypeScript。左: 会話の一覧(ウィンドウの上から下まで。上のハンバーガーで開閉、閉じるとアイコンだけの細い列)/ 右上: タイトルバー(Frameless のため自前。開いている会話の名前、右端に最小化・最大化・閉じる。一覧の上の空いているところと合わせてドラッグで移動)/ 中央: チャット(入力欄の下にモデルの選択、右端に「今すぐ要約」とメーター)/ 設定の画面(`SettingsView.tsx`。一覧の下の「設定」で開閉。別の画面として扱い、チャットの代わりに会話の場所に出す。一覧で会話を選ぶ・「+ 新規」でも閉じる。入力欄の打ちかけの文は App が持つので消えない))。`useModels.ts` / `useConversations.ts` / `useChat.ts` / `useAppSettings.ts` が Go とのやり取り、`components/` が表示。Vite でビルドした `frontend/dist` を `go:embed` で埋め込む |
 | `_cmd/aibow/frontend/bindings/` | `wails3 generate bindings` の生成物(コミットする。手で直さない) |
 | `_cmd/aibow/build/` / `Taskfile.yml` | `wails3 init`(react テンプレート)由来のビルド設定。ios / android / docker は削除して `.gitignore` 済み |
 | `_cmd/aibow/version` / `_cmd/version.go` | バージョンの唯一の正と、それを config.yml / package.json に書き写すスクリプト(リポジトリのルートで `go run _cmd/version.go`)。version は `//go:embed` で exe に入る |
