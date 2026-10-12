@@ -1,4 +1,4 @@
-// 画面上部: モデルの選択と、読み込み中のモデルの情報
+// チャットの入力欄の下: モデルの選択と、読み込み中のモデルの情報
 import type { Models } from "../useModels";
 
 interface Props {
@@ -7,7 +7,7 @@ interface Props {
 }
 
 // モデルはアプリ全体で1つ(VRAM に1つしか載らない)。会話を切り替えてもモデルは変わらない
-export function Header({ models, disabled }: Props) {
+export function ModelBar({ models, disabled }: Props) {
   const { current, gpu, loading } = models;
   const groups = [
     { source: "file", label: "models フォルダ" },
@@ -23,8 +23,7 @@ export function Header({ models, disabled }: Props) {
       : "モデル未読み込み";
 
   return (
-    <header>
-      <h1>aibow</h1>
+    <div className="model-bar">
       <select
         className="model-select"
         title="使うモデル(models フォルダと Ollama のモデル)"
@@ -45,6 +44,6 @@ export function Header({ models, disabled }: Props) {
         {outside && <option value={current.id}>{current.name}</option>}
       </select>
       <span className="model-info" title={current?.desc ?? ""}>{info}</span>
-    </header>
+    </div>
   );
 }

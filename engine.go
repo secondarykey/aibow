@@ -327,7 +327,7 @@ func (e *Engine) Generate(
 	}
 	defer e.mu.Unlock()
 	if e.model == 0 {
-		return st, errors.New("モデルが読み込まれていません。画面上部でモデルを選んでください")
+		return st, errors.New("モデルが読み込まれていません。入力欄の下でモデルを選んでください")
 	}
 
 	// 3. 会話 → 文字列 → トークン列
