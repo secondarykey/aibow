@@ -1,4 +1,4 @@
-// App.tsx: 画面全体。左に会話の一覧、中央にチャット(下に入力欄とモデルの選択)。
+// App.tsx: 画面全体。左に会話の一覧(左上のハンバーガーで開閉)、中央にチャット(下に入力欄とモデルの選択)。
 // 右の設定パネルは一覧の下の「設定」で開閉する。
 //
 //	useTranscript    … 画面に並べる表示(吹き出し・メモ・エラー)
@@ -28,6 +28,7 @@ export default function App() {
   // 生成とモデルの読み込みは同時にできない(Go 側のコンテキストが1つしかないため)
   const [busy, setBusy] = useState<Busy>("idle");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [listOpen, setListOpen] = useState(true);
 
   const transcript = useTranscript();
   const { addError } = transcript;
@@ -94,6 +95,8 @@ export default function App() {
           onRename={(id, title) => convs.rename(id, title).catch(err => addError(errorMessage(err)))}
           settingsOpen={settingsOpen}
           onToggleSettings={() => setSettingsOpen(o => !o)}
+          open={listOpen}
+          onToggleOpen={() => setListOpen(o => !o)}
         />
         <section className="center">
           <ChatView items={transcript.items} onStop={chat.stop} />

@@ -259,7 +259,7 @@ aibow を起動したまま `ollama pull` した場合は、aibow のウィン�
 
 ### 会話の保存
 
-会話は SQLite のファイル `%APPDATA%ibowibow.db` に保存され、アプリを閉じても残ります。
+会話は SQLite のファイル `%APPDATA%\aibow\aibow.db` に保存され、アプリを閉じても残ります。
 左の一覧で、会話の新規作成・切り替え・削除ができます。タイトルは最初の発言の先頭から自動で付き、一覧でダブルクリックすると変えられます。
 生成中に別の会話を開いて読むことはできますが、送信は生成が終わるまでできません(エンジンが1つのため)。
 
@@ -282,7 +282,7 @@ aibow を起動したまま `ollama pull` した場合は、aibow のウィン�
 | `AIBOW_MODELS_DIR` | `models` | GGUF ファイルを探すフォルダ(相対パスはカレントフォルダが基準) |
 | `OLLAMA_MODELS` | `%USERPROFILE%\.ollama\models` | Ollama の保存フォルダ(Ollama 自身と同じ変数) |
 | `AIBOW_LIB` | `lib` | llama.cpp の DLL があるフォルダ(相対パスはカレントフォルダが基準) |
-| `AIBOW_DB` | `%APPDATA%ibowibow.db` | 会話を保存する SQLite のファイル。フォルダが無ければ作る |
+| `AIBOW_DB` | `%APPDATA%\aibow\aibow.db` | 会話を保存する SQLite のファイル。フォルダが無ければ作る |
 | `AIBOW_CTX` | `16384` | コンテキスト長(一度に扱えるトークン数 = プロンプト + 返事)。増やすと長い会話ができるが VRAM を使う(Qwen3.5 4B で 1 トークンあたり約 32KB) |
 | `AIBOW_GPU_LAYERS` | `999` | GPU に載せる層の数。VRAM に入りきらないモデルは減らす(残りは CPU で計算) |
 | `AIBOW_MAX_TOKENS` | `8192` | 1回の返事で生成するトークン数の上限(思考 + 答えの合計) |

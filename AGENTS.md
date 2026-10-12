@@ -17,7 +17,7 @@ aibow は、ローカルLLMを使ったアプリを**自分で作りながら仕
 ```
 ウィンドウ(_cmd/aibow/frontend の React) ⇄ Wails v3 ⇄ aibow ⇄ yzma ⇄ llama.cpp(_cmd/aibow/lib\ の DLL)⇄ GPU
                                                      ⇅          ↑ _cmd/aibow/models\*.gguf / Ollama の保存フォルダ
-                                          aibow/store(SQLite: %APPDATA%ibowibow.db)
+                                          aibow/store(SQLite: %APPDATA%\aibow\aibow.db)
 ```
 
 **Ollama などの外部 LLM サーバーは使わない**。aibow のプロセスの中で llama.cpp を直接動かす。
@@ -44,7 +44,7 @@ Ollama のサーバーや API は使わない。Ollama のモデルの一部は 
 | `_cmd/aibow/main.go` | Wails のアプリとウィンドウを作る。Wails に依存するコードは `_cmd/aibow` だけに置く |
 | `_cmd/aibow/config.go` | 環境変数の読み込み |
 | `_cmd/aibow/service.go` | `ChatService`。画面と `aibow.Conversations` / `Engine` の中継だけをする(モデル・会話・設定・`Send`) |
-| `_cmd/aibow/frontend/src/` | チャット画面(React + TypeScript。左: 会話の一覧 / 中央: チャット(入力欄の下にモデルの選択)/ 右: 設定パネル(一覧の下の「設定」で開閉、初期は閉じている))。`useModels.ts` / `useConversations.ts` / `useChat.ts` / `useAppSettings.ts` が Go とのやり取り、`components/` が表示。Vite でビルドした `frontend/dist` を `go:embed` で埋め込む |
+| `_cmd/aibow/frontend/src/` | チャット画面(React + TypeScript。左: 会話の一覧(左上のハンバーガーで開閉。閉じるとアイコンだけの細い列)/ 中央: チャット(入力欄の下にモデルの選択)/ 右: 設定パネル(一覧の下の「設定」で開閉、初期は閉じている))。`useModels.ts` / `useConversations.ts` / `useChat.ts` / `useAppSettings.ts` が Go とのやり取り、`components/` が表示。Vite でビルドした `frontend/dist` を `go:embed` で埋め込む |
 | `_cmd/aibow/frontend/bindings/` | `wails3 generate bindings` の生成物(コミットする。手で直さない) |
 | `_cmd/aibow/build/` / `Taskfile.yml` | `wails3 init`(react テンプレート)由来のビルド設定。ios / android / docker は削除して `.gitignore` 済み |
 | `_cmd/aibow/version` / `_cmd/version.go` | バージョンの唯一の正と、それを config.yml / package.json に書き写すスクリプト(リポジトリのルートで `go run _cmd/version.go`)。version は `//go:embed` で exe に入る |
@@ -93,7 +93,7 @@ Ollama のサーバーや API は使わない。Ollama のモデルの一部は 
 - yzma と llama.cpp はバージョンの組み合わせが決まっている。現在は yzma v1.29.1 + llama.cpp v0.6.0(ビルド b11429)。
   yzma を上げるときは、yzma の README の対応表を確認し、`lib\` の入れ直しも README に書く
 - チャットテンプレートはライブラリ任せにせず、`prompt.go` に自分で書く(書式を理解することが学習目的のため)
-- フロントエンドは React + TypeScript + Vite(`wails3 init -t react` のテンプレート)。npm のパッケージは react / react-dom / @wailsio/runtime と開発用の vite / typescript など。
+- フロントエンドは React + TypeScript + Vite(`wails3 init -t react` のテンプレート)。npm のパッケージは react / react-dom / @wailsio/runtime / react-icons(アイコン。Lucide の `react-icons/lu` を使う)と開発用の vite / typescript など。
   それ以外を足すときも、理由と代替案を示してユーザーに確認する。Wails の構成はユーザーの wails3 スキルの標準(`_cmd/<名前>/build/config.yml`・Taskfile・`wails3 dev`)に従う
 - 設定は環境変数(`AIBOW_MODEL` / `AIBOW_MODELS_DIR` / `AIBOW_LIB` / `AIBOW_DB` / `AIBOW_CTX` / `AIBOW_GPU_LAYERS` / `AIBOW_MAX_TOKENS` / `AIBOW_PRESENCE_PENALTY` / `AIBOW_LLAMA_LOG`、Ollama の保存先は Ollama と同じ `OLLAMA_MODELS`)。
   新しい設定も `AIBOW_` で始まる環境変数にし、README の表に追加する。
@@ -154,10 +154,13 @@ worktree には `lib\` / `models\` / `frontend/node_modules` が無い。
 - `lib\` / `models\` は `AIBOW_LIB` / `AIBOW_MODELS_DIR` で本体(`/d/Go/Projects/aibow/_cmd/aibow/`)を指す(ユーザーの環境では、worktree のセッション開始時にこの2つが自動で設定される)。
   **worktree に `lib\` / `models\` を作らない・入れ直さない**(yzma の install や GGUF のダウンロードをしない)
 - 本体の `lib\` / `models\` へのジャンクションやシンボリックリンクを張らない。worktree の解放時に Git 管理外のファイルが消され、リンク先の本体の実体まで消える
-- 会話の DB は、試すときは `AIBOW_DB` を一時フォルダのファイルにする(ユーザーの `%APPDATA%ibowibow.db` に試しの会話を混ぜない)
+- 会話の DB は、試すときは `AIBOW_DB` を一時フォルダのファイルにする(ユーザーの `%APPDATA%\aibow\aibow.db` に試しの会話を混ぜない)
 - `node_modules` は worktree の `_cmd/aibow/frontend` で `npm install` する(ユーザーの環境で本体へのジャンクションが自動で張られている場合は、そのまま使い、`npm install` しない)
 画面を外から操作して確かめるときは、一時ビルドで `application.Options.Windows.AdditionalBrowserArgs` に
 `--remote-debugging-port=9222` を足し、CDP(`http://localhost:9222/json`)で `Runtime.evaluate` する(この変更はコミットしない)。
+- ユーザーはふだんから aibow を起動していることがある。一時ビルドでは `application.Options.Windows.WebviewUserDataPath` も一時フォルダにする
+  (同じ WebView2 のデータフォルダを起動引数の違うプロセスで使うと、後から起動した方が WebView2 を作れず失敗する: 8007139f)
+- 試しに起動したアプリを閉じるときは、**自分が起動したプロセスの PID だけ**を終了させる。`taskkill /IM aibow.exe` のように名前で終了させない(ユーザーのアプリまで閉じてしまう)
 
 GPU や本物のモデルがない環境では、llama.cpp の CPU 版と小さな GGUF(重みがランダムな極小モデルでもよい)で
 「読み込み → 生成 → 停止 → 2回目の送信で KV キャッシュが再利用される → モデルの切り替え → 壊れたモデルを選んだら元に戻る → 再起動しても会話が残る」までを確認してください。
