@@ -183,7 +183,12 @@ export default function App() {
   } else {
     content = (
       <section className="center">
-        <ChatView items={transcript.items} firstId={convs.current?.usage?.first_id ?? null} onStop={chat.stop} />
+        <ChatView
+          items={transcript.items}
+          firstId={convs.current?.usage?.first_id ?? null}
+          conversationId={currentId}
+          onStop={chat.stop}
+        />
         {input}
       </section>
     );

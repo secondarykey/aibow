@@ -1,25 +1,30 @@
 // 会話の表示: 吹き出し・エラー・要約の区切り
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import type { Compaction } from "../../bindings/aibow";
 import { compactionStats } from "../transcript";
 import type { AssistantView, Item } from "../transcript";
 import { RenderedText } from "./RenderedText";
+import { useStickToBottom } from "../stickToBottom";
 
 const FADED_TITLE = "この発言はモデルに渡していません(要約に入ったか、会話の上限に収めるために外しました)";
 
 // onStop は生成中の返事(要約中なら要約だけ)を止める。生成中の返事は1つだけ(生成は同時に1つ)なので、どの返事かは渡さない。
 // firstId はモデルに渡す最初の発言(Go の Usage.first_id)。これより前の発言は、要約に入ったか
 // truncate で外れて、モデルに渡していないので薄く表示する(発言そのものは保存されている)
-export function ChatView({ items, firstId, onStop }: { items: Item[]; firstId: string | null; onStop(): void }) {
+// conversationId は表示している会話の ID。会話を切り替えたら、一番下(最新の発言)から見せる
+export function ChatView({ items, firstId, conversationId, onStop }: {
+  items: Item[];
+  firstId: string | null;
+  conversationId: string | null;
+  onStop(): void;
+}) {
   const faded = (msgId?: string) => (msgId && firstId && msgId < firstId ? " faded" : "");
   const fadedTitle = (msgId?: string) => (faded(msgId) ? FADED_TITLE : undefined);
 
-  const ref = useRef<HTMLDivElement>(null);
-
-  // 何か増えたり書き換わったりしたら、一番下までスクロールする
-  useEffect(() => {
-    if (ref.current) ref.current.scrollTop = ref.current.scrollHeight;
-  }, [items]);
+  // 何か増えたり書き換わったりしたら、一番下にいるときだけ一番下まで送る(上にスクロールして読んでいる間は送らない)。
+  // 会話を切り替えたときと、自分で送信したとき(ユーザーの発言が増えたとき)は、どこを読んでいても一番下へ
+  const userCount = items.filter(it => it.kind === "user").length;
+  const ref = useStickToBottom<HTMLDivElement>(items, `${conversationId}:${userCount}`);
 
   return (
     <div className="chat" ref={ref}>
@@ -74,10 +79,7 @@ function StopButton({ label, onStop }: { label: string; onStop(): void }) {
 
 // 要約を作っている途中: 要約の文が流れてくる様子を見せる
 function Summarizing({ text }: { text: string }) {
-  const box = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (box.current) box.current.scrollTop = box.current.scrollHeight;
-  }, [text]);
+  const box = useStickToBottom<HTMLDivElement>(text);
   return (
     <div className="summarizing">
       <div className="summarizing-label">古い発言を要約しています…</div>
@@ -101,16 +103,13 @@ function Divider({ compaction }: { compaction: Compaction }) {
 
 // 思考は畳んだ状態で出し、クリックで開いたときだけ中身を見せる
 function Thinking({ label, text }: { label: string; text: string }) {
-  const box = useRef<HTMLDivElement>(null);
-  const details = useRef<HTMLDetailsElement>(null);
-
-  // 開いているときは、思考の続きが見えるように下までスクロールする
-  useEffect(() => {
-    if (details.current?.open && box.current) box.current.scrollTop = box.current.scrollHeight;
-  }, [text]);
+  // 開いているときは、思考の続きが見えるように下まで送る(上にスクロールして読んでいる間は送らない)。
+  // 開いたときは、一番下(最新の思考)から見せる
+  const [open, setOpen] = useState(false);
+  const box = useStickToBottom<HTMLDivElement>(text, open);
 
   return (
-    <details className="thinking" ref={details}>
+    <details className="thinking" onToggle={e => setOpen(e.currentTarget.open)}>
       <summary>{label}</summary>
       <div ref={box}>{text}</div>
     </details>
