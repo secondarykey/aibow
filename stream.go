@@ -15,6 +15,10 @@ type utf8Buffer struct {
 }
 
 // Push はトークン1個分のバイト列を受け取り、文字として完成した部分を返す。
+//
+// モデルは UTF-8 として正しくないバイト列を出すこともある(小さいモデルや、重みがランダムなモデルで起きやすい)。
+// そのまま保存すると、次の送信でプロンプトに入ったときに llama.cpp のトークン化が止まる(プロセスごと落ちる)ことがあるので、
+// 文字にならないバイトは U+FFFD(�)に置き換えて返す。
 func (u *utf8Buffer) Push(piece []byte) string {
 	u.pending = append(u.pending, piece...)
 
@@ -30,17 +34,20 @@ func (u *utf8Buffer) Push(piece []byte) string {
 		}
 	}
 
-	out := string(u.pending[:cut])
+	out := strings.ToValidUTF8(string(u.pending[:cut]), replacementChar)
 	u.pending = append(u.pending[:0], u.pending[cut:]...)
 	return out
 }
 
-// Flush は残っているバイトを全部返す(生成が終わったとき用)。
+// Flush は残っているバイトを全部返す(生成が終わったとき用)。書きかけのまま終わった文字は U+FFFD にする。
 func (u *utf8Buffer) Flush() string {
-	out := string(u.pending)
+	out := strings.ToValidUTF8(string(u.pending), replacementChar)
 	u.pending = u.pending[:0]
 	return out
 }
+
+// replacementChar は文字にならないバイトの代わりに入れる文字(U+FFFD)。
+const replacementChar = "\uFFFD"
 
 // ---- 思考と答えの切り分け -----------------------------------------------------------
 //

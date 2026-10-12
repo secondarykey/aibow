@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -329,7 +330,15 @@ func (e *Engine) CountTokens(text string) (int, error) {
 	if e.vocab == 0 {
 		return 0, ErrNoModel
 	}
-	return len(llama.Tokenize(e.vocab, text, true, true)), nil
+	return len(e.tokenize(text)), nil
+}
+
+// tokenize は文字列をトークン列にする。特別なトークン(<|im_start|> など)は1トークンとして扱う(parseSpecial=true)。
+//
+// UTF-8 として正しくないバイト列を渡すと、llama.cpp の中で C++ の例外が投げられてプロセスごと落ちることがある
+// (Go 側では受け止められない)。保存済みの発言などに紛れ込んでいても落ちないよう、U+FFFD に置き換えてから渡す。
+func (e *Engine) tokenize(text string) []llama.Token {
+	return llama.Tokenize(e.vocab, strings.ToValidUTF8(text, replacementChar), true, true)
 }
 
 // Close はモデルとライブラリを解放する。
@@ -362,7 +371,7 @@ func (e *Engine) Generate(
 	// 3. 会話 → 文字列 → トークン列
 	prompt := buildPrompt(messages, opt.Think)
 	onPrompt(prompt)
-	tokens := llama.Tokenize(e.vocab, prompt, true, true)
+	tokens := e.tokenize(prompt)
 	st.PromptTokens = len(tokens)
 
 	nCtx := int(llama.NCtx(e.lctx))
