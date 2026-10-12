@@ -11,6 +11,25 @@ interface Props {
   onSend(text: string): void;
 }
 
+// テキストを打つ入力欄か(ボタンやチェックボックス、スライダーは対象外)
+function isTextInput(el: Element | null): boolean {
+  if (el instanceof HTMLTextAreaElement) return true;
+  return el instanceof HTMLInputElement && ["text", "search", "number"].includes(el.type);
+}
+
+// focusUnlessTyping は入力欄にフォーカスを移す。ただし、ほかの入力欄で打っている最中なら奪わない。
+//
+// 会話の名前の変更は、一覧のダブルクリックで入力欄を出す。ダブルクリックの1回目・2回目のクリックで
+// 「会話を開く → 開き終わったら入力欄へ」が動くので、開き終わるのが入力欄を出したあとになり、
+// 名前の入力欄からフォーカスを奪って(blur で確定扱いになり)編集が閉じてしまっていた。
+// 返事が終わったときに、設定パネルでシステムプロンプトを打っている最中だった場合も同じ。
+function focusUnlessTyping(el: HTMLTextAreaElement | null) {
+  if (!el) return;
+  const active = document.activeElement;
+  if (active !== el && isTextInput(active)) return;
+  el.focus();
+}
+
 export function Composer({ canSend, blockedReason, home, focusKey, onSend }: Props) {
   const [text, setText] = useState("");
   const input = useRef<HTMLTextAreaElement>(null);
@@ -26,13 +45,13 @@ export function Composer({ canSend, blockedReason, home, focusKey, onSend }: Pro
 
   // 返事が終わったら、すぐ次を打てるように入力欄に戻る
   useEffect(() => {
-    if (canSend) input.current?.focus();
+    if (canSend) focusUnlessTyping(input.current);
   }, [canSend]);
 
   // 一覧で会話を選んだり「+ 新規」を押したりしたあと、すぐ打てるように入力欄に戻る。
   // 押したボタンにフォーカスが残るので、こちらから移す(生成中で送れなくても、打つことはできる)
   useEffect(() => {
-    input.current?.focus();
+    focusUnlessTyping(input.current);
   }, [focusKey]);
 
   const submit = (e?: FormEvent) => {
