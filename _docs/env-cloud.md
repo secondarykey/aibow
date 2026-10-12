@@ -14,6 +14,21 @@ Claude Code のクラウドセッションなど、画面も GPU も無い Linux
 - Linux でビルドするには GTK4 / WebKitGTK 6 の開発用パッケージ(`libgtk-4-dev` / `libwebkitgtk-6.0-dev`)が要る
 - Wails が作る `build/linux/aibow.desktop` や、`_cmd/aibow` に出来た実行ファイルはコミットしない
 
+## wails3 が無いとき
+
+- バインディングは `_cmd/aibow` で `CGO_ENABLED=0 go run github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.26 generate bindings -f '' -clean=true -ts -i` で作り直せる
+  (GTK が無いので cgo を切る。Go の版の違いなどの警告は出るが、コミット済みのものと同じ結果になることを確かめた。2026-10-12)
+- 画面だけの変更なら、`_cmd/aibow/frontend` で `npx tsc --noEmit` と `npx vite build` で型チェックとビルドを確かめられる(`wails3 build` の画面の部分と同じ)
+- `go vet ./_cmd/aibow` と `wails3 build` は GTK が無いと通らない。Go の画面側を変えたときは、server モードのビルド(下)か、ユーザーの Windows で確かめてもらう
+
+## Go を動かさずに画面の部品を確かめる
+
+- `_cmd/aibow/frontend/.harness/`(`.gitignore` の `.*` で Git に入らない)に、部品(`RenderedText` や `ChatView` など)にダミーのデータを渡して描くだけの
+  `index.html` と `main.tsx` を置き、`npx vite build .harness --outDir <一時フォルダの絶対パス> --base ./` でビルドして、Playwright で開く。終わったら `.harness/` を消す
+  - `--outDir` は `.harness` からの相対パスになるので、**必ず絶対パスで書く**(相対で書いてリポジトリの外に出力してしまったことがある)
+- ダウンロードは `page.waitForEvent("download")`、時刻は `page.clock.install()` で固定・早送りして確かめられる
+- 画面全体(`App.tsx`)も `frontend/dist` を開けば描けるが、Go の呼び出しはエラーになる(モデルの一覧のエラーが出る)
+
 ## Playwright で操作する
 
 - Chromium はインストール済み(`/opt/pw-browsers/chromium-*/chrome-linux/chrome` を `executablePath` に渡す)。`playwright-core` は一時フォルダに入れる
