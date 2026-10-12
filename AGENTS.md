@@ -12,11 +12,12 @@ aibow は、ローカルLLMを使ったアプリを**自分で作りながら仕
 
 完成品を早く作ることより、**各段階で何が起きているかが読んで分かること**を優先してください。
 
-## 現在の構成(ステップ1: チャット)
+## 現在の構成(ステップ2-1: 会話の保存)
 
 ```
 ウィンドウ(_cmd/aibow/frontend の React) ⇄ Wails v3 ⇄ aibow ⇄ yzma ⇄ llama.cpp(_cmd/aibow/lib\ の DLL)⇄ GPU
-                                                                    ↑ _cmd/aibow/models\*.gguf / Ollama の保存フォルダ
+                                                     ⇅          ↑ _cmd/aibow/models\*.gguf / Ollama の保存フォルダ
+                                          aibow/store(SQLite: %APPDATA%ibowibow.db)
 ```
 
 **Ollama などの外部 LLM サーバーは使わない**。aibow のプロセスの中で llama.cpp を直接動かす。
@@ -35,11 +36,15 @@ Ollama のサーバーや API は使わない。Ollama のモデルの一部は 
 | `models.go` | モデルの一覧(`models\` の *.gguf と Ollama の保存フォルダ)。ID は `file:<パス>` / `ollama:<名前>` |
 | `prompt.go` | 会話 → ChatML 文字列(Qwen3.5 の公式チャットテンプレートを Go で書き直したもの) |
 | `stream.go` | UTF-8 の切れ目の処理と、`</think>` で思考と答えを振り分ける処理 |
-| `*_test.go` | テンプレート、思考の振り分け、Ollama の目録の読み取りのテスト(モデル不要で実行できる) |
+| `conversation.go` | 会話の仕組み(`Conversations`)。発言の保存、タイトルの自動付与、思考を除いた履歴での生成、答えが出なかった回の理由の文、生成は同時に1つ |
+| `store.go` | 保存先の約束(`Store` interface)と、会話・発言の型(`Conversation` / `StoredMessage` / `ReplyStats`) |
+| `appsettings.go` | アプリ全体の設定(`app_settings` の読み書き)。環境変数は DB に値が無いときの初期値 |
+| `store/sqlite.go` | `Store` の SQLite 実装(`modernc.org/sqlite`)。`PRAGMA user_version` でマイグレーションを管理する(版を足すときは `migrations` の末尾に追加) |
+| `*_test.go` | テンプレート、思考の振り分け、Ollama の目録、会話の仕組み(メモリ上の保存先 `memstore_test.go`)、SQLite(一時フォルダの DB)のテスト。モデル不要 |
 | `_cmd/aibow/main.go` | Wails のアプリとウィンドウを作る。Wails に依存するコードは `_cmd/aibow` だけに置く |
 | `_cmd/aibow/config.go` | 環境変数の読み込み |
-| `_cmd/aibow/service.go` | `ChatService`。画面から呼ばれるメソッド(`Models` / `SwitchModel` / `Chat`) |
-| `_cmd/aibow/frontend/src/` | チャット画面(React + TypeScript)。`useModels.ts` / `useChat.ts` が Go とのやり取り、`components/` が表示。Vite でビルドした `frontend/dist` を `go:embed` で埋め込む |
+| `_cmd/aibow/service.go` | `ChatService`。画面と `aibow.Conversations` / `Engine` の中継だけをする(モデル・会話・設定・`Send`) |
+| `_cmd/aibow/frontend/src/` | チャット画面(React + TypeScript、3列: 会話の一覧 / チャット / 設定パネル)。`useModels.ts` / `useConversations.ts` / `useChat.ts` / `useAppSettings.ts` が Go とのやり取り、`components/` が表示。Vite でビルドした `frontend/dist` を `go:embed` で埋め込む |
 | `_cmd/aibow/frontend/bindings/` | `wails3 generate bindings` の生成物(コミットする。手で直さない) |
 | `_cmd/aibow/build/` / `Taskfile.yml` | `wails3 init`(react テンプレート)由来のビルド設定。ios / android / docker は削除して `.gitignore` 済み |
 | `_cmd/aibow/version` / `_cmd/version.go` | バージョンの唯一の正と、それを config.yml / package.json に書き写すスクリプト(リポジトリのルートで `go run _cmd/version.go`)。version は `//go:embed` で exe に入る |
@@ -49,8 +54,9 @@ Ollama のサーバーや API は使わない。Ollama のモデルの一部は 
 
 - 画面 → Go は生成されたバインディング(`ChatService.Models()` など)で呼ぶ。Go のメソッドを変えたら `wails3 generate bindings -f '' -clean=true -ts -i` で作り直す
   (Taskfile と同じフラグ。`-i` は interface 生成なので、画面で `new` しない)。`wails3 dev` / `wails3 build` は自動で作り直す
-- Go → 画面は Wails のイベント。`chat` イベントは `RegisterEvent[ChatEvent]` で型を登録してあり、画面では `ev.data` が `ChatEvent` 型になる。`type` は `prompt` / `thinking` / `content` / `stats` / `error` / `done`。
-  `Chat` の戻り値とイベントは別経路で届き順序が保証されないので、終わりは必ず `done` イベントで判定する
+- Go → 画面は Wails のイベント。`chat` イベントは `RegisterEvent[aibow.ChatEvent]` で型を登録してあり、画面では `ev.data` が `ChatEvent` 型になる。`type` は `prompt` / `thinking` / `content` / `error` / `done`。
+  `conversation_id` が付いていて、画面は表示中の会話のものだけを出す。`done` には Go が保存した返事(`reply`)が入る。
+  `Send` の戻り値とイベントは別経路で届き順序が保証されないので、終わりは必ず `done` イベントで判定する
 - 停止は `Call` の Promise の `cancel()` → Go の `ctx` がキャンセルされる。アプリ終了時は `ServiceShutdown` で生成を止める
 - 起動時のモデルはウィンドウを出してから裏で読み込み、終わったら `models` イベントで画面に知らせる
 - Windows の WebView2 は、別のウィンドウから戻ると IME(日本語入力)が効かなくなることがある。Go が `events.Windows.WindowSetFocus` で
@@ -58,11 +64,15 @@ Ollama のサーバーや API は使わない。Ollama のモデルの一部は 
   IME 変換中・ボタンにフォーカスがあるときは触らない。新しい入力欄を足しても、テキスト入力なら自動で対象になる
 - 起動に失敗しても(lib が無い、環境変数の値が不正など)ウィンドウは出し、`Models()` の `error` で理由を画面に出す。
   リリース版(`wails3 build`)はコンソールが無く、`log.Fatal` だと何も見えずに終わるため。起動時のエラーで `log.Fatal` しない
-- 会話履歴は画面側が持ち、毎回全件を送る(モデルはステートレス)
-- 過去のアシスタント発言は答えだけを履歴に残す(思考は捨てる。公式テンプレートと同じ)
+- 会話履歴は Go(`aibow.Conversations`)が持ち、SQLite に保存する。画面は会話の ID と新しい発言だけを送り、Go が毎回全件を並べ直してモデルに渡す(モデルはステートレス)
+- 過去のアシスタント発言の思考は保存して画面で見られるが、モデルに渡すのは答えだけ(公式テンプレートと同じ)。システムプロンプトは発言として保存せず、会話の設定から毎回先頭に付ける
+- 会話ごとの設定(システムプロンプト・上限トークン数・temperature・思考・presence penalty)は `conversations.settings`(JSON)。
+  新しい会話は `app_settings` の既定をコピーする。アプリ全体の設定(コンテキスト長・GPU の層数・最後に使ったモデル)も `app_settings`
+- ID は `uuid.NewV7()`(作成順に並ぶ)。DB には TEXT で入れ、発言の順番は ID の並びで決める(順番用の列は持たない)
 - 思考の ON/OFF は、プロンプト末尾を `<think>\n` にするか `<think>\n\n</think>\n\n` にするかで切り替える
-- 生成とモデルの入れ替えは同時に1つだけ(コンテキストが1つのため)。`Engine.mu` で排他している
-- モデルの切り替えは「今のモデルを解放 → 新しいモデルを読み込む」の順(VRAM 8GB に2つは載らないため)。失敗したら元のモデルを読み直す
+- 生成とモデルの入れ替えは同時に1つだけ(コンテキストが1つのため)。`Engine.mu` で排他している。会話の側でも生成中の会話を1つだけ持ち(`Conversations.generating`)、生成中の会話は削除できない
+- モデルの切り替えは「今のモデルを解放 → 新しいモデルを読み込む」の順(VRAM 8GB に2つは載らないため)。失敗したら元のモデルを読み直す。
+  GPU の層数の変更(`SetGPULayers`)も同じ仕組みで読み直す。コンテキスト長の変更(`SetContextSize`)はコンテキストだけを作り直し、モデルは読み直さない
 
 ## 作業の進め方
 
@@ -74,18 +84,19 @@ Ollama のサーバーや API は使わない。Ollama のモデルの一部は 
 
 ## 技術方針
 
-- **言語は Go**(1.26 以上。yzma の要求)。0001 で 1.27 に上げ、標準の `uuid` パッケージを使う。Python など別言語の実装を持ち込まない
+- **言語は Go**(1.27 以上。標準の `uuid` パッケージを使う)。Python など別言語の実装を持ち込まない
 - Go の外部パッケージは **yzma(github.com/hybridgroup/yzma)と、画面用の Wails v3(`_cmd/aibow` のみ)**。それ以外は標準ライブラリで書く。
   Wails は現在 v3.0.0-beta.26(`wails3` CLI と同じ版)。ルートの `go.mod` には Wails を入れない
-  0001 で SQLite のドライバー `modernc.org/sqlite`(cgo 不要)を追加する(ユーザー承認済み)。C コンパイラなし(`CGO_ENABLED=0`)でビルドできる状態を保つ
+  会話の保存に SQLite のドライバー `modernc.org/sqlite`(cgo 不要。ルートのモジュールの `store` パッケージだけで使う)。C コンパイラなし(`CGO_ENABLED=0`)でビルドできる状態を保つ
   追加が必要な場合は、理由と代替案を示してユーザーに確認してから追加する(MCP の公式 Go SDK はステップ4以降で検討してよい)
 - yzma と llama.cpp はバージョンの組み合わせが決まっている。現在は yzma v1.29.1 + llama.cpp v0.6.0(ビルド b11429)。
   yzma を上げるときは、yzma の README の対応表を確認し、`lib\` の入れ直しも README に書く
 - チャットテンプレートはライブラリ任せにせず、`prompt.go` に自分で書く(書式を理解することが学習目的のため)
 - フロントエンドは React + TypeScript + Vite(`wails3 init -t react` のテンプレート)。npm のパッケージは react / react-dom / @wailsio/runtime と開発用の vite / typescript など。
   それ以外を足すときも、理由と代替案を示してユーザーに確認する。Wails の構成はユーザーの wails3 スキルの標準(`_cmd/<名前>/build/config.yml`・Taskfile・`wails3 dev`)に従う
-- 設定は環境変数(`AIBOW_MODEL` / `AIBOW_MODELS_DIR` / `AIBOW_LIB` / `AIBOW_CTX` / `AIBOW_GPU_LAYERS` / `AIBOW_MAX_TOKENS` / `AIBOW_PRESENCE_PENALTY` / `AIBOW_LLAMA_LOG`、Ollama の保存先は Ollama と同じ `OLLAMA_MODELS`)。
-  新しい設定も `AIBOW_` で始まる環境変数にし、README の表に追加する
+- 設定は環境変数(`AIBOW_MODEL` / `AIBOW_MODELS_DIR` / `AIBOW_LIB` / `AIBOW_DB` / `AIBOW_CTX` / `AIBOW_GPU_LAYERS` / `AIBOW_MAX_TOKENS` / `AIBOW_PRESENCE_PENALTY` / `AIBOW_LLAMA_LOG`、Ollama の保存先は Ollama と同じ `OLLAMA_MODELS`)。
+  新しい設定も `AIBOW_` で始まる環境変数にし、README の表に追加する。
+  画面で変えられる設定(コンテキスト長・GPU の層数・上限トークン数・presence penalty)の環境変数は「DB にまだ値が無いときの初期値」で、画面で変えたら DB の値が優先
 
 ## バージョンとローカルデプロイ
 
@@ -115,7 +126,7 @@ Ollama のサーバーや API は使わない。Ollama のモデルの一部は 
 - presence penalty(`AIBOW_PRESENCE_PENALTY`、既定 1.5、直近 256 生成トークンが対象): Qwen3.5 4B は「1+1は？」でも数百トークン考える。
   CPU で各1回試したところ、0 と 1.0 は 700 トークン以内に答えまで届かず、1.5 は 662 トークンで答えた。思考オフの日本語の答えの自然さはどれも同程度。
   試行は各1回なので、変えるときは複数回比べること
-- 答えが空のまま終わった回(思考の途中で打ち切り・停止)は、理由の文を assistant の発言として履歴に残す(質問が宙に浮かないように)
+- 答えが空のまま終わった回(思考の途中で打ち切り・停止)は、理由の文を assistant の発言として保存する(質問が宙に浮かないように)。`conversation.go` の `noAnswerNote`
 
 ## 既知の問題
 
@@ -130,7 +141,7 @@ Ollama のサーバーや API は使わない。Ollama のモデルの一部は 
 
 ```bash
 gofmt -l .                       # 整形が必要なファイルを表示(何も出なければ OK。_cmd も含む)
-go test ./...                    # テンプレート、思考の振り分け、Ollama の目録のテスト(モデル不要)
+go test ./...                    # テンプレート、思考の振り分け、Ollama の目録、会話の仕組み、SQLite のテスト(モデル不要)
 (cd _cmd/aibow && wails3 build)  # バインディング生成 → 画面の型チェックとビルド(tsc + vite)→ Go のビルド
 go vet ./... ./_cmd/aibow        # よくある間違いを静的チェック(./... は _cmd を含まないので並べる)
 ```
@@ -142,11 +153,12 @@ worktree には `lib\` / `models\` / `frontend/node_modules` が無い。
 - `lib\` / `models\` は `AIBOW_LIB` / `AIBOW_MODELS_DIR` で本体(`/d/Go/Projects/aibow/_cmd/aibow/`)を指す(ユーザーの環境では、worktree のセッション開始時にこの2つが自動で設定される)。
   **worktree に `lib\` / `models\` を作らない・入れ直さない**(yzma の install や GGUF のダウンロードをしない)
 - 本体の `lib\` / `models\` へのジャンクションやシンボリックリンクを張らない。worktree の解放時に Git 管理外のファイルが消され、リンク先の本体の実体まで消える
+- 会話の DB は、試すときは `AIBOW_DB` を一時フォルダのファイルにする(ユーザーの `%APPDATA%ibowibow.db` に試しの会話を混ぜない)
 - `node_modules` は worktree の `_cmd/aibow/frontend` で `npm install` する(ユーザーの環境で本体へのジャンクションが自動で張られている場合は、そのまま使い、`npm install` しない)
 画面を外から操作して確かめるときは、一時ビルドで `application.Options.Windows.AdditionalBrowserArgs` に
 `--remote-debugging-port=9222` を足し、CDP(`http://localhost:9222/json`)で `Runtime.evaluate` する(この変更はコミットしない)。
 
 GPU や本物のモデルがない環境では、llama.cpp の CPU 版と小さな GGUF(重みがランダムな極小モデルでもよい)で
-「読み込み → 生成 → 停止 → 2回目の送信で KV キャッシュが再利用される → モデルの切り替え → 壊れたモデルを選んだら元に戻る」までを確認してください。
+「読み込み → 生成 → 停止 → 2回目の送信で KV キャッシュが再利用される → モデルの切り替え → 壊れたモデルを選んだら元に戻る → 再起動しても会話が残る」までを確認してください。
 Ollama の保存フォルダは、`manifests\registry.ollama.ai\library\<名前>\<タグ>`(目録 JSON)と `blobs\sha256-<ハッシュ>` を作れば模擬できます(`OLLAMA_MODELS` で指定)。
 出力される文章の中身は確認できないので、思考と答えの振り分けは `stream_test.go` で確認します。

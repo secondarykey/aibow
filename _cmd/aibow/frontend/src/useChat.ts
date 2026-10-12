@@ -105,7 +105,9 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
           finish();
           return;
         case "prompt":
+          // prompt が届いた時点で、Go はユーザーの発言とタイトルを保存し終えている。一覧のタイトルを先に更新する
           setPrompts(p => ({ ...p, [id]: ev.text ?? "" }));
+          reloadList().catch(() => {});
           return;
         case "error":
           if (viewing.current === id) addError(ev.error ?? "");
