@@ -19,6 +19,7 @@ export interface Conversations {
   open(id: string): Promise<void>;
   create(): Promise<void>;           // 新しい会話を作って開く
   remove(id: string): Promise<void>;
+  rename(id: string, title: string): Promise<void>;
   reloadList(): Promise<void>;
   updateSettings(patch: Partial<ConversationSettings>): void; // 開いている会話の設定を変える
   flushSettings(): Promise<void>;     // まだ Go に送っていない設定を送る(送信の前に呼ぶ)
@@ -99,6 +100,11 @@ export function useConversations(onError: (text: string) => void): Conversations
     }
   }, [open]);
 
+  const rename = useCallback(async (id: string, title: string) => {
+    await ChatService.RenameConversation(id, title);
+    await reloadList();
+  }, [reloadList]);
+
   const updateSettings = useCallback((patch: Partial<ConversationSettings>) => {
     const cur = currentRef.current;
     if (!cur) return;
@@ -112,5 +118,5 @@ export function useConversations(onError: (text: string) => void): Conversations
     pending.current = { id: cur.conversation.id, settings, timer };
   }, [flushSettings, setCurrent, onError]);
 
-  return { list, current, openCount, init, open, create, remove, reloadList, updateSettings, flushSettings };
+  return { list, current, openCount, init, open, create, remove, rename, reloadList, updateSettings, flushSettings };
 }

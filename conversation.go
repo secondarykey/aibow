@@ -97,6 +97,21 @@ func (cs *Conversations) Delete(id uuid.UUID) error {
 	return cs.store.DeleteConversation(id)
 }
 
+// Rename は会話のタイトルを変える。自動で付いたタイトルも、あとから変えられる。
+// 最初の送信の前に付けた名前は、自動のタイトルで上書きしない(TouchConversation がタイトルが空のときだけ入れる)。
+func (cs *Conversations) Rename(id uuid.UUID, title string) error {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return errors.New("タイトルを空にはできません")
+	}
+	c, _, err := cs.store.Conversation(id)
+	if err != nil {
+		return err
+	}
+	c.Title = title
+	return cs.store.UpdateConversation(c) // 更新日時は変えない(名前を変えただけで一覧の並びが変わらないように)
+}
+
 // UpdateSettings は会話の設定を変える。次の送信から効く。
 func (cs *Conversations) UpdateSettings(id uuid.UUID, s ConversationSettings) error {
 	c, _, err := cs.store.Conversation(id)
@@ -150,12 +165,9 @@ func (cs *Conversations) Send(ctx context.Context, id uuid.UUID, text string, em
 		return
 	}
 
-	// 1. ユーザーの発言を保存する。最初の発言なら、その先頭を会話のタイトルにする
+	// 1. ユーザーの発言を保存する。タイトルがまだ無ければ(最初の発言なら)、その先頭をタイトルにする
 	user := StoredMessage{ID: uuid.NewV7(), ConversationID: id, Role: "user", Content: text, CreatedAt: time.Now()}
-	if conv.Title == "" {
-		conv.Title = titleFrom(text)
-	}
-	if err := cs.save(&conv, user); err != nil {
+	if err := cs.save(user, titleFrom(text)); err != nil {
 		fail(err)
 		return
 	}
@@ -172,20 +184,20 @@ func (cs *Conversations) Send(ctx context.Context, id uuid.UUID, text string, em
 	}
 
 	// 3. 返事を保存する
-	if err := cs.save(&conv, *r); err != nil {
+	if err := cs.save(*r, ""); err != nil {
 		fail(err)
 		return
 	}
 	reply = r
 }
 
-// save は発言を1件保存し、会話の更新日時(一覧の並び順に使う)とタイトルを書き換える。
-func (cs *Conversations) save(conv *Conversation, m StoredMessage) error {
+// save は発言を1件保存し、会話の更新日時(一覧の並び順に使う)を進める。
+// タイトルが空なら autoTitle を入れる。
+func (cs *Conversations) save(m StoredMessage, autoTitle string) error {
 	if err := cs.store.AddMessage(m); err != nil {
 		return fmt.Errorf("発言を保存できません: %w", err)
 	}
-	conv.UpdatedAt = m.CreatedAt
-	if err := cs.store.UpdateConversation(*conv); err != nil {
+	if err := cs.store.TouchConversation(m.ConversationID, m.CreatedAt, autoTitle); err != nil {
 		return fmt.Errorf("会話を更新できません: %w", err)
 	}
 	return nil

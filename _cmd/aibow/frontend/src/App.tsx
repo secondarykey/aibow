@@ -91,6 +91,7 @@ export default function App() {
           onOpen={id => convs.open(id).catch(err => addError(errorMessage(err)))}
           onNew={onNew}
           onDelete={id => convs.remove(id).catch(err => addError(errorMessage(err)))}
+          onRename={(id, title) => convs.rename(id, title).catch(err => addError(errorMessage(err)))}
           settingsOpen={settingsOpen}
           onToggleSettings={() => setSettingsOpen(o => !o)}
         />

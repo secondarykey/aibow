@@ -85,6 +85,11 @@ nav.conversations .footer .settings.active { background: var(--bg); border-color
   display: inline-block; width: 7px; height: 7px; border-radius: 50%;
   background: var(--accent); margin-right: 6px; vertical-align: middle;
 }
+.conversation.editing { padding: 3px 4px; }
+.conversation .title-input {
+  flex: 1; min-width: 0; font: inherit; font-size: 13px; padding: 4px 6px; border-radius: 6px;
+  border: 1px solid var(--accent); background: var(--panel); color: var(--text);
+}
 .conversation.confirming { padding: 4px 6px; gap: 4px; background: var(--bg); }
 .conversation .confirm-text { flex: 1; color: var(--error); }
 .conversation.confirming button { border: 1px solid var(--border); padding: 3px 8px; }

@@ -153,3 +153,28 @@ func TestAppSettings(t *testing.T) {
 		t.Errorf("アプリ設定: %+v %v", app, err)
 	}
 }
+
+func TestTouchConversation(t *testing.T) {
+	s, _ := openTemp(t)
+	base := time.Now()
+	c := newConv(t, s, base)
+
+	// タイトルが空なら自動のタイトルが入り、更新日時が進む
+	if err := s.TouchConversation(c.ID, base.Add(time.Minute), "自動"); err != nil {
+		t.Fatal(err)
+	}
+	// タイトルがあれば変えない(日時だけ進む)
+	if err := s.TouchConversation(c.ID, base.Add(2*time.Minute), "別の自動"); err != nil {
+		t.Fatal(err)
+	}
+	got, _, err := s.Conversation(c.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Title != "自動" || !got.UpdatedAt.Equal(base.Add(2*time.Minute).Truncate(time.Microsecond)) {
+		t.Errorf("タイトル %q / 更新日時 %v", got.Title, got.UpdatedAt)
+	}
+	if err := s.TouchConversation(uuid.NewV7(), base, "x"); !errors.Is(err, aibow.ErrNotFound) {
+		t.Errorf("無い会話は ErrNotFound のはずです: %v", err)
+	}
+}

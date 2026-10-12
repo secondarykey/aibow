@@ -268,6 +268,14 @@ func (s *ChatService) DeleteConversation(id uuid.UUID) error {
 	return s.convs.Delete(id)
 }
 
+// RenameConversation は会話のタイトルを変える。空にはできない。
+func (s *ChatService) RenameConversation(id uuid.UUID, title string) error {
+	if s.startupErr != nil {
+		return s.startupErr
+	}
+	return s.convs.Rename(id, title)
+}
+
 // UpdateConversationSettings は会話の設定を変える。次の送信から効く。
 func (s *ChatService) UpdateConversationSettings(id uuid.UUID, settings aibow.ConversationSettings) error {
 	if s.startupErr != nil {
