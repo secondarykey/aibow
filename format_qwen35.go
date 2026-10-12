@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"io"
 	"strings"
+	"unicode"
 )
 
 // qwen35 は Qwen3.5 の書式。GGUF の general.architecture が "qwen35" のモデルに使う。
@@ -268,22 +269,74 @@ func pyJSON(raw []byte) string {
 	return b.String()
 }
 
+// ---- 出力の読み取り -----------------------------------------------------------------
+//
+// モデルが書く返事は、次のような1本の文字列:
+//
+//	…思考…
+//	</think>
+//
+//	計算してみます。            ← 答え(画面に出す)
+//
+//	<tool_call>                  ← ここから先は答えの欄に出さない
+//	<function=calculate>
+//	<parameter=expression>
+//	1234 * 5678
+//	</parameter>
+//	</function>
+//	</tool_call>
+//
+// 思考と答えは thinkSplitter で分け、答えの中に <tool_call> が出てきたら、そこから先は「呼び出しの部分」として
+// 取っておき、生成が終わってから読み取る。タグは何トークンかに分かれて届くことがあるので、
+// "<tool_call>" の書きかけかもしれない末尾は、次が届くまで出さずに持っておく(思考の振り分けと同じ考え方)。
+const (
+	qwen35CallStart = "<tool_call>"
+	qwen35CallEnd   = "</tool_call>"
+	qwen35Response  = "<tool_response>"
+)
+
 func (qwen35) NewParser(think bool) OutputParser {
 	return &qwen35Parser{split: newThinkSplitter(think)}
 }
 
-// qwen35Parser は生成した文字列を思考と答えに振り分け、全体も覚えておく(Result 用)。
+// qwen35Parser は生成した文字列を思考・答え・呼び出しの部分に振り分け、全体も覚えておく(Result 用)。
 type qwen35Parser struct {
 	split             *thinkSplitter
 	thinking, content strings.Builder
+	held              string          // 答えのうち、"<tool_call>" の書きかけかもしれないので保留している文字列
+	calls             strings.Builder // "<tool_call>" から後ろ(呼び出しの部分)。空なら、まだ呼び出しは出ていない
 }
 
 func (q *qwen35Parser) Push(text string) (thinking, content string) {
-	return q.keep(q.split.Push(text))
+	thinking, content = q.split.Push(text)
+	return q.keep(thinking, q.pushContent(content, false))
 }
 
 func (q *qwen35Parser) Flush() (thinking, content string) {
-	return q.keep(q.split.Flush())
+	thinking, content = q.split.Flush()
+	return q.keep(thinking, q.pushContent(content, true))
+}
+
+// pushContent は答えの文字列から、"<tool_call>" より前の部分だけを返す。後ろは calls に取っておく。
+func (q *qwen35Parser) pushContent(text string, last bool) string {
+	if q.calls.Len() > 0 {
+		q.calls.WriteString(text)
+		return ""
+	}
+	q.held += text
+	if i := strings.Index(q.held, qwen35CallStart); i >= 0 {
+		out := q.held[:i]
+		q.calls.WriteString(q.held[i:])
+		q.held = ""
+		return out
+	}
+	keep := 0
+	if !last {
+		keep = partialSuffix(q.held, qwen35CallStart)
+	}
+	out := q.held[:len(q.held)-keep]
+	q.held = q.held[len(q.held)-keep:]
+	return out
 }
 
 func (q *qwen35Parser) keep(thinking, content string) (string, string) {
@@ -292,10 +345,104 @@ func (q *qwen35Parser) keep(thinking, content string) (string, string) {
 	return thinking, content
 }
 
-func (q *qwen35Parser) Stop() bool { return false }
+// Stop は、呼び出しの後ろでモデルが <tool_response> を書き始めたら true を返す。
+// 結果を書くのはアプリの役目。モデルに続きを書かせると、ありもしない結果を想像して答えてしまう。
+func (q *qwen35Parser) Stop() bool {
+	return strings.Contains(q.calls.String(), qwen35Response)
+}
 
 func (q *qwen35Parser) Result() Output {
-	return Output{Thinking: q.thinking.String(), Content: q.content.String()}
+	out := Output{Thinking: q.thinking.String(), Content: q.content.String()}
+	if q.calls.Len() > 0 {
+		// 呼び出しの前の空行は書式の区切りなので、答えからは落とす
+		out.Content = strings.TrimRightFunc(out.Content, unicode.IsSpace)
+		out.ToolCalls = parseQwen35Calls(q.calls.String())
+	}
+	return out
+}
+
+// parseQwen35Calls は「呼び出しの部分」(<tool_call> から後ろ)から、呼び出しを全部読み取る。
+// 呼び出しの間や後ろに書かれた文は捨てる(テンプレートの指示で「呼び出しの後ろには何も書かない」ことになっている)。
+func parseQwen35Calls(s string) []ToolCall {
+	// モデルが自分で書き始めた結果は捨てる(Stop で止めたときに、書きかけで残っている)
+	if i := strings.Index(s, qwen35Response); i >= 0 {
+		s = s[:i]
+	}
+	var calls []ToolCall
+	for {
+		i := strings.Index(s, qwen35CallStart)
+		if i < 0 {
+			return calls
+		}
+		s = s[i:]
+		end := strings.Index(s, qwen35CallEnd)
+		if end < 0 {
+			// 閉じないまま終わった(返事の上限・停止など)
+			raw := strings.TrimRightFunc(s, unicode.IsSpace)
+			return append(calls, brokenCall(raw, "", "</tool_call> で閉じていません"))
+		}
+		block := s[:end+len(qwen35CallEnd)]
+		calls = append(calls, parseQwen35Call(block))
+		s = s[len(block):]
+	}
+}
+
+// qwen35CallHelp は、書式が崩れていたときにモデルに返すエラーに添える、正しい書き方。
+const qwen35CallHelp = "正しい書式: <tool_call>\n<function=関数名>\n<parameter=引数名>\n値\n</parameter>\n</function>\n</tool_call>"
+
+// parseQwen35Call は <tool_call>…</tool_call> を1つ読み取る。
+//
+//	<tool_call>
+//	<function=名前>
+//	<parameter=引数の名前>
+//	値(複数行でもよい)
+//	</parameter>
+//	</function>
+//	</tool_call>
+//
+// 値の前後の改行1つずつは書式の区切りなので落とす(値の中の改行や字下げは残す。ステップ3でファイルの中身を渡すため)。
+func parseQwen35Call(block string) ToolCall {
+	inner := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(block, qwen35CallStart), qwen35CallEnd))
+	if !strings.HasPrefix(inner, "<function=") {
+		return brokenCall(block, "", "<tool_call> の中が <function=関数名> で始まっていません")
+	}
+	nameEnd := strings.Index(inner, ">")
+	name := strings.TrimSpace(inner[len("<function="):max(nameEnd, len("<function="))])
+	if nameEnd < 0 || name == "" {
+		return brokenCall(block, "", "<function=関数名> の関数名が読み取れません")
+	}
+	body, ok := strings.CutSuffix(inner[nameEnd+1:], "</function>")
+	if !ok {
+		return brokenCall(block, name, "</function> で閉じていません")
+	}
+
+	call := ToolCall{Name: name, Args: []ToolArg{}}
+	for {
+		body = strings.TrimLeftFunc(body, unicode.IsSpace)
+		if body == "" {
+			return call
+		}
+		if !strings.HasPrefix(body, "<parameter=") {
+			return brokenCall(block, name, "<function> の中に <parameter=引数名> 以外の文があります")
+		}
+		ne := strings.Index(body, ">")
+		if ne < 0 {
+			return brokenCall(block, name, "<parameter=引数名> の引数名が読み取れません")
+		}
+		arg := strings.TrimSpace(body[len("<parameter="):ne])
+		value, rest, ok := strings.Cut(body[ne+1:], "</parameter>")
+		if arg == "" || !ok {
+			return brokenCall(block, name, "<parameter=引数名> が </parameter> で閉じていません")
+		}
+		value = strings.TrimSuffix(strings.TrimPrefix(value, "\n"), "\n")
+		call.Args = append(call.Args, ToolArg{Name: arg, Value: value})
+		body = rest
+	}
+}
+
+// brokenCall は読み取れなかった呼び出し。name は読み取れた関数名(読めなければ空)。
+func brokenCall(raw, name, reason string) ToolCall {
+	return ToolCall{Name: name, Raw: raw, Error: "書式が崩れていて呼び出しを読み取れません(" + reason + ")。\n" + qwen35CallHelp}
 }
 
 // ---- 思考と答えの切り分け -----------------------------------------------------------

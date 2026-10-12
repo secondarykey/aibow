@@ -4,22 +4,38 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
 
-func split(think bool, pieces ...string) (thinking, content string) {
-	s := newThinkSplitter(think)
-	for _, p := range pieces {
-		th, c := s.Push(p)
+// parse は pieces を順に届いたものとして Qwen3.5 の読み取りに通す。
+// 返すのは、生成中に画面へ出した思考と答え(streamed)と、終わったあとの結果(Result)。
+func parse(think bool, pieces ...string) (thinking, content string, out Output, stopped bool) {
+	p := (qwen35{}).NewParser(think)
+	for _, piece := range pieces {
+		th, c := p.Push(piece)
 		thinking += th
 		content += c
+		if p.Stop() {
+			stopped = true
+			break
+		}
 	}
-	th, c := s.Flush()
-	return thinking + th, content + c
+	th, c := p.Flush()
+	return thinking + th, content + c, p.Result(), stopped
 }
 
-func TestThinkSplitter(t *testing.T) {
+// runes は文字列を1文字ずつに分ける(1トークンずつ届く様子のまね。タグがどこで分かれても読めるかを見る)。
+func runes(s string) []string {
+	var out []string
+	for _, r := range s {
+		out = append(out, string(r))
+	}
+	return out
+}
+
+func TestQwen35ParserSplitsThinking(t *testing.T) {
 	cases := []struct {
 		name         string
 		think        bool
@@ -32,11 +48,95 @@ func TestThinkSplitter(t *testing.T) {
 		{"タグに似た文字列", true, []string{"a</b", "x</think>答え"}, "a</bx", "答え"},
 		{"思考なし", false, []string{"答", "え"}, "", "答え"},
 		{"思考の途中で終了", true, []string{"考え", "中</thi"}, "考え中</thi", ""},
+		{"<tool_call> に似た文字列", false, []string{"a <tool", "_cal と <tool_call"}, "", "a <tool_cal と <tool_call"},
 	}
 	for _, c := range cases {
-		th, ct := split(c.think, c.pieces...)
+		th, ct, out, _ := parse(c.think, c.pieces...)
 		if th != c.wantThinking || ct != c.wantContent {
 			t.Errorf("%s: got (%q, %q), want (%q, %q)", c.name, th, ct, c.wantThinking, c.wantContent)
+		}
+		if out.Thinking != th || out.Content != ct || len(out.ToolCalls) != 0 {
+			t.Errorf("%s: Result が画面に出した内容と違います: %+v", c.name, out)
+		}
+	}
+}
+
+// 答えの後ろの呼び出し(複数・複数行の値)を読み取り、呼び出しの部分は画面に出さないこと
+func TestQwen35ParserReadsToolCalls(t *testing.T) {
+	text := "時刻を見てから計算する\n</think>\n\n調べます。\n\n" +
+		"<tool_call>\n<function=get_current_time>\n</function>\n</tool_call>\n" +
+		"<tool_call>\n<function=calculate>\n<parameter=expression>\n(1 +\n  2) * 3\n</parameter>\n" +
+		"<parameter=note>\n\n</parameter>\n</function>\n</tool_call>"
+	want := []ToolCall{
+		{Name: "get_current_time", Args: []ToolArg{}},
+		{Name: "calculate", Args: []ToolArg{{"expression", "(1 +\n  2) * 3"}, {"note", ""}}},
+	}
+	// まとめて届いても、1文字ずつ届いても同じ
+	for _, pieces := range [][]string{{text}, runes(text)} {
+		th, ct, out, stopped := parse(true, pieces...)
+		if th != "時刻を見てから計算する\n" || out.Thinking != th {
+			t.Errorf("思考: %q", th)
+		}
+		if strings.Contains(ct, "<tool") || strings.TrimSpace(ct) != "調べます。" || out.Content != "調べます。" {
+			t.Errorf("答え: 画面 %q / 結果 %q", ct, out.Content)
+		}
+		if !reflect.DeepEqual(out.ToolCalls, want) || stopped {
+			t.Errorf("呼び出し: %+v(止めた: %v)", out.ToolCalls, stopped)
+		}
+	}
+}
+
+// プロンプトに書き戻した呼び出しを読むと、元と同じになること(書き方と読み方が対になっている)
+func TestQwen35CallsRoundTrip(t *testing.T) {
+	calls := []ToolCall{
+		{Name: "calculate", Args: []ToolArg{{"expression", "1+2"}}},
+		{Name: "write_file", Args: []ToolArg{{"path", "a.go"}, {"content", "package a\n\n\tfunc f() {}\n"}}},
+	}
+	var b strings.Builder
+	writeQwen35Calls(&b, calls, true)
+	_, _, out, _ := parse(false, "答え"+b.String())
+	if !reflect.DeepEqual(out.ToolCalls, calls) || out.Content != "答え" {
+		t.Errorf("読み戻した呼び出し: %+v / 答え %q", out.ToolCalls, out.Content)
+	}
+}
+
+// 呼び出しの後ろでモデルが結果を自分で書き始めたら止め、その部分は捨てること
+func TestQwen35ParserStopsAtToolResponse(t *testing.T) {
+	text := "<tool_call>\n<function=calculate>\n<parameter=expression>\n7/2\n</parameter>\n</function>\n</tool_call>\n" +
+		"<tool_response>\n3.5\n</tool_response>\n答えは 3.5 です"
+	_, ct, out, stopped := parse(false, runes(text)...)
+	if !stopped {
+		t.Fatal("<tool_response> で止まっていません")
+	}
+	if ct != "" || len(out.ToolCalls) != 1 || out.ToolCalls[0].Error != "" || out.ToolCalls[0].Args[0].Value != "7/2" {
+		t.Errorf("答え %q / 呼び出し %+v", ct, out.ToolCalls)
+	}
+}
+
+// 書式が崩れた呼び出しは、エラーと生の文字列を持たせる(実行はしない。モデルに立て直させる)
+func TestQwen35ParserBrokenCalls(t *testing.T) {
+	cases := []struct {
+		name, text, wantName, wantRaw string
+	}{
+		{"Qwen3 の JSON の書き方", "<tool_call>\n{\"name\": \"calculate\", \"arguments\": {\"expression\": \"1+1\"}}\n</tool_call>", "",
+			"<tool_call>\n{\"name\": \"calculate\", \"arguments\": {\"expression\": \"1+1\"}}\n</tool_call>"},
+		{"閉じないまま終わった", "<tool_call>\n<function=calculate>\n<parameter=expression>\n1+\n", "",
+			"<tool_call>\n<function=calculate>\n<parameter=expression>\n1+"},
+		{"</function> が無い", "<tool_call>\n<function=calculate>\n<parameter=expression>\n1\n</parameter>\n</tool_call>", "calculate",
+			"<tool_call>\n<function=calculate>\n<parameter=expression>\n1\n</parameter>\n</tool_call>"},
+		{"</parameter> が無い", "<tool_call>\n<function=calculate>\n<parameter=expression>\n1\n</function>\n</tool_call>", "calculate",
+			"<tool_call>\n<function=calculate>\n<parameter=expression>\n1\n</function>\n</tool_call>"},
+		{"関数名が空", "<tool_call>\n<function=>\n</function>\n</tool_call>", "", "<tool_call>\n<function=>\n</function>\n</tool_call>"},
+	}
+	for _, c := range cases {
+		_, _, out, _ := parse(false, c.text)
+		if len(out.ToolCalls) != 1 {
+			t.Errorf("%s: 呼び出しの数 %+v", c.name, out.ToolCalls)
+			continue
+		}
+		got := out.ToolCalls[0]
+		if got.Error == "" || got.Raw != c.wantRaw || got.Name != c.wantName || !strings.Contains(got.Error, "正しい書式") {
+			t.Errorf("%s: %+v", c.name, got)
 		}
 	}
 }
