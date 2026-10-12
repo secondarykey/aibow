@@ -5,3 +5,9 @@
 # llama.cpp のライブラリとモデル(大きいのでリポジトリには入れない)
 lib/
 models/
+
+# Claude Code の個人用の設定と作業用のフォルダ(worktree)。
+# チームで共有する .claude/settings.json などを将来置けるよう、.claude/ 全体ではなくこの2つだけを除外する
+.*
+.claude/settings.local.json
+.claude/worktrees/
