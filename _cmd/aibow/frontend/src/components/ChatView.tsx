@@ -62,7 +62,9 @@ function AssistantMessage({ view, faded, onStop }: { view: AssistantView; faded:
           <p className="hint">「思考する」をオフにするか、アプリ全体の設定の「返事の上限」を増やすと答えまで届きやすくなります。</p>
         )}
       </div>
-      {!view.generating && (view.content || view.stats) && <ReplyActions content={view.content} stats={view.stats} />}
+      {!view.generating && (view.content || view.stats) && (
+        <ReplyActions content={view.content} stats={view.stats} createdAt={view.createdAt} />
+      )}
       {view.generating && (
         <div className="stop-row">
           {/* 要約中の停止は要約だけを止める(返事は truncate で生成する)ので、要約が終わったらまた押せる */}
@@ -75,12 +77,14 @@ function AssistantMessage({ view, faded, onStop }: { view: AssistantView; faded:
 
 // 返事の最後の行: 答えのコピーと、詳細情報(モデル名・速さ・トークン数など)の開閉。
 // 詳細情報はふだんは使わないので畳んでおき、「詳細」を押したときだけ出す。生成中は出さない(停止ボタンだけ)
-function ReplyActions({ content, stats }: { content: string; stats?: string }) {
+function ReplyActions({ content, stats, createdAt }: { content: string; stats?: string; createdAt?: string }) {
   const [open, setOpen] = useState(false);
+  const time = replyTime(createdAt);
   return (
     <>
       <div className="reply-actions">
         {content && <CopyButton text={content} />}
+        {time && <span className="reply-time" title={time.full}>{time.short}</span>}
         {stats && (
           <button className="reply-action" onClick={() => setOpen(o => !o)} aria-expanded={open} title="モデル名・速さ・トークン数など">
             {open ? <LuChevronDown /> : <LuChevronRight />} 詳細
@@ -90,6 +94,22 @@ function ReplyActions({ content, stats }: { content: string; stats?: string }) {
       {open && stats && <div className="stats">{stats}</div>}
     </>
   );
+}
+
+// 返事の時刻の表示。今日なら「14:05」、今年なら「10/12 14:05」、それより前は「2025/10/12 14:05」。
+// マウスを乗せると秒まで出す。今日かどうかは表示するときに決める(日をまたいで開いたままでも合うように)
+function replyTime(createdAt?: string): { short: string; full: string } | null {
+  if (!createdAt) return null;
+  const t = new Date(createdAt);
+  if (Number.isNaN(t.getTime())) return null;
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const hm = `${pad(t.getHours())}:${pad(t.getMinutes())}`;
+  const md = `${t.getMonth() + 1}/${t.getDate()}`;
+  const full = `${t.getFullYear()}/${md} ${hm}:${pad(t.getSeconds())}`;
+  if (t.toDateString() === now.toDateString()) return { short: hm, full };
+  if (t.getFullYear() === now.getFullYear()) return { short: `${md} ${hm}`, full };
+  return { short: `${t.getFullYear()}/${md} ${hm}`, full };
 }
 
 // 停止を押してから、Go が止まるまでの間は押せなくする

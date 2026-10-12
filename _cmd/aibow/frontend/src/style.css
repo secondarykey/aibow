@@ -214,7 +214,9 @@ footer.home .composer textarea { line-height: 1.5; min-height: calc(3 * 1.5em + 
 .stop-row button { font-size: 12px; padding: 3px 10px; }
 .stats { font-size: 11.5px; color: var(--muted); margin-top: 4px; font-family: ui-monospace, Consolas, monospace; }
 /* 返事の最後の行: コピーと詳細の開閉。目立たないよう、枠の無い小さなボタンにする */
-.reply-actions { display: flex; gap: 2px; margin: 6px 0 0 -6px; }
+.reply-actions { display: flex; align-items: center; gap: 2px; margin: 6px 0 0 -6px; }
+/* 返事の時刻。ボタンと同じ小ささ・色で、コピーと「詳細」の間に置く */
+.reply-time { padding: 2px 6px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .reply-action {
   display: flex; align-items: center; gap: 4px; padding: 2px 6px; font-size: 12px;
   border: none; background: transparent; color: var(--muted);

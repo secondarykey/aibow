@@ -16,6 +16,7 @@ export interface AssistantView {
   cutoff?: string;       // 答えが出ないまま終わったときの理由の文
   cutoffHint?: boolean;  // 打ち切りの対処のヒントを出すか
   stats?: string;        // 統計行
+  createdAt?: string;    // 返事を保存した時刻(= 書き終えた時刻。Go の time.Time が RFC 3339 の文字列で届く)
 
   // 要約(compact の summary)。返事の前や「今すぐ要約」で、同じ吹き出しの中に要約の文を流す
   summarizing?: boolean; // 要約を作っている途中か(停止ボタンは要約だけを止める)
@@ -98,6 +99,7 @@ export function replyView(m: StoredMessage): AssistantView {
     thinking: m.thinking,
     thinkLabel: thinkLabel(s?.think_sec ?? 0),
     content: m.content,
+    createdAt: m.created_at,
   };
   if (s?.no_answer) {
     // 答えが出なかった回は、content に理由の文が入っている(モデルにもこの文が渡る)
