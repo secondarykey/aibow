@@ -1,4 +1,4 @@
-// 会話の表示: 吹き出し・メモ・エラー
+// 会話の表示: 吹き出し・エラー
 import { useEffect, useRef, useState } from "react";
 import type { AssistantView, Item } from "../transcript";
 import { RenderedText } from "./RenderedText";
@@ -21,8 +21,6 @@ export function ChatView({ items, onStop }: { items: Item[]; onStop(): void }) {
               return <div key={it.id} className="msg user">{it.text}</div>;
             case "error":
               return <div key={it.id} className="msg error">{it.text}</div>;
-            case "note":
-              return <div key={it.id} className="note">— {it.text} —</div>;
             case "assistant":
               return <AssistantMessage key={it.id} view={it} onStop={onStop} />;
           }

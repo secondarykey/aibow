@@ -1,7 +1,8 @@
 // transcript.ts: 画面に並べる会話の表示(吹き出し・メモ・エラー)を持つ部分。
 //
 // 会話の履歴そのものは Go が持っていて(SQLite に保存)、画面は会話を開くたびに受け取って表示に変える。
-// 表示にはエラーやモデル切り替えのメモも出すが、これは保存しない(会話を開き直すと消える)。
+// 表示にはエラーも出すが、これは保存しない(会話を開き直すと消える)。
+// モデルの読み込みなどのお知らせは、会話の表示ではなくトースト(toast.tsx)に出す。
 import { useCallback, useRef, useState } from "react";
 import type { StoredMessage } from "../bindings/aibow";
 
@@ -19,7 +20,6 @@ export interface AssistantView {
 
 export type Item =
   | { id: number; kind: "user"; text: string }
-  | { id: number; kind: "note"; text: string }
   | { id: number; kind: "error"; text: string }
   | ({ id: number; kind: "assistant" } & AssistantView);
 
@@ -30,7 +30,6 @@ export type NewItem = DistributiveOmit<Item, "id">;
 export interface Transcript {
   items: Item[];
   addUser(text: string): void;
-  addNote(text: string): void;
   addError(text: string): void;
   addAssistant(view?: Partial<AssistantView>): number; // 追加した返事の id を返す
   updateAssistant(id: number, patch: Partial<AssistantView>): void;
@@ -51,7 +50,6 @@ export function useTranscript(): Transcript {
   return {
     items,
     addUser: useCallback(text => { add({ kind: "user", text }); }, [add]),
-    addNote: useCallback(text => { add({ kind: "note", text }); }, [add]),
     addError: useCallback(text => { add({ kind: "error", text }); }, [add]),
     addAssistant: useCallback(
       view => add({ kind: "assistant", waiting: true, thinking: "", thinkLabel: "", content: "", ...view }),

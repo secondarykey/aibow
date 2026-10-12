@@ -7,6 +7,7 @@ import { Events } from "@wailsio/runtime";
 import { ChatService } from "../bindings/aibow/cmd/aibow";
 import type { ModelEntry, ModelInfo } from "../bindings/aibow";
 import type { Transcript } from "./transcript";
+import type { Notifier } from "./toast";
 import { errorMessage } from "./errors";
 
 // unavailable は起動に失敗した状態(lib が無いなど)。何もできないので、ずっと操作できなくする
@@ -21,8 +22,10 @@ export interface Models {
   reload(): Promise<boolean>; // 一覧を取り直す。起動に失敗していたら false
 }
 
-export function useModels(t: Pick<Transcript, "addNote" | "addError">, setBusy: (b: Busy) => void): Models {
-  const { addNote, addError } = t;
+// 読み込みのお知らせはトースト(n)に出す。「読み込み中…」は出したままにし、終わったら同じ key で置き換える
+export function useModels(n: Notifier, t: Pick<Transcript, "addError">, setBusy: (b: Busy) => void): Models {
+  const { notify, dismissKey } = n;
+  const { addError } = t;
   const [models, setModels] = useState<ModelEntry[]>([]);
   const [current, setCurrent] = useState<ModelInfo | null>(null);
   const [gpu, setGpu] = useState(false);
@@ -52,13 +55,12 @@ export function useModels(t: Pick<Transcript, "addNote" | "addError">, setBusy: 
       startupLoading.current = true;
       setLoading(true);
       setBusy("loading");
-      addNote(`${d.loading} を読み込み中…`);
+      notify(`${d.loading} を読み込み中…`, { key: "model", sticky: true });
     }
     return true;
-  }, [addNote, addError, setBusy]);
+  }, [notify, addError, setBusy]);
 
-  // 起動時の読み込みが終わった合図(models イベント)を待つ。
-  // 最初の一覧の取得(reload)は、会話を開いてから App が呼ぶ(会話を開くと表示が作り直され、メモが消えるため)
+  // 起動時の読み込みが終わった合図(models イベント)を待つ。最初の一覧の取得(reload)は App が呼ぶ
   useEffect(() => {
     const off = Events.On("models", async () => {
       startupDone.current = true;
@@ -68,24 +70,27 @@ export function useModels(t: Pick<Transcript, "addNote" | "addError">, setBusy: 
       setModels(d.models ?? []);
       setCurrent(d.current);
       if (!wasLoading) return;
-      addNote(d.current
-        ? `${d.current.name} を読み込みました(${d.current.load_sec.toFixed(1)} 秒)`
-        : "モデルを読み込めませんでした。上で選び直してください");
+      if (d.current) {
+        notify(`${d.current.name} を読み込みました(${d.current.load_sec.toFixed(1)} 秒)`, { key: "model" });
+      } else {
+        dismissKey("model");
+        addError("モデルを読み込めませんでした。入力欄の下で選び直してください");
+      }
       setLoading(false);
       setBusy("idle");
     });
     return off;
-  }, [addNote, setBusy]);
+  }, [notify, dismissKey, addError, setBusy]);
 
   const switchModel = useCallback(async (id: string) => {
     const name = models.find(m => m.id === id)?.name ?? id;
     setLoading(true);
     setBusy("loading");
-    addNote(`${name} を読み込み中…`);
+    notify(`${name} を読み込み中…`, { key: "model", sticky: true });
     let failed = false;
     try {
       const info = await ChatService.SwitchModel(id); // 読み込み終わるまで返らない
-      if (info) addNote(`モデルを ${info.name} に切り替えました(読み込み ${info.load_sec.toFixed(1)} 秒)`);
+      if (info) notify(`モデルを ${info.name} に切り替えました(読み込み ${info.load_sec.toFixed(1)} 秒)`, { key: "model" });
     } catch (err) {
       // Go が error を返すと、ここに来る
       addError(errorMessage(err));
@@ -94,10 +99,13 @@ export function useModels(t: Pick<Transcript, "addNote" | "addError">, setBusy: 
     const d = await ChatService.Models(); // 失敗したときは元のモデルの表示に戻る
     setModels(d.models ?? []);
     setCurrent(d.current);
-    if (failed && d.current) addNote(`元のモデル ${d.current.name} に戻しました`);
+    if (failed) {
+      if (d.current) notify(`元のモデル ${d.current.name} に戻しました`, { key: "model" });
+      else dismissKey("model");
+    }
     setLoading(false);
     setBusy("idle");
-  }, [models, addNote, addError, setBusy]);
+  }, [models, notify, dismissKey, addError, setBusy]);
 
   return { models, current, gpu, loading, switchModel, reload };
 }
