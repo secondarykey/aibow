@@ -1,4 +1,4 @@
-// 左側: 会話の一覧(更新の新しい順)。新規作成・切り替え・削除
+// 左側: 会話の一覧(更新の新しい順)。新規作成・切り替え・削除。下に設定パネルの開閉ボタン
 import { useState } from "react";
 import type { Conversation } from "../../bindings/aibow";
 
@@ -10,9 +10,13 @@ interface Props {
   onOpen(id: string): void;
   onNew(): void;
   onDelete(id: string): void;
+  settingsOpen: boolean;
+  onToggleSettings(): void;
 }
 
-export function ConversationList({ list, currentId, generatingId, disabled, onOpen, onNew, onDelete }: Props) {
+export function ConversationList({
+  list, currentId, generatingId, disabled, onOpen, onNew, onDelete, settingsOpen, onToggleSettings,
+}: Props) {
   // 削除の確認を出している会話。消すと戻せないので、もう一度押してもらう
   const [confirming, setConfirming] = useState<string | null>(null);
 
@@ -49,6 +53,9 @@ export function ConversationList({ list, currentId, generatingId, disabled, onOp
           );
         })}
       </ul>
+      <div className="footer">
+        <button className={settingsOpen ? "settings active" : "settings"} onClick={onToggleSettings}>設定</button>
+      </div>
     </nav>
   );
 }

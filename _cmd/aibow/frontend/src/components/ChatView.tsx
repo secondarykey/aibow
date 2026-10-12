@@ -40,7 +40,7 @@ function AssistantMessage({ view }: { view: AssistantView }) {
         <RenderedText text={view.content} />
         {view.cutoff && <p className="cutoff">{view.cutoff}</p>}
         {view.cutoffHint && (
-          <p className="hint">「思考する」をオフにするか、右の設定の「返事の上限トークン数」か「コンテキスト長」を増やすと答えまで届きやすくなります。</p>
+          <p className="hint">「思考する」をオフにするか、設定の「返事の上限トークン数」か「コンテキスト長」を増やすと答えまで届きやすくなります。</p>
         )}
       </div>
       {view.stats && <div className="stats">{view.stats}</div>}

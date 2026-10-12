@@ -1,4 +1,4 @@
-// App.tsx: 画面全体。左に会話の一覧、中央にチャット、右に設定パネルの3列。
+// App.tsx: 画面全体。左に会話の一覧、中央にチャット。右の設定パネルは一覧の下の「設定」で開閉する。
 //
 //	useTranscript    … 画面に並べる表示(吹き出し・メモ・エラー)
 //	useModels        … モデルの一覧と切り替え(Go の ChatService.Models / SwitchModel)
@@ -26,6 +26,7 @@ import { errorMessage } from "./errors";
 export default function App() {
   // 生成とモデルの読み込みは同時にできない(Go 側のコンテキストが1つしかないため)
   const [busy, setBusy] = useState<Busy>("idle");
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const transcript = useTranscript();
   const { addError } = transcript;
@@ -90,6 +91,8 @@ export default function App() {
           onOpen={id => convs.open(id).catch(err => addError(errorMessage(err)))}
           onNew={onNew}
           onDelete={id => convs.remove(id).catch(err => addError(errorMessage(err)))}
+          settingsOpen={settingsOpen}
+          onToggleSettings={() => setSettingsOpen(o => !o)}
         />
         <section className="center">
           <ChatView items={transcript.items} />
@@ -101,7 +104,7 @@ export default function App() {
             onStop={chat.stop}
           />
         </section>
-        <SettingsPanel
+        {settingsOpen && <SettingsPanel
           settings={convs.current?.conversation.settings ?? null}
           onChange={convs.updateSettings}
           onMakeDefault={() => convs.current && app.setDefaults(convs.current.conversation.settings)}
@@ -109,7 +112,7 @@ export default function App() {
           appDisabled={busy !== "idle"}
           onApplyApp={app.apply}
           lastPrompt={chat.lastPrompt}
-        />
+        />}
       </main>
       <ImeFocusRelay />
     </>
