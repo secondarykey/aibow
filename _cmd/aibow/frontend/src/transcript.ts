@@ -7,6 +7,7 @@ import type { StoredMessage } from "../bindings/aibow";
 
 // アシスタントの返事1件の表示。生成中は少しずつ書き換わる。
 export interface AssistantView {
+  generating?: boolean;  // 生成中か(吹き出しの中に停止ボタンを出す)
   waiting: boolean;      // 最初の文字が届くまでの「応答待ち…」
   thinking: string;      // 思考(ない場合は空)
   thinkLabel: string;    // 思考を畳んだときの見出し(「思考中… 3秒」など)
@@ -81,6 +82,7 @@ export const thinkLabel = (sec: number) => `思考の過程(${Math.round(sec)}�
 export function replyView(m: StoredMessage): AssistantView {
   const s = m.stats;
   const view: AssistantView = {
+    generating: false,
     waiting: false,
     thinking: m.thinking,
     thinkLabel: thinkLabel(s?.think_sec ?? 0),

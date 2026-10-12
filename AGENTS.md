@@ -57,7 +57,7 @@ Ollama のサーバーや API は使わない。Ollama のモデルの一部は 
 - Go → 画面は Wails のイベント。`chat` イベントは `RegisterEvent[aibow.ChatEvent]` で型を登録してあり、画面では `ev.data` が `ChatEvent` 型になる。`type` は `prompt` / `thinking` / `content` / `error` / `done`。
   `conversation_id` が付いていて、画面は表示中の会話のものだけを出す。`done` には Go が保存した返事(`reply`)が入る。
   `Send` の戻り値とイベントは別経路で届き順序が保証されないので、終わりは必ず `done` イベントで判定する
-- 停止は `Call` の Promise の `cancel()` → Go の `ctx` がキャンセルされる。アプリ終了時は `ServiceShutdown` で生成を止める
+- 停止(生成中の返事の吹き出しの中のボタン)は `Call` の Promise の `cancel()` → Go の `ctx` がキャンセルされる。アプリ終了時は `ServiceShutdown` で生成を止める
 - 起動時のモデルはウィンドウを出してから裏で読み込み、終わったら `models` イベントで画面に知らせる
 - Windows の WebView2 は、別のウィンドウから戻ると IME(日本語入力)が効かなくなることがある。Go が `events.Windows.WindowSetFocus` で
   `aibow:window:focus` を送り、画面の `imeFocus.tsx` が見えない input を経由して入力欄にフォーカスを付け直す(同じ要素への blur → focus では直らない)。

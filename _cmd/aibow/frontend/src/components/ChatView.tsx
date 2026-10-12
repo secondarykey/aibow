@@ -1,9 +1,10 @@
 // 会話の表示: 吹き出し・メモ・エラー
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { AssistantView, Item } from "../transcript";
 import { RenderedText } from "./RenderedText";
 
-export function ChatView({ items }: { items: Item[] }) {
+// onStop は生成中の返事を止める。生成中の返事は1つだけ(生成は同時に1つ)なので、どの返事かは渡さない
+export function ChatView({ items, onStop }: { items: Item[]; onStop(): void }) {
   const ref = useRef<HTMLDivElement>(null);
 
   // 何か増えたり書き換わったりしたら、一番下までスクロールする
@@ -23,7 +24,7 @@ export function ChatView({ items }: { items: Item[] }) {
             case "note":
               return <div key={it.id} className="note">— {it.text} —</div>;
             case "assistant":
-              return <AssistantMessage key={it.id} view={it} />;
+              return <AssistantMessage key={it.id} view={it} onStop={onStop} />;
           }
         })}
       </div>
@@ -31,7 +32,9 @@ export function ChatView({ items }: { items: Item[] }) {
   );
 }
 
-function AssistantMessage({ view }: { view: AssistantView }) {
+function AssistantMessage({ view, onStop }: { view: AssistantView; onStop(): void }) {
+  // 停止を押してから、Go が止まって done が届くまでの間は押せなくする
+  const [stopping, setStopping] = useState(false);
   return (
     <div className="msg assistant">
       {view.thinking && <Thinking label={view.thinkLabel} text={view.thinking} />}
@@ -44,6 +47,11 @@ function AssistantMessage({ view }: { view: AssistantView }) {
         )}
       </div>
       {view.stats && <div className="stats">{view.stats}</div>}
+      {view.generating && (
+        <div className="stop-row">
+          <button disabled={stopping} onClick={() => { setStopping(true); onStop(); }}>停止</button>
+        </div>
+      )}
     </div>
   );
 }

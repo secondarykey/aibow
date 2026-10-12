@@ -95,13 +95,11 @@ export default function App() {
           onToggleSettings={() => setSettingsOpen(o => !o)}
         />
         <section className="center">
-          <ChatView items={transcript.items} />
+          <ChatView items={transcript.items} onStop={chat.stop} />
           <Composer
             canSend={busy === "idle" && currentId !== null}
-            canStop={busy === "generating" && chat.generatingId === currentId}
             blockedReason={blockedReason}
             onSend={chat.send}
-            onStop={chat.stop}
           />
           <ModelBar models={models} disabled={busy !== "idle"} />
         </section>

@@ -1,16 +1,14 @@
-// 画面下部: 入力欄と送信・停止ボタン
+// 画面下部: 入力欄と送信ボタン(停止ボタンは生成中の返事の吹き出しの中にある)
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent } from "react";
 
 interface Props {
   canSend: boolean;
-  canStop: boolean;
   blockedReason?: string; // 送信できない理由(ボタンのツールチップに出す)
   onSend(text: string): void;
-  onStop(): void;
 }
 
-export function Composer({ canSend, canStop, blockedReason, onSend, onStop }: Props) {
+export function Composer({ canSend, blockedReason, onSend }: Props) {
   const [text, setText] = useState("");
   const input = useRef<HTMLTextAreaElement>(null);
   const composing = useRef(false); // IME で変換中か
@@ -61,7 +59,6 @@ export function Composer({ canSend, canStop, blockedReason, onSend, onStop }: Pr
           onCompositionEnd={() => (composing.current = false)}
         />
         <button className="primary" type="submit" disabled={!canSend} title={canSend ? undefined : blockedReason}>送信</button>
-        <button type="button" disabled={!canStop} onClick={onStop}>停止</button>
       </form>
     </footer>
   );
