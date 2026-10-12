@@ -270,20 +270,15 @@ AIBOW_MODEL=ollama:qwen3.5:4b wails3 dev
 ```
 
 Git の worktree など、別の場所にあるコードから起動するときは、`lib\` と `models\` は Git に入っていないので、本体の場所を指定します。
+worktree に `lib\` / `models\` を入れ直す必要はありません。
+
 ```bash
 AIBOW_LIB=/d/Go/Projects/aibow/_cmd/aibow/lib AIBOW_MODELS_DIR=/d/Go/Projects/aibow/_cmd/aibow/models wails3 dev
 ```
 
-`frontend/node_modules/` も Git に入っていません。worktree の `_cmd/aibow` で次を実行すると、本体の `node_modules` を共有できます
-(本体で先に `npm install` しておきます)。
-
-```bash
-powershell -NoProfile -Command "New-Item -ItemType Junction -Path frontend/node_modules -Target D:/Go/Projects/aibow/_cmd/aibow/frontend/node_modules"
-```
-PowerShell を呼び出して、Windows のジャンクション(フォルダの別名)を作ります。管理者権限は要りません。
-(Git Bash から `cmd //c mklink /J` を使うと、引数の変換で失敗します)
-ジャンクションを作った worktree では `npm install` を実行しないでください(ジャンクションが実際のフォルダに置き換わります)。
-パッケージの増減は本体で行います。
+本体の `lib\` / `models\` へのジャンクション(フォルダの別名)は作らないでください。
+worktree を消すツールによっては、ジャンクションの先(本体の `lib\` / `models\`)の中身まで消してしまいます。
+`frontend/node_modules/` も Git に入っていないので、worktree の `_cmd/aibow/frontend` で `npm install` します。
 
 ## このステップで観察してほしいこと
 

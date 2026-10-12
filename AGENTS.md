@@ -160,8 +160,11 @@ go vet ./... ./_cmd/aibow        # よくある間違いを静的チェック(./
 `_cmd/aibow` は `frontend/dist` を埋め込むので、画面を一度もビルドしていないと `go vet` / `go build` が「パターンに一致するファイルが無い」で失敗します。先に `wails3 build` を実行します。
 
 実際の生成は `_cmd/aibow` で `wails3 dev`(または `wails3 build` してから `wails3 task run`)で起動し、開いたウィンドウで送受信して確認します。
-worktree には `lib\` / `models\` / `frontend/node_modules` が無いので、`AIBOW_LIB` / `AIBOW_MODELS_DIR` で本体(`/d/Go/Projects/aibow/_cmd/aibow/`)の場所を指定し、
-`node_modules` は本体へのジャンクションを作る(本体に無ければ worktree で `npm install`)。
+worktree には `lib\` / `models\` / `frontend/node_modules` が無い。
+- `lib\` / `models\` は `AIBOW_LIB` / `AIBOW_MODELS_DIR` で本体(`/d/Go/Projects/aibow/_cmd/aibow/`)を指す(ユーザーの環境では、worktree のセッション開始時にこの2つが自動で設定される)。
+  **worktree に `lib\` / `models\` を作らない・入れ直さない**(yzma の install や GGUF のダウンロードをしない)
+- 本体の `lib\` / `models\` へのジャンクションやシンボリックリンクを張らない。worktree の解放時に Git 管理外のファイルが消され、リンク先の本体の実体まで消える
+- `node_modules` は worktree の `_cmd/aibow/frontend` で `npm install` する(ユーザーの環境で本体へのジャンクションが自動で張られている場合は、そのまま使い、`npm install` しない)
 画面を外から操作して確かめるときは、一時ビルドで `application.Options.Windows.AdditionalBrowserArgs` に
 `--remote-debugging-port=9222` を足し、CDP(`http://localhost:9222/json`)で `Runtime.evaluate` する(この変更はコミットしない)。
 
