@@ -4,6 +4,7 @@ package aibow
 //
 // モデルは何も覚えていない(ステートレス)。毎回「これまでの会話を全部」1本の文字列にして読ませている。
 // 「記憶」に見えるものは、アプリがここで発言を保存し、次の送信のたびに並べ直しているだけ。
+// 会話が長くなって会話の上限を超えたら、古い部分を捨てるか要約して収める(compact.go)。
 // Claude などのチャットアプリも同じ構造になっている。
 //
 // 画面(_cmd/aibow)はこの仕組みを呼ぶだけで、履歴を持たない。
@@ -380,7 +381,7 @@ func promptMessages(system, summary string, history []StoredMessage) []Message {
 func noAnswerNote(stopReason string) string {
 	switch stopReason {
 	case "length":
-		return "(考えている途中で上限トークン数に達したため、答えを出せませんでした)"
+		return "(考えている途中で返事の上限に達したため、答えを出せませんでした)"
 	case "context":
 		return "(考えている途中でコンテキストがいっぱいになったため、答えを出せませんでした)"
 	case "cancel":

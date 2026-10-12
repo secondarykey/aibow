@@ -23,6 +23,7 @@ aibow は、ローカルLLMを使ったアプリを**自分で作りながら仕
 **Ollama などの外部 LLM サーバーは使わない**。aibow のプロセスの中で llama.cpp を直接動かす。
 これはユーザーの明確な方針なので、LLM サーバーを別プロセスで立てる構成を提案・導入しないこと。
 画面は Wails v3 のデスクトップアプリ。HTTP サーバーは立てない(以前のブラウザ版から移行した)。
+(GUI の無い環境で確かめるための Wails の server モードは、確認用の一時ビルドだけで使う。下の「確認方法」)
 
 ただし **Ollama を「モデルの管理係」として使うのは OK**(ユーザーの方針)。
 Ollama が `ollama pull` で保存したファイル(`manifests\` の目録と `blobs\` の GGUF)を aibow が直接読む。
@@ -32,15 +33,15 @@ Ollama のサーバーや API は使わない。Ollama のモデルの一部は 
 | ファイル | 役割 |
 |---|---|
 | `aibow.go` | パッケージの説明。ルートは `aibow` パッケージ(ライブラリ)で、Wails を import しない |
-| `engine.go` | llama.cpp の呼び出し。モデルの読み込み・入れ替え、KV キャッシュ再利用、decode、サンプリングの生成ループ |
+| `engine.go` | llama.cpp の呼び出し。モデルの読み込み・入れ替え、作業領域の作り直し、トークン数を数える(`CountTokens`)、KV キャッシュ再利用、decode、サンプリングの生成ループ |
 | `models.go` | モデルの一覧(`models\` の *.gguf と Ollama の保存フォルダ)。ID は `file:<パス>` / `ollama:<名前>` |
 | `prompt.go` | 会話 → ChatML 文字列(Qwen3.5 の公式チャットテンプレートを Go で書き直したもの) |
-| `stream.go` | UTF-8 の切れ目の処理と、`</think>` で思考と答えを振り分ける処理 |
+| `stream.go` | UTF-8 の切れ目の処理(文字にならないバイトは U+FFFD)と、`</think>` で思考と答えを振り分ける処理 |
 | `conversation.go` | 会話の仕組み(`Conversations`)。発言の保存、タイトルの自動付与と名前の変更、思考を除いた履歴での生成、答えが出なかった回の理由の文、生成は同時に1つ |
 | `compact.go` | 会話の上限に収める仕組み(`none` / `truncate` / `summary`)、メーター(`Usage`)、今すぐ要約(`Compact`)と要約だけの停止(`StopSummary`)、要約の指示の文面 |
 | `store.go` | 保存先の約束(`Store` interface)と、会話・発言・要約の型(`Conversation` / `StoredMessage` / `ReplyStats` / `Compaction`) |
 | `appsettings.go` | アプリ全体の設定(`app_settings` の読み書き)。作業領域に関わる設定は `WorkspaceSettings` にまとめる(プロファイルに移す塊)。環境変数は DB に値が無いときの初期値。古い `n_ctx` の引き継ぎ |
-| `store/sqlite.go` | `Store` の SQLite 実装(`modernc.org/sqlite`)。`PRAGMA user_version` でマイグレーションを管理する(版を足すときは `migrations` の末尾に追加) |
+| `store/sqlite.go` | `Store` の SQLite 実装(`modernc.org/sqlite`)。`PRAGMA user_version` でマイグレーションを管理する(版を足すときは `migrations` の末尾に追加。版 1: 会話・発言・設定、版 2: `compactions`) |
 | `*_test.go` | テンプレート、思考の振り分け、Ollama の目録、会話の仕組み(メモリ上の保存先 `memstore_test.go`)、compact(1文字 = 1トークンで数える偽物の `fakeGen`)、SQLite(一時フォルダの DB)のテスト。モデル不要 |
 | `_cmd/aibow/main.go` | Wails のアプリとウィンドウを作る(Frameless。タイトルバーは画面の `TitleBar.tsx`)。Wails に依存するコードは `_cmd/aibow` だけに置く |
 | `_cmd/aibow/config.go` | 環境変数の読み込み |
@@ -72,7 +73,7 @@ Ollama のサーバーや API は使わない。Ollama のモデルの一部は 
   IME 変換中・ボタンにフォーカスがあるときは触らない。新しい入力欄を足しても、テキスト入力なら自動で対象になる
 - 起動に失敗しても(lib が無い、環境変数の値が不正など)ウィンドウは出し、`Models()` の `error` で理由を画面に出す。
   リリース版(`wails3 build`)はコンソールが無く、`log.Fatal` だと何も見えずに終わるため。起動時のエラーで `log.Fatal` しない
-- 会話履歴は Go(`aibow.Conversations`)が持ち、SQLite に保存する。画面は会話の ID と新しい発言だけを送り、Go が毎回全件を並べ直してモデルに渡す(モデルはステートレス)
+- 会話履歴は Go(`aibow.Conversations`)が持ち、SQLite に保存する。画面は会話の ID と新しい発言だけを送り、Go が毎回並べ直してモデルに渡す(モデルはステートレス。会話の上限を超えたら compact で収める)
 - 過去のアシスタント発言の思考は保存して画面で見られるが、モデルに渡すのは答えだけ(公式テンプレートと同じ)。システムプロンプトは発言として保存せず、会話の設定から毎回先頭に付ける
 - 会話ごとの設定(システムプロンプト・temperature・思考・presence penalty・compact の方式)は `conversations.settings`(JSON)。
   `compact` が空の古い会話は `summary` として扱う(`normalized`)。古い JSON の `max_tokens` は読むときに無視される。
@@ -165,7 +166,7 @@ Ollama のサーバーや API は使わない。Ollama のモデルの一部は 
 
 ```bash
 gofmt -l .                       # 整形が必要なファイルを表示(何も出なければ OK。_cmd も含む)
-go test ./...                    # テンプレート、思考の振り分け、Ollama の目録、会話の仕組み、SQLite のテスト(モデル不要)
+go test ./...                    # テンプレート、思考の振り分け、Ollama の目録、会話の仕組み、compact、設定の引き継ぎ、SQLite(マイグレーション)のテスト(モデル不要)
 (cd _cmd/aibow && wails3 build)  # バインディング生成 → 画面の型チェックとビルド(tsc + vite)→ Go のビルド
 go vet ./... ./_cmd/aibow        # よくある間違いを静的チェック(./... は _cmd を含まないので並べる)
 ```
@@ -179,14 +180,18 @@ worktree には `lib\` / `models\` / `frontend/node_modules` が無い。
 - 本体の `lib\` / `models\` へのジャンクションやシンボリックリンクを張らない。worktree の解放時に Git 管理外のファイルが消され、リンク先の本体の実体まで消える
 - 会話の DB は、試すときは `AIBOW_DB` を一時フォルダのファイルにする(ユーザーの `%APPDATA%\aibow\aibow.db` に試しの会話を混ぜない)
 - `node_modules` は worktree の `_cmd/aibow/frontend` で `npm install` する(ユーザーの環境で本体へのジャンクションが自動で張られている場合は、そのまま使い、`npm install` しない)
+
 画面を外から操作して確かめるときは、一時ビルドで `application.Options.Windows.AdditionalBrowserArgs` に
 `--remote-debugging-port=9222` を足し、CDP(`http://localhost:9222/json`)で `Runtime.evaluate` する(この変更はコミットしない)。
+
 - ユーザーはふだんから aibow を起動していることがある。一時ビルドでは `application.Options.Windows.WebviewUserDataPath` も一時フォルダにする
   (同じ WebView2 のデータフォルダを起動引数の違うプロセスで使うと、後から起動した方が WebView2 を作れず失敗する: 8007139f)
 - 試しに起動したアプリを閉じるときは、**自分が起動したプロセスの PID だけ**を終了させる。`taskkill /IM aibow.exe` のように名前で終了させない(ユーザーのアプリまで閉じてしまう)
 
-GUI の無い Linux(クラウドのセッションなど)では、Wails の server モード(`go build -tags server`。リポジトリは変えない)で起動すると
+GUI の無い Linux(クラウドのセッションなど)では、Wails の server モード(`_cmd/aibow` で `go build -tags server -o <一時フォルダ>/aibow-server .`。リポジトリは変えない)で起動すると
 `WAILS_SERVER_PORT` のポートで画面が HTTP で配信され、Playwright などのブラウザから操作して確かめられる(Go のメソッドもイベントも動く)。
+Linux でビルドするには GTK4 / WebKitGTK 6 の開発用パッケージ(`libgtk-4-dev` / `libwebkitgtk-6.0-dev`)が要る。
+Wails が作る `build/linux/aibow.desktop` や、`_cmd/aibow` に出来た実行ファイルはコミットしない。
 
 GPU や本物のモデルがない環境では、llama.cpp の CPU 版と小さな GGUF(重みがランダムな極小モデルでもよい)で
 「読み込み → 生成 → 停止 → 2回目の送信で KV キャッシュが再利用される → モデルの切り替え → 壊れたモデルを選んだら元に戻る → 再起動しても会話が残る」までを確認してください。

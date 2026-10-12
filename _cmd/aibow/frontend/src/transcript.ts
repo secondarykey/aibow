@@ -82,7 +82,7 @@ export function useTranscript(): Transcript {
 
 // 生成が「発言の終わり」以外の理由で止まったときの表示
 const STOP_REASONS: Record<string, string> = {
-  length: "上限トークン数で打ち切り",
+  length: "返事の上限で打ち切り",
   context: "コンテキストがいっぱいで打ち切り",
   cancel: "停止",
 };

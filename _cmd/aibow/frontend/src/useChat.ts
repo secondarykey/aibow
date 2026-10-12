@@ -1,7 +1,8 @@
 // useChat.ts: 送信・生成の途中経過の受け取り・停止。
 //
 // 会話の履歴は Go が持っているので、ここで送るのは「会話の ID」と「新しい発言」だけ。
-// Go が履歴を保存し、全部を並べ直してモデルに渡す(モデル自身は何も覚えていない)。
+// Go が履歴を保存し、毎回並べ直してモデルに渡す(モデル自身は何も覚えていない)。
+// 会話の上限を超えたら、Go が compact で収めてから渡す(compact.go)。
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CancelError, Events } from "@wailsio/runtime";
 import type { CancellablePromise } from "@wailsio/runtime";
