@@ -34,6 +34,9 @@ Ollama が保存したファイルを aibow が直接読むので、Ollama は�
 | `_cmd/aibow/frontend/src/` | チャット画面(React + TypeScript)。`App.tsx` が全体、`useChat.ts` / `useModels.ts` が Go とのやり取り |
 | `_cmd/aibow/frontend/bindings/` | `wails3 generate bindings` が作る、Go のメソッドを呼ぶ関数と型(自動生成。手で直さない) |
 | `_cmd/aibow/build/` / `Taskfile.yml` | `wails3 dev` / `wails3 build` の設定(アプリ名、アイコン、OS ごとのビルド手順) |
+| `_cmd/aibow/version` | アプリのバージョン(唯一の正)。exe に埋め込まれ、ウィンドウのタイトルに出る |
+| `_cmd/version.go` | `version` の値を `build/config.yml` / `frontend/package.json` に書き写す・上げるスクリプト |
+| `_cmd/aibow/Taskfile.local.example.yml` | 自分の PC にインストールする `local:deploy` のひな形(`Taskfile.local.yml` にコピーして使う) |
 | `go.work` | ルートと `_cmd/aibow` の2つのモジュールをまとめる(下の説明を参照) |
 | `_cmd/aibow/lib\` | llama.cpp の DLL(自分で取得。Git には入れない) |
 | `_cmd/aibow/models\` | 自分でダウンロードしたモデル(Git には入れない) |
@@ -193,6 +196,44 @@ wails3 task run
 カレントフォルダが `bin\` になり、`lib\` が見つかりません。その場合は、起動できない理由がウィンドウに表示されます
 (`AIBOW_LIB` / `AIBOW_MODELS_DIR` を絶対パスで設定しておけば、どこから起動しても動きます)。
 `bin\aibow.exe` はコンソールを持たないので、ログは出ません。ログを見たいときは `wails3 dev` で起動します。
+
+### 自分の PC にインストールする(local:deploy)
+
+普段使いの場所(既定は `D:\Program Files\aibow`)へ、バージョン管理込みでインストールします。
+インストール先は人や PC ごとに違うので、設定は Git に入れない `Taskfile.local.yml` に書きます。最初に1回だけ、ひな形をコピーします。
+
+```bash
+cp Taskfile.local.example.yml Taskfile.local.yml
+```
+`_cmd/aibow` で実行します。インストール先を変えたいときは、コピーした `Taskfile.local.yml` の `DEPLOY_DEST` を書き換えます。
+
+```bash
+wails3 task local:deploy
+```
+次のことを順に行います。
+
+1. 起動中の aibow を終了する(起動中の exe は上書きできないため)
+2. 前回インストールしたバージョンのままなら、patch を1つ上げる(0.1.0 → 0.1.1)
+3. `version` の値を、`build/config.yml`・`frontend/package.json`・exe に焼き込むバージョン情報(`build/windows/info.json` など)に反映する
+4. `wails3 build`
+5. 3 で変わったファイルだけをコミットする(作業中の他の変更は巻き込まない)
+6. コミットに `v0.1.1` のようなタグを打つ(push はしない)。どのコミットをインストールしたかが分かる
+7. `bin\aibow.exe` と `lib\` をインストール先へコピーする(`lib\` は変わったファイルだけ)
+
+インストール先の `aibow.exe` を起動すると、隣の `lib\` を使います。モデルは Ollama のものが使えます。
+GGUF を自分で置く場合は、インストール先に `models\` を作って置くか、`AIBOW_MODELS_DIR` で指定します。
+
+```bash
+go run _cmd/version.go -bump
+```
+patch は自動で上がりますが、minor / major を上げたいときは、**リポジトリのルートで**これを実行してから `local:deploy` します。
+上げ方を選ぶと、`version`・`build/config.yml`・`frontend/package.json` が書き換わります。
+
+インストール先を一時的に変えたいときや、worktree のように `lib\` が無い場所から実行するときは、`KEY=値` で渡します。
+
+```bash
+wails3 task local:deploy DEPLOY_DEST="D:/tmp/aibow" LIB_SRC=/d/Go/Projects/aibow/_cmd/aibow/lib
+```
 
 ### 起動時に落ちた場合
 

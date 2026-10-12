@@ -42,6 +42,8 @@ Ollama のサーバーや API は使わない。Ollama のモデルの一部は 
 | `_cmd/aibow/frontend/src/` | チャット画面(React + TypeScript)。`useModels.ts` / `useChat.ts` が Go とのやり取り、`components/` が表示。Vite でビルドした `frontend/dist` を `go:embed` で埋め込む |
 | `_cmd/aibow/frontend/bindings/` | `wails3 generate bindings` の生成物(コミットする。手で直さない) |
 | `_cmd/aibow/build/` / `Taskfile.yml` | `wails3 init`(react テンプレート)由来のビルド設定。ios / android / docker は削除して `.gitignore` 済み |
+| `_cmd/aibow/version` / `_cmd/version.go` | バージョンの唯一の正と、それを config.yml / package.json に書き写すスクリプト(リポジトリのルートで `go run _cmd/version.go`)。version は `//go:embed` で exe に入る |
+| `_cmd/aibow/Taskfile.local.example.yml` | ローカルデプロイ(`wails3 task local:deploy`)のひな形。各自 `Taskfile.local.yml` にコピーして使う(Git に入れない。`Taskfile.yml` から optional で読む) |
 | `_cmd/aibow/go.mod` / `go.work` | `_cmd/aibow` は別モジュール(Wails に依存)。`go.work` でルートとまとめる |
 | `_cmd/aibow/lib\` / `_cmd/aibow/models\` | llama.cpp の DLL とモデル。Git には入れない。モデルを動かすのはこのアプリだけなので(VRAM 8GB に2プロセス分は載らない)、アプリのフォルダに置く。起動・準備は `_cmd/aibow` で行う(カレントフォルダから探すため) |
 
@@ -106,6 +108,14 @@ Ollama のサーバーや API は使わない。Ollama のモデルの一部は 
   それ以外を足すときも、理由と代替案を示してユーザーに確認する。Wails の構成はユーザーの wails3 スキルの標準(`_cmd/<名前>/build/config.yml`・Taskfile・`wails3 dev`)に従う
 - 設定は環境変数(`AIBOW_MODEL` / `AIBOW_MODELS_DIR` / `AIBOW_LIB` / `AIBOW_CTX` / `AIBOW_GPU_LAYERS` / `AIBOW_MAX_TOKENS` / `AIBOW_PRESENCE_PENALTY` / `AIBOW_LLAMA_LOG`、Ollama の保存先は Ollama と同じ `OLLAMA_MODELS`)。
   新しい設定も `AIBOW_` で始まる環境変数にし、README の表に追加する
+
+## バージョンとローカルデプロイ
+
+- CI でビルドしないので、`wails3 task local:deploy` が CI の代わり。バージョンの反映 → ビルド → ビルド情報だけのコミット → `v`+バージョンのタグ → インストールまでを行う
+- バージョンを手で config.yml などに書かない。`_cmd/aibow/version` だけを変え、`go run _cmd/version.go` で書き写す(deploy は自動で行う)
+- `v`+今のバージョンのタグがある(= デプロイ済み)なら、deploy が patch を自動で上げる。minor / major は `go run _cmd/version.go -bump`
+- `Taskfile.local.yml` のタスクを、コミットする `Taskfile.yml` のタスクから呼ばない(持っていない環境で壊れる)
+- deploy を試すときは `DEPLOY_DEST` を一時フォルダにし、試しに作ったコミットとタグは消しておく(タグはリポジトリ全体で共有される)
 
 ## コードの書き方
 

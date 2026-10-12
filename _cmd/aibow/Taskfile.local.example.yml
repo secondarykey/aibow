@@ -11,7 +11,7 @@
 #
 #   1. 起動中の aibow を終了する(起動中の exe は上書きできないため)
 #   2. v+今のバージョンのタグがあれば(= デプロイ済みなのに version を上げていなければ)patch を上げる
-#   3. version の値を config.yml / package.json と、exe に焼き込むバージョン情報(build/windows/info.json など)に反映する
+#   3. version の値を config.yml / package.json / package-lock.json と、exe に焼き込むバージョン情報(build/windows/info.json など)に反映する
 #   4. wails3 build
 #   5. 3 で変わったファイルだけをコミットする(作業中の他の変更は巻き込まない)
 #   6. HEAD に v+バージョンのタグを打つ(push はしない)
@@ -55,7 +55,7 @@ tasks:
       # CI でビルドしないので、バージョンやアプリ情報はここで反映してから exe に焼き込む
       - task: build-info
       - wails3 build
-      # ビルドが通ってからコミットする(build 中の npm install が package-lock.json のバージョンをそろえるので、それも含める)
+      # ビルドが通ってからコミットする
       - task: commit-build-info
       - task: tag-version
       - powershell -NoProfile -Command "New-Item -ItemType Directory -Force -Path '{{.DEPLOY_DEST}}' | Out-Null"
@@ -67,6 +67,7 @@ tasks:
     desc: Propagate version and app info to the build assets.
     cmds:
       - task: sync-version
+      - task: sync-lock
       # -name / -binaryname は config.yml から読まれず、省略すると空になる。Taskfile.yml の APP_NAME と一致させる
       - wails3 update build-assets -name "{{.APP_NAME}}" -binaryname "{{.APP_NAME}}" -config build/config.yml -dir build
 
@@ -77,6 +78,14 @@ tasks:
     dir: ../..
     cmds:
       - go run _cmd/version.go
+
+  # package-lock.json のバージョンを package.json にそろえる(node_modules には触らない)。
+  # wails3 build は node_modules があると npm install しないので、ビルドではそろわない
+  sync-lock:
+    internal: true
+    dir: frontend
+    cmds:
+      - npm install --package-lock-only --ignore-scripts --no-audit --no-fund
 
   # v+今のバージョンのタグがある(= デプロイ済みなのに version を上げていない)なら patch を上げる
   bump-version:
