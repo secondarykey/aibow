@@ -10,5 +10,5 @@ build/ios/
 build/android/
 build/docker/
 
-# 個人用のタスク(コピー先など環境ごとの設定が入る)。Taskfile.local.example.yml から作る
+# 個人用のタスク(インストール先など環境ごとの設定が入る)。ローカルの設定を残さないため、ひな形も含めてコミットしない
 Taskfile.local.yml

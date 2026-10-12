@@ -16,7 +16,7 @@ includes:
   darwin: ./build/darwin/Taskfile.yml
   linux: ./build/linux/Taskfile.yml
   # 個人用のタスク(local:deploy など)。Taskfile.local.yml は Git に入れない。
-  # 無い環境でも他のタスクが動くよう optional にする(Taskfile.local.example.yml を参照)
+  # 無い環境でも他のタスクが動くよう optional にする(README の「自分の PC にインストールする」を参照)
   local:
     taskfile: Taskfile.local.yml
     optional: true

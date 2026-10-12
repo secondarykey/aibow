@@ -36,7 +36,6 @@ Ollama が保存したファイルを aibow が直接読むので、Ollama は�
 | `_cmd/aibow/build/` / `Taskfile.yml` | `wails3 dev` / `wails3 build` の設定(アプリ名、アイコン、OS ごとのビルド手順) |
 | `_cmd/aibow/version` | アプリのバージョン(唯一の正)。exe に埋め込まれ、ウィンドウのタイトルに出る |
 | `_cmd/version.go` | `version` の値を `build/config.yml` / `frontend/package.json` に書き写す・上げるスクリプト |
-| `_cmd/aibow/Taskfile.local.example.yml` | 自分の PC にインストールする `local:deploy` のひな形(`Taskfile.local.yml` にコピーして使う) |
 | `go.work` | ルートと `_cmd/aibow` の2つのモジュールをまとめる(下の説明を参照) |
 | `_cmd/aibow/lib\` | llama.cpp の DLL(自分で取得。Git には入れない) |
 | `_cmd/aibow/models\` | 自分でダウンロードしたモデル(Git には入れない) |
@@ -199,22 +198,19 @@ wails3 task run
 
 ### 自分の PC にインストールする(local:deploy)
 
-普段使いの場所(既定は `D:\Program Files\aibow`)へ、バージョン管理込みでインストールします。
-インストール先は人や PC ごとに違うので、設定は Git に入れない `Taskfile.local.yml` に書きます。最初に1回だけ、ひな形をコピーします。
-
-```bash
-cp Taskfile.local.example.yml Taskfile.local.yml
-```
-`_cmd/aibow` で実行します。インストール先を変えたいときは、コピーした `Taskfile.local.yml` の `DEPLOY_DEST` を書き換えます。
+普段使いの場所へ、バージョン管理込みでインストールします。
+インストール先などのローカルの設定をリポジトリに残さないよう、`local:deploy` は各自の `_cmd/aibow/Taskfile.local.yml` に書きます。
+このファイルは Git に入れません(`.gitignore` 済み)。`Taskfile.yml` が optional で読み込むので、無い環境でも他のタスクはそのまま動きます。
 
 ```bash
 wails3 task local:deploy
 ```
-次のことを順に行います。
+`_cmd/aibow` で実行します。`Taskfile.local.yml` の `local:deploy` は、次のことを順に行う作りにしています。
 
 1. 起動中の aibow を終了する(起動中の exe は上書きできないため)
 2. 前回インストールしたバージョンのままなら、patch を1つ上げる(0.1.0 → 0.1.1)
-3. `version` の値を、`build/config.yml`・`frontend/package.json`・exe に焼き込むバージョン情報(`build/windows/info.json` など)に反映する
+3. `version` の値を、`build/config.yml`・`frontend/package.json`・`frontend/package-lock.json`・exe に焼き込むバージョン情報(`build/windows/info.json` など)に反映する
+   (`go run _cmd/version.go` → `npm install --package-lock-only` → `wails3 update build-assets -name aibow -binaryname aibow`)
 4. `wails3 build`
 5. 3 で変わったファイルだけをコミットする(作業中の他の変更は巻き込まない)
 6. コミットに `v0.1.1` のようなタグを打つ(push はしない)。どのコミットをインストールしたかが分かる
@@ -229,10 +225,10 @@ go run _cmd/version.go -bump
 patch は自動で上がりますが、minor / major を上げたいときは、**リポジトリのルートで**これを実行してから `local:deploy` します。
 上げ方を選ぶと、`version`・`build/config.yml`・`frontend/package.json` が書き換わります。
 
-インストール先を一時的に変えたいときや、worktree のように `lib\` が無い場所から実行するときは、`KEY=値` で渡します。
+`Taskfile.local.yml` の変数(インストール先など)を一時的に変えたいときは、`KEY=値` で渡します(`wails3 task` は `--` の後ろの引数を受け取れないため)。
 
 ```bash
-wails3 task local:deploy DEPLOY_DEST="D:/tmp/aibow" LIB_SRC=/d/Go/Projects/aibow/_cmd/aibow/lib
+wails3 task local:deploy DEPLOY_DEST="D:/tmp/aibow"
 ```
 
 ### 起動時に落ちた場合
