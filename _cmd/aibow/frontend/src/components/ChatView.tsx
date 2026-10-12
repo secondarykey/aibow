@@ -1,6 +1,6 @@
 // 会話の表示: 吹き出し・エラー・要約の区切り
 import { useState } from "react";
-import { LuChevronDown, LuChevronRight } from "react-icons/lu";
+import { LuChevronDown, LuChevronRight, LuCircleStop } from "react-icons/lu";
 import { CopyButton } from "./CopyButton";
 import type { Compaction } from "../../bindings/aibow";
 import { compactionStats } from "../transcript";
@@ -112,10 +112,15 @@ function replyTime(createdAt?: string): { short: string; full: string } | null {
   return { short: `${t.getFullYear()}/${md} ${hm}`, full };
 }
 
+// 停止のボタン。赤い停止のアイコンだけを出し、何を止めるか(停止 / 要約を停止)はマウスを乗せると出る。
 // 停止を押してから、Go が止まるまでの間は押せなくする
 function StopButton({ label, onStop }: { label: string; onStop(): void }) {
   const [stopping, setStopping] = useState(false);
-  return <button disabled={stopping} onClick={() => { setStopping(true); onStop(); }}>{label}</button>;
+  return (
+    <button className="stop" title={label} aria-label={label} disabled={stopping} onClick={() => { setStopping(true); onStop(); }}>
+      <LuCircleStop />
+    </button>
+  );
 }
 
 // 要約を作っている途中: 要約の文が流れてくる様子を見せる
