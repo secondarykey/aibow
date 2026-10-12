@@ -99,8 +99,8 @@ func main() {
 		Title:     "aibow " + strings.TrimSpace(version),
 		Width:     720, // 起動時の大きさ(広げたいときは最大化かリサイズ)
 		Height:    820,
-		MinWidth:  360, // 最小の大きさ。画面の端に小さく置いておけるよう、起動時の幅の半分まで縮められる
-		MinHeight: 240,
+		MinWidth:  360, // 最小の幅。画面の端に細く置いておけるよう、起動時の幅の半分まで縮められる
+		MinHeight: 480, // 最小の高さ。これより低いと、入力欄とモデルの行で会話がほとんど見えなくなる
 		Frameless: true,
 		URL:       "/",
 	})
