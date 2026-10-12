@@ -41,10 +41,10 @@ Ollama のサーバーや API は使わない。Ollama のモデルの一部は 
 | `appsettings.go` | アプリ全体の設定(`app_settings` の読み書き)。環境変数は DB に値が無いときの初期値 |
 | `store/sqlite.go` | `Store` の SQLite 実装(`modernc.org/sqlite`)。`PRAGMA user_version` でマイグレーションを管理する(版を足すときは `migrations` の末尾に追加) |
 | `*_test.go` | テンプレート、思考の振り分け、Ollama の目録、会話の仕組み(メモリ上の保存先 `memstore_test.go`)、SQLite(一時フォルダの DB)のテスト。モデル不要 |
-| `_cmd/aibow/main.go` | Wails のアプリとウィンドウを作る。Wails に依存するコードは `_cmd/aibow` だけに置く |
+| `_cmd/aibow/main.go` | Wails のアプリとウィンドウを作る(Frameless。タイトルバーは画面の `TitleBar.tsx`)。Wails に依存するコードは `_cmd/aibow` だけに置く |
 | `_cmd/aibow/config.go` | 環境変数の読み込み |
 | `_cmd/aibow/service.go` | `ChatService`。画面と `aibow.Conversations` / `Engine` の中継だけをする(モデル・会話・設定・`Send`) |
-| `_cmd/aibow/frontend/src/` | チャット画面(React + TypeScript。左: 会話の一覧(左上のハンバーガーで開閉。閉じるとアイコンだけの細い列)/ 中央: チャット(入力欄の下にモデルの選択)/ 右: 設定パネル(一覧の下の「設定」で開閉、初期は閉じている))。`useModels.ts` / `useConversations.ts` / `useChat.ts` / `useAppSettings.ts` が Go とのやり取り、`components/` が表示。Vite でビルドした `frontend/dist` を `go:embed` で埋め込む |
+| `_cmd/aibow/frontend/src/` | チャット画面(React + TypeScript。上: タイトルバー(Frameless のため自前。ドラッグで移動、左端のハンバーガーで一覧を開閉、右端に最小化・最大化・閉じる)/ 左: 会話の一覧(閉じるとアイコンだけの細い列)/ 中央: チャット(入力欄の下にモデルの選択)/ 右: 設定パネル(一覧の下の「設定」で開閉、初期は閉じている))。`useModels.ts` / `useConversations.ts` / `useChat.ts` / `useAppSettings.ts` が Go とのやり取り、`components/` が表示。Vite でビルドした `frontend/dist` を `go:embed` で埋め込む |
 | `_cmd/aibow/frontend/bindings/` | `wails3 generate bindings` の生成物(コミットする。手で直さない) |
 | `_cmd/aibow/build/` / `Taskfile.yml` | `wails3 init`(react テンプレート)由来のビルド設定。ios / android / docker は削除して `.gitignore` 済み |
 | `_cmd/aibow/version` / `_cmd/version.go` | バージョンの唯一の正と、それを config.yml / package.json に書き写すスクリプト(リポジトリのルートで `go run _cmd/version.go`)。version は `//go:embed` で exe に入る |
@@ -59,6 +59,8 @@ Ollama のサーバーや API は使わない。Ollama のモデルの一部は 
   `Send` の戻り値とイベントは別経路で届き順序が保証されないので、終わりは必ず `done` イベントで判定する
 - 停止(生成中の返事の吹き出しの中のボタン)は `Call` の Promise の `cancel()` → Go の `ctx` がキャンセルされる。アプリ終了時は `ServiceShutdown` で生成を止める
 - 起動時のモデルはウィンドウを出してから裏で読み込み、終わったら `models` イベントで画面に知らせる
+- ウィンドウは Frameless。ドラッグできる場所は CSS の `--wails-draggable: drag`(`.titlebar`)、ボタンは `no-drag`。`main.tsx` で `@wailsio/runtime` を import しておく(ドラッグとリサイズはランタイムがページ全体のマウス操作を見て行う)。
+  リサイズの判定はマウスの座標だけで行われるので、ルート要素に余白は要らない(wails3 スキルの「5px の余白が必須」は beta.26 では不要)
 - Windows の WebView2 は、別のウィンドウから戻ると IME(日本語入力)が効かなくなることがある。Go が `events.Windows.WindowSetFocus` で
   `aibow:window:focus` を送り、画面の `imeFocus.tsx` が見えない input を経由して入力欄にフォーカスを付け直す(同じ要素への blur → focus では直らない)。
   IME 変換中・ボタンにフォーカスがあるときは触らない。新しい入力欄を足しても、テキスト入力なら自動で対象になる
