@@ -1,5 +1,7 @@
 // 会話の表示: 吹き出し・エラー・要約の区切り
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { Clipboard } from "@wailsio/runtime";
+import { LuCheck, LuChevronDown, LuChevronRight, LuCopy } from "react-icons/lu";
 import type { Compaction } from "../../bindings/aibow";
 import { compactionStats } from "../transcript";
 import type { AssistantView, Item } from "../transcript";
@@ -60,7 +62,7 @@ function AssistantMessage({ view, faded, onStop }: { view: AssistantView; faded:
           <p className="hint">「思考する」をオフにするか、アプリ全体の設定の「返事の上限」を増やすと答えまで届きやすくなります。</p>
         )}
       </div>
-      {view.stats && <div className="stats">{view.stats}</div>}
+      {!view.generating && (view.content || view.stats) && <ReplyActions content={view.content} stats={view.stats} />}
       {view.generating && (
         <div className="stop-row">
           {/* 要約中の停止は要約だけを止める(返事は truncate で生成する)ので、要約が終わったらまた押せる */}
@@ -68,6 +70,50 @@ function AssistantMessage({ view, faded, onStop }: { view: AssistantView; faded:
         </div>
       )}
     </div>
+  );
+}
+
+// 返事の最後の行: 答えのコピーと、詳細情報(モデル名・速さ・トークン数など)の開閉。
+// 詳細情報はふだんは使わないので畳んでおき、「詳細」を押したときだけ出す。生成中は出さない(停止ボタンだけ)
+function ReplyActions({ content, stats }: { content: string; stats?: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <div className="reply-actions">
+        {content && <CopyButton text={content} />}
+        {stats && (
+          <button className="reply-action" onClick={() => setOpen(o => !o)} aria-expanded={open} title="モデル名・速さ・トークン数など">
+            {open ? <LuChevronDown /> : <LuChevronRight />} 詳細
+          </button>
+        )}
+      </div>
+      {open && stats && <div className="stats">{stats}</div>}
+    </>
+  );
+}
+
+// 答えの文をクリップボードにコピーする(思考は含めない)。押したら少しの間「コピーしました」にする。
+// まずブラウザの navigator.clipboard を使う(WebView2 の画面は http://wails.localhost で、安全な場所として扱われるので使える)。
+// 使えなかったときは、Wails のランタイムの Clipboard.SetText(Go 側で OS のクリップボードに書く)を使う
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const timer = window.setTimeout(() => setCopied(false), 1500);
+    return () => window.clearTimeout(timer);
+  }, [copied]);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      await Clipboard.SetText(text);
+    }
+    setCopied(true);
+  };
+  return (
+    <button className="reply-action" onClick={() => copy().catch(() => {})} title="答えの文をコピーする(思考は含めない)">
+      {copied ? <><LuCheck /> コピーしました</> : <><LuCopy /> コピー</>}
+    </button>
   );
 }
 
