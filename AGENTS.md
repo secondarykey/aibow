@@ -44,7 +44,7 @@ Ollama のサーバーや API は使わない。Ollama のモデルの一部は 
 | `_cmd/aibow/main.go` | Wails のアプリとウィンドウを作る。Wails に依存するコードは `_cmd/aibow` だけに置く |
 | `_cmd/aibow/config.go` | 環境変数の読み込み |
 | `_cmd/aibow/service.go` | `ChatService`。画面と `aibow.Conversations` / `Engine` の中継だけをする(モデル・会話・設定・`Send`) |
-| `_cmd/aibow/frontend/src/` | チャット画面(React + TypeScript。左: 会話の一覧 / 中央: チャット(入力欄の下にモデルの選択)/ 右: 設定パネル(一覧の下の「設定」で開閉、初期は閉じている))。`useModels.ts` / `useConversations.ts` / `useChat.ts` / `useAppSettings.ts` が Go とのやり取り、`components/` が表示。Vite でビルドした `frontend/dist` を `go:embed` で埋め込む |
+| `_cmd/aibow/frontend/src/` | チャット画面(React + TypeScript。左: 会話の一覧(左上のハンバーガーで開閉。閉じるとアイコンだけの細い列)/ 中央: チャット(入力欄の下にモデルの選択)/ 右: 設定パネル(一覧の下の「設定」で開閉、初期は閉じている))。`useModels.ts` / `useConversations.ts` / `useChat.ts` / `useAppSettings.ts` が Go とのやり取り、`components/` が表示。Vite でビルドした `frontend/dist` を `go:embed` で埋め込む |
 | `_cmd/aibow/frontend/bindings/` | `wails3 generate bindings` の生成物(コミットする。手で直さない) |
 | `_cmd/aibow/build/` / `Taskfile.yml` | `wails3 init`(react テンプレート)由来のビルド設定。ios / android / docker は削除して `.gitignore` 済み |
 | `_cmd/aibow/version` / `_cmd/version.go` | バージョンの唯一の正と、それを config.yml / package.json に書き写すスクリプト(リポジトリのルートで `go run _cmd/version.go`)。version は `//go:embed` で exe に入る |
@@ -93,7 +93,7 @@ Ollama のサーバーや API は使わない。Ollama のモデルの一部は 
 - yzma と llama.cpp はバージョンの組み合わせが決まっている。現在は yzma v1.29.1 + llama.cpp v0.6.0(ビルド b11429)。
   yzma を上げるときは、yzma の README の対応表を確認し、`lib\` の入れ直しも README に書く
 - チャットテンプレートはライブラリ任せにせず、`prompt.go` に自分で書く(書式を理解することが学習目的のため)
-- フロントエンドは React + TypeScript + Vite(`wails3 init -t react` のテンプレート)。npm のパッケージは react / react-dom / @wailsio/runtime と開発用の vite / typescript など。
+- フロントエンドは React + TypeScript + Vite(`wails3 init -t react` のテンプレート)。npm のパッケージは react / react-dom / @wailsio/runtime / react-icons(アイコン。Lucide の `react-icons/lu` を使う)と開発用の vite / typescript など。
   それ以外を足すときも、理由と代替案を示してユーザーに確認する。Wails の構成はユーザーの wails3 スキルの標準(`_cmd/<名前>/build/config.yml`・Taskfile・`wails3 dev`)に従う
 - 設定は環境変数(`AIBOW_MODEL` / `AIBOW_MODELS_DIR` / `AIBOW_LIB` / `AIBOW_DB` / `AIBOW_CTX` / `AIBOW_GPU_LAYERS` / `AIBOW_MAX_TOKENS` / `AIBOW_PRESENCE_PENALTY` / `AIBOW_LLAMA_LOG`、Ollama の保存先は Ollama と同じ `OLLAMA_MODELS`)。
   新しい設定も `AIBOW_` で始まる環境変数にし、README の表に追加する。

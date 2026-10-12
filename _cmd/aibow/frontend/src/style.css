@@ -66,11 +66,20 @@ nav.conversations {
   width: 230px; flex-shrink: 0; border-right: 1px solid var(--border); background: var(--panel);
   display: flex; flex-direction: column; font-size: 13px; min-height: 0;
 }
-nav.conversations .new { margin: 10px; }
+nav.conversations .nav-top { display: flex; align-items: center; gap: 6px; padding: 10px; }
+nav.conversations .new { flex: 1; }
+nav.conversations.collapsed { width: 48px; align-items: center; padding: 10px 0; gap: 6px; }
+nav.conversations.collapsed .spacer { flex: 1; }
+.icon-btn {
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  width: 32px; height: 32px; padding: 0; font-size: 18px; border: none; background: transparent;
+}
+.icon-btn:hover:not(:disabled) { background: var(--bg); }
 nav.conversations ul { list-style: none; margin: 0; padding: 0 6px 10px; overflow-y: auto; flex: 1; }
 nav.conversations .footer { border-top: 1px solid var(--border); padding: 10px; }
-nav.conversations .footer .settings { width: 100%; }
-nav.conversations .footer .settings.active { background: var(--bg); border-color: var(--accent); }
+nav.conversations .footer .settings { width: 100%; display: flex; align-items: center; justify-content: center; gap: 6px; }
+nav.conversations .settings.active { background: var(--bg); border-color: var(--accent); }
+nav.conversations.collapsed .settings.active { color: var(--accent); }
 .conversation { display: flex; align-items: center; border-radius: 6px; margin-bottom: 2px; }
 .conversation:hover, .conversation.current { background: var(--bg); }
 .conversation.current .title { font-weight: 600; }
