@@ -4,6 +4,8 @@
 // 設定は別の画面として扱い、一覧の下の「設定」で開くと、チャットの代わりに会話の場所に出す(SettingsView)。
 // 「会話に戻る」・一覧で会話を選ぶ・「+ 新規」で閉じる。
 // 一覧と会話の間の仕切り(Splitter)をドラッグすると、一覧の幅が変わる。
+// ウィンドウが狭い(640px 以下)ときは、一覧を開くと会話を押しのけず、会話の上に重ねて出す。
+// 狭くなったときに一覧が開いていたら自動で閉じる(会話の場所が狭くなりすぎないように)。
 //
 //	useTranscript    … 画面に並べる表示(吹き出し・エラー)
 //	useToasts        … 右上に出して数秒で消えるお知らせ(モデルの読み込みなど)
@@ -33,6 +35,7 @@ import { SettingsView } from "./components/SettingsView";
 import { Composer } from "./components/Composer";
 import { ImeFocusRelay } from "./imeFocus";
 import { errorMessage } from "./errors";
+import { NARROW_QUERY, useMediaQuery } from "./mediaQuery";
 
 export default function App() {
   // 生成とモデルの読み込みは同時にできない(Go 側のコンテキストが1つしかないため)
@@ -43,7 +46,25 @@ export default function App() {
   const [settingsFrom, setSettingsFrom] = useState(0);
   // 入力欄に打っている文。設定の画面を開くと入力欄は消えるので、戻ったときに続きを打てるようにここで持つ
   const [text, setText] = useState("");
-  const [listOpen, setListOpen] = useState(true);
+  const narrow = useMediaQuery(NARROW_QUERY);
+  const [listOpen, setListOpen] = useState(() => !window.matchMedia(NARROW_QUERY).matches);
+  // 狭くなったら一覧を閉じる。狭いまま開いたときは、閉じずに会話の上に重ねて出す(overlay)
+  useEffect(() => {
+    if (narrow) setListOpen(false);
+  }, [narrow]);
+  const overlay = narrow && listOpen;
+  // 重ねて出している一覧は、会話を選ぶ・「+ 新規」・「設定」を押したら閉じる(選んだものが見えるように)
+  const closeOverlay = () => {
+    if (overlay) setListOpen(false);
+  };
+  useEffect(() => {
+    if (!overlay) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setListOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [overlay]);
   const listWidth = useListWidth(); // 会話の一覧の幅(一覧の右の仕切りで変える)
   // 入力欄にフォーカスを移す合図。会話を開いた・「+ 新規」を押したあとに進める(Composer の focusKey)
   const [focusKey, setFocusKey] = useState(0);
@@ -96,6 +117,7 @@ export default function App() {
   // 「+ 新規」: 新しい会話の画面に移る。会話そのものは、そこで最初に送信したときに作る
   const home = convs.current === null;
   const onNew = () => {
+    closeOverlay();
     setSettingsOpen(false); // 設定の画面を開いていたら閉じて、新しい会話の画面に戻る
     if (home) {
       focusInput(); // すでに新しい会話の画面なら、入力欄に戻すだけ
@@ -151,11 +173,13 @@ export default function App() {
   const title = settingsOpen ? "設定" : convTitle;
 
   const toggleSettings = () => {
+    closeOverlay();
     if (!settingsOpen) setSettingsFrom(transcript.items.reduce((m, it) => Math.max(m, it.id), 0));
     setSettingsOpen(o => !o);
   };
   // 一覧で会話を選んだら、設定の画面を閉じてその会話を出す
   const onOpen = (id: string) => {
+    closeOverlay();
     setSettingsOpen(false);
     convs.open(id).then(focusInput, err => addError(errorMessage(err)));
   };
@@ -194,30 +218,38 @@ export default function App() {
     );
   }
 
+  const listProps = {
+    list: convs.list,
+    currentId,
+    generatingId: chat.generatingId,
+    disabled: unavailable,
+    onOpen,
+    onNew,
+    onDelete: (id: string) => convs.remove(id).then(focusInput, err => addError(errorMessage(err))),
+    onRename: (id: string, title: string) => convs.rename(id, title).catch(err => addError(errorMessage(err))),
+    settingsOpen,
+    onToggleSettings: toggleSettings,
+    onToggleOpen: () => setListOpen(o => !o),
+    width: listWidth.width,
+  };
+
   return (
     <>
-      <ConversationList
-        list={convs.list}
-        currentId={currentId}
-        generatingId={chat.generatingId}
-        disabled={unavailable}
-        onOpen={onOpen}
-        onNew={onNew}
-        onDelete={id => convs.remove(id).then(focusInput, err => addError(errorMessage(err)))}
-        onRename={(id, title) => convs.rename(id, title).catch(err => addError(errorMessage(err)))}
-        settingsOpen={settingsOpen}
-        onToggleSettings={toggleSettings}
-        open={listOpen}
-        onToggleOpen={() => setListOpen(o => !o)}
-        width={listWidth.width}
-      />
-      {listOpen && (
+      {/* 狭いときは、ここ(会話の横)はいつも畳んだ細い列で、開いた一覧は下の overlay に重ねて出す */}
+      <ConversationList {...listProps} open={listOpen && !narrow} />
+      {listOpen && !narrow && (
         <Splitter width={listWidth.width} onResize={listWidth.set} onCommit={listWidth.commit} onReset={listWidth.reset} />
       )}
       <div className="workspace">
         <TitleBar title={title} />
         <main>{content}</main>
       </div>
+      {overlay && (
+        // 後ろの影を押したら閉じる(一覧の中を押したときは閉じない)
+        <div className="list-overlay" onMouseDown={e => e.target === e.currentTarget && setListOpen(false)}>
+          <ConversationList {...listProps} open />
+        </div>
+      )}
       <Toasts toasts={toasts.toasts} onDismiss={toasts.dismiss} />
       <ImeFocusRelay />
     </>

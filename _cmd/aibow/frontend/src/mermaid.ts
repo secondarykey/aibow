@@ -6,7 +6,7 @@
 //   - htmlLabels: false: ラベルを HTML ではなく SVG の文字で描く。strict でも <img> は残り、
 //     src が外の URL なら画像を取りに行ってしまうため(試して確かめた)。
 //     PNG の書き出し(diagramExport.ts)も、SVG の中に HTML が無いことを前提にしている
-import { useEffect, useState } from "react";
+import { useMediaQuery } from "./mediaQuery";
 import type { Mermaid } from "mermaid";
 
 let loading: Promise<Mermaid> | null = null;
@@ -40,13 +40,5 @@ export function renderMermaid(code: string, dark: boolean): Promise<string> {
 
 // OS のライト / ダークの設定(画面の CSS と同じ prefers-color-scheme)。図の配色を合わせるために使う
 export function usePrefersDark(): boolean {
-  const query = "(prefers-color-scheme: dark)";
-  const [dark, setDark] = useState(() => window.matchMedia(query).matches);
-  useEffect(() => {
-    const m = window.matchMedia(query);
-    const onChange = () => setDark(m.matches);
-    m.addEventListener("change", onChange);
-    return () => m.removeEventListener("change", onChange);
-  }, []);
-  return dark;
+  return useMediaQuery("(prefers-color-scheme: dark)");
 }

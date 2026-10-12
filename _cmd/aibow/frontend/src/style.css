@@ -254,6 +254,10 @@ nav.conversations {
 }
 /* 幅は仕切り(Splitter.tsx)で変える。ウィンドウを狭めたときも、会話の側に 280px を残す */
 nav.conversations:not(.collapsed) { min-width: 160px; max-width: calc(100vw - 280px); }
+/* 狭いウィンドウ(640px 以下)で開いた一覧は、会話の上に重ねて出す(App.tsx の overlay)。
+   後ろの会話には影をかけ、影を押すと閉じる。一覧は会話の側に少なくとも 48px(畳んだ列の幅)を残す */
+.list-overlay { position: fixed; inset: 0; z-index: 30; display: flex; background: rgba(0, 0, 0, .32); }
+.list-overlay nav.conversations:not(.collapsed) { max-width: calc(100vw - 48px); box-shadow: 4px 0 18px rgba(0, 0, 0, .22); }
 /* 一覧と会話の間の仕切り。一覧の右の境目に重ねて置く(つかみやすいよう、見た目の線より広い 7px) */
 .splitter {
   flex-shrink: 0; width: 7px; margin: 0 -4px 0 -3px; position: relative; z-index: 5;
