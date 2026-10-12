@@ -1,6 +1,8 @@
 // aibow: ローカルLLMを自分で動かして、仕組みを学ぶためのチャットアプリ(デスクトップ版)
 //
 //	ウィンドウ(frontend の React) ⇄ Wails ⇄ ChatService ⇄ aibow パッケージ ⇄ llama.cpp(DLL) ⇄ GPU
+//	                                                         ⇅
+//	                                                   store パッケージ(SQLite)
 //
 // Wails はデスクトップアプリの枠組み。OS に入っている WebView(Windows なら WebView2)で
 // HTML の画面を表示し、画面の JavaScript から Go のメソッドを呼べるようにする。
@@ -13,7 +15,7 @@
 //
 //	main.go    … 起動(このファイル)
 //	config.go  … 環境変数から設定を読む
-//	service.go … 画面から呼ばれるメソッド(モデルの一覧・切り替え・チャット)
+//	service.go … 画面から呼ばれるメソッド(モデル・会話・設定・送信)
 //	frontend/  … 画面(React + TypeScript)。Vite でビルドした frontend/dist が実行ファイルに埋め込まれる
 //	build/     … wails3 build / wails3 dev の設定(アプリ名、アイコン、OS ごとの手順)
 package main
@@ -25,6 +27,7 @@ import (
 	"strings"
 
 	"aibow"
+	"aibow/store"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
@@ -48,17 +51,23 @@ var frontendFiles embed.FS
 func init() {
 	// chat イベントで送るデータの型を Wails に教えておく。
 	// バインディング生成のときに TypeScript の型(ChatEvent)が作られ、画面側で型付きで受け取れる。
-	application.RegisterEvent[ChatEvent](chatEventName)
+	application.RegisterEvent[aibow.ChatEvent](chatEventName)
 }
 
 func main() {
 	// 起動に失敗しても(lib が無いなど)ウィンドウは出し、理由を画面に表示する。
 	// リリース版(wails3 build)はコンソールが無く、ログだけでは何も見えずに終わってしまうため。
 	cfg, err := loadConfig()
+	var st *store.SQLite
+	var settings aibow.AppSettings
 	var engine *aibow.Engine
 	var initial *aibow.ModelEntry
 	if err == nil {
-		engine, initial, err = startEngine(cfg)
+		st, settings, err = openStore(cfg)
+	}
+	if err == nil {
+		defer st.Close()
+		engine, initial, err = startEngine(cfg, settings)
 	}
 	if err != nil {
 		log.Printf("※ 起動できません: %v", err)
@@ -71,7 +80,7 @@ func main() {
 		Name:        "aibow",
 		Description: "ローカルLLMを自分で動かして仕組みを学ぶチャット",
 		Services: []application.Service{
-			application.NewService(NewChatService(engine, cfg.catalog, initial, err)),
+			application.NewService(NewChatService(engine, st, settings, cfg.catalog, initial, err)),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
@@ -103,10 +112,27 @@ func main() {
 	}
 }
 
+// openStore は会話を保存する DB を開き、アプリ全体の設定を読む。
+func openStore(cfg appConfig) (*store.SQLite, aibow.AppSettings, error) {
+	st, err := store.Open(cfg.dbPath)
+	if err != nil {
+		return nil, cfg.app, err
+	}
+	log.Printf("会話の保存先: %s", absPath(cfg.dbPath))
+	app, err := aibow.LoadAppSettings(st, cfg.app)
+	if err != nil {
+		st.Close()
+		return nil, cfg.app, err
+	}
+	return st, app, nil
+}
+
 // startEngine は llama.cpp を読み込み、起動時に読み込むモデルを決める。
 // モデルの読み込み自体は、ウィンドウを出してから ChatService が裏で行う。
-func startEngine(cfg appConfig) (*aibow.Engine, *aibow.ModelEntry, error) {
-	engine, err := aibow.NewEngine(cfg.engine)
+func startEngine(cfg appConfig, app aibow.AppSettings) (*aibow.Engine, *aibow.ModelEntry, error) {
+	ec := cfg.engine
+	ec.NCtx, ec.GPULayers = app.NCtx, app.GPULayers // 画面で変えた値(DB)か、環境変数の値
+	engine, err := aibow.NewEngine(ec)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -125,7 +151,7 @@ func startEngine(cfg appConfig) (*aibow.Engine, *aibow.ModelEntry, error) {
 	}
 
 	// 起動時のモデル。見つからなくても起動はして、画面で選べるようにする。
-	m, err := pickInitialModel(cfg, models)
+	m, err := pickInitialModel(cfg, app, models)
 	if err != nil {
 		log.Printf("※ %v", err)
 		return engine, nil, nil

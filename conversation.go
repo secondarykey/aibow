@@ -1,0 +1,305 @@
+package aibow
+
+// conversation.go: 会話の仕組み。履歴の管理と、生成の呼び出し。
+//
+// モデルは何も覚えていない(ステートレス)。毎回「これまでの会話を全部」1本の文字列にして読ませている。
+// 「記憶」に見えるものは、アプリがここで発言を保存し、次の送信のたびに並べ直しているだけ。
+// Claude などのチャットアプリも同じ構造になっている。
+//
+// 画面(_cmd/aibow)はこの仕組みを呼ぶだけで、履歴を持たない。
+// Wails に依存しないので、ステップ6の API からも同じものを使える。
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+	"unicode"
+	"uuid"
+)
+
+// Generator は返事を生成するもの。本物は Engine。テストでは偽物に差し替える。
+type Generator interface {
+	Generate(ctx context.Context, messages []Message, opt GenerateOptions,
+		onPrompt func(prompt string), onThinking, onContent func(text string)) (GenerateStats, error)
+	Info() *ModelInfo
+}
+
+// ChatEvent は送信の途中経過。Send がコールバックで1つずつ渡す。
+//
+//	prompt   : モデルに渡した文字列(学習用に画面に表示する)
+//	thinking : 思考の断片
+//	content  : 答えの断片
+//	error    : エラー
+//	done     : 終わり。必ず最後に1回だけ送る。保存した返事があれば Reply に入る
+type ChatEvent struct {
+	ConversationID uuid.UUID      `json:"conversation_id"` // どの会話の送信か。画面は表示中の会話のものだけを出す
+	Type           string         `json:"type"`
+	Text           string         `json:"text,omitempty"`
+	Error          string         `json:"error,omitempty"`
+	Reply          *StoredMessage `json:"reply,omitempty"`
+}
+
+// ErrGenerating は、別の送信の生成中に送信されたときのエラー。
+var ErrGenerating = errors.New("別の会話で返事を生成中です。終わるまで待つか、その会話で停止してください")
+
+// Conversations は会話の一覧と送信を扱う。
+type Conversations struct {
+	store Store
+	gen   Generator
+
+	// generating は生成中の会話の ID。生成していなければ nil。
+	// エンジン(作業領域)が1つしかないので、生成は同時に1つだけ。
+	generating atomic.Pointer[uuid.UUID]
+
+	mu       sync.Mutex
+	defaults ConversationSettings // 新しい会話の既定の設定
+}
+
+func NewConversations(store Store, gen Generator, defaults ConversationSettings) *Conversations {
+	return &Conversations{store: store, gen: gen, defaults: defaults}
+}
+
+// List は会話の一覧を、更新の新しい順に返す。
+func (cs *Conversations) List() ([]Conversation, error) {
+	return cs.store.ListConversations()
+}
+
+// Get は会話1つと、その発言を古い順に返す。
+func (cs *Conversations) Get(id uuid.UUID) (Conversation, []StoredMessage, error) {
+	return cs.store.Conversation(id)
+}
+
+// Create は新しい会話を作る。設定は「新しい会話の既定の設定」をコピーする。
+// コピーなので、会話の中で設定を変えても既定やほかの会話には効かない。
+func (cs *Conversations) Create() (Conversation, error) {
+	now := time.Now()
+	c := Conversation{
+		ID:        uuid.NewV7(),
+		Settings:  cs.Defaults(),
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if err := cs.store.CreateConversation(c); err != nil {
+		return Conversation{}, fmt.Errorf("会話を作れません: %w", err)
+	}
+	return c, nil
+}
+
+// Delete は会話を消す。生成中の会話は消せない(書き込み先が消えてしまうため)。
+func (cs *Conversations) Delete(id uuid.UUID) error {
+	if g := cs.generating.Load(); g != nil && *g == id {
+		return errors.New("返事を生成中の会話は削除できません。停止してから削除してください")
+	}
+	return cs.store.DeleteConversation(id)
+}
+
+// UpdateSettings は会話の設定を変える。次の送信から効く。
+func (cs *Conversations) UpdateSettings(id uuid.UUID, s ConversationSettings) error {
+	c, _, err := cs.store.Conversation(id)
+	if err != nil {
+		return err
+	}
+	c.Settings = s
+	return cs.store.UpdateConversation(c)
+}
+
+// Defaults は新しい会話の既定の設定を返す。
+func (cs *Conversations) Defaults() ConversationSettings {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+	return cs.defaults
+}
+
+// SetDefaults は新しい会話の既定の設定を変えて保存する。今ある会話には効かない。
+func (cs *Conversations) SetDefaults(s ConversationSettings) error {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+	if err := SaveAppSetting(cs.store, SettingDefaults, s); err != nil {
+		return err
+	}
+	cs.defaults = s
+	return nil
+}
+
+// Generating は生成中の会話の ID を返す。生成していなければ nil。
+func (cs *Conversations) Generating() *uuid.UUID {
+	return cs.generating.Load()
+}
+
+// Send はユーザーの発言を保存し、返事を生成して保存する。
+// 途中経過は emit に ChatEvent で渡す。最後に必ず done を1回渡す。
+// ctx がキャンセルされると(画面の停止ボタン)、そこまでの返事を保存して終わる。
+func (cs *Conversations) Send(ctx context.Context, id uuid.UUID, text string, emit func(ChatEvent)) {
+	var reply *StoredMessage
+	defer func() { emit(ChatEvent{ConversationID: id, Type: "done", Reply: reply}) }()
+	fail := func(err error) { emit(ChatEvent{ConversationID: id, Type: "error", Error: err.Error()}) }
+
+	if !cs.generating.CompareAndSwap(nil, &id) {
+		fail(ErrGenerating)
+		return
+	}
+	defer cs.generating.Store(nil)
+
+	conv, history, err := cs.store.Conversation(id)
+	if err != nil {
+		fail(err)
+		return
+	}
+
+	// 1. ユーザーの発言を保存する。最初の発言なら、その先頭を会話のタイトルにする
+	user := StoredMessage{ID: uuid.NewV7(), ConversationID: id, Role: "user", Content: text, CreatedAt: time.Now()}
+	if conv.Title == "" {
+		conv.Title = titleFrom(text)
+	}
+	if err := cs.save(&conv, user); err != nil {
+		fail(err)
+		return
+	}
+	history = append(history, user)
+
+	// 2. 生成する。モデルに渡すのは、システムプロンプトと各発言の「答え」だけ
+	r, err := cs.generate(ctx, conv, history, emit)
+	if err != nil {
+		fail(err)
+		return
+	}
+	if r == nil {
+		return // 何も生成されなかった(すぐに停止した、など)
+	}
+
+	// 3. 返事を保存する
+	if err := cs.save(&conv, *r); err != nil {
+		fail(err)
+		return
+	}
+	reply = r
+}
+
+// save は発言を1件保存し、会話の更新日時(一覧の並び順に使う)とタイトルを書き換える。
+func (cs *Conversations) save(conv *Conversation, m StoredMessage) error {
+	if err := cs.store.AddMessage(m); err != nil {
+		return fmt.Errorf("発言を保存できません: %w", err)
+	}
+	conv.UpdatedAt = m.CreatedAt
+	if err := cs.store.UpdateConversation(*conv); err != nil {
+		return fmt.Errorf("会話を更新できません: %w", err)
+	}
+	return nil
+}
+
+// generate は返事を生成して、保存する形(StoredMessage)にして返す。
+// 何も生成されなかったときは nil を返す。
+func (cs *Conversations) generate(ctx context.Context, conv Conversation, history []StoredMessage, emit func(ChatEvent)) (*StoredMessage, error) {
+	set := conv.Settings
+	opt := GenerateOptions{
+		Think:           set.Think,
+		Temperature:     float32(set.Temperature),
+		MaxTokens:       set.MaxTokens,
+		PresencePenalty: float32(set.PresencePenalty),
+	}
+	model := ""
+	if info := cs.gen.Info(); info != nil {
+		model = info.Name // どのモデルの返事か、発言ごとに記録する
+	}
+
+	// 思考と答えを受け取りながら、時間を測る(画面の統計行と「思考の過程(N秒)」に使う)
+	var thinking, content strings.Builder
+	start := time.Now()
+	var firstAt, thinkStart, thinkEnd time.Time
+	onText := func(kind string, b *strings.Builder) func(string) {
+		return func(t string) {
+			now := time.Now()
+			if firstAt.IsZero() {
+				firstAt = now
+			}
+			if kind == "thinking" {
+				if thinkStart.IsZero() {
+					thinkStart = now
+				}
+			} else if thinkEnd.IsZero() {
+				thinkEnd = now
+			}
+			b.WriteString(t)
+			emit(ChatEvent{ConversationID: conv.ID, Type: kind, Text: t})
+		}
+	}
+
+	st, err := cs.gen.Generate(ctx, promptMessages(set.System, history), opt,
+		func(p string) { emit(ChatEvent{ConversationID: conv.ID, Type: "prompt", Text: p}) },
+		onText("thinking", &thinking), onText("content", &content),
+	)
+	if err != nil {
+		return nil, err
+	}
+	if thinking.Len() == 0 && content.Len() == 0 {
+		return nil, nil
+	}
+
+	now := time.Now()
+	stats := &ReplyStats{GenerateStats: st, FirstSec: firstAt.Sub(start).Seconds()}
+	if !thinkStart.IsZero() {
+		if thinkEnd.IsZero() {
+			thinkEnd = now
+		}
+		stats.ThinkSec = thinkEnd.Sub(thinkStart).Seconds()
+	}
+	m := &StoredMessage{
+		ID: uuid.NewV7(), ConversationID: conv.ID, Role: "assistant",
+		Content: content.String(), Thinking: thinking.String(),
+		Model: model, Stats: stats, CreatedAt: now,
+	}
+	if m.Content == "" {
+		// 考えている途中で終わり、答えが出なかった場合。
+		// 何も残さないと、モデルからは「質問に返事をしていない」ように見えるので、
+		// 何が起きたかを返事として残す(次の送信でもモデルに渡る)。
+		m.Content = noAnswerNote(st.StopReason)
+		stats.NoAnswer = true
+	}
+	return m, nil
+}
+
+// promptMessages は保存した発言を、モデルに渡す形にする。
+// 過去の返事は「答え」だけを入れ、思考は入れない(Qwen3.5 の公式テンプレートと同じ)。
+// システムプロンプトは発言としては保存せず、会話の設定から毎回先頭に付ける。
+func promptMessages(system string, history []StoredMessage) []Message {
+	var out []Message
+	if s := strings.TrimSpace(system); s != "" {
+		out = append(out, Message{Role: "system", Content: s})
+	}
+	for _, m := range history {
+		out = append(out, Message{Role: m.Role, Content: m.Content})
+	}
+	return out
+}
+
+// noAnswerNote は、答えが出ないまま終わったときに答えの代わりに残す文。
+func noAnswerNote(stopReason string) string {
+	switch stopReason {
+	case "length":
+		return "(考えている途中で上限トークン数に達したため、答えを出せませんでした)"
+	case "context":
+		return "(考えている途中でコンテキストがいっぱいになったため、答えを出せませんでした)"
+	case "cancel":
+		return "(考えている途中で停止されたため、答えを出していません)"
+	}
+	return "(考えている途中で終わったため、答えを出せませんでした)"
+}
+
+// titleMaxRunes は自動で付けるタイトルの長さ(文字数)。
+const titleMaxRunes = 30
+
+// titleFrom は最初のユーザー発言から会話のタイトルを作る。
+// モデルに考えさせると生成が1回増えるので、先頭を切り出すだけにしている。
+func titleFrom(text string) string {
+	// 改行やタブは1つの空白にまとめる(一覧で1行に収めるため)
+	t := strings.Join(strings.FieldsFunc(text, unicode.IsSpace), " ")
+	r := []rune(t)
+	if len(r) > titleMaxRunes {
+		return string(r[:titleMaxRunes]) + "…"
+	}
+	return t
+}

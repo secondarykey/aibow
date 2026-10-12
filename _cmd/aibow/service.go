@@ -5,17 +5,20 @@ package main
 // Wails では、Service として登録した構造体の「大文字で始まるメソッド」を、
 // 画面の JavaScript から関数のように呼べる(中身は Wails が仲立ちする RPC)。
 //
-//	TypeScript: ChatService.Chat(req)      ← wails3 generate bindings が frontend/bindings に作る関数
+//	TypeScript: ChatService.Send(id, text)  ← wails3 generate bindings が frontend/bindings に作る関数
 //	        ↓  Wails が引数を JSON にして Go に渡す
-//	Go:         (*ChatService).Chat(ctx, req)
+//	Go:         (*ChatService).Send(ctx, id, text)
 //
 // メソッドのコメントと構造体の json タグは、バインディングの TypeScript の型とコメントにもなる。
-// Web サーバー版の /api/models・/api/model・/api/chat が、それぞれ Models・SwitchModel・Chat になった。
+//
+// 会話の履歴や設定を持つのは aibow パッケージの Conversations で、ChatService は画面との中継をするだけ。
 
 import (
 	"context"
 	"log"
+	"sync"
 	"sync/atomic"
+	"uuid"
 
 	"aibow"
 
@@ -23,11 +26,17 @@ import (
 )
 
 type ChatService struct {
-	engine  *aibow.Engine // 起動に失敗したときは nil
+	engine  *aibow.Engine        // 起動に失敗したときは nil
+	store   aibow.Store          // 起動に失敗したときは nil
+	convs   *aibow.Conversations // 起動に失敗したときは nil
 	catalog aibow.ModelCatalog
 
 	// startupErr は起動に失敗した理由(lib が無いなど)。画面に表示する
 	startupErr error
+
+	// app はアプリ全体の設定(コンテキスト長・GPU の層数)。画面で変えると DB にも保存する
+	appMu sync.Mutex
+	app   aibow.AppSettings
 
 	// initial は起動時に読み込むモデル。nil なら読み込まない(画面で選ぶ)。
 	initial *aibow.ModelEntry
@@ -41,12 +50,18 @@ type ChatService struct {
 	cancelQuit context.CancelFunc
 }
 
-func NewChatService(engine *aibow.Engine, catalog aibow.ModelCatalog, initial *aibow.ModelEntry, startupErr error) *ChatService {
+func NewChatService(engine *aibow.Engine, st aibow.Store, app aibow.AppSettings, catalog aibow.ModelCatalog,
+	initial *aibow.ModelEntry, startupErr error) *ChatService {
 	quit, cancel := context.WithCancel(context.Background())
-	return &ChatService{
-		engine: engine, catalog: catalog, initial: initial, startupErr: startupErr,
+	s := &ChatService{
+		engine: engine, catalog: catalog, app: app, initial: initial, startupErr: startupErr,
 		quit: quit, cancelQuit: cancel,
 	}
+	if startupErr == nil {
+		s.store = st
+		s.convs = aibow.NewConversations(st, engine, app.Defaults)
+	}
+	return s
 }
 
 // ServiceStartup はアプリの起動時に Wails から呼ばれる(画面からは呼べない特別な名前)。
@@ -63,7 +78,7 @@ func (s *ChatService) ServiceStartup(ctx context.Context, options application.Se
 
 // loadInitial は起動時のモデルを読み込み、終わったら models イベントで画面に知らせる。
 func (s *ChatService) loadInitial(m aibow.ModelEntry) {
-	loadAndLog(s.engine, m)
+	s.loadModel(m)
 	s.loading.Store(nil)
 	application.Get().Event.Emit(modelsEventName)
 }
@@ -79,7 +94,7 @@ func (s *ChatService) ServiceShutdown() error {
 // modelsEventName は、起動時のモデルの読み込みが終わったことを画面に知らせるイベントの名前。
 const modelsEventName = "models"
 
-// ModelsResult は Models の戻り値。JSON のキー名は Web サーバー版と同じ。
+// ModelsResult は Models の戻り値。
 type ModelsResult struct {
 	Models  []aibow.ModelEntry `json:"models"`
 	Current *aibow.ModelInfo   `json:"current"`           // 未読み込みなら null
@@ -107,6 +122,8 @@ func (s *ChatService) Models() ModelsResult {
 // SwitchModel はモデルを切り替える。読み込み終わるまで返らない。
 // 失敗したときは元のモデルに戻っている(画面は Models を呼び直して確認する)。
 // Go で error を返すと、JavaScript 側では Promise が reject される。
+//
+// モデルはアプリ全体で1つ(VRAM に1つしか載らない)。会話を切り替えてもモデルは変わらない。
 func (s *ChatService) SwitchModel(id string) (*aibow.ModelInfo, error) {
 	if s.startupErr != nil {
 		return nil, s.startupErr
@@ -115,50 +132,158 @@ func (s *ChatService) SwitchModel(id string) (*aibow.ModelInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	return loadAndLog(s.engine, m)
+	return s.loadModel(m)
 }
 
-func loadAndLog(engine *aibow.Engine, m aibow.ModelEntry) (*aibow.ModelInfo, error) {
+// loadModel はモデルを読み込み、成功したら「最後に使ったモデル」として保存する(次の起動で読み込む)。
+func (s *ChatService) loadModel(m aibow.ModelEntry) (*aibow.ModelInfo, error) {
 	log.Printf("モデルを読み込み中: %s (%s)", m.Name, m.Path)
-	i, err := engine.LoadModel(m)
+	i, err := s.engine.LoadModel(m)
 	if err != nil {
 		log.Printf("※ %v", err)
 		return nil, err
 	}
-	log.Printf("読み込み完了 (%.1f 秒): %s / %.2fB パラメータ / %.2f GB / %d 層 / GPU に載せる層: %d / コンテキスト長: %d",
-		i.LoadSec, i.Desc, i.ParamsB, i.SizeGB, i.Layers, i.GPULayers, i.NCtx)
+	logModel("読み込み完了", i)
+	s.saveAppSetting(aibow.SettingLastModel, m.ID, func(a *aibow.AppSettings) { a.LastModel = m.ID })
 	return i, nil
 }
 
-// ---- チャット -------------------------------------------------------------------------
-
-// ChatRequest は画面 → Go。
-type ChatRequest struct {
-	Messages    []aibow.Message `json:"messages"`
-	Think       *bool           `json:"think"`
-	Temperature *float64        `json:"temperature"`
+func logModel(what string, i *aibow.ModelInfo) {
+	log.Printf("%s (%.1f 秒): %s / %.2fB パラメータ / %.2f GB / %d 層 / GPU に載せる層: %d / コンテキスト長: %d",
+		what, i.LoadSec, i.Desc, i.ParamsB, i.SizeGB, i.Layers, i.GPULayers, i.NCtx)
 }
+
+// ---- アプリ全体の設定 -------------------------------------------------------------------
+
+// AppSettings はアプリ全体の設定(コンテキスト長・GPU の層数・新しい会話の既定の設定)を返す。
+func (s *ChatService) AppSettings() (aibow.AppSettings, error) {
+	if s.startupErr != nil {
+		return aibow.AppSettings{}, s.startupErr
+	}
+	s.appMu.Lock()
+	defer s.appMu.Unlock()
+	a := s.app
+	a.Defaults = s.convs.Defaults()
+	return a, nil
+}
+
+// SetContextSize はコンテキスト長を変える。モデルは読み直さず、コンテキスト(KV キャッシュ)だけ作り直す。
+// モデルが未読み込みなら nil を返す(次に読み込むときから効く)。
+func (s *ChatService) SetContextSize(n int) (*aibow.ModelInfo, error) {
+	if s.startupErr != nil {
+		return nil, s.startupErr
+	}
+	i, err := s.engine.SetContextSize(n)
+	if err != nil {
+		log.Printf("※ %v", err)
+		return nil, err
+	}
+	if i != nil {
+		log.Printf("コンテキスト長を %d にしました(モデルは読み直していません)", i.NCtx)
+	}
+	s.saveAppSetting(aibow.SettingNCtx, n, func(a *aibow.AppSettings) { a.NCtx = n })
+	return i, nil
+}
+
+// SetGPULayers は GPU に載せる層の数を変え、今のモデルを読み込み直す。
+// 失敗したときは元の層の数で読み直している。モデルが未読み込みなら nil を返す。
+func (s *ChatService) SetGPULayers(n int) (*aibow.ModelInfo, error) {
+	if s.startupErr != nil {
+		return nil, s.startupErr
+	}
+	i, err := s.engine.SetGPULayers(n)
+	if err != nil {
+		log.Printf("※ %v", err)
+		return nil, err
+	}
+	if i != nil {
+		logModel("GPU に載せる層を変えて読み直しました", i)
+	}
+	s.saveAppSetting(aibow.SettingGPULayers, n, func(a *aibow.AppSettings) { a.GPULayers = n })
+	return i, nil
+}
+
+// SetDefaultSettings は新しい会話の既定の設定を変える。今ある会話には効かない。
+func (s *ChatService) SetDefaultSettings(settings aibow.ConversationSettings) error {
+	if s.startupErr != nil {
+		return s.startupErr
+	}
+	return s.convs.SetDefaults(settings)
+}
+
+// saveAppSetting はアプリ全体の設定を1つ保存する。
+// 保存に失敗しても、変えた設定は今の起動中は効いているので、ログに出すだけにする。
+func (s *ChatService) saveAppSetting(key string, v any, apply func(*aibow.AppSettings)) {
+	s.appMu.Lock()
+	defer s.appMu.Unlock()
+	apply(&s.app)
+	if err := aibow.SaveAppSetting(s.store, key, v); err != nil {
+		log.Printf("※ %v", err)
+	}
+}
+
+// ---- 会話 -------------------------------------------------------------------------------
+
+// Conversations は会話の一覧を、更新の新しい順に返す。
+func (s *ChatService) Conversations() ([]aibow.Conversation, error) {
+	if s.startupErr != nil {
+		return nil, s.startupErr
+	}
+	return s.convs.List()
+}
+
+// ConversationDetail は会話1つと、その発言。
+type ConversationDetail struct {
+	Conversation aibow.Conversation    `json:"conversation"`
+	Messages     []aibow.StoredMessage `json:"messages"`
+	Generating   bool                  `json:"generating"` // この会話で返事を生成中か
+}
+
+// Conversation は会話1つと、その発言を古い順に返す。
+func (s *ChatService) Conversation(id uuid.UUID) (ConversationDetail, error) {
+	if s.startupErr != nil {
+		return ConversationDetail{}, s.startupErr
+	}
+	c, ms, err := s.convs.Get(id)
+	if err != nil {
+		return ConversationDetail{}, err
+	}
+	g := s.convs.Generating()
+	return ConversationDetail{Conversation: c, Messages: ms, Generating: g != nil && *g == id}, nil
+}
+
+// NewConversation は新しい会話を作る。設定は「新しい会話の既定の設定」のコピー。
+func (s *ChatService) NewConversation() (aibow.Conversation, error) {
+	if s.startupErr != nil {
+		return aibow.Conversation{}, s.startupErr
+	}
+	return s.convs.Create()
+}
+
+// DeleteConversation は会話を消す。返事を生成中の会話は消せない。
+func (s *ChatService) DeleteConversation(id uuid.UUID) error {
+	if s.startupErr != nil {
+		return s.startupErr
+	}
+	return s.convs.Delete(id)
+}
+
+// UpdateConversationSettings は会話の設定を変える。次の送信から効く。
+func (s *ChatService) UpdateConversationSettings(id uuid.UUID, settings aibow.ConversationSettings) error {
+	if s.startupErr != nil {
+		return s.startupErr
+	}
+	return s.convs.UpdateSettings(id, settings)
+}
+
+// ---- 送信 -------------------------------------------------------------------------------
 
 // chatEventName は、生成の途中経過を画面に送るイベントの名前。
+// 中身は aibow.ChatEvent(main.go の RegisterEvent で型を登録している)。
 const chatEventName = "chat"
 
-// ChatEvent は Go → 画面。生成の途中経過を Wails のイベントで1つずつ送る。
-// (Web サーバー版では SSE の1行が、この1つに当たる)
-//
-//	prompt   : モデルに渡した文字列(学習用に画面に表示する)
-//	thinking : 思考の断片
-//	content  : 答えの断片
-//	stats    : 統計(トークン数、速度など)
-//	error    : エラー
-//	done     : 終わり。必ず最後に1回だけ送る
-type ChatEvent struct {
-	Type    string               `json:"type"`
-	Text    string               `json:"text,omitempty"`
-	Message string               `json:"message,omitempty"`
-	Stats   *aibow.GenerateStats `json:"stats,omitempty"`
-}
-
-// Chat は返事を生成する。返事の中身は戻り値ではなく、chat イベントで少しずつ送る。
+// Send は会話にユーザーの発言を足し、返事を生成する。
+// 返事の中身は戻り値ではなく、chat イベントで少しずつ送る。
 //
 // 終わりの合図も戻り値ではなく done イベントにしている。
 // Wails ではメソッドの戻り値とイベントは別の経路で画面に届くので、
@@ -166,11 +291,11 @@ type ChatEvent struct {
 //
 // 画面で「停止」を押すと、JavaScript 側で Promise の cancel() が呼ばれ、
 // Wails がこの ctx をキャンセルする。エンジンはそれを見て生成を止める。
-func (s *ChatService) Chat(ctx context.Context, req ChatRequest) {
-	emit := func(ev ChatEvent) { application.Get().Event.Emit(chatEventName, ev) }
-	defer emit(ChatEvent{Type: "done"})
+func (s *ChatService) Send(ctx context.Context, id uuid.UUID, text string) {
+	emit := func(ev aibow.ChatEvent) { application.Get().Event.Emit(chatEventName, ev) }
 	if s.startupErr != nil {
-		emit(ChatEvent{Type: "error", Message: s.startupErr.Error()})
+		emit(aibow.ChatEvent{ConversationID: id, Type: "error", Error: s.startupErr.Error()})
+		emit(aibow.ChatEvent{ConversationID: id, Type: "done"})
 		return
 	}
 
@@ -180,26 +305,19 @@ func (s *ChatService) Chat(ctx context.Context, req ChatRequest) {
 	stop := context.AfterFunc(s.quit, cancel)
 	defer stop()
 
-	think := req.Think == nil || *req.Think
-	temp := 0.7
-	if req.Temperature != nil {
-		temp = *req.Temperature
-	}
-
-	st, err := s.engine.Generate(ctx, req.Messages, think, float32(temp),
-		func(p string) { emit(ChatEvent{Type: "prompt", Text: p}) },
-		func(t string) { emit(ChatEvent{Type: "thinking", Text: t}) },
-		func(t string) { emit(ChatEvent{Type: "content", Text: t}) },
-	)
-	if err != nil {
-		log.Printf("エラー: %v", err)
-		emit(ChatEvent{Type: "error", Message: err.Error()})
-		return
-	}
-
-	log.Printf("プロンプト %d トークン(再利用 %d)%.2f 秒 / 生成 %d トークン %.2f 秒(%.1f tok/s)/ 終了理由: %s",
-		st.PromptTokens, st.ReusedTokens, st.PromptSec, st.GenTokens, st.GenSec, tokPerSec(st), st.StopReason)
-	emit(ChatEvent{Type: "stats", Stats: &st})
+	s.convs.Send(ctx, id, text, func(ev aibow.ChatEvent) {
+		switch ev.Type {
+		case "error":
+			log.Printf("エラー: %s", ev.Error)
+		case "done":
+			if r := ev.Reply; r != nil && r.Stats != nil {
+				st := r.Stats
+				log.Printf("プロンプト %d トークン(再利用 %d)%.2f 秒 / 生成 %d トークン %.2f 秒(%.1f tok/s)/ 終了理由: %s",
+					st.PromptTokens, st.ReusedTokens, st.PromptSec, st.GenTokens, st.GenSec, tokPerSec(st.GenerateStats), st.StopReason)
+			}
+		}
+		emit(ev)
+	})
 }
 
 func tokPerSec(st aibow.GenerateStats) float64 {

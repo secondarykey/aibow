@@ -5,6 +5,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -60,25 +61,41 @@ func (r *envReader) float(key string, def float64) float64 {
 type appConfig struct {
 	engine       aibow.EngineConfig
 	catalog      aibow.ModelCatalog
-	initialModel string // 起動時に読み込むモデル。空なら一覧の先頭
+	dbPath       string // 会話を保存する SQLite のファイル
+	initialModel string // AIBOW_MODEL。空なら最後に使ったモデル → 一覧の先頭
+
+	// app は、画面で変えられるアプリ全体の設定の初期値。
+	// DB にまだ値が無いときだけ使う(画面で一度変えると DB の値が優先される)。
+	app aibow.AppSettings
 }
+
+// defaultSystemPrompt は新しい会話の既定のシステムプロンプト(画面で変えられる)。
+const defaultSystemPrompt = "あなたは親切なアシスタントです。日本語で簡潔に答えてください。"
 
 func loadConfig() (appConfig, error) {
 	var env envReader
 	c := appConfig{
 		engine: aibow.EngineConfig{
-			LibPath:         env.str("AIBOW_LIB", "lib"),
-			NCtx:            env.int("AIBOW_CTX", 16384),
-			GPULayers:       env.int("AIBOW_GPU_LAYERS", 999), // 999 = 全部 GPU に載せる
-			MaxTokens:       env.int("AIBOW_MAX_TOKENS", 8192),
-			PresencePenalty: float32(env.float("AIBOW_PRESENCE_PENALTY", 1.5)),
-			LlamaLog:        os.Getenv("AIBOW_LLAMA_LOG") == "1",
+			LibPath:  env.str("AIBOW_LIB", "lib"),
+			LlamaLog: os.Getenv("AIBOW_LLAMA_LOG") == "1",
 		},
 		catalog: aibow.ModelCatalog{
 			ModelsDir: env.str("AIBOW_MODELS_DIR", "models"),
 			OllamaDir: aibow.OllamaModelsDir(),
 		},
+		dbPath:       env.str("AIBOW_DB", defaultDBPath()),
 		initialModel: os.Getenv("AIBOW_MODEL"),
+		app: aibow.AppSettings{
+			NCtx:      env.int("AIBOW_CTX", 16384),
+			GPULayers: env.int("AIBOW_GPU_LAYERS", 999), // 999 = 全部 GPU に載せる
+			Defaults: aibow.ConversationSettings{
+				System:          defaultSystemPrompt,
+				MaxTokens:       env.int("AIBOW_MAX_TOKENS", 8192),
+				Temperature:     0.7,
+				Think:           true,
+				PresencePenalty: env.float("AIBOW_PRESENCE_PENALTY", 1.5),
+			},
+		},
 	}
 	if _, err := os.Stat(c.engine.LibPath); err != nil {
 		// 相対パスのままだと「どこを探したのか」が分からないので、絶対パスで出す
@@ -86,7 +103,21 @@ func loadConfig() (appConfig, error) {
 			"(相対パスはカレントフォルダが基準です。_cmd/aibow で起動するか、AIBOW_LIB で場所を指定してください。"+
 			"取得方法は README.md の「llama.cpp の取得」を参照)", absPath(c.engine.LibPath)))
 	}
+	if c.dbPath == "" {
+		env.errs = append(env.errs, errors.New("会話を保存する場所が決められません。AIBOW_DB で DB ファイルの場所を指定してください"))
+	}
 	return c, errors.Join(env.errs...)
+}
+
+// defaultDBPath は DB ファイルの既定の場所。Windows では %APPDATA%\aibow\aibow.db。
+// lib / models と違ってアプリのフォルダに置かないのは、会話は利用者のデータで、
+// アプリを入れ直したり、別のフォルダから起動したりしても残ってほしいから。
+func defaultDBPath() string {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(dir, "aibow", "aibow.db")
 }
 
 // absPath はログに出すためにパスを絶対パスにする。空や変換できないときはそのまま返す
@@ -101,9 +132,19 @@ func absPath(p string) string {
 	return p
 }
 
-func pickInitialModel(cfg appConfig, models []aibow.ModelEntry) (aibow.ModelEntry, error) {
+// pickInitialModel は起動時に読み込むモデルを決める。
+// AIBOW_MODEL → 最後に使ったモデル → 一覧の先頭、の順。
+func pickInitialModel(cfg appConfig, app aibow.AppSettings, models []aibow.ModelEntry) (aibow.ModelEntry, error) {
 	if cfg.initialModel != "" {
 		return cfg.catalog.Find(cfg.initialModel)
+	}
+	if app.LastModel != "" {
+		m, err := cfg.catalog.Find(app.LastModel)
+		if err == nil {
+			return m, nil
+		}
+		// 消したモデルなどで見つからなくても、一覧の先頭で起動する
+		log.Printf("※ 最後に使ったモデルが見つかりません(%v)。一覧の先頭を使います", err)
 	}
 	if len(models) == 0 {
 		return aibow.ModelEntry{}, fmt.Errorf("モデルが1つも見つかりません。models フォルダに GGUF を置くか、ollama pull してください")

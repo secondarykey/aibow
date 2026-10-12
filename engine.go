@@ -24,17 +24,24 @@ import (
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
-// EngineConfig はエンジンの設定。_cmd/aibow/config.go で環境変数から作る。
+// EngineConfig はエンジンの設定。_cmd/aibow で環境変数とアプリ設定から作る。
+// NCtx と GPULayers は、あとから SetContextSize / SetGPULayers で変えられる。
 type EngineConfig struct {
 	LibPath   string // llama.cpp の DLL が入っているフォルダ
 	NCtx      int    // コンテキスト長: 一度に扱えるトークン数(プロンプト + 返事)
 	GPULayers int    // GPU に載せる層の数。モデルの層数以上なら全部 GPU
-	MaxTokens int    // 1回の返事で生成するトークン数の上限
+	LlamaLog  bool   // llama.cpp 自身のログ(GPU への割り当てなど)を表示するか
+}
+
+// GenerateOptions は1回の生成の設定。会話ごとの設定から作る。
+type GenerateOptions struct {
+	Think       bool    // 思考させるか
+	Temperature float32 // 0 なら greedy(毎回一番点数の高いトークン)
+	MaxTokens   int     // 1回の返事で生成するトークン数の上限
 
 	// PresencePenalty は、すでに生成した言葉を選ばれにくくする強さ。0 で無効。
 	// 小さいモデルが思考の中で同じことを繰り返し、答えにたどり着かないのを防ぐ。
 	PresencePenalty float32
-	LlamaLog        bool // llama.cpp 自身のログ(GPU への割り当てなど)を表示するか
 }
 
 // ModelInfo は画面に表示するための、読み込み中のモデルの情報。
@@ -130,28 +137,94 @@ func (e *Engine) Info() *ModelInfo {
 }
 
 // LoadModel はモデルを入れ替える。数秒〜十数秒かかる。
-//
-// VRAM 8GB に2つのモデルは同時に載らないことが多いので、先に今のモデルを解放してから読み込む。
-// 新しいモデルが読めなかったときは、元のモデルを読み込み直して戻す。
 func (e *Engine) LoadModel(m ModelEntry) (*ModelInfo, error) {
 	if !e.mu.TryLock() {
 		return nil, ErrBusy
 	}
 	defer e.mu.Unlock()
+	return e.replace(m, func() {})
+}
 
+// SetGPULayers は GPU に載せる層の数を変え、今のモデルを読み込み直す。
+// 層を GPU と CPU のどちらに置くかはモデルの読み込み時に決まるので、読み直すしかない。
+// モデルが未読み込みなら、次に読み込むときから効く。
+func (e *Engine) SetGPULayers(n int) (*ModelInfo, error) {
+	if !e.mu.TryLock() {
+		return nil, ErrBusy
+	}
+	defer e.mu.Unlock()
+
+	old := e.cfg.GPULayers
+	e.cfg.GPULayers = n
+	prev := e.info.Load()
+	if prev == nil {
+		return nil, nil
+	}
+	return e.replace(prev.entry(), func() { e.cfg.GPULayers = old })
+}
+
+// replace は今のモデルを解放してから m を読み込む。e.mu を持った状態で呼ぶ。
+//
+// VRAM 8GB に2つのモデルは同時に載らないことが多いので、先に今のモデルを解放してから読み込む。
+// 読めなかったときは undo で設定を戻し、元のモデルを読み込み直して戻す。
+func (e *Engine) replace(m ModelEntry, undo func()) (*ModelInfo, error) {
 	prev := e.info.Load()
 	e.unload()
 
 	info, err := e.load(m)
 	if err != nil {
+		undo()
 		if prev != nil {
-			if _, rerr := e.load(ModelEntry{ID: prev.ID, Name: prev.Name, Path: prev.path}); rerr != nil {
+			if _, rerr := e.load(prev.entry()); rerr != nil {
 				err = fmt.Errorf("%w(元のモデルにも戻せませんでした: %v)", err, rerr)
 			}
 		}
 		return nil, err
 	}
 	return info, nil
+}
+
+// SetContextSize はコンテキスト長を変える。モデル本体(重み)は読み直さず、作業領域だけを作り直す。
+//
+// コンテキスト = 推論用の作業領域で、KV キャッシュもここにある。重みとは別に確保されるので、
+// 長さを変えるときは作業領域だけ作り直せばよい(重みの読み込みより速い)。
+// KV キャッシュは捨てるので、次の送信はプロンプトを最初から読ませることになる。
+// モデルが未読み込みなら、次に読み込むときから効く。
+func (e *Engine) SetContextSize(n int) (*ModelInfo, error) {
+	if !e.mu.TryLock() {
+		return nil, ErrBusy
+	}
+	defer e.mu.Unlock()
+
+	old := e.cfg.NCtx
+	e.cfg.NCtx = n
+	if e.model == 0 {
+		return nil, nil
+	}
+
+	// 先に今の作業領域を解放する(VRAM に新旧2つ分は載らないことがあるため)
+	llama.Free(e.lctx)
+	e.lctx = 0
+	e.cached = nil
+
+	lctx, err := e.newContext()
+	if err != nil {
+		e.cfg.NCtx = old
+		back, rerr := e.newContext()
+		if rerr != nil {
+			// 元の長さでも作れないなら、モデルごと解放して「未読み込み」にする
+			e.unload()
+			return nil, fmt.Errorf("%w(元のコンテキスト長にも戻せなかったので、モデルを解放しました: %v)", err, rerr)
+		}
+		e.lctx = back
+		return nil, err
+	}
+	e.lctx = lctx
+
+	info := *e.info.Load() // 読み込み中の情報を写して、コンテキスト長だけ書き換える
+	info.NCtx = llama.NCtx(lctx)
+	e.info.Store(&info)
+	return &info, nil
 }
 
 // load はモデルとコンテキストを作る。e.mu を持った状態で呼ぶ。
@@ -168,19 +241,15 @@ func (e *Engine) load(m ModelEntry) (*ModelInfo, error) {
 			"(Ollama のモデルの一部は Ollama 独自の形式です)。AIBOW_LLAMA_LOG=1 で詳しい理由が出ます", m.Name)
 	}
 
-	// コンテキスト = 推論用の作業領域。KV キャッシュもここに確保される。
-	// NCtx を大きくするほど長い会話を扱えるが、その分 VRAM を使う。
-	cp := llama.ContextDefaultParams()
-	cp.NCtx = uint32(e.cfg.NCtx)
-	cp.NBatch = batchSize
-	cp.NUbatch = batchSize
-	lctx, err := llama.InitFromModel(model, cp)
-	if err != nil || lctx == 0 {
+	e.model = model
+	lctx, err := e.newContext()
+	if err != nil {
 		llama.ModelFree(model)
-		return nil, fmt.Errorf("コンテキストを作れません。VRAM が足りない可能性があります(AIBOW_CTX=%d を減らすか、AIBOW_GPU_LAYERS を減らしてください)", e.cfg.NCtx)
+		e.model = 0
+		return nil, err
 	}
 
-	e.model, e.lctx, e.vocab = model, lctx, llama.ModelGetVocab(model)
+	e.lctx, e.vocab = lctx, llama.ModelGetVocab(model)
 	e.cached = nil // 新しい作業領域なので KV キャッシュは空
 	info := &ModelInfo{
 		ID:        m.ID,
@@ -196,6 +265,28 @@ func (e *Engine) load(m ModelEntry) (*ModelInfo, error) {
 	}
 	e.info.Store(info)
 	return info, nil
+}
+
+// newContext は今のモデルにコンテキストを作る。e.mu を持った状態で呼ぶ。
+//
+// コンテキスト = 推論用の作業領域。KV キャッシュもここに確保される。
+// NCtx を大きくするほど長い会話を扱えるが、その分 VRAM を使う。
+func (e *Engine) newContext() (llama.Context, error) {
+	cp := llama.ContextDefaultParams()
+	cp.NCtx = uint32(e.cfg.NCtx)
+	cp.NBatch = batchSize
+	cp.NUbatch = batchSize
+	lctx, err := llama.InitFromModel(e.model, cp)
+	if err != nil || lctx == 0 {
+		return 0, fmt.Errorf("コンテキスト(長さ %d)を作れません。VRAM が足りない可能性があります。"+
+			"設定のコンテキスト長か、GPU に載せる層の数を減らしてください", e.cfg.NCtx)
+	}
+	return lctx, nil
+}
+
+// entry は、読み込み中のモデルを読み直すための ModelEntry を返す。
+func (i *ModelInfo) entry() ModelEntry {
+	return ModelEntry{ID: i.ID, Name: i.Name, Path: i.path}
 }
 
 // unload はモデルと作業領域を解放する(VRAM が空く)。e.mu を持った状態で呼ぶ。
@@ -226,8 +317,7 @@ func (e *Engine) Close() {
 func (e *Engine) Generate(
 	ctx context.Context,
 	messages []Message,
-	think bool,
-	temperature float32,
+	opt GenerateOptions,
 	onPrompt func(prompt string),
 	onThinking, onContent func(text string),
 ) (GenerateStats, error) {
@@ -241,14 +331,14 @@ func (e *Engine) Generate(
 	}
 
 	// 3. 会話 → 文字列 → トークン列
-	prompt := buildPrompt(messages, think)
+	prompt := buildPrompt(messages, opt.Think)
 	onPrompt(prompt)
 	tokens := llama.Tokenize(e.vocab, prompt, true, true)
 	st.PromptTokens = len(tokens)
 
 	nCtx := int(llama.NCtx(e.lctx))
 	if len(tokens) >= nCtx {
-		return st, fmt.Errorf("会話が長すぎます(%d トークン / 上限 %d)。「新しい会話」で始め直すか、AIBOW_CTX を増やしてください", len(tokens), nCtx)
+		return st, fmt.Errorf("会話が長すぎます(%d トークン / 上限 %d)。新しい会話で始め直すか、設定のコンテキスト長を増やしてください", len(tokens), nCtx)
 	}
 
 	// 4. プロンプトをモデルに読ませる。KV キャッシュに残っている部分は飛ばす。
@@ -263,11 +353,11 @@ func (e *Engine) Generate(
 	st.PromptSec = time.Since(start).Seconds()
 
 	// 5. 1トークンずつ選んで、文字にして、またモデルに読ませる、の繰り返し
-	sampler := newSampler(e.vocab, temperature, e.cfg.PresencePenalty)
+	sampler := newSampler(e.vocab, opt.Temperature, opt.PresencePenalty)
 	defer llama.SamplerFree(sampler)
 
 	var u8 utf8Buffer
-	split := newThinkSplitter(think)
+	split := newThinkSplitter(opt.Think)
 	emit := func(text string) {
 		th, c := split.Push(text)
 		if th != "" {
@@ -281,7 +371,7 @@ func (e *Engine) Generate(
 	start = time.Now()
 	st.StopReason = "length"
 	buf := make([]byte, 256)
-	for st.GenTokens < e.cfg.MaxTokens {
+	for st.GenTokens < opt.MaxTokens {
 		if ctx.Err() != nil {
 			st.StopReason = "cancel"
 			break
