@@ -67,7 +67,7 @@ func send(t *testing.T, cs *Conversations, c Conversation, text string) []ChatEv
 
 func mustCreate(t *testing.T, cs *Conversations) Conversation {
 	t.Helper()
-	c, err := cs.Create()
+	c, err := cs.Create(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,6 +181,16 @@ func TestSettingsArePerConversation(t *testing.T) {
 	}
 	if c := mustCreate(t, cs); c.Settings != changed {
 		t.Errorf("新しい会話が既定をコピーしていません: %+v", c.Settings)
+	}
+	// 設定を渡して作ると、既定ではなくその設定で始まる(新しい会話の画面で変えた設定)
+	given := testDefaults
+	given.System = "画面で変えたシステムプロンプト"
+	c, err := cs.Create(&given)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _, _ := cs.Get(c.ID); got.Settings != given {
+		t.Errorf("渡した設定で作られていません: %+v", got.Settings)
 	}
 	if _, ms, _ := cs.Get(b.ID); len(ms) == 0 {
 		t.Fatal("b の発言がありません")

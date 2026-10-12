@@ -5,10 +5,11 @@ import type { FormEvent, KeyboardEvent } from "react";
 interface Props {
   canSend: boolean;
   blockedReason?: string; // 送信できない理由(ボタンのツールチップに出す)
+  home?: boolean;         // 新しい会話の画面(真ん中に出す。上の区切り線と背景を付けない)
   onSend(text: string): void;
 }
 
-export function Composer({ canSend, blockedReason, onSend }: Props) {
+export function Composer({ canSend, blockedReason, home, onSend }: Props) {
   const [text, setText] = useState("");
   const input = useRef<HTMLTextAreaElement>(null);
   const composing = useRef(false); // IME で変換中か
@@ -46,7 +47,7 @@ export function Composer({ canSend, blockedReason, onSend }: Props) {
   };
 
   return (
-    <footer>
+    <footer className={home ? "home" : undefined}>
       <form className="composer" onSubmit={submit}>
         <textarea
           ref={input}

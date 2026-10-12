@@ -52,10 +52,11 @@ export function Models(): $CancellablePromise<$models.ModelsResult> {
 }
 
 /**
- * NewConversation は新しい会話を作る。設定は「新しい会話の既定の設定」のコピー。
+ * NewConversation は新しい会話を作る。settings が null なら「新しい会話の既定の設定」のコピーで始まる。
+ * 画面は、新しい会話の画面で最初に送信するときに呼ぶ(空の会話を作らないため)。
  */
-export function NewConversation(): $CancellablePromise<aibow$0.Conversation> {
-    return $Call.ByID(1999326860);
+export function NewConversation(settings: aibow$0.ConversationSettings | null): $CancellablePromise<aibow$0.Conversation> {
+    return $Call.ByID(1999326860, settings);
 }
 
 /**

@@ -73,13 +73,18 @@ func (cs *Conversations) Get(id uuid.UUID) (Conversation, []StoredMessage, error
 	return cs.store.Conversation(id)
 }
 
-// Create は新しい会話を作る。設定は「新しい会話の既定の設定」をコピーする。
-// コピーなので、会話の中で設定を変えても既定やほかの会話には効かない。
-func (cs *Conversations) Create() (Conversation, error) {
+// Create は新しい会話を作る。settings が nil なら「新しい会話の既定の設定」をコピーする。
+// 画面は、新しい会話の画面で既定の写しを変えてから、最初の送信のときに settings を渡して作る。
+// どちらにしてもコピーなので、会話の中で設定を変えても既定やほかの会話には効かない。
+func (cs *Conversations) Create(settings *ConversationSettings) (Conversation, error) {
+	s := cs.Defaults()
+	if settings != nil {
+		s = *settings
+	}
 	now := time.Now()
 	c := Conversation{
 		ID:        uuid.NewV7(),
-		Settings:  cs.Defaults(),
+		Settings:  s,
 		CreatedAt: now,
 		UpdatedAt: now,
 	}

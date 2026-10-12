@@ -1,5 +1,6 @@
 // App.tsx: 画面全体。左に会話の一覧(ウィンドウの上から下まで。上のハンバーガーで開閉)、
 // 右に「タイトルバー(Frameless のため自前。開いている会話の名前)+ チャット(下に入力欄とモデルの選択)」。
+// 会話を開いていないとき(起動時・「+ 新規」)は、チャットの代わりに新しい会話の画面(入力欄が真ん中)を出す。
 // 右の設定パネルは一覧の下の「設定」で開閉する。
 //
 //	useTranscript    … 画面に並べる表示(吹き出し・メモ・エラー)
@@ -21,6 +22,7 @@ import { ModelBar } from "./components/ModelBar";
 import { TitleBar } from "./components/TitleBar";
 import { ConversationList } from "./components/ConversationList";
 import { ChatView } from "./components/ChatView";
+import { NewChat } from "./components/NewChat";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { Composer } from "./components/Composer";
 import { ImeFocusRelay } from "./imeFocus";
@@ -39,8 +41,8 @@ export default function App() {
   const chat = useChat(transcript, setBusy, convs);
   const app = useAppSettings(transcript, setBusy, models.reload);
 
-  // 起動時: 一番新しい会話を開いてから、モデルの一覧を取る。
-  // 会話を開くと表示が作り直されるので、「読み込み中…」のメモが消えないよう、この順にする。
+  // 起動時: 新しい会話の画面に移ってから、モデルの一覧を取る。
+  // 画面を移ると表示が作り直されるので、「読み込み中…」のメモが消えないよう、この順にする。
   // StrictMode では effect が2回呼ばれるので、1回だけにする(2回だと会話が2つ作られることがある)
   const started = useRef(false);
   useEffect(() => {
@@ -70,10 +72,11 @@ export default function App() {
   const currentId = convs.current?.conversation.id ?? null;
   const unavailable = busy === "unavailable";
 
-  // 「+ 新規」: 開いている会話がまだ空なら、新しく作らずにそれを使う(空の会話が一覧に並ばないように)
+  // 「+ 新規」: 新しい会話の画面に移る。会話そのものは、そこで最初に送信したときに作る
+  const home = convs.current === null;
   const onNew = () => {
-    if (!transcript.items.some(it => it.kind === "user")) return;
-    convs.create().catch(err => addError(errorMessage(err)));
+    if (home) return;
+    convs.goHome().catch(err => addError(errorMessage(err)));
   };
 
   // 送信できない理由。別の会話で生成中なら、会話を読むことはできるが送信はできない
@@ -82,6 +85,17 @@ export default function App() {
       : busy === "generating" ? "返事を生成中です"
         : busy === "loading" ? "モデルを読み込み中です"
           : undefined;
+
+  // 入力欄とモデルの選択。チャットの画面では下に、新しい会話の画面では真ん中に出す
+  const canSend = busy === "idle" && (convs.current !== null || convs.draft !== null);
+  const input = (
+    <>
+      <Composer canSend={canSend} blockedReason={blockedReason} home={home} onSend={chat.send} />
+      <ModelBar models={models} disabled={busy !== "idle"} />
+    </>
+  );
+  // 設定パネルの「この会話の設定」。新しい会話の画面では、これから作る会話の設定(既定の写し)
+  const settings = convs.current?.conversation.settings ?? convs.draft;
 
   // タイトルバーに出す名前は一覧から取る(名前の変更や最初の送信で付いたタイトルが、すぐ反映されるように)
   const title = convs.list.find(c => c.id === currentId)?.title || "新しい会話";
@@ -105,19 +119,18 @@ export default function App() {
       <div className="workspace">
         <TitleBar title={title} />
         <main>
-          <section className="center">
-            <ChatView items={transcript.items} onStop={chat.stop} />
-            <Composer
-              canSend={busy === "idle" && currentId !== null}
-              blockedReason={blockedReason}
-              onSend={chat.send}
-            />
-            <ModelBar models={models} disabled={busy !== "idle"} />
-          </section>
+          {home ? (
+            <NewChat items={transcript.items}>{input}</NewChat>
+          ) : (
+            <section className="center">
+              <ChatView items={transcript.items} onStop={chat.stop} />
+              {input}
+            </section>
+          )}
           {settingsOpen && <SettingsPanel
-            settings={convs.current?.conversation.settings ?? null}
+            settings={settings}
             onChange={convs.updateSettings}
-            onMakeDefault={() => convs.current && app.setDefaults(convs.current.conversation.settings)}
+            onMakeDefault={() => settings && app.setDefaults(settings)}
             app={app.settings}
             appDisabled={busy !== "idle"}
             onApplyApp={app.apply}

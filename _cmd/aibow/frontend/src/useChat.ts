@@ -32,7 +32,7 @@ export interface Chat {
 
 export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conversations): Chat {
   const { addUser, addError, addAssistant, updateAssistant, remove, reset } = t;
-  const { current, openCount, open, flushSettings, reloadList } = convs;
+  const { current, draft, openCount, open, adopt, flushSettings, reloadList } = convs;
   const [generatingId, setGeneratingId] = useState<string | null>(null);
   // モデルに渡した文字列は保存しないので、会話ごとにここで覚えておく(再起動すると消える)
   const [prompts, setPrompts] = useState<Record<string, string>>({});
@@ -41,6 +41,9 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
   const viewing = useRef<string | null>(null); // 表示している会話の ID
   // 生成中の呼び出し(stop() で停止できる)。生成中でなければ null
   const controller = useRef<{ stop(): void } | null>(null);
+  // 送信を受け付けてから生成が始まるまでの間に、もう一度送られないようにする
+  // (新しい会話の画面では、会話を作る分だけ間があく)
+  const starting = useRef(false);
   // 生成中の返事に chat イベントを渡す関数
   const listener = useRef<((ev: ChatEvent) => void) | null>(null);
 
@@ -50,8 +53,14 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
 
   // 会話を開いたら、保存された発言から表示を作り直す。
   // その会話で生成中なら、生成中の返事を末尾に足す(Go がまだ保存していないため)。
+  // 新しい会話の画面(current が null)に移ったときは、表示を空にする。
   useEffect(() => {
-    if (!current) return;
+    if (!current) {
+      viewing.current = null;
+      reset([]);
+      if (live.current) live.current.itemId = null;
+      return;
+    }
     const id = current.conversation.id;
     viewing.current = id;
     reset(messageItems(current.messages ?? []));
@@ -60,14 +69,32 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
     // 開くたびに増える openCount だけを見る(設定の変更で current が変わっても作り直さない)
   }, [openCount]);
 
-  const send = useCallback(async (text: string) => {
-    if (!current || controller.current) return;
-    const id = current.conversation.id;
-    try {
+  // target は送り先の会話の ID を決める。新しい会話の画面なら、ここで会話を作る。
+  const target = useCallback(async (): Promise<string> => {
+    if (current) {
       await flushSettings(); // 変えたばかりの設定を、送信より先に Go に届ける
+      return current.conversation.id;
+    }
+    // 新しい会話の画面: 画面で変えた設定(draft)で会話を作り、開いている会話にする。
+    // 表示は作り直さず(開き直すと、このあと足す吹き出しと順番が入れ替わることがある)、ここで空にする
+    const c = await ChatService.NewConversation(draft);
+    adopt(c);
+    viewing.current = c.id;
+    reset([]);
+    return c.id;
+  }, [current, draft, flushSettings, adopt, reset]);
+
+  const send = useCallback(async (text: string) => {
+    if (controller.current || starting.current) return;
+    starting.current = true;
+    let id: string;
+    try {
+      id = await target();
     } catch (err) {
-      addError(`設定を保存できません: ${errorMessage(err)}`);
+      addError(`送信できません: ${errorMessage(err)}`);
       return;
+    } finally {
+      starting.current = false;
     }
 
     addUser(text);
@@ -153,7 +180,7 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
     setGeneratingId(null);
     setBusy("idle");
     reloadList().catch(() => {}); // タイトルと並び順(更新の新しい順)が変わる
-  }, [current, flushSettings, open, reloadList, addUser, addError, addAssistant, updateAssistant, remove, setBusy]);
+  }, [target, open, reloadList, addUser, addError, addAssistant, updateAssistant, remove, setBusy]);
 
   const stop = useCallback(() => controller.current?.stop(), []);
 
