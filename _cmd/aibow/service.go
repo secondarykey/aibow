@@ -252,12 +252,13 @@ func (s *ChatService) Conversation(id uuid.UUID) (ConversationDetail, error) {
 	return ConversationDetail{Conversation: c, Messages: ms, Generating: g != nil && *g == id}, nil
 }
 
-// NewConversation は新しい会話を作る。設定は「新しい会話の既定の設定」のコピー。
-func (s *ChatService) NewConversation() (aibow.Conversation, error) {
+// NewConversation は新しい会話を作る。settings が null なら「新しい会話の既定の設定」のコピーで始まる。
+// 画面は、新しい会話の画面で最初に送信するときに呼ぶ(空の会話を作らないため)。
+func (s *ChatService) NewConversation(settings *aibow.ConversationSettings) (aibow.Conversation, error) {
 	if s.startupErr != nil {
 		return aibow.Conversation{}, s.startupErr
 	}
-	return s.convs.Create()
+	return s.convs.Create(settings)
 }
 
 // DeleteConversation は会話を消す。返事を生成中の会話は消せない。
