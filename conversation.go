@@ -1,6 +1,6 @@
 package aibow
 
-// conversation.go: 会話の仕組み。履歴の管理と、生成の呼び出し。
+// conversation.go: 会話の仕組み。履歴の管理と、生成の呼び出し(ツールを使うループは agent.go)。
 //
 // モデルは何も覚えていない(ステートレス)。毎回「これまでの会話を全部」1本の文字列にして読ませている。
 // 「記憶」に見えるものは、アプリがここで発言を保存し、次の送信のたびに並べ直しているだけ。
@@ -40,13 +40,16 @@ type Generator interface {
 //	prompt   : モデルに渡した文字列(学習用に画面に表示する)
 //	thinking : 思考の断片
 //	content  : 答えの断片
+//	reply    : 返事を1件保存した(Reply)。ツールを使うと1回の送信で何件も保存する(呼び出しは Reply.ToolCalls)
+//	tool_start  : ツールの実行を始めた(ToolCall)
+//	tool_result : ツールの結果を保存した(Message。role tool の発言)
 //	summarizing : 要約を作り始めた(compact の summary。返事の前か「今すぐ要約」)
 //	summary  : 要約の断片
 //	compact  : 会話の上限に収めるために compact した(方式・前後のトークン数・保存した要約など)。
 //	           要約に失敗したときも Compact.Error に理由を入れて送る
 //	usage    : メーターの値(モデルに渡す文字列のトークン数 / 会話の上限)。生成の前と、返事を保存したあとに送る
 //	error    : エラー
-//	done     : 終わり。必ず最後に1回だけ送る。保存した返事があれば Reply に入る
+//	done     : 終わり。必ず最後に1回だけ送る。保存した最後の返事があれば Reply に入る
 type ChatEvent struct {
 	ConversationID uuid.UUID      `json:"conversation_id"` // どの会話の送信か。画面は表示中の会話のものだけを出す
 	Type           string         `json:"type"`
@@ -56,6 +59,7 @@ type ChatEvent struct {
 	Message        *StoredMessage `json:"message,omitempty"`
 	Usage          *Usage         `json:"usage,omitempty"`
 	Compact        *CompactInfo   `json:"compact,omitempty"`
+	ToolCall       *ToolCall      `json:"tool_call,omitempty"`
 }
 
 // ErrGenerating は、別の送信の生成中に送信されたときのエラー。
@@ -65,6 +69,7 @@ var ErrGenerating = errors.New("別の会話で返事を生成中です。終わ
 type Conversations struct {
 	store Store
 	gen   Generator
+	tools []Tool // 「ツールを使う」が ON の会話で、モデルが使えるツール
 
 	// generating は生成中の会話の ID。生成していなければ nil。
 	// エンジン(作業領域)が1つしかないので、生成は同時に1つだけ。
@@ -88,7 +93,7 @@ type limits struct {
 // NewConversations は会話の仕組みを作る。app からは新しい会話の既定の設定と、会話の上限・返事の上限を使う。
 func NewConversations(store Store, gen Generator, app AppSettings) *Conversations {
 	return &Conversations{
-		store: store, gen: gen, defaults: app.Defaults.normalized(),
+		store: store, gen: gen, tools: BuiltinTools(), defaults: app.Defaults.normalized(),
 		limits: limits{history: app.Workspace.HistoryTokens, reply: app.Workspace.ReplyTokens},
 	}
 }
@@ -235,37 +240,11 @@ func (cs *Conversations) Send(ctx context.Context, id uuid.UUID, text string, em
 	}
 	emit(ChatEvent{ConversationID: id, Type: "user", Message: &user})
 
-	// 2. モデルに渡す内容を決める。会話の上限を超えていたら compact で収める(compact.go)。
-	// モデルに渡すのは、システムプロンプトと各発言の「答え」だけ
-	p, err := cs.prepare(ctx, conv, history, emit)
-	if err != nil {
-		if ctx.Err() == nil { // 止められた(アプリの終了など)ときは、エラーを出さずに終わる
-			fail(err)
-		}
-		return
-	}
-	cs.emitUsage(emit, id, p.usage(history, cs.currentLimits().history))
-
-	// 3. 生成する
-	r, err := cs.generate(ctx, conv, p.messages, emit)
+	// 2. 返事を生成して保存する。モデルに渡す内容は毎回、会話の上限に収めてから決める(compact.go)。
+	// ツールを呼んだら、実行して結果を渡し、ツールを呼ばなくなるまで生成を繰り返す(agent.go)
+	reply, err = cs.runTurn(ctx, conv, history, emit)
 	if err != nil {
 		fail(err)
-		return
-	}
-	if r == nil {
-		return // 何も生成されなかった(すぐに停止した、など)
-	}
-
-	// 4. 返事を保存する
-	if err := cs.save(*r, ""); err != nil {
-		fail(err)
-		return
-	}
-	reply = r
-
-	// 5. 返事が増えたあとのメーター。次の送信では、この返事もモデルに渡る
-	if u, err := cs.usage(conv, append(history, *r)); err == nil {
-		cs.emitUsage(emit, id, u)
 	}
 }
 
@@ -319,14 +298,14 @@ func (cs *Conversations) generate(ctx context.Context, conv Conversation, messag
 		}
 	}
 
-	out, err := cs.gen.Generate(ctx, Prompt{Messages: messages, Think: set.Think}, opt,
+	out, err := cs.gen.Generate(ctx, cs.promptFor(set, messages), opt,
 		func(p string) { emit(ChatEvent{ConversationID: conv.ID, Type: "prompt", Text: p}) },
 		onText("thinking"), onText("content"),
 	)
 	if err != nil {
 		return nil, err
 	}
-	if out.Thinking == "" && out.Content == "" {
+	if out.Thinking == "" && out.Content == "" && len(out.ToolCalls) == 0 {
 		return nil, nil
 	}
 	st := out.Stats
@@ -341,11 +320,11 @@ func (cs *Conversations) generate(ctx context.Context, conv Conversation, messag
 	}
 	m := &StoredMessage{
 		ID: uuid.NewV7(), ConversationID: conv.ID, Role: "assistant",
-		Content: out.Content, Thinking: out.Thinking,
+		Content: out.Content, Thinking: out.Thinking, ToolCalls: out.ToolCalls,
 		Model: model, Stats: stats, CreatedAt: now,
 	}
-	if m.Content == "" {
-		// 考えている途中で終わり、答えが出なかった場合。
+	if m.Content == "" && len(m.ToolCalls) == 0 {
+		// 考えている途中で終わり、答えが出なかった場合(ツールを呼んで答えが空なのは正常。ループの続きで答える)。
 		// 何も残さないと、モデルからは「質問に返事をしていない」ように見えるので、
 		// 何が起きたかを返事として残す(次の送信でもモデルに渡る)。
 		m.Content = noAnswerNote(st.StopReason)
@@ -373,9 +352,15 @@ func promptMessages(system, summary string, history []StoredMessage) []Message {
 		out = append(out, Message{Role: "system", Content: s})
 	}
 	for _, m := range history {
-		out = append(out, Message{Role: m.Role, Content: m.Content, Thinking: m.Thinking})
+		out = append(out, Message{Role: m.Role, Content: m.Content, Thinking: m.Thinking, ToolCalls: m.ToolCalls})
 	}
 	return out
+}
+
+// promptFor は、会話の設定でモデルに渡す内容(書式を当てる前の構造)を作る。
+// 「ツールを使う」が ON ならツールの定義も入れる。
+func (cs *Conversations) promptFor(set ConversationSettings, messages []Message) Prompt {
+	return Prompt{Messages: messages, Tools: toolDefs(cs.toolsFor(set)), Think: set.Think}
 }
 
 // noAnswerNote は、答えが出ないまま終わったときに答えの代わりに残す文。

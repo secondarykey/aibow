@@ -100,6 +100,8 @@ func loadConfig() (appConfig, error) {
 				Think:           true,
 				PresencePenalty: env.float("AIBOW_PRESENCE_PENALTY", 1.5),
 				Compact:         aibow.CompactSummary,
+				// 保存済みの既定にこの項目が無いとき(ツールの機能より前の版)も、この値が残るので ON になる
+				Tools: true,
 			},
 		},
 	}

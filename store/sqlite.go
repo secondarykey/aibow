@@ -102,6 +102,11 @@ CREATE TABLE compactions (
 );
 CREATE INDEX compactions_by_conversation ON compactions(conversation_id, id);
 `,
+	// 版 3: ツール呼び出し。発言の role に tool が増え、どちらも JSON で持つ(今までの発言は NULL)
+	`
+ALTER TABLE messages ADD COLUMN tool_calls TEXT;  -- assistant: その回のツール呼び出しの一覧(名前・引数)
+ALTER TABLE messages ADD COLUMN tool_result TEXT; -- tool: どの呼び出しの結果か・エラーか・かかった秒数(結果の文は content)
+`,
 }
 
 func migrate(db *sql.DB) error {
@@ -268,7 +273,7 @@ func (s *SQLite) DeleteConversation(id uuid.UUID) error {
 
 func (s *SQLite) messages(conv uuid.UUID) ([]aibow.StoredMessage, error) {
 	// UUIDv7 は先頭が作成時刻なので、ID の文字列順 = 作った順になる。順番用の列はいらない
-	rows, err := s.db.Query(`SELECT id, role, content, thinking, model, stats, created_at
+	rows, err := s.db.Query(`SELECT id, role, content, thinking, model, stats, tool_calls, tool_result, created_at
 		FROM messages WHERE conversation_id = ? ORDER BY id`, conv.String())
 	if err != nil {
 		return nil, err
@@ -278,8 +283,8 @@ func (s *SQLite) messages(conv uuid.UUID) ([]aibow.StoredMessage, error) {
 	for rows.Next() {
 		m := aibow.StoredMessage{ConversationID: conv}
 		var id, created string
-		var stats sql.NullString // NULL が入りうる列は Null〜 で受ける
-		if err := rows.Scan(&id, &m.Role, &m.Content, &m.Thinking, &m.Model, &stats, &created); err != nil {
+		var stats, calls, result sql.NullString // NULL が入りうる列は Null〜 で受ける
+		if err := rows.Scan(&id, &m.Role, &m.Content, &m.Thinking, &m.Model, &stats, &calls, &result, &created); err != nil {
 			return nil, err
 		}
 		if m.ID, err = parseID(id); err != nil {
@@ -294,24 +299,51 @@ func (s *SQLite) messages(conv uuid.UUID) ([]aibow.StoredMessage, error) {
 				return nil, fmt.Errorf("発言 %s の記録が読めません: %w", id, err)
 			}
 		}
+		if calls.Valid {
+			if err := json.Unmarshal([]byte(calls.String), &m.ToolCalls); err != nil {
+				return nil, fmt.Errorf("発言 %s のツール呼び出しが読めません: %w", id, err)
+			}
+		}
+		if result.Valid {
+			m.ToolResult = &aibow.ToolResult{}
+			if err := json.Unmarshal([]byte(result.String), m.ToolResult); err != nil {
+				return nil, fmt.Errorf("発言 %s のツールの結果が読めません: %w", id, err)
+			}
+		}
 		out = append(out, m)
 	}
 	return out, rows.Err()
 }
 
 func (s *SQLite) AddMessage(m aibow.StoredMessage) error {
-	var stats sql.NullString
-	if m.Stats != nil {
-		b, err := json.Marshal(m.Stats)
-		if err != nil {
-			return err
-		}
-		stats = sql.NullString{String: string(b), Valid: true}
+	stats, err := nullJSON(m.Stats, m.Stats == nil)
+	if err != nil {
+		return err
 	}
-	_, err := s.db.Exec(`INSERT INTO messages (id, conversation_id, role, content, thinking, model, stats, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		m.ID.String(), m.ConversationID.String(), m.Role, m.Content, m.Thinking, m.Model, stats, formatTime(m.CreatedAt))
+	calls, err := nullJSON(m.ToolCalls, len(m.ToolCalls) == 0)
+	if err != nil {
+		return err
+	}
+	result, err := nullJSON(m.ToolResult, m.ToolResult == nil)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`INSERT INTO messages (id, conversation_id, role, content, thinking, model, stats, tool_calls, tool_result, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		m.ID.String(), m.ConversationID.String(), m.Role, m.Content, m.Thinking, m.Model, stats, calls, result, formatTime(m.CreatedAt))
 	return err
+}
+
+// nullJSON は v を JSON にする。empty なら NULL(その発言には無い値)。
+func nullJSON(v any, empty bool) (sql.NullString, error) {
+	if empty {
+		return sql.NullString{}, nil
+	}
+	b, err := json.Marshal(v)
+	if err != nil {
+		return sql.NullString{}, err
+	}
+	return sql.NullString{String: string(b), Valid: true}, nil
 }
 
 // ---- 要約 -------------------------------------------------------------------------------

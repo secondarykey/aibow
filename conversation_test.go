@@ -28,14 +28,17 @@ type fakeGen struct {
 
 type fakeReply struct {
 	thinking, content, stopReason string
+	toolCalls                     []ToolCall // モデルが書いたツール呼び出し(書式から読み取った形)
 	err                           error
 	waitCancel                    bool // ctx がキャンセルされるまで待ち、停止された扱いで終わる
 }
 
 type fakeCall struct {
 	messages []Message
+	tools    []ToolDef
 	opt      GenerateOptions
 	think    bool
+	prompt   string // 書式を当てた文字列
 }
 
 // fakeGen の書式は本物と同じ Qwen3.5(トークン数を数えるとき、プロンプトを画面に渡すときに使う)
@@ -52,7 +55,7 @@ func (g *fakeGen) CountTokens(p Prompt) (int, error) {
 func (g *fakeGen) Generate(ctx context.Context, p Prompt, opt GenerateOptions,
 	onPrompt func(string), onThinking, onContent func(string)) (Output, error) {
 	g.gotMessages, g.gotOpt, g.gotThink = p.Messages, opt, p.Think
-	g.calls = append(g.calls, fakeCall{p.Messages, opt, p.Think})
+	g.calls = append(g.calls, fakeCall{p.Messages, p.Tools, opt, p.Think, testFormat.BuildPrompt(p)})
 	onPrompt(testFormat.BuildPrompt(p))
 	if g.block != nil {
 		<-g.block
@@ -78,7 +81,7 @@ func (g *fakeGen) Generate(ctx context.Context, p Prompt, opt GenerateOptions,
 	if reason == "" {
 		reason = "eos"
 	}
-	return Output{Thinking: r.thinking, Content: r.content, Stats: GenerateStats{GenTokens: 10, StopReason: reason}}, nil
+	return Output{Thinking: r.thinking, Content: r.content, ToolCalls: r.toolCalls, Stats: GenerateStats{GenTokens: 10, StopReason: reason}}, nil
 }
 
 // sameMessages は、モデルに渡した発言が want と同じかを返す。

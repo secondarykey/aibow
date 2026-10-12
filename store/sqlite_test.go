@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 	"uuid"
@@ -240,5 +241,72 @@ func TestMigrationFromVersion1(t *testing.T) {
 	s.db.QueryRow("SELECT count(*) FROM compactions").Scan(&n)
 	if n != 0 {
 		t.Errorf("会話を消しても要約が %d 件残っています", n)
+	}
+}
+
+// ツールの呼び出しと結果が、開き直しても同じように読めること
+func TestToolMessagesPersist(t *testing.T) {
+	s, path := openTemp(t)
+	c := newConv(t, s, time.Now())
+	call := aibow.ToolCall{Name: "calculate", Args: []aibow.ToolArg{{Name: "expression", Value: "7/2"}}}
+	broken := aibow.ToolCall{Raw: "<tool_call>?</tool_call>", Error: "書式が崩れています"}
+	reply := aibow.StoredMessage{ID: uuid.NewV7(), ConversationID: c.ID, Role: "assistant", ToolCalls: []aibow.ToolCall{call, broken}, CreatedAt: time.Now()}
+	result := aibow.StoredMessage{ID: uuid.NewV7(), ConversationID: c.ID, Role: "tool", Content: "3.5",
+		ToolResult: &aibow.ToolResult{Call: call, Sec: 0.01}, CreatedAt: time.Now()}
+	for _, m := range []aibow.StoredMessage{reply, result} {
+		if err := s.AddMessage(m); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s.Close()
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	_, ms, err := s.Conversation(c.ID)
+	if err != nil || len(ms) != 2 {
+		t.Fatalf("%+v %v", ms, err)
+	}
+	if !reflect.DeepEqual(ms[0].ToolCalls, reply.ToolCalls) || ms[0].ToolResult != nil {
+		t.Errorf("呼び出し: %+v / %+v", ms[0].ToolCalls, ms[0].ToolResult)
+	}
+	if ms[1].Content != "3.5" || ms[1].ToolResult == nil || !reflect.DeepEqual(*ms[1].ToolResult, *result.ToolResult) || ms[1].ToolCalls != nil {
+		t.Errorf("結果: %+v / %+v", ms[1], ms[1].ToolResult)
+	}
+}
+
+// 版 2 の DB(ツールの列が無い)を開くと列が足され、今までの発言はツールの情報なしで読めること
+func TestMigrationFromVersion2(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "v2.db")
+	db, err := sql.Open("sqlite", path+"?_pragma=foreign_keys(1)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(migrations[0] + migrations[1] + "PRAGMA user_version = 2;"); err != nil {
+		t.Fatal(err)
+	}
+	conv, msg := uuid.NewV7(), uuid.NewV7()
+	now := formatTime(time.Now())
+	if _, err := db.Exec(`INSERT INTO conversations VALUES (?, 't', '{"system":"","think":true,"compact":"summary"}', ?, ?)`, conv.String(), now, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO messages VALUES (?, ?, 'assistant', 'こんにちは', '', 'm', NULL, ?)`, msg.String(), conv.String(), now); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	c, ms, err := s.Conversation(conv)
+	if err != nil || len(ms) != 1 || ms[0].Content != "こんにちは" || ms[0].ToolCalls != nil || ms[0].ToolResult != nil {
+		t.Fatalf("今ある発言: %+v %v", ms, err)
+	}
+	if c.Settings.Tools {
+		t.Errorf("今ある会話の「ツールを使う」は OFF のまま: %+v", c.Settings)
 	}
 }

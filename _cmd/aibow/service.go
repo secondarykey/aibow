@@ -17,9 +17,12 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"sync/atomic"
+	"unicode/utf8"
 	"uuid"
 
 	"aibow"
@@ -389,12 +392,15 @@ func (s *ChatService) run(ctx context.Context, id uuid.UUID, f func(ctx context.
 			logCompact(ev.Compact)
 		case "error":
 			log.Printf("エラー: %s", ev.Error)
-		case "done":
+		case "reply":
+			// ツールを使うと1回の送信で何回も生成する。回ごとに出すと、KV キャッシュの再利用数の変化が見える
 			if r := ev.Reply; r != nil && r.Stats != nil {
 				st := r.Stats
-				log.Printf("プロンプト %d トークン(再利用 %d)%.2f 秒 / 生成 %d トークン %.2f 秒(%.1f tok/s)/ 終了理由: %s",
-					st.PromptTokens, st.ReusedTokens, st.PromptSec, st.GenTokens, st.GenSec, tokPerSec(st.GenerateStats), st.StopReason)
+				log.Printf("プロンプト %d トークン(再利用 %d)%.2f 秒 / 生成 %d トークン %.2f 秒(%.1f tok/s)/ 終了理由: %s / ツール呼び出し %d 件",
+					st.PromptTokens, st.ReusedTokens, st.PromptSec, st.GenTokens, st.GenSec, tokPerSec(st.GenerateStats), st.StopReason, len(r.ToolCalls))
 			}
+		case "tool_result":
+			logTool(ev.Message)
 		}
 		emit(ev)
 	})
@@ -405,6 +411,28 @@ func tokPerSec(st aibow.GenerateStats) float64 {
 		return 0
 	}
 	return float64(st.GenTokens) / st.GenSec
+}
+
+// logTool はツールの実行をログに出す(学習用: 名前・引数・結果の長さ・秒数・エラー)。
+// 書式が崩れていた呼び出しは、モデルが書いたままの文字列も出す(どう崩れたかを見るため)。
+func logTool(m *aibow.StoredMessage) {
+	r := m.ToolResult
+	if r == nil {
+		return
+	}
+	var args []string
+	for _, a := range r.Call.Args {
+		args = append(args, fmt.Sprintf("%s=%q", a.Name, a.Value))
+	}
+	status := "成功"
+	if r.Error {
+		status = m.Content
+	}
+	log.Printf("ツール %s(%s): 結果 %d 文字 / %.3f 秒 / %s", cmp.Or(r.Call.Name, "?"), strings.Join(args, ", "),
+		utf8.RuneCountInString(m.Content), r.Sec, status)
+	if r.Call.Raw != "" {
+		log.Printf("  モデルが書いた呼び出し: %q", r.Call.Raw)
+	}
 }
 
 // logCompact は compact したことをログに出す(学習用: 方式・前後のトークン数・かかった秒数)。

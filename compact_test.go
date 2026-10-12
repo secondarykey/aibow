@@ -184,7 +184,7 @@ func TestTruncateKeepsTheLatestMessage(t *testing.T) {
 	// 最新の発言だけで上限を超えるなら、保存も生成もせずにエラー
 	calls := len(g.calls)
 	evs := sendRaw(cs, c, long+"!")
-	if errs := errorsOf(evs); len(errs) != 1 || !strings.Contains(errs[0], "この発言だけで会話の上限を超えています") {
+	if errs := errorsOf(evs); len(errs) != 1 || !strings.Contains(errs[0], "今の発言(とツールの結果)だけで会話の上限を超えています") {
 		t.Errorf("エラー: %v", errs)
 	}
 	if len(g.calls) != calls {
@@ -298,7 +298,7 @@ func TestSummaryRunsBeforeTheReply(t *testing.T) {
 	for _, ev := range evs {
 		types = append(types, ev.Type)
 	}
-	if got := strings.Join(types, ","); !strings.HasPrefix(got, "user,summarizing,summary,compact,usage,prompt,content,usage") {
+	if got := strings.Join(types, ","); !strings.HasPrefix(got, "user,summarizing,summary,compact,usage,prompt,content,reply,usage") {
 		t.Errorf("イベントの順番: %s", got)
 	}
 	cp := compacts(evs)[0]

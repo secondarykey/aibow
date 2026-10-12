@@ -61,6 +61,9 @@ type ConversationSettings struct {
 	Think           bool    `json:"think"`            // 思考させるか
 	PresencePenalty float64 `json:"presence_penalty"` // 同じ言葉を繰り返しにくくする強さ。0 で無効
 	Compact         string  `json:"compact"`          // 会話の上限を超えたときの方式: none / truncate / summary
+	// Tools はツールを使うか。OFF ならツールの説明をプロンプトに入れない(説明だけで毎回 500 トークンほど増えるため、比べられるように)。
+	// この項目より前に保存された会話は値が無いので OFF のまま。新しい会話の既定は ON
+	Tools bool `json:"tools"`
 }
 
 // compact の方式(compact.go)
@@ -82,17 +85,30 @@ func (s ConversationSettings) normalized() ConversationSettings {
 
 // StoredMessage は保存された発言1件。
 //
-// モデルに渡すのは Role と Content だけ(prompt.go の Message)。
-// Thinking・Model・Stats は、画面で後から見返すために残している。
+// モデルに渡すのは Role・Content・Thinking・ToolCalls(format.go の Message)。思考をプロンプトに入れるかは書式が決める。
+// Model・Stats・ToolResult は、画面で後から見返すために残している。
+//
+// 1回の送信でツールを使うと、発言は次のように並ぶ(どれも1件ずつ保存する):
+//
+//	user → assistant(ToolCalls あり)→ tool → tool → assistant(ToolCalls あり)→ tool → assistant(答え)
 type StoredMessage struct {
 	ID             uuid.UUID   `json:"id"` // UUIDv7。発言の順番はこの並びで決まる
 	ConversationID uuid.UUID   `json:"conversation_id"`
-	Role           string      `json:"role"`     // system / user / assistant
-	Content        string      `json:"content"`  // 答え。答えが出なかった回は理由の文
-	Thinking       string      `json:"thinking"` // 思考。モデルには渡さない
-	Model          string      `json:"model"`    // どのモデルの返事か(assistant のみ)
-	Stats          *ReplyStats `json:"stats"`    // 生成の記録(assistant のみ)
+	Role           string      `json:"role"`                  // system / user / assistant / tool
+	Content        string      `json:"content"`               // 答え。答えが出なかった回は理由の文。tool はツールの結果の文
+	Thinking       string      `json:"thinking"`              // 思考
+	Model          string      `json:"model"`                 // どのモデルの返事か(assistant のみ)
+	Stats          *ReplyStats `json:"stats"`                 // 生成の記録(assistant のみ)
+	ToolCalls      []ToolCall  `json:"tool_calls,omitempty"`  // その回のツール呼び出し(assistant のみ)
+	ToolResult     *ToolResult `json:"tool_result,omitempty"` // どの呼び出しの結果か(tool のみ)
 	CreatedAt      time.Time   `json:"created_at"`
+}
+
+// ToolResult はツールの結果1件の記録(結果の文そのものは StoredMessage.Content)。
+type ToolResult struct {
+	Call  ToolCall `json:"call"`  // どの呼び出しの結果か(書式に依存しない形。名前・引数)
+	Error bool     `json:"error"` // エラーだったか(Content は「エラー: …」)
+	Sec   float64  `json:"sec"`   // 実行にかかった秒数
 }
 
 // Compaction は要約1件(compact の summary)。

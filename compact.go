@@ -63,9 +63,10 @@ func (p passing) usage(history []StoredMessage, limit int) Usage {
 	return u
 }
 
-// count は、発言の列にチャットテンプレートを当てた文字列(= 実際にモデルに渡す文字列)のトークン数を数える。
-func (cs *Conversations) count(messages []Message, think bool) (int, error) {
-	return cs.gen.CountTokens(Prompt{Messages: messages, Think: think})
+// count は、チャットテンプレートを当てた文字列(= 実際にモデルに渡す文字列)のトークン数を数える。
+// ツールを使う会話では、ツールの説明もシステムプロンプトに入るので、その分も数える。
+func (cs *Conversations) count(p Prompt) (int, error) {
+	return cs.gen.CountTokens(p)
 }
 
 // passFrom は、要約(nil なら無し)と history[first:] を渡すときの内容を組み立てて数える。
@@ -75,7 +76,7 @@ func (cs *Conversations) passFrom(set ConversationSettings, summary *Compaction,
 		text = summary.Summary
 	}
 	msgs := promptMessages(set.System, text, history[first:])
-	n, err := cs.count(msgs, set.Think)
+	n, err := cs.count(cs.promptFor(set, msgs))
 	return passing{summary: summary, first: first, messages: msgs, tokens: n}, err
 }
 
@@ -127,7 +128,9 @@ func (cs *Conversations) Compactions(id uuid.UUID) ([]Compaction, error) {
 // 収められないなら、発言を保存せず、生成もせずに止める(返事の無い質問を残さないため)。
 //
 //	none               : 全部をそのまま渡すので、全部が上限以下でないといけない
-//	truncate / summary : 最新の発言は必ず渡すので、それだけで上限を超えていたら収めようがない
+//	truncate / summary : 最新の組(最後のユーザーの発言から後ろ)は必ず渡すので、それだけで上限を超えていたら収めようがない
+//
+// ツールを使う送信では、2回目からの生成の前にも呼ぶ(ツールの結果で、最新の組が伸びていくため)。
 func (cs *Conversations) checkFits(set ConversationSettings, history []StoredMessage) error {
 	limit := cs.currentLimits().history
 	if set.Compact == CompactNone {
@@ -141,12 +144,12 @@ func (cs *Conversations) checkFits(set ConversationSettings, history []StoredMes
 		}
 		return nil
 	}
-	p, err := cs.passFrom(set, nil, history, len(history)-1)
+	p, err := cs.passFrom(set, nil, history, lastUser(history))
 	if err != nil {
 		return err
 	}
 	if p.tokens > limit {
-		return fmt.Errorf("この発言だけで会話の上限を超えています(システムプロンプト込みで %d / %d トークン)。"+
+		return fmt.Errorf("今の発言(とツールの結果)だけで会話の上限を超えています(システムプロンプト込みで %d / %d トークン)。"+
 			"発言を短くするか、アプリ全体の設定で会話の上限を増やしてください", p.tokens, limit)
 	}
 	return nil
@@ -203,6 +206,16 @@ func turnStarts(history []StoredMessage, from int) []int {
 		}
 	}
 	return out
+}
+
+// lastUser は最後のユーザーの発言の位置。無ければ 0。
+func lastUser(history []StoredMessage) int {
+	for i := len(history) - 1; i >= 0; i-- {
+		if history[i].Role == "user" {
+			return i
+		}
+	}
+	return 0
 }
 
 // firstFitting は、starts の中で fits が true になる一番前の位置(starts の添字)を返す。無ければ -1。
@@ -339,13 +352,49 @@ func summaryMessages(prev string, part []StoredMessage) []Message {
 	}
 	b.WriteString("\n\n## その続きの会話\n")
 	for _, m := range part {
-		who := "ユーザー"
-		if m.Role == "assistant" {
-			who = "アシスタント"
+		switch m.Role {
+		case "user":
+			fmt.Fprintf(&b, "ユーザー: %s\n", m.Content)
+		case "assistant":
+			if m.Content != "" {
+				fmt.Fprintf(&b, "アシスタント: %s\n", m.Content)
+			}
+			for _, c := range m.ToolCalls {
+				fmt.Fprintf(&b, "アシスタント: (ツール %s を呼んだ%s)\n", c.Name, argsText(c.Args))
+			}
+		case "tool":
+			name := ""
+			if m.ToolResult != nil {
+				name = m.ToolResult.Call.Name
+			}
+			fmt.Fprintf(&b, "ツールの結果(%s): %s\n", name, headRunes(m.Content, summaryToolResultRunes))
 		}
-		fmt.Fprintf(&b, "%s: %s\n", who, m.Content)
 	}
 	return []Message{{Role: "system", Content: summaryInstruction}, {Role: "user", Content: b.String()}}
+}
+
+// summaryToolResultRunes は、要約に渡すツールの結果・引数の長さ(文字数)。長いものは先頭だけにする
+const summaryToolResultRunes = 200
+
+// argsText は要約に渡す引数の文。例: 「: expression=1234 * 5678」
+func argsText(args []ToolArg) string {
+	var parts []string
+	for _, a := range args {
+		parts = append(parts, a.Name+"="+headRunes(a.Value, summaryToolResultRunes))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return ": " + strings.Join(parts, ", ")
+}
+
+// headRunes は s の先頭 n 文字。切ったときは「…」を付ける。
+func headRunes(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n]) + "…"
 }
 
 // summarize は、まだ要約に入っていない古い発言を、前回の要約と一緒に要約し直して保存する(要約を積み重ねる)。
@@ -414,7 +463,7 @@ func (cs *Conversations) summaryEnd(history []StoredMessage, prev *Compaction, f
 		prevText = prev.Summary
 	}
 	fits := func(end int) (bool, error) {
-		n, err := cs.count(summaryMessages(prevText, history[from:end]), false)
+		n, err := cs.count(Prompt{Messages: summaryMessages(prevText, history[from:end])})
 		return n <= budget, err
 	}
 	// 候補は from より後ろの組の始まりと keep。長くなるほど収まりにくいので、後ろから二分探索する
