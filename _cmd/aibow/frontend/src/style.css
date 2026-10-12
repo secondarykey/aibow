@@ -10,6 +10,13 @@
     --code: #2a2b2f; --error: #ff8a80;
   }
 }
+/* --edge-gap: ウィンドウの右端に接してスクロールする場所(.chat / .settings-view)の、スクロールバーの外側に空ける幅。
+   Frameless のウィンドウは、画面のランタイム(@wailsio/runtime)が「マウスがウィンドウの端から数 px 以内か」を見てリサイズする。
+   その幅は Windows の SM_CXSIZEFRAME(100% で 4px 前後、拡大表示ではもっと広い)。要素のスクロールバーが端に接していると、
+   スクロールバーがマウスを受け取ってしまい、リサイズのカーソルが出ず、端をつかめない
+   (ランタイムがずらしてくれるのは、ページ全体のスクロールバーだけ)。
+   透明な枠線(border)はスクロールバーの外側に付き、背景は枠線の下まで塗られるので、見た目を変えずにスクロールバーを内側へ寄せられる */
+:root { --edge-gap: 8px; }
 * { box-sizing: border-box; }
 body {
   margin: 0; background: var(--bg); color: var(--text);
@@ -73,7 +80,7 @@ button:disabled { opacity: .5; cursor: default; }
 
 main { flex: 1; display: flex; min-height: 0; }
 .center { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-.chat { flex: 1; overflow-y: auto; padding: 16px; }
+.chat { flex: 1; overflow-y: auto; padding: 16px; border-right: var(--edge-gap) solid transparent; }
 
 /* 新しい会話の画面: 入力欄を真ん中より少し上に置く */
 .center.home { justify-content: center; padding-bottom: 12vh; }
@@ -178,7 +185,10 @@ nav.conversations.collapsed .settings.active { color: var(--accent); }
 .conversation button.danger { color: #fff; background: var(--error); border-color: var(--error); }
 
 /* 設定の画面: チャットの代わりに会話の場所に出す。中身はチャットと同じく真ん中の列にそろえる */
-.settings-view { flex: 1; min-width: 0; overflow-y: auto; background: var(--panel); font-size: 13px; }
+.settings-view {
+  flex: 1; min-width: 0; overflow-y: auto; background: var(--panel); font-size: 13px;
+  border-right: var(--edge-gap) solid transparent;
+}
 .settings-inner { max-width: 720px; margin: 0 auto; padding: 16px 16px 32px; }
 .settings-header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
 .settings-header h1 { font-size: 16px; margin: 0; flex: 1; }

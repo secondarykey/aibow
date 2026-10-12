@@ -67,7 +67,10 @@ Ollama のサーバーや API は使わない。Ollama のモデルの一部は 
 - 起動時と「+ 新規」は新しい会話の画面(`NewChat.tsx`、入力欄が真ん中)。会話はそこで最初に送信したときに作る(`ChatService.NewConversation(settings)`。空の会話を作らない)
 - 起動時のモデルはウィンドウを出してから裏で読み込み、終わったら `models` イベントで画面に知らせる
 - ウィンドウは Frameless。ドラッグできる場所は CSS の `--wails-draggable: drag`(`.titlebar`)、ボタンは `no-drag`。`main.tsx` で `@wailsio/runtime` を import しておく(ドラッグとリサイズはランタイムがページ全体のマウス操作を見て行う)。
-  リサイズの判定はマウスの座標だけで行われるので、ルート要素に余白は要らない(wails3 スキルの「5px の余白が必須」は beta.26 では不要)
+  リサイズの判定はマウスの座標だけで行われるので、ルート要素に余白は要らない(wails3 スキルの「5px の余白が必須」は beta.26 では不要)。
+  ただし、ウィンドウの端に接してスクロールする要素(`.chat` / `.settings-view`)は、スクロールバーが端の数 px(Windows の SM_CXSIZEFRAME)の
+  マウスを受け取ってリサイズできなくなる(ランタイムがずらすのはページ全体のスクロールバーだけ)。
+  透明な枠線 `border-right: var(--edge-gap) solid transparent` でスクロールバーを内側に寄せる。端に接してスクロールする要素を足したら同じようにする
 - Windows の WebView2 は、別のウィンドウから戻ると IME(日本語入力)が効かなくなることがある。Go が `events.Windows.WindowSetFocus` で
   `aibow:window:focus` を送り、画面の `imeFocus.tsx` が見えない input を経由して入力欄にフォーカスを付け直す(同じ要素への blur → focus では直らない)。
   IME 変換中・ボタンにフォーカスがあるときは触らない。新しい入力欄を足しても、テキスト入力なら自動で対象になる
