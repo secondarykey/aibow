@@ -34,7 +34,12 @@ export function ChatView({ items, firstId, conversationId, onStop }: {
         {items.map(it => {
           switch (it.kind) {
             case "user":
-              return <div key={it.id} className={"msg user" + faded(it.msgId)} title={fadedTitle(it.msgId)}>{it.text}</div>;
+              return (
+                <div key={it.id} className="user-turn">
+                  <div className={"msg user" + faded(it.msgId)} title={fadedTitle(it.msgId)}>{it.text}</div>
+                  <UserActions text={it.text} createdAt={it.createdAt} />
+                </div>
+              );
             case "error":
               return <div key={it.id} className="msg error">{it.text}</div>;
             case "divider":
@@ -83,7 +88,7 @@ function ReplyActions({ content, stats, createdAt }: { content: string; stats?: 
     <>
       <div className="reply-actions">
         {content && <CopyButton text={content} />}
-        {createdAt && <ReplyTime createdAt={createdAt} />}
+        {createdAt && <MessageTime createdAt={createdAt} />}
         {stats && (
           <button className="reply-action" onClick={() => setOpen(o => !o)} aria-expanded={open} title="モデル名・速さ・トークン数など">
             {open ? <LuChevronDown /> : <LuChevronRight />} 詳細
@@ -95,14 +100,24 @@ function ReplyActions({ content, stats, createdAt }: { content: string; stats?: 
   );
 }
 
-// 返事の時刻。ふだんは今からどれくらい前か(「3分前」「2時間前」「4日前」)で出し、マウスを乗せると実際の時刻を秒まで出す。
+// 発言の下の行: 時刻とコピー。発言と同じく右に寄せる(返事の側とは並びを逆にして「時刻 コピー」)
+function UserActions({ text, createdAt }: { text: string; createdAt?: string }) {
+  return (
+    <div className="user-actions">
+      {createdAt && <MessageTime createdAt={createdAt} />}
+      <CopyButton text={text} />
+    </div>
+  );
+}
+
+// 発言と返事の時刻。ふだんは今からどれくらい前か(「3分前」「2時間前」「4日前」)で出し、マウスを乗せると実際の時刻を秒まで出す。
 // 5日以上前は「前」で数えても分かりにくいので、日時(「2025/10/12 14:05」)で出す。
 // 開いたままでも「たった今」→「1分前」と進むよう、30 秒ごとに描き直す
-function ReplyTime({ createdAt }: { createdAt: string }) {
+function MessageTime({ createdAt }: { createdAt: string }) {
   const now = useNow(30_000);
   const t = new Date(createdAt);
   if (Number.isNaN(t.getTime())) return null;
-  return <span className="reply-time" title={formatDateTime(t, true)}>{ago(t, now)}</span>;
+  return <span className="msg-time" title={formatDateTime(t, true)}>{ago(t, now)}</span>;
 }
 
 function useNow(intervalMs: number): Date {

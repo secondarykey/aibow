@@ -25,10 +25,11 @@ export interface AssistantView {
 }
 
 // msgId は保存された発言の ID(UUIDv7。文字列の順 = 作った順)。モデルに渡していない発言を薄く表示するのに使う。
-// 送信した発言と返事には、Go が保存したときに付ける(user イベントと done の reply)
+// 送信した発言と返事には、Go が保存したときに付ける(user イベントと done の reply)。
+// createdAt は保存した時刻(Go の time.Time が RFC 3339 の文字列で届く)。発言の下と返事の最後に「N分前」で出す
 // divider は要約した位置の区切り。開くと要約の文が読める
 export type Item =
-  | { id: number; kind: "user"; text: string; msgId?: string }
+  | { id: number; kind: "user"; text: string; msgId?: string; createdAt?: string }
   | { id: number; kind: "error"; text: string }
   | { id: number; kind: "divider"; compaction: Compaction }
   | ({ id: number; kind: "assistant"; msgId?: string } & AssistantView);
@@ -43,7 +44,8 @@ export interface Transcript {
   addError(text: string): void;
   addAssistant(view?: Partial<AssistantView>): number; // 追加した返事の id を返す
   updateAssistant(id: number, patch: Partial<AssistantView>): void;
-  setMsgId(id: number, msgId: string): void; // 送信した発言・返事が保存されたら、保存された ID を付ける(薄い表示に使う)
+  // 送信した発言・返事が保存されたら、保存された ID(薄い表示に使う)と時刻を付ける
+  setSaved(id: number, m: Pick<StoredMessage, "id" | "created_at">): void;
   remove(id: number): void;
   reset(items: NewItem[]): void; // 別の会話を開いたときに、表示を丸ごと入れ替える
 }
@@ -69,8 +71,10 @@ export function useTranscript(): Transcript {
     updateAssistant: useCallback((id, patch) => {
       setItems(prev => prev.map(it => (it.id === id && it.kind === "assistant" ? { ...it, ...patch } : it)));
     }, []),
-    setMsgId: useCallback((id, msgId) => {
-      setItems(prev => prev.map(it => (it.id === id && (it.kind === "user" || it.kind === "assistant") ? { ...it, msgId } : it)));
+    setSaved: useCallback((id, m) => {
+      setItems(prev => prev.map(it => (
+        it.id === id && (it.kind === "user" || it.kind === "assistant") ? { ...it, msgId: m.id, createdAt: m.created_at } : it
+      )));
     }, []),
     remove: useCallback(id => setItems(prev => prev.filter(it => it.id !== id)), []),
     reset: useCallback(newItems => {
@@ -125,7 +129,7 @@ export function messageItems(messages: StoredMessage[], compactions: Compaction[
   for (const m of messages) {
     out.push(m.role === "assistant"
       ? { kind: "assistant", msgId: m.id, ...replyView(m) }
-      : { kind: "user", text: m.content, msgId: m.id });
+      : { kind: "user", text: m.content, msgId: m.id, createdAt: m.created_at });
     for (const c of compactions) {
       if (c.upto_message_id === m.id) out.push({ kind: "divider", compaction: c });
     }

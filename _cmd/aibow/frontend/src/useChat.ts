@@ -35,7 +35,7 @@ export interface Chat {
 }
 
 export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conversations): Chat {
-  const { addUser, addError, addAssistant, updateAssistant, setMsgId, remove, reset } = t;
+  const { addUser, addError, addAssistant, updateAssistant, setSaved, remove, reset } = t;
   const { current, draft, openCount, open, adopt, flushSettings, reloadList, setUsage } = convs;
   const [generatingId, setGeneratingId] = useState<string | null>(null);
   // モデルに渡した文字列は保存しないので、会話ごとにここで覚えておく(再起動すると消える)
@@ -119,7 +119,7 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
       if (l.itemId !== null) {
         if (reply) {
           updateAssistant(l.itemId, replyView(reply));
-          setMsgId(l.itemId, reply.id);
+          setSaved(l.itemId, reply);
         } else remove(l.itemId); // 何も生成されなかった(今すぐ要約もここ)
       } else if (reply && viewing.current === id) {
         // 会話を開き直している最中に終わった。保存された返事が読めるように開き直す
@@ -141,8 +141,9 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
           finish();
           return;
         case "user":
-          // 送信した発言が保存された。ID を付けておくと、あとで truncate や要約で外れたときに薄く表示できる
-          if (l.userItemId !== null && ev.message) setMsgId(l.userItemId, ev.message.id);
+          // 送信した発言が保存された。ID を付けておくと、あとで truncate や要約で外れたときに薄く表示できる。
+          // 発言の下の時刻も、保存した時刻(Go の時計)で出す
+          if (l.userItemId !== null && ev.message) setSaved(l.userItemId, ev.message);
           return;
         case "prompt":
           // prompt が届いた時点で、Go はユーザーの発言とタイトルを保存し終えている。一覧のタイトルを先に更新する
@@ -216,7 +217,7 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
     setGeneratingId(null);
     setBusy("idle");
     reloadList().catch(() => {}); // タイトルと並び順(更新の新しい順)が変わる
-  }, [open, reloadList, setUsage, addError, addAssistant, updateAssistant, setMsgId, remove, setBusy]);
+  }, [open, reloadList, setUsage, addError, addAssistant, updateAssistant, setSaved, remove, setBusy]);
 
   const send = useCallback(async (text: string) => {
     if (controller.current || starting.current) return;
