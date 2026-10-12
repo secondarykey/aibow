@@ -1,7 +1,7 @@
 // 会話の表示: 吹き出し・エラー・要約の区切り
-import { useEffect, useState } from "react";
-import { Clipboard } from "@wailsio/runtime";
-import { LuCheck, LuChevronDown, LuChevronRight, LuCopy } from "react-icons/lu";
+import { useState } from "react";
+import { LuChevronDown, LuChevronRight } from "react-icons/lu";
+import { CopyButton } from "./CopyButton";
 import type { Compaction } from "../../bindings/aibow";
 import { compactionStats } from "../transcript";
 import type { AssistantView, Item } from "../transcript";
@@ -80,7 +80,7 @@ function ReplyActions({ content, stats }: { content: string; stats?: string }) {
   return (
     <>
       <div className="reply-actions">
-        {content && <CopyButton text={content} />}
+        {content && <CopyButton text={content} title="答えの文をコピーする(思考は含めない)" />}
         {stats && (
           <button className="reply-action" onClick={() => setOpen(o => !o)} aria-expanded={open} title="モデル名・速さ・トークン数など">
             {open ? <LuChevronDown /> : <LuChevronRight />} 詳細
@@ -89,31 +89,6 @@ function ReplyActions({ content, stats }: { content: string; stats?: string }) {
       </div>
       {open && stats && <div className="stats">{stats}</div>}
     </>
-  );
-}
-
-// 答えの文をクリップボードにコピーする(思考は含めない)。押したら少しの間「コピーしました」にする。
-// まずブラウザの navigator.clipboard を使う(WebView2 の画面は http://wails.localhost で、安全な場所として扱われるので使える)。
-// 使えなかったときは、Wails のランタイムの Clipboard.SetText(Go 側で OS のクリップボードに書く)を使う
-function CopyButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
-  useEffect(() => {
-    if (!copied) return;
-    const timer = window.setTimeout(() => setCopied(false), 1500);
-    return () => window.clearTimeout(timer);
-  }, [copied]);
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch {
-      await Clipboard.SetText(text);
-    }
-    setCopied(true);
-  };
-  return (
-    <button className="reply-action" onClick={() => copy().catch(() => {})} title="答えの文をコピーする(思考は含めない)">
-      {copied ? <><LuCheck /> コピーしました</> : <><LuCopy /> コピー</>}
-    </button>
   );
 }
 
