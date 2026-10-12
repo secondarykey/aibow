@@ -20,6 +20,7 @@ export interface AppSettings {
 /**
  * ChatEvent は送信の途中経過。Send がコールバックで1つずつ渡す。
  * 
+ * 	user     : ユーザーの発言を保存した(Message に保存した発言。画面は ID を表示に付けて、薄い表示に使う)
  * 	prompt   : モデルに渡した文字列(学習用に画面に表示する)
  * 	thinking : 思考の断片
  * 	content  : 答えの断片
@@ -40,6 +41,7 @@ export interface ChatEvent {
     "text"?: string;
     "error"?: string;
     "reply"?: StoredMessage | null;
+    "message"?: StoredMessage | null;
     "usage"?: Usage | null;
     "compact"?: CompactInfo | null;
 }

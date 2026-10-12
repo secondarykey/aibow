@@ -20,6 +20,7 @@ const secSince = (t: number) => Math.round((performance.now() - t) / 1000);
 interface Live {
   convId: string;
   itemId: number | null; // 表示している吹き出しの id。その会話を表示していなければ null
+  userItemId: number | null; // 送信した発言の表示の id(会話を開き直したら、保存された発言から作り直すので null)
   view: AssistantView;
   thinkStart: number;
 }
@@ -33,7 +34,7 @@ export interface Chat {
 }
 
 export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conversations): Chat {
-  const { addUser, addError, addAssistant, updateAssistant, remove, reset } = t;
+  const { addUser, addError, addAssistant, updateAssistant, setMsgId, remove, reset } = t;
   const { current, draft, openCount, open, adopt, flushSettings, reloadList, setUsage } = convs;
   const [generatingId, setGeneratingId] = useState<string | null>(null);
   // モデルに渡した文字列は保存しないので、会話ごとにここで覚えておく(再起動すると消える)
@@ -67,7 +68,10 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
     viewing.current = id;
     reset(messageItems(current.messages ?? [], current.compactions ?? []));
     const l = live.current;
-    if (l) l.itemId = l.convId === id && current.generating ? addAssistant(l.view) : null;
+    if (l) {
+      l.itemId = l.convId === id && current.generating ? addAssistant(l.view) : null;
+      l.userItemId = null;
+    }
     // 開くたびに増える openCount だけを見る(設定の変更で current が変わっても作り直さない)
   }, [openCount]);
 
@@ -88,9 +92,9 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
 
   // run は送信と「今すぐ要約」の共通部分。生成中の吹き出しを出し、chat イベントで書き換え、done で終わる。
   // manual は「今すぐ要約」(返事は生成しない。終わったら吹き出しを消して、区切りが出るように開き直す)
-  const run = useCallback(async (id: string, start: () => CancellablePromise<void>, manual: boolean) => {
+  const run = useCallback(async (id: string, start: () => CancellablePromise<void>, manual: boolean, userItemId: number | null) => {
     const l: Live = {
-      convId: id, itemId: null, thinkStart: 0,
+      convId: id, itemId: null, userItemId, thinkStart: 0,
       view: { generating: true, waiting: true, thinking: "", thinkLabel: "", content: "", summarizing: manual, summary: "" },
     };
     l.itemId = addAssistant(l.view);
@@ -112,8 +116,10 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
     // 終わったら、Go が保存した返事で吹き出しを置き換える(統計や「思考の過程(N秒)」も付く)
     const done = (reply: StoredMessage | null) => {
       if (l.itemId !== null) {
-        if (reply) updateAssistant(l.itemId, replyView(reply));
-        else remove(l.itemId); // 何も生成されなかった(今すぐ要約もここ)
+        if (reply) {
+          updateAssistant(l.itemId, replyView(reply));
+          setMsgId(l.itemId, reply.id);
+        } else remove(l.itemId); // 何も生成されなかった(今すぐ要約もここ)
       } else if (reply && viewing.current === id) {
         // 会話を開き直している最中に終わった。保存された返事が読めるように開き直す
         open(id).catch(() => {});
@@ -132,6 +138,10 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
           live.current = null; // 開き直しても、もう生成中の吹き出しは足さない
           if (manual && compacted) reopen();
           finish();
+          return;
+        case "user":
+          // 送信した発言が保存された。ID を付けておくと、あとで truncate や要約で外れたときに薄く表示できる
+          if (l.userItemId !== null && ev.message) setMsgId(l.userItemId, ev.message.id);
           return;
         case "prompt":
           // prompt が届いた時点で、Go はユーザーの発言とタイトルを保存し終えている。一覧のタイトルを先に更新する
@@ -205,7 +215,7 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
     setGeneratingId(null);
     setBusy("idle");
     reloadList().catch(() => {}); // タイトルと並び順(更新の新しい順)が変わる
-  }, [open, reloadList, setUsage, addError, addAssistant, updateAssistant, remove, setBusy]);
+  }, [open, reloadList, setUsage, addError, addAssistant, updateAssistant, setMsgId, remove, setBusy]);
 
   const send = useCallback(async (text: string) => {
     if (controller.current || starting.current) return;
@@ -219,14 +229,14 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
     } finally {
       starting.current = false;
     }
-    addUser(text);
-    await run(id, () => ChatService.Send(id, text), false);
+    const userItemId = addUser(text);
+    await run(id, () => ChatService.Send(id, text), false, userItemId);
   }, [target, run, addUser, addError]);
 
   const compact = useCallback(async () => {
     if (controller.current || starting.current || !current) return;
     const id = current.conversation.id;
-    await run(id, () => ChatService.Compact(id), true);
+    await run(id, () => ChatService.Compact(id), true, null);
   }, [current, run]);
 
   const stop = useCallback(() => controller.current?.stop(), []);

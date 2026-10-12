@@ -32,6 +32,7 @@ type Generator interface {
 
 // ChatEvent は送信の途中経過。Send がコールバックで1つずつ渡す。
 //
+//	user     : ユーザーの発言を保存した(Message に保存した発言。画面は ID を表示に付けて、薄い表示に使う)
 //	prompt   : モデルに渡した文字列(学習用に画面に表示する)
 //	thinking : 思考の断片
 //	content  : 答えの断片
@@ -48,6 +49,7 @@ type ChatEvent struct {
 	Text           string         `json:"text,omitempty"`
 	Error          string         `json:"error,omitempty"`
 	Reply          *StoredMessage `json:"reply,omitempty"`
+	Message        *StoredMessage `json:"message,omitempty"`
 	Usage          *Usage         `json:"usage,omitempty"`
 	Compact        *CompactInfo   `json:"compact,omitempty"`
 }
@@ -227,6 +229,7 @@ func (cs *Conversations) Send(ctx context.Context, id uuid.UUID, text string, em
 		fail(err)
 		return
 	}
+	emit(ChatEvent{ConversationID: id, Type: "user", Message: &user})
 
 	// 2. モデルに渡す内容を決める。会話の上限を超えていたら compact で収める(compact.go)。
 	// モデルに渡すのは、システムプロンプトと各発言の「答え」だけ

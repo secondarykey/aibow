@@ -51,6 +51,10 @@ func TestUsageCountsThePromptWithTemplate(t *testing.T) {
 	if got.FirstID == nil || *got.FirstID != ms[0].ID {
 		t.Errorf("全部渡しているので、最初の発言から: %+v", got)
 	}
+	// 保存したユーザーの発言は user イベントで届く(画面は ID を表示に付けて、薄い表示に使う)
+	if evs[0].Type != "user" || evs[0].Message == nil || evs[0].Message.ID != ms[0].ID {
+		t.Errorf("user イベント: %+v", evs[0])
+	}
 	// 思考の ON/OFF でプロンプトの末尾が変わるので、トークン数も変わる
 	set := c.Settings
 	set.Think = false
@@ -299,7 +303,7 @@ func TestSummaryRunsBeforeTheReply(t *testing.T) {
 	for _, ev := range evs {
 		types = append(types, ev.Type)
 	}
-	if got := strings.Join(types, ","); !strings.HasPrefix(got, "summarizing,summary,compact,usage,prompt,content,usage") {
+	if got := strings.Join(types, ","); !strings.HasPrefix(got, "user,summarizing,summary,compact,usage,prompt,content,usage") {
 		t.Errorf("イベントの順番: %s", got)
 	}
 	cp := compacts(evs)[0]

@@ -24,7 +24,7 @@ export interface AssistantView {
 }
 
 // msgId は保存された発言の ID(UUIDv7。文字列の順 = 作った順)。モデルに渡していない発言を薄く表示するのに使う。
-// 送信したばかりで、まだ会話を開き直していない発言には無い(最新の発言は必ずモデルに渡るので困らない)
+// 送信した発言と返事には、Go が保存したときに付ける(user イベントと done の reply)
 // divider は要約した位置の区切り。開くと要約の文が読める
 export type Item =
   | { id: number; kind: "user"; text: string; msgId?: string }
@@ -38,10 +38,11 @@ export type NewItem = DistributiveOmit<Item, "id">;
 
 export interface Transcript {
   items: Item[];
-  addUser(text: string): void;
+  addUser(text: string): number; // 追加した発言の id を返す
   addError(text: string): void;
   addAssistant(view?: Partial<AssistantView>): number; // 追加した返事の id を返す
   updateAssistant(id: number, patch: Partial<AssistantView>): void;
+  setMsgId(id: number, msgId: string): void; // 送信した発言・返事が保存されたら、保存された ID を付ける(薄い表示に使う)
   remove(id: number): void;
   reset(items: NewItem[]): void; // 別の会話を開いたときに、表示を丸ごと入れ替える
 }
@@ -58,7 +59,7 @@ export function useTranscript(): Transcript {
 
   return {
     items,
-    addUser: useCallback(text => { add({ kind: "user", text }); }, [add]),
+    addUser: useCallback(text => add({ kind: "user", text }), [add]),
     addError: useCallback(text => { add({ kind: "error", text }); }, [add]),
     addAssistant: useCallback(
       view => add({ kind: "assistant", waiting: true, thinking: "", thinkLabel: "", content: "", ...view }),
@@ -66,6 +67,9 @@ export function useTranscript(): Transcript {
     ),
     updateAssistant: useCallback((id, patch) => {
       setItems(prev => prev.map(it => (it.id === id && it.kind === "assistant" ? { ...it, ...patch } : it)));
+    }, []),
+    setMsgId: useCallback((id, msgId) => {
+      setItems(prev => prev.map(it => (it.id === id && (it.kind === "user" || it.kind === "assistant") ? { ...it, msgId } : it)));
     }, []),
     remove: useCallback(id => setItems(prev => prev.filter(it => it.id !== id)), []),
     reset: useCallback(newItems => {
