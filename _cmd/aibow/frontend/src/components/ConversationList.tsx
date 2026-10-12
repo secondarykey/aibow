@@ -1,8 +1,10 @@
 // 左側: 会話の一覧(更新の新しい順)。新規作成・切り替え・名前の変更・削除。下に設定パネルの開閉ボタン。
-// タイトルバーのハンバーガーで一覧を畳める。畳んだときもアイコンだけの細い列を残し、新規と設定は押せるようにする
+// ウィンドウの上から下までの列。上のハンバーガーで一覧を畳める。畳んだときもアイコンだけの細い列を残し、
+// ハンバーガー・新規・設定はそこに集める。上の空いているところはタイトルバーと同じくドラッグでウィンドウを動かせる
 import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
-import { LuSettings, LuSquarePen } from "react-icons/lu";
+import { LuMenu, LuSettings, LuSquarePen } from "react-icons/lu";
+import { toggleMaximiseOnDoubleClick } from "./TitleBar";
 import type { Conversation } from "../../bindings/aibow";
 
 interface Props {
@@ -16,23 +18,30 @@ interface Props {
   onRename(id: string, title: string): void;
   settingsOpen: boolean;
   onToggleSettings(): void;
-  open: boolean; // 一覧を開いているか(開閉はタイトルバーのハンバーガー)
+  open: boolean; // 一覧を開いているか
+  onToggleOpen(): void;
 }
 
 export function ConversationList({
   list, currentId, generatingId, disabled, onOpen, onNew, onDelete, onRename, settingsOpen, onToggleSettings,
-  open,
+  open, onToggleOpen,
 }: Props) {
   // 削除の確認を出している会話。消すと戻せないので、もう一度押してもらう
   const [confirming, setConfirming] = useState<string | null>(null);
   // 名前を変えている会話(ダブルクリックで入力欄になる)
   const [editing, setEditing] = useState<string | null>(null);
 
+  const menu = (
+    <button className="icon-btn" title={open ? "会話の一覧を閉じる" : "会話の一覧を開く"} onClick={onToggleOpen}>
+      <LuMenu />
+    </button>
+  );
   const settingsCls = settingsOpen ? "settings active" : "settings";
 
   if (!open) {
     return (
-      <nav className="conversations collapsed">
+      <nav className="conversations collapsed" onDoubleClick={toggleMaximiseOnDoubleClick}>
+        {menu}
         <button className="icon-btn" title="新しい会話" disabled={disabled} onClick={onNew}><LuSquarePen /></button>
         <span className="spacer" />
         <button className={"icon-btn " + settingsCls} title="設定" onClick={onToggleSettings}><LuSettings /></button>
@@ -42,7 +51,8 @@ export function ConversationList({
 
   return (
     <nav className="conversations">
-      <div className="nav-top">
+      <div className="nav-top" onDoubleClick={toggleMaximiseOnDoubleClick}>
+        {menu}
         <button className="new" disabled={disabled} onClick={onNew}>+ 新規</button>
       </div>
       <ul>
