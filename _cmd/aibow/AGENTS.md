@@ -34,7 +34,8 @@ Ollama の保存先は Ollama と同じ `OLLAMA_MODELS`。意味と既定値は 
 ## Wails とフロントエンドの方針
 
 - Wails は現在 v3.0.0-beta.26(`wails3` CLI と同じ版)。構成はユーザーの wails3 スキルの標準(`_cmd/<名前>/build/config.yml`・Taskfile・`wails3 dev`)に従う
-- フロントエンドは React + TypeScript + Vite(`wails3 init -t react` のテンプレート)。npm のパッケージは react / react-dom / @wailsio/runtime / react-icons(アイコン。Lucide の `react-icons/lu` を使う)と開発用の vite / typescript など。
+- フロントエンドは React + TypeScript + Vite(`wails3 init -t react` のテンプレート)。npm のパッケージは react / react-dom / @wailsio/runtime / react-icons(アイコン。Lucide の `react-icons/lu` を使う)/ marked(返事の Markdown の表示。[_docs/ui.md](../../_docs/ui.md))と開発用の vite / typescript など。
+  marked は版を固定している(`18.0.14`)。上げるときは出てから2週間以上たった版にする
   それ以外を足すときは、理由と代替案を示してユーザーに確認する
 
 ## 起動と終了
