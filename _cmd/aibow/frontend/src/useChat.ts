@@ -1,181 +1,157 @@
 // useChat.ts: 送信・生成の途中経過の受け取り・停止。
+//
+// 会話の履歴は Go が持っているので、ここで送るのは「会話の ID」と「新しい発言」だけ。
+// Go が履歴を保存し、全部を並べ直してモデルに渡す(モデル自身は何も覚えていない)。
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CancelError, Events } from "@wailsio/runtime";
 import { ChatService } from "../bindings/aibow/cmd/aibow";
-import type { ChatEvent } from "../bindings/aibow/cmd/aibow";
-import type { GenerateStats, Message, ModelInfo } from "../bindings/aibow";
+import type { ChatEvent, StoredMessage } from "../bindings/aibow";
+import { messageItems, replyView, thinkLabel } from "./transcript";
 import type { AssistantView, Transcript } from "./transcript";
+import type { Conversations } from "./useConversations";
 import type { Busy } from "./useModels";
 import { errorMessage } from "./errors";
 
-export interface ChatSettings {
-  system: string;
-  think: boolean;
-  temperature: number;
-}
-
-// 答えが出ないまま終わったときに、答えの代わりに表示して履歴にも残す文
-const NO_ANSWER: Record<string, string> = {
-  length: "(考えている途中で上限トークン数に達したため、答えを出せませんでした)",
-  context: "(考えている途中でコンテキストがいっぱいになったため、答えを出せませんでした)",
-  cancel: "(考えている途中で停止されたため、答えを出していません)",
-};
-
-// 生成が「発言の終わり」以外の理由で止まったときの表示
-const STOP_REASONS: Record<string, string> = {
-  length: "上限トークン数で打ち切り",
-  context: "コンテキストがいっぱいで打ち切り",
-  cancel: "停止",
-};
-
 const secSince = (t: number) => Math.round((performance.now() - t) / 1000);
 
-export interface Chat {
-  lastPrompt: string; // モデルに実際に渡した文字列
-  send(text: string): Promise<void>;
-  stop(): void;
-  clear(): void;
+// 生成中の返事。生成中に別の会話を開いても生成は続くので、画面の表示とは別に持っておき、
+// その会話に戻ってきたら、ここから吹き出しを作り直す。
+interface Live {
+  convId: string;
+  itemId: number | null; // 表示している吹き出しの id。その会話を表示していなければ null
+  view: AssistantView;
+  thinkStart: number;
 }
 
-export function useChat(
-  t: Transcript,
-  setBusy: (b: Busy) => void,
-  current: ModelInfo | null,
-  settings: ChatSettings,
-): Chat {
-  const { addUser, addError, addAssistant, updateAssistant, remove, clear: clearItems } = t;
-  const [lastPrompt, setLastPrompt] = useState("");
+export interface Chat {
+  generatingId: string | null; // 返事を生成中の会話の ID
+  lastPrompt: string;          // 開いている会話で、モデルに実際に渡した文字列
+  send(text: string): Promise<void>;
+  stop(): void;
+}
 
-  // 会話履歴。これが「LLMの記憶」の正体。画面側でこの配列を持ち、毎回まるごと送る。
-  // 表示には使わないので state ではなく ref に持つ。
-  const history = useRef<Message[]>([]);
-  // 「新しい会話」を押すたびに増やす。生成中に押されたら、その返事は新しい会話の履歴に入れない
-  const session = useRef(0);
+export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conversations): Chat {
+  const { addUser, addError, addAssistant, updateAssistant, remove, reset } = t;
+  const { current, openCount, open, flushSettings, reloadList } = convs;
+  const [generatingId, setGeneratingId] = useState<string | null>(null);
+  // モデルに渡した文字列は保存しないので、会話ごとにここで覚えておく(再起動すると消える)
+  const [prompts, setPrompts] = useState<Record<string, string>>({});
 
+  const live = useRef<Live | null>(null);
+  const viewing = useRef<string | null>(null); // 表示している会話の ID
   // 生成中の呼び出し(stop() で停止できる)。生成中でなければ null
-  const controller = useRef<{ stopped: boolean; stop(): void } | null>(null);
+  const controller = useRef<{ stop(): void } | null>(null);
   // 生成中の返事に chat イベントを渡す関数
   const listener = useRef<((ev: ChatEvent) => void) | null>(null);
 
-  // Go の Chat が送ってくる途中経過(service.go の ChatEvent)。
+  // Go の Send が送ってくる途中経過(aibow.ChatEvent)。
   // main.go の RegisterEvent で型を登録してあるので、ev.data は ChatEvent 型になる。
   useEffect(() => Events.On("chat", ev => listener.current?.(ev.data)), []);
 
+  // 会話を開いたら、保存された発言から表示を作り直す。
+  // その会話で生成中なら、生成中の返事を末尾に足す(Go がまだ保存していないため)。
+  useEffect(() => {
+    if (!current) return;
+    const id = current.conversation.id;
+    viewing.current = id;
+    reset(messageItems(current.messages ?? []));
+    const l = live.current;
+    if (l) l.itemId = l.convId === id && current.generating ? addAssistant(l.view) : null;
+    // 開くたびに増える openCount だけを見る(設定の変更で current が変わっても作り直さない)
+  }, [openCount]);
+
   const send = useCallback(async (text: string) => {
-    if (controller.current) return;
-    const mySession = session.current;
-    history.current.push({ role: "user", content: text });
+    if (!current || controller.current) return;
+    const id = current.conversation.id;
+    try {
+      await flushSettings(); // 変えたばかりの設定を、送信より先に Go に届ける
+    } catch (err) {
+      addError(`設定を保存できません: ${errorMessage(err)}`);
+      return;
+    }
+
     addUser(text);
-
-    // システムプロンプトは履歴の先頭に毎回付ける
-    const system = settings.system.trim();
-    const messages: Message[] = system ? [{ role: "system", content: system }, ...history.current] : [...history.current];
-
-    const id = addAssistant();
-    const modelName = current ? current.name : "(モデルなし)"; // どのモデルの返事か記録しておく
-    const startAt = performance.now();
-    let content = "", thinking = "", thinkStart = 0;
-    let firstAt: number | null = null;
-    let stats: GenerateStats | null = null;
+    const l: Live = { convId: id, itemId: null, thinkStart: 0, view: { waiting: true, thinking: "", thinkLabel: "", content: "" } };
+    l.itemId = addAssistant(l.view);
+    live.current = l;
+    setGeneratingId(id);
     setBusy("generating");
 
-    // 返事は Chat の戻り値ではなく、chat イベントで少しずつ届く。done が来たら終わり。
-    let finish = () => {};
-    const finished = new Promise<void>(resolve => (finish = resolve));
-    listener.current = ev => {
-      switch (ev.type) {
-        case "done":
-          finish();
-          return;
-        case "prompt":
-          setLastPrompt(ev.text ?? "");
-          return;
-        case "stats":
-          stats = ev.stats ?? null;
-          return;
-        case "error":
-          addError(ev.message ?? "");
-          return;
-        case "thinking":
-          // 思考は畳んだ状態で出し、クリックで開いたときだけ中身を見せる
-          firstAt ??= performance.now();
-          if (!thinking) thinkStart = performance.now();
-          thinking += ev.text ?? "";
-          updateAssistant(id, {
-            waiting: false,
-            thinking,
-            thinkLabel: content ? `思考の過程(${secSince(thinkStart)}秒)` : `思考中… ${secSince(thinkStart)}秒`,
-          });
-          return;
-        case "content":
-          firstAt ??= performance.now();
-          if (thinking && !content) updateAssistant(id, { thinkLabel: `思考の過程(${secSince(thinkStart)}秒)` });
-          content += ev.text ?? "";
-          updateAssistant(id, { waiting: false, content });
-          return;
+    // 生成中の返事を書き換える。表示していない会話なら、覚えておくだけ
+    const show = (patch: Partial<AssistantView>) => {
+      l.view = { ...l.view, ...patch };
+      if (l.itemId !== null) updateAssistant(l.itemId, patch);
+    };
+
+    // 終わったら、Go が保存した返事で吹き出しを置き換える(統計や「思考の過程(N秒)」も付く)
+    const done = (reply: StoredMessage | null) => {
+      if (l.itemId !== null) {
+        if (reply) updateAssistant(l.itemId, replyView(reply));
+        else remove(l.itemId); // 何も生成されなかった
+      } else if (reply && viewing.current === id) {
+        // 会話を開き直している最中に終わった。保存された返事が読めるように開き直す
+        open(id).catch(() => {});
       }
     };
 
-    // Go の Chat を呼ぶ。戻り値の Promise の cancel() を呼ぶと、Go 側の ctx がキャンセルされる
-    const call = ChatService.Chat({ messages, think: settings.think, temperature: settings.temperature });
-    const ctl = { stopped: false, stop() { this.stopped = true; call.cancel(); } };
-    controller.current = ctl;
+    // 返事は Send の戻り値ではなく、chat イベントで少しずつ届く。done が来たら終わり。
+    let finish = () => {};
+    const finished = new Promise<void>(resolve => (finish = resolve));
+    listener.current = ev => {
+      if (ev.conversation_id !== id) return;
+      switch (ev.type) {
+        case "done":
+          done(ev.reply ?? null);
+          finish();
+          return;
+        case "prompt":
+          setPrompts(p => ({ ...p, [id]: ev.text ?? "" }));
+          return;
+        case "error":
+          if (viewing.current === id) addError(ev.error ?? "");
+          else console.warn(`別の会話でのエラー: ${ev.error}`);
+          return;
+        case "thinking": {
+          // 思考は畳んだ状態で出し、クリックで開いたときだけ中身を見せる
+          if (!l.view.thinking) l.thinkStart = performance.now();
+          const sec = secSince(l.thinkStart);
+          show({
+            waiting: false,
+            thinking: l.view.thinking + (ev.text ?? ""),
+            thinkLabel: l.view.content ? thinkLabel(sec) : `思考中… ${sec}秒`,
+          });
+          return;
+        }
+        case "content": {
+          const patch: Partial<AssistantView> = { waiting: false, content: l.view.content + (ev.text ?? "") };
+          if (l.view.thinking && !l.view.content) patch.thinkLabel = thinkLabel(secSince(l.thinkStart));
+          show(patch);
+          return;
+        }
+      }
+    };
+
+    // Go の Send を呼ぶ。戻り値の Promise の cancel() を呼ぶと、Go 側の ctx がキャンセルされる
+    const call = ChatService.Send(id, text);
+    controller.current = { stop: () => call.cancel() };
     call.catch(err => {
       if (err instanceof CancelError) return; // 停止ボタン。done イベントは Go から届く
       // Go のメソッドを呼べなかった(done イベントは来ない)
       addError(`呼び出しエラー: ${errorMessage(err)}`);
+      done(null);
       finish();
     });
     await finished;
     listener.current = null;
     controller.current = null;
+    live.current = null;
+    setGeneratingId(null);
     setBusy("idle");
-    if (mySession !== session.current) return; // 生成中に「新しい会話」が押された
-
-    // 統計: 最初の文字が出るまでの時間と、Go から届いたトークン数・速度
-    const patch: Partial<AssistantView> = { waiting: false };
-    if (firstAt !== null) {
-      const parts = [modelName, `初回応答 ${((firstAt - startAt) / 1000).toFixed(2)}s`];
-      const s = stats as GenerateStats | null;
-      if (s) {
-        parts.push(`プロンプト ${s.prompt_tokens} tok(再利用 ${s.reused_tokens})${s.prompt_sec.toFixed(2)}s`);
-        const rate = s.gen_sec > 0 ? (s.gen_tokens / s.gen_sec).toFixed(1) : "-";
-        parts.push(`生成 ${s.gen_tokens} tok ・ ${rate} tok/s`);
-        if (s.stop_reason !== "eos") parts.push(STOP_REASONS[s.stop_reason] ?? s.stop_reason);
-      } else if (ctl.stopped) {
-        parts.push("停止");
-      }
-      patch.stats = parts.join(" ・ ");
-    }
-
-    // 履歴に残すのは「答え」だけ。思考部分は次回以降は送らないのが一般的。
-    if (content) {
-      history.current.push({ role: "assistant", content });
-    } else if (thinking) {
-      // 考えている途中で終わり、答えが出なかった場合。
-      // 何も残さないと、モデルからは「質問に返事をしていない」ように見えるので、
-      // 何が起きたかを返事として履歴に残す。
-      const reason = (stats as GenerateStats | null)?.stop_reason ?? (ctl.stopped ? "cancel" : "");
-      const note = NO_ANSWER[reason] ?? "(考えている途中で終わったため、答えを出せませんでした)";
-      patch.thinkLabel = `思考の過程(${secSince(thinkStart)}秒)`;
-      patch.cutoff = note;
-      patch.cutoffHint = reason !== "cancel";
-      history.current.push({ role: "assistant", content: note });
-    } else {
-      remove(id);
-    }
-    if (content || thinking) updateAssistant(id, patch);
-  }, [addUser, addError, addAssistant, updateAssistant, remove, setBusy, current, settings]);
+    reloadList().catch(() => {}); // タイトルと並び順(更新の新しい順)が変わる
+  }, [current, flushSettings, open, reloadList, addUser, addError, addAssistant, updateAssistant, remove, setBusy]);
 
   const stop = useCallback(() => controller.current?.stop(), []);
 
-  const clear = useCallback(() => {
-    controller.current?.stop();
-    session.current++;
-    history.current = [];
-    clearItems();
-    setLastPrompt("");
-  }, [clearItems]);
-
-  return { lastPrompt, send, stop, clear };
+  const lastPrompt = current ? prompts[current.conversation.id] ?? "" : "";
+  return { generatingId, lastPrompt, send, stop };
 }

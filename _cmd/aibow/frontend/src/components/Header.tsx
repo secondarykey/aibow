@@ -4,10 +4,10 @@ import type { Models } from "../useModels";
 interface Props {
   models: Models;
   disabled: boolean;
-  onClear(): void;
 }
 
-export function Header({ models, disabled, onClear }: Props) {
+// モデルはアプリ全体で1つ(VRAM に1つしか載らない)。会話を切り替えてもモデルは変わらない
+export function Header({ models, disabled }: Props) {
   const { current, gpu, loading } = models;
   const groups = [
     { source: "file", label: "models フォルダ" },
@@ -45,8 +45,6 @@ export function Header({ models, disabled, onClear }: Props) {
         {outside && <option value={current.id}>{current.name}</option>}
       </select>
       <span className="model-info" title={current?.desc ?? ""}>{info}</span>
-      <span className="spacer" />
-      <button title="会話履歴を消す" onClick={onClear}>新しい会話</button>
     </header>
   );
 }

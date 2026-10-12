@@ -7,12 +7,12 @@ import type { Events } from "@wailsio/runtime";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import type * as main$0 from "../../../../../aibow/cmd/aibow/models.js";
+import type * as aibow$0 from "../../../../../aibow/models.js";
 
 declare module "@wailsio/runtime" {
     namespace Events {
         interface CustomEvents {
-            "chat": main$0.ChatEvent;
+            "chat": aibow$0.ChatEvent;
         }
     }
 }

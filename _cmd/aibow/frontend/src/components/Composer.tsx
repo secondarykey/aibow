@@ -5,11 +5,12 @@ import type { FormEvent, KeyboardEvent } from "react";
 interface Props {
   canSend: boolean;
   canStop: boolean;
+  blockedReason?: string; // 送信できない理由(ボタンのツールチップに出す)
   onSend(text: string): void;
   onStop(): void;
 }
 
-export function Composer({ canSend, canStop, onSend, onStop }: Props) {
+export function Composer({ canSend, canStop, blockedReason, onSend, onStop }: Props) {
   const [text, setText] = useState("");
   const input = useRef<HTMLTextAreaElement>(null);
   const composing = useRef(false); // IME で変換中か
@@ -59,7 +60,7 @@ export function Composer({ canSend, canStop, onSend, onStop }: Props) {
           onCompositionStart={() => (composing.current = true)}
           onCompositionEnd={() => (composing.current = false)}
         />
-        <button className="primary" type="submit" disabled={!canSend}>送信</button>
+        <button className="primary" type="submit" disabled={!canSend} title={canSend ? undefined : blockedReason}>送信</button>
         <button type="button" disabled={!canStop} onClick={onStop}>停止</button>
       </form>
     </footer>

@@ -8,23 +8,40 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as aibow$0 from "../../models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as uuid$0 from "../../../uuid/models.js";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as $models from "./models.js";
 
 /**
- * Chat は返事を生成する。返事の中身は戻り値ではなく、chat イベントで少しずつ送る。
- * 
- * 終わりの合図も戻り値ではなく done イベントにしている。
- * Wails ではメソッドの戻り値とイベントは別の経路で画面に届くので、
- * 戻り値が先に着くと、最後のほうの文字がまだ届いていないことがあるため。
- * 
- * 画面で「停止」を押すと、JavaScript 側で Promise の cancel() が呼ばれ、
- * Wails がこの ctx をキャンセルする。エンジンはそれを見て生成を止める。
+ * AppSettings はアプリ全体の設定(コンテキスト長・GPU の層数・新しい会話の既定の設定)を返す。
  */
-export function Chat(req: $models.ChatRequest): $CancellablePromise<void> {
-    return $Call.ByID(1600365757, req);
+export function AppSettings(): $CancellablePromise<aibow$0.AppSettings> {
+    return $Call.ByID(1212015075);
+}
+
+/**
+ * Conversation は会話1つと、その発言を古い順に返す。
+ */
+export function Conversation(id: uuid$0.UUID): $CancellablePromise<$models.ConversationDetail> {
+    return $Call.ByID(499268636, id);
+}
+
+/**
+ * Conversations は会話の一覧を、更新の新しい順に返す。
+ */
+export function Conversations(): $CancellablePromise<aibow$0.Conversation[] | null> {
+    return $Call.ByID(1204101821);
+}
+
+/**
+ * DeleteConversation は会話を消す。返事を生成中の会話は消せない。
+ */
+export function DeleteConversation(id: uuid$0.UUID): $CancellablePromise<void> {
+    return $Call.ByID(353617351, id);
 }
 
 /**
@@ -35,10 +52,64 @@ export function Models(): $CancellablePromise<$models.ModelsResult> {
 }
 
 /**
+ * NewConversation は新しい会話を作る。設定は「新しい会話の既定の設定」のコピー。
+ */
+export function NewConversation(): $CancellablePromise<aibow$0.Conversation> {
+    return $Call.ByID(1999326860);
+}
+
+/**
+ * Send は会話にユーザーの発言を足し、返事を生成する。
+ * 返事の中身は戻り値ではなく、chat イベントで少しずつ送る。
+ * 
+ * 終わりの合図も戻り値ではなく done イベントにしている。
+ * Wails ではメソッドの戻り値とイベントは別の経路で画面に届くので、
+ * 戻り値が先に着くと、最後のほうの文字がまだ届いていないことがあるため。
+ * 
+ * 画面で「停止」を押すと、JavaScript 側で Promise の cancel() が呼ばれ、
+ * Wails がこの ctx をキャンセルする。エンジンはそれを見て生成を止める。
+ */
+export function Send(id: uuid$0.UUID, text: string): $CancellablePromise<void> {
+    return $Call.ByID(2164379061, id, text);
+}
+
+/**
+ * SetContextSize はコンテキスト長を変える。モデルは読み直さず、コンテキスト(KV キャッシュ)だけ作り直す。
+ * モデルが未読み込みなら nil を返す(次に読み込むときから効く)。
+ */
+export function SetContextSize(n: number): $CancellablePromise<aibow$0.ModelInfo | null> {
+    return $Call.ByID(3021476409, n);
+}
+
+/**
+ * SetDefaultSettings は新しい会話の既定の設定を変える。今ある会話には効かない。
+ */
+export function SetDefaultSettings(settings: aibow$0.ConversationSettings): $CancellablePromise<void> {
+    return $Call.ByID(3793269207, settings);
+}
+
+/**
+ * SetGPULayers は GPU に載せる層の数を変え、今のモデルを読み込み直す。
+ * 失敗したときは元の層の数で読み直している。モデルが未読み込みなら nil を返す。
+ */
+export function SetGPULayers(n: number): $CancellablePromise<aibow$0.ModelInfo | null> {
+    return $Call.ByID(128737747, n);
+}
+
+/**
  * SwitchModel はモデルを切り替える。読み込み終わるまで返らない。
  * 失敗したときは元のモデルに戻っている(画面は Models を呼び直して確認する)。
  * Go で error を返すと、JavaScript 側では Promise が reject される。
+ * 
+ * モデルはアプリ全体で1つ(VRAM に1つしか載らない)。会話を切り替えてもモデルは変わらない。
  */
 export function SwitchModel(id: string): $CancellablePromise<aibow$0.ModelInfo | null> {
     return $Call.ByID(1702876432, id);
+}
+
+/**
+ * UpdateConversationSettings は会話の設定を変える。次の送信から効く。
+ */
+export function UpdateConversationSettings(id: uuid$0.UUID, settings: aibow$0.ConversationSettings): $CancellablePromise<void> {
+    return $Call.ByID(1660834684, id, settings);
 }

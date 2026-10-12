@@ -18,7 +18,7 @@ export interface Models {
   gpu: boolean;
   loading: boolean;          // モデルを読み込み中か(起動時・切り替え時)
   switchModel(id: string): Promise<void>;
-  reload(): Promise<void>;
+  reload(): Promise<boolean>; // 一覧を取り直す。起動に失敗していたら false
 }
 
 export function useModels(t: Pick<Transcript, "addNote" | "addError">, setBusy: (b: Busy) => void): Models {
@@ -43,7 +43,7 @@ export function useModels(t: Pick<Transcript, "addNote" | "addError">, setBusy: 
         setBusy("unavailable");
         addError(`起動できません: ${d.error}`);
       }
-      return;
+      return false;
     }
     setModels(d.models ?? []);
     setCurrent(d.current);
@@ -54,9 +54,11 @@ export function useModels(t: Pick<Transcript, "addNote" | "addError">, setBusy: 
       setBusy("loading");
       addNote(`${d.loading} を読み込み中…`);
     }
-  }, [addNote, setBusy]);
+    return true;
+  }, [addNote, addError, setBusy]);
 
-  // 起動時: 一覧を取り、起動時の読み込みが終わった合図(models イベント)を待つ
+  // 起動時の読み込みが終わった合図(models イベント)を待つ。
+  // 最初の一覧の取得(reload)は、会話を開いてから App が呼ぶ(会話を開くと表示が作り直され、メモが消えるため)
   useEffect(() => {
     const off = Events.On("models", async () => {
       startupDone.current = true;
@@ -72,9 +74,8 @@ export function useModels(t: Pick<Transcript, "addNote" | "addError">, setBusy: 
       setLoading(false);
       setBusy("idle");
     });
-    reload().catch(err => addError(`モデル一覧を取得できません: ${errorMessage(err)}`));
     return off;
-  }, [reload, addNote, addError, setBusy]);
+  }, [addNote, setBusy]);
 
   const switchModel = useCallback(async (id: string) => {
     const name = models.find(m => m.id === id)?.name ?? id;

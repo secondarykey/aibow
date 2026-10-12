@@ -6,34 +6,20 @@
 import * as aibow$0 from "../../models.js";
 
 /**
- * ChatEvent は Go → 画面。生成の途中経過を Wails のイベントで1つずつ送る。
- * (Web サーバー版では SSE の1行が、この1つに当たる)
- * 
- * 	prompt   : モデルに渡した文字列(学習用に画面に表示する)
- * 	thinking : 思考の断片
- * 	content  : 答えの断片
- * 	stats    : 統計(トークン数、速度など)
- * 	error    : エラー
- * 	done     : 終わり。必ず最後に1回だけ送る
+ * ConversationDetail は会話1つと、その発言。
  */
-export interface ChatEvent {
-    "type": string;
-    "text"?: string;
-    "message"?: string;
-    "stats"?: aibow$0.GenerateStats | null;
+export interface ConversationDetail {
+    "conversation": aibow$0.Conversation;
+    "messages": aibow$0.StoredMessage[] | null;
+
+    /**
+     * この会話で返事を生成中か
+     */
+    "generating": boolean;
 }
 
 /**
- * ChatRequest は画面 → Go。
- */
-export interface ChatRequest {
-    "messages": aibow$0.Message[] | null;
-    "think": boolean | null;
-    "temperature": number | null;
-}
-
-/**
- * ModelsResult は Models の戻り値。JSON のキー名は Web サーバー版と同じ。
+ * ModelsResult は Models の戻り値。
  */
 export interface ModelsResult {
     "models": aibow$0.ModelEntry[] | null;
