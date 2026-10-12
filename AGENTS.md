@@ -51,7 +51,7 @@ aibow は、ローカルLLMを使ったアプリを**自分で作りながら仕
 | ユーザーの Windows 環境(worktree)で起動して確かめる | [_docs/env-windows.md](_docs/env-windows.md) |
 | クラウドセッション(GUI の無い Linux)で起動して確かめる | [_docs/env-cloud.md](_docs/env-cloud.md) |
 | パラメータの調整・実際に動かして分かったことの記録 | [_docs/tuning.md](_docs/tuning.md) |
-| 不具合の調査 | [_docs/known-issues.md](_docs/known-issues.md) |
+| 不具合の調査・`npm audit` の警告 | [_docs/known-issues.md](_docs/known-issues.md) |
 
 ## 作業の進め方
 
