@@ -2,12 +2,14 @@
   --bg: #f6f5f2; --panel: #ffffff; --text: #1f2328; --muted: #6b7280;
   --border: #e3e1dc; --user: #e8f0fe; --accent: #2f6fde; --think: #fbf7e9;
   --code: #f1f1ef; --error: #b42318;
+  --scrollbar: rgba(0, 0, 0, .18); --scrollbar-hover: rgba(0, 0, 0, .32);
 }
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #17181a; --panel: #1f2023; --text: #e6e6e6; --muted: #9aa0a6;
     --border: #2e3034; --user: #1f2b44; --accent: #6ea0ff; --think: #2a2717;
     --code: #2a2b2f; --error: #ff8a80;
+    --scrollbar: rgba(255, 255, 255, .16); --scrollbar-hover: rgba(255, 255, 255, .30);
   }
 }
 /* --edge-gap: ウィンドウの右端に接してスクロールする場所(.chat / .settings-view)の、スクロールバーの外側に空ける幅。
@@ -18,6 +20,20 @@
    透明な枠線(border)はスクロールバーの外側に付き、背景は枠線の下まで塗られるので、見た目を変えずにスクロールバーを内側へ寄せられる */
 :root { --edge-gap: 8px; }
 * { box-sizing: border-box; }
+
+/* スクロールバー: 矢印のボタンも溝の色も無い、つまみだけのフラットな形にし、色は明るい・暗いのテーマに合わせる。
+   WebView2 は Chromium なので ::-webkit-scrollbar で形を決められる。
+   標準の scrollbar-color は使わない(指定すると Chromium は ::-webkit-scrollbar を無視し、矢印のボタンが戻ることがあるため) */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-button { display: none; }
+/* 透明な枠線 + background-clip で、つまみを溝より細く見せる(端に少し余白ができる) */
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar); background-clip: padding-box;
+  border: 2px solid transparent; border-radius: 5px; min-height: 32px;
+}
+::-webkit-scrollbar-thumb:hover, ::-webkit-scrollbar-thumb:active { background: var(--scrollbar-hover); background-clip: padding-box; }
+
 body {
   margin: 0; background: var(--bg); color: var(--text);
   font-family: system-ui, "Segoe UI", "Hiragino Sans", "Yu Gothic UI", sans-serif;
