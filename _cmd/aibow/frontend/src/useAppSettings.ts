@@ -7,6 +7,7 @@ import { useCallback, useState } from "react";
 import { ChatService } from "../bindings/aibow/cmd/aibow";
 import type { AppSettings, ConversationSettings } from "../bindings/aibow";
 import type { Transcript } from "./transcript";
+import type { Notifier } from "./toast";
 import type { Busy } from "./useModels";
 import { errorMessage } from "./errors";
 
@@ -18,11 +19,13 @@ export interface AppSettingsState {
 }
 
 export function useAppSettings(
-  t: Pick<Transcript, "addNote" | "addError">,
+  n: Notifier,
+  t: Pick<Transcript, "addError">,
   setBusy: (b: Busy) => void,
   reloadModels: () => Promise<boolean>,
 ): AppSettingsState {
-  const { addNote, addError } = t;
+  const { notify, dismissKey } = n;
+  const { addError } = t;
   const [settings, setSettings] = useState<AppSettings | null>(null);
 
   const reload = useCallback(async () => {
@@ -35,34 +38,35 @@ export function useAppSettings(
     try {
       if (nCtx !== settings.n_ctx) {
         const info = await ChatService.SetContextSize(nCtx);
-        addNote(info
+        notify(info
           ? `コンテキスト長を ${info.n_ctx} にしました(モデルは読み直していません)`
           : `コンテキスト長を ${nCtx} にしました(次にモデルを読み込むときから効きます)`);
       }
       if (gpuLayers !== settings.gpu_layers) {
-        addNote(`GPU に載せる層を ${gpuLayers} にして、モデルを読み込み直しています…`);
+        notify(`GPU に載せる層を ${gpuLayers} にして、モデルを読み込み直しています…`, { key: "model", sticky: true });
         const info = await ChatService.SetGPULayers(gpuLayers);
-        addNote(info
-          ? `読み込み直しました(${info.load_sec.toFixed(1)} 秒)`
-          : `GPU に載せる層を ${gpuLayers} にしました(次にモデルを読み込むときから効きます)`);
+        notify(info
+          ? `GPU に載せる層を ${gpuLayers} にして読み込み直しました(${info.load_sec.toFixed(1)} 秒)`
+          : `GPU に載せる層を ${gpuLayers} にしました(次にモデルを読み込むときから効きます)`, { key: "model" });
       }
     } catch (err) {
       // Go 側で元の設定に戻している
+      dismissKey("model");
       addError(errorMessage(err));
     }
     await Promise.all([reload(), reloadModels()]).catch(err => addError(errorMessage(err)));
     setBusy("idle");
-  }, [settings, reload, reloadModels, addNote, addError, setBusy]);
+  }, [settings, reload, reloadModels, notify, dismissKey, addError, setBusy]);
 
   const setDefaults = useCallback(async (s: ConversationSettings) => {
     try {
       await ChatService.SetDefaultSettings(s);
-      addNote("この設定を新しい会話の既定にしました");
+      notify("この設定を新しい会話の既定にしました");
       await reload();
     } catch (err) {
       addError(errorMessage(err));
     }
-  }, [reload, addNote, addError]);
+  }, [reload, notify, addError]);
 
   return { settings, reload, apply, setDefaults };
 }

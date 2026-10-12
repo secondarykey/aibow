@@ -3,7 +3,8 @@
 // 会話を開いていないとき(起動時・「+ 新規」)は、チャットの代わりに新しい会話の画面(入力欄が真ん中)を出す。
 // 右の設定パネルは一覧の下の「設定」で開閉する。
 //
-//	useTranscript    … 画面に並べる表示(吹き出し・メモ・エラー)
+//	useTranscript    … 画面に並べる表示(吹き出し・エラー)
+//	useToasts        … 右上に出して数秒で消えるお知らせ(モデルの読み込みなど)
 //	useModels        … モデルの一覧と切り替え(Go の ChatService.Models / SwitchModel)
 //	useConversations … 会話の一覧・開いている会話・会話ごとの設定
 //	useChat          … 送信と停止(Go の ChatService.Send と chat イベント)
@@ -13,6 +14,7 @@
 // Go のメソッドは、wails3 generate bindings が作った frontend/bindings の関数として呼ぶ。
 import { useEffect, useRef, useState } from "react";
 import { useTranscript } from "./transcript";
+import { Toasts, useToasts } from "./toast";
 import { useModels } from "./useModels";
 import type { Busy } from "./useModels";
 import { useConversations } from "./useConversations";
@@ -38,11 +40,12 @@ export default function App() {
   const focusInput = () => setFocusKey(n => n + 1);
 
   const transcript = useTranscript();
+  const toasts = useToasts();
   const { addError } = transcript;
-  const models = useModels(transcript, setBusy);
+  const models = useModels(toasts, transcript, setBusy);
   const convs = useConversations(addError);
   const chat = useChat(transcript, setBusy, convs);
-  const app = useAppSettings(transcript, setBusy, models.reload);
+  const app = useAppSettings(toasts, transcript, setBusy, models.reload);
 
   // 起動時: 新しい会話の画面に移ってから、モデルの一覧を取る。
   // 画面を移ると表示が作り直されるので、「読み込み中…」のメモが消えないよう、この順にする。
@@ -144,6 +147,7 @@ export default function App() {
           />}
         </main>
       </div>
+      <Toasts toasts={toasts.toasts} onDismiss={toasts.dismiss} />
       <ImeFocusRelay />
     </>
   );
