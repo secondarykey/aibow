@@ -42,7 +42,7 @@ aibow は、ローカルLLMを使ったアプリを**自分で作りながら仕
 | 作業内容 | 読むもの |
 |---|---|
 | 生成・モデルの読み込みと切り替え・トークン化・プロンプトの書式・思考の振り分け・モデルの一覧 | [_docs/engine.md](_docs/engine.md) |
-| ツール呼び出し・エージェントループ・書式の interface(`Format`)・ツールの追加 | [_docs/tools.md](_docs/tools.md) |
+| ツール呼び出し・エージェントループ・書式の interface(`Format`)・ツールの追加・作業フォルダ・ファイルとコマンドのツール・実行前の確認 | [_docs/tools.md](_docs/tools.md) |
 | 会話の履歴・会話ごとの設定・アプリ全体の設定・保存の約束(`Store`) | [_docs/conversations.md](_docs/conversations.md) |
 | 会話の上限・compact(truncate / summary)・メーター | [_docs/compact.md](_docs/compact.md) |
 | SQLite の実装・マイグレーション | [store/AGENTS.md](store/AGENTS.md) |
