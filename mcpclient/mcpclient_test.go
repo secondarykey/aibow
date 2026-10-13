@@ -133,7 +133,7 @@ func TestStartAndTools(t *testing.T) {
 	if len(errs) != 0 || !slices.Equal(started, []string{"util"}) {
 		t.Fatalf("作業フォルダが無ければ util だけ起動する: %v %v", started, errs)
 	}
-	if got := names(m.Tools("D:/a")); len(got) != 4 || got[0] != "util/echo" {
+	if got := names(m.Tools("D:/a")); len(got) != 4 || got[0] != "util/util__echo" {
 		t.Errorf("fs はまだ起動していない: %v", got)
 	}
 
@@ -142,7 +142,7 @@ func TestStartAndTools(t *testing.T) {
 		t.Errorf("fs だけを起動する(util は動いている): %v", started)
 	}
 	got := names(m.Tools("D:/a"))
-	if len(got) != 8 || got[0] != "fs/echo" || got[4] != "util/echo" {
+	if len(got) != 8 || got[0] != "fs/fs__echo" || got[4] != "util/util__echo" {
 		t.Errorf("サーバーの名前の順に並ぶ: %v", got)
 	}
 	if got := names(m.Tools("D:/b")); len(got) != 4 {
@@ -167,7 +167,7 @@ func TestRun(t *testing.T) {
 	m.Start(ctx, "")
 	tools := m.Tools("")
 
-	echo := tool.Find(tools, "echo")
+	echo := tool.Find(tools, "util__echo")
 	args, err := tool.CheckArgs(echo.Def(), []tool.Arg{{Name: "paths", Value: `["a.go", "b.go"]`}, {Name: "loud", Value: "True"}})
 	if err != nil {
 		t.Fatal(err)
@@ -179,11 +179,11 @@ func TestRun(t *testing.T) {
 		t.Error("inputSchema の required も確かめる")
 	}
 
-	if got, err := tool.Find(tools, "fail").Run(ctx, nil); err == nil || err.Error() != "file not found" {
+	if got, err := tool.Find(tools, "util__fail").Run(ctx, nil); err == nil || err.Error() != "file not found" {
 		t.Errorf("isError の結果はエラーにする: %q, %v", got, err)
 	}
 
-	slow := tool.Find(tools, "slow")
+	slow := tool.Find(tools, "util__slow")
 	tctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
 	defer cancel()
 	if _, err := slow.Run(tctx, nil); err == nil || !strings.Contains(err.Error(), "時間の上限") {
@@ -285,7 +285,7 @@ func TestCommandServer(t *testing.T) {
 	if _, errs := m.Start(context.Background(), dir); len(errs) != 0 {
 		t.Fatal(errs)
 	}
-	got, err := tool.Find(m.Tools(dir), "where").Run(context.Background(), nil)
+	got, err := tool.Find(m.Tools(dir), "self__where").Run(context.Background(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -393,7 +393,7 @@ func TestHTTPServer(t *testing.T) {
 	if got := names(m.Tools("D:/a")); len(got) != 4 {
 		t.Errorf("url のサーバーは作業フォルダに関係なく共有する: %v", got)
 	}
-	echo := tool.Find(m.Tools(""), "echo")
+	echo := tool.Find(m.Tools(""), "intra__echo")
 	if got, err := echo.Run(ctx, tool.Args{"paths": []any{"a"}}); err != nil || got != `{"paths":["a"]}` {
 		t.Errorf("echo: %q, %v", got, err)
 	}
@@ -408,7 +408,7 @@ func TestHTTPServer(t *testing.T) {
 
 	// サーバーが JSON-RPC のエラーで答えた(知らないツール)だけなら、つながりは生きているので外さない
 	e := echo.(*remoteTool)
-	unknown := &remoteTool{server: e.server, session: e.session, def: tool.Def{Name: "no_such_tool"}, broken: e.broken}
+	unknown := &remoteTool{server: e.server, session: e.session, def: tool.Def{Name: "intra__no_such_tool"}, name: "no_such_tool", broken: e.broken}
 	if _, err := unknown.Run(ctx, nil); err == nil || strings.Contains(err.Error(), "つながりが切れました") {
 		t.Errorf("サーバーの答えのエラー: %v", err)
 	}
@@ -424,6 +424,20 @@ func TestHTTPServer(t *testing.T) {
 	}
 	if got := m.Tools(""); len(got) != 0 {
 		t.Errorf("つながりが切れたサーバーのツールは外す: %v", names(got))
+	}
+}
+
+// MCP のツールの名前には、サーバーの名前を前に付ける(名前空間の代わり)。使えない文字は _ にする
+func TestToolName(t *testing.T) {
+	for server, want := range map[string]string{
+		"filesystem":   "filesystem__read_file",
+		"Blender":      "Blender__read_file",
+		"my server.v2": "my_server_v2__read_file",
+		"ブレンダー":        "_______read_file", // 1文字ずつ _ にする(5 文字 + 区切りの __)
+	} {
+		if got := ToolName(server, "read_file"); got != want {
+			t.Errorf("%q: %q(期待: %q)", server, got, want)
+		}
 	}
 }
 

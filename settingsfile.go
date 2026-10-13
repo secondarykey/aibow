@@ -43,10 +43,18 @@ func LoadSettingsFile(path string) (SettingsFile, error) {
 	if err := json.Unmarshal(data, &s); err != nil {
 		return SettingsFile{}, fmt.Errorf("設定ファイル %s を読めません(%s): %w", path, jsonErrorLine(data, err), err)
 	}
+	prefixes := map[string]string{} // ツールの名前の前に付ける形 → サーバーの名前
 	for _, name := range slices.Sorted(maps.Keys(s.MCPServers)) {
 		if name == "" {
 			return SettingsFile{}, fmt.Errorf("設定ファイル %s の mcpServers に、名前が空のサーバーがあります", path)
 		}
+		// サーバーの名前はツールの名前の前に付く(filesystem__read_file)。英数字・_・- 以外は _ になるので、重なると区別できない
+		p := mcpclient.ServerPrefix(name)
+		if other, dup := prefixes[p]; dup {
+			return SettingsFile{}, fmt.Errorf("設定ファイル %s の mcpServers の %s と %s は、ツールの名前に付けると同じ %s__… になり、区別できません。"+
+				"名前を変えてください(英数字・_・- だけで書くと、そのまま使われます)", path, other, name, p)
+		}
+		prefixes[p] = name
 		if err := s.MCPServers[name].Validate(); err != nil {
 			return SettingsFile{}, fmt.Errorf("設定ファイル %s の mcpServers の %s: %w", path, name, err)
 		}

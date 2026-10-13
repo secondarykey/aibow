@@ -4,7 +4,7 @@
 // 書き換えるツール(write_file / edit_file)とコマンド(run_command)は、実行する前に確認を待つ。待っている間はカードを開いたままにし、
 // 何をするか(パス・上書きか)と差分(```diff。+ は緑、- は赤)、コマンドならコマンドそのもの、理由の欄と「拒否」「実行する」を出す。
 // MCP のサーバーのツールは中身が見えないので、全部確認する。差分の代わりに、サーバーに渡す引数(JSON)を出す。
-// MCP のツールは、名前の前にサーバーの名前を小さく出す(同じ名前のツールが組み込みにもあるため)。
+// MCP のツールは、名前の前にサーバーの名前を小さく出す(モデルに見せる名前は「サーバーの名前__ツールの名前」なので、前の部分は外して出す)。
 // 答えると Go の待っているループに届き、実行(か拒否)の結果が届いたら、ほかのカードと同じく畳んだ1行に戻る。
 import { useState } from "react";
 import { LuBan, LuCheck, LuHourglass, LuLoaderCircle, LuWrench, LuX } from "react-icons/lu";
@@ -35,13 +35,16 @@ export function ToolCard({ tool, generating, onAnswer }: Props) {
   const rejected = tool.decision?.approved === false;
   const state = tool.confirm ? "confirm" : running ? "running" : rejected ? "rejected" : tool.error ? "error" : "ok";
   const server = tool.server || tool.confirm?.preview.server;
+  // MCP のツールの名前は「サーバーの名前__ツールの名前」(名前空間の代わり)。サーバーの名前は枠で出すので、名前からは外す
+  const prefix = server ? [...server].map(c => /[A-Za-z0-9_-]/.test(c) ? c : "_").join("") + "__" : "";
+  const name = prefix && tool.name.startsWith(prefix) ? tool.name.slice(prefix.length) : tool.name;
   return (
     // 確認を待っている間だけ開いたままにする(open を外すと、ふだんの畳んだ1行に戻る)
     <details className={`tool-card ${state}`} open={tool.confirm ? true : undefined}>
       <summary>
         <LuWrench className="tool-icon" />
         {server && <span className="tool-server">{server}</span>}
-        <code title={server ? `MCP のサーバー ${server} のツール` : TOOL_LABELS[tool.name]}>{tool.name || "(読み取れない呼び出し)"}</code>
+        <code title={server ? `MCP のサーバー ${server} のツール(モデルに見せる名前: ${tool.name})` : TOOL_LABELS[tool.name]}>{name || "(読み取れない呼び出し)"}</code>
         {state === "confirm" && <span className="tool-status"><LuHourglass /> 確認待ち</span>}
         {state === "running" && generating && <span className="tool-status"><LuLoaderCircle className="spin" /> 実行中…</span>}
         {state === "ok" && <span className="tool-status"><LuCheck /> {tool.sec?.toFixed(2)}秒</span>}

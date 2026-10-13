@@ -33,7 +33,8 @@ const (
 type remoteTool struct {
 	server  string
 	session *mcp.ClientSession
-	def     tool.Def
+	def     tool.Def    // モデルに見せる定義。名前は「サーバーの名前__ツールの名前」(ToolName)
+	name    string      // サーバーが付けたツールの名前(tools/call にはこちらを送る)
 	broken  func(error) // つながりが切れたと分かったときに呼ぶ(Manager が一覧から外し、次の送信でつなぎ直す)
 }
 
@@ -42,6 +43,30 @@ var (
 	_ tool.Confirmable = (*remoteTool)(nil)
 	_ tool.TimeLimiter = (*remoteTool)(nil)
 )
+
+// ToolName は、MCP のサーバーのツールをモデルに見せるときの名前。サーバーの名前を前に付ける(filesystem__read_file)。
+//
+// MCP の決まりごとには名前空間が無く、ツールの名前は「1つのサーバーの中で重ならない」ことしか決まっていない。
+// モデルに見えるのはツールの名前の平らな一覧で、呼び出しも名前だけなので、サーバーが違っても名前が同じだと区別できない
+// (filesystem サーバーの read_file と、組み込みの read_file)。そこで、クライアントの側でサーバーの名前を前に付けて、名前空間の代わりにする
+// (Claude Code の mcp__<サーバー>__<ツール> と同じ考え方)。組み込みのツールには付けない。
+//
+// 区切りは __。ステップ6の OpenAI 互換 API では、ツールの名前に使える文字が英数字・_・- に限られるので、. は使わない。
+// サーバーの名前のそれ以外の文字は _ に置き換える(ServerPrefix)。
+// 名前が重なったときだけでなく、いつも付ける(サーバーを足したら別のツールの名前が変わる、ということが起きないように)。
+func ToolName(server, name string) string {
+	return ServerPrefix(server) + "__" + name
+}
+
+// ServerPrefix は、ツールの名前の前に付けるサーバーの名前(英数字・_・- 以外を _ にしたもの)。
+func ServerPrefix(server string) string {
+	return strings.Map(func(c rune) rune {
+		if c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_' || c == '-' {
+			return c
+		}
+		return '_' // 日本語の名前なども1文字ずつ _ にする(重なったら settings.json を読むときにエラーにする)
+	}, server)
+}
 
 // newRemoteTool は、tools/list で受け取ったツールの定義を tool.Def にする。
 //
@@ -59,7 +84,8 @@ func newRemoteTool(server string, session *mcp.ClientSession, t *mcp.Tool, broke
 	}
 	return &remoteTool{
 		server: server, session: session, broken: broken,
-		def: tool.Def{Name: t.Name, Description: t.Description, Parameters: params},
+		def:  tool.Def{Name: ToolName(server, t.Name), Description: t.Description, Parameters: params},
+		name: t.Name,
 	}, nil
 }
 
@@ -81,7 +107,7 @@ func (t *remoteTool) Run(ctx context.Context, args tool.Args) (string, error) {
 	if args == nil {
 		args = tool.Args{}
 	}
-	res, err := t.session.CallTool(ctx, &mcp.CallToolParams{Name: t.def.Name, Arguments: map[string]any(args)})
+	res, err := t.session.CallTool(ctx, &mcp.CallToolParams{Name: t.name, Arguments: map[string]any(args)})
 	switch {
 	case errors.Is(ctx.Err(), context.DeadlineExceeded):
 		return "", fmt.Errorf("時間の上限(%d 秒)を超えたため止めました", int(callTimeout.Seconds()))

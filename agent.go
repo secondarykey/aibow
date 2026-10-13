@@ -323,8 +323,9 @@ func (cs *Conversations) toolsFor(set ConversationSettings) []tool.Tool {
 		return tools
 	}
 	for _, t := range cs.remote.Tools(set.WorkDir) {
-		// 名前が重なったツールは出さない(先にあるほう = 組み込みのツールを使う)。同じ名前が2つあると、モデルも aibow も区別できない。
-		// 重なったときにどうするか(サーバーの名前を前に付ける、など)は 0006 の未決事項。起動したときにログに出す(startRemote)
+		// MCP のツールの名前にはサーバーの名前が前に付いている(filesystem__read_file。mcpclient.ToolName)ので、ふつうは重ならない。
+		// それでも重なったら出さない(先にあるほう = 組み込みのツールを使う)。同じ名前が2つあると、モデルも aibow も区別できないため。
+		// 重なったものは、起動したときにログに出す(logRemoteTools)
 		if tool.Find(tools, t.Def().Name) == nil {
 			tools = append(tools, t)
 		}

@@ -150,5 +150,5 @@ stdio で aibow から起動した(`uv run --directory …`。環境は `UV_PROJ
 
 ### filesystem サーバー(2026-10-14、モデルを使わずに確かめたこと)
 
-- `npx -y @modelcontextprotocol/server-filesystem` は、初回の起動に約 10.6 秒(ほとんどが npx)。ツールは 14 個で、`read_file`・`write_file`・`edit_file` が組み込みと名前が重なる(今は出していない)
+- `npx -y @modelcontextprotocol/server-filesystem` は、初回の起動に約 10.6 秒(ほとんどが npx)。ツールは 14 個で、`read_file`・`write_file`・`edit_file` が組み込みと名前が重なる(サーバーの名前を前に付けて区別するようにした)
 - 2025-11-25 版で話す。aibow(SDK)が最初に送る 2026-07-28 版の `server/discover` は「Method not found」で返され、古い版の挨拶に戻ってつながる
