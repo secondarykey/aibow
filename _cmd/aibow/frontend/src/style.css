@@ -229,6 +229,8 @@ footer.home .composer textarea { line-height: 1.5; min-height: calc(3 * 1.5em + 
 }
 .tool-card summary { cursor: pointer; display: flex; align-items: center; gap: 6px; }
 .tool-card summary code { color: var(--text); font-size: 12.5px; }
+/* MCP のサーバーのツールは、名前の前にサーバーの名前を小さく出す */
+.tool-server { font-size: 11px; padding: 0 5px; border-radius: 4px; border: 1px solid var(--border); color: var(--muted); }
 .tool-card .tool-status { display: inline-flex; align-items: center; gap: 3px; margin-left: auto; }
 .tool-card.ok .tool-status { color: var(--muted); }
 .tool-card.error { border-color: color-mix(in srgb, var(--error) 40%, var(--border)); }

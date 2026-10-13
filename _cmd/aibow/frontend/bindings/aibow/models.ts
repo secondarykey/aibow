@@ -517,6 +517,11 @@ export interface ToolResult {
      * 実行前の確認の結果。確認が要らないツール・確認する前に止まった呼び出しは nil
      */
     "confirm"?: Confirmation | null;
+
+    /**
+     * MCP のサーバーのツールなら、そのサーバーの名前(settings.json の名前)。組み込みのツールは空
+     */
+    "server"?: string;
 }
 
 /**

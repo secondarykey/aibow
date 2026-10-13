@@ -34,4 +34,14 @@ export interface Preview {
      * 実行するコマンド(run_command)
      */
     "command"?: string;
+
+    /**
+     * MCP のサーバーの名前。中身が見えないので差分は作れず、どのサーバーに何を渡すかを見せる
+     */
+    "server"?: string;
+
+    /**
+     * MCP のサーバーに渡す引数(JSON を整えたもの)
+     */
+    "args"?: string;
 }

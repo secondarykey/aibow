@@ -14,7 +14,7 @@
 // ファイルの役割:
 //
 //	main.go    … 起動(このファイル)
-//	config.go  … 環境変数から設定を読む
+//	config.go  … 環境変数から設定を読む(settings.json は aibow.LoadSettingsFile、MCP のサーバーは startMCP)
 //	service.go … 画面から呼ばれるメソッド(モデル・会話・設定・送信)
 //	frontend/  … 画面(React + TypeScript)。Vite でビルドした frontend/dist が実行ファイルに埋め込まれる
 //	build/     … wails3 build / wails3 dev の設定(アプリ名、アイコン、OS ごとの手順)
@@ -24,9 +24,12 @@ import (
 	"embed"
 	"io/fs"
 	"log"
+	"maps"
+	"slices"
 	"strings"
 
 	"aibow"
+	"aibow/mcpclient"
 	"aibow/store"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -58,6 +61,13 @@ func main() {
 	// 起動に失敗しても(lib が無いなど)ウィンドウは出し、理由を画面に表示する。
 	// リリース版(wails3 build)はコンソールが無く、ログだけでは何も見えずに終わってしまうため。
 	cfg, err := loadConfig()
+	var remote aibow.RemoteTools
+	if err == nil {
+		if m := startMCP(&cfg); m != nil {
+			defer m.Close() // アプリを閉じたら、起動した MCP のサーバーも止める(子プロセスまで)
+			remote = m
+		}
+	}
 	for _, n := range cfg.notices {
 		log.Printf("※ %s", n)
 	}
@@ -83,7 +93,7 @@ func main() {
 		Name:        "aibow",
 		Description: "ローカルLLMを自分で動かして仕組みを学ぶチャット",
 		Services: []application.Service{
-			application.NewService(NewChatService(engine, st, settings, cfg.catalog, initial, cfg.notices, err)),
+			application.NewService(NewChatService(engine, st, settings, cfg.catalog, initial, remote, cfg.notices, err)),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
@@ -118,6 +128,24 @@ func main() {
 	if err := app.Run(); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// startMCP は設定ファイル(settings.json)を読み、MCP のサーバーの係(mcpclient.Manager)を作る。
+// サーバーはまだ起動しない(要る最初の送信のときに起動する)。サーバーが書いてなければ nil。
+// 設定ファイルの書き間違いは、アプリを止めずに画面のお知らせで伝え、MCP を使わずに起動する。
+func startMCP(cfg *appConfig) *mcpclient.Manager {
+	sf, err := aibow.LoadSettingsFile(cfg.settingsPath)
+	if err != nil {
+		cfg.notices = append(cfg.notices, err.Error()+"(MCP のサーバーは使わずに起動しました)")
+		return nil
+	}
+	if len(sf.MCPServers) == 0 {
+		log.Printf("MCP のサーバー: なし(設定ファイル: %s)", absPath(cfg.settingsPath))
+		return nil
+	}
+	names := slices.Sorted(maps.Keys(sf.MCPServers))
+	log.Printf("MCP のサーバー: %s(設定ファイル: %s。要る最初の送信で起動します)", strings.Join(names, ", "), absPath(cfg.settingsPath))
+	return mcpclient.New(sf.MCPServers, mcpclient.Options{Version: strings.TrimSpace(version)})
 }
 
 // openStore は会話を保存する DB を開き、アプリ全体の設定を読む。

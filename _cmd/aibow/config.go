@@ -62,6 +62,7 @@ type appConfig struct {
 	engine       aibow.EngineConfig
 	catalog      aibow.ModelCatalog
 	dbPath       string // 会話を保存する SQLite のファイル
+	settingsPath string // 設定ファイル(settings.json。手で書く設定。今は MCP のサーバーだけ)
 	initialModel string // AIBOW_MODEL。空なら最後に使ったモデル → 一覧の先頭
 
 	// app は、画面で変えられるアプリ全体の設定の初期値。
@@ -86,7 +87,8 @@ func loadConfig() (appConfig, error) {
 			ModelsDir: env.str("AIBOW_MODELS_DIR", "models"),
 			OllamaDir: aibow.OllamaModelsDir(),
 		},
-		dbPath:       env.str("AIBOW_DB", defaultDBPath()),
+		dbPath:       env.str("AIBOW_DB", configFile("aibow.db")),
+		settingsPath: env.str("AIBOW_SETTINGS", configFile("settings.json")),
 		initialModel: os.Getenv("AIBOW_MODEL"),
 		app: aibow.AppSettings{
 			Workspace: aibow.WorkspaceSettings{
@@ -131,15 +133,15 @@ func loadConfig() (appConfig, error) {
 	return c, errors.Join(env.errs...)
 }
 
-// defaultDBPath は DB ファイルの既定の場所。Windows では %APPDATA%\aibow\aibow.db。
-// lib / models と違ってアプリのフォルダに置かないのは、会話は利用者のデータで、
+// configFile は、DB ファイル・設定ファイルの既定の場所。Windows では %APPDATA%\aibow\<name>。
+// lib / models と違ってアプリのフォルダに置かないのは、会話と設定は利用者のデータで、
 // アプリを入れ直したり、別のフォルダから起動したりしても残ってほしいから。
-func defaultDBPath() string {
+func configFile(name string) string {
 	dir, err := os.UserConfigDir()
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(dir, "aibow", "aibow.db")
+	return filepath.Join(dir, "aibow", name)
 }
 
 // absPath はログに出すためにパスを絶対パスにする。空や変換できないときはそのまま返す

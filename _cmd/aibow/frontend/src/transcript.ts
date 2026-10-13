@@ -15,6 +15,7 @@ export interface ToolView {
   result?: string;  // 結果の文(エラーなら「エラー: …」。モデルにもこの文が渡る)
   error?: boolean;
   sec?: number;     // 実行にかかった秒数
+  server?: string;  // MCP のサーバーのツールなら、そのサーバーの名前(結果に保存されている)。組み込みのツールは空
   confirm?: ConfirmRequest; // 実行前の確認を待っている(書き換えるツール)。カードに差分と「実行する / 拒否」を出す
   decision?: Confirmation;  // 確認への答え(保存されている。拒否したら状態を「拒否」にする)
 }
@@ -139,7 +140,7 @@ export function turnView(ms: StoredMessage[]): AssistantView {
       // 結果は呼び出しと同じ順に保存されている。まだ結果の無い最初のカードに付ける
       const card = steps[steps.length - 1]?.tools.find(t => t.result === undefined);
       if (card) {
-        Object.assign(card, { result: m.content, error: m.tool_result?.error, sec: m.tool_result?.sec, decision: m.tool_result?.confirm ?? undefined });
+        Object.assign(card, { result: m.content, error: m.tool_result?.error, sec: m.tool_result?.sec, decision: m.tool_result?.confirm ?? undefined, server: m.tool_result?.server || undefined });
       }
     }
   }
