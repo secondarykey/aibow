@@ -6,7 +6,8 @@ package tool
 // コマンドは何でもできる(ファイルを消す、ネットワークにつなぐ、作業フォルダの外を触る)ので、
 // ファイルのツールの os.Root のように仕組みで縛ることはできない。実行前の確認が唯一の守りになる。
 //
-// どのシェルで動かすか・子プロセスの止め方は OS ごとに違うので、shell_windows.go / shell_unix.go に分けている。
+// どのシェルで動かすかは OS ごとに違うので、shell_windows.go / shell_unix.go に分けている。
+// 子プロセスまでまとめて止める仕組みは internal/proc(MCP のサーバーでも使う)。
 // ここは OS に関係ない部分(時間の上限・出力の切り方・結果の書き方)。
 
 import (
@@ -20,6 +21,8 @@ import (
 	"sync"
 	"time"
 	"unicode/utf8"
+
+	"aibow/internal/proc"
 )
 
 const (
@@ -94,11 +97,11 @@ func (t runCommand) Run(ctx context.Context, args Args) (string, error) {
 	cmd.Stdin = nil                     // 標準入力は空(NUL / /dev/null)。入力待ちで止まらないように
 	cmd.Stdout, cmd.Stderr = &out, &out // 同じ書き先にすると、標準出力とエラー出力が出た順に1つにまとまる
 	cmd.WaitDelay = waitDelay
-	tree, err := startTree(cmd)
+	tree, err := proc.Start(cmd)
 	if err != nil {
 		return "", fmt.Errorf("コマンドを起動できません: %w", err)
 	}
-	defer tree.close()
+	defer tree.Close()
 
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
@@ -106,7 +109,7 @@ func (t runCommand) Run(ctx context.Context, args Args) (string, error) {
 	case err = <-done:
 	case <-ctx.Done():
 		// 時間切れか停止。シェルだけでなく、そこから起動された子プロセス(go test が起動したものなど)もまとめて止める
-		tree.kill()
+		tree.Kill()
 		<-done
 		why := "停止されたため"
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
