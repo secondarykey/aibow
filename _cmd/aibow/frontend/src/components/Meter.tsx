@@ -6,6 +6,8 @@
 //
 // summary の会話では、トークン数(「n / 上限」の n)を押すと今すぐ要約する(onCompact)。
 // 要約は「n を減らす」操作なので、別のボタンを並べずに数そのものを押せるようにしている。
+// 数を両側から矢印で挟み(→| n |←)、縮める操作だと分かるようにする。
+import { LuArrowLeftToLine, LuArrowRightToLine } from "react-icons/lu";
 import type { Usage } from "../../bindings/aibow";
 
 // 橙にする割合。ここを超えたら、もうすぐ compact が働く
@@ -30,7 +32,11 @@ export function Meter({ usage, onCompact, compactDisabled }: Props) {
     <span className={`meter ${level}`} title={title}>
       <span className="meter-bar"><span style={{ width: `${Math.min(ratio, 1) * 100}%` }} /></span>
       {onCompact
-        ? <button className="meter-tokens" disabled={compactDisabled} onClick={onCompact} title="要約">{usage.tokens.toLocaleString()}</button>
+        ? (
+          <button className="meter-tokens" disabled={compactDisabled} onClick={onCompact} title="要約">
+            <LuArrowRightToLine />{usage.tokens.toLocaleString()}<LuArrowLeftToLine />
+          </button>
+        )
         : usage.tokens.toLocaleString()}
       {" / "}{usage.limit.toLocaleString()}
     </span>

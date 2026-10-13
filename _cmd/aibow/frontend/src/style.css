@@ -89,7 +89,8 @@ body {
 .meter-bar span { display: block; height: 100%; background: var(--meter); }
 /* 今すぐ要約: summary の会話では、トークン数(n / 上限 の n)をボタンにする。
    文字の色はメーターの色(橙・赤)を引き継ぐ。押せない間(生成中など)は、ほかのボタンと同じく薄くする */
-.meter-tokens { font: inherit; color: inherit; padding: 1px 7px; }
+.meter-tokens { font: inherit; color: inherit; padding: 1px 5px; display: inline-flex; align-items: center; gap: 3px; }
+.meter-tokens svg { font-size: 11px; }
 .model-select {
   font: inherit; font-size: 13px; padding: 4px 6px; border-radius: 6px; max-width: 320px;
   border: 1px solid var(--border); background: var(--bg); color: var(--text);
