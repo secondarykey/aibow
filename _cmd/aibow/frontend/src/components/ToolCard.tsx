@@ -1,8 +1,8 @@
 // ツールのカード: モデルがツールを呼んだ位置に出す。「思考の過程」と同じく畳んだ1行で、開くと引数と結果が読める。
 // モデルが書いた <tool_call> の生の文字列は答えの欄には出さない(「モデルに渡した文字列」のパネルでは見える)。
 //
-// 書き換えるツール(write_file / edit_file)は、実行する前に確認を待つ。待っている間はカードを開いたままにし、
-// 何をするか(パス・上書きか)と差分(```diff。+ は緑、- は赤)、理由の欄と「拒否」「実行する」を出す。
+// 書き換えるツール(write_file / edit_file)とコマンド(run_command)は、実行する前に確認を待つ。待っている間はカードを開いたままにし、
+// 何をするか(パス・上書きか)と差分(```diff。+ は緑、- は赤)、コマンドならコマンドそのもの、理由の欄と「拒否」「実行する」を出す。
 // 答えると Go の待っているループに届き、実行(か拒否)の結果が届いたら、ほかのカードと同じく畳んだ1行に戻る。
 import { useState } from "react";
 import { LuBan, LuCheck, LuHourglass, LuLoaderCircle, LuWrench, LuX } from "react-icons/lu";
@@ -18,6 +18,7 @@ const TOOL_LABELS: Record<string, string> = {
   read_file: "作業フォルダの中のファイルを読む",
   write_file: "作業フォルダの中のファイルを丸ごと書く(実行前に確認する)",
   edit_file: "作業フォルダの中のファイルの一部を置き換える(実行前に確認する)",
+  run_command: "作業フォルダでコマンドを実行する(実行前に確認する)",
 };
 
 interface Props {
@@ -83,12 +84,14 @@ function Confirm({ req, onAnswer }: { req: ConfirmRequest; onAnswer: Props["onAn
   return (
     <div className="confirm">
       <div className="confirm-target">
-        <code>{pv.path}</code>
+        {pv.path && <code>{pv.path}</code>}
         <span className={`confirm-note ${pv.note === "上書き" ? "overwrite" : ""}`}>{pv.note}</span>
       </div>
-      {pv.diff
-        ? <CodeBlock code={pv.diff.replace(/\n$/, "")} lang="diff" closed />
-        : <p className="tool-none">(大きいため差分は出していません)</p>}
+      {pv.command
+        ? <CodeBlock code={pv.command} lang="" closed />
+        : pv.diff
+          ? <CodeBlock code={pv.diff.replace(/\n$/, "")} lang="diff" closed />
+          : <p className="tool-none">(大きいため差分は出していません)</p>}
       <div className="confirm-actions">
         <input
           type="text"

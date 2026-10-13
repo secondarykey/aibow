@@ -16,12 +16,12 @@ export interface Arg {
  */
 export interface Preview {
     /**
-     * 対象(作業フォルダからの相対パス)
+     * 対象(作業フォルダからの相対パス)。コマンドでは空
      */
     "path": string;
 
     /**
-     * 何をするか(「上書き」「新しく作る」「書き換え」)
+     * 何をするか(「上書き」「新しく作る」「書き換え」「コマンド」)
      */
     "note": string;
 
@@ -29,4 +29,9 @@ export interface Preview {
      * 変更の差分(unified diff。画面は ```diff のコードブロックで出す)。大きすぎるときは空
      */
     "diff": string;
+
+    /**
+     * 実行するコマンド(run_command)
+     */
+    "command"?: string;
 }

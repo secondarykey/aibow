@@ -14,6 +14,8 @@
 | `tool/files.go` | 作業フォルダのツールの共通部分(`Files`・`os.Root` で開く・パスを作業フォルダからの相対にする) |
 | `tool/list.go` / `tool/read.go` | 作業フォルダのツール `list_files` / `read_file` |
 | `tool/write.go` | 書き換えるツール `write_file`(丸ごと書く)/ `edit_file`(1か所だけ置き換える)。どちらも実行前に確認する |
+| `tool/command.go` | コマンドのツール `run_command`(時間の上限 120 秒・出力の切り方・結果の書き方)。実行前に確認する |
+| `tool/shell_windows.go` / `tool/shell_unix.go` | どのシェルで動かすか(cmd.exe / `/bin/sh`)と、子プロセスまでまとめて止める仕組み(ジョブオブジェクト / プロセスグループ)。OS ごとに違う部分はここだけ |
 | `tool/confirm.go` | 実行前に確認が要るツールの印(`Confirmable`)と、確認の画面に出す内容(`Preview`: パス・上書きか・差分)。差分は `github.com/pkg/diff` |
 | `agent.go` | エージェントループ(`runTurn`)とツールの実行(10 秒の上限・20 回の上限・停止・会話の上限に入らない結果・実行前の確認の待ち) |
 | `format_qwen35_test.go` | 書式のテスト。プロンプトは公式テンプレートを jinja2 で通した期待値と1文字まで比べる |
@@ -138,10 +140,26 @@ tool ── 何も知らない
 # Environment
 Working directory: D:\Work\example
 OS: windows
+Shell for run_command: cmd.exe (use dir, type, findstr; ls, cat and grep are not available)
 Use paths relative to the working directory.
 ```
 
-書式に関係ない情報なので、書式ではなく会話の仕組みの側で組み立てる。コマンドのツール(3-3)を足したら、シェルの行を足す。
+書式に関係ない情報なので、書式ではなく会話の仕組みの側で組み立てる。シェルの行は OS ごとに `tool.ShellNote`(Linux なら `/bin/sh`)。
+
+### コマンドのツール(0005 の 3-3)
+
+- `run_command`: 作業フォルダをカレントにしてシェルで実行し、出力と終了コードを返す。実行前に確認する(確認のカードにはコマンドを出す)
+- コマンドは何でもできるので、ファイルのツールの `os.Root` のように仕組みでは縛れない。実行前の確認が唯一の守り
+- **Windows**:`cmd.exe /d /v:on /s /c "chcp 65001 >nul && cmd.exe /d /s /c "!AIBOW_COMMAND!""`(コマンドは環境変数 `AIBOW_COMMAND`)。窓は出さない(`CREATE_NO_WINDOW`)
+  - 同じ cmd.exe の中で `chcp 65001` しても組み込みのコマンドは Shift_JIS のままなので、chcp の後に起動した cmd.exe で動かす(cmd.exe 自身のメッセージは英語になる)
+  - コマンドを遅延展開(`!変数!`)で渡すのは、外側の cmd.exe にコマンドの中の `" & |` を解釈させないため
+  - シェルをジョブオブジェクトに入れ、時間切れ・停止のときはジョブごと止める(cmd.exe だけを止めると、子プロセスがパイプを持ったまま残り、Wait が返らない)。
+    ジョブには KILL_ON_JOB_CLOSE を付け、終わった後に残ったプロセスも止める
+- **Windows 以外**:`/bin/sh -c`。プロセスグループで起動し(`Setpgid`)、止めるときはグループごと(負の PID に SIGKILL)。macOS は未確認
+- 時間の上限は 120 秒(`tool.TimeLimiter`。ほかのツールは 10 秒のまま)。上限を決めるツールは後片付けをして返る約束なので、ループは時間切れ・停止の後 5 秒まで結果を待つ
+- 標準入力は空(NUL / `/dev/null`)。標準出力とエラー出力は出た順に1つにまとめる
+- 結果は「出力 + `(終了コード N)`」。0 以外の終了コードもエラーではない(テストの失敗をモデルに読ませる)。時間切れ・停止はエラーで、ここまでの出力を付ける
+- 出力は先頭 3,000 バイト・末尾 5,000 バイトを残して間を切る(エラーは末尾に出やすい)。CRLF は LF に、UTF-8 でないバイトは `?` に
 
 ### 書き換えるツールと実行前の確認(0005 の 3-2)
 
