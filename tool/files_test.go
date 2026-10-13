@@ -135,14 +135,25 @@ func TestListFiles(t *testing.T) {
 	dir := workDir(t, map[string]string{
 		"main.go": "", "go.mod": "", "b/z.txt": "", "b/a/x.txt": "", "a.txt": "", "empty/": "",
 		".git/HEAD": "", "web/node_modules/m/i.js": "", "web/app.ts": "", ".gitignore": "",
+		".claude/worktrees/x/a.go": "", ".vscode/settings.json": "", ".env": "",
 	})
 	tl := listFiles{dir}
-	want := strings.Join([]string{".gitignore", "a.txt", "b/", "b/a/", "b/a/x.txt", "b/z.txt", "empty/", "go.mod", "main.go", "web/", "web/app.ts"}, "\n")
+	// 浅い順(直下を全部 → 1つ下を全部 → …)。それぞれの中は名前の順。
+	// .git と node_modules は名前も出さない。隠しフォルダは名前だけ出して中に入らない。隠しファイルは出す
+	want := strings.Join([]string{
+		".claude/ (中は省略)", ".env", ".gitignore", ".vscode/ (中は省略)", "a.txt", "b/", "empty/", "go.mod", "main.go", "web/",
+		"b/a/", "b/z.txt", "web/app.ts",
+		"b/a/x.txt",
+		"(「中は省略」は隠しフォルダです。中を見るには path に指定してください)"}, "\n")
 	if got, err := run(t, tl); err != nil || got != want {
 		t.Errorf("全体:\n%s\n%v\n期待:\n%s", got, err, want)
 	}
+	// 隠しフォルダも、path に指定すれば中を並べる
+	if got, err := run(t, tl, "path", ".claude"); err != nil || got != ".claude/worktrees/\n.claude/worktrees/x/\n.claude/worktrees/x/a.go" {
+		t.Errorf(".claude: %q, %v", got, err)
+	}
 	// 下のフォルダを指定しても、パスは作業フォルダから
-	if got, err := run(t, tl, "path", "b/"); err != nil || got != "b/a/\nb/a/x.txt\nb/z.txt" {
+	if got, err := run(t, tl, "path", "b/"); err != nil || got != "b/a/\nb/z.txt\nb/a/x.txt" {
 		t.Errorf("b: %q, %v", got, err)
 	}
 	if got, err := run(t, tl, "path", "empty"); err != nil || !strings.Contains(got, "空のフォルダ") {
@@ -169,6 +180,17 @@ func TestListFilesLimit(t *testing.T) {
 	delete(files, fmt.Sprintf("f%04d.txt", listMax))
 	if got, _ := run(t, listFiles{workDir(t, files)}); strings.Contains(got, "切りました") {
 		t.Error("ちょうど上限で「切りました」が出ています")
+	}
+
+	// 件数が少なくても、パスが長ければ文字数で切る(深い場所のファイルはパスが長い)
+	files = map[string]string{}
+	for i := range 100 {
+		files[fmt.Sprintf("%s%03d.txt", strings.Repeat("x", 92), i)] = "" // 改行を足して 100 文字
+	}
+	got, err = run(t, listFiles{workDir(t, files)})
+	lines = strings.Split(got, "\n")
+	if err != nil || len(lines) != listMaxRunes/100+1 || !strings.Contains(lines[len(lines)-1], "切りました") {
+		t.Errorf("文字数: %d 行(最後: %q), %v", len(lines), lines[len(lines)-1], err)
 	}
 }
 
