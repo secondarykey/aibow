@@ -307,7 +307,7 @@ func TestRememberTools(t *testing.T) {
 	}
 }
 
-// ローカルのツールも同じ仕組みで扱う。決まりの既定は今までどおり(書き換えるツールは確認する、読むだけのツールは確認しない)。
+// 組み込みのツールも同じ仕組みで扱う。決まりの既定は今までどおり(書き換えるツールは確認する、読むだけのツールは確認しない)。
 // グループごと「使わない」なら、ツールごとの扱いにかかわらず使わない
 func TestLocalToolPolicy(t *testing.T) {
 	cs := &Conversations{}
@@ -325,7 +325,7 @@ func TestLocalToolPolicy(t *testing.T) {
 	if cs.toolPolicy(set, write) != ToolAllow {
 		t.Error("ツールごとの PC の既定")
 	}
-	prefs.SetLocalPolicy(ToolOff)
+	prefs.SetBuiltinPolicy(ToolOff)
 	if cs.toolPolicy(set, write) != ToolOff || cs.toolPolicy(set, read) != ToolOff {
 		t.Error("グループごと使わないなら、ツールごとの扱いにかかわらず使わない")
 	}
@@ -333,12 +333,12 @@ func TestLocalToolPolicy(t *testing.T) {
 	if cs.toolPolicy(set, read) != ToolAsk {
 		t.Error("会話の上書きが一番優先")
 	}
-	if names := LocalTools(); len(names) != 7 || names[0].Name != "get_current_time" || names[6].Name != "run_command" {
-		t.Errorf("ローカルのツールの一覧: %+v", names)
+	if names := BuiltinTools(); len(names) != 7 || names[0].Name != "get_current_time" || names[6].Name != "run_command" {
+		t.Errorf("組み込みのツールの一覧: %+v", names)
 	}
 }
 
-// ローカルのツールも「使わない」ならモデルに見せない。読むだけのツールを「確認する」にすると、引数を見せて確認する。
+// 組み込みのツールも「使わない」ならモデルに見せない。読むだけのツールを「確認する」にすると、引数を見せて確認する。
 // サーバーごと「使わない」にした MCP のサーバーは、会話で選んであっても起動しない
 func TestLocalToolPolicyInConversation(t *testing.T) {
 	g := &fakeGen{replies: []fakeReply{
@@ -372,6 +372,44 @@ func TestLocalToolPolicyInConversation(t *testing.T) {
 	}
 	if rs := toolResults(t, cs, c); len(rs) != 1 || rs[0].ToolResult.Error || !strings.Contains(rs[0].Content, "package main") {
 		t.Errorf("確認して実行した: %+v", rs)
+	}
+}
+
+// 会話ごとに組み込みのツールを外せる(入力欄の上の「この会話のツール」)。MCP のツールはそのまま使う
+func TestBuiltinOffInConversation(t *testing.T) {
+	g := &fakeGen{content: "はい"}
+	cs, c, _ := newWorkDirConversation(t, g)
+	useFake(t, cs, &c)
+	cs.SetRemoteTools(&fakeRemote{tools: []tool.Tool{&remoteTool{name: "fake__write"}}})
+	c.Settings.BuiltinOff = true
+	if err := cs.UpdateSettings(c.ID, c.Settings); err != nil {
+		t.Fatal(err)
+	}
+	sendAnswering(cs, context.Background(), c, "やあ", func(*ConfirmRequest) bool { return false })
+	if names := promptToolNames(g.calls[0]); !slices.Equal(names, []string{"fake__write"}) {
+		t.Errorf("組み込みのツールは外し、MCP のツールは使う: %v", names)
+	}
+	if strings.Contains(g.calls[0].prompt, "Shell for run_command") {
+		t.Error("run_command を使わないので、シェルの行は書かない")
+	}
+	if d := cs.Defaults(); d.BuiltinOff {
+		t.Error("新しい会話では組み込みのツールを使う")
+	}
+}
+
+// 前の名前(「ローカル」と呼んでいたころ)の tools.json(local のキー)も読める
+func TestToolPrefsLegacyLocal(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "tools.json")
+	os.WriteFile(path, []byte(`{"local": "off"}`), 0o644)
+	p, err := LoadToolPrefs(path)
+	if got, ok := p.groupPolicy(""); err != nil || !ok || got != ToolOff {
+		t.Fatalf("local を builtin として読む: %v %v %v", got, ok, err)
+	}
+	if err := p.SetToolPolicy("x", ToolOff); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(path); !strings.Contains(string(b), `"builtin": "off"`) || strings.Contains(string(b), `"local"`) {
+		t.Errorf("書くときは builtin のキーにする: %s", b)
 	}
 }
 

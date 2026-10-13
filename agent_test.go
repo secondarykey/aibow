@@ -258,7 +258,7 @@ func TestAgentToolTimeout(t *testing.T) {
 	}
 }
 
-// ローカルのツールを「使わない」にすると、ツールの定義をプロンプトに入れない(トークン数も減る)
+// 組み込みのツールを「使わない」にすると、ツールの定義をプロンプトに入れない(トークン数も減る)
 func TestToolsOffLeavesToolsOutOfThePrompt(t *testing.T) {
 	g := &fakeGen{content: "こんにちは"}
 	cs, _, c := newToolConversation(t, g)
@@ -269,7 +269,7 @@ func TestToolsOffLeavesToolsOutOfThePrompt(t *testing.T) {
 	}
 
 	prefs := &ToolPrefs{}
-	prefs.SetLocalPolicy(ToolOff) // 設定の画面の「ツール」で、ローカルのグループを使わないにした
+	prefs.SetBuiltinPolicy(ToolOff) // 設定の画面の「ツール」で、組み込みのグループを使わないにした
 	cs.SetToolPrefs(prefs)
 	send(t, cs, c, "もう一度")
 	off, _ := cs.Usage(c.ID)

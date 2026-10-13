@@ -286,6 +286,12 @@ export interface ConversationSettings {
     "mcp_servers": string[] | null;
 
     /**
+     * BuiltinOff は、この会話で組み込みのツール(aibow の中で動くツール)を使わないか。
+     * 入力欄の上の「この会話のツール」で外したとき。新しい会話では使う(設定の画面の「ツール」で組み込みを使うにしていれば)
+     */
+    "builtin_off"?: boolean;
+
+    /**
      * ToolPolicies は、この会話だけのツールの扱いの上書き(ツールのモデルに見せる名前 → 使わない / 確認する / 確認しない)。
      * PC の既定(tools.json)より優先する。会話を消せば一緒に消える(toolprefs.go)。今は画面から変えない
      */
@@ -549,9 +555,9 @@ export enum ToolPolicy {
  */
 export interface ToolPrefsView {
     /**
-     * ローカルのツール全部の扱い(空なら決めていない)
+     * 組み込みのツール全部の扱い(空なら決めていない)
      */
-    "local": ToolPolicy;
+    "builtin": ToolPolicy;
     "servers": { [_ in string]?: ToolPolicy } | null;
     "tools": { [_ in string]?: ToolPolicy } | null;
     "known": { [_ in string]?: KnownTool[] | null } | null;

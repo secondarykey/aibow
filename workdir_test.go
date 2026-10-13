@@ -42,7 +42,7 @@ func TestWorkDirAddsFileToolsAndEnvironment(t *testing.T) {
 		{"作業フォルダあり", dir, func() {}, []string{"get_current_time", "calculate", "list_files", "read_file", "write_file", "edit_file", "run_command"}, true, true},
 		{"run_command を使わない", dir, func() { prefs.SetToolPolicy("run_command", ToolOff) },
 			[]string{"get_current_time", "calculate", "list_files", "read_file", "write_file", "edit_file"}, true, false},
-		{"ローカルのツールを使わない", dir, func() { prefs.SetLocalPolicy(ToolOff) }, nil, false, false},
+		{"組み込みのツールを使わない", dir, func() { prefs.SetBuiltinPolicy(ToolOff) }, nil, false, false},
 	}
 	for i, s := range steps {
 		set.WorkDir = s.workDir

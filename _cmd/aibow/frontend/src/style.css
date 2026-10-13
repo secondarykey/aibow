@@ -462,28 +462,28 @@ footer { border-top: 1px solid var(--border); background: var(--panel); padding:
 .workdir-bar.set .workdir { border-color: var(--border); background: var(--bg); color: var(--text); }
 .workdir-bar .workdir-clear { padding: 2px 4px; }
 .workdir-name { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* この会話で使う MCP のサーバー(作業フォルダの隣)。選んでいないときはプラグのアイコンだけ、選んだら名前を枠付きで出す。
+/* この会話のツール(作業フォルダの隣)。使うものがあればレンチのアイコンの横に名前を枠付きで出す。
    押すと上に一覧が開く(入力欄の上にあるので、下に開くと入力欄に重なる) */
-.mcp-bar { position: relative; font-size: 12.5px; color: var(--muted); }
-.mcp-bar .mcp {
+.conv-tools { position: relative; font-size: 12.5px; color: var(--muted); }
+.conv-tools-btn {
   display: inline-flex; align-items: center; gap: 5px; font-size: inherit; padding: 2px 7px;
   border-color: transparent; background: transparent; color: inherit;
 }
-.mcp-bar .mcp:hover { color: var(--text); }
-.mcp-bar.set .mcp { border-color: var(--border); background: var(--bg); color: var(--text); }
-.mcp-names { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mcp-menu {
+.conv-tools-btn:hover { color: var(--text); }
+.conv-tools.set .conv-tools-btn { border-color: var(--border); background: var(--bg); color: var(--text); }
+.conv-tools-names { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conv-tools-menu {
   position: absolute; bottom: calc(100% + 4px); left: 0; z-index: 20; min-width: 180px; padding: 4px;
   border: 1px solid var(--border); border-radius: 8px; background: var(--panel); box-shadow: 0 4px 16px rgba(0, 0, 0, .25);
   display: flex; flex-direction: column;
 }
-.mcp-item {
+.conv-tools-item {
   display: flex; align-items: center; gap: 6px; padding: 5px 8px; border: none; border-radius: 5px;
   background: transparent; color: var(--text); font-size: 13px; text-align: left;
 }
-.mcp-item:hover { background: var(--bg); }
-.mcp-item.needs-dir { color: var(--muted); }
-.mcp-check { width: 14px; display: inline-flex; color: var(--accent); }
+.conv-tools-item:hover { background: var(--bg); }
+.conv-tools-item.needs-dir { color: var(--muted); }
+.conv-tools-check { width: 14px; display: inline-flex; color: var(--accent); }
 
 /* トースト: 右上(タイトルバーのすぐ下)に重ねて出す。クリックで消える */
 .toasts {

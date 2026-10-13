@@ -34,6 +34,21 @@ export function AppSettings(): $CancellablePromise<aibow$0.AppSettings> {
 }
 
 /**
+ * BuiltinAvailable は、組み込みのツールを会話で使えるか(設定の画面の「ツール」で、組み込みのグループを使わないにしていないか)。
+ * 入力欄の上の「この会話のツール」に、組み込みを出すかどうかに使う。
+ */
+export function BuiltinAvailable(): $CancellablePromise<boolean> {
+    return $Call.ByID(1869554825);
+}
+
+/**
+ * BuiltinTools は組み込みのツール(aibow の中で動くツール)の一覧(設定の画面の「ツール」に出す)。
+ */
+export function BuiltinTools(): $CancellablePromise<aibow$0.KnownTool[] | null> {
+    return $Call.ByID(704771653);
+}
+
+/**
  * ChooseWorkDir は作業フォルダを選ぶダイアログを出し、選んだフォルダの絶対パスを返す。取り消したら空。
  * current が空でなければ、そのフォルダから開く。選んだフォルダを会話に入れるのは画面の側(会話の設定として保存する)。
  */
@@ -83,13 +98,6 @@ export function DeleteConversation(id: uuid$0.UUID): $CancellablePromise<void> {
  */
 export function LoadToolList(server: string): $CancellablePromise<void> {
     return $Call.ByID(4133085097, server);
-}
-
-/**
- * LocalTools はローカルのツール(aibow の中で動くツール)の一覧(設定の画面の「ツール」に出す)。
- */
-export function LocalTools(): $CancellablePromise<aibow$0.KnownTool[] | null> {
-    return $Call.ByID(3361536797);
 }
 
 /**
@@ -153,7 +161,7 @@ export function SetGPULayers(n: number): $CancellablePromise<aibow$0.ModelInfo |
 }
 
 /**
- * SetGroupPolicy は、ツールのグループ全部の扱いの PC の既定を変える。group が空ならローカルのツール、そうでなければ MCP のサーバー。
+ * SetGroupPolicy は、ツールのグループ全部の扱いの PC の既定を変える。group が空なら組み込みのツール、そうでなければ MCP のサーバー。
  * 画面ではグループの「使う」のチェック(使わないなら off、使うなら空 = 決めていない)。
  */
 export function SetGroupPolicy(group: string, policy: aibow$0.ToolPolicy): $CancellablePromise<void> {

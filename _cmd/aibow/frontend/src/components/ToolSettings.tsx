@@ -1,6 +1,6 @@
 // 設定の画面の「ツール」: ツールを使う / 使わない(この PC の既定 = tools.json)。
 //
-// ツールはグループに分けて出す: ローカル(aibow の中で動くツール)と、MCP のサーバーごと。
+// ツールはグループに分けて出す: 組み込み(aibow の中で動くツール)と、MCP のサーバーごと。
 // グループの「使う」を外すと、そのグループのツールは全部使わない(一覧も畳む)。使うにすると、一覧を開いてツールごとに選べる。
 //
 // ツールの扱いは「会話ごとの上書き → この PC の既定 → 決まりの既定」の順に決まる(Go の Conversations.toolPolicy)。
@@ -17,6 +17,7 @@ import type { KnownTool, ToolPrefsView } from "../../bindings/aibow";
 import type { ServerInfo } from "../../bindings/aibow/mcpclient";
 import { errorMessage } from "../errors";
 import { TOOL_LABELS } from "../toolLabels";
+import { BUILTIN } from "./ToolBar";
 
 interface Props {
   onChanged(): void; // プロンプトに入るツール・使えるサーバーが変わったので、メーターと MCP の一覧を読み直す
@@ -36,7 +37,7 @@ export function ToolSettings({ onChanged }: Props) {
   }, []);
   useEffect(() => {
     reload();
-    ChatService.LocalTools().then(t => setLocal(t ?? []), err => setError(errorMessage(err)));
+    ChatService.BuiltinTools().then(t => setLocal(t ?? []), err => setError(errorMessage(err)));
     ChatService.AllMCPServers().then(s => setServers(s ?? []), err => setError(errorMessage(err)));
   }, [reload]);
 
@@ -81,13 +82,13 @@ export function ToolSettings({ onChanged }: Props) {
     <div className="tool-settings">
       {(error || prefs.error) && <div className="msg error">{error || prefs.error}</div>}
       <ToolGroup
-        name="ローカル"
+        name={BUILTIN}
         title="aibow の中で動くツール"
-        on={prefs.local !== ToolPolicy.ToolOff}
+        on={prefs.builtin !== ToolPolicy.ToolOff}
         onToggle={on => setGroup("", on)}
         tools={local}
         prefs={prefs}
-        groupPolicy={prefs.local}
+        groupPolicy={prefs.builtin}
         label={t => TOOL_LABELS[t.name] ?? t.description}
         onSetTools={setTools}
       />
@@ -118,7 +119,7 @@ export function ToolSettings({ onChanged }: Props) {
   );
 }
 
-// ToolGroup はツールのグループ1つ(ローカル / MCP のサーバー1つ)。使うときだけ、ツールの一覧を開く
+// ToolGroup はツールのグループ1つ(組み込み / MCP のサーバー1つ)。使うときだけ、ツールの一覧を開く
 function ToolGroup({ name, title, on, onToggle, tools, prefs, groupPolicy, prefix = "", label, onSetTools, loading, listError, onReload }: {
   name: string;
   title: string;

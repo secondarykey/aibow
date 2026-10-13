@@ -34,7 +34,7 @@ import { NewChat } from "./components/NewChat";
 import { SettingsView } from "./components/SettingsView";
 import { Composer } from "./components/Composer";
 import { WorkDirBar } from "./components/WorkDirBar";
-import { McpBar } from "./components/McpBar";
+import { ToolBar } from "./components/ToolBar";
 import { ChatService } from "../bindings/aibow/cmd/aibow";
 import type { ServerInfo } from "../bindings/aibow/mcpclient";
 import { ImeFocusRelay } from "./imeFocus";
@@ -104,11 +104,13 @@ export default function App() {
   // 会話で選べる MCP のサーバー(settings.json に書いたもののうち、設定の画面でサーバーごと「使わない」にしていないもの)。
   // 起動したときと、設定の画面の「ツール」を変えたときに読む
   const [mcpServers, setMcpServers] = useState<ServerInfo[]>([]);
+  const [builtinAvailable, setBuiltinAvailable] = useState(true); // 組み込みのツールを使える(「ツール」で使わないにしていない)
   const reloadMcp = useCallback(() => {
     ChatService.MCPServers().then(
       s => setMcpServers(s ?? []),
       err => addError(`MCP のサーバーの一覧を取得できません: ${errorMessage(err)}`),
     );
+    ChatService.BuiltinAvailable().then(setBuiltinAvailable, err => addError(errorMessage(err)));
   }, [addError]);
   useEffect(reloadMcp, [reloadMcp]);
 
@@ -163,7 +165,7 @@ export default function App() {
         focusKey={focusKey}
         onSend={chat.send}
         top={settings && (
-          // 入力欄の上: 作業フォルダと、この会話で使う MCP のサーバー(どちらも会話ごとの設定)
+          // 入力欄の上: 作業フォルダと、この会話のツール(どちらも会話ごとの設定)
           <div className="composer-top">
             <WorkDirBar
               workDir={settings.work_dir}
@@ -173,11 +175,14 @@ export default function App() {
               }}
               onError={addError}
             />
-            <McpBar
+            <ToolBar
+              builtinAvailable={builtinAvailable}
+              builtinOn={!settings.builtin_off}
               servers={mcpServers}
               selected={settings.mcp_servers ?? []}
               workDir={settings.work_dir}
-              onChange={mcp_servers => convs.updateSettings({ mcp_servers })}
+              onBuiltinChange={on => convs.updateSettings({ builtin_off: !on })}
+              onServersChange={mcp_servers => convs.updateSettings({ mcp_servers })}
             />
           </div>
         )}
@@ -230,10 +235,10 @@ export default function App() {
         onToolsChanged={() => {
           reloadMcp();
           convs.refreshUsage().catch(err => addError(errorMessage(err)));
-          // 新しい会話の画面なら、これから作る会話で使う MCP のサーバーを「ツール」に合わせ直す(「ツール」のチェックが最初から使うサーバー)
+          // 新しい会話の画面なら、これから作る会話のツールを「ツール」に合わせ直す(「ツール」のチェックが最初から使うもの)
           if (!convs.current && convs.draft) {
             ChatService.AppSettings().then(
-              a => convs.updateSettings({ mcp_servers: a.defaults.mcp_servers }),
+              a => convs.updateSettings({ mcp_servers: a.defaults.mcp_servers, builtin_off: false }),
               err => addError(errorMessage(err)),
             );
           }

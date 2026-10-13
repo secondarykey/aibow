@@ -8,13 +8,13 @@ package aibow
 //	PC の既定         … tools.json(手元のファイル。aibow が書く)。何も決めていない会話での扱い
 //
 // 会話の上書き → PC の既定(グループごとの「使わない」→ ツールごと → グループごと)→ 決まりの既定、の順に見て、
-// 最初に見つかったものを使う(Conversations.toolPolicy)。グループは、ローカル(aibow の中で動くツール)と、MCP のサーバーごと。
+// 最初に見つかったものを使う(Conversations.toolPolicy)。グループは、組み込み(aibow の中で動くツール)と、MCP のサーバーごと。
 //
 // PC の既定を会話の DB に入れないのは、ツールは手元で動くことが多く、「聞かずに動かしてよいか」はその PC を使う人が決めることだから。
 // 会話をサーバーに置く形(TODO.md のクライアント/サーバー構成の B)にしても、これは手元に残る。
 // 手で書く settings.json とも分けている(画面で変えたものを aibow が書くので、手で書いたファイルの形や並びを崩さないため)。
 //
-// ツールの名前は、ローカルのツールはそのまま(write_file)、MCP のツールはサーバーの名前が前に付く(Blender__render)ので重ならない。
+// ツールの名前は、組み込みのツールはそのまま(write_file)、MCP のツールはサーバーの名前が前に付く(Blender__render)ので重ならない。
 
 import (
 	"encoding/json"
@@ -49,8 +49,10 @@ type KnownTool struct {
 
 // toolsFile は tools.json の中身。
 type toolsFile struct {
-	// Local はローカルのツール(aibow の中で動くツール)全部の既定
-	Local ToolPolicy `json:"local,omitempty"`
+	// Builtin は組み込みのツール(aibow の中で動くツール)全部の既定
+	Builtin ToolPolicy `json:"builtin,omitempty"`
+	// LegacyLocal は、前の名前(「ローカル」と呼んでいたころ)の Builtin。読むときに Builtin に移し、書くときは書かない
+	LegacyLocal ToolPolicy `json:"local,omitempty"`
 	// Servers は MCP のサーバーごとの既定(そのサーバーの全部のツール)。キーは settings.json のサーバーの名前
 	Servers map[string]ToolPolicy `json:"servers,omitempty"`
 	// Tools はツールごとの扱い。キーはモデルに見せる名前(Blender__get_objects_summary)。サーバーごとの既定より優先する
@@ -78,6 +80,10 @@ func LoadToolPrefs(path string) (*ToolPrefs, error) {
 	if err == nil {
 		err = json.Unmarshal(data, &p.data)
 	}
+	if p.data.Builtin == "" { // 前の名前のキー(local)で書いてあれば移す
+		p.data.Builtin = p.data.LegacyLocal
+	}
+	p.data.LegacyLocal = ""
 	if err == nil {
 		err = p.data.validate()
 	}
@@ -89,8 +95,8 @@ func LoadToolPrefs(path string) (*ToolPrefs, error) {
 }
 
 func (f toolsFile) validate() error {
-	if f.Local != "" && !f.Local.valid() {
-		return fmt.Errorf("local の扱い %q は知らない値です(off / ask / allow)", f.Local)
+	if f.Builtin != "" && !f.Builtin.valid() {
+		return fmt.Errorf("builtin の扱い %q は知らない値です(off / ask / allow)", f.Builtin)
 	}
 	for _, m := range []map[string]ToolPolicy{f.Servers, f.Tools} {
 		for k, v := range m {
@@ -103,7 +109,7 @@ func (f toolsFile) validate() error {
 }
 
 // policy は PC の既定でのツールの扱い。決めていなければ ok が false。
-// group は、ローカルのツールなら空、MCP のツールならサーバーの名前。
+// group は、組み込みのツールなら空、MCP のツールならサーバーの名前。
 //
 // グループごと「使わない」なら、ツールごとの扱いにかかわらず使わない(画面でグループを使わないにすると、ツールの一覧ごと畳むため)。
 // そうでなければ、ツールごと → グループごと、の順に見る。
@@ -124,7 +130,7 @@ func (p *ToolPrefs) policy(group, name string) (ToolPolicy, bool) {
 	return g, gok
 }
 
-// groupPolicy はグループ(ローカルなら空、MCP ならサーバーの名前)全部の扱い。決めていなければ ok が false。
+// groupPolicy はグループ(組み込みなら空、MCP ならサーバーの名前)全部の扱い。決めていなければ ok が false。
 func (p *ToolPrefs) groupPolicy(group string) (ToolPolicy, bool) {
 	if p == nil {
 		return "", false
@@ -132,7 +138,7 @@ func (p *ToolPrefs) groupPolicy(group string) (ToolPolicy, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if group == "" {
-		return p.data.Local, p.data.Local != ""
+		return p.data.Builtin, p.data.Builtin != ""
 	}
 	v, ok := p.data.Servers[group]
 	return v, ok
@@ -143,9 +149,9 @@ func (p *ToolPrefs) SetToolPolicy(name string, policy ToolPolicy) error {
 	return p.update(func(f *toolsFile) { f.Tools = setPolicy(f.Tools, name, policy) }, policy)
 }
 
-// SetLocalPolicy はローカルのツール全部の扱いの PC の既定を変えて、tools.json に書く。policy が空なら決めていない状態に戻す。
-func (p *ToolPrefs) SetLocalPolicy(policy ToolPolicy) error {
-	return p.update(func(f *toolsFile) { f.Local = policy }, policy)
+// SetBuiltinPolicy は組み込みのツール全部の扱いの PC の既定を変えて、tools.json に書く。policy が空なら決めていない状態に戻す。
+func (p *ToolPrefs) SetBuiltinPolicy(policy ToolPolicy) error {
+	return p.update(func(f *toolsFile) { f.Builtin = policy }, policy)
 }
 
 // SetServerPolicy はサーバーの全部のツールの扱いの PC の既定を変えて、tools.json に書く。policy が空なら決めていない状態に戻す。
@@ -207,7 +213,7 @@ func (p *ToolPrefs) update(change func(*toolsFile), policy ToolPolicy) error {
 }
 
 func (f toolsFile) clone() toolsFile {
-	c := toolsFile{Local: f.Local, Servers: maps.Clone(f.Servers), Tools: maps.Clone(f.Tools), Known: map[string][]KnownTool{}}
+	c := toolsFile{Builtin: f.Builtin, Servers: maps.Clone(f.Servers), Tools: maps.Clone(f.Tools), Known: map[string][]KnownTool{}}
 	for k, v := range f.Known {
 		c.Known[k] = slices.Clone(v)
 	}
@@ -239,7 +245,7 @@ func (p *ToolPrefs) save() error {
 
 // ToolPrefsView は、画面の設定に出すための PC の既定の写し。
 type ToolPrefsView struct {
-	Local   ToolPolicy             `json:"local"` // ローカルのツール全部の扱い(空なら決めていない)
+	Builtin ToolPolicy             `json:"builtin"` // 組み込みのツール全部の扱い(空なら決めていない)
 	Servers map[string]ToolPolicy  `json:"servers"`
 	Tools   map[string]ToolPolicy  `json:"tools"`
 	Known   map[string][]KnownTool `json:"known"`
@@ -256,7 +262,7 @@ func (p *ToolPrefs) View() ToolPrefsView {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	c := p.data.clone()
-	v.Local = c.Local
+	v.Builtin = c.Builtin
 	maps.Copy(v.Servers, c.Servers)
 	maps.Copy(v.Tools, c.Tools)
 	maps.Copy(v.Known, c.Known)
