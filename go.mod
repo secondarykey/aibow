@@ -4,6 +4,7 @@ go 1.27.0
 
 require (
 	github.com/hybridgroup/yzma v1.29.1
+	github.com/pkg/diff v0.0.0-20241224192749-4e6772a4315c
 	modernc.org/sqlite v1.60.1
 )
 

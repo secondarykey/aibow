@@ -36,7 +36,7 @@ func TestWorkDirAddsFileToolsAndEnvironment(t *testing.T) {
 		wantEnv   bool
 	}{
 		{"作業フォルダなし", "", true, []string{"get_current_time", "calculate"}, false},
-		{"作業フォルダあり", dir, true, []string{"get_current_time", "calculate", "list_files", "read_file"}, true},
+		{"作業フォルダあり", dir, true, []string{"get_current_time", "calculate", "list_files", "read_file", "write_file", "edit_file"}, true},
 		{"ツールが OFF", dir, false, nil, false},
 	}
 	for i, s := range steps {

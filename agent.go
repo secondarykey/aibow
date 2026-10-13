@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 	"uuid"
 
@@ -94,7 +95,7 @@ func (cs *Conversations) runTurn(ctx context.Context, conv Conversation, history
 					calls++ // 書式の崩れは実行していないので数えない(立て直しの機会を減らさないため)
 				}
 				emit(ChatEvent{ConversationID: conv.ID, Type: "tool_start", ToolCall: &c})
-				res = cs.runTool(ctx, conv, c)
+				res = cs.runTool(ctx, conv, c, emit)
 				var err error
 				if res, err = cs.fitResult(conv.Settings, history, res); err != nil {
 					return last, err
@@ -124,32 +125,113 @@ func (cs *Conversations) runTurn(ctx context.Context, conv Conversation, history
 }
 
 // runTool はツールを1つ実行して、結果の発言(role tool)を作る。失敗もエラーの結果として返す。
-func (cs *Conversations) runTool(ctx context.Context, conv Conversation, c ToolCall) StoredMessage {
-	start := time.Now()
-	text, err := cs.callTool(ctx, conv.Settings, c)
-	sec := time.Since(start).Seconds()
+//
+// 書き換えるツール(tool.Confirmable)は、実行する前にユーザーの確認を待つ。
+// 拒否されたら実行せず、「ユーザーが実行を拒否しました。理由: …」を結果としてモデルに返す(ループは続ける。
+// 失敗しても送信は止めない、と同じ考え方で、モデルに別のやり方を考えさせる)。
+func (cs *Conversations) runTool(ctx context.Context, conv Conversation, c ToolCall, emit func(ChatEvent)) StoredMessage {
+	t, args, err := cs.lookupTool(conv.Settings, c)
 	if err != nil {
-		return toolMessage(conv.ID, c, errorPrefix+err.Error(), true, sec)
+		return toolMessage(conv.ID, c, errorPrefix+err.Error(), true, 0)
 	}
-	return toolMessage(conv.ID, c, text, false, sec)
+	var conf *Confirmation
+	if ct, ok := t.(tool.Confirmable); ok {
+		if conf, err = cs.confirm(ctx, conv.ID, c, ct, args, emit); err != nil {
+			return toolMessage(conv.ID, c, errorPrefix+err.Error(), true, 0)
+		}
+		if !conf.Approved {
+			res := toolMessage(conv.ID, c, rejected(conf.Reason), false, 0)
+			res.ToolResult.Confirm = conf
+			return res
+		}
+	}
+
+	// 時間を測るのは実行だけ(確認を待った時間は入れない)
+	start := time.Now()
+	text, err := cs.execute(ctx, t, args)
+	sec := time.Since(start).Seconds()
+	res := toolMessage(conv.ID, c, text, false, sec)
+	if err != nil {
+		res = toolMessage(conv.ID, c, errorPrefix+err.Error(), true, sec)
+	}
+	res.ToolResult.Confirm = conf
+	return res
 }
 
-// callTool は呼び出しを確かめて、ツールを実行する。
-func (cs *Conversations) callTool(ctx context.Context, set ConversationSettings, c ToolCall) (string, error) {
+// lookupTool は呼び出しを確かめて、実行するツールと引数を返す。
+func (cs *Conversations) lookupTool(set ConversationSettings, c ToolCall) (tool.Tool, tool.Args, error) {
 	if c.Error != "" {
-		return "", errors.New(c.Error) // 書式が崩れていて読み取れなかった
+		return nil, nil, errors.New(c.Error) // 書式が崩れていて読み取れなかった
 	}
 	tools := cs.toolsFor(set)
 	t := tool.Find(tools, c.Name)
 	if t == nil {
-		return "", fmt.Errorf("ツール %s はありません(使えるツール: %s)", c.Name, tool.Names(tools))
+		return nil, nil, fmt.Errorf("ツール %s はありません(使えるツール: %s)", c.Name, tool.Names(tools))
 	}
 	args, err := tool.CheckArgs(t.Def(), c.Args)
 	if err != nil {
-		return "", err
+		return nil, nil, err
 	}
+	return t, args, nil
+}
 
-	// 時間の上限を付けて実行する。ツールが ctx を見ずに止まらなくても、待つのは上限まで
+// confirm は、実行してよいかをユーザーに確かめ、答えを待つ。
+//
+// 確認の内容(差分など)をツールに作らせ、confirm イベントで画面に送り、Confirm で答えが届くまで止まって待つ。
+// 「ループを途中で止めて、ユーザーの返事を待つ」のは、チャネルで待つだけでできる。
+// 待つ間は時間の上限に数えない(ユーザーが読む時間なので)。停止ボタン(ctx)では止まる。
+// 確認の内容を作れないとき(置き換える場所が見つからない、など)は、聞かずにエラーを返す。
+func (cs *Conversations) confirm(ctx context.Context, conv uuid.UUID, c ToolCall, t tool.Confirmable, args tool.Args, emit func(ChatEvent)) (*Confirmation, error) {
+	pv, err := t.Preview(args)
+	if err != nil {
+		return nil, err
+	}
+	req := ConfirmRequest{ID: uuid.NewV7().String(), Call: c, Preview: pv}
+	p := &pendingConfirm{conv: conv, id: req.ID, answer: make(chan Confirmation, 1)}
+	cs.confirmMu.Lock()
+	cs.pending = p
+	cs.confirmMu.Unlock()
+	defer func() {
+		cs.confirmMu.Lock()
+		if cs.pending == p {
+			cs.pending = nil
+		}
+		cs.confirmMu.Unlock()
+	}()
+
+	emit(ChatEvent{ConversationID: conv, Type: "confirm", Confirm: &req})
+	select {
+	case a := <-p.answer:
+		return &a, nil
+	case <-ctx.Done():
+		return nil, errors.New("停止されたため実行していません")
+	}
+}
+
+// Confirm は、確認を待っているツールに答える(画面の「実行する」「拒否」)。
+// 待っている確認が無い・ID が違う(停止した後に押した、など)ときはエラー。
+func (cs *Conversations) Confirm(conv uuid.UUID, id string, approved bool, reason string) error {
+	cs.confirmMu.Lock()
+	defer cs.confirmMu.Unlock()
+	p := cs.pending
+	if p == nil || p.conv != conv || p.id != id {
+		return errors.New("この確認はもう待っていません(停止したか、すでに答えています)")
+	}
+	cs.pending = nil // 2回押しても、答えは1回だけ届ける
+	p.answer <- Confirmation{Approved: approved, Reason: strings.TrimSpace(reason)}
+	return nil
+}
+
+// rejected は、拒否されたときにモデルに返す結果の文。
+func rejected(reason string) string {
+	if reason == "" {
+		reason = "(書かれていません)"
+	}
+	return "ユーザーが実行を拒否しました。理由: " + reason
+}
+
+// execute はツールを実行する。時間の上限を付け、ツールが ctx を見ずに止まらなくても、待つのは上限まで。
+func (cs *Conversations) execute(ctx context.Context, t tool.Tool, args tool.Args) (string, error) {
 	tctx, cancel := context.WithTimeout(ctx, toolTimeout)
 	defer cancel()
 	type result struct {

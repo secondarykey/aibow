@@ -14,17 +14,50 @@ package tool
 // Tool の interface は作業フォルダを知らなくてよい。
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 )
 
 // Files は、作業フォルダ dir の中を扱うツール。dir は絶対パス。
 func Files(dir string) []Tool {
-	return []Tool{listFiles{dir}, readFile{dir}}
+	return []Tool{listFiles{dir}, readFile{dir}, writeFile{dir}, editFile{dir}}
+}
+
+// textMaxBytes は、テキストとして扱うファイルの大きさの上限。これより大きいファイルは読ませも書き換えさせもしない
+const textMaxBytes = 10 << 20
+
+// readText は、作業フォルダの中のファイルを UTF-8 のテキストとして丸ごと読む。無ければ exists=false(エラーではない。新しく作るときのため)。
+// テキストとして扱えないもの(フォルダ・大きすぎる・バイナリ・UTF-8 でない)はエラー。
+func readText(root *os.Root, p string) (text string, exists bool, err error) {
+	st, err := root.Stat(p)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return "", false, nil
+	case err != nil:
+		return "", false, openError(p, err)
+	case st.IsDir():
+		return "", true, fmt.Errorf("%s はフォルダです。中を見るには list_files を使ってください", p)
+	case st.Size() > textMaxBytes:
+		return "", true, fmt.Errorf("%s は大きすぎるため扱えません(%d MB まで)", p, textMaxBytes>>20)
+	}
+	data, err := root.ReadFile(p)
+	if err != nil {
+		return "", true, openError(p, err)
+	}
+	// NUL はテキストのファイルにはまず出てこないので、バイナリ(画像・実行ファイルなど)の目印にする
+	if bytes.IndexByte(data, 0) >= 0 {
+		return "", true, fmt.Errorf("%s はバイナリのファイルのため扱えません", p)
+	}
+	if !utf8.Valid(data) {
+		return "", true, fmt.Errorf("%s は UTF-8 のテキストではないため扱えません(Shift_JIS などは扱えません)", p)
+	}
+	return string(data), true, nil
 }
 
 // openRoot は作業フォルダを os.Root として開く。開くのは呼び出しごと(会話の途中でフォルダが消えても気づけるように)。

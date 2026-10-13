@@ -262,8 +262,16 @@ func TestReadFile(t *testing.T) {
 // 作業フォルダが消えていたら、ツールはエラーを返す(アプリは止まらない)
 func TestFilesWorkDirGone(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "gone")
+	args := map[string][]string{
+		"write_file": {"path", "a.txt", "content", "x"},
+		"edit_file":  {"path", "a.txt", "old_string", "a", "new_string", "b"},
+	}
 	for _, tl := range Files(dir) {
-		if _, err := run(t, tl, "path", "a.txt"); err == nil || !strings.Contains(err.Error(), "作業フォルダ") {
+		kv, ok := args[tl.Def().Name]
+		if !ok {
+			kv = []string{"path", "a.txt"}
+		}
+		if _, err := run(t, tl, kv...); err == nil || !strings.Contains(err.Error(), "作業フォルダ") {
 			t.Errorf("%s: %v", tl.Def().Name, err)
 		}
 	}

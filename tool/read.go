@@ -10,7 +10,6 @@ package tool
 // 書き換えのツール(3-2)では行番号を含めずに書かせる。
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -19,9 +18,8 @@ import (
 )
 
 const (
-	readMaxLines = 200      // 1回に読む行数の上限(limit の既定と最大)
-	readMaxRunes = 8000     // 1回に返す文字数の上限(行番号を含む)
-	readMaxBytes = 10 << 20 // 読むファイルの大きさの上限。これより大きいファイルはテキストとして読ませない
+	readMaxLines = 200  // 1回に読む行数の上限(limit の既定と最大)
+	readMaxRunes = 8000 // 1回に返す文字数の上限(行番号を含む)
 )
 
 type readFile struct {
@@ -45,48 +43,25 @@ func (t readFile) Run(ctx context.Context, args Args) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	data, err := t.read(p)
+	root, err := openRoot(t.dir)
 	if err != nil {
 		return "", err
 	}
-	return readLines(p, data, args.Int("offset", 1), args.Int("limit", readMaxLines))
-}
-
-// read はファイルを丸ごと読む。テキストとして読めないもの(フォルダ・大きすぎる・バイナリ・UTF-8 でない)はエラー。
-func (t readFile) read(p string) ([]byte, error) {
-	root, err := openRoot(t.dir)
-	if err != nil {
-		return nil, err
-	}
 	defer root.Close()
-
-	st, err := root.Stat(p)
+	text, exists, err := readText(root, p)
 	switch {
 	case err != nil:
-		return nil, openError(p, err)
-	case st.IsDir():
-		return nil, fmt.Errorf("%s はフォルダです。中を見るには list_files を使ってください", p)
-	case st.Size() > readMaxBytes:
-		return nil, fmt.Errorf("%s は大きすぎるため読めません(%d MB まで)", p, readMaxBytes>>20)
+		return "", err
+	case !exists:
+		return "", fmt.Errorf("%s は見つかりません。list_files で、ある場所を確かめてください", p)
 	}
-	data, err := root.ReadFile(p)
-	if err != nil {
-		return nil, openError(p, err)
-	}
-	// NUL はテキストのファイルにはまず出てこないので、バイナリ(画像・実行ファイルなど)の目印にする
-	if bytes.IndexByte(data, 0) >= 0 {
-		return nil, fmt.Errorf("%s はバイナリのファイルのため読めません", p)
-	}
-	if !utf8.Valid(data) {
-		return nil, fmt.Errorf("%s は UTF-8 のテキストではないため読めません(Shift_JIS などは扱えません)", p)
-	}
-	return data, nil
+	return readLines(p, text, args.Int("offset", 1), args.Int("limit", readMaxLines))
 }
 
 // readLines は、offset 行目から limit 行(と readMaxRunes 文字)までを、行番号を付けて返す。
 // 続きがあれば、続きの読み方を書き添える。
-func readLines(p string, data []byte, offset, limit int) (string, error) {
-	text := strings.TrimSuffix(string(data), "\n")
+func readLines(p, text string, offset, limit int) (string, error) {
+	text = strings.TrimSuffix(text, "\n")
 	if text == "" {
 		return fmt.Sprintf("(%s は空のファイルです)", p), nil
 	}

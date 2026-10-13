@@ -51,19 +51,28 @@ type Generator interface {
 //	compact  : 会話の上限に収めるために compact した(方式・前後のトークン数・保存した要約など)。
 //	           要約に失敗したときも Compact.Error に理由を入れて送る
 //	usage    : メーターの値(モデルに渡す文字列のトークン数 / 会話の上限)。生成の前と、返事を保存したあとに送る
+//	confirm  : ツールを実行する前に、ユーザーの確認を待っている(Confirm)。答えは Conversations.Confirm で返す
 //	error    : エラー
 //	notice   : エラーではないお知らせ(Text。画面はトーストに出す)。例: 今すぐ要約で、要約するものが無かった
 //	done     : 終わり。必ず最後に1回だけ送る。保存した最後の返事があれば Reply に入る
 type ChatEvent struct {
-	ConversationID uuid.UUID      `json:"conversation_id"` // どの会話の送信か。画面は表示中の会話のものだけを出す
-	Type           string         `json:"type"`
-	Text           string         `json:"text,omitempty"`
-	Error          string         `json:"error,omitempty"`
-	Reply          *StoredMessage `json:"reply,omitempty"`
-	Message        *StoredMessage `json:"message,omitempty"`
-	Usage          *Usage         `json:"usage,omitempty"`
-	Compact        *CompactInfo   `json:"compact,omitempty"`
-	ToolCall       *ToolCall      `json:"tool_call,omitempty"`
+	ConversationID uuid.UUID       `json:"conversation_id"` // どの会話の送信か。画面は表示中の会話のものだけを出す
+	Type           string          `json:"type"`
+	Text           string          `json:"text,omitempty"`
+	Error          string          `json:"error,omitempty"`
+	Reply          *StoredMessage  `json:"reply,omitempty"`
+	Message        *StoredMessage  `json:"message,omitempty"`
+	Usage          *Usage          `json:"usage,omitempty"`
+	Compact        *CompactInfo    `json:"compact,omitempty"`
+	ToolCall       *ToolCall       `json:"tool_call,omitempty"`
+	Confirm        *ConfirmRequest `json:"confirm,omitempty"`
+}
+
+// ConfirmRequest は、ツールを実行する前にユーザーに確かめる内容(confirm イベント)。
+type ConfirmRequest struct {
+	ID      string       `json:"id"`      // 答えるときに渡す(古い確認への答えを取り違えないため)
+	Call    ToolCall     `json:"call"`    // どの呼び出しか
+	Preview tool.Preview `json:"preview"` // 何をするか(パス・上書きか・差分)
 }
 
 // ErrGenerating は、別の送信の生成中に送信されたときのエラー。
@@ -86,6 +95,17 @@ type Conversations struct {
 	// stopSummary は生成中の要約だけを止める関数(StopSummary)。要約していなければ nil
 	summaryMu   sync.Mutex
 	stopSummary context.CancelFunc
+
+	// pending は答えを待っている確認。待っていなければ nil。生成は同時に1つなので、確認も同時に1つだけ
+	confirmMu sync.Mutex
+	pending   *pendingConfirm
+}
+
+// pendingConfirm は答えを待っている確認1つ。
+type pendingConfirm struct {
+	conv   uuid.UUID
+	id     string
+	answer chan Confirmation
 }
 
 // limits は会話の上限と返事の上限。WorkspaceSettings のうち、会話の仕組みが使う2つ。

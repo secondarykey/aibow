@@ -14,7 +14,7 @@ aibow 全体の進み具合。ルールと全体の構成は `AGENTS.md`(仕組�
 | ✅ | 2-3. ツール呼び出し:モデルが書く `<tool_call>` を読み取って実行し、結果を返して続きを書かせる(エージェントループ)。最初のツールは現在時刻と計算 | [0004-tools.md](_docs/features/0004-tools.md) |
 | ✅ | 3-0. ツールを `tool` パッケージに切り出す(動きは変えない。ステップ4・5 の MCP でツールだけを使うため) | [0005-coding-agent.md](_docs/features/0005-coding-agent.md) |
 | ✅ | 3-1. ミニコーディングエージェント:作業フォルダ(会話ごと)と、読むツール(`list_files`・`read_file`)。作業フォルダの外には `os.Root` で出られない | [0005-coding-agent.md](_docs/features/0005-coding-agent.md) |
-| ⬜ | 3-2. 書くツール(`write_file`・`edit_file`)と、実行前の確認(拒否したら理由をモデルに返して続ける) | [0005-coding-agent.md](_docs/features/0005-coding-agent.md) |
+| 🔧 | 3-2. 書くツール(`write_file`・`edit_file`)と、実行前の確認(拒否したら理由をモデルに返して続ける) | [0005-coding-agent.md](_docs/features/0005-coding-agent.md) |
 | ⬜ | 3-3. コマンド実行(`run_command`。Windows は cmd.exe、それ以外は sh。実行前に確認) | [0005-coding-agent.md](_docs/features/0005-coding-agent.md) |
 | ⬜ | 4. MCP クライアント:ステップ3のツールを MCP サーバー経由に置き換える | 未作成 |
 | ⬜ | 5. MCP サーバー自作(Go) | 未作成 |

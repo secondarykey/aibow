@@ -254,7 +254,7 @@ func TestToolMessagesPersist(t *testing.T) {
 	broken := aibow.ToolCall{Raw: "<tool_call>?</tool_call>", Error: "書式が崩れています"}
 	reply := aibow.StoredMessage{ID: uuid.NewV7(), ConversationID: c.ID, Role: "assistant", ToolCalls: []aibow.ToolCall{call, broken}, CreatedAt: time.Now()}
 	result := aibow.StoredMessage{ID: uuid.NewV7(), ConversationID: c.ID, Role: "tool", Content: "3.5",
-		ToolResult: &aibow.ToolResult{Call: call, Sec: 0.01}, CreatedAt: time.Now()}
+		ToolResult: &aibow.ToolResult{Call: call, Sec: 0.01, Confirm: &aibow.Confirmation{Approved: false, Reason: "消さないで"}}, CreatedAt: time.Now()}
 	for _, m := range []aibow.StoredMessage{reply, result} {
 		if err := s.AddMessage(m); err != nil {
 			t.Fatal(err)

@@ -128,9 +128,16 @@ type StoredMessage struct {
 
 // ToolResult はツールの結果1件の記録(結果の文そのものは StoredMessage.Content)。
 type ToolResult struct {
-	Call  ToolCall `json:"call"`  // どの呼び出しの結果か(書式に依存しない形。名前・引数)
-	Error bool     `json:"error"` // エラーだったか(Content は「エラー: …」)
-	Sec   float64  `json:"sec"`   // 実行にかかった秒数
+	Call    ToolCall      `json:"call"`              // どの呼び出しの結果か(書式に依存しない形。名前・引数)
+	Error   bool          `json:"error"`             // エラーだったか(Content は「エラー: …」)
+	Sec     float64       `json:"sec"`               // 実行にかかった秒数(確認を待った時間は入らない)
+	Confirm *Confirmation `json:"confirm,omitempty"` // 実行前の確認の結果。確認が要らないツール・確認する前に止まった呼び出しは nil
+}
+
+// Confirmation は、実行前の確認(書き換えるツール)へのユーザーの答え。再起動しても見えるよう、結果と一緒に保存する。
+type Confirmation struct {
+	Approved bool   `json:"approved"`         // 実行した。false なら拒否した
+	Reason   string `json:"reason,omitempty"` // 拒否の理由(ユーザーが書いたもの。空でもよい)
 }
 
 // Compaction は要約1件(compact の summary)。
