@@ -66,6 +66,53 @@ func TestCheckArgs(t *testing.T) {
 	}
 }
 
+// 文字列で届いた値を、JSON Schema の型に変換する。書き方は Qwen3.5 の公式テンプレートが履歴に書き戻す形
+// (配列・オブジェクトは JSON、真偽値は Python の True / False)。MCP のサーバーの定義にある書き方(type の配列)も読む
+func TestCheckArgsTypes(t *testing.T) {
+	def := Def{Name: "edit", Parameters: []byte(`{"type": "object", "properties": {
+		"paths": {"type": "array", "items": {"type": "string"}},
+		"edits": {"type": "array"},
+		"options": {"type": "object"},
+		"dryRun": {"type": "boolean"},
+		"head": {"type": ["integer", "null"]},
+		"note": {"anyOf": [{"type": "string"}, {"type": "number"}]}
+	}}`)}
+	got, err := CheckArgs(def, []Arg{
+		{"paths", `["a.go", "b.go"]`},
+		{"edits", "[{\"oldText\": \"x\", \"newText\": \"y\"}]\n"},
+		{"options", `{"sort": "name"}`},
+		{"dryRun", "True"},
+		{"head", "3"},
+		{"note", "12"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p, _ := got["paths"].([]any); len(p) != 2 || p[1] != "b.go" {
+		t.Errorf("paths: %#v", got["paths"])
+	}
+	if e, _ := got["edits"].([]any); len(e) != 1 || e[0].(map[string]any)["newText"] != "y" {
+		t.Errorf("edits: %#v", got["edits"])
+	}
+	if o, _ := got["options"].(map[string]any); o["sort"] != "name" {
+		t.Errorf("options: %#v", got["options"])
+	}
+	if got["dryRun"] != true || got["head"] != 3 || got["note"] != "12" {
+		t.Errorf("dryRun / head / note: %#v", got)
+	}
+
+	for name, a := range map[string]Arg{
+		"配列でない":         {"paths", "a.go"},
+		"配列の代わりにオブジェクト": {"paths", `{"a": 1}`},
+		"オブジェクトの代わりに配列": {"options", `[1]`},
+		"真偽値でない":        {"dryRun", "yes"},
+	} {
+		if _, err := CheckArgs(def, []Arg{a}); err == nil {
+			t.Errorf("%s: エラーになるはずです", name)
+		}
+	}
+}
+
 // 組み込みのツールの定義(JSON Schema)が読めること。必須の引数が無いときのエラーだけは正しい
 func TestBuiltinDefs(t *testing.T) {
 	for _, tl := range Builtin() {

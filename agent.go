@@ -21,6 +21,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"slices"
 	"strings"
 	"time"
@@ -139,7 +140,17 @@ func (cs *Conversations) runTool(ctx context.Context, conv Conversation, c ToolC
 	if err != nil {
 		return toolMessage(conv.ID, c, errorPrefix+err.Error(), true, 0)
 	}
+	res := cs.runFound(ctx, conv, c, t, args, emit)
+	if r, ok := t.(tool.Remote); ok {
+		res.ToolResult.Server = r.Server() // どの MCP のサーバーが実行したか(画面のカードに出す)
+	}
+	return res
+}
+
+// runFound は、見つかったツールを(確認が要るなら確認してから)実行する。
+func (cs *Conversations) runFound(ctx context.Context, conv Conversation, c ToolCall, t tool.Tool, args tool.Args, emit func(ChatEvent)) StoredMessage {
 	var conf *Confirmation
+	var err error
 	if ct, ok := t.(tool.Confirmable); ok {
 		if conf, err = cs.confirm(ctx, conv.ID, c, ct, args, emit); err != nil {
 			return toolMessage(conv.ID, c, errorPrefix+err.Error(), true, 0)
@@ -305,8 +316,25 @@ func toolMessage(conv uuid.UUID, c ToolCall, text string, isErr bool, sec float6
 }
 
 // toolsFor は会話の設定で使えるツール。「ツールを使う」が OFF なら無し。
-// 作業フォルダを決めた会話だけ、そのフォルダの中を扱うツールを足す(作業フォルダは会話ごとなので、ここで作る)。
+// 組み込みのツールの後ろに、起動済みの MCP のサーバーのツールを並べる。
 func (cs *Conversations) toolsFor(set ConversationSettings) []tool.Tool {
+	tools := cs.localTools(set)
+	if cs.remote == nil || !set.Tools {
+		return tools
+	}
+	for _, t := range cs.remote.Tools(set.WorkDir) {
+		// 名前が重なったツールは出さない(先にあるほう = 組み込みのツールを使う)。同じ名前が2つあると、モデルも aibow も区別できない。
+		// 重なったときにどうするか(サーバーの名前を前に付ける、など)は 0006 の未決事項。起動したときにログに出す(startRemote)
+		if tool.Find(tools, t.Def().Name) == nil {
+			tools = append(tools, t)
+		}
+	}
+	return tools
+}
+
+// localTools は、aibow の中で動くツール(組み込みと、作業フォルダのツール)。
+// 作業フォルダを決めた会話だけ、そのフォルダの中を扱うツールを足す(作業フォルダは会話ごとなので、ここで作る)。
+func (cs *Conversations) localTools(set ConversationSettings) []tool.Tool {
 	if !set.Tools {
 		return nil
 	}
@@ -314,4 +342,59 @@ func (cs *Conversations) toolsFor(set ConversationSettings) []tool.Tool {
 		return cs.tools
 	}
 	return append(append(slices.Clip(cs.tools), tool.Files(set.WorkDir)...), tool.RunCommand(set.WorkDir))
+}
+
+// RemoteTools は、aibow の外のプログラムが実行するツールの置き場(MCP のサーバー。本物は mcpclient.Manager)。
+// 会話の仕組みは MCP を知らない。ツールが tool.Tool の形で並んでいれば、エージェントループはそのまま使える。
+type RemoteTools interface {
+	// Start は、作業フォルダ workDir の会話で使うサーバーのうち、動いていないものを起動する。
+	// 起動したサーバーの名前と、起動できなかったサーバーのエラーを返す
+	Start(ctx context.Context, workDir string) (started []string, errs []error)
+	// Tools は起動済みのサーバーのツール(起動はしない。メーターの計算などからも呼ばれるため)
+	Tools(workDir string) []tool.Tool
+}
+
+// SetRemoteTools は MCP のサーバーのツールを使えるようにする(アプリの起動時に1回)。
+func (cs *Conversations) SetRemoteTools(r RemoteTools) {
+	cs.remote = r
+}
+
+// startRemote は、会話で使う MCP のサーバーを、送信の前に起動する。
+// 起動できなかったサーバーは、お知らせ(トースト)に出して、そのサーバーのツール無しで続ける。
+func (cs *Conversations) startRemote(ctx context.Context, conv Conversation, emit func(ChatEvent)) {
+	set := conv.Settings
+	if cs.remote == nil || !set.Tools {
+		return
+	}
+	started, errs := cs.remote.Start(ctx, set.WorkDir)
+	for _, err := range errs {
+		log.Printf("※ %v", err)
+		emit(ChatEvent{ConversationID: conv.ID, Type: "notice", Text: err.Error() + "(このサーバーのツールは使わずに続けます)"})
+	}
+	if len(started) > 0 {
+		cs.logRemoteTools(set)
+	}
+}
+
+// logRemoteTools は、MCP のツールの数と、その定義がプロンプトをどれだけ長くするかをログに出す(学習用)。
+// ツールの定義はシステムプロンプトに毎回入るので、会話の上限を使う。既製のサーバーはツールが多く、説明も長い。
+func (cs *Conversations) logRemoteTools(set ConversationSettings) {
+	local, all := cs.localTools(set), cs.toolsFor(set)
+	var skipped []string
+	for _, t := range cs.remote.Tools(set.WorkDir) {
+		if tool.Find(local, t.Def().Name) != nil {
+			skipped = append(skipped, t.Def().Name)
+		}
+	}
+	before, err1 := cs.gen.CountTokens(Prompt{Tools: tool.Defs(local)})
+	after, err2 := cs.gen.CountTokens(Prompt{Tools: tool.Defs(all)})
+	if err := errors.Join(err1, err2); err != nil {
+		log.Printf("※ ツールの定義のトークン数を数えられません: %v", err)
+		return
+	}
+	log.Printf("ツール: 組み込み %d 個 + MCP %d 個。MCP のツールの定義で、プロンプトが約 %d トークン長くなります(ツールの定義の合計は約 %d トークン)",
+		len(local), len(all)-len(local), after-before, after)
+	if len(skipped) > 0 {
+		log.Printf("※ MCP のツールのうち、組み込みのツールと名前が重なる %s は出しません", strings.Join(skipped, ", "))
+	}
 }

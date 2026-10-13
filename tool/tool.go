@@ -39,6 +39,14 @@ type TimeLimiter interface {
 	TimeLimit() time.Duration
 }
 
+// Remote は、aibow の外のプログラム(MCP のサーバー)が実行するツール。
+// モデルから見ると組み込みのツールと違いは無い(定義を見て呼ぶだけ)。違うのは、実行がどこで起きるかだけ。
+// Server はそのサーバーの名前(settings.json の mcpServers に書いた名前。画面とログに出す)。
+type Remote interface {
+	Tool
+	Server() string
+}
+
 // Def はモデルに知らせるツールの定義。書式がシステムプロンプトに入れる。
 type Def struct {
 	Name        string          `json:"name"`        // 英語の snake_case
@@ -64,7 +72,8 @@ type Arg struct {
 }
 
 // Args は実行するときの引数。CheckArgs が定義と照らし合わせ、JSON Schema の型に変換したもの
-// (type が integer なら int、number なら float64、ほかは string)。省略された引数は入っていない。
+// (type が integer なら int、number なら float64、boolean なら bool、array / object なら JSON を読んだ値([]any / map[string]any)、
+// ほかは string)。省略された引数は入っていない。
 type Args map[string]any
 
 // String は文字列の引数を返す。省略されていたら "" 。
@@ -118,12 +127,12 @@ func Names(tools []Tool) string {
 // 足りない・知らない・重なった引数はエラー。小さいモデルは引数の名前を間違えやすいので、
 // 何が使えるかをエラーの文に入れて、次の呼び出しで直せるようにする。
 //
-// Qwen3.5 の書式では値がすべて文字列で届くので、数の引数(type が integer / number)はここで変換する。
+// Qwen3.5 の書式では値がすべて文字列で届くので、文字列でない引数(数・真偽値・配列・オブジェクト)はここで変換する。
 // ツールの側は、受け取った値の型を信じてよい。
 func CheckArgs(def Def, args []Arg) (Args, error) {
 	var schema struct {
 		Properties map[string]struct {
-			Type string `json:"type"`
+			Type schemaType `json:"type"`
 		} `json:"properties"`
 		Required []string `json:"required"`
 	}
@@ -145,7 +154,7 @@ func CheckArgs(def Def, args []Arg) (Args, error) {
 		if _, dup := out[a.Name]; dup {
 			return nil, fmt.Errorf("引数 %s が2回書かれています", a.Name)
 		}
-		v, err := convert(prop.Type, a.Value)
+		v, err := convert(string(prop.Type), a.Value)
 		if err != nil {
 			return nil, fmt.Errorf("引数 %s: %w", a.Name, err)
 		}
@@ -159,8 +168,37 @@ func CheckArgs(def Def, args []Arg) (Args, error) {
 	return out, nil
 }
 
-// convert は文字列で届いた値を、JSON Schema の型に変換する。
-// 型を決めていない・文字列の引数はそのまま。真偽値や配列の引数を使うツールはまだ無いので、変換もまだ書かない。
+// schemaType は JSON Schema の type。ふつうは "string" のような文字列だが、
+// MCP のサーバーの定義には ["string", "null"](null も許す)のような配列もあるので、null でない最初の型を使う。
+// 型を決めていない(anyOf などで書いた)引数は "" になり、文字列のまま渡す。
+type schemaType string
+
+func (t *schemaType) UnmarshalJSON(b []byte) error {
+	var one string
+	if json.Unmarshal(b, &one) == nil {
+		*t = schemaType(one)
+		return nil
+	}
+	var many []string
+	if err := json.Unmarshal(b, &many); err != nil {
+		return err
+	}
+	for _, m := range many {
+		if m != "null" {
+			*t = schemaType(m)
+			return nil
+		}
+	}
+	return nil
+}
+
+// convert は文字列で届いた値を、JSON Schema の型に変換する。型を決めていない・文字列の引数はそのまま。
+//
+// 文字列でない値の書き方は、Qwen3.5 の公式テンプレートが会話の履歴に呼び出しを書き戻すときの書き方に合わせる
+// (モデルは学習でその形を見ているので、同じ形で書いてくる):
+//
+//	配列・オブジェクト … JSON(テンプレートの tojson)
+//	それ以外           … 文字列にしたもの(テンプレートは Python で動くので、真偽値は True / False になる)
 func convert(typ, value string) (any, error) {
 	v := strings.TrimSpace(value)
 	switch typ {
@@ -176,6 +214,27 @@ func convert(typ, value string) (any, error) {
 			return nil, fmt.Errorf("数で書いてください(%q)", value)
 		}
 		return f, nil
+	case "boolean":
+		switch strings.ToLower(v) {
+		case "true":
+			return true, nil
+		case "false":
+			return false, nil
+		}
+		return nil, fmt.Errorf("true か false で書いてください(%q)", value)
+	case "array", "object":
+		var x any
+		err := json.Unmarshal([]byte(v), &x)
+		if _, isArray := x.([]any); err == nil && typ == "array" && isArray {
+			return x, nil
+		}
+		if _, isObject := x.(map[string]any); err == nil && typ == "object" && isObject {
+			return x, nil
+		}
+		if typ == "array" {
+			return nil, fmt.Errorf(`JSON の配列で書いてください(例: ["a", "b"])。書かれた値: %q`, value)
+		}
+		return nil, fmt.Errorf(`JSON のオブジェクトで書いてください(例: {"key": "value"})。書かれた値: %q`, value)
 	}
 	return value, nil
 }

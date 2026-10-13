@@ -1,6 +1,6 @@
 package tool
 
-// confirm.go: 実行する前にユーザーの確認が要るツール(ファイルを書き換えるツール。3-3 のコマンドも)。
+// confirm.go: 実行する前にユーザーの確認が要るツール(ファイルを書き換えるツール。3-3 のコマンド、ステップ4の MCP のツールも)。
 //
 // ツールの守り方は2種類ある。ファイルのツールは os.Root で「作業フォルダの外に出られない」ことを仕組みで守れるが、
 // 作業フォルダの中で何を書き換えるかは縛れない。モデルへの入力(読んだファイルの中身も含む)に
@@ -30,6 +30,10 @@ type Preview struct {
 	Diff string `json:"diff"` // 変更の差分(unified diff。画面は ```diff のコードブロックで出す)。大きすぎるときは空
 
 	Command string `json:"command,omitempty"` // 実行するコマンド(run_command)
+
+	// MCP のサーバーのツール。中身が見えないので差分は作れず、どのサーバーに何を渡すかを見せる
+	Server string `json:"server,omitempty"` // サーバーの名前
+	Args   string `json:"args,omitempty"`   // 渡す引数(JSON を整えたもの)
 }
 
 // diffMaxLines は差分を作るファイルの大きさの上限(前後の行数の合計)。

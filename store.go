@@ -132,6 +132,7 @@ type ToolResult struct {
 	Error   bool          `json:"error"`             // エラーだったか(Content は「エラー: …」)
 	Sec     float64       `json:"sec"`               // 実行にかかった秒数(確認を待った時間は入らない)
 	Confirm *Confirmation `json:"confirm,omitempty"` // 実行前の確認の結果。確認が要らないツール・確認する前に止まった呼び出しは nil
+	Server  string        `json:"server,omitempty"`  // MCP のサーバーのツールなら、そのサーバーの名前(settings.json の名前)。組み込みのツールは空
 }
 
 // Confirmation は、実行前の確認(書き換えるツール)へのユーザーの答え。再起動しても見えるよう、結果と一緒に保存する。

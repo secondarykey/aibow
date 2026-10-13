@@ -85,6 +85,9 @@ type Conversations struct {
 	gen   Generator
 	tools []tool.Tool // 「ツールを使う」が ON の会話で、モデルが使えるツール(作業フォルダのツールは会話ごとに足す。toolsFor)
 
+	// remote は MCP のサーバーのツール(nil なら使わない)。設定ファイルにサーバーが書いてあるときだけ、アプリが渡す(SetRemoteTools)
+	remote RemoteTools
+
 	// generating は生成中の会話の ID。生成していなければ nil。
 	// エンジン(作業領域)が1つしかないので、生成は同時に1つだけ。
 	generating atomic.Pointer[uuid.UUID]
@@ -257,6 +260,9 @@ func (cs *Conversations) Send(ctx context.Context, id uuid.UUID, text string, em
 		fail(err)
 		return
 	}
+
+	// 0. この会話で使う MCP のサーバーが動いていなければ、起動する(そのツールも会話の上限に数えるので、確かめる前に)
+	cs.startRemote(ctx, conv, emit)
 
 	// 1. 会話の上限に収められるかを確かめてから、ユーザーの発言を保存する。
 	// タイトルがまだ無ければ(最初の発言なら)、その先頭をタイトルにする

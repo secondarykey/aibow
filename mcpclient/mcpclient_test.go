@@ -1,0 +1,328 @@
+package mcpclient
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"aibow/tool"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+// TestMain: 環境変数 AIBOW_MCP_TEST_SERVER=1 で起動されたら、テストの実行ファイル自身が MCP のサーバーとして動く
+// (標準入出力で話す)。本物の子プロセスでのつなぎ方(TestCommandServer)を、Node などを入れずに確かめるため。
+func TestMain(m *testing.M) {
+	if os.Getenv("AIBOW_MCP_TEST_SERVER") == "1" {
+		if err := newTestServer().Run(context.Background(), &mcp.StdioTransport{}); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+	os.Exit(m.Run())
+}
+
+// newTestServer は、テスト用の MCP のサーバー(SDK で作る)。
+func newTestServer() *mcp.Server {
+	s := mcp.NewServer(&mcp.Implementation{Name: "test-server", Version: "0.1"}, nil)
+	add := func(name, schema string, h mcp.ToolHandler) {
+		s.AddTool(&mcp.Tool{Name: name, Description: "Test tool " + name + ".", InputSchema: json.RawMessage(schema)}, h)
+	}
+	text := func(s string) *mcp.CallToolResult {
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: s}}}
+	}
+	add("echo", `{"type": "object", "properties": {"paths": {"type": "array", "items": {"type": "string"}}, "loud": {"type": "boolean"}}, "required": ["paths"]}`,
+		func(_ context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			return text(string(req.Params.Arguments)), nil // 届いた引数(JSON)をそのまま返す
+		})
+	add("fail", `{"type": "object"}`, func(context.Context, *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		r := text("file not found")
+		r.IsError = true
+		return r, nil
+	})
+	add("slow", `{"type": "object"}`, func(ctx context.Context, _ *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		<-ctx.Done() // 取り消しの知らせ(notifications/cancelled)が届くまで待つ
+		return nil, ctx.Err()
+	})
+	add("where", `{"type": "object"}`, func(context.Context, *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		wd, _ := os.Getwd()
+		return text(wd + "\n" + strings.Join(os.Args[1:], " ")), nil
+	})
+	return s
+}
+
+// logs は Manager のログを集める。
+type logs struct {
+	mu    sync.Mutex
+	lines []string
+}
+
+func (l *logs) logf(format string, args ...any) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.lines = append(l.lines, fmt.Sprintf(format, args...))
+}
+
+func (l *logs) contains(s string) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return slices.ContainsFunc(l.lines, func(line string) bool { return strings.Contains(line, s) })
+}
+
+// memoryManager は、プロセスを起動せずにテスト用のサーバーにつなぐ Manager(SDK の NewInMemoryTransports)。
+// sessions に、サーバーの側のつながりが起動した順に入る(落ちたことにするときに閉じる)。
+func memoryManager(t *testing.T, configs map[string]ServerConfig) (*Manager, *logs, *[]*mcp.ServerSession) {
+	t.Helper()
+	l := &logs{}
+	m := New(configs, Options{Version: "test", Logf: l.logf})
+	var sessions []*mcp.ServerSession
+	m.transport = func(string, ServerConfig, string) (mcp.Transport, error) {
+		ct, st := mcp.NewInMemoryTransports()
+		ss, err := newTestServer().Connect(context.Background(), st, nil)
+		if err != nil {
+			return nil, err
+		}
+		sessions = append(sessions, ss)
+		return ct, nil
+	}
+	t.Cleanup(m.Close)
+	return m, l, &sessions
+}
+
+func names(tools []tool.Tool) []string {
+	var out []string
+	for _, t := range tools {
+		out = append(out, t.(tool.Remote).Server()+"/"+t.Def().Name)
+	}
+	return out
+}
+
+// ${workdir} を使うサーバーは作業フォルダごとに起動し、使わないサーバーは1つを共有する。Tools は起動しない
+func TestStartAndTools(t *testing.T) {
+	m, l, _ := memoryManager(t, map[string]ServerConfig{
+		"fs":   {Command: "fs-server", Args: []string{workDirVar}},
+		"util": {Command: "util-server"},
+	})
+	ctx := context.Background()
+
+	if got := m.Tools("D:/a"); len(got) != 0 {
+		t.Fatalf("起動する前はツールが無い: %v", names(got))
+	}
+	started, errs := m.Start(ctx, "")
+	if len(errs) != 0 || !slices.Equal(started, []string{"util"}) {
+		t.Fatalf("作業フォルダが無ければ util だけ起動する: %v %v", started, errs)
+	}
+	if got := names(m.Tools("D:/a")); len(got) != 4 || got[0] != "util/echo" {
+		t.Errorf("fs はまだ起動していない: %v", got)
+	}
+
+	started, _ = m.Start(ctx, "D:/a")
+	if !slices.Equal(started, []string{"fs"}) {
+		t.Errorf("fs だけを起動する(util は動いている): %v", started)
+	}
+	got := names(m.Tools("D:/a"))
+	if len(got) != 8 || got[0] != "fs/echo" || got[4] != "util/echo" {
+		t.Errorf("サーバーの名前の順に並ぶ: %v", got)
+	}
+	if got := names(m.Tools("D:/b")); len(got) != 4 {
+		t.Errorf("別の作業フォルダでは fs はまだ動いていない: %v", got)
+	}
+	if started, _ := m.Start(ctx, "D:/a"); len(started) != 0 {
+		t.Errorf("動いているサーバーは起動し直さない: %v", started)
+	}
+
+	// 学習用のログ: 送受信したメッセージ(→ / ←)と、つながったときの版・ツールの数
+	for _, want := range []string{"MCP util → ", "MCP util ← ", `"method":"tools/list"`, "ツール 4 個"} {
+		if !l.contains(want) {
+			t.Errorf("ログに %q がありません", want)
+		}
+	}
+}
+
+// 引数は CheckArgs で JSON Schema の型に変換され(配列・真偽値)、その型のまま tools/call で届く
+func TestRun(t *testing.T) {
+	m, _, _ := memoryManager(t, map[string]ServerConfig{"util": {Command: "util-server"}})
+	ctx := context.Background()
+	m.Start(ctx, "")
+	tools := m.Tools("")
+
+	echo := tool.Find(tools, "echo")
+	args, err := tool.CheckArgs(echo.Def(), []tool.Arg{{Name: "paths", Value: `["a.go", "b.go"]`}, {Name: "loud", Value: "True"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := echo.Run(ctx, args); err != nil || got != `{"loud":true,"paths":["a.go","b.go"]}` {
+		t.Errorf("echo: %q, %v", got, err)
+	}
+	if _, err := tool.CheckArgs(echo.Def(), nil); err == nil {
+		t.Error("inputSchema の required も確かめる")
+	}
+
+	if got, err := tool.Find(tools, "fail").Run(ctx, nil); err == nil || err.Error() != "file not found" {
+		t.Errorf("isError の結果はエラーにする: %q, %v", got, err)
+	}
+
+	slow := tool.Find(tools, "slow")
+	tctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+	defer cancel()
+	if _, err := slow.Run(tctx, nil); err == nil || !strings.Contains(err.Error(), "時間の上限") {
+		t.Errorf("時間切れ: %v", err)
+	}
+	sctx, stop := context.WithCancel(ctx)
+	time.AfterFunc(100*time.Millisecond, stop)
+	if _, err := slow.Run(sctx, nil); err == nil || err.Error() != "停止されました" {
+		t.Errorf("停止: %v", err)
+	}
+
+	c := echo.(tool.Confirmable)
+	pv, err := c.Preview(args)
+	if err != nil || pv.Server != "util" || !strings.Contains(pv.Args, `"paths": [`) {
+		t.Errorf("確認には、サーバーの名前と整えた引数を出す: %+v, %v", pv, err)
+	}
+	if echo.(tool.TimeLimiter).TimeLimit() != callTimeout {
+		t.Error("時間の上限はツールが決める")
+	}
+}
+
+// サーバーが落ちたら一覧から外し、次の Start で起動し直す
+func TestRestartAfterServerDies(t *testing.T) {
+	m, l, sessions := memoryManager(t, map[string]ServerConfig{"util": {Command: "util-server"}})
+	ctx := context.Background()
+	m.Start(ctx, "")
+	(*sessions)[0].Close()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for len(m.Tools("")) != 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("落ちたサーバーのツールが残っている")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !l.contains("つながりが切れました") {
+		t.Error("落ちたことをログに出す")
+	}
+	if started, errs := m.Start(ctx, ""); !slices.Equal(started, []string{"util"}) || len(errs) != 0 {
+		t.Errorf("起動し直す: %v %v", started, errs)
+	}
+}
+
+// 起動できないサーバーはエラーを返し、ほかのサーバーは起動する
+func TestStartError(t *testing.T) {
+	l := &logs{}
+	m := New(map[string]ServerConfig{
+		"missing": {Command: filepath.Join(t.TempDir(), "no-such-server")},
+	}, Options{Logf: l.logf})
+	defer m.Close()
+	started, errs := m.Start(context.Background(), "")
+	if len(started) != 0 || len(errs) != 1 || !strings.Contains(errs[0].Error(), "MCP のサーバー missing を起動できません") {
+		t.Errorf("%v %v", started, errs)
+	}
+}
+
+// 本物の子プロセス(このテストの実行ファイル自身)を、stdio でつなぐ。
+// ${workdir} の置き換え・カレントフォルダ・閉じたらプロセスが終わること(Windows はジョブオブジェクトごと)を確かめる
+func TestCommandServer(t *testing.T) {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	l := &logs{}
+	m := New(map[string]ServerConfig{
+		"self": {Command: exe, Args: []string{"--dir=" + workDirVar}, Env: map[string]string{"AIBOW_MCP_TEST_SERVER": "1"}},
+	}, Options{Version: "test", Logf: l.logf})
+
+	if _, errs := m.Start(context.Background(), dir); len(errs) != 0 {
+		t.Fatal(errs)
+	}
+	got, err := tool.Find(m.Tools(dir), "where").Run(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wd, args, _ := strings.Cut(got, "\n")
+	if !sameDir(wd, dir) || args != "--dir="+dir {
+		t.Errorf("カレントフォルダと引数は作業フォルダ: %q", got)
+	}
+
+	start := time.Now()
+	m.Close()
+	if d := time.Since(start); d > closeWait+3*time.Second {
+		t.Errorf("閉じるのに時間がかかりすぎ: %v", d)
+	}
+	if len(m.Tools(dir)) != 0 {
+		t.Error("閉じたらツールは無い")
+	}
+	if started, _ := m.Start(context.Background(), dir); len(started) != 0 {
+		t.Error("閉じた後は起動しない")
+	}
+	if !l.contains("MCP self: つながりました") || !l.contains("MCP self: 止めました") {
+		t.Errorf("起動と停止をログに出す: %v", l.lines)
+	}
+	if testing.Verbose() { // go test -v で、実際のやり取りを見られる
+		for _, line := range l.lines {
+			t.Log(line)
+		}
+	}
+}
+
+// sameDir は、短い名前(Windows の一時フォルダは RUNNER~1 のような 8.3 形式のことがある)の違いを無視して比べる。
+func sameDir(a, b string) bool {
+	sa, err1 := os.Stat(a)
+	sb, err2 := os.Stat(b)
+	return err1 == nil && err2 == nil && os.SameFile(sa, sb)
+}
+
+func TestValidate(t *testing.T) {
+	for name, c := range map[string]ServerConfig{
+		"command が無い": {Args: []string{"x"}},
+		"http":        {Type: "http", URL: "http://localhost:3000/mcp"},
+		"url だけ":      {URL: "http://localhost:3000/mcp"},
+	} {
+		if err := c.Validate(); err == nil {
+			t.Errorf("%s: エラーになるはずです", name)
+		}
+	}
+	if err := (ServerConfig{Command: "npx", Type: "stdio"}).Validate(); err != nil {
+		t.Error(err)
+	}
+	if (ServerConfig{Command: "npx", Args: []string{"-y", "x"}}).UsesWorkDir() {
+		t.Error("${workdir} が無ければ共有する")
+	}
+	if !(ServerConfig{Command: "x", Env: map[string]string{"ROOT": workDirVar}}).UsesWorkDir() {
+		t.Error("env の ${workdir} も見る")
+	}
+}
+
+func TestResultText(t *testing.T) {
+	got := resultText([]mcp.Content{
+		&mcp.TextContent{Text: "a"},
+		&mcp.ImageContent{MIMEType: "image/png", Data: []byte{1}},
+		&mcp.EmbeddedResource{Resource: &mcp.ResourceContents{URI: "file:///x", Text: "body"}},
+	})
+	if got != "a\n(画像 image/png は渡せません)\nbody" {
+		t.Errorf("%q", got)
+	}
+	long := strings.Repeat("あ", resultMaxChars+10)
+	if s := truncate(long); !strings.HasPrefix(s, strings.Repeat("あ", resultMaxChars)+"\n…(結果が長いため、8010 文字のうち") {
+		t.Errorf("長い結果は切る: %q", s[len(s)-80:])
+	}
+}
+
+func TestLineLogger(t *testing.T) {
+	l := &logs{}
+	w := &lineLogger{logf: l.logf, prefix: "MCP x "}
+	fmt.Fprint(w, "write: {\"a\":1}\nread: {\"b\"")
+	fmt.Fprint(w, ":2}\r\n\nplain\n")
+	want := []string{`MCP x → {"a":1}`, `MCP x ← {"b":2}`, "MCP x plain"}
+	if !slices.Equal(l.lines, want) {
+		t.Errorf("%q", l.lines)
+	}
+}
