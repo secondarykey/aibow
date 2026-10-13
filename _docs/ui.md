@@ -12,7 +12,7 @@
 | `App.tsx` | 画面全体をまとめる。一覧の開閉(狭いウィンドウでは重ねて出す)、会話の場所に出すもの(チャット / 新しい会話 / 設定) |
 | `useModels.ts` / `useConversations.ts` / `useChat.ts` / `useAppSettings.ts` | Go とのやり取り |
 | `transcript.ts` | 会話の表示(吹き出し・ツールのカード・エラー・区切り)の持ち方。保存された発言から表示を作る |
-| `components/` | 表示。`ConversationList` / `Splitter` / `TitleBar` / `ChatView` / `ToolCard` / `Composer` / `ModelBar` / `Meter` / `NewChat` / `SettingsView` / `CopyButton` など。返事の中身は [rendering.md](rendering.md) |
+| `components/` | 表示。`ConversationList` / `Splitter` / `TitleBar` / `ChatView` / `ToolCard` / `Composer` / `WorkDirBar` / `ModelBar` / `Meter` / `NewChat` / `SettingsView` / `CopyButton` など。返事の中身は [rendering.md](rendering.md) |
 | `mediaQuery.ts` | 画面の幅・OS のライト / ダークを見る(`useMediaQuery`。狭いウィンドウの境目 `NARROW_QUERY`) |
 | `stickToBottom.ts` | 「一番下にいるときだけ追いかける」スクロール |
 | `toast.tsx` / `imeFocus.tsx` / `errors.ts` | トースト / IME の付け直し / Go のエラーの文の取り出し |
@@ -22,7 +22,7 @@
 - 左: 会話の一覧([下](#会話の一覧))
 - 右上: タイトルバー(`TitleBar.tsx`)。Frameless のため自前で作る。開いている会話の名前と、右端に最小化・最大化・閉じる。
   一覧の上の空いているところと合わせてドラッグで移動できる
-- 中央: チャット([下](#チャット))。入力欄の下にモデルの選択、右端に「今すぐ要約」とメーター(`Meter.tsx`)
+- 中央: チャット([下](#チャット))。入力欄の上に作業フォルダ(`WorkDirBar.tsx`)、入力欄の下にモデルの選択、右端に「今すぐ要約」とメーター(`Meter.tsx`)
 - 設定の画面(`SettingsView.tsx`): 一覧の下の「設定」で開閉する。別の画面として扱い、チャットの代わりに会話の場所に出す。
   一覧で会話を選ぶ・「+ 新規」でも閉じる。入力欄の打ちかけの文は App が持つので消えない
 - ウィンドウは起動時 720×820、最小 480×480(`main.go`)
@@ -64,6 +64,15 @@
 - 統計行は吹き出しの最後に1つで、ループ全体の合計(「N回生成」と、ツールを呼んだときは「ツール N回」が付く)。コピーは各回の答えをつなげたもの
 - 表示は保存された返事とツールの結果から作る(`turnView`)。生成中も `reply` / `tool_result` イベントで届いた保存済みの発言から作り直すので、再起動して開き直しても同じ並びになる
 - 生成中にその会話を開き直したときは、生成中の送信で保存済みの発言を、保存された発言の側からは外す(生成中の吹き出しの中に出すため)
+
+### 作業フォルダ
+
+- 入力欄の枠の上に左寄せで出す(`WorkDirBar.tsx`。`Composer` の `top`)。チャットの画面と新しい会話の画面の両方
+- 決めていないときはフォルダのアイコンだけ。押すとフォルダを選ぶダイアログ(Go の `ChatService.ChooseWorkDir`。Wails のダイアログ)
+- 決めたらフォルダの名前を枠付きで出し、右に外す × を出す。名前にマウスを乗せると絶対パス
+- 「ツールを使う」が OFF の会話では薄く出す(フォルダを決めても、ファイルのツールは出さないため)
+- 設定の画面ではなくここに置くのは、どのフォルダを触らせているかがいつも見えるように、また新しい会話の画面から設定を開かずに選べるようにするため
+  (作業フォルダは新しい会話の既定に入らないので、会話ごとに選ぶ)
 
 ## 新しい会話の画面
 

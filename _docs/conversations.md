@@ -28,9 +28,11 @@
 
 ## 設定
 
-- 会話ごとの設定(システムプロンプト・temperature・思考・presence penalty・compact の方式・ツールを使う)は `conversations.settings`(JSON)
+- 会話ごとの設定(システムプロンプト・temperature・思考・presence penalty・compact の方式・ツールを使う・作業フォルダ)は `conversations.settings`(JSON)
   - `compact` が空の古い会話は `summary` として扱う(`normalized`)。古い JSON の `max_tokens` は読むときに無視される
   - `tools` が無い古い会話は OFF のまま。新しい会話の既定は ON で、保存済みの既定に `tools` が無いときも ON(`config.go` の初期値が残るため)
+  - `work_dir`(作業フォルダの絶対パス。空なら決めていない)は**新しい会話の既定に入れない**(`asDefaults` で外す)。相対パスは保存しない(`validate`)。
+    決めた会話で「ツールを使う」が ON なら、ファイルのツールと環境の説明がプロンプトに入る([tools.md](tools.md))
 - 新しい会話は `app_settings` の既定の写しから始まる(新しい会話の画面で写しを変えると、その設定で作る)
 - アプリ全体の設定(会話の上限・返事の上限・GPU の層数・最後に使ったモデル = `WorkspaceSettings`)も `app_settings`
 - 画面で変えられる設定(会話の上限・返事の上限・GPU の層数・presence penalty)の環境変数は「DB にまだ値が無いときの初期値」で、画面で変えたら DB の値が優先
