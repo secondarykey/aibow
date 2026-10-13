@@ -1,6 +1,6 @@
 :root {
   --bg: #f6f5f2; --panel: #ffffff; --text: #1f2328; --muted: #6b7280;
-  --border: #e3e1dc; --user: #e8f0fe; --accent: #2f6fde; --think: #fbf7e9;
+  --border: #e3e1dc; --user: #e8f0fe; --accent: #2f6fde; --think: #edf1f7;
   --code: #f1f1ef; --error: #b42318;
   --scrollbar: rgba(0, 0, 0, .18); --scrollbar-hover: rgba(0, 0, 0, .32);
   /* コードの色付け(highlight.js)。GitHub の配色を元にしている */
@@ -10,7 +10,7 @@
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #17181a; --panel: #1f2023; --text: #e6e6e6; --muted: #9aa0a6;
-    --border: #2e3034; --user: #1f2b44; --accent: #6ea0ff; --think: #2a2717;
+    --border: #2e3034; --user: #1f2b44; --accent: #6ea0ff; --think: #222833;
     --code: #2a2b2f; --error: #ff8a80;
     --scrollbar: rgba(255, 255, 255, .16); --scrollbar-hover: rgba(255, 255, 255, .30);
     --hl-keyword: #ff7b72; --hl-string: #a5d6ff; --hl-comment: #8b949e; --hl-number: #79c0ff;
@@ -211,10 +211,13 @@ footer.home .composer textarea { line-height: 1.5; min-height: calc(3 * 1.5em + 
 .thinking summary { cursor: pointer; }
 .thinking div { white-space: pre-wrap; margin-top: 6px; max-height: 240px; overflow-y: auto; }
 /* ツールを使った送信の、答えまでの過程の枠。見出しは「思考の過程」と同じ見た目で、開くと中に思考とカードが並ぶ */
-.process { border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; margin-bottom: 8px; }
+.process { background: var(--think); border-radius: 6px; padding: 6px 10px; margin-bottom: 8px; }
 .process > summary { cursor: pointer; font-size: 12.5px; color: var(--muted); }
 .process-body { margin-top: 8px; }
 .process-body .step:last-child, .process-body > .thinking:last-child { margin-bottom: 0; }
+/* 枠の中の思考は、枠と見分けられるよう少しだけ青を濃くする。カードは吹き出しの地の色にして、思考と区別する */
+.process-body .thinking { background: color-mix(in srgb, var(--accent) 8%, var(--think)); }
+.process-body .tool-card { background: var(--panel); }
 /* ツールを呼んだ回と、ツールのカード。カードは「思考の過程」と同じく畳んだ1行で、開くと引数と結果が読める */
 .step { margin-bottom: 8px; }
 .step .body { margin-bottom: 6px; }
