@@ -9,6 +9,8 @@ package aibow
 
 import (
 	"errors"
+	"fmt"
+	"path/filepath"
 	"time"
 	"uuid"
 )
@@ -64,6 +66,10 @@ type ConversationSettings struct {
 	// Tools はツールを使うか。OFF ならツールの説明をプロンプトに入れない(説明だけで毎回 500 トークンほど増えるため、比べられるように)。
 	// この項目より前に保存された会話は値が無いので OFF のまま。新しい会話の既定は ON
 	Tools bool `json:"tools"`
+	// WorkDir は作業フォルダ(絶対パス)。空なら決めていない。決めた会話で「ツールを使う」が ON なら、
+	// その中のファイルを扱うツール(tool.Files)をモデルに出す。
+	// 新しい会話の既定には入れない(前の会話のフォルダを引き継いで、別のフォルダを書き換えてしまうのを防ぐため)
+	WorkDir string `json:"work_dir"`
 }
 
 // compact の方式(compact.go)
@@ -81,6 +87,22 @@ func (s ConversationSettings) normalized() ConversationSettings {
 		s.Compact = CompactSummary
 	}
 	return s
+}
+
+// asDefaults は「新しい会話の既定の設定」にするときの形。作業フォルダは外す(会話ごとに毎回選ぶ)。
+func (s ConversationSettings) asDefaults() ConversationSettings {
+	s = s.normalized()
+	s.WorkDir = ""
+	return s
+}
+
+// validate は、保存する前に設定を確かめる。
+func (s ConversationSettings) validate() error {
+	// 作業フォルダは画面のダイアログで選ぶので、ふつうは絶対パス。相対パスだと、アプリを起動した場所で意味が変わってしまう
+	if s.WorkDir != "" && !filepath.IsAbs(s.WorkDir) {
+		return fmt.Errorf("作業フォルダは絶対パスで指定してください(%s)", s.WorkDir)
+	}
+	return nil
 }
 
 // StoredMessage は保存された発言1件。

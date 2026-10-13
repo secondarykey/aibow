@@ -7,6 +7,8 @@ import type { ToolView } from "../transcript";
 const TOOL_LABELS: Record<string, string> = {
   get_current_time: "現在の日時を調べる",
   calculate: "式を計算する",
+  list_files: "作業フォルダの中のファイルを並べる",
+  read_file: "作業フォルダの中のファイルを読む",
 };
 
 export function ToolCard({ tool, generating }: { tool: ToolView; generating: boolean }) {

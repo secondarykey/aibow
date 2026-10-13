@@ -41,8 +41,8 @@ func (calculator) Def() Def {
 	}
 }
 
-func (calculator) Run(ctx context.Context, args map[string]string) (string, error) {
-	return calculate(args["expression"])
+func (calculator) Run(ctx context.Context, args Args) (string, error) {
+	return calculate(args.String("expression"))
 }
 
 // errCalcSyntax は使える書き方の説明。式が読めないときのエラーに添える。

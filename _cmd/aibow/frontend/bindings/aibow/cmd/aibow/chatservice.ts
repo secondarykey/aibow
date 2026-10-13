@@ -24,6 +24,14 @@ export function AppSettings(): $CancellablePromise<aibow$0.AppSettings> {
 }
 
 /**
+ * ChooseWorkDir は作業フォルダを選ぶダイアログを出し、選んだフォルダの絶対パスを返す。取り消したら空。
+ * current が空でなければ、そのフォルダから開く。選んだフォルダを会話に入れるのは画面の側(会話の設定として保存する)。
+ */
+export function ChooseWorkDir(current: string): $CancellablePromise<string> {
+    return $Call.ByID(2873180618, current);
+}
+
+/**
  * Compact は「今すぐ要約」。会話の上限を超えていなくても、古い発言を要約する。
  * Send と同じく、途中経過(要約の文)と終わり(done)は chat イベントで送る。
  */

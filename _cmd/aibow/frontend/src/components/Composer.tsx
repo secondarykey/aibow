@@ -1,7 +1,7 @@
 // 入力欄。送信ボタンは枠の中の右下に Enter のマークで置く(停止ボタンは生成中の返事の吹き出しの中にある)
 import { useEffect, useRef } from "react";
 import { LuCornerDownLeft } from "react-icons/lu";
-import type { FormEvent, KeyboardEvent } from "react";
+import type { FormEvent, KeyboardEvent, ReactNode } from "react";
 
 interface Props {
   text: string;           // 打っている文。設定の画面を開いている間は入力欄が消えるので、文は App が持っておく
@@ -11,6 +11,7 @@ interface Props {
   home?: boolean;         // 新しい会話の画面(真ん中に出す。上の区切り線と背景を付けない)
   focusKey?: number;      // 変わるたびに入力欄にフォーカスを移す(会話を開いた・「+ 新規」を押した、など)
   onSend(text: string): void;
+  top?: ReactNode;        // 入力欄の枠の上に出すもの(作業フォルダ)
 }
 
 // テキストを打つ入力欄か(ボタンやチェックボックス、スライダーは対象外)
@@ -32,7 +33,7 @@ function focusUnlessTyping(el: HTMLTextAreaElement | null) {
   el.focus();
 }
 
-export function Composer({ text, onTextChange: setText, canSend, blockedReason, home, focusKey, onSend }: Props) {
+export function Composer({ text, onTextChange: setText, canSend, blockedReason, home, focusKey, onSend, top }: Props) {
   const input = useRef<HTMLTextAreaElement>(null);
   const composing = useRef(false); // IME で変換中か
 
@@ -76,6 +77,7 @@ export function Composer({ text, onTextChange: setText, canSend, blockedReason, 
 
   return (
     <footer className={home ? "home" : undefined}>
+      {top}
       <form className="composer" onSubmit={submit}>
         <textarea
           ref={input}

@@ -33,6 +33,7 @@ import { ChatView } from "./components/ChatView";
 import { NewChat } from "./components/NewChat";
 import { SettingsView } from "./components/SettingsView";
 import { Composer } from "./components/Composer";
+import { WorkDirBar } from "./components/WorkDirBar";
 import { ImeFocusRelay } from "./imeFocus";
 import { errorMessage } from "./errors";
 import { NARROW_QUERY, useMediaQuery } from "./mediaQuery";
@@ -135,6 +136,8 @@ export default function App() {
 
   // 入力欄とモデルの選択。チャットの画面では下に、新しい会話の画面では真ん中に出す
   const canSend = busy === "idle" && (convs.current !== null || convs.draft !== null);
+  // 開いている会話の設定(新しい会話の画面では、これから作る会話の設定 = 既定の写し)
+  const settings = convs.current?.conversation.settings ?? convs.draft;
   const input = (
     <>
       <Composer
@@ -145,6 +148,17 @@ export default function App() {
         home={home}
         focusKey={focusKey}
         onSend={chat.send}
+        top={settings && (
+          <WorkDirBar
+            workDir={settings.work_dir}
+            toolsOn={settings.tools}
+            onChange={workDir => {
+              convs.updateSettings({ work_dir: workDir });
+              focusInput();
+            }}
+            onError={addError}
+          />
+        )}
       />
       <ModelBar models={models} disabled={busy !== "idle"}>
         {convs.current && (
@@ -165,8 +179,6 @@ export default function App() {
       </ModelBar>
     </>
   );
-  // 設定の画面の「この会話の設定」。新しい会話の画面では、これから作る会話の設定(既定の写し)
-  const settings = convs.current?.conversation.settings ?? convs.draft;
 
   // タイトルバーに出す名前は一覧から取る(名前の変更や最初の送信で付いたタイトルが、すぐ反映されるように)
   const convTitle = convs.list.find(c => c.id === currentId)?.title || "新しい会話";

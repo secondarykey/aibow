@@ -222,9 +222,9 @@ func TestQwen35PromptKeepsBrokenCallAsWritten(t *testing.T) {
 	}
 }
 
-// 組み込みのツールの定義が、モデルに見せる形(Python の json.dumps と同じ見た目)で書けること
+// 組み込みのツールとファイルのツールの定義が、モデルに見せる形(Python の json.dumps と同じ見た目)で書けること
 func TestBuiltinToolDefsAreValidJSON(t *testing.T) {
-	for _, tl := range tool.Builtin() {
+	for _, tl := range append(tool.Builtin(), tool.Files("dir")...) {
 		d := tl.Def()
 		if got := pyJSON(d.Parameters); got != string(d.Parameters) {
 			t.Errorf("%s の JSON Schema は、書き直さなくてもモデルに見せる形にしておく:\n%s\n%s", d.Name, d.Parameters, got)

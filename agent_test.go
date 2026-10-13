@@ -15,7 +15,7 @@ import (
 // fakeTool はテスト用のツール。引数 x を1つ取り、run の結果を返す。
 type fakeTool struct {
 	name string
-	run  func(ctx context.Context, args map[string]string) (string, error)
+	run  func(ctx context.Context, args tool.Args) (string, error)
 }
 
 func (f fakeTool) Def() tool.Def {
@@ -23,7 +23,7 @@ func (f fakeTool) Def() tool.Def {
 		Parameters: json.RawMessage(`{"type": "object", "properties": {"x": {"type": "string"}}, "required": []}`)}
 }
 
-func (f fakeTool) Run(ctx context.Context, args map[string]string) (string, error) {
+func (f fakeTool) Run(ctx context.Context, args tool.Args) (string, error) {
 	return f.run(ctx, args)
 }
 
@@ -136,7 +136,7 @@ func TestAgentRunsSeveralRounds(t *testing.T) {
 
 // 書式の崩れ・知らないツール・引数の間違い・ツールのエラーは、エラーの結果としてモデルに返し、送信は止めない
 func TestAgentReturnsErrorsToTheModel(t *testing.T) {
-	failing := fakeTool{name: "fail", run: func(context.Context, map[string]string) (string, error) {
+	failing := fakeTool{name: "fail", run: func(context.Context, tool.Args) (string, error) {
 		return "", errors.New("壊れています")
 	}}
 	g := &fakeGen{replies: []fakeReply{
@@ -169,10 +169,10 @@ func TestAgentReturnsErrorsToTheModel(t *testing.T) {
 	}
 }
 
-// 実行は 8 回まで。超えた分は実行せずにその旨を結果にして、止めて理由を出す
+// 実行は maxToolCalls 回まで。超えた分は実行せずにその旨を結果にして、止めて理由を出す
 func TestAgentStopsAtTheLimit(t *testing.T) {
 	g := &fakeGen{}
-	for range 20 {
+	for range maxToolCalls + 5 {
 		g.replies = append(g.replies, fakeReply{toolCalls: []ToolCall{calc("1+1")}})
 	}
 	cs, _, c := newToolConversation(t, g)
@@ -201,7 +201,7 @@ func TestAgentStopsAtTheLimit(t *testing.T) {
 // 停止ボタン: ツールの実行中に止めても、ループごと止まる(結果は「停止」として残る)
 func TestAgentStopDuringTool(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	blocking := fakeTool{name: "wait", run: func(ctx context.Context, _ map[string]string) (string, error) {
+	blocking := fakeTool{name: "wait", run: func(ctx context.Context, _ tool.Args) (string, error) {
 		cancel() // 実行中に停止ボタンが押された
 		<-ctx.Done()
 		return "", ctx.Err()
@@ -245,7 +245,7 @@ func TestAgentStopDuringGeneration(t *testing.T) {
 func TestAgentToolTimeout(t *testing.T) {
 	defer func(d time.Duration) { toolTimeout = d }(toolTimeout)
 	toolTimeout = 20 * time.Millisecond
-	slow := fakeTool{name: "slow", run: func(context.Context, map[string]string) (string, error) {
+	slow := fakeTool{name: "slow", run: func(context.Context, tool.Args) (string, error) {
 		time.Sleep(time.Second)
 		return "遅い", nil
 	}}
@@ -336,7 +336,7 @@ func TestSummaryIncludesToolCalls(t *testing.T) {
 
 // ツールの結果で今の組が会話の上限を超えたら、そこで止めてエラーを出す
 func TestAgentStopsWhenToolResultsOverflow(t *testing.T) {
-	huge := fakeTool{name: "huge", run: func(context.Context, map[string]string) (string, error) {
+	huge := fakeTool{name: "huge", run: func(context.Context, tool.Args) (string, error) {
 		return strings.Repeat("大", 5000), nil
 	}}
 	g := &fakeGen{replies: []fakeReply{{toolCalls: []ToolCall{toolCall("huge")}}, {content: "ここは生成されない"}}}

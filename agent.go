@@ -21,6 +21,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 	"uuid"
 
@@ -28,8 +29,9 @@ import (
 )
 
 const (
-	// maxToolCalls は1回の送信でツールを実行する回数の上限。モデルが同じ呼び出しを繰り返して終わらないのを防ぐ
-	maxToolCalls = 8
+	// maxToolCalls は1回の送信でツールを実行する回数の上限。モデルが同じ呼び出しを繰り返して終わらないのを防ぐ。
+	// コーディング(読む → 直す → 動かす)は回数がかさむので 20 回(0004 では 8 回だった。停止ボタンでも止められる)
+	maxToolCalls = 20
 )
 
 // toolTimeout はツール1回の実行の時間の上限(テストで短くするので変数にしている)
@@ -176,9 +178,13 @@ func toolMessage(conv uuid.UUID, c ToolCall, text string, isErr bool, sec float6
 }
 
 // toolsFor は会話の設定で使えるツール。「ツールを使う」が OFF なら無し。
+// 作業フォルダを決めた会話だけ、そのフォルダの中を扱うツールを足す(作業フォルダは会話ごとなので、ここで作る)。
 func (cs *Conversations) toolsFor(set ConversationSettings) []tool.Tool {
 	if !set.Tools {
 		return nil
 	}
-	return cs.tools
+	if set.WorkDir == "" {
+		return cs.tools
+	}
+	return append(slices.Clip(cs.tools), tool.Files(set.WorkDir)...)
 }

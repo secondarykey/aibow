@@ -20,15 +20,16 @@ import (
 	"fmt"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 )
 
 // Tool はモデルが使えるツール1つ。
 type Tool interface {
 	Def() Def
-	// Run はツールを実行して、モデルに返す結果の文を返す。
+	// Run はツールを実行して、モデルに返す結果の文を返す。args は CheckArgs で定義と照らし合わせ、型を変換したもの。
 	// error を返すと「エラー: …」としてモデルに返る(送信は止めない。モデル自身に立て直させる)
-	Run(ctx context.Context, args map[string]string) (string, error)
+	Run(ctx context.Context, args Args) (string, error)
 }
 
 // Def はモデルに知らせるツールの定義。書式がシステムプロンプトに入れる。
@@ -47,11 +48,30 @@ type Call struct {
 	Args []Arg  `json:"args"` // 書いた順(プロンプトに書き戻すときも同じ順にするため)
 }
 
-// Arg は引数1つ。値は文字列のまま持つ(Qwen3.5 の書式は値を文字列で書くため。
-// 数や真偽値の引数が要るツールを足すときに、JSON Schema の型で変換する)。
+// Arg はモデルが書いた引数1つ。値は文字列のまま持つ(Qwen3.5 の書式は値を文字列で書くため)。
+// 数の引数は、実行する前に CheckArgs が JSON Schema の型を見て変換する。
+// 呼び出しを保存・プロンプトに書き戻すときは、モデルが書いたままの文字列を使う。
 type Arg struct {
 	Name  string `json:"name"`
 	Value string `json:"value"`
+}
+
+// Args は実行するときの引数。CheckArgs が定義と照らし合わせ、JSON Schema の型に変換したもの
+// (type が integer なら int、number なら float64、ほかは string)。省略された引数は入っていない。
+type Args map[string]any
+
+// String は文字列の引数を返す。省略されていたら "" 。
+func (a Args) String(name string) string {
+	s, _ := a[name].(string)
+	return s
+}
+
+// Int は整数の引数を返す。省略されていたら def。
+func (a Args) Int(name string, def int) int {
+	if n, ok := a[name].(int); ok {
+		return n
+	}
+	return def
 }
 
 // Builtin は aibow に組み込みのツール。どれも何も書き換えない。
@@ -87,13 +107,18 @@ func Names(tools []Tool) string {
 	return listOrNone(slices.Sorted(slices.Values(names)))
 }
 
-// CheckArgs は呼び出しの引数を、定義(JSON Schema の properties と required)と照らし合わせて map にする。
+// CheckArgs は呼び出しの引数を、定義(JSON Schema の properties と required)と照らし合わせて Args にする。
 // 足りない・知らない・重なった引数はエラー。小さいモデルは引数の名前を間違えやすいので、
 // 何が使えるかをエラーの文に入れて、次の呼び出しで直せるようにする。
-func CheckArgs(def Def, args []Arg) (map[string]string, error) {
+//
+// Qwen3.5 の書式では値がすべて文字列で届くので、数の引数(type が integer / number)はここで変換する。
+// ツールの側は、受け取った値の型を信じてよい。
+func CheckArgs(def Def, args []Arg) (Args, error) {
 	var schema struct {
-		Properties map[string]json.RawMessage `json:"properties"`
-		Required   []string                   `json:"required"`
+		Properties map[string]struct {
+			Type string `json:"type"`
+		} `json:"properties"`
+		Required []string `json:"required"`
 	}
 	if err := json.Unmarshal(def.Parameters, &schema); err != nil {
 		return nil, fmt.Errorf("ツール %s の定義が読めません: %w", def.Name, err)
@@ -104,15 +129,20 @@ func CheckArgs(def Def, args []Arg) (map[string]string, error) {
 	}
 	sort.Strings(known)
 
-	out := map[string]string{}
+	out := Args{}
 	for _, a := range args {
-		if _, ok := schema.Properties[a.Name]; !ok {
+		prop, ok := schema.Properties[a.Name]
+		if !ok {
 			return nil, fmt.Errorf("引数 %s はありません(使える引数: %s)", a.Name, listOrNone(known))
 		}
 		if _, dup := out[a.Name]; dup {
 			return nil, fmt.Errorf("引数 %s が2回書かれています", a.Name)
 		}
-		out[a.Name] = a.Value
+		v, err := convert(prop.Type, a.Value)
+		if err != nil {
+			return nil, fmt.Errorf("引数 %s: %w", a.Name, err)
+		}
+		out[a.Name] = v
 	}
 	for _, r := range schema.Required {
 		if _, ok := out[r]; !ok {
@@ -120,6 +150,27 @@ func CheckArgs(def Def, args []Arg) (map[string]string, error) {
 		}
 	}
 	return out, nil
+}
+
+// convert は文字列で届いた値を、JSON Schema の型に変換する。
+// 型を決めていない・文字列の引数はそのまま。真偽値や配列の引数を使うツールはまだ無いので、変換もまだ書かない。
+func convert(typ, value string) (any, error) {
+	v := strings.TrimSpace(value)
+	switch typ {
+	case "integer":
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return nil, fmt.Errorf("整数で書いてください(%q)", value)
+		}
+		return n, nil
+	case "number":
+		f, err := strconv.ParseFloat(v, 64)
+		if err != nil {
+			return nil, fmt.Errorf("数で書いてください(%q)", value)
+		}
+		return f, nil
+	}
+	return value, nil
 }
 
 func listOrNone(names []string) string {

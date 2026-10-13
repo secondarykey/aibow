@@ -77,7 +77,7 @@ func (cs *Conversations) passFrom(set ConversationSettings, summary *Compaction,
 	if summary != nil {
 		text = summary.Summary
 	}
-	msgs := promptMessages(set.System, text, history[first:])
+	msgs := promptMessages(cs.systemPrompt(set), text, history[first:])
 	n, err := cs.count(cs.promptFor(set, msgs))
 	return passing{summary: summary, first: first, messages: msgs, tokens: n}, err
 }

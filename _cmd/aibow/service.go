@@ -331,6 +331,28 @@ func (s *ChatService) UpdateConversationSettings(id uuid.UUID, settings aibow.Co
 	return s.convs.UpdateSettings(id, settings)
 }
 
+// ChooseWorkDir は作業フォルダを選ぶダイアログを出し、選んだフォルダの絶対パスを返す。取り消したら空。
+// current が空でなければ、そのフォルダから開く。選んだフォルダを会話に入れるのは画面の側(会話の設定として保存する)。
+func (s *ChatService) ChooseWorkDir(current string) (string, error) {
+	app := application.Get()
+	d := app.Dialog.OpenFile().
+		SetTitle("作業フォルダを選ぶ").
+		CanChooseFiles(false).
+		CanChooseDirectories(true).
+		CanCreateDirectories(true)
+	if current != "" {
+		d.SetDirectory(current)
+	}
+	if w := app.Window.Current(); w != nil {
+		d.AttachToWindow(w) // ウィンドウの前に出す(後ろに隠れて、操作できなくなったように見えるのを防ぐ)
+	}
+	dir, err := d.PromptForSingleSelection()
+	if err != nil {
+		return "", fmt.Errorf("フォルダを選ぶダイアログを出せません: %w", err)
+	}
+	return dir, nil
+}
+
 // ---- 送信 -------------------------------------------------------------------------------
 
 // chatEventName は、生成の途中経過を画面に送るイベントの名前。

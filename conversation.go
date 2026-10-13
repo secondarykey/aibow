@@ -14,6 +14,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -71,7 +72,7 @@ var ErrGenerating = errors.New("別の会話で返事を生成中です。終わ
 type Conversations struct {
 	store Store
 	gen   Generator
-	tools []tool.Tool // 「ツールを使う」が ON の会話で、モデルが使えるツール
+	tools []tool.Tool // 「ツールを使う」が ON の会話で、モデルが使えるツール(作業フォルダのツールは会話ごとに足す。toolsFor)
 
 	// generating は生成中の会話の ID。生成していなければ nil。
 	// エンジン(作業領域)が1つしかないので、生成は同時に1つだけ。
@@ -95,7 +96,7 @@ type limits struct {
 // NewConversations は会話の仕組みを作る。app からは新しい会話の既定の設定と、会話の上限・返事の上限を使う。
 func NewConversations(store Store, gen Generator, app AppSettings) *Conversations {
 	return &Conversations{
-		store: store, gen: gen, tools: tool.Builtin(), defaults: app.Defaults.normalized(),
+		store: store, gen: gen, tools: tool.Builtin(), defaults: app.Defaults.asDefaults(),
 		limits: limits{history: app.Workspace.HistoryTokens, reply: app.Workspace.ReplyTokens},
 	}
 }
@@ -137,6 +138,9 @@ func (cs *Conversations) Create(settings *ConversationSettings) (Conversation, e
 	s := cs.Defaults()
 	if settings != nil {
 		s = settings.normalized()
+	}
+	if err := s.validate(); err != nil {
+		return Conversation{}, err
 	}
 	now := time.Now()
 	c := Conversation{
@@ -180,6 +184,9 @@ func (cs *Conversations) UpdateSettings(id uuid.UUID, s ConversationSettings) er
 	if err != nil {
 		return err
 	}
+	if err := s.validate(); err != nil {
+		return err
+	}
 	c.Settings = s.normalized()
 	return cs.store.UpdateConversation(c)
 }
@@ -192,8 +199,9 @@ func (cs *Conversations) Defaults() ConversationSettings {
 }
 
 // SetDefaults は新しい会話の既定の設定を変えて保存する。今ある会話には効かない。
+// 作業フォルダは既定に入れない(asDefaults)。
 func (cs *Conversations) SetDefaults(s ConversationSettings) error {
-	s = s.normalized()
+	s = s.asDefaults()
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 	if err := SaveAppSetting(cs.store, SettingDefaults, s); err != nil {
@@ -333,6 +341,33 @@ func (cs *Conversations) generate(ctx context.Context, conv Conversation, messag
 		stats.NoAnswer = true
 	}
 	return m, nil
+}
+
+// systemPrompt は、会話の設定のシステムプロンプトに、環境の説明(environment)を足したもの。
+func (cs *Conversations) systemPrompt(set ConversationSettings) string {
+	env := environment(set)
+	if env == "" {
+		return set.System
+	}
+	if s := strings.TrimSpace(set.System); s != "" {
+		return s + "\n\n" + env
+	}
+	return env
+}
+
+// environment は、作業フォルダのツールを使う会話で、モデルに知らせる環境の説明。
+//
+// モデルは自分がどこで動いているかを知らないので、作業フォルダ・OS を書いておく(パスの書き方を間違えにくくする)。
+// ツールの指示文に合わせて英語。書式に関係ない情報なので、書式ではなく会話の仕組みの側で組み立てる。
+// 会話の中で変わらないので、システムプロンプトの後ろ(要約より前)に置き、KV キャッシュの再利用を崩さない。
+func environment(set ConversationSettings) string {
+	if !set.Tools || set.WorkDir == "" {
+		return ""
+	}
+	return "# Environment\n" +
+		"Working directory: " + set.WorkDir + "\n" +
+		"OS: " + runtime.GOOS + "\n" +
+		"Use paths relative to the working directory."
 }
 
 // promptMessages は保存した発言を、モデルに渡す形にする。

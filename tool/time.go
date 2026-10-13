@@ -29,13 +29,13 @@ func (currentTime) Def() Def {
 	}
 }
 
-func (c currentTime) Run(ctx context.Context, args map[string]string) (string, error) {
+func (c currentTime) Run(ctx context.Context, args Args) (string, error) {
 	now := time.Now
 	if c.now != nil {
 		now = c.now
 	}
 	loc, zone := time.Local, "local time"
-	if tz := args["timezone"]; tz != "" {
+	if tz := args.String("timezone"); tz != "" {
 		l, err := time.LoadLocation(tz)
 		if err != nil {
 			return "", fmt.Errorf("タイムゾーン %q が見つかりません。Asia/Tokyo のような IANA の名前で指定するか、省略してください", tz)

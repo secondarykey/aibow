@@ -84,7 +84,7 @@ func LoadAppSettings(s Store, initial AppSettings) (a AppSettings, notes []strin
 			notes = append(notes, note)
 		}
 	}
-	a.Defaults = a.Defaults.normalized()
+	a.Defaults = a.Defaults.asDefaults()
 	return a, notes, nil
 }
 

@@ -35,14 +35,14 @@ func TestCalculate(t *testing.T) {
 func TestCurrentTime(t *testing.T) {
 	at := time.Date(2026, 10, 13, 6, 4, 5, 0, time.UTC)
 	tool := currentTime{now: func() time.Time { return at }}
-	got, err := tool.Run(context.Background(), map[string]string{"timezone": "Asia/Tokyo"})
+	got, err := tool.Run(context.Background(), Args{"timezone": "Asia/Tokyo"})
 	if err != nil || got != "2026-10-13 15:04:05 Tuesday (Asia/Tokyo, UTC+09:00)" {
 		t.Errorf("got %q, %v", got, err)
 	}
-	if got, err := tool.Run(context.Background(), map[string]string{}); err != nil || !strings.Contains(got, "(local time, UTC") {
+	if got, err := tool.Run(context.Background(), Args{}); err != nil || !strings.Contains(got, "(local time, UTC") {
 		t.Errorf("省略時は PC のタイムゾーン: %q, %v", got, err)
 	}
-	if _, err := tool.Run(context.Background(), map[string]string{"timezone": "Tokyo"}); err == nil {
+	if _, err := tool.Run(context.Background(), Args{"timezone": "Tokyo"}); err == nil {
 		t.Error("IANA の名前でなければエラー")
 	}
 }
