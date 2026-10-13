@@ -22,6 +22,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Tool はモデルが使えるツール1つ。
@@ -30,6 +31,12 @@ type Tool interface {
 	// Run はツールを実行して、モデルに返す結果の文を返す。args は CheckArgs で定義と照らし合わせ、型を変換したもの。
 	// error を返すと「エラー: …」としてモデルに返る(送信は止めない。モデル自身に立て直させる)
 	Run(ctx context.Context, args Args) (string, error)
+}
+
+// TimeLimiter は、実行の時間の上限を自分で決めるツール(run_command は 120 秒)。
+// 決めないツールは、会話の仕組みの既定(10 秒)。上限を過ぎると ctx が止まるので、ツールは後片付け(子プロセスを止める、など)をして返す
+type TimeLimiter interface {
+	TimeLimit() time.Duration
 }
 
 // Def はモデルに知らせるツールの定義。書式がシステムプロンプトに入れる。

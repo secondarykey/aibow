@@ -36,7 +36,7 @@ func TestWorkDirAddsFileToolsAndEnvironment(t *testing.T) {
 		wantEnv   bool
 	}{
 		{"作業フォルダなし", "", true, []string{"get_current_time", "calculate"}, false},
-		{"作業フォルダあり", dir, true, []string{"get_current_time", "calculate", "list_files", "read_file", "write_file", "edit_file"}, true},
+		{"作業フォルダあり", dir, true, []string{"get_current_time", "calculate", "list_files", "read_file", "write_file", "edit_file", "run_command"}, true},
 		{"ツールが OFF", dir, false, nil, false},
 	}
 	for i, s := range steps {
@@ -66,7 +66,7 @@ func TestEnvironmentPlacement(t *testing.T) {
 	set.Tools, set.WorkDir = true, `D:\Work\example`
 	msgs := promptMessages(cs.systemPrompt(set), "- 要約", nil)
 	want := testDefaults.System + "\n\n# Environment\nWorking directory: D:\\Work\\example\nOS: " + runtime.GOOS +
-		"\nUse paths relative to the working directory.\n\n" + summaryHeading + "\n- 要約"
+		"\nShell for run_command: " + tool.ShellNote + "\nUse paths relative to the working directory.\n\n" + summaryHeading + "\n- 要約"
 	if len(msgs) != 1 || msgs[0].Content != want {
 		t.Errorf("system:\n%s\n期待:\n%s", msgs[0].Content, want)
 	}

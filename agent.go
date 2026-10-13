@@ -35,8 +35,13 @@ const (
 	maxToolCalls = 20
 )
 
-// toolTimeout はツール1回の実行の時間の上限(テストで短くするので変数にしている)
+// toolTimeout はツール1回の実行の時間の上限(テストで短くするので変数にしている)。
+// 上限を自分で決めるツール(tool.TimeLimiter。run_command は 120 秒)は、そちらを使う
 var toolTimeout = 10 * time.Second
+
+// stopGrace は、時間切れ・停止のあと、ツールが後片付けをして返ってくるのを待つ時間。
+// run_command は子プロセスを止めてから「ここまでの出力」を返すので、それを受け取れるように少し待つ
+var stopGrace = 5 * time.Second
 
 // errorPrefix はツールの結果がエラーのときに、結果の文の先頭に付ける。
 const errorPrefix = "エラー: "
@@ -232,7 +237,13 @@ func rejected(reason string) string {
 
 // execute はツールを実行する。時間の上限を付け、ツールが ctx を見ずに止まらなくても、待つのは上限まで。
 func (cs *Conversations) execute(ctx context.Context, t tool.Tool, args tool.Args) (string, error) {
-	tctx, cancel := context.WithTimeout(ctx, toolTimeout)
+	limit, grace := toolTimeout, time.Duration(0)
+	if l, ok := t.(tool.TimeLimiter); ok {
+		// 上限を自分で決めるツールは、ctx が止まったら後片付けをして返ってくる約束(run_command は子プロセスを止めてから、ここまでの出力を返す)。
+		// その結果を受け取れるよう、少し待つ。ほかのツールは今までどおり、上限で待つのをやめる
+		limit, grace = l.TimeLimit(), stopGrace
+	}
+	tctx, cancel := context.WithTimeout(ctx, limit)
 	defer cancel()
 	type result struct {
 		text string
@@ -247,10 +258,17 @@ func (cs *Conversations) execute(ctx context.Context, t tool.Tool, args tool.Arg
 	case r := <-done:
 		return r.text, r.err
 	case <-tctx.Done():
+		if grace > 0 {
+			select {
+			case r := <-done:
+				return r.text, r.err
+			case <-time.After(grace):
+			}
+		}
 		if ctx.Err() != nil {
 			return "", errors.New("停止されました")
 		}
-		return "", fmt.Errorf("時間の上限(%d 秒)を超えたため止めました", int(toolTimeout.Seconds()))
+		return "", fmt.Errorf("時間の上限(%d 秒)を超えたため止めました", int(limit.Seconds()))
 	}
 }
 
@@ -295,5 +313,5 @@ func (cs *Conversations) toolsFor(set ConversationSettings) []tool.Tool {
 	if set.WorkDir == "" {
 		return cs.tools
 	}
-	return append(slices.Clip(cs.tools), tool.Files(set.WorkDir)...)
+	return append(append(slices.Clip(cs.tools), tool.Files(set.WorkDir)...), tool.RunCommand(set.WorkDir))
 }

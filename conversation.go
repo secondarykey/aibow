@@ -388,6 +388,7 @@ func environment(set ConversationSettings) string {
 	return "# Environment\n" +
 		"Working directory: " + set.WorkDir + "\n" +
 		"OS: " + runtime.GOOS + "\n" +
+		"Shell for run_command: " + tool.ShellNote + "\n" +
 		"Use paths relative to the working directory."
 }
 

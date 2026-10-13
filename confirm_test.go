@@ -2,10 +2,14 @@ package aibow
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"aibow/tool"
 )
 
 // newWorkDirConversation は、作業フォルダ(main.go が1つ)を決めた、ツールを使う会話を作る。
@@ -168,5 +172,49 @@ func TestConfirmNotAskedWhenPreviewFails(t *testing.T) {
 	rs := toolResults(t, cs, c)
 	if asked || len(rs) != 1 || !rs[0].ToolResult.Error || !strings.Contains(rs[0].Content, "見つかりません") || rs[0].ToolResult.Confirm != nil {
 		t.Errorf("聞いた: %v / 結果: %+v", asked, rs)
+	}
+}
+
+// run_command も実行前に確認し、実行すると出力と終了コードがモデルに渡る
+func TestRunCommandThroughAgent(t *testing.T) {
+	g := &fakeGen{replies: []fakeReply{
+		{toolCalls: []ToolCall{toolCall("run_command", "command", "echo hi")}},
+		{content: "hi と出ました"},
+	}}
+	cs, c, _ := newWorkDirConversation(t, g)
+	var req *ConfirmRequest
+	sendAnswering(cs, context.Background(), c, "echo して", func(r *ConfirmRequest) bool {
+		req = r
+		return cs.Confirm(c.ID, r.ID, true, "") == nil
+	})
+	if req == nil || req.Preview.Command != "echo hi" || req.Preview.Note != "コマンド" {
+		t.Errorf("確認: %+v", req)
+	}
+	if rs := toolResults(t, cs, c); len(rs) != 1 || rs[0].Content != "hi\n(終了コード 0)" {
+		t.Errorf("結果: %+v", rs)
+	}
+	// 環境の説明にシェルの行が入る
+	if p := g.calls[0].prompt; !strings.Contains(p, "Shell for run_command: ") {
+		t.Errorf("環境の説明にシェルがありません")
+	}
+}
+
+// limitedTool は時間の上限を自分で決め、止められたら後片付けをして「ここまでの結果」を返すツール(run_command の代わり)
+type limitedTool struct{ fakeTool }
+
+func (limitedTool) TimeLimit() time.Duration { return 50 * time.Millisecond }
+
+// 上限を自分で決めるツールは、時間切れの後に返してくる結果(ここまでの出力など)を受け取る
+func TestTimeLimiterResultAfterTimeout(t *testing.T) {
+	lt := limitedTool{fakeTool{name: "limited", run: func(ctx context.Context, _ tool.Args) (string, error) {
+		<-ctx.Done()
+		time.Sleep(20 * time.Millisecond) // 後片付け
+		return "", errors.New("時間の上限を超えたため止めました。ここまでの出力: 途中")
+	}}}
+	g := &fakeGen{replies: []fakeReply{{toolCalls: []ToolCall{toolCall("limited")}}, {content: "途中でした"}}}
+	cs, _, c := newToolConversation(t, g, lt)
+	send(t, cs, c, "やって")
+	if rs := toolResults(t, cs, c); len(rs) != 1 || !strings.Contains(rs[0].Content, "ここまでの出力: 途中") {
+		t.Errorf("結果: %+v", rs)
 	}
 }

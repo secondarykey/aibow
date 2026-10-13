@@ -25,9 +25,11 @@ type Confirmable interface {
 
 // Preview は確認の画面に出す内容。
 type Preview struct {
-	Path string `json:"path"` // 対象(作業フォルダからの相対パス)
-	Note string `json:"note"` // 何をするか(「上書き」「新しく作る」「書き換え」)
+	Path string `json:"path"` // 対象(作業フォルダからの相対パス)。コマンドでは空
+	Note string `json:"note"` // 何をするか(「上書き」「新しく作る」「書き換え」「コマンド」)
 	Diff string `json:"diff"` // 変更の差分(unified diff。画面は ```diff のコードブロックで出す)。大きすぎるときは空
+
+	Command string `json:"command,omitempty"` // 実行するコマンド(run_command)
 }
 
 // diffMaxLines は差分を作るファイルの大きさの上限(前後の行数の合計)。
