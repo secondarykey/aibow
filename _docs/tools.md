@@ -13,10 +13,12 @@
 | `tool/time.go` / `tool/calc.go` | 組み込みのツール `get_current_time` / `calculate` |
 | `tool/files.go` | 作業フォルダのツールの共通部分(`Files`・`os.Root` で開く・パスを作業フォルダからの相対にする) |
 | `tool/list.go` / `tool/read.go` | 作業フォルダのツール `list_files` / `read_file` |
-| `agent.go` | エージェントループ(`runTurn`)とツールの実行(10 秒の上限・8 回の上限・停止) |
+| `tool/write.go` | 書き換えるツール `write_file`(丸ごと書く)/ `edit_file`(1か所だけ置き換える)。どちらも実行前に確認する |
+| `tool/confirm.go` | 実行前に確認が要るツールの印(`Confirmable`)と、確認の画面に出す内容(`Preview`: パス・上書きか・差分)。差分は `github.com/pkg/diff` |
+| `agent.go` | エージェントループ(`runTurn`)とツールの実行(10 秒の上限・20 回の上限・停止・会話の上限に入らない結果・実行前の確認の待ち) |
 | `format_qwen35_test.go` | 書式のテスト。プロンプトは公式テンプレートを jinja2 で通した期待値と1文字まで比べる |
 | `testdata/qwen35/` | 書式のテストの会話(`cases.json`)と期待値(`*.txt`)、期待値を作るスクリプト(`gen_expected.py`) |
-| `tool/tool_test.go` / `tool/files_test.go` / `agent_test.go` / `workdir_test.go` | ツール(外に出られないこと・読み方の切り方を含む)とループ・作業フォルダのテスト(偽物の生成器を使う。モデル不要) |
+| `tool/tool_test.go` / `tool/files_test.go` / `tool/write_test.go` / `agent_test.go` / `workdir_test.go` / `confirm_test.go` | ツール(外に出られないこと・読み方の切り方を含む)とループ・作業フォルダのテスト(偽物の生成器を使う。モデル不要) |
 | `format_test.go` | `ToolCall` の JSON が切り出す前と同じ平らな形か(保存済みの会話を読めるか)のテスト |
 
 ## 書式(Format)
@@ -85,7 +87,7 @@ python testdata/qwen35/gen_expected.py ~/.ollama/models/blobs/sha256-<qwen3.5 �
 
 ## ツール
 
-ツールはルートの `tool/` パッケージ(`tool`)にある。`tool` は LLM・書式・会話・保存のどれも import しない(標準ライブラリだけ)。
+ツールはルートの `tool/` パッケージ(`tool`)にある。`tool` は LLM・書式・会話・保存のどれも import しない(使う外部パッケージは、確認の差分を作る `github.com/pkg/diff` だけ)。
 依存の向きが import としてそのまま見える:
 
 ```
@@ -141,11 +143,32 @@ Use paths relative to the working directory.
 
 書式に関係ない情報なので、書式ではなく会話の仕組みの側で組み立てる。コマンドのツール(3-3)を足したら、シェルの行を足す。
 
+### 書き換えるツールと実行前の確認(0005 の 3-2)
+
+- `write_file`: 新しく作るか、丸ごと上書きする。親のフォルダが無ければ作る。すでにあるファイルはパーミッションを引き継ぐ
+- `edit_file`: `old_string` がファイルの中に1か所だけなら `new_string` に置き換える。0 か所なら「見つかりません(read_file で…。行番号と、その後ろのタブは含めません)」、
+  2 か所以上なら「N か所あります。前後の行を含めて…」のエラー。改行が CRLF のファイルは、LF で書かれた `old_string` / `new_string` をファイルに合わせてから探す
+  (`read_file` は CR を見せないので、合わせないと複数行がいつまでも見つからない)
+- どちらも UTF-8 のテキストだけ(読むのと同じ `readText` の確かめ)。作業フォルダの外には `os.Root` で出られない
+- **確認**: 書き換えるツールは `tool.Confirmable`(`Tool` + `Preview`)。エージェントループは実行の前に `Preview` で確認の内容(パス・「上書き」「新しく作る」「書き換え」・差分)を作り、
+  `confirm` イベント(`ConfirmRequest`: ID・呼び出し・内容)で画面に送り、`Conversations.Confirm`(画面からは `ChatService.ConfirmTool`)の答えをチャネルで待つ
+  - 「ループを途中で止めて、ユーザーの返事を待つ」のは、チャネルで待つだけでできる。生成は同時に1つなので、待っている確認も同時に1つ(`Conversations.pending`)
+  - `Preview` がエラー(置き換える場所が見つからない、など)なら、聞かずにエラーの結果をモデルに返す
+  - 拒否したら実行せず、「ユーザーが実行を拒否しました。理由: …」(理由が空なら「(書かれていません)」)を結果にしてループを続ける。エラーの結果ではない
+  - 待つ間は時間の上限(10 秒)に数えない(秒数も実行だけを測る)。停止ボタンで止まり、「停止されたため実行していません」の結果を残す
+  - 実行するときは、もう一度ファイルを読んで確かめる(確認を待つ間に変わっていたら、古い中身で書き戻さない)
+- **差分**: `github.com/pkg/diff`(Myers の方法。ユーザーと決めて足した)で、git diff と同じ unified 形式(前後 3 行・`@@` の行番号付き)にする。
+  画面は ```` ```diff ```` のコードブロックで出す(+ は緑、- は赤。highlight.js の diff)
+  - 前後の行数の合計が 5,000 を超えたら差分を作らない(丸ごと書き直した大きなファイルは計算に時間がかかるため)
+  - 共通の行が1つも無いと、`pkg/diff` は「消す」と「足す」を別の `@@` に分けて書く(`@@ -1,1 +0,0 @@` と `@@ -0,0 +1,1 @@`)。行の中身は正しいので、そのまま出している
+  - `diff.Text` は文字列の代わりに nil を渡すとファイル名からファイルを読むので、必ず文字列を渡す(作業フォルダの外を読ませない)
+
 ## 保存
 
 - 1回の送信で `user → assistant(tool_calls)→ tool … → assistant` と1件ずつ保存する(マイグレーション版 3 で `messages` に `tool_calls` / `tool_result` を足した)
 - compact の「組」はユーザーの発言で区切るので、ツールの発言は組の中に入る(外すときも要約するときも組ごと)
 - 要約に渡す文には、呼び出し(「(ツール calculate を呼んだ: expression=…)」)と結果(先頭 200 文字)も入れる
+- 確認への答え(実行した / 拒否した・理由)は `ToolResult.Confirm` として結果と一緒に保存する(JSON の列なのでマイグレーションは要らない)。再起動してもカードに「拒否」と出る
 
 ## 画面とログ
 

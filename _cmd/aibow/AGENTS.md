@@ -55,11 +55,12 @@ Ollama の保存先は Ollama と同じ `OLLAMA_MODELS`。意味と既定値は 
 - Go → 画面は Wails のイベント。`chat` イベントは `RegisterEvent[aibow.ChatEvent]` で型を登録してあり、画面では `ev.data` が `ChatEvent` 型になる。
   `type` は `user`(保存したユーザーの発言。画面は ID を表示に付ける)/ `summarizing` / `summary`(要約の断片)/ `compact`(compact した・要約に失敗した)/
   `usage`(メーター)/ `prompt` / `thinking` / `content` / `reply`(返事を1件保存した。ツールを使うと1回の送信で何回も来る)/
-  `tool_start` / `tool_result`(ツールの結果を保存した)/ `error` / `done`
+  `tool_start` / `confirm`(ツールの実行前の確認を待っている)/ `tool_result`(ツールの結果を保存した)/ `notice`(お知らせ。画面はトースト)/ `error` / `done`
 - `conversation_id` が付いていて、画面は表示中の会話のものだけを出す。`done` には Go が保存した最後の返事(`reply`)が入る。
   画面は `reply` / `tool_result` で届いた保存済みの発言から吹き出しを作る([_docs/tools.md](../../_docs/tools.md))
 - `Send` の戻り値とイベントは別経路で届き順序が保証されないので、終わりは必ず `done` イベントで判定する(`Compact` も同じ)
 - 停止は `Call` の Promise の `cancel()` → Go の `ctx` がキャンセルされる。
   送信の途中の要約中だけは `ChatService.StopSummary()` で要約だけを止める(その回は truncate で返事に進む。[_docs/compact.md](../../_docs/compact.md))
 - 会話は、新しい会話の画面で最初に送信したときに `ChatService.NewConversation(settings)` で作る(空の会話を作らない)
+- ツールの実行前の確認には `ChatService.ConfirmTool(会話の ID, confirm イベントの ID, 実行するか, 理由)` で答える。作業フォルダは `ChatService.ChooseWorkDir` でフォルダを選ぶダイアログを出す
 - IME の問題のため、Go が `events.Windows.WindowSetFocus` で `aibow:window:focus` を送っている([_docs/ui.md](../../_docs/ui.md))

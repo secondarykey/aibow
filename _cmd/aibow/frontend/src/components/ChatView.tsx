@@ -16,11 +16,12 @@ const FADED_TITLE = "この発言はモデルに渡していません(要約に�
 // firstId はモデルに渡す最初の発言(Go の Usage.first_id)。これより前の発言は、要約に入ったか
 // truncate で外れて、モデルに渡していないので薄く表示する(発言そのものは保存されている)
 // conversationId は表示している会話の ID。会話を切り替えたら、一番下(最新の発言)から見せる
-export function ChatView({ items, firstId, conversationId, onStop }: {
+export function ChatView({ items, firstId, conversationId, onStop, onAnswer }: {
   items: Item[];
   firstId: string | null;
   conversationId: string | null;
   onStop(): void;
+  onAnswer(reqId: string, approved: boolean, reason: string): void; // ツールの実行前の確認に答える
 }) {
   const faded = (msgId?: string) => (msgId && firstId && msgId < firstId ? " faded" : "");
   const fadedTitle = (msgId?: string) => (faded(msgId) ? FADED_TITLE : undefined);
@@ -47,7 +48,7 @@ export function ChatView({ items, firstId, conversationId, onStop }: {
             case "divider":
               return <Divider key={it.id} compaction={it.compaction} />;
             case "assistant":
-              return <AssistantMessage key={it.id} view={it} faded={!!faded(it.msgId)} onStop={onStop} />;
+              return <AssistantMessage key={it.id} view={it} faded={!!faded(it.msgId)} onStop={onStop} onAnswer={onAnswer} />;
           }
         })}
       </div>
@@ -55,7 +56,12 @@ export function ChatView({ items, firstId, conversationId, onStop }: {
   );
 }
 
-function AssistantMessage({ view, faded, onStop }: { view: AssistantView; faded: boolean; onStop(): void }) {
+function AssistantMessage({ view, faded, onStop, onAnswer }: {
+  view: AssistantView;
+  faded: boolean;
+  onStop(): void;
+  onAnswer(reqId: string, approved: boolean, reason: string): void;
+}) {
   // コピーするのは答えの文だけ(ツールを使った送信では、各回の答えをつなげる)
   const answer = [...(view.steps ?? []).map(s => s.content), view.content].filter(Boolean).join("\n\n");
   return (
@@ -64,12 +70,13 @@ function AssistantMessage({ view, faded, onStop }: { view: AssistantView; faded:
       {view.compactNote && <p className="compact-note">{view.compactNote}</p>}
       {view.steps?.length ? (
         // ツールを使った送信: 答えより前(各回の思考 → 途中の答え → カード、最後の回の思考)を1つの枠にまとめて畳む
-        <Process label={view.processLabel ?? ""}>
+        // 確認を待っているカードがあれば、枠を開いたままにする(畳んでいると、待っていることに気づけない)
+        <Process label={view.processLabel ?? ""} forceOpen={view.steps.some(s => s.tools.some(t => t.confirm))}>
           {view.steps.map((s, i) => (
             <div key={i} className="step">
               {s.thinking && <Thinking label={s.thinkLabel} text={s.thinking} />}
               {s.content && <div className="body"><RenderedText text={s.content} /></div>}
-              {s.tools.map((t, j) => <ToolCard key={j} tool={t} generating={!!view.generating} />)}
+              {s.tools.map((t, j) => <ToolCard key={j} tool={t} generating={!!view.generating} onAnswer={onAnswer} />)}
             </div>
           ))}
           {view.thinking && <Thinking label={view.thinkLabel} text={view.thinking} />}
@@ -199,9 +206,10 @@ function Divider({ compaction }: { compaction: Compaction }) {
 }
 
 // ツールを使った送信の、答えまでの過程の枠。畳んだ状態で出し、開くと中に思考とツールのカードが並ぶ
-function Process({ label, children }: { label: string; children: ReactNode }) {
+// forceOpen の間は開いたままにする(外すと、ふだんの畳んだ状態に戻る)
+function Process({ label, forceOpen, children }: { label: string; forceOpen: boolean; children: ReactNode }) {
   return (
-    <details className="process">
+    <details className="process" open={forceOpen ? true : undefined}>
       <summary>{label}</summary>
       <div className="process-body">{children}</div>
     </details>

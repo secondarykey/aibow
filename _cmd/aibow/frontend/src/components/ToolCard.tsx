@@ -1,7 +1,14 @@
 // ツールのカード: モデルがツールを呼んだ位置に出す。「思考の過程」と同じく畳んだ1行で、開くと引数と結果が読める。
 // モデルが書いた <tool_call> の生の文字列は答えの欄には出さない(「モデルに渡した文字列」のパネルでは見える)。
-import { LuCheck, LuLoaderCircle, LuWrench, LuX } from "react-icons/lu";
+//
+// 書き換えるツール(write_file / edit_file)は、実行する前に確認を待つ。待っている間はカードを開いたままにし、
+// 何をするか(パス・上書きか)と差分(```diff。+ は緑、- は赤)、理由の欄と「拒否」「実行する」を出す。
+// 答えると Go の待っているループに届き、実行(か拒否)の結果が届いたら、ほかのカードと同じく畳んだ1行に戻る。
+import { useState } from "react";
+import { LuBan, LuCheck, LuHourglass, LuLoaderCircle, LuWrench, LuX } from "react-icons/lu";
+import type { ConfirmRequest } from "../../bindings/aibow";
 import type { ToolView } from "../transcript";
+import { CodeBlock } from "./CodeBlock";
 
 // 組み込みのツールの日本語の説明(モデルに見せる説明は英語。カードの名前にマウスを乗せると出す)
 const TOOL_LABELS: Record<string, string> = {
@@ -9,23 +16,37 @@ const TOOL_LABELS: Record<string, string> = {
   calculate: "式を計算する",
   list_files: "作業フォルダの中のファイルを並べる",
   read_file: "作業フォルダの中のファイルを読む",
+  write_file: "作業フォルダの中のファイルを丸ごと書く(実行前に確認する)",
+  edit_file: "作業フォルダの中のファイルの一部を置き換える(実行前に確認する)",
 };
 
-export function ToolCard({ tool, generating }: { tool: ToolView; generating: boolean }) {
+interface Props {
+  tool: ToolView;
+  generating: boolean;
+  onAnswer(reqId: string, approved: boolean, reason: string): void;
+}
+
+export function ToolCard({ tool, generating, onAnswer }: Props) {
   // 結果がまだ無いのは実行中(停止や上限で実行しなかったときも、結果は「エラー: …」として届く)
   const running = tool.result === undefined;
-  const state = running ? "running" : tool.error ? "error" : "ok";
+  const rejected = tool.decision?.approved === false;
+  const state = tool.confirm ? "confirm" : running ? "running" : rejected ? "rejected" : tool.error ? "error" : "ok";
   return (
-    <details className={`tool-card ${state}`}>
+    // 確認を待っている間だけ開いたままにする(open を外すと、ふだんの畳んだ1行に戻る)
+    <details className={`tool-card ${state}`} open={tool.confirm ? true : undefined}>
       <summary>
         <LuWrench className="tool-icon" />
         <code title={TOOL_LABELS[tool.name]}>{tool.name || "(読み取れない呼び出し)"}</code>
-        {running && generating && <span className="tool-status"><LuLoaderCircle className="spin" /> 実行中…</span>}
+        {state === "confirm" && <span className="tool-status"><LuHourglass /> 確認待ち</span>}
+        {state === "running" && generating && <span className="tool-status"><LuLoaderCircle className="spin" /> 実行中…</span>}
         {state === "ok" && <span className="tool-status"><LuCheck /> {tool.sec?.toFixed(2)}秒</span>}
+        {state === "rejected" && <span className="tool-status"><LuBan /> 拒否</span>}
         {state === "error" && <span className="tool-status"><LuX /> エラー</span>}
       </summary>
       <div className="tool-body">
-        {tool.raw ? (
+        {tool.confirm ? (
+          <Confirm req={tool.confirm} onAnswer={onAnswer} />
+        ) : tool.raw ? (
           <>
             <div className="tool-label">モデルが書いた呼び出し</div>
             <pre>{tool.raw}</pre>
@@ -46,5 +67,40 @@ export function ToolCard({ tool, generating }: { tool: ToolView; generating: boo
         )}
       </div>
     </details>
+  );
+}
+
+// Confirm は確認の中身: 何をするか・差分・理由の欄と答えのボタン
+function Confirm({ req, onAnswer }: { req: ConfirmRequest; onAnswer: Props["onAnswer"] }) {
+  const [reason, setReason] = useState("");
+  // 答えてから結果が届くまでの間は押せなくする(2回押しても、Go は1回目しか受け取らない)
+  const [sent, setSent] = useState(false);
+  const answer = (approved: boolean) => {
+    setSent(true);
+    onAnswer(req.id, approved, approved ? "" : reason);
+  };
+  const pv = req.preview;
+  return (
+    <div className="confirm">
+      <div className="confirm-target">
+        <code>{pv.path}</code>
+        <span className={`confirm-note ${pv.note === "上書き" ? "overwrite" : ""}`}>{pv.note}</span>
+      </div>
+      {pv.diff
+        ? <CodeBlock code={pv.diff.replace(/\n$/, "")} lang="diff" closed />
+        : <p className="tool-none">(大きいため差分は出していません)</p>}
+      <div className="confirm-actions">
+        <input
+          type="text"
+          placeholder="理由"
+          title="拒否するときの理由。モデルに「ユーザーが実行を拒否しました。理由: …」として渡す(空でもよい)"
+          value={reason}
+          disabled={sent}
+          onChange={e => setReason(e.target.value)}
+        />
+        <button disabled={sent} onClick={() => answer(false)}>拒否</button>
+        <button className="primary" disabled={sent} onClick={() => answer(true)}>実行する</button>
+      </div>
+    </div>
   );
 }

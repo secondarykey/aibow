@@ -7,8 +7,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { CancelError, Events } from "@wailsio/runtime";
 import type { CancellablePromise } from "@wailsio/runtime";
 import { ChatService } from "../bindings/aibow/cmd/aibow";
-import type { ChatEvent, StoredMessage } from "../bindings/aibow";
-import { messageItems, thinkLabel, toolCount, turnView } from "./transcript";
+import type { ChatEvent, ConfirmRequest, StoredMessage } from "../bindings/aibow";
+import { messageItems, thinkLabel, toolCount, turnView, withConfirm } from "./transcript";
 import type { AssistantView, Transcript } from "./transcript";
 import type { Conversations } from "./useConversations";
 import type { Busy } from "./useModels";
@@ -29,10 +29,15 @@ interface Live {
   // saved はこの送信で Go が保存し終えた返事とツールの結果(reply / tool_result イベント)。
   // ツールを使うと1回の送信で何件も保存されるので、吹き出しはここから作り直す(開き直したときと同じ並びになる)
   saved: StoredMessage[];
+  // confirm は、実行前の確認を待っているツール(答えるか、結果が届くまで)。待っていなければ null。
+  // 会話を切り替えても Go は待ち続けるので、ここに覚えておき、戻ったときもボタン付きのカードを出す
+  confirm: ConfirmRequest | null;
 }
 
 export interface Chat {
   generatingId: string | null; // 返事(か要約)を生成中の会話の ID
+  confirmingId: string | null; // ツールの実行前の確認を待っている会話の ID(会話の一覧に「確認待ち」と出す)
+  answer(reqId: string, approved: boolean, reason: string): Promise<void>; // 確認に答える(「実行する」「拒否」)
   lastPrompt: string;          // 開いている会話で、モデルに実際に渡した文字列
   send(text: string): Promise<void>;
   compact(): Promise<void>;    // 今すぐ要約(開いている会話)
@@ -44,6 +49,7 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
   const { current, draft, openCount, open, adopt, flushSettings, reloadList, setUsage } = convs;
   const { notify } = n;
   const [generatingId, setGeneratingId] = useState<string | null>(null);
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
   // モデルに渡した文字列は保存しないので、会話ごとにここで覚えておく(再起動すると消える)
   const [prompts, setPrompts] = useState<Record<string, string>>({});
 
@@ -103,7 +109,7 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
   // manual は「今すぐ要約」(返事は生成しない。終わったら吹き出しを消して、区切りが出るように開き直す)
   const run = useCallback(async (id: string, start: () => CancellablePromise<void>, manual: boolean, userItemId: number | null) => {
     const l: Live = {
-      convId: id, itemId: null, userItemId, thinkStart: 0, processStart: 0, saved: [],
+      convId: id, itemId: null, userItemId, thinkStart: 0, processStart: 0, saved: [], confirm: null,
       view: { generating: true, waiting: true, thinking: "", thinkLabel: "", content: "", summarizing: manual, summary: "" },
     };
     l.itemId = addAssistant(l.view);
@@ -154,6 +160,7 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
       if (ev.conversation_id !== id) return;
       switch (ev.type) {
         case "done":
+          setConfirmingId(null);
           done();
           live.current = null; // 開き直しても、もう生成中の吹き出しは足さない
           if (manual && compacted) reopen();
@@ -198,9 +205,22 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
             show(liveProcess(false));
           }
           return;
+        case "confirm":
+          // ツールを実行する前に、確認を待っている。そのカードに差分と「実行する / 拒否」を出す
+          if (!ev.confirm) return;
+          l.confirm = ev.confirm;
+          setConfirmingId(id);
+          // 待っているのはモデルではなくユーザーなので、「応答待ち…」は消す(答えたら結果が届いたときに戻す)
+          show({ steps: withConfirm(turnView(l.saved).steps, l.confirm), waiting: false });
+          return;
         case "tool_result":
-          // ツールの結果を保存した。結果の無いカードは「実行中」と出ている
+          // ツールの結果を保存した。結果の無いカードは「実行中」と出ている。確認を待っていたなら、答えが出た
           if (!ev.message) return;
+          if (l.confirm) {
+            l.confirm = null;
+            setConfirmingId(null);
+            show({ waiting: true }); // 次はモデルが結果を読んで続きを書く
+          }
           l.saved.push(ev.message);
           show({ steps: turnView(l.saved).steps });
           show(liveProcess(false));
@@ -286,5 +306,16 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
   const stop = useCallback(() => controller.current?.stop(), []);
 
   const lastPrompt = current ? prompts[current.conversation.id] ?? "" : "";
-  return { generatingId, lastPrompt, send, compact, stop };
+  // 確認に答える。答えは Go の待っているループに届き、実行(か拒否の結果)の tool_result が返ってくる
+  const answer = useCallback(async (reqId: string, approved: boolean, reason: string) => {
+    const l = live.current;
+    if (!l) return;
+    try {
+      await ChatService.ConfirmTool(l.convId, reqId, approved, reason);
+    } catch (err) {
+      addError(errorMessage(err));
+    }
+  }, [addError]);
+
+  return { generatingId, confirmingId, answer, lastPrompt, send, compact, stop };
 }

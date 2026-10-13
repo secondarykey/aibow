@@ -35,6 +35,7 @@ export interface AppSettings {
  * 	compact  : 会話の上限に収めるために compact した(方式・前後のトークン数・保存した要約など)。
  * 	           要約に失敗したときも Compact.Error に理由を入れて送る
  * 	usage    : メーターの値(モデルに渡す文字列のトークン数 / 会話の上限)。生成の前と、返事を保存したあとに送る
+ * 	confirm  : ツールを実行する前に、ユーザーの確認を待っている(Confirm)。答えは Conversations.Confirm で返す
  * 	error    : エラー
  * 	notice   : エラーではないお知らせ(Text。画面はトーストに出す)。例: 今すぐ要約で、要約するものが無かった
  * 	done     : 終わり。必ず最後に1回だけ送る。保存した最後の返事があれば Reply に入る
@@ -52,6 +53,7 @@ export interface ChatEvent {
     "usage"?: Usage | null;
     "compact"?: CompactInfo | null;
     "tool_call"?: ToolCall | null;
+    "confirm"?: ConfirmRequest | null;
 }
 
 /**
@@ -183,6 +185,41 @@ export interface Compaction {
      */
     "stats": CompactStats | null;
     "created_at": string;
+}
+
+/**
+ * ConfirmRequest は、ツールを実行する前にユーザーに確かめる内容(confirm イベント)。
+ */
+export interface ConfirmRequest {
+    /**
+     * 答えるときに渡す(古い確認への答えを取り違えないため)
+     */
+    "id": string;
+
+    /**
+     * どの呼び出しか
+     */
+    "call": ToolCall;
+
+    /**
+     * 何をするか(パス・上書きか・差分)
+     */
+    "preview": tool$0.Preview;
+}
+
+/**
+ * Confirmation は、実行前の確認(書き換えるツール)へのユーザーの答え。再起動しても見えるよう、結果と一緒に保存する。
+ */
+export interface Confirmation {
+    /**
+     * 実行した。false なら拒否した
+     */
+    "approved": boolean;
+
+    /**
+     * 拒否の理由(ユーザーが書いたもの。空でもよい)
+     */
+    "reason"?: string;
 }
 
 /**
@@ -472,9 +509,14 @@ export interface ToolResult {
     "error": boolean;
 
     /**
-     * 実行にかかった秒数
+     * 実行にかかった秒数(確認を待った時間は入らない)
      */
     "sec": number;
+
+    /**
+     * 実行前の確認の結果。確認が要らないツール・確認する前に止まった呼び出しは nil
+     */
+    "confirm"?: Confirmation | null;
 }
 
 /**

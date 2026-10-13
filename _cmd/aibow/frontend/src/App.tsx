@@ -217,6 +217,7 @@ export default function App() {
           firstId={convs.current?.usage?.first_id ?? null}
           conversationId={currentId}
           onStop={chat.stop}
+          onAnswer={chat.answer}
         />
         {input}
       </section>
@@ -227,6 +228,7 @@ export default function App() {
     list: convs.list,
     currentId,
     generatingId: chat.generatingId,
+    waitingId: chat.confirmingId,
     disabled: unavailable,
     onOpen,
     onNew,

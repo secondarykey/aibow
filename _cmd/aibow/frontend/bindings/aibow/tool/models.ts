@@ -10,3 +10,23 @@ export interface Arg {
     "name": string;
     "value": string;
 }
+
+/**
+ * Preview は確認の画面に出す内容。
+ */
+export interface Preview {
+    /**
+     * 対象(作業フォルダからの相対パス)
+     */
+    "path": string;
+
+    /**
+     * 何をするか(「上書き」「新しく作る」「書き換え」)
+     */
+    "note": string;
+
+    /**
+     * 変更の差分(unified diff。画面は ```diff のコードブロックで出す)。大きすぎるときは空
+     */
+    "diff": string;
+}

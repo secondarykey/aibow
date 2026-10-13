@@ -4,7 +4,7 @@
 // 表示にはエラーも出すが、これは保存しない(会話を開き直すと消える)。
 // モデルの読み込みなどのお知らせは、会話の表示ではなくトースト(toast.tsx)に出す。
 import { useCallback, useRef, useState } from "react";
-import type { Compaction, ReplyStats, StoredMessage } from "../bindings/aibow";
+import type { Compaction, Confirmation, ConfirmRequest, ReplyStats, StoredMessage } from "../bindings/aibow";
 import type { Arg as ToolArg } from "../bindings/aibow/tool";
 
 // ツールの呼び出し1つの表示(カード)。結果がまだ無ければ実行中
@@ -15,6 +15,8 @@ export interface ToolView {
   result?: string;  // 結果の文(エラーなら「エラー: …」。モデルにもこの文が渡る)
   error?: boolean;
   sec?: number;     // 実行にかかった秒数
+  confirm?: ConfirmRequest; // 実行前の確認を待っている(書き換えるツール)。カードに差分と「実行する / 拒否」を出す
+  decision?: Confirmation;  // 確認への答え(保存されている。拒否したら状態を「拒否」にする)
 }
 
 // ツールを呼んだ回(エージェントループの途中の1回分)の表示: 思考 → 答え → カード
@@ -136,7 +138,9 @@ export function turnView(ms: StoredMessage[]): AssistantView {
     } else if (m.role === "tool") {
       // 結果は呼び出しと同じ順に保存されている。まだ結果の無い最初のカードに付ける
       const card = steps[steps.length - 1]?.tools.find(t => t.result === undefined);
-      if (card) Object.assign(card, { result: m.content, error: m.tool_result?.error, sec: m.tool_result?.sec });
+      if (card) {
+        Object.assign(card, { result: m.content, error: m.tool_result?.error, sec: m.tool_result?.sec, decision: m.tool_result?.confirm ?? undefined });
+      }
     }
   }
   // 最後の回が無い(ツールの上限や停止で、答える前に止めた)ときは、カードだけの吹き出しになる
@@ -148,6 +152,21 @@ export function turnView(ms: StoredMessage[]): AssistantView {
   view.stats = statsLine(ms.filter(m => m.role === "assistant"));
   view.createdAt = ms[ms.length - 1]?.created_at;
   return view;
+}
+
+// withConfirm は、確認を待っている呼び出しのカード(まだ結果の無い最初のカード)に、確認の内容を付ける。
+// 確認は「実行する直前」に来るので、結果の無いカードのうち先頭のものが、今確認を待っている呼び出し
+export function withConfirm(steps: StepView[] | undefined, req: ConfirmRequest | null): StepView[] | undefined {
+  if (!steps || !req) return steps;
+  let done = false;
+  return steps.map(s => ({
+    ...s,
+    tools: s.tools.map(t => {
+      if (done || t.result !== undefined) return t;
+      done = true;
+      return { ...t, confirm: req };
+    }),
+  }));
 }
 
 // processLabel は、ツールを使った送信の「答えまでの過程」の枠の見出し。秒数は送信から答えを書き始めるまでの時間で、

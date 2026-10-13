@@ -7,6 +7,8 @@ export type {
     CompactInfo,
     CompactStats,
     Compaction,
+    ConfirmRequest,
+    Confirmation,
     Conversation,
     ConversationSettings,
     ModelEntry,

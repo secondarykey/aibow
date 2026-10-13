@@ -13,6 +13,7 @@ interface Props {
   list: Conversation[];
   currentId: string | null;
   generatingId: string | null;
+  waitingId: string | null; // ツールの実行前の確認を待っている会話(生成中の印を「確認待ち」にする)
   disabled: boolean;
   onOpen(id: string): void;
   onNew(): void;
@@ -26,7 +27,7 @@ interface Props {
 }
 
 export function ConversationList({
-  list, currentId, generatingId, disabled, onOpen, onNew, onDelete, onRename, settingsOpen, onToggleSettings,
+  list, currentId, generatingId, waitingId, disabled, onOpen, onNew, onDelete, onRename, settingsOpen, onToggleSettings,
   open, onToggleOpen, width,
 }: Props) {
   // 削除の確認を出している会話。消すと戻せないので、もう一度押してもらう
@@ -94,7 +95,9 @@ export function ConversationList({
                 onClick={() => onOpen(c.id)}
                 onDoubleClick={() => setEditing(c.id)}
               >
-                {generating && <span className="dot" title="返事を生成中" />}
+                {generating && (c.id === waitingId
+                  ? <span className="dot waiting" title="ツールの実行の確認待ち" />
+                  : <span className="dot" title="返事を生成中" />)}
                 {title}
               </button>
               <button

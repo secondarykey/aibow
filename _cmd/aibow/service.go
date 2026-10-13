@@ -382,6 +382,15 @@ func (s *ChatService) Compact(ctx context.Context, id uuid.UUID) {
 	})
 }
 
+// ConfirmTool は、実行前の確認を待っているツールに答える(カードの「実行する」「拒否」)。
+// reqID は confirm イベントの ID。拒否するときの reason は空でもよい(モデルには「理由: (書かれていません)」と渡る)。
+func (s *ChatService) ConfirmTool(id uuid.UUID, reqID string, approved bool, reason string) error {
+	if s.startupErr != nil {
+		return s.startupErr
+	}
+	return s.convs.Confirm(id, reqID, approved, reason)
+}
+
 // StopSummary は生成中の要約だけを止める(要約中に出る停止ボタン)。
 // 送信の途中の要約なら、その回は古い発言を外して(truncate)返事の生成に進む。
 // Promise の cancel() だと送信全体が止まってしまうので、別のメソッドにしている。
@@ -414,6 +423,10 @@ func (s *ChatService) run(ctx context.Context, id uuid.UUID, f func(ctx context.
 			logCompact(ev.Compact)
 		case "error":
 			log.Printf("エラー: %s", ev.Error)
+		case "confirm":
+			if c := ev.Confirm; c != nil {
+				log.Printf("確認を待っています: %s %s(%s)", c.Call.Name, c.Preview.Path, c.Preview.Note)
+			}
 		case "reply":
 			// ツールを使うと1回の送信で何回も生成する。回ごとに出すと、KV キャッシュの再利用数の変化が見える
 			if r := ev.Reply; r != nil && r.Stats != nil {
@@ -452,6 +465,13 @@ func logTool(m *aibow.StoredMessage) {
 	}
 	log.Printf("ツール %s(%s): 結果 %d 文字 / %.3f 秒 / %s", cmp.Or(r.Call.Name, "?"), strings.Join(args, ", "),
 		utf8.RuneCountInString(m.Content), r.Sec, status)
+	if c := r.Confirm; c != nil {
+		if c.Approved {
+			log.Printf("  確認: 実行した")
+		} else {
+			log.Printf("  確認: 拒否した(理由: %q)", c.Reason)
+		}
+	}
 	if r.Call.Raw != "" {
 		log.Printf("  モデルが書いた呼び出し: %q", r.Call.Raw)
 	}

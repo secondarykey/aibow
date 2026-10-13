@@ -40,6 +40,14 @@ export function Compact(id: uuid$0.UUID): $CancellablePromise<void> {
 }
 
 /**
+ * ConfirmTool は、実行前の確認を待っているツールに答える(カードの「実行する」「拒否」)。
+ * reqID は confirm イベントの ID。拒否するときの reason は空でもよい(モデルには「理由: (書かれていません)」と渡る)。
+ */
+export function ConfirmTool(id: uuid$0.UUID, reqID: string, approved: boolean, reason: string): $CancellablePromise<void> {
+    return $Call.ByID(665849895, id, reqID, approved, reason);
+}
+
+/**
  * Conversation は会話1つと、その発言を古い順に返す。
  */
 export function Conversation(id: uuid$0.UUID): $CancellablePromise<$models.ConversationDetail> {
