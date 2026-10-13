@@ -182,13 +182,30 @@ func (cs *Conversations) lookupTool(set ConversationSettings, c ToolCall) (tool.
 	tools := cs.toolsFor(set)
 	t := tool.Find(tools, c.Name)
 	if t == nil {
-		return nil, nil, fmt.Errorf("ツール %s はありません(使えるツール: %s)", c.Name, tool.Names(tools))
+		return nil, nil, fmt.Errorf("ツール %s はありません%s(使えるツール: %s)", c.Name, didYouMean(tools, c.Name), tool.Names(tools))
 	}
 	args, err := tool.CheckArgs(t.Def(), c.Args)
 	if err != nil {
 		return nil, nil, err
 	}
 	return t, args, nil
+}
+
+// didYouMean は、知らない名前で呼ばれたとき、MCP のツールのうち「__名前」で終わるものを「〜のことですか?」として返す。
+//
+// MCP のツールの名前にはサーバーの名前が前に付く(filesystem__list_directory)が、モデルは前の部分を落として書くことがある
+// (名前空間を付ける前の会話の履歴をまねしたときなど)。勝手に読み替えず(取り違えが見えなくなるため)、正しい名前を教えて、モデルに呼び直させる。
+func didYouMean(tools []tool.Tool, name string) string {
+	var cands []string
+	for _, t := range tools {
+		if n := t.Def().Name; strings.HasSuffix(n, "__"+name) {
+			cands = append(cands, n)
+		}
+	}
+	if len(cands) == 0 {
+		return ""
+	}
+	return "。" + strings.Join(cands, " か ") + " のことですか?"
 }
 
 // confirm は、実行してよいかをユーザーに確かめ、答えを待つ。

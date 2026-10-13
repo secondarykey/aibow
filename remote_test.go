@@ -100,6 +100,26 @@ func TestRemoteTools(t *testing.T) {
 	}
 }
 
+// サーバーの名前を落として呼んだら、正しい名前を「〜のことですか?」でモデルに返す(勝手に読み替えない)
+func TestRemoteToolDidYouMean(t *testing.T) {
+	g := &fakeGen{replies: []fakeReply{
+		{toolCalls: []ToolCall{toolCall("list_directory", "path", ".")}},
+		{content: "呼び直します"},
+	}}
+	cs, c, _ := newWorkDirConversation(t, g)
+	rt := &remoteTool{name: "filesystem__list_directory"}
+	cs.SetRemoteTools(&fakeRemote{tools: []tool.Tool{rt}})
+
+	evs := sendAnswering(cs, context.Background(), c, "並べて", func(*ConfirmRequest) bool { return false })
+	if errs := errorsOf(evs); len(errs) != 0 {
+		t.Fatalf("エラー: %v", errs)
+	}
+	rs := toolResults(t, cs, c)
+	if len(rs) != 1 || !strings.Contains(rs[0].Content, "ツール list_directory はありません。filesystem__list_directory のことですか?") || rt.ran {
+		t.Errorf("結果: %+v", rs)
+	}
+}
+
 // 起動できないサーバーはお知らせに出し、そのサーバー無しで送信を続ける。ツールが OFF なら起動しない
 func TestRemoteToolsStartError(t *testing.T) {
 	g := &fakeGen{content: "こんにちは"}
