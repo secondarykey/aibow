@@ -114,3 +114,13 @@ aibow のリポジトリそのもの(`D:\Go\Projects\aibow`)を作業フォル�
 - 「直して、もう一度確かめて」まで頼むと、読む → 直す → 動かすを最後まで回せた。「テストを実行して」だけだと、失敗を説明して止まる
 - `edit_file` の `old_string` を数行にしたとき、直す必要のないコメントの行まで書き換えた(「name へのあいさつ」→「名前のいる挨拶」)。確認の差分で気づける
 - 9B は Ollama に入っていなかったので比べていない
+
+### 作業フォルダの名前で頼むと cd してしまう(0005 の後に直した)
+
+ユーザーの報告:作業フォルダ `ytscroll` で「コミットして」と頼んだら、`cd ytscroll && git status` を実行して失敗した。
+
+- 作業フォルダを `ytscroll` という git のリポジトリにして試すと、「コミットして」では 3 回とも `cd` しなかったが、
+  **「ytscroll をコミットして」とフォルダの名前を書くと、3 回に 1 回 `cd ytscroll && git status` を書いた**(作業フォルダの下に ytscroll があると思った)
+- 環境の説明に「Commands already run inside the working directory, so do not cd into it. "ytscroll" refers to the working directory itself.」を足し、
+  `run_command` の説明にも「It already runs in the working directory; do not cd into it.」を足したら、同じ頼み方で 6 回とも `cd` しなかった(6 回ともコミットできた)
+- 6 回のうち 1 回は、すでにリポジトリなのに `git init` から始めた(害は無いが、確認のカードで気づける)

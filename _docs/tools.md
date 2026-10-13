@@ -142,6 +142,7 @@ Working directory: D:\Work\example
 OS: windows
 Shell for run_command: cmd.exe (use dir, type, findstr; ls, cat and grep are not available)
 Use paths relative to the working directory.
+Commands already run inside the working directory, so do not cd into it. "example" refers to the working directory itself.
 ```
 
 書式に関係ない情報なので、書式ではなく会話の仕組みの側で組み立てる。シェルの行は OS ごとに `tool.ShellNote`(Linux なら `/bin/sh`)。

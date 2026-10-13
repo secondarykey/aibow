@@ -14,6 +14,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -389,7 +390,11 @@ func environment(set ConversationSettings) string {
 		"Working directory: " + set.WorkDir + "\n" +
 		"OS: " + runtime.GOOS + "\n" +
 		"Shell for run_command: " + tool.ShellNote + "\n" +
-		"Use paths relative to the working directory."
+		"Use paths relative to the working directory.\n" +
+		// ユーザーが「ytscroll をコミットして」のようにフォルダの名前で呼ぶと、4B は ytscroll を作業フォルダの下のフォルダだと思い、
+		// 「cd ytscroll && git status」と書いて失敗した(3 回に 1 回)。すでにその中にいることと、その名前は作業フォルダそのものだと書く
+		"Commands already run inside the working directory, so do not cd into it. \"" + filepath.Base(set.WorkDir) +
+		"\" refers to the working directory itself."
 }
 
 // promptMessages は保存した発言を、モデルに渡す形にする。

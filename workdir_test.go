@@ -63,10 +63,13 @@ func TestWorkDirAddsFileToolsAndEnvironment(t *testing.T) {
 func TestEnvironmentPlacement(t *testing.T) {
 	cs, _ := newTestConversations(t, &fakeGen{})
 	set := testDefaults
-	set.Tools, set.WorkDir = true, `D:\Work\example`
+	work := filepath.Join(t.TempDir(), "example") // OS の書き方の絶対パス(Linux のテストでも名前が取れるように)
+	set.Tools, set.WorkDir = true, work
 	msgs := promptMessages(cs.systemPrompt(set), "- 要約", nil)
-	want := testDefaults.System + "\n\n# Environment\nWorking directory: D:\\Work\\example\nOS: " + runtime.GOOS +
-		"\nShell for run_command: " + tool.ShellNote + "\nUse paths relative to the working directory.\n\n" + summaryHeading + "\n- 要約"
+	want := testDefaults.System + "\n\n# Environment\nWorking directory: " + work + "\nOS: " + runtime.GOOS +
+		"\nShell for run_command: " + tool.ShellNote + "\nUse paths relative to the working directory.\n" +
+		"Commands already run inside the working directory, so do not cd into it. \"example\" refers to the working directory itself.\n\n" +
+		summaryHeading + "\n- 要約"
 	if len(msgs) != 1 || msgs[0].Content != want {
 		t.Errorf("system:\n%s\n期待:\n%s", msgs[0].Content, want)
 	}

@@ -49,7 +49,8 @@ type runCommand struct {
 func (runCommand) Def() Def {
 	return Def{
 		Name: "run_command",
-		Description: "Run a command line in the working directory with the shell named in the Environment section, and return its output and exit code. " +
+		Description: "Run a command line with the shell named in the Environment section, and return its output and exit code. " +
+			"It already runs in the working directory; do not cd into it. " +
 			"Use it to build, test or run programs. Commands cannot read input and are stopped after 120 seconds. The user is asked to approve before it runs.",
 		Parameters: json.RawMessage(`{"type": "object", "properties": {"command": {"type": "string", ` +
 			`"description": "The command line to run."}}, "required": ["command"]}`),
