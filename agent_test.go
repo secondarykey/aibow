@@ -349,4 +349,31 @@ func TestAgentStopsWhenToolResultsOverflow(t *testing.T) {
 	if len(g.calls) != 1 {
 		t.Errorf("2回目の生成はしないはず: %d 回", len(g.calls))
 	}
+
+	// メーターは上限を超えたまま。今すぐ要約しても、最新の組は要約しないので、そう伝える
+	// (「最近の発言が上限の半分に収まっています」は事実と逆なので出さない)
+	if u, _ := cs.Usage(c.ID); u.Tokens <= u.Limit {
+		t.Fatalf("メーター: %d / %d(超えているはず)", u.Tokens, u.Limit)
+	}
+	evs = nil
+	cs.Compact(context.Background(), c.ID, func(ev ChatEvent) { evs = append(evs, ev) })
+	if errs := errorsOf(evs); len(errs) != 1 || errs[0] != errOnlyLatestTurn.Error() {
+		t.Errorf("今すぐ要約のエラー: %v", errs)
+	}
+
+	// 次の質問を送ると、前の組が要約の対象になり、要約してから答える
+	g.replies = []fakeReply{{content: "- 大きい結果を受け取った"}, {content: "続きです"}}
+	evs = sendRaw(cs, c, "続けて")
+	if errs := errorsOf(evs); len(errs) != 0 {
+		t.Fatalf("次の送信のエラー: %v", errs)
+	}
+	if list, _ := cs.Compactions(c.ID); len(list) != 1 || list[0].Summary != "- 大きい結果を受け取った" {
+		t.Errorf("要約: %+v", list)
+	}
+	if _, ms, _ := cs.Get(c.ID); ms[len(ms)-1].Content != "続きです" {
+		t.Errorf("最後の返事: %q", ms[len(ms)-1].Content)
+	}
+	if u, _ := cs.Usage(c.ID); u.Tokens > u.Limit {
+		t.Errorf("要約のあとも超えています: %d / %d", u.Tokens, u.Limit)
+	}
 }

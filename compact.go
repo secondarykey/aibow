@@ -320,8 +320,14 @@ var summaryInstruction = fmt.Sprintf(`あなたは会話の要約係です。「
 - 会話に無いことを付け足さない
 - 要約だけを出力する(「以下が要約です」などの前置きは書かない)`, summaryMaxRunes)
 
-// errNothingToSummarize は、要約できる古い発言が無いときのエラー。
+// errNothingToSummarize は、要約できる古い発言が無いときのエラー。最近の発言が上限の半分に収まっていて、要約するまでもない。
 var errNothingToSummarize = errors.New("要約できる古い発言がありません(最近の発言が、会話の上限の半分に収まっています)")
+
+// errOnlyLatestTurn は、要約に入っていない発言が最新の組(最後の質問とその返事)だけのときのエラー。
+// 最新の組は要約せずに必ず残すので、それだけで上限を超えていても(ツールの結果が長かったなど)、今は要約できない。
+// 次の質問を送ると、この組は「古い組」になり、要約の対象になる。
+var errOnlyLatestTurn = errors.New("要約できる古い発言がありません。最後の質問とその返事(ツールの結果を含む)は要約せずに残すためです。" +
+	"次に送信すると、この部分が要約の対象になります")
 
 // latestSummary は会話の最新の要約と、まだ要約に入っていない最初の発言の位置を返す。要約が無ければ nil, 0。
 func (cs *Conversations) latestSummary(id uuid.UUID, history []StoredMessage) (*Compaction, int, error) {
@@ -413,11 +419,14 @@ func (cs *Conversations) summarize(ctx context.Context, conv Conversation, histo
 	}
 
 	// 1. どこから後ろを残すか: 会話の上限の半分に収まる、一番前の組から
-	keep, err := cs.keepFrom(set, history, from, lim.history/2)
+	keep, fits, err := cs.keepFrom(set, history, from, lim.history/2)
 	if err != nil {
 		return nil, err
 	}
 	if keep <= from {
+		if !fits {
+			return nil, errOnlyLatestTurn // 最新の組だけで半分を超えているが、最新の組は要約しない
+		}
 		return nil, errNothingToSummarize
 	}
 
@@ -438,23 +447,24 @@ func (cs *Conversations) summarize(ctx context.Context, conv Conversation, histo
 }
 
 // keepFrom は、最近の発言をそのまま残す位置を返す。history[from:] の組の始まりのうち、
-// そこから後ろが budget トークンに収まる一番前の位置。どれも収まらなければ最新の組の始まり。
-func (cs *Conversations) keepFrom(set ConversationSettings, history []StoredMessage, from, budget int) (int, error) {
+// そこから後ろが budget トークンに収まる一番前の位置(fits=true)。
+// どれも収まらなければ最新の組の始まり(fits=false。最新の組だけで budget を超えている)。
+func (cs *Conversations) keepFrom(set ConversationSettings, history []StoredMessage, from, budget int) (keep int, fits bool, err error) {
 	starts := turnStarts(history, from)
 	if len(starts) == 0 {
-		return from, nil
+		return from, true, nil
 	}
 	i, err := firstFitting(starts, func(start int) (bool, error) {
 		p, err := cs.passFrom(set, nil, history, start)
 		return p.tokens <= budget, err
 	})
 	if err != nil {
-		return 0, err
+		return 0, false, err
 	}
 	if i < 0 {
-		i = len(starts) - 1
+		return starts[len(starts)-1], false, nil
 	}
-	return starts[i], nil
+	return starts[i], true, nil
 }
 
 // summaryEnd は、history[from:end] を前回の要約と一緒に要約させるとき、要約の指示が budget に収まる一番大きい end を返す。
@@ -601,7 +611,7 @@ func (cs *Conversations) Compact(ctx context.Context, id uuid.UUID, emit func(Ch
 		return
 	}
 	if _, err := cs.summarize(ctx, conv, history, emit); err != nil {
-		if errors.Is(err, errNothingToSummarize) {
+		if errors.Is(err, errNothingToSummarize) || errors.Is(err, errOnlyLatestTurn) {
 			fail(err)
 		} else {
 			fail(fmt.Errorf("要約を作れませんでした: %w", err))
