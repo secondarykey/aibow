@@ -24,4 +24,7 @@
 - Ollama の保存フォルダは、`manifests\registry.ollama.ai\library\<名前>\<タグ>`(目録 JSON)と `blobs\sha256-<ハッシュ>` を作れば模擬できます(`OLLAMA_MODELS` で指定)
 - 重みがランダムなモデルでは出力される文章の中身は確認できないので、思考と答えの振り分けとツール呼び出しの読み取りは `format_qwen35_test.go` で確認します
 - ツール呼び出し(0004)は「今何時? → get_current_time」「1234 × 5678 は? → calculate」「日付を調べてから計算(ツール2回)」と、枠(秒数・ツールの回数)とカードが再起動後も同じに出ることを確認する。
+- MCP(0006)は、`settings.json` のサーバーで「ツールの一覧がプロンプトに入る → 確認のカードにサーバーの名前と引数が出る → 実行して結果をモデルが読む → アプリを閉じるとサーバーのプロセスが残らない」を確認する。
+  設定ファイルは試しのものを `AIBOW_SETTINGS` で指定する(ユーザーの `%APPDATA%\aibow\settings.json` を書き換えない)。モデルなしでつなぎ方だけを見るなら `go test -v -run TestCommandServer ./mcpclient`。
+  ほかのアプリと同じフォルダの uv のプロジェクトを `uv run` で起動すると、そのアプリの環境を作り直そうとしてしまうので、`UV_PROJECT_ENVIRONMENT` で環境を分ける([mcp.md](mcp.md) の「実例」)
   画面を通さずにモデルの振る舞いだけを見るときは、`aibow` パッケージを呼ぶ小さなプログラム(`NewEngine` → `LoadModel` → `NewConversations` → `Send`)をリポジトリの外で作ると早い
