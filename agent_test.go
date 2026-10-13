@@ -27,13 +27,12 @@ func (f fakeTool) Run(ctx context.Context, args tool.Args) (string, error) {
 	return f.run(ctx, args)
 }
 
-// newToolConversation は「ツールを使う」が ON の会話を作る。
+// newToolConversation はツール(時刻・計算と extra)を使える会話を作る。
 func newToolConversation(t *testing.T, g *fakeGen, extra ...tool.Tool) (*Conversations, *memStore, Conversation) {
 	t.Helper()
 	cs, st := newTestConversations(t, g)
 	cs.tools = append(tool.Builtin(), extra...)
 	set := testDefaults
-	set.Tools = true
 	c, err := cs.Create(&set)
 	if err != nil {
 		t.Fatal(err)
@@ -259,7 +258,7 @@ func TestAgentToolTimeout(t *testing.T) {
 	}
 }
 
-// 「ツールを使う」が OFF なら、ツールの定義をプロンプトに入れない(トークン数も減る)
+// ローカルのツールを「使わない」にすると、ツールの定義をプロンプトに入れない(トークン数も減る)
 func TestToolsOffLeavesToolsOutOfThePrompt(t *testing.T) {
 	g := &fakeGen{content: "こんにちは"}
 	cs, _, c := newToolConversation(t, g)
@@ -269,9 +268,9 @@ func TestToolsOffLeavesToolsOutOfThePrompt(t *testing.T) {
 		t.Errorf("ON: ツールの定義が入っていません")
 	}
 
-	set := c.Settings
-	set.Tools = false
-	cs.UpdateSettings(c.ID, set)
+	prefs := &ToolPrefs{}
+	prefs.SetLocalPolicy(ToolOff) // 設定の画面の「ツール」で、ローカルのグループを使わないにした
+	cs.SetToolPrefs(prefs)
 	send(t, cs, c, "もう一度")
 	off, _ := cs.Usage(c.ID)
 	if len(g.calls[1].tools) != 0 || strings.Contains(g.calls[1].prompt, "# Tools") {

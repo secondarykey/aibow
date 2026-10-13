@@ -167,7 +167,6 @@ export default function App() {
           <div className="composer-top">
             <WorkDirBar
               workDir={settings.work_dir}
-              toolsOn={settings.tools}
               onChange={workDir => {
                 convs.updateSettings({ work_dir: workDir });
                 focusInput();
@@ -178,7 +177,6 @@ export default function App() {
               servers={mcpServers}
               selected={settings.mcp_servers ?? []}
               workDir={settings.work_dir}
-              toolsOn={settings.tools}
               onChange={mcp_servers => convs.updateSettings({ mcp_servers })}
             />
           </div>

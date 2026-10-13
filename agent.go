@@ -362,7 +362,7 @@ func toolMessage(conv uuid.UUID, c ToolCall, text string, isErr bool, sec float6
 	}
 }
 
-// toolsFor は会話の設定で使えるツール。「ツールを使う」が OFF なら無し。
+// toolsFor は会話で使えるツール。使うかどうかは toolPolicy で決める(設定の画面の「ツール」と、会話の上書き)。
 // 組み込みのツールの後ろに、起動済みの MCP のサーバーのツールを並べる。
 func (cs *Conversations) toolsFor(set ConversationSettings) []tool.Tool {
 	// 「使わない」にしたツールはモデルに見せない(説明もプロンプトに入らない)
@@ -372,7 +372,7 @@ func (cs *Conversations) toolsFor(set ConversationSettings) []tool.Tool {
 			tools = append(tools, t)
 		}
 	}
-	if cs.remote == nil || !set.Tools {
+	if cs.remote == nil {
 		return tools
 	}
 	for _, t := range cs.remote.Tools(set.WorkDir, cs.usableServers(set)) {
@@ -428,12 +428,9 @@ func (cs *Conversations) usableServers(set ConversationSettings) []string {
 	return out
 }
 
-// localTools は、aibow の中で動くツール(組み込みと、作業フォルダのツール)。
+// localTools は、aibow の中で動くツール(組み込みと、作業フォルダのツール)。使うかどうかは見ない(toolsFor が見る)。
 // 作業フォルダを決めた会話だけ、そのフォルダの中を扱うツールを足す(作業フォルダは会話ごとなので、ここで作る)。
 func (cs *Conversations) localTools(set ConversationSettings) []tool.Tool {
-	if !set.Tools {
-		return nil
-	}
 	if set.WorkDir == "" {
 		return cs.tools
 	}
@@ -494,7 +491,7 @@ func (cs *Conversations) SetRemoteTools(r RemoteTools) {
 // 起動できなかったサーバーは、お知らせ(トースト)に出して、そのサーバーのツール無しで続ける。
 func (cs *Conversations) startRemote(ctx context.Context, conv Conversation, emit func(ChatEvent)) {
 	set := conv.Settings
-	if cs.remote == nil || !set.Tools {
+	if cs.remote == nil {
 		return
 	}
 	started, errs := cs.remote.Start(ctx, set.WorkDir, cs.usableServers(set))

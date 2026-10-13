@@ -8,25 +8,22 @@ import { ChatService } from "../../bindings/aibow/cmd/aibow";
 import { errorMessage } from "../errors";
 
 interface Props {
-  workDir: string;  // 空なら決めていない
-  toolsOn: boolean; // 「ツールを使う」が OFF の会話では、フォルダを決めてもファイルのツールを出さない(薄く出す)
+  workDir: string; // 空なら決めていない
   onChange(workDir: string): void;
   onError(text: string): void;
 }
 
-export function WorkDirBar({ workDir, toolsOn, onChange, onError }: Props) {
+export function WorkDirBar({ workDir, onChange, onError }: Props) {
   const choose = () => {
     ChatService.ChooseWorkDir(workDir).then(
       dir => dir && onChange(dir), // 取り消したら空が返るので、何もしない
       err => onError(errorMessage(err)),
     );
   };
-  const title = !workDir ? "作業フォルダを選ぶ"
-    : toolsOn ? workDir
-      : `${workDir}(「ツールを使う」が OFF のため、ファイルのツールは使いません)`;
+  const title = workDir || "作業フォルダを選ぶ";
 
   return (
-    <div className={"workdir-bar" + (workDir ? " set" : "") + (toolsOn ? "" : " off")}>
+    <div className={"workdir-bar" + (workDir ? " set" : "")}>
       <button className="workdir" type="button" onClick={choose} title={title}>
         <LuFolder />
         {workDir && <span className="workdir-name">{baseName(workDir)}</span>}

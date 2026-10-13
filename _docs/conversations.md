@@ -28,11 +28,11 @@
 
 ## 設定
 
-- 会話ごとの設定(システムプロンプト・temperature・思考・presence penalty・compact の方式・ツールを使う・作業フォルダ)は `conversations.settings`(JSON)
+- 会話ごとの設定(システムプロンプト・temperature・思考・presence penalty・compact の方式・作業フォルダ・使う MCP のサーバー)は `conversations.settings`(JSON)
   - `compact` が空の古い会話は `summary` として扱う(`normalized`)。古い JSON の `max_tokens` は読むときに無視される
-  - `tools` が無い古い会話は OFF のまま。新しい会話の既定は ON で、保存済みの既定に `tools` が無いときも ON(`config.go` の初期値が残るため)
+  - 以前の「ツールを使う」(`tools`)は 0006 で無くした。ツールを使うかは、設定の画面の「ツール」(`tools.json`)と会話で使う MCP のサーバーだけで決める。保存済みの JSON に残っている `tools` は読むときに無視される(OFF だった会話でもツールを使うようになる)
   - `work_dir`(作業フォルダの絶対パス。空なら決めていない)は**新しい会話の既定に入れない**(`asDefaults` で外す)。相対パスは保存しない(`validate`)。
-    決めた会話で「ツールを使う」が ON なら、ファイルのツールと環境の説明がプロンプトに入る([tools.md](tools.md))
+    決めた会話では、ファイルのツール・コマンドのツールと環境の説明がプロンプトに入る(使わないにしたツールは除く。[tools.md](tools.md))
   - `mcp_servers`(この会話で使う MCP のサーバーの名前)は新しい会話の既定に入る(初期値は空 = 使わない)。読むときは空の配列にそろえる(`normalized`)
   - `tool_policies`(この会話だけのツールの扱いの上書き)は新しい会話の既定に入れない(`asDefaults` で外す)。知らない値は保存しない(`validate`)。仕組みは [mcp.md](mcp.md)
 - 新しい会話は `app_settings` の既定の写しから始まる(新しい会話の画面で写しを変えると、その設定で作る)

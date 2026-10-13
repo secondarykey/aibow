@@ -21,26 +21,32 @@ func toolNamesOf(defs []tool.Def) []string {
 }
 
 // 作業フォルダを決めた会話だけ、ファイルのツールと環境の説明がプロンプトに入る。
-// 決めていない会話・ツールが OFF の会話には、どちらも入らない
+// 環境の説明は、使うツールに合わせる(シェルの行は run_command を使うときだけ。作業フォルダを使うツールが無ければ書かない)
 func TestWorkDirAddsFileToolsAndEnvironment(t *testing.T) {
 	dir := t.TempDir()
 	g := &fakeGen{content: "はい"}
 	cs, _, c := newToolConversation(t, g)
 
 	set := c.Settings
+	prefs := &ToolPrefs{}
+	cs.SetToolPrefs(prefs)
 	steps := []struct {
 		name      string
 		workDir   string
-		tools     bool
+		prefs     func()
 		wantTools []string
 		wantEnv   bool
+		wantShell bool
 	}{
-		{"作業フォルダなし", "", true, []string{"get_current_time", "calculate"}, false},
-		{"作業フォルダあり", dir, true, []string{"get_current_time", "calculate", "list_files", "read_file", "write_file", "edit_file", "run_command"}, true},
-		{"ツールが OFF", dir, false, nil, false},
+		{"作業フォルダなし", "", func() {}, []string{"get_current_time", "calculate"}, false, false},
+		{"作業フォルダあり", dir, func() {}, []string{"get_current_time", "calculate", "list_files", "read_file", "write_file", "edit_file", "run_command"}, true, true},
+		{"run_command を使わない", dir, func() { prefs.SetToolPolicy("run_command", ToolOff) },
+			[]string{"get_current_time", "calculate", "list_files", "read_file", "write_file", "edit_file"}, true, false},
+		{"ローカルのツールを使わない", dir, func() { prefs.SetLocalPolicy(ToolOff) }, nil, false, false},
 	}
 	for i, s := range steps {
-		set.WorkDir, set.Tools = s.workDir, s.tools
+		set.WorkDir = s.workDir
+		s.prefs()
 		if err := cs.UpdateSettings(c.ID, set); err != nil {
 			t.Fatal(err)
 		}
@@ -51,6 +57,9 @@ func TestWorkDirAddsFileToolsAndEnvironment(t *testing.T) {
 		}
 		if got := strings.Contains(call.prompt, "# Environment"); got != s.wantEnv {
 			t.Errorf("%s: 環境の説明 %v(期待: %v)", s.name, got, s.wantEnv)
+		}
+		if got := strings.Contains(call.prompt, "Shell for run_command") || strings.Contains(call.prompt, "do not cd"); got != s.wantShell {
+			t.Errorf("%s: シェルの行 %v(期待: %v)", s.name, got, s.wantShell)
 		}
 	}
 	// 作業フォルダの無い会話に、前の会話のファイルのツールが残っていないこと(cs.tools を書き換えていない)
@@ -64,7 +73,7 @@ func TestEnvironmentPlacement(t *testing.T) {
 	cs, _ := newTestConversations(t, &fakeGen{})
 	set := testDefaults
 	work := filepath.Join(t.TempDir(), "example") // OS の書き方の絶対パス(Linux のテストでも名前が取れるように)
-	set.Tools, set.WorkDir = true, work
+	set.WorkDir = work
 	msgs := promptMessages(cs.systemPrompt(set), "- 要約", nil)
 	want := testDefaults.System + "\n\n# Environment\nWorking directory: " + work + "\nOS: " + runtime.GOOS +
 		"\nShell for run_command: " + tool.ShellNote + "\nUse paths relative to the working directory.\n" +

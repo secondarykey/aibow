@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -375,7 +376,7 @@ func (cs *Conversations) generate(ctx context.Context, conv Conversation, messag
 
 // systemPrompt は、会話の設定のシステムプロンプトに、環境の説明(environment)を足したもの。
 func (cs *Conversations) systemPrompt(set ConversationSettings) string {
-	env := environment(set)
+	env := cs.environment(set)
 	if env == "" {
 		return set.System
 	}
@@ -385,24 +386,42 @@ func (cs *Conversations) systemPrompt(set ConversationSettings) string {
 	return env
 }
 
-// environment は、作業フォルダのツールを使う会話で、モデルに知らせる環境の説明。
+// environment は、作業フォルダを決めた会話で、モデルに知らせる環境の説明。
 //
 // モデルは自分がどこで動いているかを知らないので、作業フォルダ・OS を書いておく(パスの書き方を間違えにくくする)。
 // ツールの指示文に合わせて英語。書式に関係ない情報なので、書式ではなく会話の仕組みの側で組み立てる。
 // 会話の中で変わらないので、システムプロンプトの後ろ(要約より前)に置き、KV キャッシュの再利用を崩さない。
-func environment(set ConversationSettings) string {
-	if !set.Tools || set.WorkDir == "" {
+//
+// 使うツールに合わせて書く:時刻・計算のほかにツールが無ければ書かない(作業フォルダを使うツールが無い)。
+// シェルと cd の注意は、run_command を使うときだけ書く(使わないツールのことを書かない)。
+func (cs *Conversations) environment(set ConversationSettings) string {
+	if set.WorkDir == "" {
 		return ""
 	}
-	return "# Environment\n" +
-		"Working directory: " + set.WorkDir + "\n" +
-		"OS: " + runtime.GOOS + "\n" +
-		"Shell for run_command: " + tool.ShellNote + "\n" +
-		"Use paths relative to the working directory.\n" +
-		// ユーザーが「ytscroll をコミットして」のようにフォルダの名前で呼ぶと、4B は ytscroll を作業フォルダの下のフォルダだと思い、
-		// 「cd ytscroll && git status」と書いて失敗した(3 回に 1 回)。すでにその中にいることと、その名前は作業フォルダそのものだと書く
-		"Commands already run inside the working directory, so do not cd into it. \"" + filepath.Base(set.WorkDir) +
-		"\" refers to the working directory itself."
+	tools := cs.toolsFor(set)
+	usesFolder := slices.ContainsFunc(tools, func(t tool.Tool) bool {
+		n := t.Def().Name
+		return n != "get_current_time" && n != "calculate"
+	})
+	if !usesFolder {
+		return ""
+	}
+	command := tool.Find(tools, "run_command") != nil
+	var b strings.Builder
+	b.WriteString("# Environment\n")
+	b.WriteString("Working directory: " + set.WorkDir + "\n")
+	b.WriteString("OS: " + runtime.GOOS + "\n")
+	if command {
+		b.WriteString("Shell for run_command: " + tool.ShellNote + "\n")
+	}
+	b.WriteString("Use paths relative to the working directory.\n")
+	// ユーザーが「ytscroll をコミットして」のようにフォルダの名前で呼ぶと、4B は ytscroll を作業フォルダの下のフォルダだと思い、
+	// 「cd ytscroll && git status」と書いて失敗した(3 回に 1 回)。すでにその中にいることと、その名前は作業フォルダそのものだと書く
+	if command {
+		b.WriteString("Commands already run inside the working directory, so do not cd into it. ")
+	}
+	b.WriteString("\"" + filepath.Base(set.WorkDir) + "\" refers to the working directory itself.")
+	return b.String()
 }
 
 // promptMessages は保存した発言を、モデルに渡す形にする。

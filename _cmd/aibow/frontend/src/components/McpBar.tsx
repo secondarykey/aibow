@@ -12,11 +12,10 @@ interface Props {
   servers: ServerInfo[]; // settings.json に書いたサーバー
   selected: string[];    // この会話で使うサーバー
   workDir: string;       // 作業フォルダ(${workdir} を使うサーバーは、決めていないと使えない)
-  toolsOn: boolean;      // 「ツールを使う」が OFF の会話では、選んでもツールを出さない(薄く出す)
   onChange(selected: string[]): void;
 }
 
-export function McpBar({ servers, selected, workDir, toolsOn, onChange }: Props) {
+export function McpBar({ servers, selected, workDir, onChange }: Props) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -35,12 +34,10 @@ export function McpBar({ servers, selected, workDir, toolsOn, onChange }: Props)
   const using = servers.filter(s => selected.includes(s.name));
   const toggle = (name: string) =>
     onChange(selected.includes(name) ? selected.filter(n => n !== name) : [...selected, name]);
-  const title = using.length === 0 ? "この会話で使う MCP のサーバーを選ぶ"
-    : toolsOn ? "この会話で使う MCP のサーバー"
-      : "「ツールを使う」が OFF のため、MCP のツールは使いません";
+  const title = using.length === 0 ? "この会話で使う MCP のサーバーを選ぶ" : "この会話で使う MCP のサーバー";
 
   return (
-    <div className={"mcp-bar" + (using.length ? " set" : "") + (toolsOn ? "" : " off")} ref={ref}>
+    <div className={"mcp-bar" + (using.length ? " set" : "")} ref={ref}>
       <button className="mcp" type="button" onClick={() => setOpen(o => !o)} title={title}>
         <LuPlug />
         {using.length > 0 && <span className="mcp-names">{using.map(s => s.name).join(", ")}</span>}

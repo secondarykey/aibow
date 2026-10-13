@@ -63,11 +63,11 @@ type ConversationSettings struct {
 	Think           bool    `json:"think"`            // 思考させるか
 	PresencePenalty float64 `json:"presence_penalty"` // 同じ言葉を繰り返しにくくする強さ。0 で無効
 	Compact         string  `json:"compact"`          // 会話の上限を超えたときの方式: none / truncate / summary
-	// Tools はツールを使うか。OFF ならツールの説明をプロンプトに入れない(説明だけで毎回 500 トークンほど増えるため、比べられるように)。
-	// この項目より前に保存された会話は値が無いので OFF のまま。新しい会話の既定は ON
-	Tools bool `json:"tools"`
-	// WorkDir は作業フォルダ(絶対パス)。空なら決めていない。決めた会話で「ツールを使う」が ON なら、
-	// その中のファイルを扱うツール(tool.Files)をモデルに出す。
+	// (以前の「ツールを使う」(tools)は 0006 で無くした。ツールを使うかは、設定の画面の「ツール」(tools.json)と、
+	// 会話で使う MCP のサーバーだけで決める。保存済みの会話の JSON に残っている tools は、読むときに無視される)
+	//
+	// WorkDir は作業フォルダ(絶対パス)。空なら決めていない。決めた会話では、
+	// その中のファイルを扱うツール(tool.Files)とコマンドのツールをモデルに出す。
 	// 新しい会話の既定には入れない(前の会話のフォルダを引き継いで、別のフォルダを書き換えてしまうのを防ぐため)
 	WorkDir string `json:"work_dir"`
 	// MCPServers は、この会話で使う MCP のサーバー(settings.json の名前)。選んでいないサーバーはモデルに見せず、起動もしない。

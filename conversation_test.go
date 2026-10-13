@@ -97,7 +97,11 @@ var testWorkspace = WorkspaceSettings{HistoryTokens: 100000, ReplyTokens: 100}
 func newTestConversations(t *testing.T, g *fakeGen) (*Conversations, *memStore) {
 	t.Helper()
 	st := newMemStore()
-	return NewConversations(st, g, AppSettings{Workspace: testWorkspace, Defaults: testDefaults}), st
+	cs := NewConversations(st, g, AppSettings{Workspace: testWorkspace, Defaults: testDefaults})
+	// ツールの定義でプロンプトのトークン数が変わらないよう、ツール無しで始める(会話の上限を小さくして確かめるテストのため)。
+	// ツールを使うテストは newToolConversation で足す
+	cs.tools = nil
+	return cs, st
 }
 
 // send は Send を呼び、渡されたイベントを返す。

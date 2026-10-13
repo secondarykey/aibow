@@ -110,11 +110,6 @@ function ConversationSettingsForm({ settings, onChange, onMakeDefault }: {
       </label>
       <p className="hint">オフにすると、プロンプトの最後に空の思考 <code>&lt;think&gt;&lt;/think&gt;</code> を入れて、すぐ答えさせます。</p>
 
-      <label className="check" title="現在時刻(get_current_time)と計算(calculate)、作業フォルダを決めた会話ではファイルを並べる・読む・書き換える・コマンドを実行する(書き換えとコマンドは実行前に確認)。オフにするとツールの説明をプロンプトに入れない">
-        <input type="checkbox" checked={settings.tools} onChange={e => onChange({ tools: e.target.checked })} />
-        ツールを使う
-      </label>
-
       <button className="make-default" onClick={onMakeDefault}>この設定を新しい会話の既定にする</button>
     </>
   );

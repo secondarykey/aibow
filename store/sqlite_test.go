@@ -306,11 +306,8 @@ func TestMigrationFromVersion2(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	c, ms, err := s.Conversation(conv)
+	_, ms, err := s.Conversation(conv)
 	if err != nil || len(ms) != 1 || ms[0].Content != "こんにちは" || ms[0].ToolCalls != nil || ms[0].ToolResult != nil {
 		t.Fatalf("今ある発言: %+v %v", ms, err)
-	}
-	if c.Settings.Tools {
-		t.Errorf("今ある会話の「ツールを使う」は OFF のまま: %+v", c.Settings)
 	}
 }

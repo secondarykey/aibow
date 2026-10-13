@@ -165,7 +165,7 @@ func TestRemoteToolDidYouMean(t *testing.T) {
 	}
 }
 
-// 起動できないサーバーはお知らせに出し、そのサーバー無しで送信を続ける。ツールが OFF なら起動しない
+// 起動できないサーバーはお知らせに出し、そのサーバー無しで送信を続ける
 func TestRemoteToolsStartError(t *testing.T) {
 	g := &fakeGen{content: "こんにちは"}
 	cs, _, c := newToolConversation(t, g)
@@ -184,15 +184,6 @@ func TestRemoteToolsStartError(t *testing.T) {
 	}
 	if len(g.calls) != 1 {
 		t.Errorf("送信は続ける: %d", len(g.calls))
-	}
-
-	c.Settings.Tools = false
-	if err := cs.UpdateSettings(c.ID, c.Settings); err != nil {
-		t.Fatal(err)
-	}
-	cs.Send(context.Background(), c.ID, "もう一度", func(ChatEvent) {})
-	if len(r.workDirs) != 1 {
-		t.Errorf("ツールが OFF の会話では起動しない: %v", r.workDirs)
 	}
 }
 
@@ -254,7 +245,6 @@ func TestToolPolicyInConversations(t *testing.T) {
 
 	// 会話B: 何も決めていない(PC の既定 = 確認する)
 	b := mustCreate(t, cs)
-	b.Settings.Tools = true
 	useFake(t, cs, &b)
 	write.ran = false
 	sendAnswering(cs, context.Background(), b, "書いて", func(q *ConfirmRequest) bool {
