@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -21,12 +22,22 @@ import (
 
 // TestMain: 環境変数 AIBOW_MCP_TEST_SERVER=1 で起動されたら、テストの実行ファイル自身が MCP のサーバーとして動く
 // (標準入出力で話す)。本物の子プロセスでのつなぎ方(TestCommandServer)を、Node などを入れずに確かめるため。
+//
+// "fail" ならエラー出力に理由を書いてすぐ終わり、"hang" なら何も話さずに待ち続ける(起動の失敗と時間切れを確かめるため)。
 func TestMain(m *testing.M) {
-	if os.Getenv("AIBOW_MCP_TEST_SERVER") == "1" {
+	switch os.Getenv("AIBOW_MCP_TEST_SERVER") {
+	case "1":
 		if err := newTestServer().Run(context.Background(), &mcp.StdioTransport{}); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
+		os.Exit(0)
+	case "fail":
+		fmt.Fprintln(os.Stderr, "loading config...")
+		fmt.Fprintln(os.Stderr, "error: failed to persist temporary file: access denied")
+		os.Exit(1)
+	case "hang":
+		time.Sleep(time.Hour)
 		os.Exit(0)
 	}
 	os.Exit(m.Run())
@@ -86,7 +97,7 @@ func memoryManager(t *testing.T, configs map[string]ServerConfig) (*Manager, *lo
 	l := &logs{}
 	m := New(configs, Options{Version: "test", Logf: l.logf})
 	var sessions []*mcp.ServerSession
-	m.transport = func(string, ServerConfig, string) (mcp.Transport, error) {
+	m.transport = func(string, ServerConfig, string, io.Writer) (mcp.Transport, error) {
 		ct, st := mcp.NewInMemoryTransports()
 		ss, err := newTestServer().Connect(context.Background(), st, nil)
 		if err != nil {
@@ -229,6 +240,35 @@ func TestStartError(t *testing.T) {
 	}
 }
 
+// 起動に失敗したら、サーバーのエラー出力の最後の行をエラーに添える。時間切れなら startupTimeout の延ばし方を書く
+func TestStartFailureReason(t *testing.T) {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := New(map[string]ServerConfig{
+		"broken": {Command: exe, Env: map[string]string{"AIBOW_MCP_TEST_SERVER": "fail"}},
+		"slow":   {Command: exe, Env: map[string]string{"AIBOW_MCP_TEST_SERVER": "hang"}, StartupTimeout: 1},
+	}, Options{Logf: (&logs{}).logf})
+	defer m.Close()
+
+	begin := time.Now()
+	_, errs := m.Start(context.Background(), "")
+	if len(errs) != 2 {
+		t.Fatalf("2つとも起動できない: %v", errs)
+	}
+	if got := errs[0].Error(); !strings.Contains(got, "MCP のサーバー broken を起動できません") ||
+		!strings.Contains(got, "サーバーのエラー出力の最後の行: error: failed to persist temporary file: access denied") {
+		t.Errorf("エラー出力の最後の行を添える: %s", got)
+	}
+	if got := errs[1].Error(); !strings.Contains(got, "起動の上限(1 秒)までにつながりませんでした") || !strings.Contains(got, "startupTimeout") {
+		t.Errorf("時間切れ: %s", got)
+	}
+	if d := time.Since(begin); d > time.Second+closeWait+5*time.Second {
+		t.Errorf("startupTimeout の 1 秒で止める: %v", d)
+	}
+}
+
 // 本物の子プロセス(このテストの実行ファイル自身)を、stdio でつなぐ。
 // ${workdir} の置き換え・カレントフォルダ・閉じたらプロセスが終わること(Windows はジョブオブジェクトごと)を確かめる
 func TestCommandServer(t *testing.T) {
@@ -306,6 +346,15 @@ func TestValidate(t *testing.T) {
 		if err := c.Validate(); err != nil {
 			t.Errorf("%s: %v", name, err)
 		}
+	}
+	if err := (ServerConfig{Command: "npx", StartupTimeout: -1}).Validate(); err == nil {
+		t.Error("startupTimeout は 1 以上")
+	}
+	if got := (ServerConfig{Command: "npx", StartupTimeout: 180}).startupTimeout(); got != 180*time.Second {
+		t.Errorf("startupTimeout: %v", got)
+	}
+	if got := (ServerConfig{Command: "npx"}).startupTimeout(); got != defaultStartupTimeout {
+		t.Errorf("既定の上限: %v", got)
 	}
 	if (ServerConfig{Command: "npx", Args: []string{"-y", "x"}}).UsesWorkDir() {
 		t.Error("${workdir} が無ければ共有する")

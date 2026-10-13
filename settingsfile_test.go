@@ -26,12 +26,13 @@ func TestLoadSettingsFile(t *testing.T) {
   "mcpServers": {
     "filesystem": {
       "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem", "${workdir}"]
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "${workdir}"],
+      "startupTimeout": 180
     }
   }
 }`))
 	fs := s.MCPServers["filesystem"]
-	if err != nil || fs.Command != "npx" || len(fs.Args) != 3 || !fs.UsesWorkDir() {
+	if err != nil || fs.Command != "npx" || len(fs.Args) != 3 || !fs.UsesWorkDir() || fs.StartupTimeout != 180 {
 		t.Errorf("%+v, %v", s, err)
 	}
 

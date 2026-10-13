@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"maps"
 	"net/http"
@@ -57,6 +58,10 @@ type ServerConfig struct {
 	// Type はトランスポートの種類。書かなくてよい(command か url で決まる)。
 	// ほかのツールの設定には "type": "stdio" / "http" と書いたものがあるので、読んで確かめる
 	Type string `json:"type,omitempty"`
+
+	// StartupTimeout は、起動してつながる(ツールの一覧を受け取る)までの上限の秒数。書かなければ 60 秒。
+	// 初回の npx・uv は、パッケージのダウンロードや環境の組み立てで 60 秒を超えることがあるので、サーバーごとに延ばせるようにしている
+	StartupTimeout int `json:"startupTimeout,omitempty"`
 }
 
 // workDirVar は、args と env の値の中で会話の作業フォルダに置き換える文字列。
@@ -68,6 +73,9 @@ const workDirVar = "${workdir}"
 
 // Validate は設定の形を確かめる。
 func (c ServerConfig) Validate() error {
+	if c.StartupTimeout < 0 {
+		return fmt.Errorf("startupTimeout は秒数(1 以上)で書いてください: %d", c.StartupTimeout)
+	}
 	switch {
 	case c.Type == "sse":
 		return errors.New("古い HTTP+SSE のトランスポート(type: sse)には対応していません(MCP の 2025-03-26 版から非推奨)。" +
@@ -94,6 +102,14 @@ func (c ServerConfig) Validate() error {
 		return errors.New("type が http なのに url がありません")
 	}
 	return nil
+}
+
+// startupTimeout は起動の上限。
+func (c ServerConfig) startupTimeout() time.Duration {
+	if c.StartupTimeout > 0 {
+		return time.Duration(c.StartupTimeout) * time.Second
+	}
+	return defaultStartupTimeout
 }
 
 // isHTTP は url のサーバー(Streamable HTTP)か。
@@ -147,9 +163,9 @@ func (c ServerConfig) describe(workDir string) string {
 }
 
 const (
-	// startTimeout はサーバーの起動(つないでツールの一覧を受け取るまで)の時間の上限。
-	// 初回の npx はパッケージをダウンロードするので長めにしている
-	startTimeout = 60 * time.Second
+	// defaultStartupTimeout はサーバーの起動(つないでツールの一覧を受け取るまで)の時間の上限の既定。
+	// 初回の npx はパッケージをダウンロードするので長めにしている。サーバーごとに startupTimeout で変えられる
+	defaultStartupTimeout = 60 * time.Second
 	// closeWait は、閉じるときに標準入力を閉じてから、サーバーが自分で終わるのを待つ時間。過ぎたら止める
 	closeWait = 2 * time.Second
 )
@@ -171,8 +187,9 @@ type Manager struct {
 	names   []string // 名前の順(ツールを並べる順を毎回同じにする。プロンプトが変わると KV キャッシュが効かなくなるため)
 	opt     Options
 
-	// transport はサーバーへのつなぎ方。本物は子プロセスを起動するか HTTP で話す(realTransport)。テストではプロセスを起動しないものに差し替える
-	transport func(name string, cfg ServerConfig, workDir string) (mcp.Transport, error)
+	// transport はサーバーへのつなぎ方。本物は子プロセスを起動するか HTTP で話す(realTransport)。テストではプロセスを起動しないものに差し替える。
+	// stderr は、子プロセスのサーバーのエラー出力の書き先
+	transport func(name string, cfg ServerConfig, workDir string, stderr io.Writer) (mcp.Transport, error)
 
 	mu      sync.Mutex
 	running map[serverKey]*server
@@ -237,18 +254,24 @@ func (m *Manager) Start(ctx context.Context, workDir string) (started []string, 
 
 // start はサーバーを1つ起動し、つないで、ツールの一覧を受け取る。
 func (m *Manager) start(ctx context.Context, k serverKey, cfg ServerConfig) error {
-	ctx, cancel := context.WithTimeout(ctx, startTimeout)
+	limit := cfg.startupTimeout()
+	ctx, cancel := context.WithTimeout(ctx, limit)
 	defer cancel()
 	begin := time.Now()
 	m.opt.Logf("MCP %s: %s", k.name, cfg.describe(k.workDir))
 
-	t, err := m.transport(k.name, cfg, k.workDir)
+	// サーバーのエラー出力(stderr)はログに出し、最後の行を覚えておく。起動に失敗したとき、理由はたいていそこに書いてある
+	stderr := &lineLogger{logf: m.opt.Logf, prefix: "MCP " + k.name + " (stderr) "}
+	t, err := m.transport(k.name, cfg, k.workDir, stderr)
 	if err != nil {
 		return err
 	}
-	hint := "command・args を確かめてください。サーバーのエラー出力はログにあります"
+	hint := "command・args を確かめてください"
 	if cfg.isHTTP() {
 		hint = "url と、サーバーが動いているかを確かめてください"
+	}
+	fail := func(what string, err error) error {
+		return startFailure(ctx, what, hint, limit, stderr, err)
 	}
 	// 送受信した JSON-RPC のメッセージを、そのままログに出す(SDK の LoggingTransport)。MCP の正体が見える
 	t = &mcp.LoggingTransport{Transport: t, Writer: &lineLogger{logf: m.opt.Logf, prefix: "MCP " + k.name + " "}}
@@ -260,7 +283,7 @@ func (m *Manager) start(ctx context.Context, k serverKey, cfg ServerConfig) erro
 		&mcp.ClientOptions{Capabilities: &mcp.ClientCapabilities{}})
 	session, err := client.Connect(ctx, t, nil)
 	if err != nil {
-		return fmt.Errorf("つなげません(%s): %w", hint, err)
+		return fail("つなげません", err)
 	}
 	s := &server{key: k, session: session}
 	// つながりが切れた(サーバーが落ちた・再起動した)と分かったら、一覧から外す。次の Start でつなぎ直す
@@ -268,7 +291,7 @@ func (m *Manager) start(ctx context.Context, k serverKey, cfg ServerConfig) erro
 	tools, err := listTools(ctx, k.name, session, broken)
 	if err != nil {
 		session.Close()
-		return fmt.Errorf("ツールの一覧を受け取れません: %w", err)
+		return fail("ツールの一覧を受け取れません", err)
 	}
 	s.tools = tools
 
@@ -297,6 +320,21 @@ func (m *Manager) start(ctx context.Context, k serverKey, cfg ServerConfig) erro
 	// url のサーバーは、リクエストのたびに HTTP でつなぐので、落ちたことはツールの呼び出しが失敗して分かる(broken)
 	go func() { m.drop(s, session.Wait()) }()
 	return nil
+}
+
+// startFailure は、起動に失敗した理由の文を作る(画面のお知らせに出る)。
+// 時間切れなら上限の延ばし方を、サーバーがエラー出力に何か書いていれば、その最後の行を添える
+// (ログを見なくても、たいていの原因が分かるように。例: uv の「アクセスが拒否されました」)。
+func startFailure(ctx context.Context, what, hint string, limit time.Duration, stderr *lineLogger, err error) error {
+	msg := fmt.Sprintf("%s(%s)", what, hint)
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		msg = fmt.Sprintf("起動の上限(%d 秒)までにつながりませんでした。初回はダウンロードや環境の組み立てで時間がかかることがあります"+
+			"(settings.json の startupTimeout に秒数を書くと延ばせます)", int(limit.Seconds()))
+	}
+	if last := stderr.last(); last != "" {
+		msg += "。サーバーのエラー出力の最後の行: " + last
+	}
+	return fmt.Errorf("%s: %w", msg, err)
 }
 
 // drop は、つながりが切れたサーバーを一覧から外す(次の Start で起動し直す・つなぎ直す)。
@@ -381,11 +419,11 @@ func (m *Manager) Close() {
 }
 
 // realTransport は本物のつなぎ方。command のサーバーは子プロセスとして起動し、url のサーバーには HTTP で話しかける。
-func (m *Manager) realTransport(name string, cfg ServerConfig, workDir string) (mcp.Transport, error) {
+func (m *Manager) realTransport(name string, cfg ServerConfig, workDir string, stderr io.Writer) (mcp.Transport, error) {
 	if cfg.isHTTP() {
 		return httpTransport(cfg), nil
 	}
-	return m.commandTransport(name, cfg, workDir)
+	return commandTransport(cfg, workDir, stderr)
 }
 
 // httpTransport は url のサーバーへのつなぎ方(Streamable HTTP)。
@@ -419,10 +457,10 @@ func (t headerTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 // SDK の CommandTransport は、閉じるときに「標準入力を閉じる → 待つ → SIGTERM → 止める」(MCP の決まりごと)を行うが、
 // Windows では起動したプロセス(npx.cmd を動かす cmd.exe)しか止めないので、その子の node が残ってしまう。
 // そこで起動した直後にジョブオブジェクトに入れ(internal/proc)、閉じた後にジョブごと止める。
-func (m *Manager) commandTransport(name string, cfg ServerConfig, workDir string) (mcp.Transport, error) {
+func commandTransport(cfg ServerConfig, workDir string, stderr io.Writer) (mcp.Transport, error) {
 	cmd := cfg.command(workDir)
 	// サーバーのエラー出力は、そのサーバーのログ(stdio では、標準出力は MCP のメッセージ専用。ログはエラー出力に出す決まり)
-	cmd.Stderr = &lineLogger{logf: m.opt.Logf, prefix: "MCP " + name + " (stderr) "}
+	cmd.Stderr = stderr
 	proc.Prepare(cmd)
 	return &treeTransport{inner: &mcp.CommandTransport{Command: cmd, TerminateDuration: closeWait}}, nil
 }

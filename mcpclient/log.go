@@ -20,8 +20,19 @@ type lineLogger struct {
 	logf   func(format string, args ...any)
 	prefix string
 
-	mu  sync.Mutex
-	buf []byte
+	mu   sync.Mutex
+	buf  []byte
+	tail string // 最後に出した行(起動に失敗したときに、理由として画面のお知らせに添える)
+}
+
+// last は最後の行を返す。改行で終わっていない書きかけの行があれば、そちらを返す。
+func (l *lineLogger) last() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if s := strings.TrimSpace(string(l.buf)); s != "" {
+		return shorten(s)
+	}
+	return l.tail
 }
 
 func (l *lineLogger) Write(p []byte) (int, error) {
@@ -37,6 +48,7 @@ func (l *lineLogger) Write(p []byte) (int, error) {
 		l.buf = l.buf[i+1:]
 		if line != "" {
 			l.logf("%s%s", l.prefix, shorten(arrow(line)))
+			l.tail = shorten(strings.TrimSpace(line))
 		}
 	}
 	return len(p), nil
