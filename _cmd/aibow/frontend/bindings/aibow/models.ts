@@ -550,6 +550,10 @@ export enum ToolPolicy {
  * ToolPrefsView は、画面の設定に出すための PC の既定の写し。
  */
 export interface ToolPrefsView {
+    /**
+     * ローカルのツール全部の扱い(空なら決めていない)
+     */
+    "local": ToolPolicy;
     "servers": { [_ in string]?: ToolPolicy } | null;
     "tools": { [_ in string]?: ToolPolicy } | null;
     "known": { [_ in string]?: KnownTool[] | null } | null;

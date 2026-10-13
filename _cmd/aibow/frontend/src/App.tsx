@@ -16,7 +16,7 @@
 //
 // 会話の履歴と設定は Go が SQLite に保存している。画面は表示と入力に専念する。
 // Go のメソッドは、wails3 generate bindings が作った frontend/bindings の関数として呼ぶ。
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranscript } from "./transcript";
 import { Toasts, useToasts } from "./toast";
 import { useModels } from "./useModels";
@@ -101,14 +101,16 @@ export default function App() {
     })();
   }, [convs.init, models.reload, app.reload, addError]);
 
-  // settings.json に書いた MCP のサーバー。起動したときに1回だけ読む(settings.json は起動したときだけ読むので、変わらない)
+  // 会話で選べる MCP のサーバー(settings.json に書いたもののうち、設定の画面でサーバーごと「使わない」にしていないもの)。
+  // 起動したときと、設定の画面の「ツール」を変えたときに読む
   const [mcpServers, setMcpServers] = useState<ServerInfo[]>([]);
-  useEffect(() => {
+  const reloadMcp = useCallback(() => {
     ChatService.MCPServers().then(
       s => setMcpServers(s ?? []),
       err => addError(`MCP のサーバーの一覧を取得できません: ${errorMessage(err)}`),
     );
   }, [addError]);
+  useEffect(reloadMcp, [reloadMcp]);
 
   // モデルや上限が変わると、同じ会話でもトークン数(メーター)が変わるので数え直す
   useEffect(() => {
@@ -227,8 +229,10 @@ export default function App() {
         appDisabled={busy !== "idle"}
         onApplyApp={app.apply}
         lastPrompt={chat.lastPrompt}
-        mcpServers={mcpServers}
-        onToolsChanged={() => convs.refreshUsage().catch(err => addError(errorMessage(err)))}
+        onToolsChanged={() => {
+          reloadMcp();
+          convs.refreshUsage().catch(err => addError(errorMessage(err)));
+        }}
       />
     );
   } else if (home) {

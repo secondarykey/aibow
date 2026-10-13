@@ -20,6 +20,13 @@ import * as uuid$0 from "../../../uuid/models.js";
 import * as $models from "./models.js";
 
 /**
+ * AllMCPServers は settings.json に書いた MCP のサーバー全部(設定の画面の「ツール」に出す)。
+ */
+export function AllMCPServers(): $CancellablePromise<mcpclient$0.ServerInfo[] | null> {
+    return $Call.ByID(840001874);
+}
+
+/**
  * AppSettings はアプリ全体の設定(会話の上限・返事の上限・GPU の層数・新しい会話の既定の設定)を返す。
  */
 export function AppSettings(): $CancellablePromise<aibow$0.AppSettings> {
@@ -79,7 +86,15 @@ export function LoadToolList(server: string): $CancellablePromise<void> {
 }
 
 /**
- * MCPServers は settings.json に書いた MCP のサーバー(会話ごとに使うものを選ぶ一覧)。書いてなければ空。
+ * LocalTools はローカルのツール(aibow の中で動くツール)の一覧(設定の画面の「ツール」に出す)。
+ */
+export function LocalTools(): $CancellablePromise<aibow$0.KnownTool[] | null> {
+    return $Call.ByID(3361536797);
+}
+
+/**
+ * MCPServers は、会話ごとに使うものを選ぶ MCP のサーバーの一覧(settings.json に書いたもののうち、
+ * 設定の画面でサーバーごと「使わない」にしていないもの)。書いてなければ空。
  */
 export function MCPServers(): $CancellablePromise<mcpclient$0.ServerInfo[] | null> {
     return $Call.ByID(287669679);
@@ -135,6 +150,14 @@ export function SetDefaultSettings(settings: aibow$0.ConversationSettings): $Can
  */
 export function SetGPULayers(n: number): $CancellablePromise<aibow$0.ModelInfo | null> {
     return $Call.ByID(128737747, n);
+}
+
+/**
+ * SetGroupPolicy は、ツールのグループ全部の扱いの PC の既定を変える。group が空ならローカルのツール、そうでなければ MCP のサーバー。
+ * 画面ではグループの「使う」のチェック(使わないなら off、使うなら空 = 決めていない)。
+ */
+export function SetGroupPolicy(group: string, policy: aibow$0.ToolPolicy): $CancellablePromise<void> {
+    return $Call.ByID(2609014370, group, policy);
 }
 
 /**

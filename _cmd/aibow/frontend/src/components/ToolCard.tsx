@@ -11,17 +11,7 @@ import { LuBan, LuCheck, LuHourglass, LuLoaderCircle, LuWrench, LuX } from "reac
 import type { ConfirmRequest } from "../../bindings/aibow";
 import type { ToolView } from "../transcript";
 import { CodeBlock } from "./CodeBlock";
-
-// 組み込みのツールの日本語の説明(モデルに見せる説明は英語。カードの名前にマウスを乗せると出す)
-const TOOL_LABELS: Record<string, string> = {
-  get_current_time: "現在の日時を調べる",
-  calculate: "式を計算する",
-  list_files: "作業フォルダの中のファイルを並べる",
-  read_file: "作業フォルダの中のファイルを読む",
-  write_file: "作業フォルダの中のファイルを丸ごと書く(実行前に確認する)",
-  edit_file: "作業フォルダの中のファイルの一部を置き換える(実行前に確認する)",
-  run_command: "作業フォルダでコマンドを実行する(実行前に確認する)",
-};
+import { TOOL_LABELS } from "../toolLabels";
 
 interface Props {
   tool: ToolView;
@@ -97,8 +87,8 @@ function Confirm({ req, onAnswer }: { req: ConfirmRequest; onAnswer: Props["onAn
       </div>
       {pv.command
         ? <CodeBlock code={pv.command} lang="" closed />
-        : pv.server
-          ? <CodeBlock code={pv.args ?? "{}"} lang="json" closed />
+        : pv.server || pv.args
+          ? <CodeBlock code={pv.args ?? "{}"} lang="json" closed /> // MCP のツールと、読むだけのツールを「確認する」にしたときは引数を見せる
           : pv.diff
           ? <CodeBlock code={pv.diff.replace(/\n$/, "")} lang="diff" closed />
           : <p className="tool-none">(大きいため差分は出していません)</p>}

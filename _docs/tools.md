@@ -114,6 +114,7 @@ tool ── 何も知らない
   `Run` は変換済みの `tool.Args`(`map[string]any`。`String` / `Int` で取り出す)を受け取る。保存とプロンプトへの書き戻しは、モデルが書いたままの文字列(`tool.Arg`)を使う
 - ステップ3(ファイル操作)のツールも `tool.Tool` で足し、`Conversations.tools` に入れる。
   ステップ4の MCP のサーバーのツールも `tool.Tool`(`tool.Remote`)で、`Conversations.toolsFor` が組み込みのツールの後ろに並べる([mcp.md](mcp.md))
+- ツールを使うか・実行前に確認するかは、ローカルのツールも MCP のツールも `Conversations.toolPolicy` で決める(会話の上書き → `tools.json` → 決まりの既定。[mcp.md](mcp.md) の「ツールの扱い」)。決まりの既定は今までどおり(書き換えるツールとコマンドは確認する、読むだけのツールは確認しない)
 
 | 名前 | 中身 |
 |---|---|

@@ -290,6 +290,74 @@ func TestRememberTools(t *testing.T) {
 	}
 }
 
+// ローカルのツールも同じ仕組みで扱う。決まりの既定は今までどおり(書き換えるツールは確認する、読むだけのツールは確認しない)。
+// グループごと「使わない」なら、ツールごとの扱いにかかわらず使わない
+func TestLocalToolPolicy(t *testing.T) {
+	cs := &Conversations{}
+	prefs := &ToolPrefs{}
+	cs.SetToolPrefs(prefs)
+	set := ConversationSettings{}
+	write, read := tool.Files(".")[2], tool.Files(".")[1]
+	if write.Def().Name != "write_file" || read.Def().Name != "read_file" {
+		t.Fatalf("並び: %s %s", write.Def().Name, read.Def().Name)
+	}
+	if cs.toolPolicy(set, write) != ToolAsk || cs.toolPolicy(set, read) != ToolAllow {
+		t.Error("決まりの既定: 書き換えるツールは確認する、読むだけのツールは確認しない")
+	}
+	prefs.SetToolPolicy("write_file", ToolAllow)
+	if cs.toolPolicy(set, write) != ToolAllow {
+		t.Error("ツールごとの PC の既定")
+	}
+	prefs.SetLocalPolicy(ToolOff)
+	if cs.toolPolicy(set, write) != ToolOff || cs.toolPolicy(set, read) != ToolOff {
+		t.Error("グループごと使わないなら、ツールごとの扱いにかかわらず使わない")
+	}
+	set.ToolPolicies = map[string]ToolPolicy{"read_file": ToolAsk}
+	if cs.toolPolicy(set, read) != ToolAsk {
+		t.Error("会話の上書きが一番優先")
+	}
+	if names := LocalTools(); len(names) != 7 || names[0].Name != "get_current_time" || names[6].Name != "run_command" {
+		t.Errorf("ローカルのツールの一覧: %+v", names)
+	}
+}
+
+// ローカルのツールも「使わない」ならモデルに見せない。読むだけのツールを「確認する」にすると、引数を見せて確認する。
+// サーバーごと「使わない」にした MCP のサーバーは、会話で選んであっても起動しない
+func TestLocalToolPolicyInConversation(t *testing.T) {
+	g := &fakeGen{replies: []fakeReply{
+		{toolCalls: []ToolCall{toolCall("read_file", "path", "main.go")}},
+		{content: "読みました"},
+	}}
+	cs, c, _ := newWorkDirConversation(t, g)
+	useFake(t, cs, &c)
+	r := &fakeRemote{tools: []tool.Tool{&remoteTool{name: "fake__write"}}}
+	cs.SetRemoteTools(r)
+	prefs := &ToolPrefs{}
+	prefs.SetToolPolicy("run_command", ToolOff)
+	prefs.SetToolPolicy("read_file", ToolAsk)
+	prefs.SetServerPolicy("fake", ToolOff)
+	cs.SetToolPrefs(prefs)
+
+	var req *ConfirmRequest
+	sendAnswering(cs, context.Background(), c, "読んで", func(q *ConfirmRequest) bool {
+		req = q
+		return cs.Confirm(c.ID, q.ID, true, "") == nil
+	})
+	names := promptToolNames(g.calls[0])
+	if slices.Contains(names, "run_command") || !slices.Contains(names, "read_file") || slices.Contains(names, "fake__write") {
+		t.Errorf("使わないツール・サーバーは見せない: %v", names)
+	}
+	if r.started {
+		t.Error("サーバーごと使わないなら起動しない")
+	}
+	if req == nil || req.Preview.Note != "確認" || !strings.Contains(req.Preview.Args, `"path": "main.go"`) {
+		t.Errorf("読むだけのツールの確認は引数を見せる: %+v", req)
+	}
+	if rs := toolResults(t, cs, c); len(rs) != 1 || rs[0].ToolResult.Error || !strings.Contains(rs[0].Content, "package main") {
+		t.Errorf("確認して実行した: %+v", rs)
+	}
+}
+
 // 設定の画面のために、サーバーを一時的に起動してツールの一覧を覚える(会話で使う前に)
 func TestLoadToolList(t *testing.T) {
 	cs := &Conversations{}

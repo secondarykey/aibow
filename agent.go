@@ -19,6 +19,7 @@ package aibow
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -151,7 +152,11 @@ func (cs *Conversations) runTool(ctx context.Context, conv Conversation, c ToolC
 func (cs *Conversations) runFound(ctx context.Context, conv Conversation, c ToolCall, t tool.Tool, args tool.Args, emit func(ChatEvent)) StoredMessage {
 	var conf *Confirmation
 	var err error
-	if ct, ok := t.(tool.Confirmable); ok && cs.needsConfirm(conv.Settings, t) {
+	if cs.needsConfirm(conv.Settings, t) {
+		ct, ok := t.(tool.Confirmable)
+		if !ok {
+			ct = argsPreview{t} // 確認の内容を作れないツール(読むだけのツールを「確認する」にしたとき)は、引数を見せる
+		}
 		if conf, err = cs.confirm(ctx, conv.ID, c, ct, args, emit); err != nil {
 			return toolMessage(conv.ID, c, errorPrefix+err.Error(), true, 0)
 		}
@@ -191,14 +196,29 @@ func (cs *Conversations) lookupTool(set ConversationSettings, c ToolCall) (tool.
 	return t, args, nil
 }
 
-// needsConfirm は、確認が要るツール(tool.Confirmable)を、確認してから実行するか。
-// MCP のツールは扱いが「確認しない」なら聞かずに実行する(今は tools.json か会話の設定を手で書いたときだけ)。組み込みのツールはいつも確認する。
+// needsConfirm は、ツールを確認してから実行するか(扱いが「確認する」なら確認する)。
+// 「確認しない」は今は画面から選べない(tools.json か会話の設定を手で書いたときだけ)。
+// ふだんは確認するツール(書き換えるツール・コマンド・MCP のツール)を聞かずに実行するときは、ログに出す。
 func (cs *Conversations) needsConfirm(set ConversationSettings, t tool.Tool) bool {
-	if r, ok := t.(tool.Remote); ok && cs.toolPolicy(set, r) == ToolAllow {
-		log.Printf("ツール %s は「確認しない」の扱いなので、聞かずに実行します", t.Def().Name)
-		return false
+	if cs.toolPolicy(set, t) != ToolAllow {
+		return true
 	}
-	return true
+	_, confirmable := t.(tool.Confirmable)
+	if confirmable {
+		log.Printf("ツール %s は「確認しない」の扱いなので、聞かずに実行します", t.Def().Name)
+	}
+	return false
+}
+
+// argsPreview は、確認の内容を作れないツール(読むだけのツール)を確認するときに、引数を見せる。
+type argsPreview struct{ tool.Tool }
+
+func (a argsPreview) Preview(args tool.Args) (tool.Preview, error) {
+	b, err := json.MarshalIndent(args, "", "  ")
+	if err != nil {
+		return tool.Preview{}, err
+	}
+	return tool.Preview{Note: "確認", Args: string(b)}, nil
 }
 
 // didYouMean は、知らない名前で呼ばれたとき、MCP のツールのうち「__名前」で終わるものを「〜のことですか?」として返す。
@@ -345,13 +365,18 @@ func toolMessage(conv uuid.UUID, c ToolCall, text string, isErr bool, sec float6
 // toolsFor は会話の設定で使えるツール。「ツールを使う」が OFF なら無し。
 // 組み込みのツールの後ろに、起動済みの MCP のサーバーのツールを並べる。
 func (cs *Conversations) toolsFor(set ConversationSettings) []tool.Tool {
-	tools := cs.localTools(set)
+	// 「使わない」にしたツールはモデルに見せない(説明もプロンプトに入らない)
+	var tools []tool.Tool
+	for _, t := range cs.localTools(set) {
+		if cs.toolPolicy(set, t) != ToolOff {
+			tools = append(tools, t)
+		}
+	}
 	if cs.remote == nil || !set.Tools {
 		return tools
 	}
-	for _, t := range cs.remote.Tools(set.WorkDir, set.MCPServers) {
-		// 「使わない」にしたツールはモデルに見せない(説明もプロンプトに入らない)
-		if r, ok := t.(tool.Remote); ok && cs.toolPolicy(set, r) == ToolOff {
+	for _, t := range cs.remote.Tools(set.WorkDir, cs.usableServers(set)) {
+		if cs.toolPolicy(set, t) == ToolOff {
 			continue
 		}
 		// MCP のツールの名前にはサーバーの名前が前に付いている(filesystem__read_file。mcpclient.ToolName)ので、ふつうは重ならない。
@@ -364,23 +389,43 @@ func (cs *Conversations) toolsFor(set ConversationSettings) []tool.Tool {
 	return tools
 }
 
-// toolPolicy は、会話での MCP のツールの扱い(使わない / 確認する / 確認しない)を決める。扱いを決めるのはここだけ。
+// toolPolicy は、会話でのツールの扱い(使わない / 確認する / 確認しない)を決める。扱いを決めるのはここだけ。
 //
 //  1. 会話ごとの上書き(会話の設定の tool_policies)
-//  2. PC の既定のツールごとの扱い(tools.json の tools)
-//  3. PC の既定のサーバーごとの扱い(tools.json の servers)
-//  4. 決まりの既定: 確認する(中身が見えないので)
+//  2. PC の既定(tools.json)。グループ(ローカル / MCP のサーバー)ごと「使わない」なら使わない。
+//     そうでなければ、ツールごと → グループごとの順(ToolPrefs.policy)
+//  3. 決まりの既定: MCP のツールは確認する(中身が見えないので)。
+//     ローカルのツールは、書き換えるツール・コマンド(tool.Confirmable)は確認する、読むだけのツールは確認しない(今までの動き)
 //
-// の順に見て、最初に決めてあったものを使う。組み込みのツールも、あとで同じ順で決められるようにする(今は MCP のツールだけ)。
-func (cs *Conversations) toolPolicy(set ConversationSettings, t tool.Remote) ToolPolicy {
+// の順に見て、最初に決めてあったものを使う。
+func (cs *Conversations) toolPolicy(set ConversationSettings, t tool.Tool) ToolPolicy {
 	name := t.Def().Name
 	if p, ok := set.ToolPolicies[name]; ok {
 		return p
 	}
-	if p, ok := cs.prefs.policy(t.Server(), name); ok {
+	group := "" // ローカルのツール
+	if r, ok := t.(tool.Remote); ok {
+		group = r.Server()
+	}
+	if p, ok := cs.prefs.policy(group, name); ok {
 		return p
 	}
+	if _, ok := t.(tool.Confirmable); !ok && group == "" {
+		return ToolAllow
+	}
 	return ToolAsk
+}
+
+// usableServers は、会話で選んだ MCP のサーバーのうち、PC の既定でサーバーごと「使わない」にしていないもの。
+// 使わないサーバーは、選んであっても起動しない。
+func (cs *Conversations) usableServers(set ConversationSettings) []string {
+	var out []string
+	for _, name := range set.MCPServers {
+		if p, ok := cs.prefs.groupPolicy(name); !ok || p != ToolOff {
+			out = append(out, name)
+		}
+	}
+	return out
 }
 
 // localTools は、aibow の中で動くツール(組み込みと、作業フォルダのツール)。
@@ -419,6 +464,13 @@ func (cs *Conversations) LoadToolList(ctx context.Context, server string) error 
 	return cs.prefs.setKnown(server, knownTools(tools))
 }
 
+// LocalTools は、ローカルのツール(aibow の中で動くツール)の一覧(設定の画面に出す)。
+// 作業フォルダのツールも入れる(作業フォルダを決めた会話でだけ使える)。定義は作業フォルダによらないので、仮のフォルダで作る。
+func LocalTools() []KnownTool {
+	tools := append(tool.Builtin(), tool.Files(".")...)
+	return knownTools(append(tools, tool.RunCommand(".")))
+}
+
 // knownTools は、設定の画面に出すツールの一覧(名前と説明の1行目)。
 func knownTools(tools []tool.Tool) []KnownTool {
 	known := make([]KnownTool, 0, len(tools))
@@ -445,7 +497,7 @@ func (cs *Conversations) startRemote(ctx context.Context, conv Conversation, emi
 	if cs.remote == nil || !set.Tools {
 		return
 	}
-	started, errs := cs.remote.Start(ctx, set.WorkDir, set.MCPServers)
+	started, errs := cs.remote.Start(ctx, set.WorkDir, cs.usableServers(set))
 	for _, err := range errs {
 		log.Printf("※ %v", err)
 		emit(ChatEvent{ConversationID: conv.ID, Type: "notice", Text: err.Error() + "(このサーバーのツールは使わずに続けます)"})
@@ -471,7 +523,7 @@ func (cs *Conversations) rememberTools(set ConversationSettings, started []strin
 func (cs *Conversations) logRemoteTools(set ConversationSettings) {
 	local, all := cs.localTools(set), cs.toolsFor(set)
 	var skipped []string
-	for _, t := range cs.remote.Tools(set.WorkDir, set.MCPServers) {
+	for _, t := range cs.remote.Tools(set.WorkDir, cs.usableServers(set)) {
 		if tool.Find(local, t.Def().Name) != nil {
 			skipped = append(skipped, t.Def().Name)
 		}

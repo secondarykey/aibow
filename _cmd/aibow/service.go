@@ -253,12 +253,33 @@ func (s *ChatService) saveAppSetting(key string, v any, apply func(*aibow.AppSet
 
 // ---- MCP のサーバーとツールの扱い ------------------------------------------------------
 
-// MCPServers は settings.json に書いた MCP のサーバー(会話ごとに使うものを選ぶ一覧)。書いてなければ空。
+// MCPServers は、会話ごとに使うものを選ぶ MCP のサーバーの一覧(settings.json に書いたもののうち、
+// 設定の画面でサーバーごと「使わない」にしていないもの)。書いてなければ空。
 func (s *ChatService) MCPServers() []mcpclient.ServerInfo {
+	out := []mcpclient.ServerInfo{}
+	if s.mcp == nil {
+		return out
+	}
+	view := s.prefs.View()
+	for _, info := range s.mcp.Infos() {
+		if view.Servers[info.Name] != aibow.ToolOff {
+			out = append(out, info)
+		}
+	}
+	return out
+}
+
+// AllMCPServers は settings.json に書いた MCP のサーバー全部(設定の画面の「ツール」に出す)。
+func (s *ChatService) AllMCPServers() []mcpclient.ServerInfo {
 	if s.mcp == nil {
 		return []mcpclient.ServerInfo{}
 	}
 	return s.mcp.Infos()
+}
+
+// LocalTools はローカルのツール(aibow の中で動くツール)の一覧(設定の画面の「ツール」に出す)。
+func (s *ChatService) LocalTools() []aibow.KnownTool {
+	return aibow.LocalTools()
 }
 
 // ToolPrefs は、ツールの扱いの PC の既定(tools.json)と、サーバーを起動したときに見えたツールの一覧。
@@ -281,6 +302,26 @@ func (s *ChatService) SetToolPolicy(name string, policy aibow.ToolPolicy) error 
 		return err
 	}
 	log.Printf("ツール %s の扱いの PC の既定: %s", name, policyLabel(policy))
+	return nil
+}
+
+// SetGroupPolicy は、ツールのグループ全部の扱いの PC の既定を変える。group が空ならローカルのツール、そうでなければ MCP のサーバー。
+// 画面ではグループの「使う」のチェック(使わないなら off、使うなら空 = 決めていない)。
+func (s *ChatService) SetGroupPolicy(group string, policy aibow.ToolPolicy) error {
+	var err error
+	if group == "" {
+		err = s.prefs.SetLocalPolicy(policy)
+	} else {
+		err = s.prefs.SetServerPolicy(group, policy)
+	}
+	if err != nil {
+		return err
+	}
+	name := group
+	if name == "" {
+		name = "ローカル"
+	}
+	log.Printf("ツールのグループ %s の扱いの PC の既定: %s", name, policyLabel(policy))
 	return nil
 }
 
