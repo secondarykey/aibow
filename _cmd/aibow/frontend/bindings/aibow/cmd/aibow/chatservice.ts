@@ -72,6 +72,13 @@ export function DeleteConversation(id: uuid$0.UUID): $CancellablePromise<void> {
 }
 
 /**
+ * LoadToolList は、MCP のサーバーを一時的に起動してツールの一覧を受け取り、tools.json に覚える(設定の画面で、一覧が無いときと「読み直す」)。
+ */
+export function LoadToolList(server: string): $CancellablePromise<void> {
+    return $Call.ByID(4133085097, server);
+}
+
+/**
  * MCPServers は settings.json に書いた MCP のサーバー(会話ごとに使うものを選ぶ一覧)。書いてなければ空。
  */
 export function MCPServers(): $CancellablePromise<mcpclient$0.ServerInfo[] | null> {

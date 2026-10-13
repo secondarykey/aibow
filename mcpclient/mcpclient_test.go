@@ -182,6 +182,36 @@ func TestSelectedServers(t *testing.T) {
 	}
 }
 
+// 設定の画面のために、一時的に起動してツールの一覧を受け取る(動いているサーバーの一覧には入れない)。
+// ${workdir} を使うサーバーには一時フォルダを渡し、終わったら消す
+func TestListTools(t *testing.T) {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := New(map[string]ServerConfig{
+		"self": {Command: exe, Args: []string{"--dir=" + workDirVar}, Env: map[string]string{"AIBOW_MCP_TEST_SERVER": "1"}},
+	}, Options{Logf: (&logs{}).logf})
+	defer m.Close()
+
+	tools, err := m.ListTools(context.Background(), "self")
+	if err != nil || len(tools) != 4 || tools[0].Def().Name != "self__echo" {
+		t.Fatalf("%v %v", names(tools), err)
+	}
+	if len(m.Tools("", m.Servers())) != 0 {
+		t.Error("一覧を受け取るための起動は、動いているサーバーに入れない")
+	}
+	if _, err := m.ListTools(context.Background(), "nothing"); err == nil {
+		t.Error("知らないサーバーはエラー")
+	}
+	left, _ := filepath.Glob(filepath.Join(os.TempDir(), "aibow-mcp-list-*"))
+	for _, d := range left {
+		if fi, err := os.Stat(d); err == nil && time.Since(fi.ModTime()) < time.Minute {
+			t.Errorf("一時フォルダが残っている: %s", d)
+		}
+	}
+}
+
 // 引数は CheckArgs で JSON Schema の型に変換され(配列・真偽値)、その型のまま tools/call で届く
 func TestRun(t *testing.T) {
 	m, _, _ := memoryManager(t, map[string]ServerConfig{"util": {Command: "util-server"}})

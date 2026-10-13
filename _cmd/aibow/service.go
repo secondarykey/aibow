@@ -266,6 +266,14 @@ func (s *ChatService) ToolPrefs() aibow.ToolPrefsView {
 	return s.prefs.View()
 }
 
+// LoadToolList は、MCP のサーバーを一時的に起動してツールの一覧を受け取り、tools.json に覚える(設定の画面で、一覧が無いときと「読み直す」)。
+func (s *ChatService) LoadToolList(ctx context.Context, server string) error {
+	if s.startupErr != nil {
+		return s.startupErr
+	}
+	return s.convs.LoadToolList(ctx, server)
+}
+
 // SetToolPolicy は、ツールの扱いの PC の既定を変える(tools.json に書く)。policy が空なら決めていない状態に戻す。
 // 次の送信から効く(プロンプトに入るツールが変わるので、画面はメーターを数え直す)。
 func (s *ChatService) SetToolPolicy(name string, policy aibow.ToolPolicy) error {

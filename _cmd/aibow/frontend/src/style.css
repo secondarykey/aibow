@@ -400,6 +400,9 @@ nav.conversations.collapsed .settings.active { color: var(--accent); }
 .mcp-server { margin: 10px 0 14px; }
 .mcp-server-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
 .mcp-server-name { font-weight: 600; }
+.mcp-reload { display: inline-flex; padding: 2px 4px; border-color: transparent; background: transparent; color: var(--muted); }
+.mcp-reload:hover:not(:disabled) { color: var(--text); }
+.mcp-reload .spin { animation: spin 1s linear infinite; }
 .mcp-count { color: var(--muted); font-size: 12px; }
 .mcp-bulk { margin-left: auto; display: flex; gap: 4px; }
 .mcp-bulk button { font-size: 12px; padding: 2px 8px; }

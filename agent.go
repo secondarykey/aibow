@@ -403,6 +403,29 @@ type RemoteTools interface {
 	Start(ctx context.Context, workDir string, use []string) (started []string, errs []error)
 	// Tools は、会話で使うサーバー(use)の、起動済みのツール(起動はしない。メーターの計算などからも呼ばれるため)
 	Tools(workDir string, use []string) []tool.Tool
+	// ListTools は、サーバーを一時的に起動してツールの一覧を受け取る(設定の画面で、会話で使う前にツールを選べるように)
+	ListTools(ctx context.Context, server string) ([]tool.Tool, error)
+}
+
+// LoadToolList は、サーバーを一時的に起動してツールの一覧を受け取り、PC の既定(tools.json)に覚える。
+func (cs *Conversations) LoadToolList(ctx context.Context, server string) error {
+	if cs.remote == nil {
+		return errors.New("MCP のサーバーがありません(settings.json の mcpServers)")
+	}
+	tools, err := cs.remote.ListTools(ctx, server)
+	if err != nil {
+		return err
+	}
+	return cs.prefs.setKnown(server, knownTools(tools))
+}
+
+// knownTools は、設定の画面に出すツールの一覧(名前と説明の1行目)。
+func knownTools(tools []tool.Tool) []KnownTool {
+	known := make([]KnownTool, 0, len(tools))
+	for _, t := range tools {
+		known = append(known, KnownTool{Name: t.Def().Name, Description: firstLine(t.Def().Description)})
+	}
+	return known
 }
 
 // SetToolPrefs は、ツールの扱いの PC の既定(tools.json)を使えるようにする(アプリの起動時に1回)。
@@ -437,11 +460,7 @@ func (cs *Conversations) startRemote(ctx context.Context, conv Conversation, emi
 // 設定の画面で、サーバーを起動していなくてもツールの一覧を出して、使う / 使わないを決められるようにするため。
 func (cs *Conversations) rememberTools(set ConversationSettings, started []string) {
 	for _, server := range started {
-		var known []KnownTool
-		for _, t := range cs.remote.Tools(set.WorkDir, []string{server}) {
-			known = append(known, KnownTool{Name: t.Def().Name, Description: firstLine(t.Def().Description)})
-		}
-		if err := cs.prefs.setKnown(server, known); err != nil {
+		if err := cs.prefs.setKnown(server, knownTools(cs.remote.Tools(set.WorkDir, []string{server}))); err != nil {
 			log.Printf("※ MCP のサーバー %s のツールの一覧を覚えられません: %v", server, err)
 		}
 	}

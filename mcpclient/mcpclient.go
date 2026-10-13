@@ -276,7 +276,7 @@ func (m *Manager) Start(ctx context.Context, workDir string, use []string) (star
 		if ok || closed {
 			continue
 		}
-		if err := m.start(ctx, k, cfg); err != nil {
+		if err := m.startAndKeep(ctx, k, cfg); err != nil {
 			errs = append(errs, fmt.Errorf("MCP のサーバー %s を起動できません: %w", name, err))
 			continue
 		}
@@ -285,8 +285,61 @@ func (m *Manager) Start(ctx context.Context, workDir string, use []string) (star
 	return started, errs
 }
 
-// start はサーバーを1つ起動し、つないで、ツールの一覧を受け取る。
-func (m *Manager) start(ctx context.Context, k serverKey, cfg ServerConfig) error {
+// startAndKeep はサーバーを1つ起動してつなぎ、動いているサーバーの一覧に入れる(アプリを閉じるまで残す)。
+func (m *Manager) startAndKeep(ctx context.Context, k serverKey, cfg ServerConfig) error {
+	s, err := m.connect(ctx, k, cfg)
+	if err != nil {
+		return err
+	}
+	m.mu.Lock()
+	if m.closed { // 起動している間にアプリが閉じられた
+		m.mu.Unlock()
+		s.session.Close()
+		return errors.New("アプリを閉じるところなので、起動をやめました")
+	}
+	m.running[k] = s
+	m.mu.Unlock()
+
+	// stdio のサーバーが落ちたら、つながりが閉じて Wait が返る。
+	// url のサーバーは、リクエストのたびに HTTP でつなぐので、落ちたことはツールの呼び出しが失敗して分かる(broken)
+	go func() { m.drop(s, s.session.Wait()) }()
+	return nil
+}
+
+// ListTools は、サーバーを一時的に起動してツールの一覧を受け取り、すぐ止める。
+//
+// 設定の画面で、会話で使う前に「このツールは使わない」を決められるようにするため
+// (使うツールを決めてから会話で使いたいのに、一度使わないと一覧が分からない、では順番が逆になる)。
+// ${workdir} を使うサーバーには、空の一時フォルダを渡す(ツールの一覧はフォルダによらないため。一覧を受け取ったら消す)。
+// 動いているサーバーの一覧には入れない(会話のための起動とは別)。
+func (m *Manager) ListTools(ctx context.Context, name string) ([]tool.Tool, error) {
+	cfg, ok := m.configs[name]
+	if !ok {
+		return nil, fmt.Errorf("MCP のサーバー %s は settings.json にありません", name)
+	}
+	k := serverKey{name: name}
+	if cfg.UsesWorkDir() {
+		dir, err := os.MkdirTemp("", "aibow-mcp-list-")
+		if err != nil {
+			return nil, fmt.Errorf("一時フォルダを作れません: %w", err)
+		}
+		defer os.RemoveAll(dir) // サーバーを止めてから消す(defer は後に書いたものから動く)
+		k.workDir = dir
+	}
+	m.opt.Logf("MCP %s: ツールの一覧を受け取るために、一時的につなぎます", name)
+	s, err := m.connect(ctx, k, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("MCP のサーバー %s を起動できません: %w", name, err)
+	}
+	defer func() {
+		s.session.Close()
+		m.opt.Logf("MCP %s: ツールの一覧を受け取ったので止めました", name)
+	}()
+	return s.tools, nil
+}
+
+// connect はサーバーを1つ起動し(url のサーバーなら、つなぎ)、ツールの一覧を受け取る。
+func (m *Manager) connect(ctx context.Context, k serverKey, cfg ServerConfig) (*server, error) {
 	limit := cfg.startupTimeout()
 	ctx, cancel := context.WithTimeout(ctx, limit)
 	defer cancel()
@@ -297,7 +350,7 @@ func (m *Manager) start(ctx context.Context, k serverKey, cfg ServerConfig) erro
 	stderr := &lineLogger{logf: m.opt.Logf, prefix: "MCP " + k.name + " (stderr) "}
 	t, err := m.transport(k.name, cfg, k.workDir, stderr)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	hint := "command・args を確かめてください"
 	if cfg.isHTTP() {
@@ -316,7 +369,7 @@ func (m *Manager) start(ctx context.Context, k serverKey, cfg ServerConfig) erro
 		&mcp.ClientOptions{Capabilities: &mcp.ClientCapabilities{}})
 	session, err := client.Connect(ctx, t, nil)
 	if err != nil {
-		return fail("つなげません", err)
+		return nil, fail("つなげません", err)
 	}
 	s := &server{key: k, session: session}
 	// つながりが切れた(サーバーが落ちた・再起動した)と分かったら、一覧から外す。次の Start でつなぎ直す
@@ -324,7 +377,7 @@ func (m *Manager) start(ctx context.Context, k serverKey, cfg ServerConfig) erro
 	tools, err := listTools(ctx, k.name, session, broken)
 	if err != nil {
 		session.Close()
-		return fail("ツールの一覧を受け取れません", err)
+		return nil, fail("ツールの一覧を受け取れません", err)
 	}
 	s.tools = tools
 
@@ -340,19 +393,7 @@ func (m *Manager) start(ctx context.Context, k serverKey, cfg ServerConfig) erro
 	m.opt.Logf("MCP %s: つながりました(%.1f 秒。MCP の版 %s・サーバー %s・ツール %d 個: %s)",
 		k.name, time.Since(begin).Seconds(), ver, info, len(tools), tool.Names(tools))
 
-	m.mu.Lock()
-	if m.closed { // 起動している間にアプリが閉じられた
-		m.mu.Unlock()
-		session.Close()
-		return errors.New("アプリを閉じるところなので、起動をやめました")
-	}
-	m.running[k] = s
-	m.mu.Unlock()
-
-	// stdio のサーバーが落ちたら、つながりが閉じて Wait が返る。
-	// url のサーバーは、リクエストのたびに HTTP でつなぐので、落ちたことはツールの呼び出しが失敗して分かる(broken)
-	go func() { m.drop(s, session.Wait()) }()
-	return nil
+	return s, nil
 }
 
 // startFailure は、起動に失敗した理由の文を作る(画面のお知らせに出る)。

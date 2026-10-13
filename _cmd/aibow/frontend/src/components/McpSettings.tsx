@@ -4,8 +4,11 @@
 // ここで変えるのは、この PC の既定のうち「使わない」だけ。「使わない」にしたツールはモデルに見せない(説明もプロンプトに入らない)ので、
 // 会話の上限の節約になる。「確認しない」は後日、画面から選べるようにする(今は tools.json を手で書いたときだけ効く)。
 //
-// ツールの一覧は、サーバーを最後に起動したときに Go が tools.json に覚えたもの。一度も起動していないサーバーは、一覧がまだ無い。
-import { useCallback, useEffect, useState } from "react";
+// ツールの一覧は、サーバーを最後に起動したときに Go が tools.json に覚えたもの。
+// 一覧がまだ無いサーバーは、この欄を開いたときに Go がサーバーを一時的に起動して受け取る(ChatService.LoadToolList)。
+// 会話で使う前に「このツールは使わない」を決められるようにするため。読み直すボタンでも受け取り直せる。
+import { useCallback, useEffect, useRef, useState } from "react";
+import { LuLoaderCircle, LuRefreshCw } from "react-icons/lu";
 import { ChatService } from "../../bindings/aibow/cmd/aibow";
 import { ToolPolicy } from "../../bindings/aibow";
 import type { KnownTool, ToolPrefsView } from "../../bindings/aibow";
@@ -21,10 +24,34 @@ export function McpSettings({ servers, onChanged }: Props) {
   const [prefs, setPrefs] = useState<ToolPrefsView | null>(null);
   const [error, setError] = useState("");
 
+  const [loading, setLoading] = useState<Record<string, boolean>>({});   // ツールの一覧を受け取っている途中のサーバー
+  const [listErrors, setListErrors] = useState<Record<string, string>>({}); // ツールの一覧を受け取れなかった理由
+  const tried = useRef(new Set<string>()); // 一覧が無いので自動で受け取りにいったサーバー(失敗しても繰り返さない)
+
   const reload = useCallback(() => {
     ChatService.ToolPrefs().then(setPrefs, err => setError(errorMessage(err)));
   }, []);
   useEffect(reload, [reload]);
+
+  // サーバーを一時的に起動して、ツールの一覧を受け取る(npx の初回などは数十秒かかる)
+  const loadList = useCallback((name: string) => {
+    setLoading(l => ({ ...l, [name]: true }));
+    setListErrors(e => ({ ...e, [name]: "" }));
+    ChatService.LoadToolList(name)
+      .then(reload, err => setListErrors(e => ({ ...e, [name]: errorMessage(err) })))
+      .finally(() => setLoading(l => ({ ...l, [name]: false })));
+  }, [reload]);
+
+  // 一覧がまだ無いサーバーは、開いたときに自動で受け取る
+  useEffect(() => {
+    if (!prefs) return;
+    for (const s of servers) {
+      if ((prefs.known?.[s.name]?.length ?? 0) === 0 && !tried.current.has(s.name)) {
+        tried.current.add(s.name);
+        loadList(s.name);
+      }
+    }
+  }, [prefs, servers, loadList]);
 
   if (servers.length === 0 || !prefs) return null;
 
@@ -53,6 +80,15 @@ export function McpSettings({ servers, onChanged }: Props) {
           <div key={s.name} className="mcp-server">
             <div className="mcp-server-head">
               <span className="mcp-server-name">{s.name}</span>
+              <button
+                type="button"
+                className="mcp-reload"
+                disabled={loading[s.name]}
+                onClick={() => loadList(s.name)}
+                title="ツールの一覧を読み直す(サーバーを一時的に起動します)"
+              >
+                {loading[s.name] ? <LuLoaderCircle className="spin" /> : <LuRefreshCw />}
+              </button>
               {known.length > 0 && <span className="mcp-count">{using} / {known.length}</span>}
               {known.length > 0 && (
                 <span className="mcp-bulk">
@@ -61,13 +97,16 @@ export function McpSettings({ servers, onChanged }: Props) {
                 </span>
               )}
             </div>
+            {listErrors[s.name] && <div className="msg error">{listErrors[s.name]}</div>}
             {known.length === 0 ? (
-              <p className="tool-none" title="会話でこのサーバーを選んで一度送信すると、ツールの一覧が出ます">(ツールの一覧はまだありません)</p>
+              <p className="tool-none">{loading[s.name] ? "(ツールの一覧を読み込み中…)" : "(ツールの一覧はまだありません)"}</p>
             ) : (
               <div className="mcp-tools">
                 {known.map(t => {
                   const p = policyOf(s.name, t.name);
-                  const short = t.name.startsWith(s.name.replace(/[^A-Za-z0-9_-]/gu, "_") + "__") ? t.name.slice(t.name.indexOf("__") + 2) : t.name;
+                  // モデルに見せる名前は「サーバーの名前__ツールの名前」。サーバーの名前の部分は見出しにあるので外す
+                  const prefix = s.name.replace(/[^A-Za-z0-9_-]/gu, "_") + "__";
+                  const short = t.name.startsWith(prefix) ? t.name.slice(prefix.length) : t.name;
                   return (
                     <label key={t.name} className="check mcp-tool" title={`${t.name}\n${t.description}`}>
                       <input

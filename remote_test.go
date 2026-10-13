@@ -36,6 +36,13 @@ func (r *fakeRemote) Start(_ context.Context, workDir string, use []string) ([]s
 	return []string{"fake"}, nil
 }
 
+func (r *fakeRemote) ListTools(_ context.Context, server string) ([]tool.Tool, error) {
+	if server != "fake" {
+		return nil, errors.New("知らないサーバー")
+	}
+	return r.tools, nil
+}
+
 func (r *fakeRemote) Tools(_ string, use []string) []tool.Tool {
 	if !r.started || !slices.Contains(use, "fake") {
 		return nil
@@ -280,6 +287,23 @@ func TestRememberTools(t *testing.T) {
 	known := again.View().Known["fake"]
 	if len(known) != 1 || known[0].Name != "fake__write" || known[0].Description != "Remote tool." {
 		t.Errorf("覚えた一覧(説明は1行目だけ): %+v", known)
+	}
+}
+
+// 設定の画面のために、サーバーを一時的に起動してツールの一覧を覚える(会話で使う前に)
+func TestLoadToolList(t *testing.T) {
+	cs := &Conversations{}
+	cs.SetRemoteTools(&fakeRemote{tools: []tool.Tool{&remoteTool{name: "fake__write"}}})
+	prefs := &ToolPrefs{}
+	cs.SetToolPrefs(prefs)
+	if err := cs.LoadToolList(context.Background(), "fake"); err != nil {
+		t.Fatal(err)
+	}
+	if known := prefs.View().Known["fake"]; len(known) != 1 || known[0].Name != "fake__write" {
+		t.Errorf("覚えた一覧: %+v", known)
+	}
+	if err := cs.LoadToolList(context.Background(), "other"); err == nil {
+		t.Error("起動できなければエラー")
 	}
 }
 
