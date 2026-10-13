@@ -135,3 +135,20 @@ aibow のリポジトリそのもの(`D:\Go\Projects\aibow`)を作業フォル�
 - 環境の説明に「Commands already run inside the working directory, so do not cd into it. "ytscroll" refers to the working directory itself.」を足し、
   `run_command` の説明にも「It already runs in the working directory; do not cd into it.」を足したら、同じ頼み方で 6 回とも `cd` しなかった(6 回ともコミットできた)
 - 6 回のうち 1 回は、すでにリポジトリなのに `git init` から始めた(害は無いが、確認のカードで気づける)
+
+## MCP のツール(0006)
+
+### Blender の MCP(2026-10-14、ユーザーの使用感)
+
+qwen3.5:4b・会話の上限 8192。Claude アプリの Blender の拡張の MCP サーバー(blender-mcp 1.27.0。ツール 26 個。2025-11-25 版で話す)を、
+stdio で aibow から起動した(`uv run --directory …`。環境は `UV_PROJECT_ENVIRONMENT` で分けた。[mcp.md](mcp.md) の「実例」)。
+
+- **Blender のメッシュを触れた**。MCP のツールを選んで呼び、確認のカードを経て Blender が動いた
+- ツールが 26 個(組み込みと合わせて 28 個)あっても、**迷った様子は無かった**
+- 会話の上限のメーターは **約 6,000 / 8,192**。ツールの定義がシステムプロンプトに毎回入るので、Blender の MCP を使うと、それだけで上限のかなりの部分を使う
+- 確認(引数の JSON)は問題なかったが、**1つの頼みごとで 4 回聞かれた**。「この MCP サーバーのツールはまとめて許可したい」(ロードマップの外の「MCP のツールの信頼」に記録。今はやらない)
+
+### filesystem サーバー(2026-10-14、モデルを使わずに確かめたこと)
+
+- `npx -y @modelcontextprotocol/server-filesystem` は、初回の起動に約 10.6 秒(ほとんどが npx)。ツールは 14 個で、`read_file`・`write_file`・`edit_file` が組み込みと名前が重なる(今は出していない)
+- 2025-11-25 版で話す。aibow(SDK)が最初に送る 2026-07-28 版の `server/discover` は「Method not found」で返され、古い版の挨拶に戻ってつながる
