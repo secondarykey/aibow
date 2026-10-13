@@ -87,6 +87,8 @@ type Conversations struct {
 
 	// remote は MCP のサーバーのツール(nil なら使わない)。設定ファイルにサーバーが書いてあるときだけ、アプリが渡す(SetRemoteTools)
 	remote RemoteTools
+	// prefs はツールの扱いの PC の既定(tools.json)。nil なら何も決めていない扱い(SetToolPrefs)
+	prefs *ToolPrefs
 
 	// generating は生成中の会話の ID。生成していなければ nil。
 	// エンジン(作業領域)が1つしかないので、生成は同時に1つだけ。

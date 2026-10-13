@@ -151,7 +151,7 @@ func (cs *Conversations) runTool(ctx context.Context, conv Conversation, c ToolC
 func (cs *Conversations) runFound(ctx context.Context, conv Conversation, c ToolCall, t tool.Tool, args tool.Args, emit func(ChatEvent)) StoredMessage {
 	var conf *Confirmation
 	var err error
-	if ct, ok := t.(tool.Confirmable); ok {
+	if ct, ok := t.(tool.Confirmable); ok && cs.needsConfirm(conv.Settings, t) {
 		if conf, err = cs.confirm(ctx, conv.ID, c, ct, args, emit); err != nil {
 			return toolMessage(conv.ID, c, errorPrefix+err.Error(), true, 0)
 		}
@@ -189,6 +189,16 @@ func (cs *Conversations) lookupTool(set ConversationSettings, c ToolCall) (tool.
 		return nil, nil, err
 	}
 	return t, args, nil
+}
+
+// needsConfirm は、確認が要るツール(tool.Confirmable)を、確認してから実行するか。
+// MCP のツールは扱いが「確認しない」なら聞かずに実行する(今は tools.json か会話の設定を手で書いたときだけ)。組み込みのツールはいつも確認する。
+func (cs *Conversations) needsConfirm(set ConversationSettings, t tool.Tool) bool {
+	if r, ok := t.(tool.Remote); ok && cs.toolPolicy(set, r) == ToolAllow {
+		log.Printf("ツール %s は「確認しない」の扱いなので、聞かずに実行します", t.Def().Name)
+		return false
+	}
+	return true
 }
 
 // didYouMean は、知らない名前で呼ばれたとき、MCP のツールのうち「__名前」で終わるものを「〜のことですか?」として返す。
@@ -339,7 +349,11 @@ func (cs *Conversations) toolsFor(set ConversationSettings) []tool.Tool {
 	if cs.remote == nil || !set.Tools {
 		return tools
 	}
-	for _, t := range cs.remote.Tools(set.WorkDir) {
+	for _, t := range cs.remote.Tools(set.WorkDir, set.MCPServers) {
+		// 「使わない」にしたツールはモデルに見せない(説明もプロンプトに入らない)
+		if r, ok := t.(tool.Remote); ok && cs.toolPolicy(set, r) == ToolOff {
+			continue
+		}
 		// MCP のツールの名前にはサーバーの名前が前に付いている(filesystem__read_file。mcpclient.ToolName)ので、ふつうは重ならない。
 		// それでも重なったら出さない(先にあるほう = 組み込みのツールを使う)。同じ名前が2つあると、モデルも aibow も区別できないため。
 		// 重なったものは、起動したときにログに出す(logRemoteTools)
@@ -348,6 +362,25 @@ func (cs *Conversations) toolsFor(set ConversationSettings) []tool.Tool {
 		}
 	}
 	return tools
+}
+
+// toolPolicy は、会話での MCP のツールの扱い(使わない / 確認する / 確認しない)を決める。扱いを決めるのはここだけ。
+//
+//  1. 会話ごとの上書き(会話の設定の tool_policies)
+//  2. PC の既定のツールごとの扱い(tools.json の tools)
+//  3. PC の既定のサーバーごとの扱い(tools.json の servers)
+//  4. 決まりの既定: 確認する(中身が見えないので)
+//
+// の順に見て、最初に決めてあったものを使う。組み込みのツールも、あとで同じ順で決められるようにする(今は MCP のツールだけ)。
+func (cs *Conversations) toolPolicy(set ConversationSettings, t tool.Remote) ToolPolicy {
+	name := t.Def().Name
+	if p, ok := set.ToolPolicies[name]; ok {
+		return p
+	}
+	if p, ok := cs.prefs.policy(t.Server(), name); ok {
+		return p
+	}
+	return ToolAsk
 }
 
 // localTools は、aibow の中で動くツール(組み込みと、作業フォルダのツール)。
@@ -365,11 +398,16 @@ func (cs *Conversations) localTools(set ConversationSettings) []tool.Tool {
 // RemoteTools は、aibow の外のプログラムが実行するツールの置き場(MCP のサーバー。本物は mcpclient.Manager)。
 // 会話の仕組みは MCP を知らない。ツールが tool.Tool の形で並んでいれば、エージェントループはそのまま使える。
 type RemoteTools interface {
-	// Start は、作業フォルダ workDir の会話で使うサーバーのうち、動いていないものを起動する。
+	// Start は、作業フォルダ workDir の会話で使うサーバー(use)のうち、動いていないものを起動する。
 	// 起動したサーバーの名前と、起動できなかったサーバーのエラーを返す
-	Start(ctx context.Context, workDir string) (started []string, errs []error)
-	// Tools は起動済みのサーバーのツール(起動はしない。メーターの計算などからも呼ばれるため)
-	Tools(workDir string) []tool.Tool
+	Start(ctx context.Context, workDir string, use []string) (started []string, errs []error)
+	// Tools は、会話で使うサーバー(use)の、起動済みのツール(起動はしない。メーターの計算などからも呼ばれるため)
+	Tools(workDir string, use []string) []tool.Tool
+}
+
+// SetToolPrefs は、ツールの扱いの PC の既定(tools.json)を使えるようにする(アプリの起動時に1回)。
+func (cs *Conversations) SetToolPrefs(p *ToolPrefs) {
+	cs.prefs = p
 }
 
 // SetRemoteTools は MCP のサーバーのツールを使えるようにする(アプリの起動時に1回)。
@@ -384,13 +422,28 @@ func (cs *Conversations) startRemote(ctx context.Context, conv Conversation, emi
 	if cs.remote == nil || !set.Tools {
 		return
 	}
-	started, errs := cs.remote.Start(ctx, set.WorkDir)
+	started, errs := cs.remote.Start(ctx, set.WorkDir, set.MCPServers)
 	for _, err := range errs {
 		log.Printf("※ %v", err)
 		emit(ChatEvent{ConversationID: conv.ID, Type: "notice", Text: err.Error() + "(このサーバーのツールは使わずに続けます)"})
 	}
 	if len(started) > 0 {
+		cs.rememberTools(set, started)
 		cs.logRemoteTools(set)
+	}
+}
+
+// rememberTools は、起動したサーバーのツールの一覧を PC の既定(tools.json)に覚える。
+// 設定の画面で、サーバーを起動していなくてもツールの一覧を出して、使う / 使わないを決められるようにするため。
+func (cs *Conversations) rememberTools(set ConversationSettings, started []string) {
+	for _, server := range started {
+		var known []KnownTool
+		for _, t := range cs.remote.Tools(set.WorkDir, []string{server}) {
+			known = append(known, KnownTool{Name: t.Def().Name, Description: firstLine(t.Def().Description)})
+		}
+		if err := cs.prefs.setKnown(server, known); err != nil {
+			log.Printf("※ MCP のサーバー %s のツールの一覧を覚えられません: %v", server, err)
+		}
 	}
 }
 
@@ -399,7 +452,7 @@ func (cs *Conversations) startRemote(ctx context.Context, conv Conversation, emi
 func (cs *Conversations) logRemoteTools(set ConversationSettings) {
 	local, all := cs.localTools(set), cs.toolsFor(set)
 	var skipped []string
-	for _, t := range cs.remote.Tools(set.WorkDir) {
+	for _, t := range cs.remote.Tools(set.WorkDir, set.MCPServers) {
 		if tool.Find(local, t.Def().Name) != nil {
 			skipped = append(skipped, t.Def().Name)
 		}

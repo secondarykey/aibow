@@ -396,6 +396,20 @@ nav.conversations.collapsed .settings.active { color: var(--accent); }
   border: 1px solid var(--border); background: var(--bg); color: var(--text);
 }
 .settings-view button.make-default, .settings-view button.apply { margin-top: 12px; }
+/* MCP のツール: サーバーごとに、ツールを使う / 使わないのチェック。説明は1行で切って、マウスを乗せると全部出す */
+.mcp-server { margin: 10px 0 14px; }
+.mcp-server-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.mcp-server-name { font-weight: 600; }
+.mcp-count { color: var(--muted); font-size: 12px; }
+.mcp-bulk { margin-left: auto; display: flex; gap: 4px; }
+.mcp-bulk button { font-size: 12px; padding: 2px 8px; }
+.mcp-tools { display: flex; flex-direction: column; }
+.settings-view label.mcp-tool { margin: 0; padding: 3px 0; min-width: 0; }
+.mcp-tool code { flex-shrink: 0; }
+.mcp-desc { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.mcp-allow { flex-shrink: 0; font-size: 11px; padding: 0 5px; border-radius: 4px; border: 1px solid #d97706; color: #d97706; }
+.mcp-settings .tool-none { color: var(--muted); margin: 2px 0; }
+.mcp-path { font-size: 11.5px; word-break: break-all; }
 .settings-view textarea {
   font: inherit; font-size: 13px; padding: 6px; border-radius: 6px;
   border: 1px solid var(--border); background: var(--bg); color: var(--text); resize: vertical;
@@ -426,8 +440,9 @@ footer { border-top: 1px solid var(--border); background: var(--panel); padding:
 .composer .send:disabled { background: var(--border); color: var(--muted); opacity: 1; }
 /* 作業フォルダ(入力欄の枠の上、左寄せ)。決めていないときはフォルダのアイコンだけ。
    決めたらフォルダの名前を枠付きで出し、右に外すボタン。「ツールを使う」が OFF の会話では薄くする */
+.composer-top { max-width: 820px; margin: 0 auto 6px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .workdir-bar {
-  max-width: 820px; margin: 0 auto 6px; display: flex; align-items: center; gap: 2px;
+  display: flex; align-items: center; gap: 2px;
   font-size: 12.5px; color: var(--muted);
 }
 .workdir-bar button {
@@ -439,6 +454,29 @@ footer { border-top: 1px solid var(--border); background: var(--panel); padding:
 .workdir-bar .workdir-clear { padding: 2px 4px; }
 .workdir-name { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .workdir-bar.off .workdir { opacity: .55; }
+/* この会話で使う MCP のサーバー(作業フォルダの隣)。選んでいないときはプラグのアイコンだけ、選んだら名前を枠付きで出す。
+   押すと上に一覧が開く(入力欄の上にあるので、下に開くと入力欄に重なる) */
+.mcp-bar { position: relative; font-size: 12.5px; color: var(--muted); }
+.mcp-bar .mcp {
+  display: inline-flex; align-items: center; gap: 5px; font-size: inherit; padding: 2px 7px;
+  border-color: transparent; background: transparent; color: inherit;
+}
+.mcp-bar .mcp:hover { color: var(--text); }
+.mcp-bar.set .mcp { border-color: var(--border); background: var(--bg); color: var(--text); }
+.mcp-bar.off .mcp { opacity: .55; }
+.mcp-names { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mcp-menu {
+  position: absolute; bottom: calc(100% + 4px); left: 0; z-index: 20; min-width: 180px; padding: 4px;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--panel); box-shadow: 0 4px 16px rgba(0, 0, 0, .25);
+  display: flex; flex-direction: column;
+}
+.mcp-item {
+  display: flex; align-items: center; gap: 6px; padding: 5px 8px; border: none; border-radius: 5px;
+  background: transparent; color: var(--text); font-size: 13px; text-align: left;
+}
+.mcp-item:hover { background: var(--bg); }
+.mcp-item.needs-dir { color: var(--muted); }
+.mcp-check { width: 14px; display: inline-flex; color: var(--accent); }
 
 /* トースト: 右上(タイトルバーのすぐ下)に重ねて出す。クリックで消える */
 .toasts {

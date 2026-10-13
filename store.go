@@ -70,6 +70,12 @@ type ConversationSettings struct {
 	// その中のファイルを扱うツール(tool.Files)をモデルに出す。
 	// 新しい会話の既定には入れない(前の会話のフォルダを引き継いで、別のフォルダを書き換えてしまうのを防ぐため)
 	WorkDir string `json:"work_dir"`
+	// MCPServers は、この会話で使う MCP のサーバー(settings.json の名前)。選んでいないサーバーはモデルに見せず、起動もしない。
+	// ツールの説明は毎回プロンプトに入るので、全部を載せると会話の上限を食い尽くす(Blender だけで 26 個)。新しい会話の既定は空(使わない)
+	MCPServers []string `json:"mcp_servers"`
+	// ToolPolicies は、この会話だけのツールの扱いの上書き(ツールのモデルに見せる名前 → 使わない / 確認する / 確認しない)。
+	// PC の既定(tools.json)より優先する。会話を消せば一緒に消える(toolprefs.go)。今は画面から変えない
+	ToolPolicies map[string]ToolPolicy `json:"tool_policies,omitempty"`
 }
 
 // compact の方式(compact.go)
@@ -86,13 +92,18 @@ func (s ConversationSettings) normalized() ConversationSettings {
 	default:
 		s.Compact = CompactSummary
 	}
+	if s.MCPServers == nil {
+		s.MCPServers = []string{} // 画面の型を「配列」だけにする(null にしない)
+	}
 	return s
 }
 
 // asDefaults は「新しい会話の既定の設定」にするときの形。作業フォルダは外す(会話ごとに毎回選ぶ)。
+// 会話だけのツールの扱いの上書きも外す(その会話のためのものなので)。使う MCP のサーバーは引き継ぐ。
 func (s ConversationSettings) asDefaults() ConversationSettings {
 	s = s.normalized()
 	s.WorkDir = ""
+	s.ToolPolicies = nil
 	return s
 }
 
@@ -101,6 +112,11 @@ func (s ConversationSettings) validate() error {
 	// 作業フォルダは画面のダイアログで選ぶので、ふつうは絶対パス。相対パスだと、アプリを起動した場所で意味が変わってしまう
 	if s.WorkDir != "" && !filepath.IsAbs(s.WorkDir) {
 		return fmt.Errorf("作業フォルダは絶対パスで指定してください(%s)", s.WorkDir)
+	}
+	for name, p := range s.ToolPolicies {
+		if !p.valid() {
+			return fmt.Errorf("ツール %s の扱い %q は知らない値です(off / ask / allow)", name, p)
+		}
 	}
 	return nil
 }

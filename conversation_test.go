@@ -229,7 +229,7 @@ func TestSettingsArePerConversation(t *testing.T) {
 	if err := cs.SetDefaults(changed); err != nil {
 		t.Fatal(err)
 	}
-	if c := mustCreate(t, cs); c.Settings != changed {
+	if c := mustCreate(t, cs); !sameSettings(c.Settings, changed) {
 		t.Errorf("新しい会話が既定をコピーしていません: %+v", c.Settings)
 	}
 	// 設定を渡して作ると、既定ではなくその設定で始まる(新しい会話の画面で変えた設定)
@@ -239,17 +239,17 @@ func TestSettingsArePerConversation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, _, _ := cs.Get(c.ID); got.Settings != given {
+	if got, _, _ := cs.Get(c.ID); !sameSettings(got.Settings, given) {
 		t.Errorf("渡した設定で作られていません: %+v", got.Settings)
 	}
 	if _, ms, _ := cs.Get(b.ID); len(ms) == 0 {
 		t.Fatal("b の発言がありません")
 	}
-	if b2, _, _ := cs.Get(b.ID); b2.Settings != testDefaults {
+	if b2, _, _ := cs.Get(b.ID); !sameSettings(b2.Settings, testDefaults) {
 		t.Errorf("既定を変えたら今ある会話まで変わりました: %+v", b2.Settings)
 	}
 	app, _, err := LoadAppSettings(st, AppSettings{Defaults: testDefaults})
-	if err != nil || app.Defaults != changed {
+	if err != nil || !sameSettings(app.Defaults, changed) {
 		t.Errorf("既定が保存されていません: %+v %v", app.Defaults, err)
 	}
 }
@@ -333,7 +333,7 @@ func TestLoadAppSettingsPrefersStoredValues(t *testing.T) {
 	}
 
 	got, notes, err := LoadAppSettings(st, initial)
-	if err != nil || got != initial || len(notes) != 0 {
+	if err != nil || got.Workspace != initial.Workspace || !sameSettings(got.Defaults, initial.Defaults) || len(notes) != 0 {
 		t.Fatalf("保存が空なら初期値のまま: %+v %v %v", got, notes, err)
 	}
 
@@ -453,10 +453,15 @@ func TestChangesDuringGenerationAreKept(t *testing.T) {
 
 	// 返事を保存したときに、生成を始めたときの古い値で書き戻されていないこと
 	got, ms, _ := cs.Get(c.ID)
-	if got.Title != "生成中に変えた名前" || got.Settings != changed {
+	if got.Title != "生成中に変えた名前" || !sameSettings(got.Settings, changed) {
 		t.Errorf("生成中の変更が消えました: %q %+v", got.Title, got.Settings)
 	}
 	if len(ms) != 2 {
 		t.Errorf("発言の数: %d", len(ms))
 	}
+}
+
+// sameSettings は会話の設定を比べる(使う MCP のサーバーの「空」と「無し」は同じとみなす。保存すると空の配列になるため)。
+func sameSettings(a, b ConversationSettings) bool {
+	return reflect.DeepEqual(a.normalized(), b.normalized())
 }

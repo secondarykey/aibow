@@ -61,12 +61,13 @@ func main() {
 	// 起動に失敗しても(lib が無いなど)ウィンドウは出し、理由を画面に表示する。
 	// リリース版(wails3 build)はコンソールが無く、ログだけでは何も見えずに終わってしまうため。
 	cfg, err := loadConfig()
-	var remote aibow.RemoteTools
+	var mcpm *mcpclient.Manager
+	var prefs *aibow.ToolPrefs
 	if err == nil {
-		if m := startMCP(&cfg); m != nil {
-			defer m.Close() // アプリを閉じたら、起動した MCP のサーバーも止める(子プロセスまで)
-			remote = m
+		if mcpm = startMCP(&cfg); mcpm != nil {
+			defer mcpm.Close() // アプリを閉じたら、起動した MCP のサーバーも止める(子プロセスまで)
 		}
+		prefs = loadToolPrefs(&cfg)
 	}
 	for _, n := range cfg.notices {
 		log.Printf("※ %s", n)
@@ -93,7 +94,7 @@ func main() {
 		Name:        "aibow",
 		Description: "ローカルLLMを自分で動かして仕組みを学ぶチャット",
 		Services: []application.Service{
-			application.NewService(NewChatService(engine, st, settings, cfg.catalog, initial, remote, cfg.notices, err)),
+			application.NewService(NewChatService(engine, st, settings, cfg.catalog, initial, mcpm, prefs, cfg.notices, err)),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
@@ -146,6 +147,16 @@ func startMCP(cfg *appConfig) *mcpclient.Manager {
 	names := slices.Sorted(maps.Keys(sf.MCPServers))
 	log.Printf("MCP のサーバー: %s(設定ファイル: %s。要る最初の送信で起動します)", strings.Join(names, ", "), absPath(cfg.settingsPath))
 	return mcpclient.New(sf.MCPServers, mcpclient.Options{Version: strings.TrimSpace(version)})
+}
+
+// loadToolPrefs は、ツールの扱いの PC の既定(tools.json)を読む。
+// 壊れていたら画面のお知らせで伝え、決まりの既定で動く(壊れたファイルは書き換えない)。
+func loadToolPrefs(cfg *appConfig) *aibow.ToolPrefs {
+	prefs, err := aibow.LoadToolPrefs(cfg.toolsPath)
+	if err != nil {
+		cfg.notices = append(cfg.notices, err.Error())
+	}
+	return prefs
 }
 
 // openStore は会話を保存する DB を開き、アプリ全体の設定を読む。

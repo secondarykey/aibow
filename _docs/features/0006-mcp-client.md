@@ -125,6 +125,16 @@ MCP(Model Context Protocol)は、ツールやデータを AI アプリにつな�
   - `headers` はログに出さない
   - つながりが切れたことは、ツールの呼び出しの失敗で分かる。サーバーが答えた JSON-RPC のエラーならそのまま、それ以外(SDK が付ける -32003 / -32004 / -32005 を含む)なら一覧から外し、次の送信でつなぎ直す(stdio のサーバーにも同じ扱いをする)
 
+- **会話ごとの選択とツールの扱い(決定事項 6・7)の実装**:
+  - 会話の設定に `mcp_servers`(使うサーバー)と `tool_policies`(会話だけの上書き)を足した。`mcp_servers` は新しい会話の既定に入る(初期値は空)、`tool_policies` は入れない
+  - PC の既定は `toolprefs.go` の `ToolPrefs`(`tools.json`。場所は `AIBOW_TOOLS`)。ツールごと(キーはモデルに見せる名前)とサーバーごとの既定、起動したときに見えたツールの一覧(`known`)を持つ
+  - 扱いを決めるのは `Conversations.toolPolicy` の1か所(会話の上書き → PC のツールごと → PC のサーバーごと → 確認する)。「使わない」は `toolsFor` で外し、「確認しない」は `needsConfirm` で確認を飛ばす
+  - 「確認しない」は画面から選べないが、`tools.json` を手で書けば効く(仕組みを確かめられるように。ログに出す)
+  - `tools.json` が壊れていたら、お知らせで伝えて決まりの既定で動き、ファイルは書き換えない
+  - settings.json から消したサーバーの扱いは `tools.json` に残す(戻したときに設定し直さなくてよいように)
+  - 画面:入力欄の上のプラグのアイコン(`McpBar.tsx`。一覧は上に開く)と、設定の画面の「MCP のツール」(`McpSettings.tsx`。「すべて使う / すべて使わない」付き)
+  - 画面の中には操作の説明を書かず、マウスを乗せたときの説明(title)に書いた(ユーザーの決まり)
+
 ### 調べた結果(調べてから決めること の答え)
 
 - SDK は v1.8.0。間接の依存は `google/jsonschema-go`・`segmentio/encoding`(と `segmentio/asm`)・`yosida95/uritemplate`・`golang.org/x/oauth2`・`golang.org/x/sync`・`golang.org/x/time`。`CGO_ENABLED=0` でビルドできた。SDK の `go.mod` は Go 1.25

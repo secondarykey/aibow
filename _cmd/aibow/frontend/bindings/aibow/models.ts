@@ -280,6 +280,33 @@ export interface ConversationSettings {
      * 新しい会話の既定には入れない(前の会話のフォルダを引き継いで、別のフォルダを書き換えてしまうのを防ぐため)
      */
     "work_dir": string;
+
+    /**
+     * MCPServers は、この会話で使う MCP のサーバー(settings.json の名前)。選んでいないサーバーはモデルに見せず、起動もしない。
+     * ツールの説明は毎回プロンプトに入るので、全部を載せると会話の上限を食い尽くす(Blender だけで 26 個)。新しい会話の既定は空(使わない)
+     */
+    "mcp_servers": string[] | null;
+
+    /**
+     * ToolPolicies は、この会話だけのツールの扱いの上書き(ツールのモデルに見せる名前 → 使わない / 確認する / 確認しない)。
+     * PC の既定(tools.json)より優先する。会話を消せば一緒に消える(toolprefs.go)。今は画面から変えない
+     */
+    "tool_policies"?: { [_ in string]?: ToolPolicy } | null;
+}
+
+/**
+ * KnownTool は、サーバーを起動したときに見えたツール1つ(画面の設定に一覧を出すため。ツールの扱いには使わない)。
+ */
+export interface KnownTool {
+    /**
+     * モデルに見せる名前(Blender__get_objects_summary)
+     */
+    "name": string;
+
+    /**
+     * 説明の1行目
+     */
+    "description": string;
 }
 
 /**
@@ -492,6 +519,50 @@ export interface ToolCall {
     "args": tool$0.Arg[] | null;
     "raw"?: string;
     "error"?: string;
+}
+
+/**
+ * ToolPolicy はツールの扱い。
+ */
+export enum ToolPolicy {
+    /**
+     * The Go zero value for the underlying type of the enum.
+     */
+    $zero = "",
+
+    /**
+     * 使わない: モデルに見せない(説明もプロンプトに入れないので、会話の上限の節約にもなる)
+     */
+    ToolOff = "off",
+
+    /**
+     * 確認する: 実行する前にユーザーに聞く(MCP のツールの決まりの既定)
+     */
+    ToolAsk = "ask",
+
+    /**
+     * 確認しない: 聞かずに実行する。今は画面から選べない(tools.json を手で書けば効く)
+     */
+    ToolAllow = "allow",
+};
+
+/**
+ * ToolPrefsView は、画面の設定に出すための PC の既定の写し。
+ */
+export interface ToolPrefsView {
+    "servers": { [_ in string]?: ToolPolicy } | null;
+    "tools": { [_ in string]?: ToolPolicy } | null;
+    "known": { [_ in string]?: KnownTool[] | null } | null;
+
+    /**
+     * tools.json の場所(画面に出す)
+     */
+    "path": string;
+
+    /**
+     * 読めなかったときの理由(書き換えない)
+     */
+    "error": string;
 }
 
 /**

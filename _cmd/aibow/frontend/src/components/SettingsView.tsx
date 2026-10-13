@@ -1,10 +1,12 @@
-// 設定の画面: この会話の設定 / アプリ全体の設定 / モデルに渡した文字列
+// 設定の画面: この会話の設定 / アプリ全体の設定 / MCP のツール / モデルに渡した文字列
 //
 // 会話の一覧の下の「設定」で開き、チャットの代わりに会話の場所に出す(別の画面として扱う)。
 // 「会話に戻る」か、一覧で会話を選ぶ・「+ 新規」を押すと閉じる。
 import { useEffect, useState } from "react";
 import { LuArrowLeft } from "react-icons/lu";
 import type { AppSettings, ConversationSettings, WorkspaceSettings } from "../../bindings/aibow";
+import type { ServerInfo } from "../../bindings/aibow/mcpclient";
+import { McpSettings } from "./McpSettings";
 
 interface Props {
   settings: ConversationSettings | null; // 開いている会話の設定(新しい会話の画面では、これから作る会話の設定)
@@ -17,10 +19,13 @@ interface Props {
   appDisabled: boolean; // 生成中・読み込み中は変えられない(エンジンが1つのため)
   onApplyApp(w: WorkspaceSettings): void;
   lastPrompt: string;
+  mcpServers: ServerInfo[]; // settings.json の MCP のサーバー(無ければ「MCP のツール」の欄を出さない)
+  onToolsChanged(): void;   // ツールを使う / 使わないを変えた(メーターを数え直す)
 }
 
 export function SettingsView({
   settings, conversationTitle, onClose, errors, onChange, onMakeDefault, app, appDisabled, onApplyApp, lastPrompt,
+  mcpServers, onToolsChanged,
 }: Props) {
   return (
     <section className="settings-view">
@@ -40,6 +45,13 @@ export function SettingsView({
 
         <h2 className="section">アプリ全体の設定</h2>
         {app && <AppSettingsForm app={app} disabled={appDisabled} onApply={onApplyApp} />}
+
+        {mcpServers.length > 0 && (
+          <>
+            <h2 className="section" title="この PC で、MCP のサーバーのツールを使うかどうか(全部の会話に効く。tools.json に保存する)">MCP のツール</h2>
+            <McpSettings servers={mcpServers} onChanged={onToolsChanged} />
+          </>
+        )}
 
         <h2 className="section">モデルに渡した文字列</h2>
         <p className="hint">

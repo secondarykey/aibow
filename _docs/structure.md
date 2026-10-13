@@ -37,6 +37,7 @@ Ollama が保存したファイルを aibow が直接読むので、Ollama は�
 | `mcpclient/` | MCP のクライアント。`settings.json` に書いた MCP のサーバーを起動してつなぎ、そのツールを `tool` の形で見せる(公式の Go SDK を使う) |
 | `internal/proc/` | 起動したプロセスを、子プロセスまでまとめて止める仕組み(コマンドのツールと MCP のサーバーで使う) |
 | `settingsfile.go` | 設定ファイル `settings.json`(手で書く設定。今は MCP のサーバーだけ)の読み込み |
+| `toolprefs.go` | ツールの扱い(使わない / 確認する / 確認しない)と、その PC の既定 `tools.json` の読み書き |
 | `compact.go` | 長くなった会話を「会話の上限」に収める仕組み(古い発言を捨てる / 要約する)と、メーターの計算 |
 | `store.go` | 会話の保存先の約束(interface)と、会話・発言・要約の形。会話の仕組みは保存先が SQLite かどうかを知らない |
 | `appsettings.go` | アプリ全体の設定(会話の上限・返事の上限・GPU の層数・最後に使ったモデル・新しい会話の既定の設定) |

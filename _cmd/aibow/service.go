@@ -26,6 +26,7 @@ import (
 	"uuid"
 
 	"aibow"
+	"aibow/mcpclient"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
@@ -38,6 +39,10 @@ type ChatService struct {
 
 	// startupErr は起動に失敗した理由(lib が無いなど)。画面に表示する
 	startupErr error
+
+	// mcp は settings.json の MCP のサーバー(書いてなければ nil)。prefs はツールの扱いの PC の既定(tools.json)
+	mcp   *mcpclient.Manager
+	prefs *aibow.ToolPrefs
 
 	// app はアプリ全体の設定(作業領域に関わる設定)。画面で変えると DB にも保存する
 	appMu sync.Mutex
@@ -58,20 +63,21 @@ type ChatService struct {
 	cancelQuit context.CancelFunc
 }
 
-// remote は MCP のサーバーのツール(settings.json にサーバーが無ければ nil)。
+// mcp は MCP のサーバー(settings.json にサーバーが無ければ nil)、prefs はツールの扱いの PC の既定(tools.json)。
 func NewChatService(engine *aibow.Engine, st aibow.Store, app aibow.AppSettings, catalog aibow.ModelCatalog,
-	initial *aibow.ModelEntry, remote aibow.RemoteTools, notices []string, startupErr error) *ChatService {
+	initial *aibow.ModelEntry, mcp *mcpclient.Manager, prefs *aibow.ToolPrefs, notices []string, startupErr error) *ChatService {
 	quit, cancel := context.WithCancel(context.Background())
 	s := &ChatService{
 		engine: engine, catalog: catalog, app: app, initial: initial, notices: notices, startupErr: startupErr,
-		quit: quit, cancelQuit: cancel,
+		quit: quit, cancelQuit: cancel, mcp: mcp, prefs: prefs,
 	}
 	if startupErr == nil {
 		s.store = st
 		s.convs = aibow.NewConversations(st, engine, app)
-		if remote != nil {
-			s.convs.SetRemoteTools(remote)
+		if mcp != nil { // nil の *Manager を interface に入れると nil に見えなくなるので、確かめてから渡す
+			s.convs.SetRemoteTools(mcp)
 		}
+		s.convs.SetToolPrefs(prefs)
 	}
 	return s
 }
@@ -243,6 +249,43 @@ func (s *ChatService) saveAppSetting(key string, v any, apply func(*aibow.AppSet
 	if err := aibow.SaveAppSetting(s.store, key, v); err != nil {
 		log.Printf("※ %v", err)
 	}
+}
+
+// ---- MCP のサーバーとツールの扱い ------------------------------------------------------
+
+// MCPServers は settings.json に書いた MCP のサーバー(会話ごとに使うものを選ぶ一覧)。書いてなければ空。
+func (s *ChatService) MCPServers() []mcpclient.ServerInfo {
+	if s.mcp == nil {
+		return []mcpclient.ServerInfo{}
+	}
+	return s.mcp.Infos()
+}
+
+// ToolPrefs は、ツールの扱いの PC の既定(tools.json)と、サーバーを起動したときに見えたツールの一覧。
+func (s *ChatService) ToolPrefs() aibow.ToolPrefsView {
+	return s.prefs.View()
+}
+
+// SetToolPolicy は、ツールの扱いの PC の既定を変える(tools.json に書く)。policy が空なら決めていない状態に戻す。
+// 次の送信から効く(プロンプトに入るツールが変わるので、画面はメーターを数え直す)。
+func (s *ChatService) SetToolPolicy(name string, policy aibow.ToolPolicy) error {
+	if err := s.prefs.SetToolPolicy(name, policy); err != nil {
+		return err
+	}
+	log.Printf("ツール %s の扱いの PC の既定: %s", name, policyLabel(policy))
+	return nil
+}
+
+func policyLabel(p aibow.ToolPolicy) string {
+	switch p {
+	case aibow.ToolOff:
+		return "使わない"
+	case aibow.ToolAsk:
+		return "確認する"
+	case aibow.ToolAllow:
+		return "確認しない"
+	}
+	return "決めていない"
 }
 
 // ---- 会話 -------------------------------------------------------------------------------

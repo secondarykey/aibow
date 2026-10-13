@@ -126,29 +126,29 @@ func TestStartAndTools(t *testing.T) {
 	})
 	ctx := context.Background()
 
-	if got := m.Tools("D:/a"); len(got) != 0 {
+	if got := m.Tools("D:/a", m.Servers()); len(got) != 0 {
 		t.Fatalf("起動する前はツールが無い: %v", names(got))
 	}
-	started, errs := m.Start(ctx, "")
+	started, errs := m.Start(ctx, "", m.Servers())
 	if len(errs) != 0 || !slices.Equal(started, []string{"util"}) {
 		t.Fatalf("作業フォルダが無ければ util だけ起動する: %v %v", started, errs)
 	}
-	if got := names(m.Tools("D:/a")); len(got) != 4 || got[0] != "util/util__echo" {
+	if got := names(m.Tools("D:/a", m.Servers())); len(got) != 4 || got[0] != "util/util__echo" {
 		t.Errorf("fs はまだ起動していない: %v", got)
 	}
 
-	started, _ = m.Start(ctx, "D:/a")
+	started, _ = m.Start(ctx, "D:/a", m.Servers())
 	if !slices.Equal(started, []string{"fs"}) {
 		t.Errorf("fs だけを起動する(util は動いている): %v", started)
 	}
-	got := names(m.Tools("D:/a"))
+	got := names(m.Tools("D:/a", m.Servers()))
 	if len(got) != 8 || got[0] != "fs/fs__echo" || got[4] != "util/util__echo" {
 		t.Errorf("サーバーの名前の順に並ぶ: %v", got)
 	}
-	if got := names(m.Tools("D:/b")); len(got) != 4 {
+	if got := names(m.Tools("D:/b", m.Servers())); len(got) != 4 {
 		t.Errorf("別の作業フォルダでは fs はまだ動いていない: %v", got)
 	}
-	if started, _ := m.Start(ctx, "D:/a"); len(started) != 0 {
+	if started, _ := m.Start(ctx, "D:/a", m.Servers()); len(started) != 0 {
 		t.Errorf("動いているサーバーは起動し直さない: %v", started)
 	}
 
@@ -160,12 +160,34 @@ func TestStartAndTools(t *testing.T) {
 	}
 }
 
+// 会話で選んだサーバーだけを起動し、ツールを出す。知らない名前(settings.json から消したサーバー)は無視する
+func TestSelectedServers(t *testing.T) {
+	m, _, _ := memoryManager(t, map[string]ServerConfig{
+		"a": {Command: "a-server"},
+		"b": {Command: "b-server"},
+	})
+	ctx := context.Background()
+	if started, _ := m.Start(ctx, "", nil); len(started) != 0 {
+		t.Errorf("選んでいなければ起動しない: %v", started)
+	}
+	if started, _ := m.Start(ctx, "", []string{"b", "removed"}); !slices.Equal(started, []string{"b"}) {
+		t.Errorf("選んだサーバーだけ起動する: %v", started)
+	}
+	m.Start(ctx, "", []string{"a"})
+	if got := names(m.Tools("", []string{"b"})); len(got) != 4 || got[0] != "b/b__echo" {
+		t.Errorf("起動していても、選んでいないサーバーのツールは出さない: %v", got)
+	}
+	if got := m.Servers(); !slices.Equal(got, []string{"a", "b"}) {
+		t.Errorf("Servers: %v", got)
+	}
+}
+
 // 引数は CheckArgs で JSON Schema の型に変換され(配列・真偽値)、その型のまま tools/call で届く
 func TestRun(t *testing.T) {
 	m, _, _ := memoryManager(t, map[string]ServerConfig{"util": {Command: "util-server"}})
 	ctx := context.Background()
-	m.Start(ctx, "")
-	tools := m.Tools("")
+	m.Start(ctx, "", m.Servers())
+	tools := m.Tools("", m.Servers())
 
 	echo := tool.Find(tools, "util__echo")
 	args, err := tool.CheckArgs(echo.Def(), []tool.Arg{{Name: "paths", Value: `["a.go", "b.go"]`}, {Name: "loud", Value: "True"}})
@@ -209,11 +231,11 @@ func TestRun(t *testing.T) {
 func TestRestartAfterServerDies(t *testing.T) {
 	m, l, sessions := memoryManager(t, map[string]ServerConfig{"util": {Command: "util-server"}})
 	ctx := context.Background()
-	m.Start(ctx, "")
+	m.Start(ctx, "", m.Servers())
 	(*sessions)[0].Close()
 
 	deadline := time.Now().Add(5 * time.Second)
-	for len(m.Tools("")) != 0 {
+	for len(m.Tools("", m.Servers())) != 0 {
 		if time.Now().After(deadline) {
 			t.Fatal("落ちたサーバーのツールが残っている")
 		}
@@ -222,7 +244,7 @@ func TestRestartAfterServerDies(t *testing.T) {
 	if !l.contains("つながりが切れました") {
 		t.Error("落ちたことをログに出す")
 	}
-	if started, errs := m.Start(ctx, ""); !slices.Equal(started, []string{"util"}) || len(errs) != 0 {
+	if started, errs := m.Start(ctx, "", m.Servers()); !slices.Equal(started, []string{"util"}) || len(errs) != 0 {
 		t.Errorf("起動し直す: %v %v", started, errs)
 	}
 }
@@ -234,7 +256,7 @@ func TestStartError(t *testing.T) {
 		"missing": {Command: filepath.Join(t.TempDir(), "no-such-server")},
 	}, Options{Logf: l.logf})
 	defer m.Close()
-	started, errs := m.Start(context.Background(), "")
+	started, errs := m.Start(context.Background(), "", m.Servers())
 	if len(started) != 0 || len(errs) != 1 || !strings.Contains(errs[0].Error(), "MCP のサーバー missing を起動できません") {
 		t.Errorf("%v %v", started, errs)
 	}
@@ -253,7 +275,7 @@ func TestStartFailureReason(t *testing.T) {
 	defer m.Close()
 
 	begin := time.Now()
-	_, errs := m.Start(context.Background(), "")
+	_, errs := m.Start(context.Background(), "", m.Servers())
 	if len(errs) != 2 {
 		t.Fatalf("2つとも起動できない: %v", errs)
 	}
@@ -282,10 +304,10 @@ func TestCommandServer(t *testing.T) {
 		"self": {Command: exe, Args: []string{"--dir=" + workDirVar}, Env: map[string]string{"AIBOW_MCP_TEST_SERVER": "1"}},
 	}, Options{Version: "test", Logf: l.logf})
 
-	if _, errs := m.Start(context.Background(), dir); len(errs) != 0 {
+	if _, errs := m.Start(context.Background(), dir, m.Servers()); len(errs) != 0 {
 		t.Fatal(errs)
 	}
-	got, err := tool.Find(m.Tools(dir), "self__where").Run(context.Background(), nil)
+	got, err := tool.Find(m.Tools(dir, m.Servers()), "self__where").Run(context.Background(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -299,10 +321,10 @@ func TestCommandServer(t *testing.T) {
 	if d := time.Since(start); d > closeWait+3*time.Second {
 		t.Errorf("閉じるのに時間がかかりすぎ: %v", d)
 	}
-	if len(m.Tools(dir)) != 0 {
+	if len(m.Tools(dir, m.Servers())) != 0 {
 		t.Error("閉じたらツールは無い")
 	}
-	if started, _ := m.Start(context.Background(), dir); len(started) != 0 {
+	if started, _ := m.Start(context.Background(), dir, m.Servers()); len(started) != 0 {
 		t.Error("閉じた後は起動しない")
 	}
 	if !l.contains("MCP self: つながりました") || !l.contains("MCP self: 止めました") {
@@ -387,13 +409,13 @@ func TestHTTPServer(t *testing.T) {
 	defer m.Close()
 
 	ctx := context.Background()
-	if started, errs := m.Start(ctx, ""); !slices.Equal(started, []string{"intra"}) || len(errs) != 0 {
+	if started, errs := m.Start(ctx, "", m.Servers()); !slices.Equal(started, []string{"intra"}) || len(errs) != 0 {
 		t.Fatalf("%v %v", started, errs)
 	}
-	if got := names(m.Tools("D:/a")); len(got) != 4 {
+	if got := names(m.Tools("D:/a", m.Servers())); len(got) != 4 {
 		t.Errorf("url のサーバーは作業フォルダに関係なく共有する: %v", got)
 	}
-	echo := tool.Find(m.Tools(""), "intra__echo")
+	echo := tool.Find(m.Tools("", m.Servers()), "intra__echo")
 	if got, err := echo.Run(ctx, tool.Args{"paths": []any{"a"}}); err != nil || got != `{"paths":["a"]}` {
 		t.Errorf("echo: %q, %v", got, err)
 	}
@@ -412,7 +434,7 @@ func TestHTTPServer(t *testing.T) {
 	if _, err := unknown.Run(ctx, nil); err == nil || strings.Contains(err.Error(), "つながりが切れました") {
 		t.Errorf("サーバーの答えのエラー: %v", err)
 	}
-	if got := m.Tools(""); len(got) != 4 {
+	if got := m.Tools("", m.Servers()); len(got) != 4 {
 		t.Errorf("つながりは外さない: %v", names(got))
 	}
 
@@ -422,7 +444,7 @@ func TestHTTPServer(t *testing.T) {
 	if _, err := echo.Run(ctx, tool.Args{"paths": []any{"a"}}); err == nil || !strings.Contains(err.Error(), "つながりが切れました") {
 		t.Errorf("止まったサーバー: %v", err)
 	}
-	if got := m.Tools(""); len(got) != 0 {
+	if got := m.Tools("", m.Servers()); len(got) != 0 {
 		t.Errorf("つながりが切れたサーバーのツールは外す: %v", names(got))
 	}
 }

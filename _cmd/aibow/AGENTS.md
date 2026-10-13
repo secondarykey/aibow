@@ -9,7 +9,7 @@ Wails v3 のデスクトップアプリです。ルートの `aibow` パッケ�
 | ファイル | 役割 |
 |---|---|
 | `main.go` | Wails のアプリとウィンドウを作る(Frameless。タイトルバーは画面の `TitleBar.tsx`)。ウィンドウは起動時 720×820、最小 480×480 |
-| `config.go` | 環境変数の読み込み。`settings.json` を読んで MCP のサーバーの係(`mcpclient.Manager`)を作るのは `main.go` の `startMCP`(アプリを閉じるときに止める) |
+| `config.go` | 環境変数の読み込み。`settings.json` を読んで MCP のサーバーの係(`mcpclient.Manager`)を作るのは `main.go` の `startMCP`(アプリを閉じるときに止める)、`tools.json` を読むのは `loadToolPrefs` |
 | `service.go` | `ChatService`。画面と `aibow.Conversations` / `Engine` の中継だけをする(モデル・会話・設定(`SetLimits` など)・メーター(`Usage`)・`Send` / `Compact` / `StopSummary`)。生成の回ごとの統計・compact・ツールの実行のログもここで出す |
 | `frontend/src/` | チャット画面(React + TypeScript)。Vite でビルドした `frontend/dist` を `go:embed` で埋め込む。中身は [_docs/ui.md](../../_docs/ui.md) と [_docs/rendering.md](../../_docs/rendering.md) |
 | `frontend/bindings/` | `wails3 generate bindings` の生成物(コミットする。手で直さない) |
@@ -25,7 +25,7 @@ Wails v3 のデスクトップアプリです。ルートの `aibow` パッケ�
 
 ## 環境変数
 
-`AIBOW_MODEL` / `AIBOW_MODELS_DIR` / `AIBOW_LIB` / `AIBOW_DB` / `AIBOW_SETTINGS` / `AIBOW_HISTORY_TOKENS` / `AIBOW_MAX_TOKENS` / `AIBOW_GPU_LAYERS` / `AIBOW_PRESENCE_PENALTY` / `AIBOW_LLAMA_LOG`、
+`AIBOW_MODEL` / `AIBOW_MODELS_DIR` / `AIBOW_LIB` / `AIBOW_DB` / `AIBOW_SETTINGS` / `AIBOW_TOOLS` / `AIBOW_HISTORY_TOKENS` / `AIBOW_MAX_TOKENS` / `AIBOW_GPU_LAYERS` / `AIBOW_PRESENCE_PENALTY` / `AIBOW_LLAMA_LOG`、
 Ollama の保存先は Ollama と同じ `OLLAMA_MODELS`。意味と既定値は [_docs/usage.md](../../_docs/usage.md) の表にある。
 
 - `AIBOW_CTX` は 0002 で廃止(設定されていたらログとトーストで伝える)

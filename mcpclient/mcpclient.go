@@ -223,11 +223,44 @@ func New(configs map[string]ServerConfig, opt Options) *Manager {
 	return m
 }
 
-// Start は、作業フォルダ workDir の会話で使うサーバーのうち、まだ動いていないものを起動する。
-// 起動したサーバーの名前と、起動できなかったサーバーのエラーを返す(起動できなくても、ほかのサーバーと会話は続けられる)。
-// workDir が空なら、${workdir} を使うサーバーは起動しない。
-func (m *Manager) Start(ctx context.Context, workDir string) (started []string, errs []error) {
+// Servers は settings.json に書いたサーバーの名前(名前の順)。
+func (m *Manager) Servers() []string {
+	return slices.Clone(m.names)
+}
+
+// ServerInfo は、画面で会話ごとにサーバーを選ぶときに出す情報。
+type ServerInfo struct {
+	Name        string `json:"name"`          // settings.json の名前
+	HTTP        bool   `json:"http"`          // url のサーバー(そうでなければ command で起動する stdio のサーバー)
+	UsesWorkDir bool   `json:"uses_work_dir"` // ${workdir} を使う(作業フォルダを決めた会話でしか使えない)
+}
+
+// Infos は settings.json に書いたサーバーの情報(名前の順)。
+func (m *Manager) Infos() []ServerInfo {
+	out := make([]ServerInfo, 0, len(m.names))
 	for _, name := range m.names {
+		c := m.configs[name]
+		out = append(out, ServerInfo{Name: name, HTTP: c.isHTTP(), UsesWorkDir: c.UsesWorkDir()})
+	}
+	return out
+}
+
+// selected は、names のうち use に入っているもの(名前の順)。知らない名前(settings.json から消したサーバー)は無視する。
+func (m *Manager) selected(use []string) []string {
+	var out []string
+	for _, name := range m.names {
+		if slices.Contains(use, name) {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+// Start は、作業フォルダ workDir の会話で使うサーバー(use)のうち、まだ動いていないものを起動する。
+// 起動したサーバーの名前と、起動できなかったサーバーのエラーを返す(起動できなくても、ほかのサーバーと会話は続けられる)。
+// workDir が空なら、${workdir} を使うサーバーは起動しない。会話で選んでいないサーバーも起動しない。
+func (m *Manager) Start(ctx context.Context, workDir string, use []string) (started []string, errs []error) {
+	for _, name := range m.selected(use) {
 		cfg := m.configs[name]
 		k := serverKey{name: name}
 		if cfg.UsesWorkDir() {
@@ -370,13 +403,13 @@ func listTools(ctx context.Context, name string, session *mcp.ClientSession, bro
 	return tools, nil
 }
 
-// Tools は、作業フォルダ workDir の会話で使える、起動済みのサーバーのツール(サーバーの名前の順)。
+// Tools は、作業フォルダ workDir の会話で使う(use)、起動済みのサーバーのツール(サーバーの名前の順)。
 // サーバーを起動はしない(画面のメーターの計算などからも呼ばれるため。起動は送信のときの Start)。
-func (m *Manager) Tools(workDir string) []tool.Tool {
+func (m *Manager) Tools(workDir string, use []string) []tool.Tool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var tools []tool.Tool
-	for _, name := range m.names {
+	for _, name := range m.selected(use) {
 		k := serverKey{name: name}
 		if m.configs[name].UsesWorkDir() {
 			if workDir == "" {

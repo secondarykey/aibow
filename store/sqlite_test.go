@@ -91,7 +91,7 @@ func TestConversationsAndMessagesPersist(t *testing.T) {
 	if len(list) != 2 || list[0].ID != c.ID || list[1].ID != old.ID {
 		t.Fatalf("一覧が更新の新しい順になっていません: %+v", list)
 	}
-	if list[0].Title != "やあ" || list[0].Settings != settings {
+	if list[0].Title != "やあ" || !reflect.DeepEqual(list[0].Settings, settings) {
 		t.Errorf("タイトルか設定が違います: %+v", list[0])
 	}
 	if !list[0].UpdatedAt.Equal(c.UpdatedAt.Truncate(time.Microsecond)) {
@@ -154,7 +154,9 @@ func TestAppSettings(t *testing.T) {
 	aibow.SaveAppSetting(s, aibow.SettingDefaults, settings)
 	app, _, err := aibow.LoadAppSettings(s, aibow.AppSettings{Workspace: aibow.WorkspaceSettings{GPULayers: 999, ReplyTokens: 100}})
 	w := app.Workspace
-	if err != nil || w.HistoryTokens != 8192 || w.ReplyTokens != 100 || w.GPULayers != 999 || app.Defaults != settings {
+	want := settings
+	want.MCPServers = []string{} // 既定として読むときは整えた形(使う MCP のサーバーは空の配列)になる
+	if err != nil || w.HistoryTokens != 8192 || w.ReplyTokens != 100 || w.GPULayers != 999 || !reflect.DeepEqual(app.Defaults, want) {
 		t.Errorf("アプリ設定: %+v %v", app, err)
 	}
 }

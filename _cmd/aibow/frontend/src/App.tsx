@@ -34,6 +34,9 @@ import { NewChat } from "./components/NewChat";
 import { SettingsView } from "./components/SettingsView";
 import { Composer } from "./components/Composer";
 import { WorkDirBar } from "./components/WorkDirBar";
+import { McpBar } from "./components/McpBar";
+import { ChatService } from "../bindings/aibow/cmd/aibow";
+import type { ServerInfo } from "../bindings/aibow/mcpclient";
 import { ImeFocusRelay } from "./imeFocus";
 import { errorMessage } from "./errors";
 import { NARROW_QUERY, useMediaQuery } from "./mediaQuery";
@@ -98,6 +101,15 @@ export default function App() {
     })();
   }, [convs.init, models.reload, app.reload, addError]);
 
+  // settings.json に書いた MCP のサーバー。起動したときに1回だけ読む(settings.json は起動したときだけ読むので、変わらない)
+  const [mcpServers, setMcpServers] = useState<ServerInfo[]>([]);
+  useEffect(() => {
+    ChatService.MCPServers().then(
+      s => setMcpServers(s ?? []),
+      err => addError(`MCP のサーバーの一覧を取得できません: ${errorMessage(err)}`),
+    );
+  }, [addError]);
+
   // モデルや上限が変わると、同じ会話でもトークン数(メーター)が変わるので数え直す
   useEffect(() => {
     convs.refreshUsage().catch(() => {});
@@ -149,15 +161,25 @@ export default function App() {
         focusKey={focusKey}
         onSend={chat.send}
         top={settings && (
-          <WorkDirBar
-            workDir={settings.work_dir}
-            toolsOn={settings.tools}
-            onChange={workDir => {
-              convs.updateSettings({ work_dir: workDir });
-              focusInput();
-            }}
-            onError={addError}
-          />
+          // 入力欄の上: 作業フォルダと、この会話で使う MCP のサーバー(どちらも会話ごとの設定)
+          <div className="composer-top">
+            <WorkDirBar
+              workDir={settings.work_dir}
+              toolsOn={settings.tools}
+              onChange={workDir => {
+                convs.updateSettings({ work_dir: workDir });
+                focusInput();
+              }}
+              onError={addError}
+            />
+            <McpBar
+              servers={mcpServers}
+              selected={settings.mcp_servers ?? []}
+              workDir={settings.work_dir}
+              toolsOn={settings.tools}
+              onChange={mcp_servers => convs.updateSettings({ mcp_servers })}
+            />
+          </div>
         )}
       />
       <ModelBar models={models} disabled={busy !== "idle"}>
@@ -205,6 +227,8 @@ export default function App() {
         appDisabled={busy !== "idle"}
         onApplyApp={app.apply}
         lastPrompt={chat.lastPrompt}
+        mcpServers={mcpServers}
+        onToolsChanged={() => convs.refreshUsage().catch(err => addError(errorMessage(err)))}
       />
     );
   } else if (home) {

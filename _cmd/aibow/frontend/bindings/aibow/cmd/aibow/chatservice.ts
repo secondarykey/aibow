@@ -10,6 +10,9 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 import * as aibow$0 from "../../models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as mcpclient$0 from "../../mcpclient/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as uuid$0 from "../../../uuid/models.js";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
@@ -66,6 +69,13 @@ export function Conversations(): $CancellablePromise<aibow$0.Conversation[] | nu
  */
 export function DeleteConversation(id: uuid$0.UUID): $CancellablePromise<void> {
     return $Call.ByID(353617351, id);
+}
+
+/**
+ * MCPServers は settings.json に書いた MCP のサーバー(会話ごとに使うものを選ぶ一覧)。書いてなければ空。
+ */
+export function MCPServers(): $CancellablePromise<mcpclient$0.ServerInfo[] | null> {
+    return $Call.ByID(287669679);
 }
 
 /**
@@ -130,6 +140,14 @@ export function SetLimits(history: number, reply: number): $CancellablePromise<a
 }
 
 /**
+ * SetToolPolicy は、ツールの扱いの PC の既定を変える(tools.json に書く)。policy が空なら決めていない状態に戻す。
+ * 次の送信から効く(プロンプトに入るツールが変わるので、画面はメーターを数え直す)。
+ */
+export function SetToolPolicy(name: string, policy: aibow$0.ToolPolicy): $CancellablePromise<void> {
+    return $Call.ByID(1851266373, name, policy);
+}
+
+/**
  * StopSummary は生成中の要約だけを止める(要約中に出る停止ボタン)。
  * 送信の途中の要約なら、その回は古い発言を外して(truncate)返事の生成に進む。
  * Promise の cancel() だと送信全体が止まってしまうので、別のメソッドにしている。
@@ -147,6 +165,13 @@ export function StopSummary(): $CancellablePromise<void> {
  */
 export function SwitchModel(id: string): $CancellablePromise<aibow$0.ModelInfo | null> {
     return $Call.ByID(1702876432, id);
+}
+
+/**
+ * ToolPrefs は、ツールの扱いの PC の既定(tools.json)と、サーバーを起動したときに見えたツールの一覧。
+ */
+export function ToolPrefs(): $CancellablePromise<aibow$0.ToolPrefsView> {
+    return $Call.ByID(2378033441);
 }
 
 /**
