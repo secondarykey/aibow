@@ -135,26 +135,29 @@ func (cs *Conversations) Compactions(id uuid.UUID) ([]Compaction, error) {
 // ツールを使う送信では、2回目からの生成の前にも呼ぶ(ツールの結果で、最新の組が伸びていくため)。
 func (cs *Conversations) checkFits(set ConversationSettings, history []StoredMessage) error {
 	limit := cs.currentLimits().history
-	if set.Compact == CompactNone {
-		p, err := cs.passFrom(set, nil, history, 0)
-		if err != nil {
-			return err
-		}
-		if p.tokens > limit {
-			return fmt.Errorf("会話の上限を超えました(%d / %d トークン)。この会話の設定で compact を有効にするか、"+
-				"アプリ全体の設定で会話の上限を増やしてください", p.tokens, limit)
-		}
-		return nil
-	}
-	p, err := cs.passFrom(set, nil, history, lastUser(history))
-	if err != nil {
+	n, err := cs.turnTokens(set, history)
+	switch {
+	case err != nil:
 		return err
+	case n <= limit:
+		return nil
+	case set.Compact == CompactNone:
+		return fmt.Errorf("会話の上限を超えました(%d / %d トークン)。この会話の設定で compact を有効にするか、"+
+			"アプリ全体の設定で会話の上限を増やしてください", n, limit)
 	}
-	if p.tokens > limit {
-		return fmt.Errorf("今の発言(とツールの結果)だけで会話の上限を超えています(システムプロンプト込みで %d / %d トークン)。"+
-			"発言を短くするか、アプリ全体の設定で会話の上限を増やしてください", p.tokens, limit)
+	return fmt.Errorf("今の発言(とツールの結果)だけで会話の上限を超えています(システムプロンプト込みで %d / %d トークン)。"+
+		"発言を短くするか、アプリ全体の設定で会話の上限を増やしてください", n, limit)
+}
+
+// turnTokens は、compact しても必ず渡す部分のトークン数。none は全部、truncate / summary は最新の組(とシステムプロンプト)。
+// これが会話の上限を超えていたら、どの方式でも収めようがない。
+func (cs *Conversations) turnTokens(set ConversationSettings, history []StoredMessage) (int, error) {
+	from := lastUser(history)
+	if set.Compact == CompactNone {
+		from = 0
 	}
-	return nil
+	p, err := cs.passFrom(set, nil, history, from)
+	return p.tokens, err
 }
 
 // prepare は、送信のときにモデルに渡す内容を決める。会話の上限を超えていたら、会話の設定の方式で収める。
@@ -612,7 +615,8 @@ func (cs *Conversations) Compact(ctx context.Context, id uuid.UUID, emit func(Ch
 	}
 	if _, err := cs.summarize(ctx, conv, history, emit); err != nil {
 		if errors.Is(err, errNothingToSummarize) || errors.Is(err, errOnlyLatestTurn) {
-			fail(err)
+			// 失敗ではなく「要約するものが無かった」なので、エラーではなくお知らせにする
+			emit(ChatEvent{ConversationID: id, Type: "notice", Text: err.Error()})
 		} else {
 			fail(fmt.Errorf("要約を作れませんでした: %w", err))
 		}

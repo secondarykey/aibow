@@ -430,8 +430,9 @@ func TestCompactNow(t *testing.T) {
 	short := longTalk(t, cs, g, CompactSummary, 1)
 	evs = nil
 	cs.Compact(context.Background(), short.ID, func(ev ChatEvent) { evs = append(evs, ev) })
-	if errs := errorsOf(evs); len(errs) != 1 || errs[0] != errNothingToSummarize.Error() {
-		t.Errorf("要約できる発言が無いときのエラー: %v", errs)
+	// 失敗ではないので、エラーではなくお知らせ
+	if errs, notes := errorsOf(evs), noticesOf(evs); len(errs) != 0 || len(notes) != 1 || notes[0] != errNothingToSummarize.Error() {
+		t.Errorf("要約できる発言が無いとき: エラー %v / お知らせ %v", errs, notes)
 	}
 }
 

@@ -334,34 +334,55 @@ func TestSummaryIncludesToolCalls(t *testing.T) {
 	}
 }
 
-// ツールの結果で今の組が会話の上限を超えたら、そこで止めてエラーを出す
-func TestAgentStopsWhenToolResultsOverflow(t *testing.T) {
+// ツールの結果を足すと今の組が会話の上限を超えるときは、結果の代わりに「長すぎて渡せない」エラーを返し、ループは続ける。
+// モデルは範囲を絞って呼び直せる。会話は上限を超えた状態にならない
+func TestAgentRejectsResultThatDoesNotFit(t *testing.T) {
 	huge := fakeTool{name: "huge", run: func(context.Context, tool.Args) (string, error) {
 		return strings.Repeat("大", 5000), nil
 	}}
-	g := &fakeGen{replies: []fakeReply{{toolCalls: []ToolCall{toolCall("huge")}}, {content: "ここは生成されない"}}}
+	g := &fakeGen{replies: []fakeReply{{toolCalls: []ToolCall{toolCall("huge")}}, {content: "範囲を絞ります"}}}
 	cs, _, c := newToolConversation(t, g, huge)
 	cs.SetLimits(4000, 100)
 	evs := sendRaw(cs, c, "大きいのを")
-	if errs := errorsOf(evs); len(errs) != 1 || !strings.Contains(errs[0], "ツールの結果を足すと会話の上限を超える") {
+	if errs := errorsOf(evs); len(errs) != 0 {
 		t.Errorf("エラー: %v", errs)
 	}
-	if len(g.calls) != 1 {
-		t.Errorf("2回目の生成はしないはず: %d 回", len(g.calls))
+	_, ms, _ := cs.Get(c.ID)
+	res := ms[2]
+	if res.Role != "tool" || !res.ToolResult.Error || !strings.Contains(res.Content, "会話の上限に入らないため、渡せません") || strings.Contains(res.Content, "大大") {
+		t.Errorf("結果: %+v", res)
 	}
+	if len(g.calls) != 2 || ms[len(ms)-1].Content != "範囲を絞ります" {
+		t.Errorf("ループは続くはず: 生成 %d 回 / 最後 %q", len(g.calls), ms[len(ms)-1].Content)
+	}
+	if u, _ := cs.Usage(c.ID); u.Tokens > u.Limit {
+		t.Errorf("上限を超えています: %d / %d", u.Tokens, u.Limit)
+	}
+}
 
-	// メーターは上限を超えたまま。今すぐ要約しても、最新の組は要約しないので、そう伝える
-	// (「最近の発言が上限の半分に収まっています」は事実と逆なので出さない)
+// 最新の組だけで会話の上限を超えている会話(上限を下げた・この仕組みより前に保存された)では、
+// 今すぐ要約しても要約するものが無い。エラーではなくお知らせで、次に送信すれば要約されると伝える。
+// 次の質問を送ると、前の組が要約の対象になり、要約してから答える
+func TestCompactNowWhenLatestTurnIsTooLong(t *testing.T) {
+	big := fakeTool{name: "big", run: func(context.Context, tool.Args) (string, error) {
+		return strings.Repeat("大", 2500), nil
+	}}
+	g := &fakeGen{replies: []fakeReply{{toolCalls: []ToolCall{toolCall("big")}}, {content: "受け取りました"}}}
+	cs, _, c := newToolConversation(t, g, big)
+	cs.SetLimits(4000, 100)
+	send(t, cs, c, "大きいのを")
+	cs.SetLimits(2000, 100) // 最新の組だけで上限を超えた状態にする
 	if u, _ := cs.Usage(c.ID); u.Tokens <= u.Limit {
 		t.Fatalf("メーター: %d / %d(超えているはず)", u.Tokens, u.Limit)
 	}
-	evs = nil
+
+	var evs []ChatEvent
 	cs.Compact(context.Background(), c.ID, func(ev ChatEvent) { evs = append(evs, ev) })
-	if errs := errorsOf(evs); len(errs) != 1 || errs[0] != errOnlyLatestTurn.Error() {
-		t.Errorf("今すぐ要約のエラー: %v", errs)
+	// 「最近の発言が上限の半分に収まっています」は事実と逆なので出さない
+	if errs, notes := errorsOf(evs), noticesOf(evs); len(errs) != 0 || len(notes) != 1 || notes[0] != errOnlyLatestTurn.Error() {
+		t.Errorf("今すぐ要約: エラー %v / お知らせ %v", errs, notes)
 	}
 
-	// 次の質問を送ると、前の組が要約の対象になり、要約してから答える
 	g.replies = []fakeReply{{content: "- 大きい結果を受け取った"}, {content: "続きです"}}
 	evs = sendRaw(cs, c, "続けて")
 	if errs := errorsOf(evs); len(errs) != 0 {
@@ -376,4 +397,15 @@ func TestAgentStopsWhenToolResultsOverflow(t *testing.T) {
 	if u, _ := cs.Usage(c.ID); u.Tokens > u.Limit {
 		t.Errorf("要約のあとも超えています: %d / %d", u.Tokens, u.Limit)
 	}
+}
+
+// noticesOf はイベントからお知らせ(notice)の文だけを取り出す
+func noticesOf(evs []ChatEvent) []string {
+	var out []string
+	for _, ev := range evs {
+		if ev.Type == "notice" {
+			out = append(out, ev.Text)
+		}
+	}
+	return out
 }

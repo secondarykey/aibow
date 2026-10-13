@@ -52,6 +52,7 @@ type Generator interface {
 //	           要約に失敗したときも Compact.Error に理由を入れて送る
 //	usage    : メーターの値(モデルに渡す文字列のトークン数 / 会話の上限)。生成の前と、返事を保存したあとに送る
 //	error    : エラー
+//	notice   : エラーではないお知らせ(Text。画面はトーストに出す)。例: 今すぐ要約で、要約するものが無かった
 //	done     : 終わり。必ず最後に1回だけ送る。保存した最後の返事があれば Reply に入る
 type ChatEvent struct {
 	ConversationID uuid.UUID      `json:"conversation_id"` // どの会話の送信か。画面は表示中の会話のものだけを出す

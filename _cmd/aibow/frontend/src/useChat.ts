@@ -12,6 +12,7 @@ import { messageItems, thinkLabel, toolCount, turnView } from "./transcript";
 import type { AssistantView, Transcript } from "./transcript";
 import type { Conversations } from "./useConversations";
 import type { Busy } from "./useModels";
+import type { Notifier } from "./toast";
 import { errorMessage } from "./errors";
 
 const secSince = (t: number) => Math.round((performance.now() - t) / 1000);
@@ -38,9 +39,10 @@ export interface Chat {
   stop(): void;
 }
 
-export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conversations): Chat {
+export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conversations, n: Notifier): Chat {
   const { addUser, addError, addAssistant, updateAssistant, setSaved, remove, reset } = t;
   const { current, draft, openCount, open, adopt, flushSettings, reloadList, setUsage } = convs;
+  const { notify } = n;
   const [generatingId, setGeneratingId] = useState<string | null>(null);
   // モデルに渡した文字列は保存しないので、会話ごとにここで覚えておく(再起動すると消える)
   const [prompts, setPrompts] = useState<Record<string, string>>({});
@@ -207,6 +209,10 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
           if (viewing.current === id) addError(ev.error ?? "");
           else console.warn(`別の会話でのエラー: ${ev.error}`);
           return;
+        case "notice":
+          // エラーではないお知らせ(今すぐ要約で、要約するものが無かった、など)。会話の表示ではなくトーストに出す
+          if (viewing.current === id) notify(ev.text ?? "", { ms: 8000 });
+          return;
         case "thinking": {
           // 思考は畳んだ状態で出し、クリックで開いたときだけ中身を見せる
           if (!l.view.thinking) l.thinkStart = performance.now();
@@ -253,7 +259,7 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
     setGeneratingId(null);
     setBusy("idle");
     reloadList().catch(() => {}); // タイトルと並び順(更新の新しい順)が変わる
-  }, [open, reloadList, setUsage, addError, addAssistant, updateAssistant, setSaved, remove, setBusy]);
+  }, [open, reloadList, setUsage, addError, addAssistant, updateAssistant, setSaved, remove, setBusy, notify]);
 
   const send = useCallback(async (text: string) => {
     if (controller.current || starting.current) return;

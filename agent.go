@@ -95,6 +95,10 @@ func (cs *Conversations) runTurn(ctx context.Context, conv Conversation, history
 				}
 				emit(ChatEvent{ConversationID: conv.ID, Type: "tool_start", ToolCall: &c})
 				res = cs.runTool(ctx, conv, c)
+				var err error
+				if res, err = cs.fitResult(conv.Settings, history, res); err != nil {
+					return last, err
+				}
 			}
 			if err := cs.save(res, ""); err != nil {
 				return last, err
@@ -166,6 +170,29 @@ func (cs *Conversations) callTool(ctx context.Context, set ConversationSettings,
 		}
 		return "", fmt.Errorf("時間の上限(%d 秒)を超えたため止めました", int(toolTimeout.Seconds()))
 	}
+}
+
+// fitResult は、結果を足すと今の組が会話の上限を超えるとき、結果の代わりに「長すぎて渡せない」エラーの結果にする。
+//
+// 結果をそのまま保存すると、次の生成の前の checkFits で止まり、会話は上限を超えたまま残ってしまう
+// (最新の組は要約しないので、次の質問を送るまで「今すぐ要約」もできない)。
+// 代わりにエラーとして返せば、モデルは範囲を絞って呼び直せる(失敗しても送信は止めない、と同じ考え方)。
+// ツールは実行済みなので、結果を捨てるだけ。
+func (cs *Conversations) fitResult(set ConversationSettings, history []StoredMessage, res StoredMessage) (StoredMessage, error) {
+	limit := cs.currentLimits().history
+	with, err := cs.turnTokens(set, append(slices.Clip(history), res))
+	if err != nil || with <= limit {
+		return res, err
+	}
+	without, err := cs.turnTokens(set, history)
+	if err != nil {
+		return res, err
+	}
+	res.Content = fmt.Sprintf("%s結果が長すぎて会話の上限に入らないため、渡せません(結果は約 %d トークン、残りは約 %d トークン)。"+
+		"範囲を絞って呼び直してください(list_files なら path で下のフォルダを、read_file なら offset と limit で行を指定する)",
+		errorPrefix, with-without, max(0, limit-without))
+	res.ToolResult.Error = true
+	return res, nil
 }
 
 // toolMessage はツールの結果の発言を作る。

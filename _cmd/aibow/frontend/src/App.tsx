@@ -76,7 +76,7 @@ export default function App() {
   const { addError } = transcript;
   const models = useModels(toasts, transcript, setBusy);
   const convs = useConversations(addError);
-  const chat = useChat(transcript, setBusy, convs);
+  const chat = useChat(transcript, setBusy, convs, toasts);
   const app = useAppSettings(toasts, transcript, setBusy, models.reload);
 
   // 起動時: 新しい会話の画面に移ってから、モデルの一覧を取る。
