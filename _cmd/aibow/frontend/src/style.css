@@ -401,10 +401,13 @@ nav.conversations.collapsed .settings.active { color: var(--accent); }
 .settings-view button.make-default, .settings-view button.apply { margin-top: 12px; }
 /* ツール: グループ(ローカル / MCP のサーバー)ごとに「使う」のチェック。使うグループだけ、ツールの一覧を字下げして開く。
    説明は1行で切って、マウスを乗せると全部出す */
-.tool-group { margin: 6px 0; }
+.tool-group { margin: 6px 0 6px 20px; }
 .tool-group-head { display: flex; align-items: center; gap: 8px; min-height: 28px; }
 .settings-view .tool-group-head label.check { margin: 0; }
 .tool-group-name { font-weight: 600; }
+/* チェックを外したグループの ▶(畳んだ一覧を開く)。チェックしたグループは ▶ の代わりに同じ幅を空けて、名前の位置をそろえる */
+.tool-open { display: inline-flex; padding: 2px; margin-left: -20px; width: 18px; border-color: transparent; background: transparent; color: var(--muted); }
+.tool-open:hover { color: var(--text); }
 .tool-group:not(.on) .tool-group-name { color: var(--muted); font-weight: 400; }
 .tool-count { color: var(--muted); font-size: 12px; }
 .tool-reload { display: inline-flex; padding: 2px 4px; border-color: transparent; background: transparent; color: var(--muted); }

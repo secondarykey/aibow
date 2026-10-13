@@ -399,6 +399,21 @@ export interface ModelInfo {
 }
 
 /**
+ * NotDefault は、新しい会話で最初から選ばないグループ。
+ */
+export interface NotDefault {
+    /**
+     * 組み込みのツール
+     */
+    "builtin"?: boolean;
+
+    /**
+     * MCP のサーバー(settings.json の名前)
+     */
+    "servers"?: string[] | null;
+}
+
+/**
  * ReplyStats は返事1件の記録。エンジンの GenerateStats に、会話の仕組みで測った値を足したもの。
  * 再起動した後も、画面の統計行や「思考の過程(N秒)」を作り直せるように保存する。
  */
@@ -561,6 +576,11 @@ export interface ToolPrefsView {
     "servers": { [_ in string]?: ToolPolicy } | null;
     "tools": { [_ in string]?: ToolPolicy } | null;
     "known": { [_ in string]?: KnownTool[] | null } | null;
+
+    /**
+     * 新しい会話で最初から選ばないグループ
+     */
+    "notDefault": NotDefault;
 
     /**
      * tools.json の場所(画面に出す)

@@ -261,26 +261,13 @@ func (s *ChatService) Version() string {
 
 // ---- MCP のサーバーとツールの扱い ------------------------------------------------------
 
-// MCPServers は、会話ごとに使うものを選ぶ MCP のサーバーの一覧(settings.json に書いたもののうち、
-// 設定の画面でサーバーごと「使わない」にしていないもの)。書いてなければ空。
+// MCPServers は、会話ごとに使うものを選ぶ MCP のサーバーの一覧(settings.json に書いたもの全部)。書いてなければ空。
+// 設定の画面の「ツール」のチェックは「新しい会話で最初から選ぶか」だけなので、チェックを外したものもここに出す。
 func (s *ChatService) MCPServers() []mcpclient.ServerInfo {
-	out := []mcpclient.ServerInfo{}
 	if s.mcp == nil {
-		return out
+		return []mcpclient.ServerInfo{}
 	}
-	view := s.prefs.View()
-	for _, info := range s.mcp.Infos() {
-		if view.Servers[info.Name] != aibow.ToolOff {
-			out = append(out, info)
-		}
-	}
-	return out
-}
-
-// BuiltinAvailable は、組み込みのツールを会話で使えるか(設定の画面の「ツール」で、組み込みのグループを使わないにしていないか)。
-// 入力欄の上の「この会話のツール」に、組み込みを出すかどうかに使う。
-func (s *ChatService) BuiltinAvailable() bool {
-	return s.prefs.View().Builtin != aibow.ToolOff
+	return s.mcp.Infos()
 }
 
 // AllMCPServers は settings.json に書いた MCP のサーバー全部(設定の画面の「ツール」に出す)。
@@ -319,23 +306,17 @@ func (s *ChatService) SetToolPolicy(name string, policy aibow.ToolPolicy) error 
 	return nil
 }
 
-// SetGroupPolicy は、ツールのグループ全部の扱いの PC の既定を変える。group が空なら組み込みのツール、そうでなければ MCP のサーバー。
-// 画面ではグループの「使う」のチェック(使わないなら off、使うなら空 = 決めていない)。
-func (s *ChatService) SetGroupPolicy(group string, policy aibow.ToolPolicy) error {
-	var err error
-	if group == "" {
-		err = s.prefs.SetBuiltinPolicy(policy)
-	} else {
-		err = s.prefs.SetServerPolicy(group, policy)
-	}
-	if err != nil {
+// SetGroupDefault は、ツールのグループを新しい会話で最初から選ぶかを変える(tools.json に書く)。
+// group が空なら組み込みのツール、そうでなければ MCP のサーバー。画面ではグループのチェック。
+func (s *ChatService) SetGroupDefault(group string, on bool) error {
+	if err := s.prefs.SetGroupDefault(group, on); err != nil {
 		return err
 	}
 	name := group
 	if name == "" {
 		name = "組み込み"
 	}
-	log.Printf("ツールのグループ %s の扱いの PC の既定: %s", name, policyLabel(policy))
+	log.Printf("ツールのグループ %s を新しい会話で最初から選ぶ: %v", name, on)
 	return nil
 }
 

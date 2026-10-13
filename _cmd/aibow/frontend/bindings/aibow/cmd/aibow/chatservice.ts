@@ -34,14 +34,6 @@ export function AppSettings(): $CancellablePromise<aibow$0.AppSettings> {
 }
 
 /**
- * BuiltinAvailable は、組み込みのツールを会話で使えるか(設定の画面の「ツール」で、組み込みのグループを使わないにしていないか)。
- * 入力欄の上の「この会話のツール」に、組み込みを出すかどうかに使う。
- */
-export function BuiltinAvailable(): $CancellablePromise<boolean> {
-    return $Call.ByID(1869554825);
-}
-
-/**
  * BuiltinTools は組み込みのツール(aibow の中で動くツール)の一覧(設定の画面の「ツール」に出す)。
  */
 export function BuiltinTools(): $CancellablePromise<aibow$0.KnownTool[] | null> {
@@ -101,8 +93,8 @@ export function LoadToolList(server: string): $CancellablePromise<void> {
 }
 
 /**
- * MCPServers は、会話ごとに使うものを選ぶ MCP のサーバーの一覧(settings.json に書いたもののうち、
- * 設定の画面でサーバーごと「使わない」にしていないもの)。書いてなければ空。
+ * MCPServers は、会話ごとに使うものを選ぶ MCP のサーバーの一覧(settings.json に書いたもの全部)。書いてなければ空。
+ * 設定の画面の「ツール」のチェックは「新しい会話で最初から選ぶか」だけなので、チェックを外したものもここに出す。
  */
 export function MCPServers(): $CancellablePromise<mcpclient$0.ServerInfo[] | null> {
     return $Call.ByID(287669679);
@@ -161,11 +153,11 @@ export function SetGPULayers(n: number): $CancellablePromise<aibow$0.ModelInfo |
 }
 
 /**
- * SetGroupPolicy は、ツールのグループ全部の扱いの PC の既定を変える。group が空なら組み込みのツール、そうでなければ MCP のサーバー。
- * 画面ではグループの「使う」のチェック(使わないなら off、使うなら空 = 決めていない)。
+ * SetGroupDefault は、ツールのグループを新しい会話で最初から選ぶかを変える(tools.json に書く)。
+ * group が空なら組み込みのツール、そうでなければ MCP のサーバー。画面ではグループのチェック。
  */
-export function SetGroupPolicy(group: string, policy: aibow$0.ToolPolicy): $CancellablePromise<void> {
-    return $Call.ByID(2609014370, group, policy);
+export function SetGroupDefault(group: string, on: boolean): $CancellablePromise<void> {
+    return $Call.ByID(3125203925, group, on);
 }
 
 /**

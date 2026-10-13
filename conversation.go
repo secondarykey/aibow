@@ -221,24 +221,26 @@ func (cs *Conversations) UpdateSettings(id uuid.UUID, s ConversationSettings) er
 
 // Defaults は新しい会話の既定の設定を返す。
 //
-// 使う MCP のサーバーは、保存した既定ではなく、設定の画面の「ツール」で使うにしているサーバー全部にする
+// 使う MCP のサーバーと組み込みのツールを使うかは、保存した既定ではなく、設定の画面の「ツール」のグループのチェックで決める
 // (「ツール」のチェックが「新しい会話で最初から使う」の意味。決める場所を1つにするため、保存した既定には入れない)。
+// チェックを外したものも、会話の「この会話のツール」からはいつでも選べる。
 func (cs *Conversations) Defaults() ConversationSettings {
 	cs.mu.Lock()
 	d := cs.defaults
 	cs.mu.Unlock()
 	d.MCPServers = cs.defaultServers()
+	d.BuiltinOff = !cs.prefs.groupDefault("")
 	return d
 }
 
-// defaultServers は、新しい会話で最初から使う MCP のサーバー(settings.json のうち、PC の既定でサーバーごと「使わない」にしていないもの)。
+// defaultServers は、新しい会話で最初から使う MCP のサーバー(settings.json のうち、「ツール」でチェックを外していないもの)。
 func (cs *Conversations) defaultServers() []string {
 	out := []string{}
 	if cs.remote == nil {
 		return out
 	}
 	for _, name := range cs.remote.Servers() {
-		if p, ok := cs.prefs.groupPolicy(name); !ok || p != ToolOff {
+		if cs.prefs.groupDefault(name) {
 			out = append(out, name)
 		}
 	}

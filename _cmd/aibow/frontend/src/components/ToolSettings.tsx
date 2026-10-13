@@ -1,7 +1,8 @@
 // 設定の画面の「ツール」: ツールを使う / 使わない(この PC の既定 = tools.json)。
 //
 // ツールはグループに分けて出す: 組み込み(aibow の中で動くツール)と、MCP のサーバーごと。
-// グループの「使う」を外すと、そのグループのツールは全部使わない(一覧も畳む)。使うにすると、一覧を開いてツールごとに選べる。
+// グループのチェックは「新しい会話で最初から使う」の意味(使えなくするのではない。会話の「この会話のツール」からはいつでも選べる)。
+// チェックしたグループは一覧を開いて出す。外したグループは畳むが、▶ で開いてツールごとに選べる(会話で選んで使うこともあるため)。
 //
 // ツールの扱いは「会話ごとの上書き → この PC の既定 → 決まりの既定」の順に決まる(Go の Conversations.toolPolicy)。
 // ここで変えるのは、この PC の既定のうち「使わない」だけ。使わないツールはモデルに見せない(説明もプロンプトに入らない)ので、
@@ -10,7 +11,7 @@
 // MCP のサーバーのツールの一覧は、サーバーを最後に起動したときに Go が tools.json に覚えたもの。
 // 使うグループで一覧がまだ無ければ、Go がサーバーを一時的に起動して受け取る(ChatService.LoadToolList)。読み直すボタンでも受け取り直せる。
 import { useCallback, useEffect, useRef, useState } from "react";
-import { LuLoaderCircle, LuRefreshCw } from "react-icons/lu";
+import { LuChevronDown, LuChevronRight, LuLoaderCircle, LuRefreshCw } from "react-icons/lu";
 import { ChatService } from "../../bindings/aibow/cmd/aibow";
 import { ToolPolicy } from "../../bindings/aibow";
 import type { KnownTool, ToolPrefsView } from "../../bindings/aibow";
@@ -31,6 +32,7 @@ export function ToolSettings({ onChanged }: Props) {
   const [loading, setLoading] = useState<Record<string, boolean>>({});   // ツールの一覧を受け取っている途中のサーバー
   const [listErrors, setListErrors] = useState<Record<string, string>>({}); // ツールの一覧を受け取れなかった理由
   const tried = useRef(new Set<string>()); // 一覧が無いので自動で受け取りにいったサーバー(失敗しても繰り返さない)
+  const [opened, setOpened] = useState<Record<string, boolean>>({}); // チェックを外したグループのうち、▶ で開いたもの
 
   const reload = useCallback(() => {
     ChatService.ToolPrefs().then(setPrefs, err => setError(errorMessage(err)));
@@ -50,17 +52,17 @@ export function ToolSettings({ onChanged }: Props) {
       .finally(() => setLoading(l => ({ ...l, [name]: false })));
   }, [reload]);
 
-  // 使うサーバーで一覧がまだ無ければ、自動で受け取る(使わないサーバーは、使うにしたときに受け取る)
+  // 開いているグループで一覧がまだ無ければ、自動で受け取る
   useEffect(() => {
     if (!prefs) return;
     for (const s of servers) {
-      const on = prefs.servers?.[s.name] !== ToolPolicy.ToolOff;
-      if (on && (prefs.known?.[s.name]?.length ?? 0) === 0 && !tried.current.has(s.name)) {
+      const shown = !prefs.notDefault.servers?.includes(s.name) || opened[s.name];
+      if (shown && (prefs.known?.[s.name]?.length ?? 0) === 0 && !tried.current.has(s.name)) {
         tried.current.add(s.name);
         loadList(s.name);
       }
     }
-  }, [prefs, servers, loadList]);
+  }, [prefs, servers, loadList, opened]);
 
   if (!prefs) return error ? <div className="msg error">{error}</div> : null;
 
@@ -74,17 +76,19 @@ export function ToolSettings({ onChanged }: Props) {
   };
   const setTools = (changes: { name: string; policy: ToolPolicy }[]) =>
     after(Promise.all(changes.map(c => ChatService.SetToolPolicy(c.name, c.policy))));
-  // グループの「使う」: 使わないなら off、使うなら決めていない状態に戻す
-  const setGroup = (group: string, on: boolean) =>
-    after(ChatService.SetGroupPolicy(group, on ? ToolPolicy.$zero : ToolPolicy.ToolOff));
+  // グループのチェック: 新しい会話で最初から使うか
+  const setGroup = (group: string, on: boolean) => after(ChatService.SetGroupDefault(group, on));
+  const toggleOpen = (group: string) => setOpened(o => ({ ...o, [group]: !o[group] }));
 
   return (
     <div className="tool-settings">
       {(error || prefs.error) && <div className="msg error">{error || prefs.error}</div>}
       <ToolGroup
         name={BUILTIN}
-        title="aibow の中で動くツール"
-        on={prefs.builtin !== ToolPolicy.ToolOff}
+        title="aibow の中で動くツール。チェックすると、新しい会話で最初から使う"
+        on={!prefs.notDefault.builtin}
+        open={opened[""]}
+        onToggleOpen={() => toggleOpen("")}
         onToggle={on => setGroup("", on)}
         tools={local}
         prefs={prefs}
@@ -96,12 +100,11 @@ export function ToolSettings({ onChanged }: Props) {
         <ToolGroup
           key={s.name}
           name={s.name}
-          title={s.http ? "URL でつなぐ MCP のサーバー" : "aibow が起動する MCP のサーバー"}
-          on={prefs.servers?.[s.name] !== ToolPolicy.ToolOff}
-          onToggle={on => {
-            setGroup(s.name, on);
-            if (on && (prefs.known?.[s.name]?.length ?? 0) === 0) loadList(s.name);
-          }}
+          title={(s.http ? "URL でつなぐ MCP のサーバー" : "aibow が起動する MCP のサーバー") + "。チェックすると、新しい会話で最初から使う"}
+          on={!prefs.notDefault.servers?.includes(s.name)}
+          open={opened[s.name]}
+          onToggleOpen={() => toggleOpen(s.name)}
+          onToggle={on => setGroup(s.name, on)}
           tools={prefs.known?.[s.name] ?? []}
           prefs={prefs}
           groupPolicy={prefs.servers?.[s.name] ?? ToolPolicy.$zero}
@@ -119,11 +122,14 @@ export function ToolSettings({ onChanged }: Props) {
   );
 }
 
-// ToolGroup はツールのグループ1つ(組み込み / MCP のサーバー1つ)。使うときだけ、ツールの一覧を開く
-function ToolGroup({ name, title, on, onToggle, tools, prefs, groupPolicy, prefix = "", label, onSetTools, loading, listError, onReload }: {
+// ToolGroup はツールのグループ1つ(組み込み / MCP のサーバー1つ)。
+// チェックしている(新しい会話で最初から使う)グループは一覧を開いて出す。外したグループは畳み、▶ で開ける
+function ToolGroup({ name, title, on, open, onToggleOpen, onToggle, tools, prefs, groupPolicy, prefix = "", label, onSetTools, loading, listError, onReload }: {
   name: string;
   title: string;
   on: boolean;
+  open?: boolean;
+  onToggleOpen(): void;
   onToggle(on: boolean): void;
   tools: KnownTool[];
   prefs: ToolPrefsView;
@@ -136,27 +142,33 @@ function ToolGroup({ name, title, on, onToggle, tools, prefs, groupPolicy, prefi
   onReload?(): void;
 }) {
   const using = tools.filter(t => prefs.tools?.[t.name] !== ToolPolicy.ToolOff).length;
+  const shown = on || open;
   return (
     <div className={"tool-group" + (on ? " on" : "")}>
       <div className="tool-group-head">
+        {!on && (
+          <button type="button" className="tool-open" onClick={onToggleOpen} title={open ? "畳む" : "ツールの一覧を開く"}>
+            {open ? <LuChevronDown /> : <LuChevronRight />}
+          </button>
+        )}
         <label className="check" title={title}>
           <input type="checkbox" checked={on} onChange={e => onToggle(e.target.checked)} />
           <span className="tool-group-name">{name}</span>
         </label>
-        {on && tools.length > 0 && <span className="tool-count">{using} / {tools.length}</span>}
-        {onReload && on && (
+        {shown && tools.length > 0 && <span className="tool-count">{using} / {tools.length}</span>}
+        {onReload && shown && (
           <button type="button" className="tool-reload" disabled={loading} onClick={onReload} title="ツールの一覧を読み直す(サーバーを一時的に起動します)">
             {loading ? <LuLoaderCircle className="spin" /> : <LuRefreshCw />}
           </button>
         )}
-        {on && tools.length > 0 && (
+        {shown && tools.length > 0 && (
           <span className="tool-bulk">
             <button type="button" onClick={() => onSetTools(tools.map(t => ({ name: t.name, policy: ToolPolicy.$zero })))}>すべて使う</button>
             <button type="button" onClick={() => onSetTools(tools.map(t => ({ name: t.name, policy: ToolPolicy.ToolOff })))}>すべて使わない</button>
           </span>
         )}
       </div>
-      {on && (
+      {shown && (
         <div className="tool-group-body">
           {listError && <div className="msg error">{listError}</div>}
           {tools.length === 0 ? (

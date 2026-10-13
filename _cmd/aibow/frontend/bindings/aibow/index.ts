@@ -18,6 +18,7 @@ export type {
     KnownTool,
     ModelEntry,
     ModelInfo,
+    NotDefault,
     ReplyStats,
     StoredMessage,
     ToolCall,

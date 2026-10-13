@@ -157,9 +157,14 @@ func TestDefaultServers(t *testing.T) {
 	if got := mustCreate(t, cs).Settings.MCPServers; !slices.Equal(got, []string{"fake"}) {
 		t.Errorf("「ツール」で使うサーバーを最初から選ぶ: %v", got)
 	}
-	prefs.SetServerPolicy("fake", ToolOff)
-	if got := cs.Defaults().MCPServers; len(got) != 0 {
-		t.Errorf("使わないにしたサーバーは選ばない: %v", got)
+	prefs.SetGroupDefault("fake", false)
+	prefs.SetGroupDefault("", false)
+	if d := cs.Defaults(); len(d.MCPServers) != 0 || !d.BuiltinOff {
+		t.Errorf("「ツール」でチェックを外したものは、新しい会話で最初から選ばない: %+v", d)
+	}
+	prefs.SetGroupDefault("", true)
+	if d := cs.Defaults(); d.BuiltinOff {
+		t.Error("チェックを戻すと選ぶ")
 	}
 	set := cs.Defaults()
 	set.MCPServers = []string{"fake"}
@@ -397,19 +402,44 @@ func TestBuiltinOffInConversation(t *testing.T) {
 	}
 }
 
-// 前の名前(「ローカル」と呼んでいたころ)の tools.json(local のキー)も読める
-func TestToolPrefsLegacyLocal(t *testing.T) {
+// 前の名前(「ローカル」と呼んでいたころ)の tools.json(local のキー)も読める。
+// 前の画面で書いたグループごとの「使わない」は、「新しい会話で最初から選ばない」に読み替える(使えなくはしない)
+func TestToolPrefsLegacy(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "tools.json")
-	os.WriteFile(path, []byte(`{"local": "off"}`), 0o644)
+	os.WriteFile(path, []byte(`{"local": "allow", "servers": {"Blender": "off", "filesystem": "allow"}}`), 0o644)
 	p, err := LoadToolPrefs(path)
-	if got, ok := p.groupPolicy(""); err != nil || !ok || got != ToolOff {
+	if got, ok := p.groupPolicy(""); err != nil || !ok || got != ToolAllow {
 		t.Fatalf("local を builtin として読む: %v %v %v", got, ok, err)
+	}
+	if _, ok := p.groupPolicy("Blender"); ok || p.groupDefault("Blender") || !p.groupDefault("filesystem") {
+		t.Error("グループの off は「最初から選ばない」に読み替える")
 	}
 	if err := p.SetToolPolicy("x", ToolOff); err != nil {
 		t.Fatal(err)
 	}
-	if b, _ := os.ReadFile(path); !strings.Contains(string(b), `"builtin": "off"`) || strings.Contains(string(b), `"local"`) {
-		t.Errorf("書くときは builtin のキーにする: %s", b)
+	b, _ := os.ReadFile(path)
+	if !strings.Contains(string(b), `"builtin": "allow"`) || strings.Contains(string(b), `"local"`) || !strings.Contains(string(b), `"notDefault"`) {
+		t.Errorf("書くときは新しい形にする: %s", b)
+	}
+	os.WriteFile(path, []byte(`{"builtin": "off"}`), 0o644)
+	if p, _ := LoadToolPrefs(path); p.groupDefault("") {
+		t.Error("組み込みの off も読み替える")
+	}
+}
+
+// 「ツール」でチェックを外した(最初から選ばない)サーバーでも、会話で選べば使う
+func TestNotDefaultServerCanBeSelected(t *testing.T) {
+	g := &fakeGen{content: "はい"}
+	cs, c, _ := newWorkDirConversation(t, g)
+	r := &fakeRemote{tools: []tool.Tool{&remoteTool{name: "fake__write"}}}
+	cs.SetRemoteTools(r)
+	prefs := &ToolPrefs{}
+	prefs.SetGroupDefault("fake", false)
+	cs.SetToolPrefs(prefs)
+	useFake(t, cs, &c)
+	sendAnswering(cs, context.Background(), c, "やあ", func(*ConfirmRequest) bool { return false })
+	if !r.started || !slices.Contains(promptToolNames(g.calls[0]), "fake__write") {
+		t.Errorf("会話で選べば使う: 起動 %v, %v", r.started, promptToolNames(g.calls[0]))
 	}
 }
 

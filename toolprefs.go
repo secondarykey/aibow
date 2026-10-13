@@ -59,6 +59,15 @@ type toolsFile struct {
 	Tools map[string]ToolPolicy `json:"tools,omitempty"`
 	// Known は、サーバーを最後に起動したときに見えたツールの一覧。起動のたびに置き換える
 	Known map[string][]KnownTool `json:"known,omitempty"`
+	// NotDefault は、新しい会話で最初から選ばないグループ(設定の画面の「ツール」で、グループのチェックを外したもの)。
+	// 使えなくするのではない。会話の「この会話のツール」からは、いつでも選べる
+	NotDefault NotDefault `json:"notDefault,omitzero"`
+}
+
+// NotDefault は、新しい会話で最初から選ばないグループ。
+type NotDefault struct {
+	Builtin bool     `json:"builtin,omitempty"` // 組み込みのツール
+	Servers []string `json:"servers,omitempty"` // MCP のサーバー(settings.json の名前)
 }
 
 // ToolPrefs は、その PC でのツールの扱いの既定(tools.json)。nil でも使える(何も決めていない扱い)。
@@ -84,6 +93,7 @@ func LoadToolPrefs(path string) (*ToolPrefs, error) {
 		p.data.Builtin = p.data.LegacyLocal
 	}
 	p.data.LegacyLocal = ""
+	p.data.moveGroupOff()
 	if err == nil {
 		err = p.data.validate()
 	}
@@ -92,6 +102,26 @@ func LoadToolPrefs(path string) (*ToolPrefs, error) {
 		return p, fmt.Errorf("ツールの扱いのファイル %s を読めません(ツールの扱いは決まりの既定で動き、ファイルは書き換えません): %w", path, err)
 	}
 	return p, nil
+}
+
+// moveGroupOff は、グループごとの「使わない」を「新しい会話で最初から選ばない」に読み替える。
+//
+// 最初は、設定の画面の「ツール」でグループのチェックを外すと「どの会話でも使えない」(グループの off)にしていた。
+// 会話で選んでいたものまで消えて分かりにくかったので、「新しい会話で最初から選ばない」(NotDefault)に変えた。
+// 前の画面で書いた off はこちらの意味で書いたものなので、読むときに移す。グループの扱い(servers / builtin)には、確認する・確認しないだけが残る。
+func (f *toolsFile) moveGroupOff() {
+	if f.Builtin == ToolOff {
+		f.Builtin, f.NotDefault.Builtin = "", true
+	}
+	for name, p := range f.Servers {
+		if p == ToolOff {
+			delete(f.Servers, name)
+			if !slices.Contains(f.NotDefault.Servers, name) {
+				f.NotDefault.Servers = append(f.NotDefault.Servers, name)
+			}
+		}
+	}
+	slices.Sort(f.NotDefault.Servers)
 }
 
 func (f toolsFile) validate() error {
@@ -171,6 +201,34 @@ func setPolicy(m map[string]ToolPolicy, key string, policy ToolPolicy) map[strin
 	return m
 }
 
+// SetGroupDefault は、グループ(組み込みなら空、MCP ならサーバーの名前)を新しい会話で最初から選ぶかを変えて、tools.json に書く。
+func (p *ToolPrefs) SetGroupDefault(group string, on bool) error {
+	return p.update(func(f *toolsFile) {
+		if group == "" {
+			f.NotDefault.Builtin = !on
+			return
+		}
+		f.NotDefault.Servers = slices.DeleteFunc(f.NotDefault.Servers, func(n string) bool { return n == group })
+		if !on {
+			f.NotDefault.Servers = append(f.NotDefault.Servers, group)
+			slices.Sort(f.NotDefault.Servers)
+		}
+	}, "")
+}
+
+// groupDefault は、グループを新しい会話で最初から選ぶか(決めていなければ選ぶ)。
+func (p *ToolPrefs) groupDefault(group string) bool {
+	if p == nil {
+		return true
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if group == "" {
+		return !p.data.NotDefault.Builtin
+	}
+	return !slices.Contains(p.data.NotDefault.Servers, group)
+}
+
 // setKnown は、サーバーを起動したときに見えたツールの一覧を覚える(前の一覧と同じなら書かない)。
 func (p *ToolPrefs) setKnown(server string, tools []KnownTool) error {
 	if p == nil {
@@ -213,7 +271,8 @@ func (p *ToolPrefs) update(change func(*toolsFile), policy ToolPolicy) error {
 }
 
 func (f toolsFile) clone() toolsFile {
-	c := toolsFile{Builtin: f.Builtin, Servers: maps.Clone(f.Servers), Tools: maps.Clone(f.Tools), Known: map[string][]KnownTool{}}
+	c := toolsFile{Builtin: f.Builtin, Servers: maps.Clone(f.Servers), Tools: maps.Clone(f.Tools), Known: map[string][]KnownTool{},
+		NotDefault: NotDefault{Builtin: f.NotDefault.Builtin, Servers: slices.Clone(f.NotDefault.Servers)}}
 	for k, v := range f.Known {
 		c.Known[k] = slices.Clone(v)
 	}
@@ -245,12 +304,13 @@ func (p *ToolPrefs) save() error {
 
 // ToolPrefsView は、画面の設定に出すための PC の既定の写し。
 type ToolPrefsView struct {
-	Builtin ToolPolicy             `json:"builtin"` // 組み込みのツール全部の扱い(空なら決めていない)
-	Servers map[string]ToolPolicy  `json:"servers"`
-	Tools   map[string]ToolPolicy  `json:"tools"`
-	Known   map[string][]KnownTool `json:"known"`
-	Path    string                 `json:"path"`  // tools.json の場所(画面に出す)
-	Error   string                 `json:"error"` // 読めなかったときの理由(書き換えない)
+	Builtin    ToolPolicy             `json:"builtin"` // 組み込みのツール全部の扱い(空なら決めていない)
+	Servers    map[string]ToolPolicy  `json:"servers"`
+	Tools      map[string]ToolPolicy  `json:"tools"`
+	Known      map[string][]KnownTool `json:"known"`
+	NotDefault NotDefault             `json:"notDefault"` // 新しい会話で最初から選ばないグループ
+	Path       string                 `json:"path"`       // tools.json の場所(画面に出す)
+	Error      string                 `json:"error"`      // 読めなかったときの理由(書き換えない)
 }
 
 // View は画面に出すための写しを返す。
@@ -263,6 +323,10 @@ func (p *ToolPrefs) View() ToolPrefsView {
 	defer p.mu.Unlock()
 	c := p.data.clone()
 	v.Builtin = c.Builtin
+	v.NotDefault = c.NotDefault
+	if v.NotDefault.Servers == nil {
+		v.NotDefault.Servers = []string{}
+	}
 	maps.Copy(v.Servers, c.Servers)
 	maps.Copy(v.Tools, c.Tools)
 	maps.Copy(v.Known, c.Known)
