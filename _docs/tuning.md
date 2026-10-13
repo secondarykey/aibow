@@ -149,6 +149,14 @@ stdio で aibow から起動した(`uv run --directory …`。環境は `UV_PROJ
 - ツールの名前にサーバーの名前を前に付けた後(`Blender__get_objects_summary` のように長くなった)も、4B は名前を書き間違えずに呼べた
 - 確認(引数の JSON)は問題なかったが、**1つの頼みごとで 4 回聞かれた**。「この MCP サーバーのツールはまとめて許可したい」(ロードマップの外の「MCP のツールの信頼」に記録。今はやらない)
 
+### filesystem サーバー(2026-10-14、ユーザーの使用感)
+
+qwen3.5:4b。作業フォルダを決めた会話で filesystem サーバーを使うようにした(組み込みのファイルのツールも同時に出ている)。
+
+- ファイルを読むのに、組み込みの `read_file` ではなく、filesystem サーバーの **`read_text_file`** を選んだ
+- filesystem の `edit_file`(書き換えを配列で渡す、複雑な引数)は使っていないので、4B が書けるかはまだ分からない
+- 名前空間を付ける前の会話の履歴では、前の部分を落として `list_directory` と書いた(古い名前をまねした)。今はエラーに「filesystem__list_directory のことですか?」を添える
+
 ### filesystem サーバー(2026-10-14、モデルを使わずに確かめたこと)
 
 - `npx -y @modelcontextprotocol/server-filesystem` は、初回の起動に約 10.6 秒(ほとんどが npx)。ツールは 14 個で、`read_file`・`write_file`・`edit_file` が組み込みと名前が重なる(サーバーの名前を前に付けて区別するようにした)
