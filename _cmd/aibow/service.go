@@ -44,6 +44,9 @@ type ChatService struct {
 	mcp   *mcpclient.Manager
 	prefs *aibow.ToolPrefs
 
+	// version はアプリのバージョン(_cmd/aibow/version。画面の左下に出す)
+	version string
+
 	// app はアプリ全体の設定(作業領域に関わる設定)。画面で変えると DB にも保存する
 	appMu sync.Mutex
 	app   aibow.AppSettings
@@ -65,11 +68,11 @@ type ChatService struct {
 
 // mcp は MCP のサーバー(settings.json にサーバーが無ければ nil)、prefs はツールの扱いの PC の既定(tools.json)。
 func NewChatService(engine *aibow.Engine, st aibow.Store, app aibow.AppSettings, catalog aibow.ModelCatalog,
-	initial *aibow.ModelEntry, mcp *mcpclient.Manager, prefs *aibow.ToolPrefs, notices []string, startupErr error) *ChatService {
+	initial *aibow.ModelEntry, mcp *mcpclient.Manager, prefs *aibow.ToolPrefs, version string, notices []string, startupErr error) *ChatService {
 	quit, cancel := context.WithCancel(context.Background())
 	s := &ChatService{
 		engine: engine, catalog: catalog, app: app, initial: initial, notices: notices, startupErr: startupErr,
-		quit: quit, cancelQuit: cancel, mcp: mcp, prefs: prefs,
+		quit: quit, cancelQuit: cancel, mcp: mcp, prefs: prefs, version: version,
 	}
 	if startupErr == nil {
 		s.store = st
@@ -249,6 +252,11 @@ func (s *ChatService) saveAppSetting(key string, v any, apply func(*aibow.AppSet
 	if err := aibow.SaveAppSetting(s.store, key, v); err != nil {
 		log.Printf("※ %v", err)
 	}
+}
+
+// Version はアプリのバージョン(画面の左下に出す)。起動に失敗していても返す。
+func (s *ChatService) Version() string {
+	return s.version
 }
 
 // ---- MCP のサーバーとツールの扱い ------------------------------------------------------

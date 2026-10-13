@@ -94,7 +94,7 @@ func main() {
 		Name:        "aibow",
 		Description: "ローカルLLMを自分で動かして仕組みを学ぶチャット",
 		Services: []application.Service{
-			application.NewService(NewChatService(engine, st, settings, cfg.catalog, initial, mcpm, prefs, cfg.notices, err)),
+			application.NewService(NewChatService(engine, st, settings, cfg.catalog, initial, mcpm, prefs, strings.TrimSpace(version), cfg.notices, err)),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),

@@ -1,9 +1,11 @@
-// 左側: 会話の一覧(更新の新しい順)。新規作成・切り替え・名前の変更・削除。下に設定の画面の開閉ボタン。
+// 左側: 会話の一覧(更新の新しい順)。新規作成・切り替え・名前の変更・削除。
+// 下にアプリの名前とバージョン、右に設定の画面の開閉ボタン(アイコンだけ)。
 // ウィンドウの上から下までの列。上のハンバーガーで一覧を畳める。畳んだときもアイコンだけの細い列を残し、
 // ハンバーガー・新規・設定はそこに集める。上の空いているところはタイトルバーと同じくドラッグでウィンドウを動かせる。
 // 「+ 新規」は一覧の一番上の行に置く(スクロールしても隠れないよう、一覧の外に固定する)。
-// 開いているときも畳んだときも同じアイコンを使い、開いているときだけ文字を添える(設定と同じ)
+// 開いているときも畳んだときも同じアイコンを使い、開いているときだけ文字を添える
 import { useEffect, useRef, useState } from "react";
+import { ChatService } from "../../bindings/aibow/cmd/aibow";
 import type { KeyboardEvent } from "react";
 import { LuMenu, LuPlus, LuSettings } from "react-icons/lu";
 import { toggleMaximiseOnDoubleClick } from "./TitleBar";
@@ -111,10 +113,20 @@ export function ConversationList({
         })}
       </ul>
       <div className="footer">
-        <button className={settingsCls} onClick={onToggleSettings}><LuSettings /> 設定</button>
+        <AppName />
+        <button className={"icon-btn " + settingsCls} title="設定" onClick={onToggleSettings}><LuSettings /></button>
       </div>
     </nav>
   );
+}
+
+// AppName はアプリの名前とバージョン(Go の _cmd/aibow/version)。
+function AppName() {
+  const [version, setVersion] = useState("");
+  useEffect(() => {
+    ChatService.Version().then(setVersion, () => setVersion(""));
+  }, []);
+  return <span className="app-name">AIBow{version && <span className="app-version">{version}</span>}</span>;
 }
 
 // 名前の入力欄。Enter かフォーカスが外れたら確定、Esc で取り消し(onDone に null)

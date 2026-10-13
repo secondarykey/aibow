@@ -219,3 +219,10 @@ export function UpdateConversationSettings(id: uuid$0.UUID, settings: aibow$0.Co
 export function Usage(id: uuid$0.UUID): $CancellablePromise<aibow$0.Usage | null> {
     return $Call.ByID(118846370, id);
 }
+
+/**
+ * Version はアプリのバージョン(画面の左下に出す)。起動に失敗していても返す。
+ */
+export function Version(): $CancellablePromise<string> {
+    return $Call.ByID(2667902589);
+}
