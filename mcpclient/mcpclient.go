@@ -51,7 +51,7 @@ type ServerConfig struct {
 
 	URL string `json:"url,omitempty"`
 	// Headers は、url のサーバーへのリクエストに毎回付ける HTTP ヘッダー(API キーなど)。
-	// OAuth(ブラウザでのログイン)には対応していない
+	// OAuth(ブラウザでのログイン)には、まだ対応していない(TODO.md のロードマップの外)
 	Headers map[string]string `json:"headers,omitempty"`
 
 	// Type はトランスポートの種類。書かなくてよい(command か url で決まる)。
