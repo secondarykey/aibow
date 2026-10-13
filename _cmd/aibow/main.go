@@ -94,7 +94,7 @@ func main() {
 		Name:        "aibow",
 		Description: "ローカルLLMを自分で動かして仕組みを学ぶチャット",
 		Services: []application.Service{
-			application.NewService(NewChatService(engine, st, settings, cfg.catalog, initial, mcpm, prefs, strings.TrimSpace(version), cfg.notices, err)),
+			application.NewService(NewChatService(engine, st, settings, cfg.catalog, initial, mcpm, prefs, appVersion(), cfg.notices, err)),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
@@ -107,7 +107,7 @@ func main() {
 	// Frameless: OS のタイトルバーと枠を消し、画面(frontend/src/components/TitleBar.tsx)で作る。
 	// Title は画面には出ないが、タスクバーや Alt+Tab に出る。
 	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Title:     "aibow " + strings.TrimSpace(version),
+		Title:     "aibow " + appVersion(),
 		Width:     720, // 起動時の大きさ(広げたいときは最大化かリサイズ)
 		Height:    820,
 		MinWidth:  480, // 最小の幅。画面の端に細く置いておけるよう、起動時の幅より狭くできる
@@ -124,7 +124,7 @@ func main() {
 		app.Event.Emit(windowFocusEventName)
 	})
 
-	log.Printf("aibow %s 起動", strings.TrimSpace(version))
+	log.Printf("aibow %s 起動", appVersion())
 	// Run はウィンドウが閉じられるまで返らない。返ったら defer で VRAM を解放する。
 	if err := app.Run(); err != nil {
 		log.Fatal(err)
@@ -146,7 +146,7 @@ func startMCP(cfg *appConfig) *mcpclient.Manager {
 	}
 	names := slices.Sorted(maps.Keys(sf.MCPServers))
 	log.Printf("MCP のサーバー: %s(設定ファイル: %s。要る最初の送信で起動します)", strings.Join(names, ", "), absPath(cfg.settingsPath))
-	return mcpclient.New(sf.MCPServers, mcpclient.Options{Version: strings.TrimSpace(version)})
+	return mcpclient.New(sf.MCPServers, mcpclient.Options{Version: appVersion()})
 }
 
 // loadToolPrefs は、ツールの扱いの PC の既定(tools.json)を読む。
