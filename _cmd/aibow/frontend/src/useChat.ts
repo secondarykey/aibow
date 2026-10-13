@@ -8,7 +8,7 @@ import { CancelError, Events } from "@wailsio/runtime";
 import type { CancellablePromise } from "@wailsio/runtime";
 import { ChatService } from "../bindings/aibow/cmd/aibow";
 import type { ChatEvent, StoredMessage } from "../bindings/aibow";
-import { messageItems, thinkLabel, turnView } from "./transcript";
+import { messageItems, thinkLabel, toolCount, turnView } from "./transcript";
 import type { AssistantView, Transcript } from "./transcript";
 import type { Conversations } from "./useConversations";
 import type { Busy } from "./useModels";
@@ -119,8 +119,9 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
       if (!l.view.steps?.length) return {};
       const sec = secSince(l.processStart);
       const thought = !!l.view.thinking || l.view.steps.some(s => s.thinking);
-      if (answering) return { processLabel: thought ? thinkLabel(sec) : `ツールの使用(${sec}秒)` };
-      return { processLabel: thought ? `思考中… ${sec}秒` : `ツールを使用中… ${sec}秒` };
+      const count = toolCount(l.view.steps);
+      if (answering) return { processLabel: (thought ? thinkLabel(sec) : `ツールの使用(${sec}秒)`) + count };
+      return { processLabel: (thought ? `思考中… ${sec}秒` : `ツールを使用中… ${sec}秒`) + count };
     };
 
     // 表示している会話なら開き直す(要約の区切りと薄い表示を、保存された内容から作り直す)。

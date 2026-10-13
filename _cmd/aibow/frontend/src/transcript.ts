@@ -161,7 +161,13 @@ export function processLabel(ms: StoredMessage[], final: StoredMessage | null, s
     else if (s) sec += s.prompt_sec + s.gen_sec;
   }
   const thought = !!final?.thinking || steps.some(s => s.thinking);
-  return thought ? thinkLabel(sec) : `ツールの使用(${Math.round(sec)}秒)`;
+  return (thought ? thinkLabel(sec) : `ツールの使用(${Math.round(sec)}秒)`) + toolCount(steps);
+}
+
+// toolCount は枠の見出しに付ける、ツールを呼んだ回数(カードの数。エラーや実行しなかった呼び出しも数える)
+export function toolCount(steps: StepView[]): string {
+  const n = steps.reduce((a, s) => a + s.tools.length, 0);
+  return n > 0 ? `・ツール ${n}回` : "";
 }
 
 // replyView は保存された返事1件(ツールを呼ばなかった回)を表示に変える。思考の秒数や統計も保存されているので、再起動後も同じ表示になる。
@@ -197,6 +203,8 @@ function statsLine(replies: StoredMessage[]): string | undefined {
   const gen = sum(s => s.gen_tokens), genSec = sum(s => s.gen_sec);
   parts.push(`生成 ${gen} tok ・ ${genSec > 0 ? (gen / genSec).toFixed(1) : "-"} tok/s`);
   if (rs.length > 1) parts.push(`${rs.length}回生成`);
+  const calls = rs.reduce((a, r) => a + (r.tool_calls?.length ?? 0), 0);
+  if (calls > 0) parts.push(`ツール ${calls}回`);
   const stop = last.stats!.stop_reason;
   if (stop !== "eos") parts.push(STOP_REASONS[stop] ?? stop);
   return parts.join(" ・ ");
