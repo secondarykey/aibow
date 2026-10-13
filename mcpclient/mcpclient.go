@@ -2,6 +2,7 @@
 //
 // MCP は、ツールやデータを AI アプリにつなぐための決まりごと。中身は JSON-RPC 2.0 のメッセージのやり取りで、
 // ローカルでは「クライアント(aibow)がサーバーを子プロセスとして起動し、標準入出力で1行ずつ JSON を送り合う」(stdio のトランスポート)。
+// どこかで動いているサーバーには、同じ JSON を HTTP の POST で送る(Streamable HTTP のトランスポート)。
 // やり取りは公式の Go SDK(github.com/modelcontextprotocol/go-sdk)に任せ、送受信したメッセージはログに出して見えるようにする。
 //
 //	aibow ── 起動する(npx …)──→ MCP のサーバー(別のプロセス)
@@ -20,6 +21,9 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"maps"
+	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"slices"
@@ -33,16 +37,26 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// ServerConfig は MCP のサーバー1つの起動のしかた(settings.json の mcpServers の1つ)。
+// ServerConfig は MCP のサーバー1つのつなぎ方(settings.json の mcpServers の1つ)。
 // 形は、多くのツールで使われている mcpServers に合わせている(ほかのツールの設定をそのまま貼れるように)。
+//
+// つなぎ方(トランスポート)は2つ。どちらか一方を書く:
+//
+//	stdio           … command(と args・env)。aibow がサーバーを子プロセスとして起動し、標準入出力で話す
+//	Streamable HTTP … url(と headers)。どこかで動いているサーバーに、HTTP で話しかける(イントラの中のサーバーなど)
 type ServerConfig struct {
-	Command string            `json:"command"`
+	Command string            `json:"command,omitempty"`
 	Args    []string          `json:"args,omitempty"`
 	Env     map[string]string `json:"env,omitempty"`
-	// Type はトランスポートの種類。aibow は stdio だけなので、空か "stdio" だけを受け付ける
-	// (ほかのツールの設定には "type": "http" や "url" を書いたものがあるため、読んで分かりやすいエラーにする)
+
+	URL string `json:"url,omitempty"`
+	// Headers は、url のサーバーへのリクエストに毎回付ける HTTP ヘッダー(API キーなど)。
+	// OAuth(ブラウザでのログイン)には対応していない
+	Headers map[string]string `json:"headers,omitempty"`
+
+	// Type はトランスポートの種類。書かなくてよい(command か url で決まる)。
+	// ほかのツールの設定には "type": "stdio" / "http" と書いたものがあるので、読んで確かめる
 	Type string `json:"type,omitempty"`
-	URL  string `json:"url,omitempty"`
 }
 
 // workDirVar は、args と env の値の中で会話の作業フォルダに置き換える文字列。
@@ -54,17 +68,43 @@ const workDirVar = "${workdir}"
 
 // Validate は設定の形を確かめる。
 func (c ServerConfig) Validate() error {
-	if c.URL != "" || (c.Type != "" && c.Type != "stdio") {
-		return errors.New("aibow は stdio のサーバー(command で起動するもの)だけに対応しています。url や type: http のサーバーは使えません")
-	}
-	if strings.TrimSpace(c.Command) == "" {
-		return errors.New("command(起動するプログラム)がありません")
+	switch {
+	case c.Type == "sse":
+		return errors.New("古い HTTP+SSE のトランスポート(type: sse)には対応していません(MCP の 2025-03-26 版から非推奨)。" +
+			"Streamable HTTP(type: http)のサーバーなら、url だけを書けばつなげます")
+	case c.Type != "" && c.Type != "stdio" && c.Type != "http" && c.Type != "streamable-http":
+		return fmt.Errorf("type %q は知らない種類です(stdio か http。書かなくても command か url で決まります)", c.Type)
+	case c.URL != "" && strings.TrimSpace(c.Command) != "":
+		return errors.New("command と url の両方があります。どちらか1つにしてください(command はサーバーを起動する、url は動いているサーバーにつなぐ)")
+	case c.URL != "":
+		if c.Type == "stdio" {
+			return errors.New("type が stdio なのに url があります。stdio なら command を書いてください")
+		}
+		u, err := url.Parse(c.URL)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return fmt.Errorf("url %q は http:// か https:// で始まる URL で書いてください", c.URL)
+		}
+		if strings.Contains(c.URL, workDirVar) || slices.ContainsFunc(slices.Collect(maps.Values(c.Headers)), func(v string) bool { return strings.Contains(v, workDirVar) }) {
+			return errors.New("url のサーバーには作業フォルダ(${workdir})を渡せません(別の PC で動いているかもしれず、こちらのフォルダは見えないため)")
+		}
+		return nil
+	case strings.TrimSpace(c.Command) == "":
+		return errors.New("command(起動するプログラム)か url(つなぐ先)がありません")
+	case c.Type == "http" || c.Type == "streamable-http":
+		return errors.New("type が http なのに url がありません")
 	}
 	return nil
 }
 
+// isHTTP は url のサーバー(Streamable HTTP)か。
+func (c ServerConfig) isHTTP() bool { return c.URL != "" }
+
 // UsesWorkDir は、作業フォルダごとに起動するサーバーか(args か env に ${workdir} があるか)。
+// url のサーバーには作業フォルダを渡せないので、いつも false。
 func (c ServerConfig) UsesWorkDir() bool {
+	if c.isHTTP() {
+		return false
+	}
 	for _, a := range c.Args {
 		if strings.Contains(a, workDirVar) {
 			return true
@@ -96,10 +136,14 @@ func (c ServerConfig) command(workDir string) *exec.Cmd {
 	return cmd
 }
 
-// commandLine はログに出すための起動のコマンド。
-func (c ServerConfig) commandLine(workDir string) string {
+// describe はログに出すための、つなぎ方の説明(起動のコマンドか、つなぐ先の url)。
+// ヘッダー(API キーなど)はログに出さない。
+func (c ServerConfig) describe(workDir string) string {
+	if c.isHTTP() {
+		return "つなぎます: " + c.URL
+	}
 	cmd := c.command(workDir)
-	return strings.Join(append([]string{c.Command}, cmd.Args[1:]...), " ")
+	return "起動します: " + strings.Join(append([]string{c.Command}, cmd.Args[1:]...), " ")
 }
 
 const (
@@ -127,7 +171,7 @@ type Manager struct {
 	names   []string // 名前の順(ツールを並べる順を毎回同じにする。プロンプトが変わると KV キャッシュが効かなくなるため)
 	opt     Options
 
-	// transport はサーバーへのつなぎ方。本物は子プロセスを起動する(commandTransport)。テストではプロセスを起動しないものに差し替える
+	// transport はサーバーへのつなぎ方。本物は子プロセスを起動するか HTTP で話す(realTransport)。テストではプロセスを起動しないものに差し替える
 	transport func(name string, cfg ServerConfig, workDir string) (mcp.Transport, error)
 
 	mu      sync.Mutex
@@ -158,7 +202,7 @@ func New(configs map[string]ServerConfig, opt Options) *Manager {
 		m.names = append(m.names, name)
 	}
 	slices.Sort(m.names)
-	m.transport = m.commandTransport
+	m.transport = m.realTransport
 	return m
 }
 
@@ -196,11 +240,15 @@ func (m *Manager) start(ctx context.Context, k serverKey, cfg ServerConfig) erro
 	ctx, cancel := context.WithTimeout(ctx, startTimeout)
 	defer cancel()
 	begin := time.Now()
-	m.opt.Logf("MCP %s: 起動します: %s", k.name, cfg.commandLine(k.workDir))
+	m.opt.Logf("MCP %s: %s", k.name, cfg.describe(k.workDir))
 
 	t, err := m.transport(k.name, cfg, k.workDir)
 	if err != nil {
 		return err
+	}
+	hint := "command・args を確かめてください。サーバーのエラー出力はログにあります"
+	if cfg.isHTTP() {
+		hint = "url と、サーバーが動いているかを確かめてください"
 	}
 	// 送受信した JSON-RPC のメッセージを、そのままログに出す(SDK の LoggingTransport)。MCP の正体が見える
 	t = &mcp.LoggingTransport{Transport: t, Writer: &lineLogger{logf: m.opt.Logf, prefix: "MCP " + k.name + " "}}
@@ -212,13 +260,17 @@ func (m *Manager) start(ctx context.Context, k serverKey, cfg ServerConfig) erro
 		&mcp.ClientOptions{Capabilities: &mcp.ClientCapabilities{}})
 	session, err := client.Connect(ctx, t, nil)
 	if err != nil {
-		return fmt.Errorf("つなげません(command・args を確かめてください。サーバーのエラー出力はログにあります): %w", err)
+		return fmt.Errorf("つなげません(%s): %w", hint, err)
 	}
-	tools, err := listTools(ctx, k.name, session)
+	s := &server{key: k, session: session}
+	// つながりが切れた(サーバーが落ちた・再起動した)と分かったら、一覧から外す。次の Start でつなぎ直す
+	broken := func(err error) { m.drop(s, err) }
+	tools, err := listTools(ctx, k.name, session, broken)
 	if err != nil {
 		session.Close()
 		return fmt.Errorf("ツールの一覧を受け取れません: %w", err)
 	}
+	s.tools = tools
 
 	// どの版の MCP で話すことになったか。2026-07-28 版からは最初の挨拶(initialize)が無くなり、
 	// 古い版のサーバーとは、SDK が版を取り決めて挨拶をしてから話す
@@ -232,7 +284,6 @@ func (m *Manager) start(ctx context.Context, k serverKey, cfg ServerConfig) erro
 	m.opt.Logf("MCP %s: つながりました(%.1f 秒。MCP の版 %s・サーバー %s・ツール %d 個: %s)",
 		k.name, time.Since(begin).Seconds(), ver, info, len(tools), tool.Names(tools))
 
-	s := &server{key: k, session: session, tools: tools}
 	m.mu.Lock()
 	if m.closed { // 起動している間にアプリが閉じられた
 		m.mu.Unlock()
@@ -242,31 +293,37 @@ func (m *Manager) start(ctx context.Context, k serverKey, cfg ServerConfig) erro
 	m.running[k] = s
 	m.mu.Unlock()
 
-	// サーバーが落ちたら(つながりが切れたら)、一覧から外す。次の Start で起動し直す
-	go func() {
-		err := session.Wait()
-		m.mu.Lock()
-		gone := m.running[k] == s
-		if gone {
-			delete(m.running, k)
-		}
-		closed := m.closed
-		m.mu.Unlock()
-		if gone && !closed {
-			m.opt.Logf("※ MCP %s: サーバーとのつながりが切れました(%v)。次の送信で起動し直します", k.name, err)
-		}
-	}()
+	// stdio のサーバーが落ちたら、つながりが閉じて Wait が返る。
+	// url のサーバーは、リクエストのたびに HTTP でつなぐので、落ちたことはツールの呼び出しが失敗して分かる(broken)
+	go func() { m.drop(s, session.Wait()) }()
 	return nil
 }
 
+// drop は、つながりが切れたサーバーを一覧から外す(次の Start で起動し直す・つなぎ直す)。
+// すでに外していたら(閉じた・つなぎ直した後なら)何もしない。
+func (m *Manager) drop(s *server, err error) {
+	m.mu.Lock()
+	gone := m.running[s.key] == s
+	if gone {
+		delete(m.running, s.key)
+	}
+	closed := m.closed
+	m.mu.Unlock()
+	if !gone || closed {
+		return
+	}
+	m.opt.Logf("※ MCP %s: サーバーとのつながりが切れました(%v)。次の送信でつなぎ直します", s.key.name, err)
+	go s.session.Close() // 子プロセスが残っていれば止める(Wait から呼ばれたときは、もう閉じている)
+}
+
 // listTools はサーバーのツールの一覧を受け取り、tool.Tool にする。
-func listTools(ctx context.Context, name string, session *mcp.ClientSession) ([]tool.Tool, error) {
+func listTools(ctx context.Context, name string, session *mcp.ClientSession, broken func(error)) ([]tool.Tool, error) {
 	var tools []tool.Tool
 	for t, err := range session.Tools(ctx, nil) { // 一覧が何ページかに分かれていても、全部たどる
 		if err != nil {
 			return nil, err
 		}
-		rt, err := newRemoteTool(name, session, t)
+		rt, err := newRemoteTool(name, session, t, broken)
 		if err != nil {
 			return nil, err
 		}
@@ -323,7 +380,41 @@ func (m *Manager) Close() {
 	wg.Wait()
 }
 
-// commandTransport は、サーバーを子プロセスとして起動する本物のつなぎ方。
+// realTransport は本物のつなぎ方。command のサーバーは子プロセスとして起動し、url のサーバーには HTTP で話しかける。
+func (m *Manager) realTransport(name string, cfg ServerConfig, workDir string) (mcp.Transport, error) {
+	if cfg.isHTTP() {
+		return httpTransport(cfg), nil
+	}
+	return m.commandTransport(name, cfg, workDir)
+}
+
+// httpTransport は url のサーバーへのつなぎ方(Streamable HTTP)。
+//
+// aibow → サーバーのメッセージは、1つずつ HTTP の POST で送る。返事は、その POST の応答(JSON か、SSE で何回かに分けて)で返ってくる。
+// サーバーから好きなときに知らせを送るための、つなぎっぱなしの GET(standalone SSE)は開かない
+// (ツールの一覧が変わった知らせなどは使わないため。つなぎっぱなしの接続を持たないほうが、イントラのプロキシなどで困りにくい)。
+func httpTransport(cfg ServerConfig) mcp.Transport {
+	client := &http.Client{Transport: headerTransport{headers: cfg.Headers, base: http.DefaultTransport}}
+	return &mcp.StreamableClientTransport{Endpoint: cfg.URL, HTTPClient: client, DisableStandaloneSSE: true}
+}
+
+// headerTransport は、リクエストに settings.json の headers(API キーなど)を付ける。
+type headerTransport struct {
+	headers map[string]string
+	base    http.RoundTripper
+}
+
+func (t headerTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	if len(t.headers) > 0 {
+		r = r.Clone(r.Context()) // RoundTrip は渡されたリクエストを書き換えてはいけない決まり
+		for k, v := range t.headers {
+			r.Header.Set(k, v)
+		}
+	}
+	return t.base.RoundTrip(r)
+}
+
+// commandTransport は、サーバーを子プロセスとして起動するつなぎ方(stdio)。
 //
 // SDK の CommandTransport は、閉じるときに「標準入力を閉じる → 待つ → SIGTERM → 止める」(MCP の決まりごと)を行うが、
 // Windows では起動したプロセス(npx.cmd を動かす cmd.exe)しか止めないので、その子の node が残ってしまう。

@@ -13,6 +13,7 @@ import (
 
 	"aibow/tool"
 
+	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -33,6 +34,7 @@ type remoteTool struct {
 	server  string
 	session *mcp.ClientSession
 	def     tool.Def
+	broken  func(error) // つながりが切れたと分かったときに呼ぶ(Manager が一覧から外し、次の送信でつなぎ直す)
 }
 
 var (
@@ -46,7 +48,7 @@ var (
 // inputSchema(引数の JSON Schema)は、0004 の tool.Def の引数と同じ形なので、そのまま使える。
 // ただし SDK は inputSchema を map[string]any で渡してくるので、サーバーが書いた順(type → properties → required など)は残らず、
 // JSON にし直すとキーの名前の順になる。モデルが読むには困らない。
-func newRemoteTool(server string, session *mcp.ClientSession, t *mcp.Tool) (*remoteTool, error) {
+func newRemoteTool(server string, session *mcp.ClientSession, t *mcp.Tool, broken func(error)) (*remoteTool, error) {
 	schema := t.InputSchema
 	if schema == nil {
 		schema = map[string]any{"type": "object", "properties": map[string]any{}}
@@ -56,7 +58,7 @@ func newRemoteTool(server string, session *mcp.ClientSession, t *mcp.Tool) (*rem
 		return nil, fmt.Errorf("ツール %s の inputSchema を読めません: %w", t.Name, err)
 	}
 	return &remoteTool{
-		server: server, session: session,
+		server: server, session: session, broken: broken,
 		def: tool.Def{Name: t.Name, Description: t.Description, Parameters: params},
 	}, nil
 }
@@ -86,7 +88,12 @@ func (t *remoteTool) Run(ctx context.Context, args tool.Args) (string, error) {
 	case ctx.Err() != nil:
 		return "", errors.New("停止されました")
 	case err != nil:
-		// プロトコルのエラー(知らないツール・引数の形が違う、など)や、サーバーが落ちていたとき
+		// サーバーが JSON-RPC のエラーで答えた(知らないツール・引数の形が違う、など)なら、つながりは生きている。
+		// それ以外(HTTP でつなげない・サーバーが落ちた)は、つながりが切れたとみなして、次の送信でつなぎ直す
+		if !answeredByServer(err) && t.broken != nil {
+			t.broken(err)
+			return "", fmt.Errorf("MCP のサーバー %s とのつながりが切れました。次の送信でつなぎ直します: %w", t.server, err)
+		}
 		return "", fmt.Errorf("MCP のサーバー %s で実行できません: %w", t.server, err)
 	}
 	text := truncate(resultText(res.Content))
@@ -95,6 +102,22 @@ func (t *remoteTool) Run(ctx context.Context, args tool.Args) (string, error) {
 		return "", errors.New(text)
 	}
 	return text, nil
+}
+
+// answeredByServer は、エラーがサーバーからの答え(JSON-RPC のエラー)か。
+//
+// SDK は、つながりの問題も JSON-RPC のエラーの形で返すことがある(HTTP で送れなかったときの -32005 rejected by transport など)。
+// それらの番号はサーバーの答えではないので、つながりが切れたとみなす。
+func answeredByServer(err error) bool {
+	var e *jsonrpc.Error
+	if !errors.As(err, &e) {
+		return false
+	}
+	switch e.Code {
+	case -32003, -32004, -32005: // SDK が付ける番号: client is closing / server is closing / rejected by transport
+		return false
+	}
+	return true
 }
 
 // resultText は、結果の content(文章・画像など、いくつかの部分)を、モデルに渡す1つの文章にする。

@@ -25,7 +25,7 @@ import (
 
 // SettingsFile は設定ファイルの中身。
 type SettingsFile struct {
-	// MCPServers は MCP のサーバー(名前 → 起動のしかた)。形は多くのツールで使われている mcpServers に合わせている
+	// MCPServers は MCP のサーバー(名前 → 起動のしかた・つなぐ先)。形は多くのツールで使われている mcpServers に合わせている
 	MCPServers map[string]mcpclient.ServerConfig `json:"mcpServers"`
 }
 

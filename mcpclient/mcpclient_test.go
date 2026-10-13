@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
@@ -282,22 +284,97 @@ func sameDir(a, b string) bool {
 
 func TestValidate(t *testing.T) {
 	for name, c := range map[string]ServerConfig{
-		"command が無い": {Args: []string{"x"}},
-		"http":        {Type: "http", URL: "http://localhost:3000/mcp"},
-		"url だけ":      {URL: "http://localhost:3000/mcp"},
+		"command も url も無い": {Args: []string{"x"}},
+		"両方ある":              {Command: "npx", URL: "http://localhost:3000/mcp"},
+		"古い SSE":            {Type: "sse", URL: "http://localhost:3000/sse"},
+		"知らない type":         {Type: "websocket", URL: "ws://localhost:3000"},
+		"http なのに url が無い":  {Type: "http", Command: "x"},
+		"stdio なのに url":     {Type: "stdio", URL: "http://localhost:3000/mcp"},
+		"URL でない":           {URL: "localhost:3000/mcp"},
+		"url に作業フォルダ":       {URL: "http://localhost:3000/mcp?root=${workdir}"},
+		"headers に作業フォルダ":   {URL: "http://localhost:3000/mcp", Headers: map[string]string{"X-Root": workDirVar}},
 	} {
 		if err := c.Validate(); err == nil {
 			t.Errorf("%s: エラーになるはずです", name)
 		}
 	}
-	if err := (ServerConfig{Command: "npx", Type: "stdio"}).Validate(); err != nil {
-		t.Error(err)
+	for name, c := range map[string]ServerConfig{
+		"stdio":      {Command: "npx", Type: "stdio"},
+		"url だけ":     {URL: "http://intra.example:3000/mcp"},
+		"type: http": {Type: "http", URL: "https://intra.example/mcp", Headers: map[string]string{"Authorization": "Bearer x"}},
+	} {
+		if err := c.Validate(); err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
 	}
 	if (ServerConfig{Command: "npx", Args: []string{"-y", "x"}}).UsesWorkDir() {
 		t.Error("${workdir} が無ければ共有する")
 	}
 	if !(ServerConfig{Command: "x", Env: map[string]string{"ROOT": workDirVar}}).UsesWorkDir() {
 		t.Error("env の ${workdir} も見る")
+	}
+	if (ServerConfig{URL: "http://localhost/mcp"}).UsesWorkDir() {
+		t.Error("url のサーバーは作業フォルダごとにしない")
+	}
+}
+
+// url のサーバー(Streamable HTTP)につなぐ。headers を毎回付け、サーバーが止まったら一覧から外す
+func TestHTTPServer(t *testing.T) {
+	var mu sync.Mutex
+	var auth []string
+	mcpHandler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return newTestServer() }, nil)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		auth = append(auth, r.Header.Get("Authorization"))
+		mu.Unlock()
+		mcpHandler.ServeHTTP(w, r)
+	}))
+	defer srv.Close()
+
+	l := &logs{}
+	m := New(map[string]ServerConfig{
+		"intra": {URL: srv.URL, Headers: map[string]string{"Authorization": "Bearer secret"}},
+	}, Options{Version: "test", Logf: l.logf})
+	defer m.Close()
+
+	ctx := context.Background()
+	if started, errs := m.Start(ctx, ""); !slices.Equal(started, []string{"intra"}) || len(errs) != 0 {
+		t.Fatalf("%v %v", started, errs)
+	}
+	if got := names(m.Tools("D:/a")); len(got) != 4 {
+		t.Errorf("url のサーバーは作業フォルダに関係なく共有する: %v", got)
+	}
+	echo := tool.Find(m.Tools(""), "echo")
+	if got, err := echo.Run(ctx, tool.Args{"paths": []any{"a"}}); err != nil || got != `{"paths":["a"]}` {
+		t.Errorf("echo: %q, %v", got, err)
+	}
+	mu.Lock()
+	if len(auth) == 0 || slices.ContainsFunc(auth, func(a string) bool { return a != "Bearer secret" }) {
+		t.Errorf("headers は毎回付ける: %q", auth)
+	}
+	mu.Unlock()
+	if !l.contains("MCP intra: つなぎます: "+srv.URL) || l.contains("secret") {
+		t.Error("つなぐ先はログに出し、headers(API キーなど)は出さない")
+	}
+
+	// サーバーが JSON-RPC のエラーで答えた(知らないツール)だけなら、つながりは生きているので外さない
+	e := echo.(*remoteTool)
+	unknown := &remoteTool{server: e.server, session: e.session, def: tool.Def{Name: "no_such_tool"}, broken: e.broken}
+	if _, err := unknown.Run(ctx, nil); err == nil || strings.Contains(err.Error(), "つながりが切れました") {
+		t.Errorf("サーバーの答えのエラー: %v", err)
+	}
+	if got := m.Tools(""); len(got) != 4 {
+		t.Errorf("つながりは外さない: %v", names(got))
+	}
+
+	// サーバーが止まった: 呼び出しが失敗したら一覧から外し、次の Start でつなぎ直す
+	srv.CloseClientConnections()
+	srv.Close()
+	if _, err := echo.Run(ctx, tool.Args{"paths": []any{"a"}}); err == nil || !strings.Contains(err.Error(), "つながりが切れました") {
+		t.Errorf("止まったサーバー: %v", err)
+	}
+	if got := m.Tools(""); len(got) != 0 {
+		t.Errorf("つながりが切れたサーバーのツールは外す: %v", names(got))
 	}
 }
 
