@@ -16,7 +16,11 @@ package aibow
 // 会話の仕組みは、<|im_start|> や <think> や <tool_call> のような書式の文字列を一切扱わない。
 // 今ある実装は Qwen3.5 用(format_qwen35.go)だけ。
 
-import "fmt"
+import (
+	"fmt"
+
+	"aibow/tool"
+)
 
 // Message は会話の1件。role は "system" / "user" / "assistant" / "tool"。
 //
@@ -33,8 +37,8 @@ type Message struct {
 // Prompt はモデルに渡す内容を、書式を当てる前の「構造」のまま持つ。
 type Prompt struct {
 	Messages []Message
-	Tools    []ToolDef // モデルに知らせるツール。空ならツールの説明を入れない
-	Think    bool      // 思考させるか
+	Tools    []tool.Def // モデルに知らせるツール。空ならツールの説明を入れない
+	Think    bool       // 思考させるか
 }
 
 // Output は1回の生成の結果を、書式を外した「構造」にしたもの。
@@ -43,6 +47,21 @@ type Output struct {
 	Content   string     // 答え。ツール呼び出しの部分は含まない
 	ToolCalls []ToolCall // モデルが書いたツール呼び出し(書いた順)
 	Stats     GenerateStats
+}
+
+// ToolCall はモデルが書いたツール呼び出し1つ。書式に依存しない形にしたもの。
+//
+// 名前と引数(tool.Call)に、書式の崩れの情報を足している。崩れは書式の話なので tool パッケージには持たせない。
+// 書式が崩れて読み取れなかった呼び出しは、Raw にモデルが書いた生の文字列、Error に理由を持つ。
+// 実行はせず、エラーの結果としてモデルに返して立て直させる。次のプロンプトには Raw をそのまま入れ、
+// モデルが自分の書いたものを見られるようにする。
+//
+// tool.Call を埋め込んでいるので、JSON は {"name", "args", "raw", "error"} の平らな形になる
+// (tool パッケージに切り出す前と同じ形。保存済みの会話をそのまま読める)。
+type ToolCall struct {
+	tool.Call
+	Raw   string `json:"raw,omitempty"`
+	Error string `json:"error,omitempty"`
 }
 
 // Format はモデルの系統ごとの書式。

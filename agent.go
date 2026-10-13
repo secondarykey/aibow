@@ -23,6 +23,8 @@ import (
 	"fmt"
 	"time"
 	"uuid"
+
+	"aibow/tool"
 )
 
 const (
@@ -132,11 +134,11 @@ func (cs *Conversations) callTool(ctx context.Context, set ConversationSettings,
 		return "", errors.New(c.Error) // 書式が崩れていて読み取れなかった
 	}
 	tools := cs.toolsFor(set)
-	tool := findTool(tools, c.Name)
-	if tool == nil {
-		return "", fmt.Errorf("ツール %s はありません(使えるツール: %s)", c.Name, toolNames(tools))
+	t := tool.Find(tools, c.Name)
+	if t == nil {
+		return "", fmt.Errorf("ツール %s はありません(使えるツール: %s)", c.Name, tool.Names(tools))
 	}
-	args, err := toolArgs(tool.Def(), c.Args)
+	args, err := tool.CheckArgs(t.Def(), c.Args)
 	if err != nil {
 		return "", err
 	}
@@ -150,7 +152,7 @@ func (cs *Conversations) callTool(ctx context.Context, set ConversationSettings,
 	}
 	done := make(chan result, 1)
 	go func() {
-		text, err := tool.Run(tctx, args)
+		text, err := t.Run(tctx, args)
 		done <- result{text, err}
 	}()
 	select {
@@ -174,7 +176,7 @@ func toolMessage(conv uuid.UUID, c ToolCall, text string, isErr bool, sec float6
 }
 
 // toolsFor は会話の設定で使えるツール。「ツールを使う」が OFF なら無し。
-func (cs *Conversations) toolsFor(set ConversationSettings) []Tool {
+func (cs *Conversations) toolsFor(set ConversationSettings) []tool.Tool {
 	if !set.Tools {
 		return nil
 	}

@@ -1,20 +1,21 @@
 # ツール呼び出し(エージェントループ)と書式
 
 モデルが「ツールを使いたい」と書いたら aibow が実行し、結果を渡して続きを書かせる仕組みと、
-それを支える「書式」(チャットテンプレート)の interface の説明です。仕様は [features/0004-tools.md](features/0004-tools.md)。
+それを支える「書式」(チャットテンプレート)の interface の説明です。仕様は [features/0004-tools.md](features/0004-tools.md)(ツールを `tool/` パッケージに切り出したのは [features/0005-coding-agent.md](features/0005-coding-agent.md) の 3-0)。
 
 ## ファイル
 
 | ファイル | 役割 |
 |---|---|
-| `format.go` | 書式の interface(`Format` / `OutputParser`)と、会話の仕組みとエンジンの間で受け渡す形(`Message` / `Prompt` / `Output`)。モデルの種類で書式を選ぶ表 |
+| `format.go` | 書式の interface(`Format` / `OutputParser`)と、会話の仕組みとエンジンの間で受け渡す形(`Message` / `Prompt` / `Output` / `ToolCall`)。モデルの種類で書式を選ぶ表 |
 | `format_qwen35.go` | Qwen3.5 の書式。プロンプトの組み立て(ツールの説明・呼び出し・結果・ループ中の思考)と、出力の振り分け(思考・答え・`<tool_call>`) |
-| `tool.go` | ツールの interface(`Tool`)・定義(`ToolDef`)・呼び出し(`ToolCall`)。引数を JSON Schema と照らし合わせる `toolArgs` |
-| `tool_time.go` / `tool_calc.go` | 組み込みのツール `get_current_time` / `calculate` |
+| `tool/tool.go` | `tool` パッケージ。ツールの interface(`Tool`)・定義(`Def`)・呼び出し(`Call`: 名前と引数だけ)・引数(`Arg`)。引数を JSON Schema と照らし合わせる `CheckArgs` |
+| `tool/time.go` / `tool/calc.go` | 組み込みのツール `get_current_time` / `calculate` |
 | `agent.go` | エージェントループ(`runTurn`)とツールの実行(10 秒の上限・8 回の上限・停止) |
 | `format_qwen35_test.go` | 書式のテスト。プロンプトは公式テンプレートを jinja2 で通した期待値と1文字まで比べる |
 | `testdata/qwen35/` | 書式のテストの会話(`cases.json`)と期待値(`*.txt`)、期待値を作るスクリプト(`gen_expected.py`) |
-| `tool_test.go` / `agent_test.go` | ツールとループのテスト(偽物の生成器を使う。モデル不要) |
+| `tool/tool_test.go` / `agent_test.go` | ツールとループのテスト(偽物の生成器を使う。モデル不要) |
+| `format_test.go` | `ToolCall` の JSON が切り出す前と同じ平らな形か(保存済みの会話を読めるか)のテスト |
 
 ## 書式(Format)
 
@@ -80,10 +81,26 @@ python testdata/qwen35/gen_expected.py ~/.ollama/models/blobs/sha256-<qwen3.5 �
 
 ## ツール
 
+ツールはルートの `tool/` パッケージ(`tool`)にある。`tool` は LLM・書式・会話・保存のどれも import しない(標準ライブラリだけ)。
+依存の向きが import としてそのまま見える:
+
+```
+書式(format_qwen35.go)── 定義(tool.Def)をプロンプトに書き、呼び出しを読み取る ──→ tool
+会話の仕組み(agent.go)── 実行する(回数・時間の上限・停止・結果の保存はこちら)──→ tool
+tool ── 何も知らない
+```
+
+- 切り出した理由:ステップ5の MCP サーバーはツールだけを外に出すプログラムで、ルートの `aibow` を import すると LLM(yzma)や会話の仕組みまで入ってしまう。
+  ステップ4の MCP クライアントも「遠くのツールを `tool.Tool` として見せる」ので、interface が独立しているほうが素直
+- 呼び出しは2層。`tool.Call` は名前と引数だけ。書式の崩れ(モデルが書いたままの `Raw` と理由の `Error`)は書式の話なので、
+  ルートの `ToolCall` が `tool.Call` を埋め込んで足している。埋め込みなので JSON は `{"name", "args", "raw", "error"}` の平らな形のまま
+  (切り出す前と同じ。保存済みの会話をそのまま読める。Wails が作る TS の型も同じ形)
+- エージェントループ(回数の上限・時間の上限・停止・結果の保存)は会話の仕組みなので、ルートの `agent.go` に残している
+- 型の名前はパッケージ名と重ねない(`tool.ToolDef` ではなく `tool.Def`。Go の慣習)。interface だけは `tool.Tool`(`context.Context` と同じく、ほかに良い名前が無いため)
 - `Tool` は定義(`Def`: 名前・説明・引数の JSON Schema)と実行(`Run`)を持つ。名前は英語の snake_case、説明も英語
 - 引数は文字列のまま渡す(Qwen3.5 の書式が値を文字列で書くため)。数や真偽値が要るツール(MCP)を足すときに、JSON Schema の型で変換する
-- 引数は `toolArgs` が JSON Schema の `properties` / `required` と照らし合わせる。間違いは「使える引数: …」付きのエラーで返す
-- ステップ3(ファイル操作)・ステップ4(MCP)のツールも `Tool` で足し、`Conversations.tools` に入れる
+- 引数は `tool.CheckArgs` が JSON Schema の `properties` / `required` と照らし合わせる。間違いは「使える引数: …」付きのエラーで返す
+- ステップ3(ファイル操作)・ステップ4(MCP)のツールも `tool.Tool` で足し、`Conversations.tools` に入れる
 
 | 名前 | 中身 |
 |---|---|

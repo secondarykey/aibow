@@ -12,8 +12,8 @@ aibow 全体の進み具合。ルールと全体の構成は `AGENTS.md`(仕組�
 | ✅ | 2-1. 会話を Go 側に移し、SQLite に保存する。会話は複数。設定を画面から変えられるようにする | [0001-conversations.md](_docs/features/0001-conversations.md) |
 | 🔧 | 2-2. compact:会話が長くなったら、古い発言を捨てる / 要約する、の2方式を作って比べる。上限を「会話の上限 + 返事の上限」に変える | [0002-compact.md](_docs/features/0002-compact.md) |
 | ✅ | 2-3. ツール呼び出し:モデルが書く `<tool_call>` を読み取って実行し、結果を返して続きを書かせる(エージェントループ)。最初のツールは現在時刻と計算 | [0004-tools.md](_docs/features/0004-tools.md) |
-| ⬜ | 3-0. ツールを `tool` パッケージに切り出す(動きは変えない。ステップ4・5 の MCP でツールだけを使うため) | [0005-coding-agent.md](_docs/features/0005-coding-agent.md) |
-| ⬜ | 3-1. ミニコーディングエージェント:作業フォルダ(会話ごと)と、読むツール(`list_files`・`read_file`)。作業フォルダの外には `os.Root` で出られない | [0005-coding-agent.md](_docs/features/0005-coding-agent.md) |
+| ✅ | 3-0. ツールを `tool` パッケージに切り出す(動きは変えない。ステップ4・5 の MCP でツールだけを使うため) | [0005-coding-agent.md](_docs/features/0005-coding-agent.md) |
+| 🔧 | 3-1. ミニコーディングエージェント:作業フォルダ(会話ごと)と、読むツール(`list_files`・`read_file`)。作業フォルダの外には `os.Root` で出られない | [0005-coding-agent.md](_docs/features/0005-coding-agent.md) |
 | ⬜ | 3-2. 書くツール(`write_file`・`edit_file`)と、実行前の確認(拒否したら理由をモデルに返して続ける) | [0005-coding-agent.md](_docs/features/0005-coding-agent.md) |
 | ⬜ | 3-3. コマンド実行(`run_command`。Windows は cmd.exe、それ以外は sh。実行前に確認) | [0005-coding-agent.md](_docs/features/0005-coding-agent.md) |
 | ⬜ | 4. MCP クライアント:ステップ3のツールを MCP サーバー経由に置き換える | 未作成 |

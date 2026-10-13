@@ -1,6 +1,6 @@
 # 0005: ミニコーディングエージェント(ファイル操作・コマンド実行)
 
-- 状態: ⬜ 未着手
+- 状態: 🔧 作業中(3-0 済み)
 - ロードマップ: ステップ 3(3-0 `tool` パッケージの切り出し / 3-1 読む / 3-2 書く・確認 / 3-3 コマンド)
 - 決めた日: 2026-10-13(Chat でユーザーと相談して決定)
 - 前提: 0004(ツール呼び出し・エージェントループ・書式の interface)、0002(compact)
@@ -55,6 +55,15 @@
 - 型の名前は、パッケージ名と重ならないようにする(`tool.ToolDef` ではなく `tool.Def` など。Go の慣習)
 - 3-0 では動きを変えない(テストがそのまま通ること)。作業フォルダを `Tool` に渡すための interface の変更は 3-1 で行う
 - 保存済みの会話(`messages` の `tool_calls` / `tool_result` の JSON)が、切り出した後も同じように読めること
+
+#### 3-0 で決めたこと(Code が実装しながら決めた)
+
+- 名前:`tool.Tool`(interface)・`tool.Def`(定義)・`tool.Call`(名前と引数だけの呼び出し)・`tool.Arg`(引数)・`tool.CheckArgs`(今の `toolArgs`)・
+  `tool.Builtin`(今の `BuiltinTools`)・`tool.Defs` / `tool.Find` / `tool.Names`。interface だけは `tool.Tool` と重なるが、ほかに良い名前が無いのでそのまま(`context.Context` と同じ)
+- 書式の崩れの線の引き方:ルートの `ToolCall`(`format.go` に移した)が `tool.Call` を**埋め込み**、`Raw` / `Error` を足す。
+  埋め込みなので JSON は `{"name", "args", "raw", "error"}` の平らな形のまま変わらず、保存済みの会話も読める(`format_test.go` で確かめる)。
+  Wails が作る TS の型も同じ平らな形になる(画面の変更は `ToolArg` の import 先だけ)
+- `pyJSON` で定義の見た目を確かめるテストは書式の話なので、ルートに残した(`format_qwen35_test.go`)
 
 ### ツール
 

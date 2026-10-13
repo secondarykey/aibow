@@ -3,6 +3,9 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as tool$0 from "./tool/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as uuid$0 from "../uuid/models.js";
 
 /**
@@ -425,20 +428,15 @@ export interface StoredMessage {
 }
 
 /**
- * ToolArg は引数1つ。値は文字列のまま持つ(Qwen3.5 の書式は値を文字列で書くため。
- * 数や真偽値の引数が要るツール(ステップ4 の MCP)を足すときに、JSON Schema の型で変換する)。
- */
-export interface ToolArg {
-    "name": string;
-    "value": string;
-}
-
-/**
  * ToolCall はモデルが書いたツール呼び出し1つ。書式に依存しない形にしたもの。
  * 
+ * 名前と引数(tool.Call)に、書式の崩れの情報を足している。崩れは書式の話なので tool パッケージには持たせない。
  * 書式が崩れて読み取れなかった呼び出しは、Raw にモデルが書いた生の文字列、Error に理由を持つ。
  * 実行はせず、エラーの結果としてモデルに返して立て直させる。次のプロンプトには Raw をそのまま入れ、
  * モデルが自分の書いたものを見られるようにする。
+ * 
+ * tool.Call を埋め込んでいるので、JSON は {"name", "args", "raw", "error"} の平らな形になる
+ * (tool パッケージに切り出す前と同じ形。保存済みの会話をそのまま読める)。
  */
 export interface ToolCall {
     "name": string;
@@ -446,7 +444,7 @@ export interface ToolCall {
     /**
      * 書いた順(プロンプトに書き戻すときも同じ順にするため)
      */
-    "args": ToolArg[] | null;
+    "args": tool$0.Arg[] | null;
     "raw"?: string;
     "error"?: string;
 }

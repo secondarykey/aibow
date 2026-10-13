@@ -13,7 +13,6 @@ export type {
     ModelInfo,
     ReplyStats,
     StoredMessage,
-    ToolArg,
     ToolCall,
     ToolResult,
     Usage,

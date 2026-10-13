@@ -4,7 +4,8 @@
 // 表示にはエラーも出すが、これは保存しない(会話を開き直すと消える)。
 // モデルの読み込みなどのお知らせは、会話の表示ではなくトースト(toast.tsx)に出す。
 import { useCallback, useRef, useState } from "react";
-import type { Compaction, ReplyStats, StoredMessage, ToolArg } from "../bindings/aibow";
+import type { Compaction, ReplyStats, StoredMessage } from "../bindings/aibow";
+import type { Arg as ToolArg } from "../bindings/aibow/tool";
 
 // ツールの呼び出し1つの表示(カード)。結果がまだ無ければ実行中
 export interface ToolView {

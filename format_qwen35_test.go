@@ -7,6 +7,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"aibow/tool"
 )
 
 // parse は pieces を順に届いたものとして Qwen3.5 の読み取りに通す。
@@ -68,8 +70,8 @@ func TestQwen35ParserReadsToolCalls(t *testing.T) {
 		"<tool_call>\n<function=calculate>\n<parameter=expression>\n(1 +\n  2) * 3\n</parameter>\n" +
 		"<parameter=note>\n\n</parameter>\n</function>\n</tool_call>"
 	want := []ToolCall{
-		{Name: "get_current_time", Args: []ToolArg{}},
-		{Name: "calculate", Args: []ToolArg{{"expression", "(1 +\n  2) * 3"}, {"note", ""}}},
+		toolCall("get_current_time"),
+		toolCall("calculate", "expression", "(1 +\n  2) * 3", "note", ""),
 	}
 	// まとめて届いても、1文字ずつ届いても同じ
 	for _, pieces := range [][]string{{text}, runes(text)} {
@@ -89,8 +91,8 @@ func TestQwen35ParserReadsToolCalls(t *testing.T) {
 // プロンプトに書き戻した呼び出しを読むと、元と同じになること(書き方と読み方が対になっている)
 func TestQwen35CallsRoundTrip(t *testing.T) {
 	calls := []ToolCall{
-		{Name: "calculate", Args: []ToolArg{{"expression", "1+2"}}},
-		{Name: "write_file", Args: []ToolArg{{"path", "a.go"}, {"content", "package a\n\n\tfunc f() {}\n"}}},
+		toolCall("calculate", "expression", "1+2"),
+		toolCall("write_file", "path", "a.go", "content", "package a\n\n\tfunc f() {}\n"),
 	}
 	var b strings.Builder
 	writeQwen35Calls(&b, calls, true)
@@ -175,9 +177,9 @@ func TestQwen35PromptMatchesTemplate(t *testing.T) {
 	if err := json.Unmarshal(b, &spec); err != nil {
 		t.Fatal(err)
 	}
-	var tools []ToolDef
+	var tools []tool.Def
 	for _, td := range spec.Tools {
-		tools = append(tools, ToolDef{Name: td.Name, Description: td.Description, Parameters: td.Parameters})
+		tools = append(tools, tool.Def{Name: td.Name, Description: td.Description, Parameters: td.Parameters})
 	}
 
 	for _, c := range spec.Cases {
@@ -188,9 +190,9 @@ func TestQwen35PromptMatchesTemplate(t *testing.T) {
 		for _, m := range c.Messages {
 			msg := Message{Role: m.Role, Content: m.Content, Thinking: m.Thinking}
 			for _, tc := range m.ToolCalls {
-				call := ToolCall{Name: tc.Name}
+				call := ToolCall{Call: tool.Call{Name: tc.Name}}
 				for _, a := range tc.Args {
-					call.Args = append(call.Args, ToolArg{Name: a[0], Value: a[1]})
+					call.Args = append(call.Args, tool.Arg{Name: a[0], Value: a[1]})
 				}
 				msg.ToolCalls = append(msg.ToolCalls, call)
 			}
@@ -217,6 +219,16 @@ func TestQwen35PromptKeepsBrokenCallAsWritten(t *testing.T) {
 	}}
 	if got := (qwen35{}).BuildPrompt(p); !strings.Contains(got, "a\n\n"+raw+"<|im_end|>\n<|im_start|>user\n<tool_response>\nエラー: x\n</tool_response>") {
 		t.Errorf("崩れた呼び出しの書き戻し:\n%s", got)
+	}
+}
+
+// 組み込みのツールの定義が、モデルに見せる形(Python の json.dumps と同じ見た目)で書けること
+func TestBuiltinToolDefsAreValidJSON(t *testing.T) {
+	for _, tl := range tool.Builtin() {
+		d := tl.Def()
+		if got := pyJSON(d.Parameters); got != string(d.Parameters) {
+			t.Errorf("%s の JSON Schema は、書き直さなくてもモデルに見せる形にしておく:\n%s\n%s", d.Name, d.Parameters, got)
+		}
 	}
 }
 

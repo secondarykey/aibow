@@ -1,4 +1,4 @@
-package aibow
+package tool
 
 import (
 	"context"
@@ -47,34 +47,40 @@ func TestCurrentTime(t *testing.T) {
 	}
 }
 
-func TestToolArgs(t *testing.T) {
+func TestCheckArgs(t *testing.T) {
 	def := calculator{}.Def()
-	if got, err := toolArgs(def, []ToolArg{{"expression", "1+1"}}); err != nil || got["expression"] != "1+1" {
+	if got, err := CheckArgs(def, []Arg{{"expression", "1+1"}}); err != nil || got["expression"] != "1+1" {
 		t.Errorf("got %v, %v", got, err)
 	}
-	for name, args := range map[string][]ToolArg{
+	for name, args := range map[string][]Arg{
 		"必須が無い":  nil,
 		"知らない引数": {{"expression", "1"}, {"expr", "1"}},
 		"重なった引数": {{"expression", "1"}, {"expression", "2"}},
 	} {
-		if _, err := toolArgs(def, args); err == nil {
+		if _, err := CheckArgs(def, args); err == nil {
 			t.Errorf("%s: エラーになるはずです", name)
 		}
 	}
-	if _, err := toolArgs(currentTime{}.Def(), nil); err != nil {
+	if _, err := CheckArgs(currentTime{}.Def(), nil); err != nil {
 		t.Errorf("省略できる引数だけなら、無くてもよい: %v", err)
 	}
 }
 
-// 組み込みのツールの定義が、モデルに見せる形(Python の json.dumps と同じ見た目)で書けること
-func TestBuiltinToolDefsAreValidJSON(t *testing.T) {
-	for _, tool := range BuiltinTools() {
-		d := tool.Def()
-		if got := pyJSON(d.Parameters); got != string(d.Parameters) {
-			t.Errorf("%s の JSON Schema は、書き直さなくてもモデルに見せる形にしておく:\n%s\n%s", d.Name, d.Parameters, got)
-		}
-		if _, err := toolArgs(d, nil); err != nil && !strings.Contains(err.Error(), "必須") {
+// 組み込みのツールの定義(JSON Schema)が読めること。必須の引数が無いときのエラーだけは正しい
+func TestBuiltinDefs(t *testing.T) {
+	for _, tl := range Builtin() {
+		d := tl.Def()
+		if _, err := CheckArgs(d, nil); err != nil && !strings.Contains(err.Error(), "必須") {
 			t.Errorf("%s: %v", d.Name, err)
 		}
+		if Find(Builtin(), d.Name) == nil {
+			t.Errorf("%s が見つかりません", d.Name)
+		}
+	}
+	if got := Names(Builtin()); got != "calculate, get_current_time" {
+		t.Errorf("名前の一覧(名前の順): %q", got)
+	}
+	if got := Names(nil); got != "なし" {
+		t.Errorf("ツールが無いとき: %q", got)
 	}
 }

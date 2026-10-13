@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"aibow/tool"
 )
 
 // fakeTool はテスト用のツール。引数 x を1つ取り、run の結果を返す。
@@ -16,8 +18,8 @@ type fakeTool struct {
 	run  func(ctx context.Context, args map[string]string) (string, error)
 }
 
-func (f fakeTool) Def() ToolDef {
-	return ToolDef{Name: f.name, Description: "test tool",
+func (f fakeTool) Def() tool.Def {
+	return tool.Def{Name: f.name, Description: "test tool",
 		Parameters: json.RawMessage(`{"type": "object", "properties": {"x": {"type": "string"}}, "required": []}`)}
 }
 
@@ -26,10 +28,10 @@ func (f fakeTool) Run(ctx context.Context, args map[string]string) (string, erro
 }
 
 // newToolConversation は「ツールを使う」が ON の会話を作る。
-func newToolConversation(t *testing.T, g *fakeGen, extra ...Tool) (*Conversations, *memStore, Conversation) {
+func newToolConversation(t *testing.T, g *fakeGen, extra ...tool.Tool) (*Conversations, *memStore, Conversation) {
 	t.Helper()
 	cs, st := newTestConversations(t, g)
-	cs.tools = append(BuiltinTools(), extra...)
+	cs.tools = append(tool.Builtin(), extra...)
 	set := testDefaults
 	set.Tools = true
 	c, err := cs.Create(&set)
@@ -39,8 +41,17 @@ func newToolConversation(t *testing.T, g *fakeGen, extra ...Tool) (*Conversation
 	return cs, st, c
 }
 
+// toolCall はモデルが書いた(書式から読み取った)呼び出しを作る。kv は引数の名前と値を交互に並べる。
+func toolCall(name string, kv ...string) ToolCall {
+	args := []tool.Arg{}
+	for i := 0; i+1 < len(kv); i += 2 {
+		args = append(args, tool.Arg{Name: kv[i], Value: kv[i+1]})
+	}
+	return ToolCall{Call: tool.Call{Name: name, Args: args}}
+}
+
 func calc(expr string) ToolCall {
-	return ToolCall{Name: "calculate", Args: []ToolArg{{"expression", expr}}}
+	return toolCall("calculate", "expression", expr)
 }
 
 // roles は発言の role を並べた文字列。例: "user,assistant,tool,assistant"
@@ -108,7 +119,7 @@ func TestAgentCallsToolAndAnswers(t *testing.T) {
 // 1回の送信で、ツールを2回以上呼ぶ流れ(時刻を聞いてから計算する)
 func TestAgentRunsSeveralRounds(t *testing.T) {
 	g := &fakeGen{replies: []fakeReply{
-		{content: "時刻を見ます。", toolCalls: []ToolCall{{Name: "get_current_time", Args: []ToolArg{{"timezone", "Asia/Tokyo"}}}}},
+		{content: "時刻を見ます。", toolCalls: []ToolCall{toolCall("get_current_time", "timezone", "Asia/Tokyo")}},
 		{toolCalls: []ToolCall{calc("365 - 286"), calc("7/2")}},
 		{content: "あと 79 日です"},
 	}}
@@ -131,10 +142,10 @@ func TestAgentReturnsErrorsToTheModel(t *testing.T) {
 	g := &fakeGen{replies: []fakeReply{
 		{toolCalls: []ToolCall{
 			{Raw: "<tool_call>{}</tool_call>", Error: "書式が崩れていて呼び出しを読み取れません"},
-			{Name: "web_search", Args: []ToolArg{}},
-			{Name: "calculate", Args: []ToolArg{{"expr", "1+1"}}},
+			toolCall("web_search"),
+			toolCall("calculate", "expr", "1+1"),
 			calc("1/0"),
-			{Name: "fail", Args: []ToolArg{}},
+			toolCall("fail"),
 		}},
 		{content: "うまくいきませんでした"},
 	}}
@@ -196,7 +207,7 @@ func TestAgentStopDuringTool(t *testing.T) {
 		return "", ctx.Err()
 	}}
 	g := &fakeGen{replies: []fakeReply{
-		{toolCalls: []ToolCall{{Name: "wait", Args: []ToolArg{}}, calc("1+1")}},
+		{toolCalls: []ToolCall{toolCall("wait"), calc("1+1")}},
 		{content: "ここは生成されない"},
 	}}
 	cs, _, c := newToolConversation(t, g, blocking)
@@ -238,7 +249,7 @@ func TestAgentToolTimeout(t *testing.T) {
 		time.Sleep(time.Second)
 		return "遅い", nil
 	}}
-	g := &fakeGen{replies: []fakeReply{{toolCalls: []ToolCall{{Name: "slow", Args: []ToolArg{}}}}, {content: "だめでした"}}}
+	g := &fakeGen{replies: []fakeReply{{toolCalls: []ToolCall{toolCall("slow")}}, {content: "だめでした"}}}
 	cs, _, c := newToolConversation(t, g, slow)
 	start := time.Now()
 	send(t, cs, c, "遅いのを")
@@ -328,7 +339,7 @@ func TestAgentStopsWhenToolResultsOverflow(t *testing.T) {
 	huge := fakeTool{name: "huge", run: func(context.Context, map[string]string) (string, error) {
 		return strings.Repeat("大", 5000), nil
 	}}
-	g := &fakeGen{replies: []fakeReply{{toolCalls: []ToolCall{{Name: "huge", Args: []ToolArg{}}}}, {content: "ここは生成されない"}}}
+	g := &fakeGen{replies: []fakeReply{{toolCalls: []ToolCall{toolCall("huge")}}, {content: "ここは生成されない"}}}
 	cs, _, c := newToolConversation(t, g, huge)
 	cs.SetLimits(4000, 100)
 	evs := sendRaw(cs, c, "大きいのを")

@@ -23,6 +23,8 @@ import (
 	"strings"
 	"time"
 	"uuid"
+
+	"aibow/tool"
 )
 
 // Usage は、会話がモデルに渡す文字列で、会話の上限をどれだけ使っているか(画面のメーター)。
@@ -377,7 +379,7 @@ func summaryMessages(prev string, part []StoredMessage) []Message {
 const summaryToolResultRunes = 200
 
 // argsText は要約に渡す引数の文。例: 「: expression=1234 * 5678」
-func argsText(args []ToolArg) string {
+func argsText(args []tool.Arg) string {
 	var parts []string
 	for _, a := range args {
 		parts = append(parts, a.Name+"="+headRunes(a.Value, summaryToolResultRunes))

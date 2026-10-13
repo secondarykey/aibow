@@ -12,6 +12,8 @@ import (
 	"io"
 	"strings"
 	"unicode"
+
+	"aibow/tool"
 )
 
 // qwen35 は Qwen3.5 の書式。GGUF の general.architecture が "qwen35" のモデルに使う。
@@ -141,7 +143,7 @@ const (
 )
 
 // writeQwen35Tools はツールの説明を書く。ツールの定義は1つにつき1行の JSON。
-func writeQwen35Tools(b *strings.Builder, tools []ToolDef) {
+func writeQwen35Tools(b *strings.Builder, tools []tool.Def) {
 	b.WriteString(qwen35ToolsIntro)
 	for _, t := range tools {
 		b.WriteString("\n")
@@ -416,7 +418,7 @@ func parseQwen35Call(block string) ToolCall {
 		return brokenCall(block, name, "</function> で閉じていません")
 	}
 
-	call := ToolCall{Name: name, Args: []ToolArg{}}
+	call := ToolCall{Call: tool.Call{Name: name, Args: []tool.Arg{}}}
 	for {
 		body = strings.TrimLeftFunc(body, unicode.IsSpace)
 		if body == "" {
@@ -435,14 +437,14 @@ func parseQwen35Call(block string) ToolCall {
 			return brokenCall(block, name, "<parameter=引数名> が </parameter> で閉じていません")
 		}
 		value = strings.TrimSuffix(strings.TrimPrefix(value, "\n"), "\n")
-		call.Args = append(call.Args, ToolArg{Name: arg, Value: value})
+		call.Args = append(call.Args, tool.Arg{Name: arg, Value: value})
 		body = rest
 	}
 }
 
 // brokenCall は読み取れなかった呼び出し。name は読み取れた関数名(読めなければ空)。
 func brokenCall(raw, name, reason string) ToolCall {
-	return ToolCall{Name: name, Raw: raw, Error: "書式が崩れていて呼び出しを読み取れません(" + reason + ")。\n" + qwen35CallHelp}
+	return ToolCall{Call: tool.Call{Name: name}, Raw: raw, Error: "書式が崩れていて呼び出しを読み取れません(" + reason + ")。\n" + qwen35CallHelp}
 }
 
 // ---- 思考と答えの切り分け -----------------------------------------------------------

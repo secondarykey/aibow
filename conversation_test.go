@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"unicode/utf8"
+
+	"aibow/tool"
 )
 
 // fakeGen はテスト用の Generator。決めておいた思考と答えを返し、渡された内容を記録する。
@@ -35,7 +37,7 @@ type fakeReply struct {
 
 type fakeCall struct {
 	messages []Message
-	tools    []ToolDef
+	tools    []tool.Def
 	opt      GenerateOptions
 	think    bool
 	prompt   string // 書式を当てた文字列

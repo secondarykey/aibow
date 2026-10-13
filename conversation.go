@@ -20,6 +20,8 @@ import (
 	"time"
 	"unicode"
 	"uuid"
+
+	"aibow/tool"
 )
 
 // Generator は返事を生成するもの。本物は Engine。テストでは偽物に差し替える。
@@ -69,7 +71,7 @@ var ErrGenerating = errors.New("別の会話で返事を生成中です。終わ
 type Conversations struct {
 	store Store
 	gen   Generator
-	tools []Tool // 「ツールを使う」が ON の会話で、モデルが使えるツール
+	tools []tool.Tool // 「ツールを使う」が ON の会話で、モデルが使えるツール
 
 	// generating は生成中の会話の ID。生成していなければ nil。
 	// エンジン(作業領域)が1つしかないので、生成は同時に1つだけ。
@@ -93,7 +95,7 @@ type limits struct {
 // NewConversations は会話の仕組みを作る。app からは新しい会話の既定の設定と、会話の上限・返事の上限を使う。
 func NewConversations(store Store, gen Generator, app AppSettings) *Conversations {
 	return &Conversations{
-		store: store, gen: gen, tools: BuiltinTools(), defaults: app.Defaults.normalized(),
+		store: store, gen: gen, tools: tool.Builtin(), defaults: app.Defaults.normalized(),
 		limits: limits{history: app.Workspace.HistoryTokens, reply: app.Workspace.ReplyTokens},
 	}
 }
@@ -360,7 +362,7 @@ func promptMessages(system, summary string, history []StoredMessage) []Message {
 // promptFor は、会話の設定でモデルに渡す内容(書式を当てる前の構造)を作る。
 // 「ツールを使う」が ON ならツールの定義も入れる。
 func (cs *Conversations) promptFor(set ConversationSettings, messages []Message) Prompt {
-	return Prompt{Messages: messages, Tools: toolDefs(cs.toolsFor(set)), Think: set.Think}
+	return Prompt{Messages: messages, Tools: tool.Defs(cs.toolsFor(set)), Think: set.Think}
 }
 
 // noAnswerNote は、答えが出ないまま終わったときに答えの代わりに残す文。

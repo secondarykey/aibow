@@ -1,6 +1,6 @@
-package aibow
+package tool
 
-// tool_calc.go: 計算のツール(calculate)。
+// calc.go: 計算のツール(calculate)。
 //
 // LLM は計算が苦手(数字もトークンの並びとして「それらしく」続けているだけ)。4B のモデルは
 // 4桁 × 4桁の掛け算をよく間違える。計算をツールに任せると、ツールの効果が分かりやすい。
@@ -32,8 +32,8 @@ import (
 
 type calculator struct{}
 
-func (calculator) Def() ToolDef {
-	return ToolDef{
+func (calculator) Def() Def {
+	return Def{
 		Name:        "calculate",
 		Description: "Evaluate an arithmetic expression exactly. Supports numbers, + - * / and parentheses.",
 		Parameters: json.RawMessage(`{"type": "object", "properties": {"expression": {"type": "string", ` +

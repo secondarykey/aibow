@@ -10,6 +10,8 @@ import (
 	"uuid"
 
 	"aibow"
+
+	"aibow/tool"
 )
 
 func openTemp(t *testing.T) (*SQLite, string) {
@@ -248,7 +250,7 @@ func TestMigrationFromVersion1(t *testing.T) {
 func TestToolMessagesPersist(t *testing.T) {
 	s, path := openTemp(t)
 	c := newConv(t, s, time.Now())
-	call := aibow.ToolCall{Name: "calculate", Args: []aibow.ToolArg{{Name: "expression", Value: "7/2"}}}
+	call := aibow.ToolCall{Call: tool.Call{Name: "calculate", Args: []tool.Arg{{Name: "expression", Value: "7/2"}}}}
 	broken := aibow.ToolCall{Raw: "<tool_call>?</tool_call>", Error: "書式が崩れています"}
 	reply := aibow.StoredMessage{ID: uuid.NewV7(), ConversationID: c.ID, Role: "assistant", ToolCalls: []aibow.ToolCall{call, broken}, CreatedAt: time.Now()}
 	result := aibow.StoredMessage{ID: uuid.NewV7(), ConversationID: c.ID, Role: "tool", Content: "3.5",

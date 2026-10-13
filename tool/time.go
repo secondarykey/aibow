@@ -1,6 +1,6 @@
-package aibow
+package tool
 
-// tool_time.go: 現在時刻のツール(get_current_time)。
+// time.go: 現在時刻のツール(get_current_time)。
 //
 // モデルは学習した時点までのことしか知らず、「今日」がいつかを知らない。
 // 時刻をツールで渡すと、知らないことを「調べて」答える、というツールの効果が分かりやすい。
@@ -20,8 +20,8 @@ type currentTime struct {
 	now func() time.Time // テストで時刻を決めるため。nil なら time.Now
 }
 
-func (currentTime) Def() ToolDef {
-	return ToolDef{
+func (currentTime) Def() Def {
+	return Def{
 		Name:        "get_current_time",
 		Description: "Get the current date, day of the week, time and time zone.",
 		Parameters: json.RawMessage(`{"type": "object", "properties": {"timezone": {"type": "string", ` +
