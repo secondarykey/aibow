@@ -3,12 +3,21 @@
 // 数えているのは、次の送信でモデルに渡す文字列(チャットテンプレートを当てたもの。要約を使うなら要約込み)。
 // 送信で足す新しい発言の分は、まだ入っていない。
 // 上限を超えていたら、次の送信で compact が働く(none なら送信が止まる)。
+//
+// summary の会話では、トークン数(「n / 上限」の n)を押すと今すぐ要約する(onCompact)。
+// 要約は「n を減らす」操作なので、別のボタンを並べずに数そのものを押せるようにしている。
 import type { Usage } from "../../bindings/aibow";
 
 // 橙にする割合。ここを超えたら、もうすぐ compact が働く
 const WARN_RATIO = 0.9;
 
-export function Meter({ usage }: { usage: Usage | null }) {
+interface Props {
+  usage: Usage | null;
+  onCompact?: () => void;    // 今すぐ要約(summary の会話だけ渡す)
+  compactDisabled?: boolean; // 生成中・読み込み中は押せない
+}
+
+export function Meter({ usage, onCompact, compactDisabled }: Props) {
   if (!usage) {
     return <span className="meter" title="トークン数はモデルで数えるので、モデルを読み込むと出ます">– / –</span>;
   }
@@ -20,7 +29,10 @@ export function Meter({ usage }: { usage: Usage | null }) {
   return (
     <span className={`meter ${level}`} title={title}>
       <span className="meter-bar"><span style={{ width: `${Math.min(ratio, 1) * 100}%` }} /></span>
-      {usage.tokens.toLocaleString()} / {usage.limit.toLocaleString()}
+      {onCompact
+        ? <button className="meter-tokens" disabled={compactDisabled} onClick={onCompact} title="要約">{usage.tokens.toLocaleString()}</button>
+        : usage.tokens.toLocaleString()}
+      {" / "}{usage.limit.toLocaleString()}
     </span>
   );
 }

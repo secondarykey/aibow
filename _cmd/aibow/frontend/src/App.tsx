@@ -162,19 +162,12 @@ export default function App() {
       />
       <ModelBar models={models} disabled={busy !== "idle"}>
         {convs.current && (
-          <>
-            {convs.current.conversation.settings.compact === "summary" && (
-              <button
-                className="compact-now"
-                disabled={busy !== "idle"}
-                onClick={chat.compact}
-                title="会話の上限を超えていなくても、古い発言を今すぐ要約する(最近の発言は会話の上限の半分まで残す)"
-              >
-                今すぐ要約
-              </button>
-            )}
-            <Meter usage={convs.current.usage} />
-          </>
+          // summary の会話では、メーターのトークン数を押すと今すぐ要約する(最近の発言は会話の上限の半分まで残す)
+          <Meter
+            usage={convs.current.usage}
+            onCompact={convs.current.conversation.settings.compact === "summary" ? chat.compact : undefined}
+            compactDisabled={busy !== "idle"}
+          />
         )}
       </ModelBar>
     </>
