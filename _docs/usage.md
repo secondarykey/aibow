@@ -98,6 +98,31 @@ aibow を起動したまま `ollama pull` した場合は、aibow のウィン�
 - 確認を待っている間に別の会話を見に行っても、待ち続けます(会話の一覧に橙の点滅)。戻るとカードがそのまま出ます
 - 答えた結果(実行した / 拒否した)は保存され、再起動しても見えます
 
+### MCP のサーバー
+
+MCP(Model Context Protocol)のサーバーのツールも使えます。サーバーは設定ファイル `settings.json`(`%APPDATA%\aibow\settings.json`)の `mcpServers` に書きます。
+書き方は、ほかのツール(Claude Desktop など)の `mcpServers` と同じです。たとえば公式の filesystem サーバー(Node.js が要ります)は次のようにします。
+
+```json
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "${workdir}"]
+    }
+  }
+}
+```
+
+- `${workdir}` は会話の作業フォルダに置き換わります。`${workdir}` を使うサーバーは作業フォルダごとに起動し、作業フォルダを決めていない会話では使いません
+- サーバーは、その会話で最初に送信したときに起動します(`npx` の初回はダウンロードで時間がかかります)。アプリを閉じると止まります
+- 設定ファイルを変えたら、アプリを起動し直してください。書き間違いは起動したときにお知らせに出ます
+- 使えるのは `command` で起動するサーバー(stdio)だけです。`url` で指定するサーバーは使えません
+- MCP のツールは、**全部、実行する前に確認**します。カードにはサーバーの名前と、サーバーに渡す引数が出ます
+- 組み込みのツールと同じ名前のツール(filesystem サーバーの `read_file`・`write_file`・`edit_file`)は出しません
+- 「ツールを使う」が OFF の会話では使いません
+- 仕組みは [mcp.md](mcp.md)
+
 - 返事の中では、答えより前の部分(各回の思考とツールのカード)が「思考の過程(N秒)・ツール N回」の枠に畳まれます
 - 1回の送信でツールを実行するのは 20 回まで、1回の実行は 10 秒まで(`run_command` は 120 秒まで)です。停止のアイコンで、ツールの実行中でも止められます(コマンドは、そこから起動された子プロセスもまとめて止めます)
 - ツールのエラーや書式の崩れは「エラー: …」としてモデルに返し、モデル自身に直させます
@@ -124,6 +149,7 @@ aibow を起動したまま `ollama pull` した場合は、aibow のウィン�
 | `OLLAMA_MODELS` | `%USERPROFILE%\.ollama\models` | Ollama の保存フォルダ(Ollama 自身と同じ変数) |
 | `AIBOW_LIB` | `lib` | llama.cpp の DLL があるフォルダ(相対パスはカレントフォルダが基準) |
 | `AIBOW_DB` | `%APPDATA%\aibow\aibow.db` | 会話を保存する SQLite のファイル。フォルダが無ければ作る |
+| `AIBOW_SETTINGS` | `%APPDATA%\aibow\settings.json` | 設定ファイル(手で書く設定。今は MCP のサーバーの `mcpServers` だけ)。無ければ MCP を使わない |
 | `AIBOW_HISTORY_TOKENS` | `8192` | 会話の上限(モデルに渡す、これまでの会話のトークン数の上限)。超えたら会話ごとの compact の方式で収める |
 | `AIBOW_MAX_TOKENS` | `8192` | 返事の上限(1回の返事で生成するトークン数の上限。思考 + 答えの合計) |
 | `AIBOW_GPU_LAYERS` | `999` | GPU に載せる層の数。VRAM に入りきらないモデルは減らす(残りは CPU で計算) |

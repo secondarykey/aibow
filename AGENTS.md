@@ -20,6 +20,7 @@ aibow は、ローカルLLMを使ったアプリを**自分で作りながら仕
 ウィンドウ(_cmd/aibow/frontend の React) ⇄ Wails v3 ⇄ aibow ⇄ yzma ⇄ llama.cpp(_cmd/aibow/lib\ の DLL)⇄ GPU
                                                      ⇅          ↑ _cmd/aibow/models\*.gguf / Ollama の保存フォルダ
                                           aibow/store(SQLite: %APPDATA%\aibow\aibow.db)
+                                          aibow/mcpclient ⇄ MCP のサーバー(%APPDATA%\aibow\settings.json に書いたもの。子プロセス)
 ```
 
 - **Ollama などの外部 LLM サーバーは使わない**。aibow のプロセスの中で llama.cpp を直接動かす。
@@ -33,6 +34,8 @@ aibow は、ローカルLLMを使ったアプリを**自分で作りながら仕
 | ルート(`aibow` パッケージ) | LLM を動かす部分と会話の仕組み。Wails を import しないライブラリ |
 | `tool/` | ツール(`tool` パッケージ)。ツールの形と組み込みのツール・作業フォルダのツール。LLM・書式・会話・保存を import しない(MCP でツールだけを使うため) |
 | `store/` | 会話の保存先(SQLite) |
+| `mcpclient/` | MCP のクライアント(`mcpclient` パッケージ)。`settings.json` の MCP のサーバーを起動し、そのツールを `tool.Tool` として見せる。`tool` を import し、ルートの `aibow` は import しない |
+| `internal/proc/` | 子プロセスまでまとめて止める仕組み(`tool` の `run_command` と `mcpclient` で使う) |
 | `_cmd/aibow/` | デスクトップアプリ(Wails v3 + React)。別モジュール |
 | `_docs/` | 仕組みごとの説明(下の表)と、機能の仕様(`_docs/features/`)。利用者向けの手順は `setup.md`(準備と起動)・`usage.md`(使い方と設定)・`structure.md`(構成とファイル) |
 | `TODO.md` | 全体の進み具合とロードマップ |
@@ -43,6 +46,7 @@ aibow は、ローカルLLMを使ったアプリを**自分で作りながら仕
 |---|---|
 | 生成・モデルの読み込みと切り替え・トークン化・プロンプトの書式・思考の振り分け・モデルの一覧 | [_docs/engine.md](_docs/engine.md) |
 | ツール呼び出し・エージェントループ・書式の interface(`Format`)・ツールの追加 | [_docs/tools.md](_docs/tools.md) |
+| MCP のクライアント・設定ファイル(`settings.json`)・MCP のサーバーの起動と終了 | [_docs/mcp.md](_docs/mcp.md) |
 | 会話の履歴・会話ごとの設定・アプリ全体の設定・保存の約束(`Store`) | [_docs/conversations.md](_docs/conversations.md) |
 | 会話の上限・compact(truncate / summary)・メーター | [_docs/compact.md](_docs/compact.md) |
 | SQLite の実装・マイグレーション | [store/AGENTS.md](store/AGENTS.md) |
@@ -69,16 +73,18 @@ aibow は、ローカルLLMを使ったアプリを**自分で作りながら仕
 ## 技術方針
 
 - **言語は Go**(1.27 以上。標準の `uuid` パッケージを使う)。Python など別言語の実装を持ち込まない
-- Go の外部パッケージは次の4つだけ。それ以外は標準ライブラリで書く
+- Go の外部パッケージは次の5つだけ。それ以外は標準ライブラリで書く
   - yzma(github.com/hybridgroup/yzma): llama.cpp の呼び出し。llama.cpp との版の組み合わせは [_docs/engine.md](_docs/engine.md)
   - Wails v3: 画面。`_cmd/aibow` だけで使い、ルートの `go.mod` には入れない
   - `modernc.org/sqlite`: 会話の保存。`store` パッケージだけで使う
   - `github.com/pkg/diff`: 書き換えるツールの実行前の確認で見せる差分(diff)の計算。`tool` パッケージだけで使う(0005 の 3-2 でユーザーと決めた)
+  - `github.com/modelcontextprotocol/go-sdk`: MCP の公式 Go SDK。`mcpclient` パッケージだけで使う(0006 でユーザーと決めた)
 - C コンパイラなし(`CGO_ENABLED=0`)でビルドできる状態を保つ
-- 外部パッケージ(Go・npm とも)を足すときは、理由と代替案を示してユーザーに確認してから足す(MCP の公式 Go SDK はステップ4以降で検討してよい)
+- 外部パッケージ(Go・npm とも)を足すときは、理由と代替案を示してユーザーに確認してから足す
 - チャットテンプレートなど、学習の対象になる仕組みはライブラリ任せにせず自分で書く
 - 設定は `AIBOW_` で始まる環境変数にし、[_docs/usage.md](_docs/usage.md) の表に追加する(今ある環境変数はその表と [_cmd/aibow/AGENTS.md](_cmd/aibow/AGENTS.md))。
   画面で変えられる設定の環境変数は「DB にまだ値が無いときの初期値」で、画面で変えたら DB の値が優先
+- 画面で変える設定は DB、手で書く設定(その PC でどう起動するか。MCP のサーバーなど)は設定ファイル `settings.json`([_docs/mcp.md](_docs/mcp.md))
 
 ## コードの書き方
 

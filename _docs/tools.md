@@ -108,9 +108,12 @@ tool ── 何も知らない
 - 型の名前はパッケージ名と重ねない(`tool.ToolDef` ではなく `tool.Def`。Go の慣習)。interface だけは `tool.Tool`(`context.Context` と同じく、ほかに良い名前が無いため)
 - `Tool` は定義(`Def`: 名前・説明・引数の JSON Schema)と実行(`Run`)を持つ。名前は英語の snake_case、説明も英語
 - 引数は `tool.CheckArgs` が JSON Schema の `properties` / `required` と照らし合わせる。間違いは「使える引数: …」付きのエラーで返す
-- Qwen3.5 の書式では値がすべて文字列で届くので、`CheckArgs` が JSON Schema の `type` を見て変換する(`integer` → int、`number` → float64、ほかは文字列)。
+- Qwen3.5 の書式では値がすべて文字列で届くので、`CheckArgs` が JSON Schema の `type` を見て変換する(`integer` → int、`number` → float64、`boolean` → bool、`array` / `object` → JSON を読んだ値、ほかは文字列)。
+  書き方は、公式テンプレートが履歴に呼び出しを書き戻すときの形に合わせる(配列・オブジェクトは `tojson`、それ以外は文字列。テンプレートは Python で動くので真偽値は `True` / `False`。0006 で MCP のツールのために足した)。
+  `type` が `["integer", "null"]` のような配列なら null でない最初の型、`anyOf` などで型を決めていなければ文字列のまま
   `Run` は変換済みの `tool.Args`(`map[string]any`。`String` / `Int` で取り出す)を受け取る。保存とプロンプトへの書き戻しは、モデルが書いたままの文字列(`tool.Arg`)を使う
-- ステップ3(ファイル操作)・ステップ4(MCP)のツールも `tool.Tool` で足し、`Conversations.tools` に入れる
+- ステップ3(ファイル操作)のツールも `tool.Tool` で足し、`Conversations.tools` に入れる。
+  ステップ4の MCP のサーバーのツールも `tool.Tool`(`tool.Remote`)で、`Conversations.toolsFor` が組み込みのツールの後ろに並べる([mcp.md](mcp.md))
 
 | 名前 | 中身 |
 |---|---|

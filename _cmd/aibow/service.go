@@ -58,7 +58,6 @@ type ChatService struct {
 	cancelQuit context.CancelFunc
 }
 
-//
 // remote は MCP のサーバーのツール(settings.json にサーバーが無ければ nil)。
 func NewChatService(engine *aibow.Engine, st aibow.Store, app aibow.AppSettings, catalog aibow.ModelCatalog,
 	initial *aibow.ModelEntry, remote aibow.RemoteTools, notices []string, startupErr error) *ChatService {

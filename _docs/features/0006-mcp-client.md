@@ -87,6 +87,30 @@ MCP(Model Context Protocol)は、ツールやデータを AI アプリにつな�
 - サーバーの起動(コマンド・かかった時間)・取り決めた MCP の版とサーバーの名前・ツールの数と定義のトークン数
 - 送受信した JSON-RPC のメッセージ(長いものは切る)
 
+### 実装で決めたこと(Code が決めた)
+
+- パッケージは `mcpclient/`(SDK の `mcp` と重ねない)。会話の仕組みは `RemoteTools`(`Start` / `Tools`)の interface だけを見る。`tool` には「外で実行するツール」の印 `tool.Remote`(`Server()`)を足した
+- `settings.json` の読み込みはルートの `settingsfile.go`(`aibow.LoadSettingsFile`)。画面で変える設定の `appsettings.go` と並べて、置き場所の違いが分かるように
+- 子プロセスまでまとめて止める仕組み(3-3 のジョブオブジェクト・プロセスグループ)を `tool` から `internal/proc` に移し、MCP のサーバーでも使う
+- サーバーの起動は送信の最初(会話の上限を確かめる前。MCP のツールの定義も上限に数えるため)。メーターの計算などでは起動しない(最初の送信の前のメーターには MCP のツールが入らない)
+- **Roots には対応していないと名乗る**(空の `ClientCapabilities`)。SDK の既定は「対応している」と名乗るが、filesystem サーバーはクライアントが Roots に対応していると Roots のフォルダを引数のフォルダの代わりに使うため
+- **組み込みのツールと名前が重なった MCP のツールは、仮に出さない**(未決事項 1 が決まるまで。重なったものはログに出す)
+- 確認の内容(`tool.Preview`)にサーバーの名前と引数(整えた JSON)を足した。保存する結果(`ToolResult`)にサーバーの名前を足した(呼び出しの `ToolCall` は書式から読み取ったものなので変えない)
+- 画面:ツールのカードの名前の前に、サーバーの名前を小さな枠で出す。確認のカードは、差分の代わりに引数の JSON を出す
+- 閉じるときの待ち時間は 2 秒(標準入力を閉じてから、サーバーが自分で終わるのを待つ)。サーバーはまとめて並行に止める
+- ログの1行は 400 文字まで
+
+### 調べた結果(調べてから決めること の答え)
+
+- SDK は v1.8.0。間接の依存は `google/jsonschema-go`・`segmentio/encoding`(と `segmentio/asm`)・`yosida95/uritemplate`・`golang.org/x/oauth2`・`golang.org/x/sync`・`golang.org/x/time`。`CGO_ENABLED=0` でビルドできた。SDK の `go.mod` は Go 1.25
+- メッセージのログは SDK の `LoggingTransport`(`write:` / `read:` の行を書く)を、1行ずつログに出す `io.Writer` で包んだ
+- Windows で `exec.Command("npx", …)` はそのまま動いた(`cmd /c` は要らない)。閉じた後に node は残らなかった(npx が起動した node 2 つが消えた)
+- filesystem サーバーは相対パスも受け付けた(カレントフォルダを作業フォルダにしているため)。作業フォルダの中の絶対パスも受け付けた
+- 配列・オブジェクト・真偽値の引数:Qwen3.5 の公式テンプレートは、履歴に書き戻すときに配列・オブジェクトを `tojson`、それ以外を文字列にする(真偽値は Python の `True` / `False`)。`CheckArgs` もその形で読む
+- **filesystem サーバー(secure-filesystem-server 1.0.0)は 2025-11-25 版で話した**。SDK が `server/discover`(2026-07-28 版)を送り、「Method not found」で返されると、古い版の挨拶(`initialize`)に戻った。ツールは 14 個(使わなくなった `read_file` も入っている)。起動に 10.6 秒(ほとんどが npx)
+- テストの偽物のサーバー:SDK でサーバーを作り、`NewInMemoryTransports` でプロセスを起動せずにつなぐ。本物の子プロセスは、テストの実行ファイル自身を MCP のサーバーとして起動して確かめる(こちらとは 2026-07-28 版で話した)
+- SDK は `inputSchema` を `map[string]any` で渡すので、サーバーが書いたキーの順は残らない(JSON にし直すと名前の順)。モデルが読むのには困らない
+
 ## やらないこと(先回りしない)
 
 - 信頼したサーバー・ツールの確認を省く仕組み(`TODO.md` のロードマップの外に記録)
