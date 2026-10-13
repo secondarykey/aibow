@@ -36,6 +36,8 @@ func (r *fakeRemote) Start(_ context.Context, workDir string, use []string) ([]s
 	return []string{"fake"}, nil
 }
 
+func (r *fakeRemote) Servers() []string { return []string{"fake"} }
+
 func (r *fakeRemote) ListTools(_ context.Context, server string) ([]tool.Tool, error) {
 	if server != "fake" {
 		return nil, errors.New("知らないサーバー")
@@ -128,19 +130,44 @@ func TestRemoteTools(t *testing.T) {
 	}
 }
 
-// 会話で選んでいないサーバーは、起動もせず、ツールも見せない(新しい会話の既定は「使わない」)
+// 会話で選んでいない(外した)サーバーは、起動もせず、ツールも見せない
 func TestRemoteToolsNotSelected(t *testing.T) {
 	g := &fakeGen{content: "こんにちは"}
-	cs, c, _ := newWorkDirConversation(t, g)
+	cs, c, _ := newWorkDirConversation(t, g) // MCP のサーバーをつなぐ前に作った会話なので、何も選んでいない
 	r := &fakeRemote{tools: []tool.Tool{&remoteTool{name: "remote_list"}}}
 	cs.SetRemoteTools(r)
 
 	if len(c.Settings.MCPServers) != 0 {
-		t.Errorf("新しい会話の既定は使わない: %v", c.Settings.MCPServers)
+		t.Errorf("何も選んでいない: %v", c.Settings.MCPServers)
 	}
 	sendAnswering(cs, context.Background(), c, "やあ", func(*ConfirmRequest) bool { return false })
 	if r.started || slices.Contains(promptToolNames(g.calls[0]), "remote_list") {
 		t.Errorf("選んでいないサーバーは起動しない・見せない: %v", promptToolNames(g.calls[0]))
+	}
+}
+
+// 新しい会話では、設定の画面の「ツール」で使うにしているサーバーを最初から選ぶ。使わないにしたサーバーは選ばない。
+// 保存する「新しい会話の既定」には、使うサーバーを入れない(決める場所は「ツール」だけ)
+func TestDefaultServers(t *testing.T) {
+	cs, _ := newTestConversations(t, &fakeGen{})
+	cs.SetRemoteTools(&fakeRemote{})
+	prefs := &ToolPrefs{}
+	cs.SetToolPrefs(prefs)
+
+	if got := mustCreate(t, cs).Settings.MCPServers; !slices.Equal(got, []string{"fake"}) {
+		t.Errorf("「ツール」で使うサーバーを最初から選ぶ: %v", got)
+	}
+	prefs.SetServerPolicy("fake", ToolOff)
+	if got := cs.Defaults().MCPServers; len(got) != 0 {
+		t.Errorf("使わないにしたサーバーは選ばない: %v", got)
+	}
+	set := cs.Defaults()
+	set.MCPServers = []string{"fake"}
+	if err := cs.SetDefaults(set); err != nil {
+		t.Fatal(err)
+	}
+	if got := cs.defaults.MCPServers; len(got) != 0 {
+		t.Errorf("保存する既定には入れない: %v", got)
 	}
 }
 

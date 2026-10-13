@@ -280,7 +280,8 @@ export interface ConversationSettings {
 
     /**
      * MCPServers は、この会話で使う MCP のサーバー(settings.json の名前)。選んでいないサーバーはモデルに見せず、起動もしない。
-     * ツールの説明は毎回プロンプトに入るので、全部を載せると会話の上限を食い尽くす(Blender だけで 26 個)。新しい会話の既定は空(使わない)
+     * ツールの説明は毎回プロンプトに入るので、全部を載せると会話の上限を食い尽くす(Blender だけで 26 個)。
+     * 新しい会話では、設定の画面の「ツール」で使うにしているサーバーを最初から選ぶ(Conversations.Defaults)
      */
     "mcp_servers": string[] | null;
 

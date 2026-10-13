@@ -230,6 +230,13 @@ export default function App() {
         onToolsChanged={() => {
           reloadMcp();
           convs.refreshUsage().catch(err => addError(errorMessage(err)));
+          // 新しい会話の画面なら、これから作る会話で使う MCP のサーバーを「ツール」に合わせ直す(「ツール」のチェックが最初から使うサーバー)
+          if (!convs.current && convs.draft) {
+            ChatService.AppSettings().then(
+              a => convs.updateSettings({ mcp_servers: a.defaults.mcp_servers }),
+              err => addError(errorMessage(err)),
+            );
+          }
         }}
       />
     );

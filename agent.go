@@ -440,6 +440,8 @@ func (cs *Conversations) localTools(set ConversationSettings) []tool.Tool {
 // RemoteTools は、aibow の外のプログラムが実行するツールの置き場(MCP のサーバー。本物は mcpclient.Manager)。
 // 会話の仕組みは MCP を知らない。ツールが tool.Tool の形で並んでいれば、エージェントループはそのまま使える。
 type RemoteTools interface {
+	// Servers は settings.json に書いたサーバーの名前(名前の順)
+	Servers() []string
 	// Start は、作業フォルダ workDir の会話で使うサーバー(use)のうち、動いていないものを起動する。
 	// 起動したサーバーの名前と、起動できなかったサーバーのエラーを返す
 	Start(ctx context.Context, workDir string, use []string) (started []string, errs []error)
