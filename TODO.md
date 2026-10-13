@@ -16,7 +16,7 @@ aibow 全体の進み具合。ルールと全体の構成は `AGENTS.md`(仕組�
 | ✅ | 3-1. ミニコーディングエージェント:作業フォルダ(会話ごと)と、読むツール(`list_files`・`read_file`)。作業フォルダの外には `os.Root` で出られない | [0005-coding-agent.md](_docs/features/0005-coding-agent.md) |
 | ✅ | 3-2. 書くツール(`write_file`・`edit_file`)と、実行前の確認(拒否したら理由をモデルに返して続ける) | [0005-coding-agent.md](_docs/features/0005-coding-agent.md) |
 | ✅ | 3-3. コマンド実行(`run_command`。Windows は cmd.exe、それ以外は sh。実行前に確認) | [0005-coding-agent.md](_docs/features/0005-coding-agent.md) |
-| 🔧 | 4. MCP クライアント:公式の Go SDK で既製の MCP サーバー(filesystem)につなぎ、そのツールを使う。サーバーは `settings.json` の `mcpServers` に書く | [0006-mcp-client.md](_docs/features/0006-mcp-client.md) |
+| ✅ | 4. MCP クライアント:公式の Go SDK で既製の MCP サーバー(filesystem)につなぎ、そのツールを使う。サーバーは `settings.json` の `mcpServers` に書く | [0006-mcp-client.md](_docs/features/0006-mcp-client.md) |
 | ⬜ | 5. MCP サーバー自作(Go):`tool` のツールを MCP で出し、aibow をつなぎ直す(ステップ3のツールを MCP サーバー経由に置き換える) | 未作成 |
 | ⬜ | 6. OpenAI 互換 API の口を作り、Cline などの既製ツールからつないで比べる | 未作成 |
 
