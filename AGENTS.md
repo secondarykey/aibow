@@ -14,7 +14,7 @@ aibow は、ローカルLLMを使ったアプリを**自分で作りながら仕
 
 完成品を早く作ることより、**各段階で何が起きているかが読んで分かること**を優先してください。
 
-## 全体の構成(ステップ2-2: compact)
+## 全体の構成(ステップ2-3: ツール呼び出し)
 
 ```
 ウィンドウ(_cmd/aibow/frontend の React) ⇄ Wails v3 ⇄ aibow ⇄ yzma ⇄ llama.cpp(_cmd/aibow/lib\ の DLL)⇄ GPU
@@ -41,6 +41,7 @@ aibow は、ローカルLLMを使ったアプリを**自分で作りながら仕
 | 作業内容 | 読むもの |
 |---|---|
 | 生成・モデルの読み込みと切り替え・トークン化・プロンプトの書式・思考の振り分け・モデルの一覧 | [_docs/engine.md](_docs/engine.md) |
+| ツール呼び出し・エージェントループ・書式の interface(`Format`)・ツールの追加 | [_docs/tools.md](_docs/tools.md) |
 | 会話の履歴・会話ごとの設定・アプリ全体の設定・保存の約束(`Store`) | [_docs/conversations.md](_docs/conversations.md) |
 | 会話の上限・compact(truncate / summary)・メーター | [_docs/compact.md](_docs/compact.md) |
 | SQLite の実装・マイグレーション | [store/AGENTS.md](store/AGENTS.md) |
@@ -96,7 +97,7 @@ aibow は、ローカルLLMを使ったアプリを**自分で作りながら仕
 
 ```bash
 gofmt -l .                       # 整形が必要なファイルを表示(何も出なければ OK。_cmd も含む)
-go test ./...                    # テンプレート、思考の振り分け、Ollama の目録、会話の仕組み、compact、設定の引き継ぎ、SQLite(マイグレーション)のテスト(モデル不要)
+go test ./...                    # 書式(公式テンプレートとの一致)、思考とツール呼び出しの振り分け、ツール、エージェントループ、Ollama の目録、会話の仕組み、compact、設定の引き継ぎ、SQLite(マイグレーション)のテスト(モデル不要)
 (cd _cmd/aibow && wails3 build)  # バインディング生成 → 画面の型チェックとビルド(tsc + vite)→ Go のビルド
 go vet ./... ./_cmd/aibow        # よくある間違いを静的チェック(./... は _cmd を含まないので並べる)
 ```

@@ -11,8 +11,8 @@
 |---|---|
 | `App.tsx` | 画面全体をまとめる。一覧の開閉(狭いウィンドウでは重ねて出す)、会話の場所に出すもの(チャット / 新しい会話 / 設定) |
 | `useModels.ts` / `useConversations.ts` / `useChat.ts` / `useAppSettings.ts` | Go とのやり取り |
-| `transcript.ts` | 会話の表示(吹き出し・エラー・区切り)の持ち方。保存された発言から表示を作る |
-| `components/` | 表示。`ConversationList` / `Splitter` / `TitleBar` / `ChatView` / `Composer` / `ModelBar` / `Meter` / `NewChat` / `SettingsView` / `CopyButton` など。返事の中身は [rendering.md](rendering.md) |
+| `transcript.ts` | 会話の表示(吹き出し・ツールのカード・エラー・区切り)の持ち方。保存された発言から表示を作る |
+| `components/` | 表示。`ConversationList` / `Splitter` / `TitleBar` / `ChatView` / `ToolCard` / `Composer` / `ModelBar` / `Meter` / `NewChat` / `SettingsView` / `CopyButton` など。返事の中身は [rendering.md](rendering.md) |
 | `mediaQuery.ts` | 画面の幅・OS のライト / ダークを見る(`useMediaQuery`。狭いウィンドウの境目 `NARROW_QUERY`) |
 | `stickToBottom.ts` | 「一番下にいるときだけ追いかける」スクロール |
 | `toast.tsx` / `imeFocus.tsx` / `errors.ts` | トースト / IME の付け直し / Go のエラーの文の取り出し |
@@ -48,6 +48,16 @@
   - マウスを乗せると実際の時刻を秒まで出す。開いたままでも進むよう、30 秒ごとに描き直す
 - 停止ボタンは、生成中の返事の吹き出しの中(右下)に出す。赤い停止のアイコン(`LuCircleStop`)だけで、何を止めるか(停止 / 要約を停止)はマウスを乗せると出る
 - 返事の本文と要約の文の表示は [rendering.md](rendering.md)
+
+### ツールのカード
+
+- 1回の送信の返事は吹き出し1つ。ツールを使った送信は、その中に「思考 → 答え → カード → 思考 → 答え …」と生成した順に並べる(`AssistantView.steps` がツールを呼んだ回)
+- カード(`ToolCard.tsx`)は「思考の過程」と同じく畳んだ1行: レンチのアイコン・ツールの名前・状態(実行中… / ✓ 秒数 / ✕ エラー)。開くと引数と結果、読み取れなかった呼び出しはモデルが書いたまま
+- ツールの名前にマウスを乗せると日本語の説明を出す(モデルに見せる説明は英語)
+- モデルが書いた `<tool_call>` の生の文字列は答えの欄に出さない(設定の画面の「モデルに渡した文字列」で見える)
+- 統計行は吹き出しの最後に1つで、ループ全体の合計(「N回生成」が付く)。コピーは各回の答えをつなげたもの
+- 表示は保存された返事とツールの結果から作る(`turnView`)。生成中も `reply` / `tool_result` イベントで届いた保存済みの発言から作り直すので、再起動して開き直しても同じ並びになる
+- 生成中にその会話を開き直したときは、生成中の送信で保存済みの発言を、保存された発言の側からは外す(生成中の吹き出しの中に出すため)
 
 ## 新しい会話の画面
 

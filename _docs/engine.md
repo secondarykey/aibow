@@ -10,9 +10,9 @@
 | `aibow.go` | パッケージの説明。ルートは `aibow` パッケージ(ライブラリ)で、Wails を import しない |
 | `engine.go` | llama.cpp の呼び出し。モデルの読み込み・入れ替え、作業領域の作り直し、トークン数を数える(`CountTokens`)、KV キャッシュ再利用、decode、サンプリングの生成ループ |
 | `models.go` | モデルの一覧(`models\` の *.gguf と Ollama の保存フォルダ)。ID は `file:<パス>` / `ollama:<名前>` |
-| `prompt.go` | 会話 → ChatML 文字列(Qwen3.5 の公式チャットテンプレートを Go で書き直したもの) |
-| `stream.go` | UTF-8 の切れ目の処理(文字にならないバイトは U+FFFD)と、`</think>` で思考と答えを振り分ける処理 |
-| `stream_test.go` | UTF-8 の切れ目、思考の振り分け、テンプレート(`BuildPrompt`)のテスト。モデル不要 |
+| `format.go` / `format_qwen35.go` | 書式(チャットテンプレート)。会話 → 文字列と、生成した文字列 → 思考・答え・ツール呼び出し。説明は [tools.md](tools.md) |
+| `stream.go` | UTF-8 の切れ目の処理(文字にならないバイトは U+FFFD) |
+| `stream_test.go` / `format_qwen35_test.go` | UTF-8 の切れ目 / 書式(公式テンプレートとの一致・思考とツール呼び出しの振り分け)のテスト。モデル不要 |
 | `models_test.go` | Ollama の目録のテスト。モデル不要 |
 
 ## llama.cpp と yzma
@@ -30,7 +30,8 @@
 
 ## チャットテンプレート
 
-- ライブラリ任せにせず、`prompt.go` に自分で書く(書式を理解することが学習目的のため)
+- ライブラリ任せにせず、`format_qwen35.go` に自分で書く(書式を理解することが学習目的のため)
+- 書式は `Format` の interface で、エンジンがモデルの種類(GGUF の `general.architecture`)で選ぶ。会話の仕組みは書式を知らない。詳しくは [tools.md](tools.md)
 - 思考の ON/OFF は、プロンプト末尾を `<think>\n` にするか `<think>\n\n</think>\n\n` にするかで切り替える
 
 ## 生成とモデルの入れ替え
