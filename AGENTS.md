@@ -33,7 +33,7 @@ aibow は、ローカルLLMを使ったアプリを**自分で作りながら仕
 | ルート(`aibow` パッケージ) | LLM を動かす部分と会話の仕組み。Wails を import しないライブラリ |
 | `store/` | 会話の保存先(SQLite) |
 | `_cmd/aibow/` | デスクトップアプリ(Wails v3 + React)。別モジュール |
-| `_docs/` | 仕組みごとの説明(下の表)と、機能の仕様(`_docs/features/`) |
+| `_docs/` | 仕組みごとの説明(下の表)と、機能の仕様(`_docs/features/`)。利用者向けの手順は `setup.md`(準備と起動)・`usage.md`(使い方と設定)・`structure.md`(構成とファイル) |
 | `TODO.md` | 全体の進み具合とロードマップ |
 
 ## 作業内容ごとに読むもの
@@ -49,6 +49,7 @@ aibow は、ローカルLLMを使ったアプリを**自分で作りながら仕
 | 画面(配置・会話の一覧・発言と返事の操作・フォーカス・スクロール・ウィンドウの移動とリサイズ・IME) | [_docs/ui.md](_docs/ui.md) |
 | 返事の表示(Markdown・コードの色付け・mermaid の図と書き出し) | [_docs/rendering.md](_docs/rendering.md) |
 | バージョン・ローカルデプロイ | [_docs/deploy.md](_docs/deploy.md) |
+| 利用者向けの説明(README・準備と起動・使い方と設定・ファイル構成)を直す | README は外部の人向けの入口として短く保ち、詳しい説明は [_docs/setup.md](_docs/setup.md)・[_docs/usage.md](_docs/usage.md)・[_docs/structure.md](_docs/structure.md) に書く |
 | アプリを起動して動作を確かめる(共通の手順と確認する項目) | [_docs/testing.md](_docs/testing.md) |
 | ユーザーの Windows 環境(worktree)で起動して確かめる | [_docs/env-windows.md](_docs/env-windows.md) |
 | クラウドセッション(GUI の無い Linux)で起動して確かめる | [_docs/env-cloud.md](_docs/env-cloud.md) |
@@ -74,7 +75,7 @@ aibow は、ローカルLLMを使ったアプリを**自分で作りながら仕
 - C コンパイラなし(`CGO_ENABLED=0`)でビルドできる状態を保つ
 - 外部パッケージ(Go・npm とも)を足すときは、理由と代替案を示してユーザーに確認してから足す(MCP の公式 Go SDK はステップ4以降で検討してよい)
 - チャットテンプレートなど、学習の対象になる仕組みはライブラリ任せにせず自分で書く
-- 設定は `AIBOW_` で始まる環境変数にし、README の表に追加する(今ある環境変数は README の表と [_cmd/aibow/AGENTS.md](_cmd/aibow/AGENTS.md))。
+- 設定は `AIBOW_` で始まる環境変数にし、[_docs/usage.md](_docs/usage.md) の表に追加する(今ある環境変数はその表と [_cmd/aibow/AGENTS.md](_cmd/aibow/AGENTS.md))。
   画面で変えられる設定の環境変数は「DB にまだ値が無いときの初期値」で、画面で変えたら DB の値が優先
 
 ## コードの書き方

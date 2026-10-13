@@ -26,10 +26,10 @@ Wails v3 のデスクトップアプリです。ルートの `aibow` パッケ�
 ## 環境変数
 
 `AIBOW_MODEL` / `AIBOW_MODELS_DIR` / `AIBOW_LIB` / `AIBOW_DB` / `AIBOW_HISTORY_TOKENS` / `AIBOW_MAX_TOKENS` / `AIBOW_GPU_LAYERS` / `AIBOW_PRESENCE_PENALTY` / `AIBOW_LLAMA_LOG`、
-Ollama の保存先は Ollama と同じ `OLLAMA_MODELS`。意味と既定値は README の表にある。
+Ollama の保存先は Ollama と同じ `OLLAMA_MODELS`。意味と既定値は [_docs/usage.md](../../_docs/usage.md) の表にある。
 
 - `AIBOW_CTX` は 0002 で廃止(設定されていたらログとトーストで伝える)
-- 新しい設定も `AIBOW_` で始まる環境変数にし、README の表に追加する
+- 新しい設定も `AIBOW_` で始まる環境変数にし、[_docs/usage.md](../../_docs/usage.md) の表に追加する
 - 画面で変えられる設定(会話の上限・返事の上限・GPU の層数・presence penalty)の環境変数は「DB にまだ値が無いときの初期値」で、画面で変えたら DB の値が優先
 
 ## Wails とフロントエンドの方針

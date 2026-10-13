@@ -19,7 +19,7 @@
 
 - aibow のプロセスの中で llama.cpp を直接動かす(外部の LLM サーバーは使わない。トップの `AGENTS.md` を参照)
 - yzma と llama.cpp はバージョンの組み合わせが決まっている。現在は yzma v1.29.1 + llama.cpp v0.6.0(ビルド b11429)。
-  yzma を上げるときは、yzma の README の対応表を確認し、`lib\` の入れ直しも README に書く
+  yzma を上げるときは、yzma の README の対応表を確認し、`lib\` の入れ直しも [setup.md](setup.md) に書く
 - llama.cpp の DLL(`lib\`)とモデル(`models\`)は `_cmd/aibow` に置く(理由は [_cmd/aibow/AGENTS.md](../_cmd/aibow/AGENTS.md))
 
 ## モデルの一覧と Ollama
