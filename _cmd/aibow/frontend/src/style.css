@@ -210,6 +210,11 @@ footer.home .composer textarea { line-height: 1.5; min-height: calc(3 * 1.5em + 
 }
 .thinking summary { cursor: pointer; }
 .thinking div { white-space: pre-wrap; margin-top: 6px; max-height: 240px; overflow-y: auto; }
+/* ツールを使った送信の、答えまでの過程の枠。見出しは「思考の過程」と同じ見た目で、開くと中に思考とカードが並ぶ */
+.process { border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; margin-bottom: 8px; }
+.process > summary { cursor: pointer; font-size: 12.5px; color: var(--muted); }
+.process-body { margin-top: 8px; }
+.process-body .step:last-child, .process-body > .thinking:last-child { margin-bottom: 0; }
 /* ツールを呼んだ回と、ツールのカード。カードは「思考の過程」と同じく畳んだ1行で、開くと引数と結果が読める */
 .step { margin-bottom: 8px; }
 .step .body { margin-bottom: 6px; }

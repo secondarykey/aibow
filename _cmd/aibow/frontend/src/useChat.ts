@@ -24,6 +24,7 @@ interface Live {
   userItemId: number | null; // 送信した発言の表示の id(会話を開き直したら、保存された発言から作り直すので null)
   view: AssistantView;
   thinkStart: number;
+  processStart: number; // 最初の回のプロンプトを渡した時刻。ツールを使った送信の、答えまでの過程の枠の秒数に使う
   // saved はこの送信で Go が保存し終えた返事とツールの結果(reply / tool_result イベント)。
   // ツールを使うと1回の送信で何件も保存されるので、吹き出しはここから作り直す(開き直したときと同じ並びになる)
   saved: StoredMessage[];
@@ -100,7 +101,7 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
   // manual は「今すぐ要約」(返事は生成しない。終わったら吹き出しを消して、区切りが出るように開き直す)
   const run = useCallback(async (id: string, start: () => CancellablePromise<void>, manual: boolean, userItemId: number | null) => {
     const l: Live = {
-      convId: id, itemId: null, userItemId, thinkStart: 0, saved: [],
+      convId: id, itemId: null, userItemId, thinkStart: 0, processStart: 0, saved: [],
       view: { generating: true, waiting: true, thinking: "", thinkLabel: "", content: "", summarizing: manual, summary: "" },
     };
     l.itemId = addAssistant(l.view);
@@ -113,6 +114,15 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
       l.view = { ...l.view, ...patch };
       if (l.itemId !== null) updateAssistant(l.itemId, patch);
     };
+    // 答えまでの過程の枠(ツールを呼んだ回があるときだけ出す)の見出し。answering は最後の答えを書き始めたか
+    const liveProcess = (answering: boolean): Partial<AssistantView> => {
+      if (!l.view.steps?.length) return {};
+      const sec = secSince(l.processStart);
+      const thought = !!l.view.thinking || l.view.steps.some(s => s.thinking);
+      if (answering) return { processLabel: thought ? thinkLabel(sec) : `ツールの使用(${sec}秒)` };
+      return { processLabel: thought ? `思考中… ${sec}秒` : `ツールを使用中… ${sec}秒` };
+    };
+
     // 表示している会話なら開き直す(要約の区切りと薄い表示を、保存された内容から作り直す)。
     // 生成中なら、開き直したあとに生成中の吹き出しが末尾に足し直される
     const reopen = () => {
@@ -154,6 +164,7 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
         case "prompt":
           // prompt が届いた時点で、Go はユーザーの発言とタイトルを保存し終えている。一覧のタイトルを先に更新する
           setPrompts(p => ({ ...p, [id]: ev.text ?? "" }));
+          if (!l.processStart) l.processStart = performance.now();
           reloadList().catch(() => {});
           return;
         case "usage":
@@ -181,6 +192,7 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
           l.saved.push(ev.reply);
           if (ev.reply.tool_calls?.length) {
             show({ steps: turnView(l.saved).steps, thinking: "", thinkLabel: "", content: "", waiting: true });
+            show(liveProcess(false));
           }
           return;
         case "tool_result":
@@ -188,6 +200,7 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
           if (!ev.message) return;
           l.saved.push(ev.message);
           show({ steps: turnView(l.saved).steps });
+          show(liveProcess(false));
           return;
         case "error":
           if (viewing.current === id) addError(ev.error ?? "");
@@ -202,11 +215,13 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
             thinking: l.view.thinking + (ev.text ?? ""),
             thinkLabel: l.view.content ? thinkLabel(sec) : `思考中… ${sec}秒`,
           });
+          if (!l.view.content) show(liveProcess(false));
           return;
         }
         case "content": {
           const patch: Partial<AssistantView> = { waiting: false, content: l.view.content + (ev.text ?? "") };
           if (l.view.thinking && !l.view.content) patch.thinkLabel = thinkLabel(secSince(l.thinkStart));
+          if (!l.view.content) Object.assign(patch, liveProcess(true));
           show(patch);
           return;
         }

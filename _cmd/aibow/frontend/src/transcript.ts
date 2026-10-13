@@ -29,6 +29,7 @@ export interface StepView {
 // thinking / content には最後の回(ツールを呼ばずに答えた回、または生成中の回)を入れる。
 export interface AssistantView {
   steps?: StepView[];    // ツールを呼んだ回(古い順)
+  processLabel?: string; // ツールを呼んだ回があるとき、答えまでの過程をまとめた枠の見出し(「思考の過程(12秒)」など)
   generating?: boolean;  // 生成中か(吹き出しの中に停止ボタンを出す)
   waiting: boolean;      // 最初の文字が届くまでの「応答待ち…」
   thinking: string;      // 思考(ない場合は空)
@@ -142,9 +143,25 @@ export function turnView(ms: StoredMessage[]): AssistantView {
     ? replyView(final)
     : { generating: false, waiting: false, thinking: "", thinkLabel: "", content: "" };
   view.steps = steps;
+  if (steps.length > 0) view.processLabel = processLabel(ms, final, steps);
   view.stats = statsLine(ms.filter(m => m.role === "assistant"));
   view.createdAt = ms[ms.length - 1]?.created_at;
   return view;
+}
+
+// processLabel は、ツールを使った送信の「答えまでの過程」の枠の見出し。秒数は送信から答えを書き始めるまでの時間で、
+// 保存した記録から足し直す(ツールを呼んだ回: プロンプトの読み込み + 生成、ツールの実行、最後の回: プロンプトの読み込み + 思考)。
+// 回の間のわずかな時間は入らないので、生成中に数えていた秒数と少しずれることがある
+export function processLabel(ms: StoredMessage[], final: StoredMessage | null, steps: StepView[]): string {
+  let sec = 0;
+  for (const m of ms) {
+    const s = m.stats;
+    if (m.role === "tool") sec += m.tool_result?.sec ?? 0;
+    else if (m === final && s) sec += s.prompt_sec + s.think_sec;
+    else if (s) sec += s.prompt_sec + s.gen_sec;
+  }
+  const thought = !!final?.thinking || steps.some(s => s.thinking);
+  return thought ? thinkLabel(sec) : `ツールの使用(${Math.round(sec)}秒)`;
 }
 
 // replyView は保存された返事1件(ツールを呼ばなかった回)を表示に変える。思考の秒数や統計も保存されているので、再起動後も同じ表示になる。

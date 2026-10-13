@@ -1,5 +1,6 @@
 // 会話の表示: 吹き出し(ツールのカードを含む)・エラー・要約の区切り
 import { useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import { LuChevronDown, LuChevronRight, LuCircleStop } from "react-icons/lu";
 import { CopyButton } from "./CopyButton";
 import type { Compaction } from "../../bindings/aibow";
@@ -59,17 +60,23 @@ function AssistantMessage({ view, faded, onStop }: { view: AssistantView; faded:
   const answer = [...(view.steps ?? []).map(s => s.content), view.content].filter(Boolean).join("\n\n");
   return (
     <div className={"msg assistant" + (faded ? " faded" : "")} title={faded ? FADED_TITLE : undefined}>
-      {/* ツールを呼んだ回: 思考 → 答え → カード の順に、生成した順で並べる */}
-      {view.steps?.map((s, i) => (
-        <div key={i} className="step">
-          {s.thinking && <Thinking label={s.thinkLabel} text={s.thinking} />}
-          {s.content && <div className="body"><RenderedText text={s.content} /></div>}
-          {s.tools.map((t, j) => <ToolCard key={j} tool={t} generating={!!view.generating} />)}
-        </div>
-      ))}
       {view.summarizing && <Summarizing text={view.summary ?? ""} />}
       {view.compactNote && <p className="compact-note">{view.compactNote}</p>}
-      {view.thinking && <Thinking label={view.thinkLabel} text={view.thinking} />}
+      {view.steps?.length ? (
+        // ツールを使った送信: 答えより前(各回の思考 → 途中の答え → カード、最後の回の思考)を1つの枠にまとめて畳む
+        <Process label={view.processLabel ?? ""}>
+          {view.steps.map((s, i) => (
+            <div key={i} className="step">
+              {s.thinking && <Thinking label={s.thinkLabel} text={s.thinking} />}
+              {s.content && <div className="body"><RenderedText text={s.content} /></div>}
+              {s.tools.map((t, j) => <ToolCard key={j} tool={t} generating={!!view.generating} />)}
+            </div>
+          ))}
+          {view.thinking && <Thinking label={view.thinkLabel} text={view.thinking} />}
+        </Process>
+      ) : (
+        view.thinking && <Thinking label={view.thinkLabel} text={view.thinking} />
+      )}
       <div className="body">
         {view.waiting && !view.summarizing && <p className="waiting">応答待ち…</p>}
         <RenderedText text={view.content} />
@@ -187,6 +194,16 @@ function Divider({ compaction }: { compaction: Compaction }) {
         <RenderedText text={compaction.summary} />
         <div className="stats">{compactionStats(compaction)}</div>
       </div>
+    </details>
+  );
+}
+
+// ツールを使った送信の、答えまでの過程の枠。畳んだ状態で出し、開くと中に思考とツールのカードが並ぶ
+function Process({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <details className="process">
+      <summary>{label}</summary>
+      <div className="process-body">{children}</div>
     </details>
   );
 }
