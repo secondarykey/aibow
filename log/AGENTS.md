@@ -13,7 +13,7 @@
 ## どこに出るか
 
 - **アプリ(`_cmd/aibow`)**: `main` の最初に `startLog` が `log.Init` を呼ぶ。`slog.Default()` が wenteasy/log の `SimpleHandler`
-  (Info 以上)になり、aibow のログもアプリのログも、Wails 自身のログもそこに出る
+  (Info 以上)になり、aibow のログもアプリのログも、Wails 自身のログもそこに出る(`main.go` が `application.Options.Logger` に `slog.Default()` を渡す。WebView2 の行は標準の log で来るが、`slog.SetDefault` のあとは同じ出口に流れる)
   - `wails3 dev`(`isDev`): ターミナル(標準エラー出力)。`AIBOW_LOG_DIR` を指定したときだけファイルにも
   - exe(`wails3 build`): ファイル `%APPDATA%\aibow\logs\aibow_<日付>.log`(wenteasy/log の `RollingFileWriter`。日ごと。`AIBOW_LOG_DIR` で変えられる)。
     exe(`-H windowsgui`)には標準エラー出力の行き先が無く、ファイルにしか残らないため。古いファイルはまだ消さない

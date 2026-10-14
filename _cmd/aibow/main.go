@@ -25,6 +25,7 @@ import (
 	"errors"
 	"io"
 	"io/fs"
+	"log/slog"
 	"maps"
 	"os"
 	"slices"
@@ -103,6 +104,10 @@ func main() {
 	app := application.New(application.Options{
 		Name:        "aibow",
 		Description: "ローカルLLMを自分で動かして仕組みを学ぶチャット",
+		// Wails 自身のログも aibow と同じ出口(startLog が組んだ slog.Default())に出す。
+		// 渡さないと、Wails は dev では自分の書式で標準エラー出力に出し、リリース版では捨てる(exe でエラーが残らない)。
+		// なお WebView2 の行([WebView2] …)は標準の log で来るが、slog.SetDefault のあとは標準の log も同じ出口に流れる
+		Logger: slog.Default(),
 		Services: []application.Service{
 			application.NewService(NewChatService(engine, st, settings, cfg.catalog, initial, mcpm, prefs, appVersion(), cfg.notices, err)),
 		},
