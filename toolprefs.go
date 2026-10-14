@@ -65,6 +65,12 @@ type toolsFile struct {
 	// NotDefault は、新しい会話で最初から選ばないグループ(設定の画面の「ツール」で、グループのチェックを外したもの)。
 	// 使えなくするのではない。会話の「この会話のツール」からは、いつでも選べる
 	NotDefault NotDefault `json:"notDefault,omitzero"`
+	// Seen は、aibow がすでに見た MCP のサーバー(settings.json の名前)。ここに無いサーバーは、足したばかりのもの。
+	// 足したばかりのサーバーは、新しい会話で最初から選ばない(NotDefault に入れる)。足しただけで全部の新しい会話のプロンプトに
+	// ツールの説明が入り、会話の上限を食わないように(2026-10-15、ユーザーの指示。NoteServers)。
+	// settings.json から消しても残す(戻したときに、前の扱いのまま使えるように)。
+	// omitempty にしないのは、「空」と「この仕組みより前のファイル(キーが無い)」を見分けるため
+	Seen []string `json:"seen"`
 }
 
 // NotDefault は、新しい会話で最初から選ばないグループ。
@@ -79,6 +85,9 @@ type ToolPrefs struct {
 	mu       sync.Mutex
 	data     toolsFile
 	readOnly bool // 読めなかったファイルを上書きして消さないよう、書かない
+	// beforeSeen は、Seen の仕組みより前に書かれたファイル(seen のキーが無い)を読んだか。
+	// そのときは、今あるサーバーを全部「見た」ことにする(それまでの扱いを変えない。NoteServers)
+	beforeSeen bool
 }
 
 // LoadToolPrefs は tools.json を読む。ファイルが無ければ空(何も決めていない)。
@@ -91,6 +100,7 @@ func LoadToolPrefs(path string) (*ToolPrefs, error) {
 	}
 	if err == nil {
 		err = json.Unmarshal(data, &p.data)
+		p.beforeSeen = p.data.Seen == nil
 	}
 	if p.data.Builtin == "" { // 前の名前のキー(local)で書いてあれば移す
 		p.data.Builtin = p.data.LegacyLocal
@@ -105,6 +115,66 @@ func LoadToolPrefs(path string) (*ToolPrefs, error) {
 		return p, fmt.Errorf("ツールの扱いのファイル %s を読めません(ツールの扱いは決まりの既定で動き、ファイルは書き換えません): %w", path, err)
 	}
 	return p, nil
+}
+
+// NoteServers は、settings.json の MCP のサーバー(servers)のうち、まだ見ていないもの(足したばかりのもの)を
+// 「新しい会話で最初から選ばない」にして、見たことを覚える。起動したときに1回呼ぶ(settings.json は起動したときにだけ読むため)。
+// 「最初から選ばない」にしたサーバーの名前を返す。
+//
+// 「ツール」のグループのチェック(NotDefault)は、外したものだけを覚えているので、そのままでは足したサーバーが「最初から使う」になる。
+// 使うかどうかは、足した人が設定の画面の「ツール」でチェックして決める。
+// Seen の仕組みより前のファイルなら、今あるサーバーは全部見たことにする(それまで最初から使っていたものを、急に外さない)。
+func (p *ToolPrefs) NoteServers(servers []string) ([]string, error) {
+	if p == nil {
+		return nil, nil
+	}
+	p.mu.Lock()
+	beforeSeen := p.beforeSeen
+	var added []string
+	if !beforeSeen {
+		for _, name := range servers {
+			if !slices.Contains(p.data.Seen, name) {
+				added = append(added, name)
+			}
+		}
+	}
+	if !beforeSeen && len(added) == 0 {
+		// 足したサーバーが無ければ書かない(MCP を使っていないのに tools.json を作らないように)。
+		// 次に書くときに seen のキーが入るよう、空の一覧にだけしておく
+		if p.data.Seen == nil {
+			p.data.Seen = []string{}
+		}
+		p.mu.Unlock()
+		return nil, nil
+	}
+	p.mu.Unlock()
+	if p.readOnly {
+		return nil, nil
+	}
+	err := p.update(func(f *toolsFile) {
+		if beforeSeen {
+			f.Seen = append(f.Seen, servers...)
+		}
+		for _, name := range added {
+			f.Seen = append(f.Seen, name)
+			if !slices.Contains(f.NotDefault.Servers, name) {
+				f.NotDefault.Servers = append(f.NotDefault.Servers, name)
+			}
+		}
+		if f.Seen == nil {
+			f.Seen = []string{} // 「この仕組みで書いたファイル」の印(seen のキーを書く)
+		}
+		slices.Sort(f.Seen)
+		f.Seen = slices.Compact(f.Seen)
+		slices.Sort(f.NotDefault.Servers)
+	}, "")
+	if err != nil {
+		return nil, err
+	}
+	p.mu.Lock()
+	p.beforeSeen = false
+	p.mu.Unlock()
+	return added, nil
 }
 
 // moveGroupOff は、グループごとの「使わない」を「新しい会話で最初から選ばない」に読み替える。
@@ -293,7 +363,7 @@ func (p *ToolPrefs) update(change func(*toolsFile), policy ToolPolicy) error {
 
 func (f toolsFile) clone() toolsFile {
 	c := toolsFile{Builtin: f.Builtin, Servers: maps.Clone(f.Servers), Tools: maps.Clone(f.Tools), Known: map[string][]KnownTool{},
-		NotDefault: NotDefault{Builtin: f.NotDefault.Builtin, Servers: slices.Clone(f.NotDefault.Servers)}}
+		NotDefault: NotDefault{Builtin: f.NotDefault.Builtin, Servers: slices.Clone(f.NotDefault.Servers)}, Seen: slices.Clone(f.Seen)}
 	for k, v := range f.Known {
 		c.Known[k] = slices.Clone(v)
 	}

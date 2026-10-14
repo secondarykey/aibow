@@ -82,6 +82,12 @@ func main() {
 	for _, n := range cfg.notices {
 		log.Warn(n)
 	}
+	if err == nil {
+		// settings.json に足したばかりの MCP のサーバーは、新しい会話で最初から使わないにする(画面のお知らせでも伝える)
+		if n := noteNewServers(mcpm, prefs); n != "" {
+			cfg.notices = append(cfg.notices, n)
+		}
+	}
 	var st *store.SQLite
 	var settings aibow.AppSettings
 	var engine *aibow.Engine
@@ -211,6 +217,27 @@ func startMCP(cfg *appConfig) *client.Manager {
 	names := slices.Sorted(maps.Keys(sf.MCPServers))
 	log.Infof("MCP のサーバー: %s(設定ファイル: %s。要る最初の送信で起動します)", strings.Join(names, ", "), absPath(cfg.settingsPath))
 	return client.New(sf.MCPServers, client.Options{Version: appVersion()})
+}
+
+// noteNewServers は、settings.json に足したばかりの MCP のサーバーを、新しい会話で最初から使わないにする(tools.json に書く)。
+// 画面のお知らせに出す文を返す(足したサーバーが無ければ空)。
+func noteNewServers(mcpm *client.Manager, prefs *aibow.ToolPrefs) string {
+	var servers []string
+	if mcpm != nil {
+		servers = mcpm.Servers()
+	}
+	added, err := prefs.NoteServers(servers)
+	if err != nil {
+		log.Error(err.Error())
+		return ""
+	}
+	if len(added) == 0 {
+		return ""
+	}
+	n := fmt.Sprintf("MCP のサーバー %s を見つけました。新しい会話では最初から使わないにしています(設定の画面の「ツール」でチェックすると、最初から使います)",
+		strings.Join(added, ", "))
+	log.Notice(n)
+	return n
 }
 
 // loadToolPrefs は、ツールの扱いの PC の既定(tools.json)を読む。
