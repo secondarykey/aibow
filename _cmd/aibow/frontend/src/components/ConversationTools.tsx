@@ -1,9 +1,12 @@
-// 会話の設定の画面の「ツール」: この会話でのツールの状態。
+// 会話の設定の画面の「ツール」: この会話で使うツール。
 //
 // グループ(組み込み / MCP のサーバー)のチェックは、この会話で使うか(入力欄の上の「この会話のツール」と同じ設定。builtin_off / mcp_servers)。
-// ツールごとの行は、この会話での扱いを見せるだけ(ツールごとに変えるのは 0009 の2段目以降)。
+// ツールごとのチェックは、この会話で使うか(会話の上書き tool_policies の on / off)。
+// PC の既定(設定の画面の「ツール」= tools.json)の「使わない」は「既定では使わない」の意味で、禁止ではない。
+// なので、既定で使わないツールも、この会話では使うにできる。既定と同じにしたら上書きを消す(既定を変えたときに付いていくように)。
+// 確認する / 確認しないはここでは変えない(会話で使うにしても、確認の扱いは既定のまま)。
 // 扱いは Go の toolPolicy と同じ決め方で Go に決めてもらう(ChatService.ToolStates)。画面で同じ判断を書き直さない。
-// 使わないツールには、どこで決まったか(この会話の上書き / PC の既定 = 設定の画面の「ツール」)を添える。
+// 既定と違うツールと、既定で使わないツールには、どこで決まったか(この会話 / 既定)を添える。
 //
 // 使っているグループは一覧を開いて出し、使っていないグループは畳む(設定の画面の「ツール」と同じ)。▶ で開ける。
 import { useEffect, useState } from "react";
@@ -40,6 +43,14 @@ export function ConversationTools({ settings, servers, onChange }: Props) {
     // settings の中で扱いに効くのは tool_policies だけなので、それが変わったときに読み直す
   }, [policies]);
 
+  // ツールを使う / 使わない。既定(会話の上書きが無いときの扱い)と同じなら上書きを消し、違えば on / off で上書きする
+  const toggleTool = (t: ToolState, on: boolean) => {
+    const next = { ...(settings.tool_policies ?? {}) };
+    if (on === (t.default !== ToolPolicy.ToolOff)) delete next[t.name];
+    else next[t.name] = on ? ToolPolicy.ToolOn : ToolPolicy.ToolOff;
+    onChange({ tool_policies: next });
+  };
+
   const selected = settings.mcp_servers ?? [];
   const toggleServer = (name: string, on: boolean) =>
     onChange({ mcp_servers: on ? [...selected, name] : selected.filter(n => n !== name) });
@@ -61,6 +72,7 @@ export function ConversationTools({ settings, servers, onChange }: Props) {
               tools={g.tools ?? []}
               workDir={settings.work_dir}
               label={t => TOOL_LABELS[t.name] ?? t.description}
+              onToggleTool={toggleTool}
             />
           );
         }
@@ -82,6 +94,7 @@ export function ConversationTools({ settings, servers, onChange }: Props) {
             // モデルに見せる名前は「サーバーの名前__ツールの名前」。サーバーの名前の部分は見出しにあるので外す
             prefix={g.server.replace(/[^A-Za-z0-9_-]/gu, "_") + "__"}
             label={t => t.description}
+            onToggleTool={toggleTool}
           />
         );
       })}
@@ -89,7 +102,7 @@ export function ConversationTools({ settings, servers, onChange }: Props) {
   );
 }
 
-function Group({ name, title, on, onToggle, open, onToggleOpen, tools, workDir, needsWorkDir, prefix = "", label }: {
+function Group({ name, title, on, onToggle, open, onToggleOpen, tools, workDir, needsWorkDir, prefix = "", label, onToggleTool }: {
   name: string;
   title: string;
   on: boolean;            // この会話で使う
@@ -101,6 +114,7 @@ function Group({ name, title, on, onToggle, open, onToggleOpen, tools, workDir, 
   needsWorkDir?: boolean; // ${workdir} を使うサーバー(作業フォルダを決めた会話でしか起動しない)
   prefix?: string;
   label(t: ToolState): string;
+  onToggleTool(t: ToolState, on: boolean): void;
 }) {
   const usable = (t: ToolState) => t.policy !== ToolPolicy.ToolOff && !(t.needs_work_dir && !workDir);
   const using = tools.filter(usable).length;
@@ -131,7 +145,12 @@ function Group({ name, title, on, onToggle, open, onToggleOpen, tools, workDir, 
               const short = t.name.startsWith(prefix) ? t.name.slice(prefix.length) : t.name;
               return (
                 <label key={t.name} className={"check tool-item" + (on ? "" : " unused")} title={`${t.name}\n${t.description}`}>
-                  <input type="checkbox" checked={usable(t)} disabled />
+                  <input
+                    type="checkbox"
+                    checked={t.policy !== ToolPolicy.ToolOff}
+                    disabled={!on} // この会話で使っていないグループのツールは、選んでも使われないので押せなくする
+                    onChange={e => onToggleTool(t, e.target.checked)}
+                  />
                   <code>{short}</code>
                   <StateTag tool={t} workDir={workDir} />
                   <span className="tool-desc">{label(t)}</span>
@@ -145,12 +164,17 @@ function Group({ name, title, on, onToggle, open, onToggleOpen, tools, workDir, 
   );
 }
 
-// 使えない理由。使うツールには何も付けない(確認する / 確認しないの表示は、確認を画面で扱うときに足す)
+// どこで決まったか・使えない理由。既定どおりに使うツールには何も付けない
+// (確認する / 確認しないの表示は、確認を画面で扱うときに足す)
 function StateTag({ tool, workDir }: { tool: ToolState; workDir: string }) {
-  if (tool.policy === ToolPolicy.ToolOff) {
-    return tool.from === "conversation"
-      ? <span className="tool-tag" title="この会話の設定(tool_policies)で使わない">この会話で使わない</span>
-      : <span className="tool-tag" title="設定の画面の「ツール」(tools.json)で使わない">PC の既定で使わない</span>;
+  const off = tool.policy === ToolPolicy.ToolOff;
+  if (tool.from === "conversation") {
+    return off
+      ? <span className="tool-tag" title="この会話だけ使わない(既定では使う)">この会話で使わない</span>
+      : <span className="tool-tag" title="この会話だけ使う(既定では使わない)">この会話で使う</span>;
+  }
+  if (off) {
+    return <span className="tool-tag" title="設定の画面の「ツール」(tools.json)で、既定では使わないにしてある">既定で使わない</span>;
   }
   if (tool.needs_work_dir && !workDir) {
     return <span className="tool-tag" title="作業フォルダを決めた会話でだけ使えます">作業フォルダが要る</span>;

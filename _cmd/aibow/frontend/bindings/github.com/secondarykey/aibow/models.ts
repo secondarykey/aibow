@@ -292,8 +292,9 @@ export interface ConversationSettings {
     "builtin_off"?: boolean;
 
     /**
-     * ToolPolicies は、この会話だけのツールの扱いの上書き(ツールのモデルに見せる名前 → 使わない / 確認する / 確認しない)。
-     * PC の既定(tools.json)より優先する。会話を消せば一緒に消える(toolprefs.go)。今は画面から変えない
+     * ToolPolicies は、この会話だけのツールの扱いの上書き(ツールのモデルに見せる名前 → 使う / 使わない / 確認する / 確認しない)。
+     * PC の既定(tools.json)より優先する。会話を消せば一緒に消える(toolprefs.go)。
+     * 画面(会話の設定の画面の「ツール」)で変えるのは、使う(on)/ 使わない(off)だけ
      */
     "tool_policies"?: { [_ in string]?: ToolPolicy } | null;
 }
@@ -578,6 +579,12 @@ export enum ToolPolicy {
      * 確認しない: 聞かずに実行する。今は画面から選べない(tools.json を手で書けば効く)
      */
     ToolAllow = "allow",
+
+    /**
+     * ToolOn は会話の上書きだけで使う値: 使う。PC の既定の「使わない」は「既定では使わない」の意味で、禁止ではないので、
+     * 会話ごとに使うことにできる(2026-10-15、ユーザーと決めた)。確認するかは変えない(PC の既定・決まりの既定のまま)
+     */
+    ToolOn = "on",
 };
 
 /**
@@ -661,6 +668,11 @@ export interface ToolState {
      * どこで決まったか(PolicyFrom…)
      */
     "from": string;
+
+    /**
+     * 会話の上書きが無いときの扱い(PC の既定か決まりの既定)。画面は、これと同じにするなら上書きを消す
+     */
+    "default": ToolPolicy;
 
     /**
      * 作業フォルダを決めた会話でだけ使える(組み込みのファイル・コマンドのツール)

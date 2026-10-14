@@ -392,7 +392,7 @@ func (cs *Conversations) toolsFor(set ConversationSettings) []tool.Tool {
 
 // toolPolicy は、会話でのツールの扱い(使わない / 確認する / 確認しない)を決める。扱いを決めるのはここだけ。
 //
-//  1. 会話ごとの上書き(会話の設定の tool_policies)
+//  1. 会話ごとの上書き(会話の設定の tool_policies)。「使う」(on)は使うかだけを決め、確認するかは 2・3 で決める
 //  2. PC の既定(tools.json)。グループ(組み込み / MCP のサーバー)ごと「使わない」なら使わない。
 //     そうでなければ、ツールごと → グループごとの順(ToolPrefs.policy)
 //  3. 決まりの既定: MCP のツールは確認する(中身が見えないので)。
@@ -418,17 +418,32 @@ const (
 
 // policyOf は toolPolicy の中身。ツールの実体が無くても(起動していない MCP のサーバーのツールでも)決められるよう、
 // グループ・名前・書き換えるツールか(tool.Confirmable)で受け取り、どこで決まったかも返す。
+//
+// 返す扱いは off / ask / allow のどれか(on は返さない。使うことにしたうえで、確認するかを返す)。
 func (cs *Conversations) policyOf(set ConversationSettings, group, name string, confirmable bool) (ToolPolicy, string) {
-	if p, ok := set.ToolPolicies[name]; ok {
+	p, ok := set.ToolPolicies[name]
+	if ok && p != ToolOn {
 		return p, PolicyFromConversation
+	}
+	if ok {
+		// この会話では使う。PC の既定の「使わない」は「既定では使わない」の意味なので打ち消し、確認するかだけを PC の既定から取る
+		if c, cok := cs.prefs.confirmPolicy(group, name); cok {
+			return c, PolicyFromConversation
+		}
+		return defaultPolicy(group, confirmable), PolicyFromConversation
 	}
 	if p, ok := cs.prefs.policy(group, name); ok {
 		return p, PolicyFromPC
 	}
+	return defaultPolicy(group, confirmable), PolicyFromDefault
+}
+
+// defaultPolicy は決まりの既定: MCP のツールは確認する。組み込みのツールは、書き換えるツール・コマンドは確認する、読むだけのツールは確認しない。
+func defaultPolicy(group string, confirmable bool) ToolPolicy {
 	if !confirmable && group == "" {
-		return ToolAllow, PolicyFromDefault
+		return ToolAllow
 	}
-	return ToolAsk, PolicyFromDefault
+	return ToolAsk
 }
 
 // ToolGroupState は、会話の設定の画面に出すツールのグループ1つ(組み込み / MCP のサーバー1つ)。
@@ -443,6 +458,7 @@ type ToolState struct {
 	Description  string     `json:"description"`    // 説明の1行目
 	Policy       ToolPolicy `json:"policy"`         // 使わない / 確認する / 確認しない(toolPolicy と同じ決め方)
 	From         string     `json:"from"`           // どこで決まったか(PolicyFrom…)
+	Default      ToolPolicy `json:"default"`        // 会話の上書きが無いときの扱い(PC の既定か決まりの既定)。画面は、これと同じにするなら上書きを消す
 	NeedsWorkDir bool       `json:"needs_work_dir"` // 作業フォルダを決めた会話でだけ使える(組み込みのファイル・コマンドのツール)
 }
 
@@ -454,8 +470,9 @@ func (cs *Conversations) ToolStates(set ConversationSettings) []ToolGroupState {
 	add := func(t tool.Tool, needsWorkDir bool) {
 		_, confirmable := t.(tool.Confirmable)
 		p, from := cs.policyOf(set, "", t.Def().Name, confirmable)
+		def, _ := cs.policyOf(ConversationSettings{}, "", t.Def().Name, confirmable)
 		builtin.Tools = append(builtin.Tools, ToolState{
-			Name: t.Def().Name, Description: firstLine(t.Def().Description), Policy: p, From: from, NeedsWorkDir: needsWorkDir,
+			Name: t.Def().Name, Description: firstLine(t.Def().Description), Policy: p, From: from, Default: def, NeedsWorkDir: needsWorkDir,
 		})
 	}
 	for _, t := range tool.Builtin() {
@@ -474,7 +491,8 @@ func (cs *Conversations) ToolStates(set ConversationSettings) []ToolGroupState {
 		g := ToolGroupState{Server: server, Tools: []ToolState{}}
 		for _, k := range known[server] {
 			p, from := cs.policyOf(set, server, k.Name, false)
-			g.Tools = append(g.Tools, ToolState{Name: k.Name, Description: k.Description, Policy: p, From: from})
+			def, _ := cs.policyOf(ConversationSettings{}, server, k.Name, false)
+			g.Tools = append(g.Tools, ToolState{Name: k.Name, Description: k.Description, Policy: p, From: from, Default: def})
 		}
 		groups = append(groups, g)
 	}

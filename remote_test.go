@@ -537,3 +537,47 @@ func TestToolStates(t *testing.T) {
 		t.Errorf("会話の上書き: %+v", s)
 	}
 }
+
+// PC の既定の「使わない」は「既定では使わない」の意味で、会話で「使う」(on)にすれば使える。
+// 確認するかは変えない(PC の既定のツールごと・グループごとの確認の扱い → 決まりの既定)
+func TestToolOnOverridesPCOff(t *testing.T) {
+	cs := &Conversations{}
+	prefs := &ToolPrefs{}
+	cs.SetToolPrefs(prefs)
+	prefs.SetToolPolicy("get_current_time", ToolOff)
+	prefs.SetServerPolicy("fake", ToolAllow)
+	prefs.SetToolPolicy("fake__write", ToolOff)
+	set := ConversationSettings{}
+
+	now := tool.Builtin()[0]
+	if now.Def().Name != "get_current_time" {
+		t.Fatalf("並び: %s", now.Def().Name)
+	}
+	if cs.toolPolicy(set, now) != ToolOff {
+		t.Fatal("PC の既定で使わないツールは、会話で何もしなければ使わない")
+	}
+	set.ToolPolicies = map[string]ToolPolicy{"get_current_time": ToolOn, "fake__write": ToolOn}
+	if got := cs.toolPolicy(set, now); got != ToolAllow {
+		t.Errorf("会話で使うにしたら使う。読むだけの組み込みのツールは決まりの既定(確認しない)のまま: %v", got)
+	}
+	if got := cs.toolPolicy(set, &remoteTool{name: "fake__write"}); got != ToolAllow {
+		t.Errorf("確認の扱いはサーバーごとの PC の既定から取る: %v", got)
+	}
+
+	// グループごと使わないにした組み込みのツールも、会話で使うにできる。書き換えるツールは確認する
+	prefs.SetBuiltinPolicy(ToolOff)
+	set.ToolPolicies = map[string]ToolPolicy{"write_file": ToolOn}
+	if got := cs.toolPolicy(set, tool.Files(".")[2]); got != ToolAsk {
+		t.Errorf("書き換えるツールは確認する: %v", got)
+	}
+	if err := set.validate(); err != nil {
+		t.Errorf("on は会話の設定に保存できる: %v", err)
+	}
+
+	states := cs.ToolStates(set)
+	for _, s := range states[0].Tools {
+		if s.Name == "write_file" && (s.Policy != ToolAsk || s.From != PolicyFromConversation || s.Default != ToolOff) {
+			t.Errorf("画面に出す状態(上書きが無ければ使わない): %+v", s)
+		}
+	}
+}

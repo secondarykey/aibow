@@ -35,6 +35,9 @@ const (
 	ToolOff   ToolPolicy = "off"   // 使わない: モデルに見せない(説明もプロンプトに入れないので、会話の上限の節約にもなる)
 	ToolAsk   ToolPolicy = "ask"   // 確認する: 実行する前にユーザーに聞く(MCP のツールの決まりの既定)
 	ToolAllow ToolPolicy = "allow" // 確認しない: 聞かずに実行する。今は画面から選べない(tools.json を手で書けば効く)
+	// ToolOn は会話の上書きだけで使う値: 使う。PC の既定の「使わない」は「既定では使わない」の意味で、禁止ではないので、
+	// 会話ごとに使うことにできる(2026-10-15、ユーザーと決めた)。確認するかは変えない(PC の既定・決まりの既定のまま)
+	ToolOn ToolPolicy = "on"
 )
 
 func (p ToolPolicy) valid() bool {
@@ -158,6 +161,24 @@ func (p *ToolPrefs) policy(group, name string) (ToolPolicy, bool) {
 		return v, true
 	}
 	return g, gok
+}
+
+// confirmPolicy は、会話で「使う」(ToolOn)にしたツールの、PC の既定での確認の扱い。決めていなければ ok が false。
+// 「使わない」は会話の「使う」で打ち消されるので飛ばし、ツールごと → グループごと、の順に見る。
+func (p *ToolPrefs) confirmPolicy(group, name string) (ToolPolicy, bool) {
+	if p == nil {
+		return "", false
+	}
+	p.mu.Lock()
+	v, ok := p.data.Tools[name]
+	p.mu.Unlock()
+	if ok && v != ToolOff {
+		return v, true
+	}
+	if g, ok := p.groupPolicy(group); ok && g != ToolOff {
+		return g, true
+	}
+	return "", false
 }
 
 // groupPolicy はグループ(組み込みなら空、MCP ならサーバーの名前)全部の扱い。決めていなければ ok が false。
