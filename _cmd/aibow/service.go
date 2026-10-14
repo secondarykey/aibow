@@ -290,6 +290,21 @@ func (s *ChatService) BuiltinTools() []aibow.KnownTool {
 	return aibow.BuiltinTools()
 }
 
+// ToolDefaults は、会話の上書きが無いときのツールの扱い(PC の既定と決まりの既定。設定の画面の「ツール」に出す)。
+func (s *ChatService) ToolDefaults() ([]aibow.ToolGroupState, error) {
+	return s.ToolStates(aibow.ConversationSettings{})
+}
+
+// SetGroupPolicy は、グループ(空なら組み込み、そうでなければ MCP のサーバー)の全部のツールの確認の扱いの PC の既定を変える
+// (確認する ask / 確認しない allow / 決めていない 空。tools.json に書く)。
+func (s *ChatService) SetGroupPolicy(group string, policy aibow.ToolPolicy) error {
+	if err := s.prefs.SetGroupPolicy(group, policy); err != nil {
+		return err
+	}
+	log.Noticef("ツールのグループ %s の扱いの PC の既定: %s", cmp.Or(group, "組み込み"), policyLabel(policy))
+	return nil
+}
+
 // ToolStates は、会話の設定 settings でのツールの扱い(会話の設定の画面に出す)。
 // 画面がまだ保存していない設定でも見られるよう、会話の ID ではなく設定を受け取る。
 func (s *ChatService) ToolStates(settings aibow.ConversationSettings) ([]aibow.ToolGroupState, error) {
@@ -344,6 +359,8 @@ func policyLabel(p aibow.ToolPolicy) string {
 		return "確認する"
 	case aibow.ToolAllow:
 		return "確認しない"
+	case aibow.ToolOn:
+		return "使う"
 	}
 	return "決めていない"
 }
@@ -491,11 +508,12 @@ func (s *ChatService) Compact(ctx context.Context, id uuid.UUID) {
 
 // ConfirmTool は、実行前の確認を待っているツールに答える(カードの「実行する」「拒否」)。
 // reqID は confirm イベントの ID。拒否するときの reason は空でもよい(モデルには「理由: (書かれていません)」と渡る)。
-func (s *ChatService) ConfirmTool(id uuid.UUID, reqID string, approved bool, reason string) error {
+// remember は、このツールのこの会話でのこれから先の扱い(空ならこの1回だけ。allow = この会話では今後聞かない、off = 今後許可しない。0010)。
+func (s *ChatService) ConfirmTool(id uuid.UUID, reqID string, approved bool, reason string, remember aibow.ToolPolicy) error {
 	if s.startupErr != nil {
 		return s.startupErr
 	}
-	return s.convs.Confirm(id, reqID, approved, reason)
+	return s.convs.Answer(id, reqID, aibow.Confirmation{Approved: approved, Reason: reason, Remember: remember})
 }
 
 // StopSummary は生成中の要約だけを止める(要約中に出る停止ボタン)。

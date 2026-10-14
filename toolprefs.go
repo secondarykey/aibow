@@ -28,13 +28,14 @@ import (
 	"sync"
 )
 
-// ToolPolicy はツールの扱い。
+// ToolPolicy はツールの扱い。真偽値の組み合わせではなく値で持つ(あとで動きを足すときは値を1つ足す。0010)。
+// 決めていないときは空(次の層を見る)。
 type ToolPolicy string
 
 const (
 	ToolOff   ToolPolicy = "off"   // 使わない: モデルに見せない(説明もプロンプトに入れないので、会話の上限の節約にもなる)
 	ToolAsk   ToolPolicy = "ask"   // 確認する: 実行する前にユーザーに聞く(MCP のツールの決まりの既定)
-	ToolAllow ToolPolicy = "allow" // 確認しない: 聞かずに実行する。今は画面から選べない(tools.json を手で書けば効く)
+	ToolAllow ToolPolicy = "allow" // 確認しない: 聞かずに実行する(設定の画面・会話の設定の画面で選ぶ。0010)
 	// ToolOn は会話の上書きだけで使う値: 使う。PC の既定の「使わない」は「既定では使わない」の意味で、禁止ではないので、
 	// 会話ごとに使うことにできる(2026-10-15、ユーザーと決めた)。確認するかは変えない(PC の既定・決まりの既定のまま)
 	ToolOn ToolPolicy = "on"
@@ -42,6 +43,11 @@ const (
 
 func (p ToolPolicy) valid() bool {
 	return p == ToolOff || p == ToolAsk || p == ToolAllow
+}
+
+// validInConversation は、会話の上書きに置ける値か(on は会話だけ)。
+func (p ToolPolicy) validInConversation() bool {
+	return p.valid() || p == ToolOn
 }
 
 // KnownTool は、サーバーを起動したときに見えたツール1つ(画面の設定に一覧を出すため。ツールの扱いには使わない)。
@@ -273,6 +279,18 @@ func (p *ToolPrefs) SetToolPolicy(name string, policy ToolPolicy) error {
 // SetBuiltinPolicy は組み込みのツール全部の扱いの PC の既定を変えて、tools.json に書く。policy が空なら決めていない状態に戻す。
 func (p *ToolPrefs) SetBuiltinPolicy(policy ToolPolicy) error {
 	return p.update(func(f *toolsFile) { f.Builtin = policy }, policy)
+}
+
+// SetGroupPolicy は、グループ(組み込みなら空、MCP ならサーバーの名前)の全部のツールの確認の扱いの PC の既定を変えて、tools.json に書く。
+// 確認する(ask)・確認しない(allow)・決めていない(空)だけ(グループごとの「使わない」は「新しい会話で最初から選ばない」= SetGroupDefault)。
+func (p *ToolPrefs) SetGroupPolicy(group string, policy ToolPolicy) error {
+	if policy != "" && policy != ToolAsk && policy != ToolAllow {
+		return fmt.Errorf("グループの扱いは確認する(ask)か確認しない(allow)です: %q", policy)
+	}
+	if group == "" {
+		return p.SetBuiltinPolicy(policy)
+	}
+	return p.SetServerPolicy(group, policy)
 }
 
 // SetServerPolicy はサーバーの全部のツールの扱いの PC の既定を変えて、tools.json に書く。policy が空なら決めていない状態に戻す。

@@ -220,6 +220,13 @@ export interface Confirmation {
      * 拒否の理由(ユーザーが書いたもの。空でもよい)
      */
     "reason"?: string;
+
+    /**
+     * Remember は、このツールのこれから先の扱い(会話の上書きに書く ToolPolicy の値)。空ならこの1回だけ。
+     * 確認のカードの「この会話では今後聞かない」(allow)・「今後許可しない」(off)など(0010)。
+     * 真偽値ではなく値で持つのは、操作を足すときに値を足すだけで済むようにするため
+     */
+    "remember"?: ToolPolicy;
 }
 
 /**
@@ -571,7 +578,8 @@ export interface ToolGroupState {
 }
 
 /**
- * ToolPolicy はツールの扱い。
+ * ToolPolicy はツールの扱い。真偽値の組み合わせではなく値で持つ(あとで動きを足すときは値を1つ足す。0010)。
+ * 決めていないときは空(次の層を見る)。
  */
 export enum ToolPolicy {
     /**
@@ -590,7 +598,7 @@ export enum ToolPolicy {
     ToolAsk = "ask",
 
     /**
-     * 確認しない: 聞かずに実行する。今は画面から選べない(tools.json を手で書けば効く)
+     * 確認しない: 聞かずに実行する(設定の画面・会話の設定の画面で選ぶ。0010)
      */
     ToolAllow = "allow",
 

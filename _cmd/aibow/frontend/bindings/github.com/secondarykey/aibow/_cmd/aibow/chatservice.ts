@@ -59,9 +59,10 @@ export function Compact(id: uuid$0.UUID): $CancellablePromise<void> {
 /**
  * ConfirmTool は、実行前の確認を待っているツールに答える(カードの「実行する」「拒否」)。
  * reqID は confirm イベントの ID。拒否するときの reason は空でもよい(モデルには「理由: (書かれていません)」と渡る)。
+ * remember は、このツールのこの会話でのこれから先の扱い(空ならこの1回だけ。allow = この会話では今後聞かない、off = 今後許可しない。0010)。
  */
-export function ConfirmTool(id: uuid$0.UUID, reqID: string, approved: boolean, reason: string): $CancellablePromise<void> {
-    return $Call.ByID(665849895, id, reqID, approved, reason);
+export function ConfirmTool(id: uuid$0.UUID, reqID: string, approved: boolean, reason: string, remember: aibow$0.ToolPolicy): $CancellablePromise<void> {
+    return $Call.ByID(665849895, id, reqID, approved, reason, remember);
 }
 
 /**
@@ -161,6 +162,14 @@ export function SetGroupDefault(group: string, on: boolean): $CancellablePromise
 }
 
 /**
+ * SetGroupPolicy は、グループ(空なら組み込み、そうでなければ MCP のサーバー)の全部のツールの確認の扱いの PC の既定を変える
+ * (確認する ask / 確認しない allow / 決めていない 空。tools.json に書く)。
+ */
+export function SetGroupPolicy(group: string, policy: aibow$0.ToolPolicy): $CancellablePromise<void> {
+    return $Call.ByID(2609014370, group, policy);
+}
+
+/**
  * SetToolPolicy は、ツールの扱いの PC の既定を変える(tools.json に書く)。policy が空なら決めていない状態に戻す。
  * 次の送信から効く(プロンプトに入るツールが変わるので、画面はメーターを数え直す)。
  */
@@ -186,6 +195,13 @@ export function StopSummary(): $CancellablePromise<void> {
  */
 export function SwitchModel(id: string): $CancellablePromise<aibow$0.ModelInfo | null> {
     return $Call.ByID(1702876432, id);
+}
+
+/**
+ * ToolDefaults は、会話の上書きが無いときのツールの扱い(PC の既定と決まりの既定。設定の画面の「ツール」に出す)。
+ */
+export function ToolDefaults(): $CancellablePromise<aibow$0.ToolGroupState[] | null> {
+    return $Call.ByID(3034059471);
 }
 
 /**

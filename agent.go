@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -136,7 +137,13 @@ func (cs *Conversations) runTurn(ctx context.Context, conv Conversation, history
 // 書き換えるツール(tool.Confirmable)は、実行する前にユーザーの確認を待つ。
 // 拒否されたら実行せず、「ユーザーが実行を拒否しました。理由: …」を結果としてモデルに返す(ループは続ける。
 // 失敗しても送信は止めない、と同じ考え方で、モデルに別のやり方を考えさせる)。
+//
+// ツールの扱いは、呼ぶたびに会話の設定を読み直して決める。送信の途中(ループの中)で会話の上書きが変わっても
+// (確認のカードの「この会話では今後聞かない」など。0010)、次の呼び出しから効くように。
 func (cs *Conversations) runTool(ctx context.Context, conv Conversation, c ToolCall, emit func(ChatEvent)) StoredMessage {
+	if fresh, _, err := cs.store.Conversation(conv.ID); err == nil {
+		conv.Settings = fresh.Settings.normalized()
+	}
 	t, args, err := cs.lookupTool(conv.Settings, c)
 	if err != nil {
 		return toolMessage(conv.ID, c, errorPrefix+err.Error(), true, 0)
@@ -159,6 +166,14 @@ func (cs *Conversations) runFound(ctx context.Context, conv Conversation, c Tool
 		}
 		if conf, err = cs.confirm(ctx, conv.ID, c, ct, args, emit); err != nil {
 			return toolMessage(conv.ID, c, errorPrefix+err.Error(), true, 0)
+		}
+		// これから先の扱いも答えられていたら(「この会話では今後聞かない」など)、会話の上書きに書く
+		if conf.Remember != "" {
+			if err := cs.SetToolPolicy(conv.ID, t.Def().Name, conf.Remember); err != nil {
+				log.Warnf("ツール %s のこれから先の扱いを保存できません: %v", t.Def().Name, err)
+			} else {
+				log.Noticef("ツール %s のこの会話での扱いを %s にしました(確認のカードから)", t.Def().Name, conf.Remember)
+			}
 		}
 		if !conf.Approved {
 			res := toolMessage(conv.ID, c, rejected(conf.Reason), false, 0)
@@ -197,7 +212,7 @@ func (cs *Conversations) lookupTool(set ConversationSettings, c ToolCall) (tool.
 }
 
 // needsConfirm は、ツールを確認してから実行するか(扱いが「確認する」なら確認する)。
-// 「確認しない」は今は画面から選べない(tools.json か会話の設定を手で書いたときだけ)。
+// 「確認しない」は、設定の画面の「ツール」(PC の既定)と会話の設定の画面の「ツール」(この会話だけ)で選ぶ(0010)。
 // ふだんは確認するツール(書き換えるツール・コマンド・MCP のツール)を聞かずに実行するときは、ログに出す。
 func (cs *Conversations) needsConfirm(set ConversationSettings, t tool.Tool) bool {
 	if cs.toolPolicy(set, t) != ToolAllow {
@@ -271,9 +286,17 @@ func (cs *Conversations) confirm(ctx context.Context, conv uuid.UUID, c ToolCall
 	}
 }
 
-// Confirm は、確認を待っているツールに答える(画面の「実行する」「拒否」)。
+// Confirm は、確認を待っているツールに答える(画面の「実行する」「拒否」)。この1回だけの答え。
 // 待っている確認が無い・ID が違う(停止した後に押した、など)ときはエラー。
 func (cs *Conversations) Confirm(conv uuid.UUID, id string, approved bool, reason string) error {
+	return cs.Answer(conv, id, Confirmation{Approved: approved, Reason: reason})
+}
+
+// Answer は、確認を待っているツールに答える。a.Remember があれば、そのツールのこの会話でのこれから先の扱いにする(0010)。
+func (cs *Conversations) Answer(conv uuid.UUID, id string, a Confirmation) error {
+	if a.Remember != "" && !a.Remember.validInConversation() {
+		return fmt.Errorf("これから先の扱い %q は知らない値です", a.Remember)
+	}
 	cs.confirmMu.Lock()
 	defer cs.confirmMu.Unlock()
 	p := cs.pending
@@ -281,8 +304,33 @@ func (cs *Conversations) Confirm(conv uuid.UUID, id string, approved bool, reaso
 		return errors.New("この確認はもう待っていません(停止したか、すでに答えています)")
 	}
 	cs.pending = nil // 2回押しても、答えは1回だけ届ける
-	p.answer <- Confirmation{Approved: approved, Reason: strings.TrimSpace(reason)}
+	a.Reason = strings.TrimSpace(a.Reason)
+	p.answer <- a
 	return nil
+}
+
+// SetToolPolicy は、会話のツールの扱いの上書きを1つだけ変えて保存する(policy が空なら上書きを消す)。
+// 会話の設定を丸ごと書き戻さないので、画面が持っている設定と関係なく、すぐ効く(確認のカードから使う。0010)。
+func (cs *Conversations) SetToolPolicy(id uuid.UUID, name string, policy ToolPolicy) error {
+	if policy != "" && !policy.validInConversation() {
+		return fmt.Errorf("ツール %s の扱い %q は知らない値です", name, policy)
+	}
+	c, _, err := cs.store.Conversation(id)
+	if err != nil {
+		return err
+	}
+	set := c.Settings.normalized()
+	set.ToolPolicies = maps.Clone(set.ToolPolicies)
+	if policy == "" {
+		delete(set.ToolPolicies, name)
+	} else {
+		if set.ToolPolicies == nil {
+			set.ToolPolicies = map[string]ToolPolicy{}
+		}
+		set.ToolPolicies[name] = policy
+	}
+	c.Settings = set
+	return cs.store.UpdateConversation(c)
 }
 
 // rejected は、拒否されたときにモデルに返す結果の文。

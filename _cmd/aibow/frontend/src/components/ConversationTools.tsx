@@ -4,7 +4,7 @@
 // ツールごとのチェックは、この会話で使うか(会話の上書き tool_policies の on / off)。
 // PC の既定(設定の画面の「ツール」= tools.json)の「使わない」は「既定では使わない」の意味で、禁止ではない。
 // なので、既定で使わないツールも、この会話では使うにできる。既定と同じにしたら上書きを消す(既定を変えたときに付いていくように)。
-// 確認する / 確認しないはここでは変えない(会話で使うにしても、確認の扱いは既定のまま)。
+// 「確認しない」の枠で、この会話だけ確認せずに実行するにできる(会話の上書きの allow / ask。0010)。既定と同じにしたら上書きを消す。
 // 扱いは Go の toolPolicy と同じ決め方で Go に決めてもらう(ChatService.ToolStates)。画面で同じ判断を書き直さない。
 // 既定と違うツールと、既定で使わないツールには、どこで決まったか(この会話 / 既定)を添える。
 //
@@ -18,6 +18,7 @@ import type { ServerInfo } from "../../bindings/github.com/secondarykey/aibow/mc
 import { errorMessage } from "../errors";
 import { TOOL_LABELS } from "../toolLabels";
 import { BUILTIN } from "./ToolBar";
+import { ConfirmChip } from "./ConfirmChip";
 
 interface Props {
   settings: ConversationSettings;
@@ -51,6 +52,15 @@ export function ConversationTools({ settings, servers, onChange }: Props) {
     onChange({ tool_policies: next });
   };
 
+  // 確認する / 確認しない(使うツールだけ)。既定(上書きが無いとき)と同じなら上書きを消し、違えば ask / allow で上書きする
+  const toggleConfirm = (t: ToolState, allow: boolean) => {
+    const next = { ...(settings.tool_policies ?? {}) };
+    const want = allow ? ToolPolicy.ToolAllow : ToolPolicy.ToolAsk;
+    if (want === t.default) delete next[t.name];
+    else next[t.name] = want;
+    onChange({ tool_policies: next });
+  };
+
   const selected = settings.mcp_servers ?? [];
   const toggleServer = (name: string, on: boolean) =>
     onChange({ mcp_servers: on ? [...selected, name] : selected.filter(n => n !== name) });
@@ -73,6 +83,7 @@ export function ConversationTools({ settings, servers, onChange }: Props) {
               workDir={settings.work_dir}
               label={t => TOOL_LABELS[t.name] ?? t.description}
               onToggleTool={toggleTool}
+              onToggleConfirm={toggleConfirm}
             />
           );
         }
@@ -95,6 +106,7 @@ export function ConversationTools({ settings, servers, onChange }: Props) {
             prefix={g.server.replace(/[^A-Za-z0-9_-]/gu, "_") + "__"}
             label={t => t.description}
             onToggleTool={toggleTool}
+            onToggleConfirm={toggleConfirm}
           />
         );
       })}
@@ -102,7 +114,7 @@ export function ConversationTools({ settings, servers, onChange }: Props) {
   );
 }
 
-function Group({ name, title, on, onToggle, open, onToggleOpen, tools, workDir, needsWorkDir, prefix = "", label, onToggleTool }: {
+function Group({ name, title, on, onToggle, open, onToggleOpen, tools, workDir, needsWorkDir, prefix = "", label, onToggleTool, onToggleConfirm }: {
   name: string;
   title: string;
   on: boolean;            // この会話で使う
@@ -115,6 +127,7 @@ function Group({ name, title, on, onToggle, open, onToggleOpen, tools, workDir, 
   prefix?: string;
   label(t: ToolState): string;
   onToggleTool(t: ToolState, on: boolean): void;
+  onToggleConfirm(t: ToolState, allow: boolean): void;
 }) {
   const usable = (t: ToolState) => t.policy !== ToolPolicy.ToolOff && !(t.needs_work_dir && !workDir);
   const using = tools.filter(usable).length;
@@ -150,6 +163,13 @@ function Group({ name, title, on, onToggle, open, onToggleOpen, tools, workDir, 
                     onChange={e => onToggleTool(t, e.target.checked)}
                   />
                   <code>{short}</code>
+                  {t.policy !== ToolPolicy.ToolOff && on && (
+                    <ConfirmChip
+                      allow={t.policy === ToolPolicy.ToolAllow}
+                      title={t.policy === ToolPolicy.ToolAllow ? "この会話では確認せずに実行する(押すと確認する)" : "この会話では確認せずに実行するようにする"}
+                      onToggle={a => onToggleConfirm(t, a)}
+                    />
+                  )}
                   <StateTag tool={t} workDir={workDir} />
                   <span className="tool-desc">{label(t)}</span>
                 </label>
@@ -167,9 +187,10 @@ function Group({ name, title, on, onToggle, open, onToggleOpen, tools, workDir, 
 function StateTag({ tool, workDir }: { tool: ToolState; workDir: string }) {
   const off = tool.policy === ToolPolicy.ToolOff;
   if (tool.from === "conversation") {
-    return off
-      ? <span className="tool-tag" title="この会話だけ使わない(既定では使う)">この会話で使わない</span>
-      : <span className="tool-tag" title="この会話だけ使う(既定では使わない)">この会話で使う</span>;
+    if (off) return <span className="tool-tag" title="この会話だけ使わない(既定では使う)">この会話で使わない</span>;
+    if (tool.default === ToolPolicy.ToolOff) return <span className="tool-tag" title="この会話だけ使う(既定では使わない)">この会話で使う</span>;
+    // 確認の扱いだけを、この会話で変えている
+    return <span className="tool-tag" title="確認するかを、この会話だけ変えています">この会話</span>;
   }
   if (off) {
     return <span className="tool-tag" title="設定の画面の「ツール」(tools.json)で、既定では使わないにしてある">既定で使わない</span>;

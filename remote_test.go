@@ -625,3 +625,80 @@ func TestNoteServers(t *testing.T) {
 		t.Errorf("次の起動からは、足したサーバーを使わない: %v", added)
 	}
 }
+
+// 確認の答えで「これから先の扱い」も答えると、会話の上書きに書き、同じ送信の次の呼び出しから効く(0010)。
+// allow(この会話では今後聞かない)なら次は聞かずに実行し、off(今後許可しない)なら次は「ありません」を返す
+func TestConfirmRemember(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		remember ToolPolicy
+		asked    int
+		ran      bool // 2回目を実行したか
+	}{
+		{"この会話では今後聞かない", ToolAllow, 1, true},
+		{"今後許可しない", ToolOff, 1, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			g := &fakeGen{replies: []fakeReply{
+				{toolCalls: []ToolCall{toolCall("fake__write", "paths", `["a"]`)}},
+				{toolCalls: []ToolCall{toolCall("fake__write", "paths", `["b", "c"]`)}},
+				{content: "書きました"},
+			}}
+			cs, c, _ := newWorkDirConversation(t, g)
+			write := &remoteTool{name: "fake__write"}
+			cs.SetRemoteTools(&fakeRemote{tools: []tool.Tool{write}})
+			cs.SetToolPrefs(&ToolPrefs{})
+			useFake(t, cs, &c)
+
+			asked := 0
+			evs := sendAnswering(cs, context.Background(), c, "書いて", func(q *ConfirmRequest) bool {
+				asked++
+				approved := tc.remember != ToolOff
+				return cs.Answer(c.ID, q.ID, Confirmation{Approved: approved, Remember: tc.remember}) == nil
+			})
+			if asked != tc.asked {
+				t.Errorf("聞いた回数: %d", asked)
+			}
+			_, ms, _ := cs.Get(c.ID)
+			second := ms[4] // user, assistant, tool, assistant, tool
+			if second.Role != "tool" || (second.Content == "xx") != tc.ran {
+				t.Errorf("2回目の結果: %q(実行したはず: %v)%v", second.Content, tc.ran, errorsOf(evs))
+			}
+			if !tc.ran && !strings.Contains(second.Content, "ありません") {
+				t.Errorf("隠したツールは「ありません」: %q", second.Content)
+			}
+			if got, _, _ := cs.Get(c.ID); got.Settings.ToolPolicies["fake__write"] != tc.remember {
+				t.Errorf("会話の上書きに書く: %v", got.Settings.ToolPolicies)
+			}
+			if first := ms[2].ToolResult.Confirm; first == nil || first.Remember != tc.remember {
+				t.Errorf("答えに残す: %+v", first)
+			}
+		})
+	}
+}
+
+// 会話の上書きを1つだけ書き換える。知らない値は書かない。空なら上書きを消す
+func TestSetToolPolicy(t *testing.T) {
+	cs, _ := newTestConversations(t, &fakeGen{})
+	c := mustCreate(t, cs)
+	if err := cs.SetToolPolicy(c.ID, "write_file", ToolAllow); err != nil {
+		t.Fatal(err)
+	}
+	if err := cs.SetToolPolicy(c.ID, "write_file", "yes"); err == nil {
+		t.Error("知らない値は書かない")
+	}
+	if got, _, _ := cs.Get(c.ID); got.Settings.ToolPolicies["write_file"] != ToolAllow {
+		t.Errorf("書いた値: %v", got.Settings.ToolPolicies)
+	}
+	cs.SetToolPolicy(c.ID, "write_file", "")
+	if got, _, _ := cs.Get(c.ID); len(got.Settings.ToolPolicies) != 0 {
+		t.Errorf("空なら消す: %v", got.Settings.ToolPolicies)
+	}
+	p := &ToolPrefs{}
+	if err := p.SetGroupPolicy("fake", ToolOff); err == nil {
+		t.Error("グループの扱いは確認する・確認しないだけ")
+	}
+	if err := p.SetGroupPolicy("", ToolAllow); err != nil || p.View().Builtin != ToolAllow {
+		t.Errorf("組み込みのグループ: %v %v", err, p.View().Builtin)
+	}
+}

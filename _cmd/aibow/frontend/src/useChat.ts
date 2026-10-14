@@ -7,6 +7,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { CancelError, Events } from "@wailsio/runtime";
 import type { CancellablePromise } from "@wailsio/runtime";
 import { ChatService } from "../bindings/github.com/secondarykey/aibow/_cmd/aibow";
+import { ToolPolicy } from "../bindings/github.com/secondarykey/aibow";
 import type { ChatEvent, ConfirmRequest, StoredMessage } from "../bindings/github.com/secondarykey/aibow";
 import { messageItems, thinkLabel, toolCount, turnView, withConfirm } from "./transcript";
 import type { AssistantView, Transcript } from "./transcript";
@@ -311,7 +312,8 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
     const l = live.current;
     if (!l) return;
     try {
-      await ChatService.ConfirmTool(l.convId, reqId, approved, reason);
+      // 4つ目はこれから先の扱い(空 = この1回だけ)。カードの「この会話では今後聞かない」などは 0010 の2段目で足す
+      await ChatService.ConfirmTool(l.convId, reqId, approved, reason, ToolPolicy.$zero);
     } catch (err) {
       addError(errorMessage(err));
     }

@@ -419,7 +419,13 @@ nav.conversations.collapsed .settings.active { color: var(--accent); }
 .settings-view label.tool-item { margin: 0; padding: 3px 0; min-width: 0; }
 .tool-item code { flex-shrink: 0; }
 .tool-desc { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.tool-allow { flex-shrink: 0; font-size: 11px; padding: 0 5px; border-radius: 4px; border: 1px solid #d97706; color: #d97706; }
+/* 「確認しない」の枠(ConfirmChip)。確認しないなら橙で出したまま、そうでなければ行(見出し)にマウスを乗せたときだけ薄く出す */
+.tool-confirm {
+  flex-shrink: 0; font-size: 11px; line-height: 1.4; padding: 0 5px; border-radius: 4px;
+  border: 1px dashed var(--border); background: transparent; color: var(--muted); cursor: pointer;
+}
+.tool-confirm.on { border: 1px solid #d97706; color: #d97706; }
+.tool-item:not(:hover) .tool-confirm:not(.on), .tool-group-head:not(:hover) .tool-confirm:not(.on) { visibility: hidden; }
 /* 会話の設定の画面の「ツール」: 使えない理由の枠と、この会話で使っていないグループのツール(薄く出す) */
 .tool-tag { flex-shrink: 0; font-size: 11px; padding: 0 5px; border-radius: 4px; border: 1px solid var(--border); color: var(--muted); font-weight: normal; }
 .tool-item.unused code { color: var(--muted); }

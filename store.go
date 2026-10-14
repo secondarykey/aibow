@@ -137,7 +137,7 @@ func (s ConversationSettings) validate() error {
 		return fmt.Errorf("会話の上限と返事の上限は 1 以上にしてください(%d / %d)", s.HistoryTokens, s.ReplyTokens)
 	}
 	for name, p := range s.ToolPolicies {
-		if !p.valid() && p != ToolOn {
+		if !p.validInConversation() {
 			return fmt.Errorf("ツール %s の扱い %q は知らない値です(on / off / ask / allow)", name, p)
 		}
 	}
@@ -178,6 +178,10 @@ type ToolResult struct {
 type Confirmation struct {
 	Approved bool   `json:"approved"`         // 実行した。false なら拒否した
 	Reason   string `json:"reason,omitempty"` // 拒否の理由(ユーザーが書いたもの。空でもよい)
+	// Remember は、このツールのこれから先の扱い(会話の上書きに書く ToolPolicy の値)。空ならこの1回だけ。
+	// 確認のカードの「この会話では今後聞かない」(allow)・「今後許可しない」(off)など(0010)。
+	// 真偽値ではなく値で持つのは、操作を足すときに値を足すだけで済むようにするため
+	Remember ToolPolicy `json:"remember,omitempty"`
 }
 
 // Compaction は要約1件(compact の summary)。
