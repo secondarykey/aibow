@@ -415,9 +415,23 @@ nav.conversations.collapsed .settings.active { color: var(--accent); }
 .tool-reload .spin { animation: spin 1s linear infinite; }
 .tool-bulk { margin-left: auto; display: flex; gap: 4px; }
 .tool-bulk button { font-size: 12px; padding: 2px 8px; }
-.tool-group-body { margin: 2px 0 10px 7px; padding-left: 16px; border-left: 2px solid var(--border); display: flex; flex-direction: column; }
-.settings-view label.tool-item { margin: 0; padding: 3px 0; min-width: 0; }
-.tool-item code { flex-shrink: 0; }
+/* ツールの一覧は表の形にして列をそろえる(名前の長さで後ろがずれないように)。
+   列: チェック / 名前 / 確認しない / 理由の枠 / 説明。行(label)は subgrid でこの列を共有し、無いものの列は空けておく。
+   名前の列は内容に合わせるが 40% まで(長い名前は … で切り、マウスを乗せると全部出す) */
+.tool-group-body {
+  margin: 2px 0 10px 7px; padding-left: 16px; border-left: 2px solid var(--border);
+  display: grid; grid-template-columns: auto fit-content(40%) auto auto minmax(0, 1fr); column-gap: 8px; align-items: center;
+}
+.tool-group-body > :not(.tool-item) { grid-column: 1 / -1; }
+.settings-view label.check.tool-item {
+  display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; align-items: center;
+  margin: 0; padding: 3px 0; min-width: 0;
+}
+.tool-item > input { grid-column: 1; margin: 0; }
+.tool-item > code { grid-column: 2; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tool-item > .tool-confirm { grid-column: 3; justify-self: start; }
+.tool-item > .tool-tag { grid-column: 4; justify-self: start; }
+.tool-item > .tool-desc { grid-column: 5; }
 .tool-desc { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 /* 「確認しない」の枠(ConfirmChip)。確認しないなら橙で出したまま、そうでなければ行(見出し)にマウスを乗せたときだけ薄く出す */
 .tool-confirm {
