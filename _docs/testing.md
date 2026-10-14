@@ -12,6 +12,7 @@
 実際の生成は `_cmd/aibow` で `wails3 dev`(または `wails3 build` してから `wails3 task run`)で起動し、開いたウィンドウで送受信して確認します。
 
 - 会話の DB は、試すときは `AIBOW_DB` を一時フォルダのファイルにする(ユーザーの `%APPDATA%\aibow\aibow.db` に試しの会話を混ぜない)
+- exe(`wails3 build`)を起動するときは、`AIBOW_LOG_DIR` も一時フォルダにする(ユーザーの `%APPDATA%\aibow\logs` に試しのログを混ぜない)
 
 ## 確認する項目
 

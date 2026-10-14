@@ -7,13 +7,15 @@
 | ファイル | 役割 |
 |---|---|
 | `log.go` | 出す関数(Trace / Debug / Info / Notice / Warn / Error と `…f`)。段階(`Level*`。値は wenteasy/log と同じ `slog.Level`)。出し先の `SetLogger` / `Logger` |
-| `setup.go` | `Init`。出口を組んで `slog.Default()` を向ける(アプリの main の最初に 1 回)。今は標準エラー出力だけ |
+| `setup.go` | `Init(Options)`。出口(ファイル `Dir/aibow_<日付>.log`・標準エラー出力)を組んで `slog.Default()` を向ける(アプリの main の最初に 1 回)。`FilePath` は今日のファイルの場所 |
 
 ## どこに出るか
 
-- **アプリ(`_cmd/aibow`)**: `main` の最初に `log.Init()`。`slog.Default()` が wenteasy/log の `SimpleHandler`
-  (標準エラー出力。Info 以上)になり、aibow のログもアプリのログもそこに出る。
-  リリース版(`-H windowsgui`)には標準エラー出力の行き先が無いので見えない(ファイルに書くのは次の段階。TODO.md)
+- **アプリ(`_cmd/aibow`)**: `main` の最初に `startLog` が `log.Init` を呼ぶ。`slog.Default()` が wenteasy/log の `SimpleHandler`
+  (Info 以上)になり、aibow のログもアプリのログも、Wails 自身のログもそこに出る
+  - `wails3 dev`(`isDev`): ターミナル(標準エラー出力)。`AIBOW_LOG_DIR` を指定したときだけファイルにも
+  - exe(`wails3 build`): ファイル `%APPDATA%\aibow\logs\aibow_<日付>.log`(wenteasy/log の `RollingFileWriter`。日ごと。`AIBOW_LOG_DIR` で変えられる)。
+    exe(`-H windowsgui`)には標準エラー出力の行き先が無く、ファイルにしか残らないため。古いファイルはまだ消さない
 - **aibow をライブラリとして使う人**: `Init` は呼ばなくてよい。aibow のログは `slog.Default()` に出るので、
   自分の `slog.SetDefault` の出口に集まる。aibow のログだけ別にしたいときは `log.SetLogger(l)`
 
@@ -27,8 +29,11 @@
 - ⚠️ **`SetLogger` を消さないこと**(2026-10-14、ユーザーと決めた)。ikkyoku はアプリなので `slog.Default()` だけだが、
   aibow はライブラリとしても使われる
 - ⚠️ **ライブラリの部分(ルートと下のパッケージ)から `Init` や `slog.SetDefault` を呼ばないこと。** 出口を決めるのはアプリ
+- ⚠️ **ログが書けなくてもアプリは動かす。** `Init` はファイルを作れなくても出せる出口だけで組み、理由をエラーで返す(アプリは画面のお知らせに出す)。
+  返す `io.Closer` は nil にしない
 
 ## テスト(`go test ./log/`)
 
 `log_test.go` —— 出す関数とレベルの足切り・**記録される位置が呼んだ側になること**(ここの関数を通しても位置がずれない歯止め)・
-`SetLogger` をしなければ `slog.Default()` に出ること・`Init` が `slog.Default()` を向け、Notice などが名前で出ること。
+`SetLogger` をしなければ `slog.Default()` に出ること・`Init` が `slog.Default()` を向け、Notice などが名前で出ること・
+ファイルに書くこと・フォルダを作れなくても止まらないこと。

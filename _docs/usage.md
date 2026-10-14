@@ -162,6 +162,7 @@ MCP(Model Context Protocol)のサーバーのツールも使えます。サー�
 | `AIBOW_LIB` | `lib` | llama.cpp の DLL があるフォルダ(相対パスはカレントフォルダが基準) |
 | `AIBOW_DB` | `%APPDATA%\aibow\aibow.db` | 会話を保存する SQLite のファイル。フォルダが無ければ作る |
 | `AIBOW_SETTINGS` | `%APPDATA%\aibow\settings.json` | 設定ファイル(手で書く設定。今は MCP のサーバーの `mcpServers` だけ)。無ければ MCP を使わない |
+| `AIBOW_LOG_DIR` | `%APPDATA%\aibow\logs` | ログファイル(`aibow_<日付>.log`。日ごと)を書くフォルダ。フォルダが無ければ作る。`wails3 build` で作った exe は既定でここに書く。`wails3 dev` はターミナルに出し、この変数を指定したときだけファイルにも書く |
 | `AIBOW_TOOLS` | `%APPDATA%\aibow\tools.json` | ツールの扱いの、この PC の既定(設定の画面で変えたものを aibow が書く) |
 | `AIBOW_HISTORY_TOKENS` | `8192` | 会話の上限(モデルに渡す、これまでの会話のトークン数の上限)。超えたら会話ごとの compact の方式で収める |
 | `AIBOW_MAX_TOKENS` | `8192` | 返事の上限(1回の返事で生成するトークン数の上限。思考 + 答えの合計) |
@@ -227,5 +228,5 @@ AIBOW_MODEL=ollama:qwen3.5:4b wails3 dev
 - **モデルの切り替え**
   読み込み時間、生成速度、答えの質がモデルの大きさでどう変わるか。設定の画面で GPU に載せる層の数を減らすと、どれくらい遅くなるか。
   会話の上限・返事の上限を変えたときは、モデルの読み込み時間が変わらない(重みは読み直さず、作業領域だけ作り直している)ことも分かります。
-- **ターミナルのログ**(`wails3 dev` で起動したとき)
+- **ログ**(`wails3 dev` で起動したときはターミナル、exe は `%APPDATA%\aibow\logs\aibow_<日付>.log`)
   起動時の計算装置とモデル一覧、1回ごとのトークン数・速度・終了理由、compact したこと(方式・前後のトークン数・秒数)、ツールの実行(名前・引数・結果の長さ・秒数)、MCP サーバーの起動・やり取り・エラー出力が出ます。

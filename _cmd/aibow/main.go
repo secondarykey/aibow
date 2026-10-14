@@ -22,6 +22,8 @@ package main
 
 import (
 	"embed"
+	"errors"
+	"io"
 	"io/fs"
 	"maps"
 	"os"
@@ -59,11 +61,16 @@ func init() {
 }
 
 func main() {
-	log.Init() // ログの出口を組む(aibow/log。標準エラー出力へ)。aibow のライブラリのログも、アプリのログもここに集まる
+	// ログの出口を最初に組む(設定の読み込みのログから残すため)。aibow のライブラリのログも、アプリのログもここに集まる
+	logs, logErr := startLog()
+	defer logs.Close()
 
 	// 起動に失敗しても(lib が無いなど)ウィンドウは出し、理由を画面に表示する。
 	// リリース版(wails3 build)はコンソールが無く、ログだけでは何も見えずに終わってしまうため。
 	cfg, err := loadConfig()
+	if logErr != nil {
+		cfg.notices = append(cfg.notices, logErr.Error()) // ログが書けなくても起動は止めず、画面で伝える
+	}
 	var mcpm *client.Manager
 	var prefs *aibow.ToolPrefs
 	if err == nil {
@@ -133,6 +140,29 @@ func main() {
 		log.Error(err.Error())
 		os.Exit(1)
 	}
+}
+
+// startLog はログの出口を組む(aibow/log の Init)。
+//
+//   - wails3 dev(isDev):ターミナルに出す(標準エラー出力)。AIBOW_LOG_DIR を指定したときだけ、ファイルにも書く
+//   - リリース版の exe:ファイルに書く(%APPDATA%\aibow\logs\aibow_<日付>.log。AIBOW_LOG_DIR で変えられる)。
+//     リリース版(-H windowsgui)には標準エラー出力の行き先が無く、ファイルにしか残らないため
+//     (0006 で、起動できない理由がどこにも残らず困った)
+//
+// ログが書けなくてもアプリは止めない。理由は error で返し、画面のお知らせに出す。
+func startLog() (io.Closer, error) {
+	dir := os.Getenv("AIBOW_LOG_DIR")
+	if dir == "" && !isDev {
+		if dir = configFile("logs"); dir == "" {
+			c, _ := log.Init(log.Options{})
+			return c, errors.New("ログを書くフォルダが決められないので、ログはファイルに残りません。AIBOW_LOG_DIR でフォルダを指定してください")
+		}
+	}
+	c, err := log.Init(log.Options{Dir: dir, Console: isDev})
+	if err == nil && dir != "" {
+		log.Infof("ログの書き出し先: %s", absPath(log.FilePath(dir)))
+	}
+	return c, err
 }
 
 // startMCP は設定ファイル(settings.json)を読み、MCP のサーバーの係(client.Manager)を作る。

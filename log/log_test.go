@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -66,12 +67,12 @@ func TestDefault(t *testing.T) {
 	}
 }
 
-// Init は slog.Default() を wenteasy/log の SimpleHandler(標準エラー出力)に向ける。
+// Init(Console)は slog.Default() を wenteasy/log の SimpleHandler(標準エラー出力)に向ける。
 // 足した段階(Trace・Notice)は、slog の書き方(INFO+2 など)ではなく名前で出る。
 func TestInit(t *testing.T) {
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
+	r, w, perr := os.Pipe()
+	if perr != nil {
+		t.Fatal(perr)
 	}
 	oldStderr, oldDefault := os.Stderr, slog.Default()
 	os.Stderr = w
@@ -81,7 +82,11 @@ func TestInit(t *testing.T) {
 	})
 	SetLogger(nil)
 
-	Init()
+	c, err := Init(Options{Console: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
 	Noticef("aibow から %s", "Notice")
 	Trace("Info より下は出ない")
 	slog.Warn("slog を直接呼んでも同じ出口")
@@ -96,4 +101,59 @@ func TestInit(t *testing.T) {
 	if strings.Contains(got, "出ない") {
 		t.Errorf("Init の既定は Info 以上:\n%s", got)
 	}
+}
+
+// keepDefault は、テストの終わりに slog.Default() と出し先を戻す。
+func keepDefault(t *testing.T) {
+	t.Helper()
+	old := slog.Default()
+	SetLogger(nil)
+	t.Cleanup(func() { slog.SetDefault(old) })
+}
+
+// Init(Dir)は、Dir の aibow_<日付>.log に書く(リリース版の exe はここにしか残らない)
+func TestInitWritesFile(t *testing.T) {
+	keepDefault(t)
+	dir := filepath.Join(t.TempDir(), "logs") // 無ければ作る
+	c, err := Init(Options{Dir: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	Infof("ファイルへ %d", 1)
+	slog.Info("slog を直接呼んでも同じファイル")
+	Debug("Info より下は出ない")
+	if err := c.Close(); err != nil { // 閉じないと Windows では一時フォルダを消せない
+		t.Fatal(err)
+	}
+
+	b, err := os.ReadFile(FilePath(dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(b)
+	for _, want := range []string{"[INFO  ] ファイルへ 1", "[INFO  ] slog を直接呼んでも同じファイル"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("%q が無い:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "出ない") {
+		t.Errorf("Info 以上だけ:\n%s", got)
+	}
+}
+
+// フォルダを作れなくても止めない。理由をエラーで返し、出せる出口で続ける(Close できるものを返す)
+func TestInitBadDir(t *testing.T) {
+	keepDefault(t)
+	file := filepath.Join(t.TempDir(), "not-a-dir")
+	if err := os.WriteFile(file, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Init(Options{Dir: filepath.Join(file, "logs")})
+	if err == nil || !strings.Contains(err.Error(), "ログはファイルに残りません") {
+		t.Errorf("作れない理由を返す: %v", err)
+	}
+	if c == nil {
+		t.Fatal("Close できるものを返す")
+	}
+	c.Close()
 }
