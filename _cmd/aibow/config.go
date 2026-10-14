@@ -94,9 +94,7 @@ func loadConfig() (appConfig, error) {
 		initialModel: os.Getenv("AIBOW_MODEL"),
 		app: aibow.AppSettings{
 			Workspace: aibow.WorkspaceSettings{
-				GPULayers:     env.int("AIBOW_GPU_LAYERS", 999), // 999 = 全部 GPU に載せる
-				HistoryTokens: env.int("AIBOW_HISTORY_TOKENS", 8192),
-				ReplyTokens:   env.int("AIBOW_MAX_TOKENS", 8192),
+				GPULayers: env.int("AIBOW_GPU_LAYERS", 999), // 999 = 全部 GPU に載せる
 			},
 			Defaults: aibow.ConversationSettings{
 				System:          defaultSystemPrompt,
@@ -104,6 +102,9 @@ func loadConfig() (appConfig, error) {
 				Think:           true,
 				PresencePenalty: env.float("AIBOW_PRESENCE_PENALTY", 1.5),
 				Compact:         aibow.CompactSummary,
+				// 会話の上限・返事の上限は新しい会話の既定(会話を作るときに写す。0009)
+				HistoryTokens: env.int("AIBOW_HISTORY_TOKENS", 8192),
+				ReplyTokens:   env.int("AIBOW_MAX_TOKENS", 8192),
 			},
 		},
 	}
@@ -116,7 +117,7 @@ func loadConfig() (appConfig, error) {
 	for _, n := range []struct {
 		key string
 		v   int
-	}{{"AIBOW_HISTORY_TOKENS", c.app.Workspace.HistoryTokens}, {"AIBOW_MAX_TOKENS", c.app.Workspace.ReplyTokens}} {
+	}{{"AIBOW_HISTORY_TOKENS", c.app.Defaults.HistoryTokens}, {"AIBOW_MAX_TOKENS", c.app.Defaults.ReplyTokens}} {
 		if n.v <= 0 {
 			env.errs = append(env.errs, fmt.Errorf("%s は 1 以上で指定してください: %d", n.key, n.v))
 		}

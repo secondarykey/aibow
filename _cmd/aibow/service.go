@@ -81,6 +81,13 @@ func NewChatService(engine *aibow.Engine, st aibow.Store, app aibow.AppSettings,
 			s.convs.SetRemoteTools(mcp)
 		}
 		s.convs.SetToolPrefs(prefs)
+		// 会話の上限・返事の上限を会話ごとにする前に作った会話には、今の既定の値を写す(既定を変えても今ある会話は変わらない、の約束。0009)
+		if n, err := s.convs.FillMissingLimits(); err != nil {
+			log.Error(err.Error())
+		} else if n > 0 {
+			d := app.Defaults
+			log.Noticef("会話の上限・返事の上限を持たない %d 個の会話に、今の既定(%d + %d)を入れました", n, d.HistoryTokens, d.ReplyTokens)
+		}
 	}
 	return s
 }
@@ -181,7 +188,7 @@ func logModel(what string, i *aibow.ModelInfo) {
 
 // ---- アプリ全体の設定 -------------------------------------------------------------------
 
-// AppSettings はアプリ全体の設定(会話の上限・返事の上限・GPU の層数・新しい会話の既定の設定)を返す。
+// AppSettings はアプリの設定(GPU の層数・最後に使ったモデル)と、新しい会話の既定の設定(会話の上限・返事の上限も入る)を返す。
 func (s *ChatService) AppSettings() (aibow.AppSettings, error) {
 	if s.startupErr != nil {
 		return aibow.AppSettings{}, s.startupErr
@@ -193,28 +200,28 @@ func (s *ChatService) AppSettings() (aibow.AppSettings, error) {
 	return a, nil
 }
 
-// SetLimits は会話の上限と返事の上限を変える。
-// 作業領域(コンテキスト)を「会話の上限 + 返事の上限」の大きさで作り直す。モデルは読み直さない。
-// モデルが未読み込みなら nil を返す(次に読み込むときから効く)。
-func (s *ChatService) SetLimits(history, reply int) (*aibow.ModelInfo, error) {
+// TryLimits は、会話の上限 + 返事の上限の大きさの作業領域を、今の作業領域として作り直してみる(モデルは読み直さない)。
+// 画面は、会話の設定の画面・新しい会話の既定で上限を「適用」するときに呼び、確保できたら設定を保存する
+// (VRAM に入らないことを、送信したときではなく変えたときに分かるようにするため。0009)。
+// 作り直したら true。確保できなければ元の大きさに戻してエラーを返す。モデルが未読み込みなら、次に読み込むときの大きさだけ変わる。
+func (s *ChatService) TryLimits(history, reply int) (bool, error) {
 	if s.startupErr != nil {
-		return nil, s.startupErr
+		return false, s.startupErr
 	}
 	if history <= 0 || reply <= 0 {
-		return nil, errors.New("会話の上限と返事の上限は 1 以上にしてください")
+		return false, errors.New("会話の上限と返事の上限は 1 以上にしてください")
 	}
-	w := aibow.WorkspaceSettings{HistoryTokens: history, ReplyTokens: reply}
-	i, err := s.engine.SetContextSize(w.ContextSize())
+	n := history + reply
+	changed, err := s.engine.EnsureContextSize(n)
 	if err != nil {
 		log.Error(err.Error())
-		return nil, err
+		return false, fmt.Errorf("作業領域(会話の上限 %d + 返事の上限 %d = %d トークン)を確保できません。"+
+			"上限を下げるか、GPU に載せる層の数を減らしてください: %w", history, reply, n, err)
 	}
-	s.convs.SetLimits(history, reply)
-	log.Noticef("会話の上限 %d + 返事の上限 %d = 作業領域 %d トークンにしました(モデルは読み直していません)",
-		history, reply, w.ContextSize())
-	s.saveAppSetting(aibow.SettingHistoryTokens, history, func(a *aibow.AppSettings) { a.Workspace.HistoryTokens = history })
-	s.saveAppSetting(aibow.SettingReplyTokens, reply, func(a *aibow.AppSettings) { a.Workspace.ReplyTokens = reply })
-	return i, nil
+	if changed {
+		log.Noticef("会話の上限 %d + 返事の上限 %d = 作業領域 %d トークンに作り直しました(モデルは読み直していません)", history, reply, n)
+	}
+	return changed, nil
 }
 
 // SetGPULayers は GPU に載せる層の数を変え、今のモデルを読み込み直す。

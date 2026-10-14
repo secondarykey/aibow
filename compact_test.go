@@ -36,7 +36,7 @@ func TestUsageCountsThePromptWithTemplate(t *testing.T) {
 		t.Fatalf("usage は生成の前と返事のあとの2回: %+v", us)
 	}
 	// 生成の前: 実際にモデルに渡した文字列のトークン数
-	if want := promptLen(g.gotMessages, true); us[0].Tokens != want || us[0].Limit != testWorkspace.HistoryTokens {
+	if want := promptLen(g.gotMessages, true); us[0].Tokens != want || us[0].Limit != testDefaults.HistoryTokens {
 		t.Errorf("生成の前: %+v(期待: %d)", us[0], want)
 	}
 	// 返事のあと: 返事も足した、次の送信で渡す分。会話を開いたときの Usage と同じ値
@@ -77,8 +77,9 @@ func TestUsageWithoutModel(t *testing.T) {
 // noModelGen はモデルが読み込まれていない Generator。
 type noModelGen struct{}
 
-func (noModelGen) Info() *ModelInfo                { return nil }
-func (noModelGen) CountTokens(Prompt) (int, error) { return 0, ErrNoModel }
+func (noModelGen) Info() *ModelInfo                    { return nil }
+func (noModelGen) CountTokens(Prompt) (int, error)     { return 0, ErrNoModel }
+func (noModelGen) EnsureContextSize(int) (bool, error) { return false, nil }
 func (noModelGen) Generate(context.Context, Prompt, GenerateOptions, func(string), func(string), func(string)) (Output, error) {
 	return Output{}, ErrNoModel
 }
@@ -140,7 +141,7 @@ func TestTruncateDropsOldTurnsAsPairs(t *testing.T) {
 	// 組の途中(返事だけ)を残すと1組より少なく収まるが、組ごとに外すので、外れるのは古い2組まるごと
 	next := StoredMessage{Role: "user", Content: "質問4"}
 	fit := promptLen(promptMessages(c.Settings.System, "", append(ms[4:], next)), true)
-	cs.SetLimits(fit+30, 100) // +30: 返事1件分(50文字以上)は入らない
+	setLimits(t, cs, &c, fit+30, 100) // +30: 返事1件分(50文字以上)は入らない
 	g.content = "ok"
 	evs := send(t, cs, c, "質問4")
 
@@ -174,7 +175,7 @@ func TestTruncateKeepsTheLatestMessage(t *testing.T) {
 	// 最新の発言だけを渡すのがちょうど収まる上限: 過去の組は全部外れる
 	long := strings.Repeat("長", 200)
 	only := promptLen(promptMessages(c.Settings.System, "", []StoredMessage{{Role: "user", Content: long}}), true)
-	cs.SetLimits(only, 100)
+	setLimits(t, cs, &c, only, 100)
 	g.content = "ok"
 	send(t, cs, c, long)
 	if len(g.gotMessages) != 2 || g.gotMessages[1].Content != long {
@@ -200,7 +201,7 @@ func TestNoneStopsBeforeGenerating(t *testing.T) {
 	cs, _ := newTestConversations(t, g)
 	c := longTalk(t, cs, g, CompactNone, 2)
 	u, _ := cs.Usage(c.ID)
-	cs.SetLimits(u.Tokens, 100) // 今の会話がちょうど入る。新しい発言の分は入らない
+	setLimits(t, cs, &c, u.Tokens, 100) // 今の会話がちょうど入る。新しい発言の分は入らない
 
 	calls := len(g.calls)
 	evs := sendRaw(cs, c, "もう1つ")
@@ -214,7 +215,7 @@ func TestNoneStopsBeforeGenerating(t *testing.T) {
 		t.Errorf("発言が保存されました: %d 件", len(ms))
 	}
 	// メーターは上限を超えた値をそのまま出す(none は何も外さない)
-	cs.SetLimits(u.Tokens-1, 100)
+	setLimits(t, cs, &c, u.Tokens-1, 100)
 	if over, _ := cs.Usage(c.ID); over.Tokens != u.Tokens || *over.FirstID != *u.FirstID {
 		t.Errorf("none のメーター: %+v", over)
 	}
@@ -231,7 +232,7 @@ func overLimit(t *testing.T, cs *Conversations, c Conversation) Usage {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cs.SetLimits(u.Tokens, summaryReply)
+	setLimits(t, cs, &c, u.Tokens, summaryReply)
 	return u
 }
 
@@ -293,12 +294,13 @@ func TestSummaryRunsBeforeTheReply(t *testing.T) {
 		t.Errorf("残した発言が上限の半分を超えています: %d > %d", kept, before.Tokens/2)
 	}
 
-	// イベント: 要約中 → 要約の文 → compact(保存した要約つき)→ 返事。メーターは要約で下がる
+	// イベント: 要約中 → 要約の文 → compact(保存した要約つき)→ 返事。メーターは要約で下がる。
+	// 会話の上限を変えたので、最初に作業領域を作り直したお知らせが来る
 	var types []string
 	for _, ev := range evs {
 		types = append(types, ev.Type)
 	}
-	if got := strings.Join(types, ","); !strings.HasPrefix(got, "user,summarizing,summary,compact,usage,prompt,content,reply,usage") {
+	if got := strings.Join(types, ","); !strings.HasPrefix(got, "notice,user,summarizing,summary,compact,usage,prompt,content,reply,usage") {
 		t.Errorf("イベントの順番: %s", got)
 	}
 	cp := compacts(evs)[0]
@@ -406,7 +408,7 @@ func TestCompactNow(t *testing.T) {
 	cs, _ := newTestConversations(t, g)
 	c := longTalk(t, cs, g, CompactSummary, 6)
 	u := overLimit(t, cs, c)
-	cs.SetLimits(u.Tokens+10, summaryReply) // 上限を超えていなくても(半分より長ければ)要約できる
+	setLimits(t, cs, &c, u.Tokens+10, summaryReply) // 上限を超えていなくても(半分より長ければ)要約できる
 
 	g.replies = []fakeReply{{content: "- 今すぐの要約"}}
 	var evs []ChatEvent
@@ -442,7 +444,7 @@ func TestSummaryInSeveralPartsWhenTooLong(t *testing.T) {
 	c := longTalk(t, cs, g, CompactSummary, 10)
 	u, _ := cs.Usage(c.ID)
 	// 会話の上限をとても小さくし、要約したい部分が作業領域(上限 + 返事の上限 − 要約の上限)に一度に入らないようにする
-	cs.SetLimits(u.Tokens/3, summaryMaxTokens+u.Tokens/6)
+	setLimits(t, cs, &c, u.Tokens/3, summaryMaxTokens+u.Tokens/6)
 
 	g.replies = []fakeReply{{content: "- 1"}, {content: "- 2"}, {content: "- 3"}, {content: "- 4"}, {content: "- 5"}}
 	var evs []ChatEvent

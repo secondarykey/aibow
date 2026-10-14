@@ -15,6 +15,8 @@ import (
 // fakeGen はテスト用の Generator。決めておいた思考と答えを返し、渡された内容を記録する。
 // トークン数は1文字を1トークンとして数える(本物のトークン化はモデルが無いとできないため)。
 type fakeGen struct {
+	nCtx                          int // EnsureContextSize で決めた作業領域の大きさ
+	resized                       int // 作業領域を作り直した回数
 	thinking, content, stopReason string
 	block                         chan struct{} // nil でなければ、閉じられるまで生成を終えない
 
@@ -48,6 +50,20 @@ var testFormat = qwen35{}
 
 func (g *fakeGen) Info() *ModelInfo {
 	return &ModelInfo{ID: "file:fake", Name: "fake-model", Arch: "qwen35", Format: testFormat.Name()}
+}
+
+// EnsureContextSize は、作業領域の大きさを覚えるだけ(大きさが変わったら作り直したことにする)。
+// 最初の1回は、起動時に作った作業領域の代わり(本物も起動時に既定の大きさで作る)なので、作り直しに数えない
+func (g *fakeGen) EnsureContextSize(n int) (bool, error) {
+	if g.nCtx == 0 {
+		g.nCtx = n
+	}
+	if g.nCtx == n {
+		return false, nil
+	}
+	g.nCtx = n
+	g.resized++
+	return true, nil
 }
 
 func (g *fakeGen) CountTokens(p Prompt) (int, error) {
@@ -89,15 +105,23 @@ func (g *fakeGen) Generate(ctx context.Context, p Prompt, opt GenerateOptions,
 // sameMessages は、モデルに渡した発言が want と同じかを返す。
 func sameMessages(got, want []Message) bool { return reflect.DeepEqual(got, want) }
 
-var testDefaults = ConversationSettings{System: "あなたはテスト用です。", Temperature: 0.7, Think: true, PresencePenalty: 1.5, Compact: CompactSummary}
+// testDefaults は新しい会話の既定。会話の上限と返事の上限は、fakeGen が1文字を1トークンと数えるので、文字数で考える
+var testDefaults = ConversationSettings{System: "あなたはテスト用です。", Temperature: 0.7, Think: true, PresencePenalty: 1.5, Compact: CompactSummary,
+	HistoryTokens: 100000, ReplyTokens: 100}
 
-// testWorkspace は会話の上限と返事の上限。fakeGen は1文字を1トークンと数えるので、上限は文字数で考える
-var testWorkspace = WorkspaceSettings{HistoryTokens: 100000, ReplyTokens: 100}
+// setLimits は会話 c の会話の上限と返事の上限を変えて保存する(c も書き換える)。
+func setLimits(t *testing.T, cs *Conversations, c *Conversation, history, reply int) {
+	t.Helper()
+	c.Settings.HistoryTokens, c.Settings.ReplyTokens = history, reply
+	if err := cs.UpdateSettings(c.ID, c.Settings); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func newTestConversations(t *testing.T, g *fakeGen) (*Conversations, *memStore) {
 	t.Helper()
 	st := newMemStore()
-	cs := NewConversations(st, g, AppSettings{Workspace: testWorkspace, Defaults: testDefaults})
+	cs := NewConversations(st, g, AppSettings{Defaults: testDefaults})
 	// ツールの定義でプロンプトのトークン数が変わらないよう、ツール無しで始める(会話の上限を小さくして確かめるテストのため)。
 	// ツールを使うテストは newToolConversation で足す
 	cs.tools = nil
@@ -331,10 +355,8 @@ func TestOnlyOneGenerationAtATime(t *testing.T) {
 
 func TestLoadAppSettingsPrefersStoredValues(t *testing.T) {
 	st := newMemStore()
-	initial := AppSettings{
-		Workspace: WorkspaceSettings{GPULayers: 999, HistoryTokens: 8192, ReplyTokens: 8192},
-		Defaults:  testDefaults,
-	}
+	initial := AppSettings{Workspace: WorkspaceSettings{GPULayers: 999}, Defaults: testDefaults}
+	initial.Defaults.HistoryTokens, initial.Defaults.ReplyTokens = 8192, 8192
 
 	got, notes, err := LoadAppSettings(st, initial)
 	if err != nil || got.Workspace != initial.Workspace || !sameSettings(got.Defaults, initial.Defaults) || len(notes) != 0 {
@@ -347,18 +369,27 @@ func TestLoadAppSettingsPrefersStoredValues(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	w := got.Workspace
-	if w.HistoryTokens != 4096 || w.ReplyTokens != 8192 || w.Model != "ollama:qwen3.5:4b" || w.GPULayers != 999 {
-		t.Errorf("保存した値が優先されていません: %+v", got)
+	w, d := got.Workspace, got.Defaults
+	if d.HistoryTokens != 4096 || d.ReplyTokens != 8192 || w.Model != "ollama:qwen3.5:4b" || w.GPULayers != 999 {
+		t.Errorf("保存した値が優先されていません(古い置き場の会話の上限は、新しい会話の既定に入る): %+v", got)
 	}
-	if w.ContextSize() != 4096+8192 {
-		t.Errorf("作業領域は会話の上限 + 返事の上限: %d", w.ContextSize())
+	if d.ContextSize() != 4096+8192 {
+		t.Errorf("作業領域は会話の上限 + 返事の上限: %d", d.ContextSize())
+	}
+
+	// 新しい会話の既定に会話の上限が入っていれば、古い置き場より優先する
+	d.HistoryTokens = 6000
+	SaveAppSetting(st, SettingDefaults, d)
+	got, _, _ = LoadAppSettings(st, initial)
+	if got.Defaults.HistoryTokens != 6000 || got.Defaults.ReplyTokens != 8192 {
+		t.Errorf("既定に入っている値を使う: %+v", got.Defaults)
 	}
 }
 
 // 古い版の DB: コンテキスト長(n_ctx)と、会話ごとの max_tokens が入った既定の設定
 func TestLoadAppSettingsMigratesNCtx(t *testing.T) {
-	initial := AppSettings{Workspace: WorkspaceSettings{HistoryTokens: 8192, ReplyTokens: 8192}, Defaults: testDefaults}
+	initial := AppSettings{Defaults: testDefaults}
+	initial.Defaults.HistoryTokens, initial.Defaults.ReplyTokens = 8192, 8192
 	for _, tc := range []struct {
 		name                string
 		nCtx, maxTokens     int // maxTokens が 0 なら既定の設定を保存しない
@@ -378,8 +409,8 @@ func TestLoadAppSettingsMigratesNCtx(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got.Workspace.HistoryTokens != tc.wantHistory || got.Workspace.ReplyTokens != tc.wantRe || len(notes) != 1 {
-				t.Errorf("引き継ぎ: %+v %v(期待: %d + %d)", got.Workspace, notes, tc.wantHistory, tc.wantRe)
+			if got.Defaults.HistoryTokens != tc.wantHistory || got.Defaults.ReplyTokens != tc.wantRe || len(notes) != 1 {
+				t.Errorf("引き継ぎ: %+v %v(期待: %d + %d)", got.Defaults, notes, tc.wantHistory, tc.wantRe)
 			}
 			// 古い既定の設定は compact が無いので summary になる
 			if tc.maxTokens > 0 && (got.Defaults.System != "古い" || got.Defaults.Compact != CompactSummary) {
@@ -388,8 +419,8 @@ func TestLoadAppSettingsMigratesNCtx(t *testing.T) {
 			// 引き継いだ値は保存されていて、次の起動では引き継ぎ直さない(返事の上限だけ変えても会話の上限がずれない)
 			SaveAppSetting(st, SettingReplyTokens, 1000)
 			again, notes, _ := LoadAppSettings(st, initial)
-			if again.Workspace.HistoryTokens != tc.wantHistory || again.Workspace.ReplyTokens != 1000 || len(notes) != 0 {
-				t.Errorf("2回目の起動: %+v %v", again.Workspace, notes)
+			if again.Defaults.HistoryTokens != tc.wantHistory || again.Defaults.ReplyTokens != 1000 || len(notes) != 0 {
+				t.Errorf("2回目の起動: %+v %v", again.Defaults, notes)
 			}
 		})
 	}
@@ -468,4 +499,87 @@ func TestChangesDuringGenerationAreKept(t *testing.T) {
 // sameSettings は会話の設定を比べる(使う MCP のサーバーの「空」と「無し」は同じとみなす。保存すると空の配列になるため)。
 func sameSettings(a, b ConversationSettings) bool {
 	return reflect.DeepEqual(a.normalized(), b.normalized())
+}
+
+// isResizeNotice は、作業領域を作り直したお知らせか。
+func isResizeNotice(text string) bool {
+	return strings.HasPrefix(text, "この会話の大きさに合わせて、作業領域を")
+}
+
+// 会話の上限・返事の上限は会話ごと。送信の前に、作業領域をその会話の大きさにする(大きさが同じなら作り直さない)。
+// 返事の上限は、その会話の値で生成を止める
+func TestWorkspaceFollowsConversation(t *testing.T) {
+	g := &fakeGen{content: "ok"}
+	cs, _ := newTestConversations(t, g)
+	a := mustCreate(t, cs)
+	b := mustCreate(t, cs)
+	setLimits(t, cs, &b, 50000, 300)
+
+	send(t, cs, a, "やあ")
+	if g.nCtx != 100100 || g.resized != 0 || g.gotOpt.MaxTokens != 100 {
+		t.Fatalf("会話A: 作業領域 %d・作り直し %d 回・返事の上限 %d", g.nCtx, g.resized, g.gotOpt.MaxTokens)
+	}
+	evs := send(t, cs, b, "やあ")
+	if g.nCtx != 50300 || g.resized != 1 || g.gotOpt.MaxTokens != 300 {
+		t.Errorf("会話B: 作業領域 %d・作り直し %d 回・返事の上限 %d", g.nCtx, g.resized, g.gotOpt.MaxTokens)
+	}
+	if notes := noticesOf(evs); len(notes) != 1 || !isResizeNotice(notes[0]) {
+		t.Errorf("作り直したらお知らせする: %v", notes)
+	}
+	if evs := send(t, cs, b, "もう1つ"); len(noticesOf(evs)) != 0 || g.resized != 1 {
+		t.Errorf("同じ大きさなら作り直さない: %v(%d 回)", noticesOf(evs), g.resized)
+	}
+	if u, _ := cs.Usage(b.ID); u.Limit != 50000 {
+		t.Errorf("メーターの上限は会話の値: %d", u.Limit)
+	}
+}
+
+// 既定の会話の上限・返事の上限は、会話を作るときに写す。既定を変えても今ある会話は変わらない
+func TestDefaultLimitsAreCopied(t *testing.T) {
+	g := &fakeGen{content: "ok"}
+	cs, _ := newTestConversations(t, g)
+	a := mustCreate(t, cs)
+	if a.Settings.HistoryTokens != testDefaults.HistoryTokens || a.Settings.ReplyTokens != testDefaults.ReplyTokens {
+		t.Fatalf("作るときに写す: %+v", a.Settings)
+	}
+	d := cs.Defaults()
+	d.HistoryTokens, d.ReplyTokens = 3000, 200
+	if err := cs.SetDefaults(d); err != nil {
+		t.Fatal(err)
+	}
+	if got, _, _ := cs.Get(a.ID); got.Settings.HistoryTokens != testDefaults.HistoryTokens {
+		t.Errorf("既定を変えても今ある会話は変わらない: %+v", got.Settings)
+	}
+	// 画面が上限を渡さなかったとき(0)も、既定の値を写す
+	b, err := cs.Create(&ConversationSettings{System: "x"})
+	if err != nil || b.Settings.HistoryTokens != 3000 || b.Settings.ReplyTokens != 200 {
+		t.Errorf("新しい会話は今の既定: %+v %v", b.Settings, err)
+	}
+}
+
+// この機能より前に作った会話(上限を持っていない)には、起動したときに今の既定の値を写す
+func TestFillMissingLimits(t *testing.T) {
+	g := &fakeGen{content: "ok"}
+	cs, st := newTestConversations(t, g)
+	old := mustCreate(t, cs)
+	old.Settings.HistoryTokens, old.Settings.ReplyTokens = 0, 0
+	if err := st.UpdateConversation(old); err != nil {
+		t.Fatal(err)
+	}
+	set := mustCreate(t, cs)
+	setLimits(t, cs, &set, 5000, 500)
+
+	n, err := cs.FillMissingLimits()
+	if err != nil || n != 1 {
+		t.Fatalf("写した会話の数: %d %v", n, err)
+	}
+	if got, _, _ := cs.Get(old.ID); got.Settings.HistoryTokens != testDefaults.HistoryTokens || got.Settings.ReplyTokens != testDefaults.ReplyTokens {
+		t.Errorf("古い会話に既定を写す: %+v", got.Settings)
+	}
+	if got, _, _ := cs.Get(set.ID); got.Settings.HistoryTokens != 5000 {
+		t.Errorf("上限を持っている会話は変えない: %+v", got.Settings)
+	}
+	if n, _ := cs.FillMissingLimits(); n != 0 {
+		t.Errorf("2回目は何もしない: %d", n)
+	}
 }

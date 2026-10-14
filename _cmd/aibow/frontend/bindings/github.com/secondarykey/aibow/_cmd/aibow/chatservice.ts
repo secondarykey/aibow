@@ -27,7 +27,7 @@ export function AllMCPServers(): $CancellablePromise<client$0.ServerInfo[] | nul
 }
 
 /**
- * AppSettings はアプリ全体の設定(会話の上限・返事の上限・GPU の層数・新しい会話の既定の設定)を返す。
+ * AppSettings はアプリの設定(GPU の層数・最後に使ったモデル)と、新しい会話の既定の設定(会話の上限・返事の上限も入る)を返す。
  */
 export function AppSettings(): $CancellablePromise<aibow$0.AppSettings> {
     return $Call.ByID(1212015075);
@@ -161,15 +161,6 @@ export function SetGroupDefault(group: string, on: boolean): $CancellablePromise
 }
 
 /**
- * SetLimits は会話の上限と返事の上限を変える。
- * 作業領域(コンテキスト)を「会話の上限 + 返事の上限」の大きさで作り直す。モデルは読み直さない。
- * モデルが未読み込みなら nil を返す(次に読み込むときから効く)。
- */
-export function SetLimits(history: number, reply: number): $CancellablePromise<aibow$0.ModelInfo | null> {
-    return $Call.ByID(2159064713, history, reply);
-}
-
-/**
  * SetToolPolicy は、ツールの扱いの PC の既定を変える(tools.json に書く)。policy が空なら決めていない状態に戻す。
  * 次の送信から効く(プロンプトに入るツールが変わるので、画面はメーターを数え直す)。
  */
@@ -210,6 +201,16 @@ export function ToolPrefs(): $CancellablePromise<aibow$0.ToolPrefsView> {
  */
 export function ToolStates(settings: aibow$0.ConversationSettings): $CancellablePromise<aibow$0.ToolGroupState[] | null> {
     return $Call.ByID(3731445479, settings);
+}
+
+/**
+ * TryLimits は、会話の上限 + 返事の上限の大きさの作業領域を、今の作業領域として作り直してみる(モデルは読み直さない)。
+ * 画面は、会話の設定の画面・新しい会話の既定で上限を「適用」するときに呼び、確保できたら設定を保存する
+ * (VRAM に入らないことを、送信したときではなく変えたときに分かるようにするため。0009)。
+ * 作り直したら true。確保できなければ元の大きさに戻してエラーを返す。モデルが未読み込みなら、次に読み込むときの大きさだけ変わる。
+ */
+export function TryLimits(history: number, reply: number): $CancellablePromise<boolean> {
+    return $Call.ByID(3764457180, history, reply);
 }
 
 /**

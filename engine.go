@@ -26,10 +26,10 @@ import (
 )
 
 // EngineConfig はエンジンの設定。_cmd/aibow で環境変数とアプリ設定から作る。
-// NCtx と GPULayers は、あとから SetContextSize / SetGPULayers で変えられる。
+// NCtx と GPULayers は、あとから EnsureContextSize / SetGPULayers で変えられる。
 type EngineConfig struct {
 	LibPath   string // llama.cpp の DLL が入っているフォルダ
-	NCtx      int    // 作業領域の大きさ: 一度に扱えるトークン数(プロンプト + 返事)。会話の上限 + 返事の上限
+	NCtx      int    // 作業領域の大きさ: 一度に扱えるトークン数(プロンプト + 返事)。会話の上限 + 返事の上限(会話ごとに違う)
 	GPULayers int    // GPU に載せる層の数。モデルの層数以上なら全部 GPU
 	LlamaLog  bool   // llama.cpp 自身のログ(GPU への割り当てなど)を表示するか
 }
@@ -198,22 +198,27 @@ func (e *Engine) replace(m ModelEntry, undo func()) (*ModelInfo, error) {
 	return info, nil
 }
 
-// SetContextSize は作業領域の大きさ(コンテキスト長)を変える。モデル本体(重み)は読み直さず、作業領域だけを作り直す。
+// EnsureContextSize は作業領域の大きさ(コンテキスト長)を n にする。今と同じ大きさなら何もしない。
+// モデル本体(重み)は読み直さず、作業領域だけを作り直す。作り直したら true。
 //
 // コンテキスト = 推論用の作業領域で、KV キャッシュもここにある。重みとは別に確保されるので、
 // 長さを変えるときは作業領域だけ作り直せばよい(重みの読み込みより速い)。
 // KV キャッシュは捨てるので、次の送信はプロンプトを最初から読ませることになる。
-// モデルが未読み込みなら、次に読み込むときから効く。
-func (e *Engine) SetContextSize(n int) (*ModelInfo, error) {
+// 会話ごとに大きさが違うので、会話の仕組みが送信の前に呼ぶ(0009)。
+// モデルが未読み込みなら、次に読み込むときから効く(false)。確保できなければ元の大きさに戻してエラーを返す。
+func (e *Engine) EnsureContextSize(n int) (bool, error) {
 	if !e.mu.TryLock() {
-		return nil, ErrBusy
+		return false, ErrBusy
 	}
 	defer e.mu.Unlock()
 
+	if e.cfg.NCtx == n {
+		return false, nil
+	}
 	old := e.cfg.NCtx
 	e.cfg.NCtx = n
 	if e.model == 0 {
-		return nil, nil
+		return false, nil
 	}
 
 	// 先に今の作業領域を解放する(VRAM に新旧2つ分は載らないことがあるため)
@@ -228,17 +233,17 @@ func (e *Engine) SetContextSize(n int) (*ModelInfo, error) {
 		if rerr != nil {
 			// 元の長さでも作れないなら、モデルごと解放して「未読み込み」にする
 			e.unload()
-			return nil, fmt.Errorf("%w(元の大きさにも戻せなかったので、モデルを解放しました: %v)", err, rerr)
+			return false, fmt.Errorf("%w(元の大きさにも戻せなかったので、モデルを解放しました: %v)", err, rerr)
 		}
 		e.lctx = back
-		return nil, err
+		return false, err
 	}
 	e.lctx = lctx
 
 	info := *e.info.Load() // 読み込み中の情報を写して、コンテキスト長だけ書き換える
 	info.NCtx = llama.NCtx(lctx)
 	e.info.Store(&info)
-	return &info, nil
+	return true, nil
 }
 
 // load はモデルとコンテキストを作る。e.mu を持った状態で呼ぶ。

@@ -116,7 +116,7 @@ wails3 dev
 
 ```
 会話の保存先: C:\Users\<ユーザー>\AppData\Roaming\aibow\aibow.db
-会話の上限 8192 + 返事の上限 8192 = 作業領域 16384 トークン
+新しい会話の既定: 会話の上限 8192 + 返事の上限 8192 = 作業領域 16384 トークン
 計算装置: CUDA0 [GPU] <GPU の名前>(VRAM 空き ○ / ○ GB)
 計算装置: CPU [CPU] <CPU の名前>
 モデルの置き場所: D:\Go\Projects\aibow\_cmd\aibow\models / Ollama: C:\Users\<ユーザー>\.ollama\models

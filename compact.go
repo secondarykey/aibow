@@ -88,7 +88,7 @@ func (cs *Conversations) plan(conv Conversation, history []StoredMessage) (passi
 	set := conv.Settings
 	switch set.Compact {
 	case CompactTruncate:
-		p, _, err := cs.truncate(set, nil, history, 0, cs.currentLimits().history)
+		p, _, err := cs.truncate(set, nil, history, 0, cs.limitsOf(set).history)
 		return p, err
 	case CompactSummary:
 		latest, from, err := cs.latestSummary(conv.ID, history)
@@ -116,7 +116,7 @@ func (cs *Conversations) usage(conv Conversation, history []StoredMessage) (Usag
 	if err != nil {
 		return Usage{}, err
 	}
-	return p.usage(history, cs.currentLimits().history), nil
+	return p.usage(history, cs.limitsOf(conv.Settings).history), nil
 }
 
 // Compactions は会話の要約を古い順に返す(画面の区切りに使う)。
@@ -134,7 +134,7 @@ func (cs *Conversations) Compactions(id uuid.UUID) ([]Compaction, error) {
 //
 // ツールを使う送信では、2回目からの生成の前にも呼ぶ(ツールの結果で、最新の組が伸びていくため)。
 func (cs *Conversations) checkFits(set ConversationSettings, history []StoredMessage) error {
-	limit := cs.currentLimits().history
+	limit := cs.limitsOf(set).history
 	n, err := cs.turnTokens(set, history)
 	switch {
 	case err != nil:
@@ -143,10 +143,10 @@ func (cs *Conversations) checkFits(set ConversationSettings, history []StoredMes
 		return nil
 	case set.Compact == CompactNone:
 		return fmt.Errorf("会話の上限を超えました(%d / %d トークン)。この会話の設定で compact を有効にするか、"+
-			"アプリ全体の設定で会話の上限を増やしてください", n, limit)
+			"会話の設定で会話の上限を増やしてください", n, limit)
 	}
 	return fmt.Errorf("今の発言(とツールの結果)だけで会話の上限を超えています(システムプロンプト込みで %d / %d トークン)。"+
-		"発言を短くするか、アプリ全体の設定で会話の上限を増やしてください", n, limit)
+		"発言を短くするか、会話の設定で会話の上限を増やしてください", n, limit)
 }
 
 // turnTokens は、compact しても必ず渡す部分のトークン数。none は全部、truncate / summary は最新の組(とシステムプロンプト)。
@@ -163,7 +163,7 @@ func (cs *Conversations) turnTokens(set ConversationSettings, history []StoredMe
 // prepare は、送信のときにモデルに渡す内容を決める。会話の上限を超えていたら、会話の設定の方式で収める。
 // 収めたときは compact イベントを送る。ctx が止められたら(アプリの終了など)ctx のエラーを返す。
 func (cs *Conversations) prepare(ctx context.Context, conv Conversation, history []StoredMessage, emit func(ChatEvent)) (passing, error) {
-	limit := cs.currentLimits().history
+	limit := cs.limitsOf(conv.Settings).history
 	p, err := cs.passFrom(conv.Settings, nil, history, 0)
 	if conv.Settings.Compact == CompactSummary {
 		p, err = cs.plan(conv, history)
@@ -277,14 +277,14 @@ func (cs *Conversations) truncate(set ConversationSettings, summary *Compaction,
 // truncateNow は truncate で収め、外した発言があれば compact イベントで知らせる。
 // before は収める前のトークン数(ログ用)。
 func (cs *Conversations) truncateNow(conv Conversation, summary *Compaction, history []StoredMessage, from, before int, emit func(ChatEvent)) (passing, error) {
-	limit := cs.currentLimits().history
+	limit := cs.limitsOf(conv.Settings).history
 	p, fits, err := cs.truncate(conv.Settings, summary, history, from, limit)
 	if err != nil {
 		return passing{}, err
 	}
 	if !fits {
 		return passing{}, fmt.Errorf("最新の発言だけで会話の上限を超えています(%d / %d トークン)。"+
-			"発言を短くするか、アプリ全体の設定で会話の上限を増やしてください", p.tokens, limit)
+			"発言を短くするか、会話の設定で会話の上限を増やしてください", p.tokens, limit)
 	}
 	if p.first > from {
 		emit(ChatEvent{ConversationID: conv.ID, Type: "compact", Compact: &CompactInfo{
@@ -415,7 +415,7 @@ func headRunes(s string, n int) string {
 // 要約の生成中は、画面の停止ボタン(StopSummary)で要約だけを止められる。
 func (cs *Conversations) summarize(ctx context.Context, conv Conversation, history []StoredMessage, emit func(ChatEvent)) (*Compaction, error) {
 	set := conv.Settings
-	lim := cs.currentLimits()
+	lim := cs.limitsOf(set)
 	latest, from, err := cs.latestSummary(conv.ID, history)
 	if err != nil {
 		return nil, err
@@ -497,7 +497,7 @@ func (cs *Conversations) summaryEnd(history []StoredMessage, prev *Compaction, f
 		}
 	}
 	if best < 0 {
-		return 0, errors.New("要約する発言が長すぎて、作業領域に入りません。アプリ全体の設定で会話の上限か返事の上限を増やしてください")
+		return 0, errors.New("要約する発言が長すぎて、作業領域に入りません。会話の設定で会話の上限か返事の上限を増やしてください")
 	}
 	return ends[best], nil
 }
@@ -610,6 +610,10 @@ func (cs *Conversations) Compact(ctx context.Context, id uuid.UUID, emit func(Ch
 
 	conv, history, err := cs.Get(id)
 	if err != nil {
+		fail(err)
+		return
+	}
+	if err := cs.ensureWorkspace(conv, emit); err != nil {
 		fail(err)
 		return
 	}

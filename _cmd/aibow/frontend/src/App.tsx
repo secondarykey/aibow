@@ -13,7 +13,7 @@
 //	useModels        … モデルの一覧と切り替え(Go の ChatService.Models / SwitchModel)
 //	useConversations … 会話の一覧・開いている会話・会話ごとの設定
 //	useChat          … 送信・今すぐ要約・停止(Go の ChatService.Send / Compact と chat イベント)
-//	useAppSettings   … アプリ全体の設定(会話の上限・返事の上限・GPU の層数・新しい会話の既定)
+//	useAppSettings   … アプリの設定(GPU の層数)と新しい会話の既定(会話の上限・返事の上限も入る)
 //
 // 会話の履歴と設定は Go が SQLite に保存している。画面は表示と入力に専念する。
 // Go のメソッドは、wails3 generate bindings が作った frontend/bindings の関数として呼ぶ。
@@ -122,6 +122,13 @@ export default function App() {
     convs.refreshUsage().catch(() => {});
   }, [models.current?.id, models.current?.n_ctx, app.settings?.workspace, convs.refreshUsage]);
 
+  // 返事を書き終えたら、モデルの情報を取り直す(送信の前に作業領域を作り直していることがあるため。入力欄の下の「作業領域」)
+  const prevBusy = useRef(busy);
+  useEffect(() => {
+    if (prevBusy.current === "generating" && busy === "idle") models.reload().catch(() => {});
+    prevBusy.current = busy;
+  }, [busy, models.reload]);
+
   // ウィンドウに戻ってきたら一覧を作り直す(aibow を起動したまま ollama pull したときのため)
   useEffect(() => {
     const onFocus = () => {
@@ -194,7 +201,7 @@ export default function App() {
           </div>
         )}
       />
-      <ModelBar models={models} disabled={busy !== "idle"}>
+      <ModelBar models={models} disabled={busy !== "idle"} size={settings ? settings.history_tokens + settings.reply_tokens : undefined}>
         {convs.current && (
           // summary の会話では、メーターのトークン数を押すと今すぐ要約する(最近の発言は会話の上限の半分まで残す)
           <Meter
@@ -248,6 +255,23 @@ export default function App() {
     app.updateDefaults(patch);
     if (home) convs.updateSettings(patch);
   };
+  // 会話の上限・返事の上限の「適用」: 作業領域をその大きさで作り直してみて、確保できたら save で保存する。
+  // VRAM に入らないことを、送信したときではなく変えたときに分かるようにするため(0009)
+  const applyLimits = async (history: number, reply: number, save: (patch: Partial<ConversationSettings>) => void) => {
+    setBusy("loading");
+    try {
+      const changed = await ChatService.TryLimits(history, reply);
+      save({ history_tokens: history, reply_tokens: reply });
+      const size = (history + reply).toLocaleString();
+      toasts.notify(changed
+        ? `会話の上限 ${history.toLocaleString()} + 返事の上限 ${reply.toLocaleString()} = 作業領域 ${size} トークンに作り直しました(モデルは読み直していません)`
+        : `会話の上限 ${history.toLocaleString()} + 返事の上限 ${reply.toLocaleString()} にしました(作業領域 ${size} トークン)`);
+    } catch (err) {
+      addError(errorMessage(err)); // Go 側で元の大きさに戻している。設定は保存しない
+    }
+    await models.reload().catch(() => {});
+    setBusy("idle");
+  };
   const settingsErrors = transcript.items.filter(it => it.kind === "error" && it.id > settingsFrom);
 
   // 会話の場所に出すもの: 設定の画面 / 新しい会話の画面 / チャット
@@ -260,6 +284,7 @@ export default function App() {
         onClose={() => setSettingsOpen(false)}
         app={app.settings}
         onDefaultsChange={onDefaultsChange}
+        onApplyDefaultLimits={(h, r) => applyLimits(h, r, onDefaultsChange)}
         appDisabled={busy !== "idle"}
         onApplyApp={app.apply}
         onToolsChanged={() => {
@@ -290,6 +315,8 @@ export default function App() {
         onMakeDefault={() => app.setDefaults(current)}
         lastPrompt={chat.lastPrompt}
         servers={mcpServers}
+        limitsDisabled={busy !== "idle"}
+        onApplyLimits={(h, r) => applyLimits(h, r, convs.updateSettings)}
       />
     );
   } else if (home) {

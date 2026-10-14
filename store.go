@@ -55,14 +55,20 @@ type Conversation struct {
 
 // ConversationSettings は会話ごとの設定。変えると次の送信から効く。
 //
-// 返事の上限(以前の max_tokens)はアプリ全体の設定に移した(WorkspaceSettings)。
-// 古い会話の JSON に max_tokens が残っていても、読むときに無視される。
+// 会話を作るときは「新しい会話の既定」の写しから始まる。写しなので、既定をあとで変えても今ある会話は変わらない。
+// 古い会話の JSON に max_tokens(返事の上限の昔の名前)が残っていても、読むときに無視される。
 type ConversationSettings struct {
 	System          string  `json:"system"`           // システムプロンプト。空なら付けない
 	Temperature     float64 `json:"temperature"`      // 0 なら毎回一番点数の高いトークンを選ぶ
 	Think           bool    `json:"think"`            // 思考させるか
 	PresencePenalty float64 `json:"presence_penalty"` // 同じ言葉を繰り返しにくくする強さ。0 で無効
 	Compact         string  `json:"compact"`          // 会話の上限を超えたときの方式: none / truncate / summary
+	// 利用者が気にするのは「会話をどれだけ続けられるか」なので、それを直接設定させる。
+	// 作業領域(KV キャッシュの置き場)の大きさは、この2つの合計を aibow が計算して確保する(ContextSize)。
+	// 作業領域はエンジンに1つだけなので、大きさの違う会話に送信するときに作り直す(Conversations.ensureWorkspace。0009)。
+	// 0 はこの機能より前に作った会話(起動したときに FillMissingLimits で既定の値を写す)
+	HistoryTokens int `json:"history_tokens"` // 会話の上限: モデルに渡す文字列のトークン数の上限。compact の基準
+	ReplyTokens   int `json:"reply_tokens"`   // 返事の上限: 1回の返事で生成するトークン数の上限(思考 + 答え)
 	// (以前の「ツールを使う」(tools)は 0006 で無くした。ツールを使うかは、設定の画面の「ツール」(tools.json)と、
 	// 会話で使う MCP のサーバーだけで決める。保存済みの会話の JSON に残っている tools は、読むときに無視される)
 	//
@@ -81,6 +87,12 @@ type ConversationSettings struct {
 	// PC の既定(tools.json)より優先する。会話を消せば一緒に消える(toolprefs.go)。
 	// 画面(会話の設定の画面の「ツール」)で変えるのは、使う(on)/ 使わない(off)だけ
 	ToolPolicies map[string]ToolPolicy `json:"tool_policies,omitempty"`
+}
+
+// ContextSize は確保する作業領域の大きさ(トークン数)。
+// 会話の上限まで詰めたプロンプトのあとに、返事の上限まで書いても溢れない大きさにする。
+func (s ConversationSettings) ContextSize() int {
+	return s.HistoryTokens + s.ReplyTokens
 }
 
 // compact の方式(compact.go)
@@ -120,6 +132,9 @@ func (s ConversationSettings) validate() error {
 	// 作業フォルダは画面のダイアログで選ぶので、ふつうは絶対パス。相対パスだと、アプリを起動した場所で意味が変わってしまう
 	if s.WorkDir != "" && !filepath.IsAbs(s.WorkDir) {
 		return fmt.Errorf("作業フォルダは絶対パスで指定してください(%s)", s.WorkDir)
+	}
+	if s.HistoryTokens < 0 || s.ReplyTokens < 0 {
+		return fmt.Errorf("会話の上限と返事の上限は 1 以上にしてください(%d / %d)", s.HistoryTokens, s.ReplyTokens)
 	}
 	for name, p := range s.ToolPolicies {
 		if !p.valid() && p != ToolOn {

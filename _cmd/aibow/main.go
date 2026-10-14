@@ -238,8 +238,8 @@ func openStore(cfg appConfig) (*store.SQLite, aibow.AppSettings, error) {
 	for _, n := range notes {
 		log.Notice(n)
 	}
-	w := app.Workspace
-	log.Infof("会話の上限 %d + 返事の上限 %d = 作業領域 %d トークン", w.HistoryTokens, w.ReplyTokens, w.ContextSize())
+	d := app.Defaults
+	log.Infof("新しい会話の既定: 会話の上限 %d + 返事の上限 %d = 作業領域 %d トークン", d.HistoryTokens, d.ReplyTokens, d.ContextSize())
 	return st, app, nil
 }
 
@@ -247,8 +247,10 @@ func openStore(cfg appConfig) (*store.SQLite, aibow.AppSettings, error) {
 // モデルの読み込み自体は、ウィンドウを出してから ChatService が裏で行う。
 func startEngine(cfg appConfig, app aibow.AppSettings) (*aibow.Engine, *aibow.ModelEntry, error) {
 	ec := cfg.engine
-	// 画面で変えた値(DB)か、環境変数の値。作業領域は会話の上限 + 返事の上限
-	ec.NCtx, ec.GPULayers = app.Workspace.ContextSize(), app.Workspace.GPULayers
+	// 画面で変えた値(DB)か、環境変数の値。
+	// 作業領域は会話ごとに違う(会話の上限 + 返事の上限)。起動時は新しい会話の画面から始まるので、新しい会話の既定の大きさで作り、
+	// 大きさの違う会話に送信するときに作り直す(Conversations.ensureWorkspace)
+	ec.NCtx, ec.GPULayers = app.Defaults.ContextSize(), app.Workspace.GPULayers
 	engine, err := aibow.NewEngine(ec)
 	if err != nil {
 		return nil, nil, err

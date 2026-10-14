@@ -9,7 +9,7 @@ import * as tool$0 from "./tool/models.js";
 import * as uuid$0 from "../../../uuid/models.js";
 
 /**
- * AppSettings はアプリ全体の設定。
+ * AppSettings はアプリの設定と、新しい会話の既定の設定。
  */
 export interface AppSettings {
     "workspace": WorkspaceSettings;
@@ -239,8 +239,8 @@ export interface Conversation {
 /**
  * ConversationSettings は会話ごとの設定。変えると次の送信から効く。
  * 
- * 返事の上限(以前の max_tokens)はアプリ全体の設定に移した(WorkspaceSettings)。
- * 古い会話の JSON に max_tokens が残っていても、読むときに無視される。
+ * 会話を作るときは「新しい会話の既定」の写しから始まる。写しなので、既定をあとで変えても今ある会話は変わらない。
+ * 古い会話の JSON に max_tokens(返事の上限の昔の名前)が残っていても、読むときに無視される。
  */
 export interface ConversationSettings {
     /**
@@ -267,6 +267,20 @@ export interface ConversationSettings {
      * 会話の上限を超えたときの方式: none / truncate / summary
      */
     "compact": string;
+
+    /**
+     * 利用者が気にするのは「会話をどれだけ続けられるか」なので、それを直接設定させる。
+     * 作業領域(KV キャッシュの置き場)の大きさは、この2つの合計を aibow が計算して確保する(ContextSize)。
+     * 作業領域はエンジンに1つだけなので、大きさの違う会話に送信するときに作り直す(Conversations.ensureWorkspace。0009)。
+     * 0 はこの機能より前に作った会話(起動したときに FillMissingLimits で既定の値を写す)
+     * 会話の上限: モデルに渡す文字列のトークン数の上限。compact の基準
+     */
+    "history_tokens": number;
+
+    /**
+     * 返事の上限: 1回の返事で生成するトークン数の上限(思考 + 答え)
+     */
+    "reply_tokens": number;
 
     /**
      * (以前の「ツールを使う」(tools)は 0006 で無くした。ツールを使うかは、設定の画面の「ツール」(tools.json)と、
@@ -702,11 +716,11 @@ export interface Usage {
 }
 
 /**
- * WorkspaceSettings は作業領域(コンテキスト)に関わる設定の塊。
+ * WorkspaceSettings はモデルの読み込みに関わる設定の塊。変えるとモデルの読み直しになる。
  * 
- * どれも変えるとエンジンに手を入れる必要がある(モデルの読み直しか、作業領域の作り直し)。
  * あとで「プロファイル」(設定に名前を付けて切り替える)を作るときは、この塊をそのままプロファイルの中に移す。
- * 今のアプリ全体の設定は「名前のない既定のプロファイル」という位置づけ。
+ * 今のアプリの設定は「名前のない既定のプロファイル」という位置づけ。
+ * 会話の上限・返事の上限(作業領域の大きさ)は、会話ごとの設定に移した(ConversationSettings。0009)。
  */
 export interface WorkspaceSettings {
     /**
@@ -718,16 +732,4 @@ export interface WorkspaceSettings {
      * GPU に載せる層の数
      */
     "gpu_layers": number;
-
-    /**
-     * 利用者が気にするのは「会話をどれだけ続けられるか」なので、それを直接設定させる。
-     * 作業領域の大きさは、この2つの合計を aibow が計算して確保する(ContextSize)。
-     * 会話の上限: モデルに渡す文字列のトークン数の上限。compact の基準
-     */
-    "history_tokens": number;
-
-    /**
-     * 返事の上限: 1回の返事で生成するトークン数の上限(思考 + 答え)
-     */
-    "reply_tokens": number;
 }

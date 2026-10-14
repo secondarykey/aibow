@@ -152,11 +152,16 @@ func TestAppSettings(t *testing.T) {
 
 	// aibow.LoadAppSettings と組み合わせて使えること
 	aibow.SaveAppSetting(s, aibow.SettingDefaults, settings)
-	app, _, err := aibow.LoadAppSettings(s, aibow.AppSettings{Workspace: aibow.WorkspaceSettings{GPULayers: 999, ReplyTokens: 100}})
+	app, _, err := aibow.LoadAppSettings(s, aibow.AppSettings{
+		Workspace: aibow.WorkspaceSettings{GPULayers: 999},
+		Defaults:  aibow.ConversationSettings{ReplyTokens: 100},
+	})
 	w := app.Workspace
 	want := settings
 	want.MCPServers = []string{} // 既定として読むときは整えた形(使う MCP のサーバーは空の配列)になる
-	if err != nil || w.HistoryTokens != 8192 || w.ReplyTokens != 100 || w.GPULayers != 999 || !reflect.DeepEqual(app.Defaults, want) {
+	// 既定に会話の上限・返事の上限が入っていなければ、古い置き場(history_tokens)か初期値を使う
+	want.HistoryTokens, want.ReplyTokens = 8192, 100
+	if err != nil || w.GPULayers != 999 || !reflect.DeepEqual(app.Defaults, want) {
 		t.Errorf("アプリ設定: %+v %v", app, err)
 	}
 }

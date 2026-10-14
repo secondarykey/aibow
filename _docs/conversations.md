@@ -1,6 +1,6 @@
 # 会話の仕組みと設定
 
-ルートの `aibow` パッケージのうち、会話の履歴・会話ごとの設定・アプリ全体の設定・保存の約束の説明です。
+ルートの `aibow` パッケージのうち、会話の履歴・会話ごとの設定・アプリの設定・保存の約束の説明です。
 決めた経緯は [features/0001-conversations.md](features/0001-conversations.md) にあります。
 会話の上限に収める仕組み(compact)は [compact.md](compact.md) に分けています。
 
@@ -10,7 +10,7 @@
 |---|---|
 | `conversation.go` | 会話の仕組み(`Conversations`)。発言の保存、タイトルの自動付与と名前の変更、生成、答えが出なかった回の理由の文、生成は同時に1つ。ツールを使うループは `agent.go`([tools.md](tools.md)) |
 | `store.go` | 保存先の約束(`Store` interface)と、会話・発言・要約の型(`Conversation` / `StoredMessage` / `ReplyStats` / `ToolResult` / `Compaction`) |
-| `appsettings.go` | アプリ全体の設定(`app_settings` の読み書き)。作業領域に関わる設定は `WorkspaceSettings` にまとめる(プロファイルに移す塊)。環境変数は DB に値が無いときの初期値。古い `n_ctx` の引き継ぎ |
+| `appsettings.go` | アプリの設定と新しい会話の既定(`app_settings` の読み書き)。モデルの読み込みに関わる設定は `WorkspaceSettings` にまとめる(プロファイルに移す塊)。会話の上限・返事の上限の古い置き場(`history_tokens` / `reply_tokens`)は、新しい会話の既定に引き継ぐためだけに読む。環境変数は DB に値が無いときの初期値。古い `n_ctx` の引き継ぎ |
 | `memstore_test.go` | テスト用のメモリ上の保存先 |
 | `conversation_test.go` | 会話の仕組みと設定の引き継ぎのテスト。モデル不要 |
 
@@ -38,8 +38,10 @@
   - `tool_policies`(この会話だけのツールの扱いの上書き。会話の設定の画面の「ツール」で `on` / `off` を書く)は新しい会話の既定に入れない(`asDefaults` で外す)。知らない値は保存しない(`validate`)。仕組みは [mcp.md](mcp.md)
 - 新しい会話は `app_settings` の既定の写しから始まる(新しい会話の画面で写しを変えると、その設定で作る)
 - 画面では、既定は設定の画面の「新しい会話の既定」、会話ごとの設定は一覧の各行の歯車で開く会話の設定の画面で変える([features/0009-conversation-settings.md](features/0009-conversation-settings.md))
-- アプリ全体の設定(会話の上限・返事の上限・GPU の層数・最後に使ったモデル = `WorkspaceSettings`)も `app_settings`
-- 画面で変えられる設定(会話の上限・返事の上限・GPU の層数・presence penalty)の環境変数は「DB にまだ値が無いときの初期値」で、画面で変えたら DB の値が優先
+- 会話の上限・返事の上限(`history_tokens` / `reply_tokens`)も会話ごとの設定(0009)。会話を作るときに既定から写すので、既定を変えても今ある会話は変わらない。
+  この機能より前に作った会話(0 のもの)には、起動したときに今の既定の値を写して保存する(`FillMissingLimits`)。作業領域の作り直しは [compact.md](compact.md)
+- アプリの設定(GPU の層数・最後に使ったモデル = `WorkspaceSettings`)も `app_settings`。会話の設定に無いものだけを持つ
+- 画面で変えられる設定(新しい会話の既定の会話の上限・返事の上限・presence penalty と、GPU の層数)の環境変数は「DB にまだ値が無いときの初期値」で、画面で変えたら DB の値が優先
 
 ## 保存
 

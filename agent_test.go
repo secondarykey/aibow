@@ -308,7 +308,7 @@ func TestTruncateKeepsToolTurnsTogether(t *testing.T) {
 	// 最後の組だけが収まる上限にする
 	next := StoredMessage{Role: "user", Content: "質問3"}
 	fit, _ := g.CountTokens(cs.promptFor(set, promptMessages(set.System, "", append(ms[8:], next))))
-	cs.SetLimits(fit+10, 100)
+	setLimits(t, cs, &c, fit+10, 100)
 	g.replies = []fakeReply{{content: "ok"}}
 	send(t, cs, c, "質問3")
 	if got := g.gotMessages; got[1].Role != "user" || got[1].Content != "質問2" || len(got) != 1+5 {
@@ -341,7 +341,7 @@ func TestAgentRejectsResultThatDoesNotFit(t *testing.T) {
 	}}
 	g := &fakeGen{replies: []fakeReply{{toolCalls: []ToolCall{toolCall("huge")}}, {content: "範囲を絞ります"}}}
 	cs, _, c := newToolConversation(t, g, huge)
-	cs.SetLimits(4000, 100)
+	setLimits(t, cs, &c, 4000, 100)
 	evs := sendRaw(cs, c, "大きいのを")
 	if errs := errorsOf(evs); len(errs) != 0 {
 		t.Errorf("エラー: %v", errs)
@@ -368,17 +368,18 @@ func TestCompactNowWhenLatestTurnIsTooLong(t *testing.T) {
 	}}
 	g := &fakeGen{replies: []fakeReply{{toolCalls: []ToolCall{toolCall("big")}}, {content: "受け取りました"}}}
 	cs, _, c := newToolConversation(t, g, big)
-	cs.SetLimits(4000, 100)
+	setLimits(t, cs, &c, 4000, 100)
 	send(t, cs, c, "大きいのを")
-	cs.SetLimits(2000, 100) // 最新の組だけで上限を超えた状態にする
+	setLimits(t, cs, &c, 2000, 100) // 最新の組だけで上限を超えた状態にする
 	if u, _ := cs.Usage(c.ID); u.Tokens <= u.Limit {
 		t.Fatalf("メーター: %d / %d(超えているはず)", u.Tokens, u.Limit)
 	}
 
 	var evs []ChatEvent
 	cs.Compact(context.Background(), c.ID, func(ev ChatEvent) { evs = append(evs, ev) })
-	// 「最近の発言が上限の半分に収まっています」は事実と逆なので出さない
-	if errs, notes := errorsOf(evs), noticesOf(evs); len(errs) != 0 || len(notes) != 1 || notes[0] != errOnlyLatestTurn.Error() {
+	// 「最近の発言が上限の半分に収まっています」は事実と逆なので出さない。
+	// 会話の上限を変えたので、先に作業領域を作り直したお知らせも来る
+	if errs, notes := errorsOf(evs), noticesOf(evs); len(errs) != 0 || len(notes) != 2 || !isResizeNotice(notes[0]) || notes[1] != errOnlyLatestTurn.Error() {
 		t.Errorf("今すぐ要約: エラー %v / お知らせ %v", errs, notes)
 	}
 

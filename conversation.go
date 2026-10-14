@@ -11,6 +11,7 @@ package aibow
 // Wails に依存しないので、ステップ6の API からも同じものを使える。
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -24,6 +25,7 @@ import (
 	"unicode"
 	"uuid"
 
+	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/tool"
 )
 
@@ -36,6 +38,9 @@ type Generator interface {
 		onPrompt func(prompt string), onThinking, onContent func(text string)) (Output, error)
 	// CountTokens は、p に書式を当てた文字列のトークン数を数える。会話の上限に収まっているかの判断に使う(compact.go)
 	CountTokens(p Prompt) (int, error)
+	// EnsureContextSize は、作業領域を n トークンの大きさにする(同じ大きさなら何もしない)。作り直したら true。
+	// 会話ごとに会話の上限・返事の上限が違うので、送信の前に呼ぶ(ensureWorkspace)
+	EnsureContextSize(n int) (bool, error)
 	Info() *ModelInfo
 }
 
@@ -97,7 +102,6 @@ type Conversations struct {
 
 	mu       sync.Mutex
 	defaults ConversationSettings // 新しい会話の既定の設定
-	limits   limits               // 会話の上限と返事の上限(アプリ全体の設定)
 
 	// stopSummary は生成中の要約だけを止める関数(StopSummary)。要約していなければ nil
 	summaryMu   sync.Mutex
@@ -121,26 +125,66 @@ type limits struct {
 	reply   int // 返事の上限: 1回の返事で生成するトークン数の上限
 }
 
-// NewConversations は会話の仕組みを作る。app からは新しい会話の既定の設定と、会話の上限・返事の上限を使う。
+// NewConversations は会話の仕組みを作る。app からは新しい会話の既定の設定を使う。
 func NewConversations(store Store, gen Generator, app AppSettings) *Conversations {
-	return &Conversations{
-		store: store, gen: gen, tools: tool.Builtin(), defaults: app.Defaults.asDefaults(),
-		limits: limits{history: app.Workspace.HistoryTokens, reply: app.Workspace.ReplyTokens},
+	return &Conversations{store: store, gen: gen, tools: tool.Builtin(), defaults: app.Defaults.asDefaults()}
+}
+
+// limitsOf は会話の上限と返事の上限。会話の設定の値を使う。
+// 持っていない(0 の)ものは、新しい会話の既定の値を使う(この機能より前の会話は起動時に埋めるので、ふつうは来ない。FillMissingLimits)。
+func (cs *Conversations) limitsOf(set ConversationSettings) limits {
+	cs.mu.Lock()
+	d := cs.defaults
+	cs.mu.Unlock()
+	return limits{history: cmp.Or(set.HistoryTokens, d.HistoryTokens), reply: cmp.Or(set.ReplyTokens, d.ReplyTokens)}
+}
+
+// withLimits は、会話の上限・返事の上限を持っていない設定に、新しい会話の既定の値を入れる。
+func (cs *Conversations) withLimits(set ConversationSettings) ConversationSettings {
+	lim := cs.limitsOf(set)
+	set.HistoryTokens, set.ReplyTokens = lim.history, lim.reply
+	return set
+}
+
+// ensureWorkspace は、エンジンの作業領域をこの会話の大きさ(会話の上限 + 返事の上限)にする。
+// 作業領域は1つだけなので、大きさの違う会話に送信するときに作り直す(会話を開いただけでは作り直さない)。
+// 作り直すと KV キャッシュは空になる(同じシステムプロンプト・ツールの説明の部分も読み直しになる)。
+func (cs *Conversations) ensureWorkspace(conv Conversation, emit func(ChatEvent)) error {
+	lim := cs.limitsOf(conv.Settings)
+	n := lim.history + lim.reply
+	changed, err := cs.gen.EnsureContextSize(n)
+	if err != nil {
+		return fmt.Errorf("この会話の作業領域(会話の上限 %d + 返事の上限 %d = %d トークン)を確保できません。"+
+			"会話の設定で上限を下げるか、GPU に載せる層の数を減らしてください: %w", lim.history, lim.reply, n, err)
 	}
+	if changed {
+		log.Infof("作業領域を %d トークン(会話の上限 %d + 返事の上限 %d)に作り直しました", n, lim.history, lim.reply)
+		emit(ChatEvent{ConversationID: conv.ID, Type: "notice",
+			Text: fmt.Sprintf("この会話の大きさに合わせて、作業領域を %d トークンに作り直しました", n)})
+	}
+	return nil
 }
 
-// SetLimits は会話の上限と返事の上限を変える。次の送信から効く。
-// エンジンの作業領域の作り直し(合計の大きさ)は、呼ぶ側(_cmd/aibow)が先に行う。
-func (cs *Conversations) SetLimits(history, reply int) {
-	cs.mu.Lock()
-	defer cs.mu.Unlock()
-	cs.limits = limits{history: history, reply: reply}
-}
-
-func (cs *Conversations) currentLimits() limits {
-	cs.mu.Lock()
-	defer cs.mu.Unlock()
-	return cs.limits
+// FillMissingLimits は、会話の上限・返事の上限を持っていない会話(会話ごとの設定にする前に作った会話)に、
+// 今の新しい会話の既定の値を写して保存する。起動したときに1回呼ぶ。写した会話の数を返す。
+// 写しておかないと、既定を変えたときに、その会話の上限まで変わってしまう(既定は今ある会話に効かない、の約束)。
+func (cs *Conversations) FillMissingLimits() (int, error) {
+	list, err := cs.store.ListConversations()
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, c := range list {
+		if c.Settings.HistoryTokens > 0 && c.Settings.ReplyTokens > 0 {
+			continue
+		}
+		c.Settings = cs.withLimits(c.Settings.normalized())
+		if err := cs.store.UpdateConversation(c); err != nil {
+			return n, fmt.Errorf("会話 %s に会話の上限・返事の上限を入れられません: %w", c.ID, err)
+		}
+		n++
+	}
+	return n, nil
 }
 
 // List は会話の一覧を、更新の新しい順に返す。
@@ -167,6 +211,7 @@ func (cs *Conversations) Create(settings *ConversationSettings) (Conversation, e
 	if settings != nil {
 		s = settings.normalized()
 	}
+	s = cs.withLimits(s) // 会話の上限・返事の上限も会話の値として持つ(画面が渡さなかったら既定の値)
 	if err := s.validate(); err != nil {
 		return Conversation{}, err
 	}
@@ -285,7 +330,12 @@ func (cs *Conversations) Send(ctx context.Context, id uuid.UUID, text string, em
 		return
 	}
 
-	// 0. この会話で使う MCP のサーバーが動いていなければ、起動する(そのツールも会話の上限に数えるので、確かめる前に)
+	// 0. 作業領域をこの会話の大きさにする(会話の上限 + 返事の上限。要約も返事も、この中で生成する)。
+	// この会話で使う MCP のサーバーが動いていなければ、起動する(そのツールも会話の上限に数えるので、確かめる前に)
+	if err := cs.ensureWorkspace(conv, emit); err != nil {
+		fail(err)
+		return
+	}
 	cs.startRemote(ctx, conv, emit)
 
 	// 1. 会話の上限に収められるかを確かめてから、ユーザーの発言を保存する。
@@ -332,7 +382,7 @@ func (cs *Conversations) generate(ctx context.Context, conv Conversation, messag
 	set := conv.Settings
 	opt := GenerateOptions{
 		Temperature:     float32(set.Temperature),
-		MaxTokens:       cs.currentLimits().reply,
+		MaxTokens:       cs.limitsOf(set).reply,
 		PresencePenalty: float32(set.PresencePenalty),
 	}
 	model := ""

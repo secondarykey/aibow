@@ -1,22 +1,26 @@
 package aibow
 
-// appsettings.go: アプリ全体の設定(会話をまたいで1つだけのもの)。
+// appsettings.go: アプリの設定(会話をまたいで1つだけのもの)と、新しい会話の既定の設定。
 //
 // 保存先の app_settings は「キー → 値」の表。値は JSON の文字列で入れる
 // (数値も文字列も構造体も同じ形で入り、DB を直接のぞいても読める)。
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 )
 
 // app_settings のキー
 const (
-	SettingHistoryTokens = "history_tokens"        // 会話の上限
-	SettingReplyTokens   = "reply_tokens"          // 返事の上限
-	SettingGPULayers     = "gpu_layers"            // GPU に載せる層の数
-	SettingLastModel     = "last_model"            // 最後に使ったモデルの ID。次の起動で読み込む
-	SettingDefaults      = "conversation_defaults" // 新しい会話の既定の設定
+	SettingGPULayers = "gpu_layers"            // GPU に載せる層の数
+	SettingLastModel = "last_model"            // 最後に使ったモデルの ID。次の起動で読み込む
+	SettingDefaults  = "conversation_defaults" // 新しい会話の既定の設定(会話の上限・返事の上限も入る)
+
+	// 会話の上限・返事の上限は、以前はアプリ全体の設定で、ここに置いていた。
+	// 今は新しい会話の既定(SettingDefaults)に入る。既定にまだ入っていないときの引き継ぎのためだけに読む(0009)
+	SettingHistoryTokens = "history_tokens"
+	SettingReplyTokens   = "reply_tokens"
 
 	// SettingNCtx は古い版の「コンテキスト長」。今は使わず、会話の上限への引き継ぎのためだけに読む
 	SettingNCtx = "n_ctx"
@@ -26,28 +30,17 @@ const (
 // コンテキスト長より返事の上限のほうが大きかった場合でも、会話ができる大きさを残す。
 const minHistoryTokens = 2048
 
-// WorkspaceSettings は作業領域(コンテキスト)に関わる設定の塊。
+// WorkspaceSettings はモデルの読み込みに関わる設定の塊。変えるとモデルの読み直しになる。
 //
-// どれも変えるとエンジンに手を入れる必要がある(モデルの読み直しか、作業領域の作り直し)。
 // あとで「プロファイル」(設定に名前を付けて切り替える)を作るときは、この塊をそのままプロファイルの中に移す。
-// 今のアプリ全体の設定は「名前のない既定のプロファイル」という位置づけ。
+// 今のアプリの設定は「名前のない既定のプロファイル」という位置づけ。
+// 会話の上限・返事の上限(作業領域の大きさ)は、会話ごとの設定に移した(ConversationSettings。0009)。
 type WorkspaceSettings struct {
 	Model     string `json:"model"`      // 最後に使ったモデルの ID(app_settings のキーは last_model)
 	GPULayers int    `json:"gpu_layers"` // GPU に載せる層の数
-
-	// 利用者が気にするのは「会話をどれだけ続けられるか」なので、それを直接設定させる。
-	// 作業領域の大きさは、この2つの合計を aibow が計算して確保する(ContextSize)。
-	HistoryTokens int `json:"history_tokens"` // 会話の上限: モデルに渡す文字列のトークン数の上限。compact の基準
-	ReplyTokens   int `json:"reply_tokens"`   // 返事の上限: 1回の返事で生成するトークン数の上限(思考 + 答え)
 }
 
-// ContextSize は確保する作業領域の大きさ(トークン数)。
-// 会話の上限まで詰めたプロンプトのあとに、返事の上限まで書いても溢れない大きさにする。
-func (w WorkspaceSettings) ContextSize() int {
-	return w.HistoryTokens + w.ReplyTokens
-}
-
-// AppSettings はアプリ全体の設定。
+// AppSettings はアプリの設定と、新しい会話の既定の設定。
 type AppSettings struct {
 	Workspace WorkspaceSettings    `json:"workspace"`
 	Defaults  ConversationSettings `json:"defaults"` // 新しい会話の既定の設定
@@ -58,25 +51,31 @@ type AppSettings struct {
 // 画面で一度変えると保存先に入るので、以降は環境変数より保存した値が優先される。
 //
 // notes は、古い版の設定を引き継いだときのお知らせ(ログに出す)。
+//
+// 新しい会話の既定の会話の上限・返事の上限は、古い置き場(history_tokens / reply_tokens、もっと古い n_ctx)→
+// 既定の設定(conversation_defaults)の順に読み、後から読んだものが勝つ(既定に入っていれば、それを使う)。
 func LoadAppSettings(s Store, initial AppSettings) (a AppSettings, notes []string, err error) {
 	a = initial
 	found := map[string]bool{}
-	for key, v := range map[string]any{
-		SettingHistoryTokens: &a.Workspace.HistoryTokens,
-		SettingReplyTokens:   &a.Workspace.ReplyTokens,
-		SettingGPULayers:     &a.Workspace.GPULayers,
-		SettingLastModel:     &a.Workspace.Model,
-		SettingDefaults:      &a.Defaults,
+	// 順番が要るので、マップではなく並びで読む(既定の設定は最後。古い置き場の値を上書きする)
+	for _, kv := range []struct {
+		key string
+		v   any
+	}{
+		{SettingHistoryTokens, &a.Defaults.HistoryTokens},
+		{SettingReplyTokens, &a.Defaults.ReplyTokens},
+		{SettingGPULayers, &a.Workspace.GPULayers},
+		{SettingLastModel, &a.Workspace.Model},
 	} {
-		ok, err := loadAppSetting(s, key, v)
+		ok, err := loadAppSetting(s, kv.key, kv.v)
 		if err != nil {
 			return initial, nil, err
 		}
-		found[key] = ok
+		found[kv.key] = ok
 	}
 
 	if !found[SettingHistoryTokens] && !found[SettingReplyTokens] {
-		note, err := migrateNCtx(s, &a.Workspace)
+		note, err := migrateNCtx(s, &a.Defaults)
 		if err != nil {
 			return initial, nil, err
 		}
@@ -84,6 +83,13 @@ func LoadAppSettings(s Store, initial AppSettings) (a AppSettings, notes []strin
 			notes = append(notes, note)
 		}
 	}
+	legacy := a.Defaults
+	if _, err := loadAppSetting(s, SettingDefaults, &a.Defaults); err != nil {
+		return initial, nil, err
+	}
+	// 既定に会話の上限・返事の上限が入っていなければ(0 なら)、古い置き場か初期値のまま
+	a.Defaults.HistoryTokens = cmp.Or(a.Defaults.HistoryTokens, legacy.HistoryTokens)
+	a.Defaults.ReplyTokens = cmp.Or(a.Defaults.ReplyTokens, legacy.ReplyTokens)
 	a.Defaults = a.Defaults.asDefaults()
 	return a, notes, nil
 }
@@ -93,7 +99,7 @@ func LoadAppSettings(s Store, initial AppSettings) (a AppSettings, notes []strin
 //
 // 引き継いだ値はその場で保存する。保存しないと、あとで返事の上限だけ変えたときに、
 // 次の起動で n_ctx から計算し直されて会話の上限がずれてしまう。
-func migrateNCtx(s Store, w *WorkspaceSettings) (string, error) {
+func migrateNCtx(s Store, w *ConversationSettings) (string, error) {
 	var nCtx int
 	ok, err := loadAppSetting(s, SettingNCtx, &nCtx)
 	if err != nil || !ok {

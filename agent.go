@@ -67,7 +67,7 @@ func (cs *Conversations) runTurn(ctx context.Context, conv Conversation, history
 			}
 			return last, err
 		}
-		cs.emitUsage(emit, conv.ID, p.usage(history, cs.currentLimits().history))
+		cs.emitUsage(emit, conv.ID, p.usage(history, cs.limitsOf(conv.Settings).history))
 
 		// 2. 生成して保存する
 		r, err := cs.generate(ctx, conv, p.messages, emit)
@@ -337,7 +337,7 @@ func (cs *Conversations) execute(ctx context.Context, t tool.Tool, args tool.Arg
 // 代わりにエラーとして返せば、モデルは範囲を絞って呼び直せる(失敗しても送信は止めない、と同じ考え方)。
 // ツールは実行済みなので、結果を捨てるだけ。
 func (cs *Conversations) fitResult(set ConversationSettings, history []StoredMessage, res StoredMessage) (StoredMessage, error) {
-	limit := cs.currentLimits().history
+	limit := cs.limitsOf(set).history
 	with, err := cs.turnTokens(set, append(slices.Clip(history), res))
 	if err != nil || with <= limit {
 		return res, err

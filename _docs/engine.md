@@ -41,7 +41,8 @@
 - 語彙(vocab)は `Engine.vocabMu` でも守っていて、`CountTokens` は生成中でも呼べる(別の会話を開いたときのメーターのため)
 - モデルの切り替えは「今のモデルを解放 → 新しいモデルを読み込む」の順(VRAM 8GB に2つは載らないため)。失敗したら元のモデルを読み直す
 - GPU の層数の変更(`SetGPULayers`)も同じ仕組みで読み直す。
-  会話の上限・返事の上限の変更(`ChatService.SetLimits` → `Engine.SetContextSize`)はコンテキストだけを作り直し、モデルは読み直さない。
+  作業領域の大きさの変更(`Engine.EnsureContextSize`。同じ大きさなら何もしない)はコンテキストだけを作り直し、モデルは読み直さない。
+  会話ごとに大きさが違うので、会話の仕組みが送信の前に呼ぶ。画面で上限を「適用」したときも `ChatService.TryLimits` から呼び、VRAM に入るかを確かめる(0009)。
   作業領域(`n_ctx`)の決め方は [compact.md](compact.md)
 
 ## UTF-8 として正しくない文字列

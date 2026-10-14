@@ -6,7 +6,7 @@
 import { LuArrowLeft } from "react-icons/lu";
 import type { ConversationSettings } from "../../bindings/github.com/secondarykey/aibow";
 import type { ServerInfo } from "../../bindings/github.com/secondarykey/aibow/mcp/client";
-import { ConversationSettingsForm } from "./ConversationSettingsForm";
+import { ConversationSettingsForm, LimitsForm } from "./ConversationSettingsForm";
 import { ConversationTools } from "./ConversationTools";
 
 interface Props {
@@ -18,9 +18,12 @@ interface Props {
   onMakeDefault(): void;
   lastPrompt: string;
   servers: ServerInfo[]; // settings.json の MCP のサーバー
+  limitsDisabled: boolean; // 生成中・読み込み中は上限を変えられない(作業領域を作り直すため)
+  onApplyLimits(history: number, reply: number): void;
 }
 
-export function ConversationSettingsView({ title, settings, errors, onClose, onChange, onMakeDefault, lastPrompt, servers }: Props) {
+export function ConversationSettingsView({ title, settings, errors, onClose, onChange, onMakeDefault, lastPrompt, servers, limitsDisabled, onApplyLimits,
+}: Props) {
   return (
     <section className="settings-view">
       <div className="settings-inner">
@@ -34,6 +37,7 @@ export function ConversationSettingsView({ title, settings, errors, onClose, onC
         {errors.map(e => <div key={e.id} className="msg error">{e.text}</div>)}
 
         <ConversationSettingsForm settings={settings} onChange={onChange} />
+        <LimitsForm history={settings.history_tokens} reply={settings.reply_tokens} disabled={limitsDisabled} onApply={onApplyLimits} />
         <button className="make-default" onClick={onMakeDefault}>この設定を新しい会話の既定にする</button>
 
         <h2 className="section" title="この会話で使うツール(入力欄の上の「この会話のツール」と同じ)">ツール</h2>

@@ -1,10 +1,9 @@
-// useAppSettings.ts: アプリ全体の設定(会話の上限・返事の上限・GPU に載せる層の数・新しい会話の既定の設定)。
+// useAppSettings.ts: アプリの設定(GPU に載せる層の数)と、新しい会話の既定の設定。
 //
-// 会話ごとの設定と違い、変えるとエンジンに手を入れる必要がある:
-//   会話の上限・返事の上限 … 合計の大きさで作業領域(KV キャッシュの置き場)だけ作り直す。モデルは読み直さない
-//   GPU の層数             … 層を GPU と CPU のどちらに置くかは読み込み時に決まるので、モデルを読み直す
+// GPU の層数は、層を GPU と CPU のどちらに置くかが読み込み時に決まるので、変えるとモデルを読み直す。
 //
 // 新しい会話の既定(設定の画面の「新しい会話の既定」)は、会話の設定と同じく変えたらすぐ保存する。今ある会話には効かない。
+// 会話の上限・返事の上限も既定の一部(会話を作るときに写す)。作業領域を作り直してみるのは App(applyLimits)。
 import { useCallback, useRef, useState } from "react";
 import { ChatService } from "../bindings/github.com/secondarykey/aibow/_cmd/aibow";
 import type { AppSettings, ConversationSettings, WorkspaceSettings } from "../bindings/github.com/secondarykey/aibow";
@@ -48,16 +47,9 @@ export function useAppSettings(
   const apply = useCallback(async (w: WorkspaceSettings) => {
     if (!settings) return;
     const old = settings.workspace;
-    const { history_tokens: history, reply_tokens: reply, gpu_layers: gpuLayers } = w;
+    const { gpu_layers: gpuLayers } = w;
     setBusy("loading");
     try {
-      if (history !== old.history_tokens || reply !== old.reply_tokens) {
-        const info = await ChatService.SetLimits(history, reply);
-        const size = (history + reply).toLocaleString();
-        notify(info
-          ? `会話の上限 ${history.toLocaleString()} + 返事の上限 ${reply.toLocaleString()} = 作業領域 ${size} トークンにしました(モデルは読み直していません)`
-          : `会話の上限・返事の上限を変えました(作業領域 ${size} トークン。次にモデルを読み込むときから効きます)`);
-      }
       if (gpuLayers !== old.gpu_layers) {
         notify(`GPU に載せる層を ${gpuLayers} にして、モデルを読み込み直しています…`, { key: "model", sticky: true });
         const info = await ChatService.SetGPULayers(gpuLayers);
