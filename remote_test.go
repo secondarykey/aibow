@@ -497,3 +497,43 @@ func TestToolPrefsFile(t *testing.T) {
 		t.Errorf("ファイルはそのまま: %s", b)
 	}
 }
+
+// 会話の設定の画面に出すツールの扱いは、toolPolicy と同じ決め方で、どこで決まったかも分かる。
+// MCP のサーバーのツールは、起動していなくても、覚えた一覧(tools.json の known)から出す
+func TestToolStates(t *testing.T) {
+	cs := &Conversations{}
+	prefs := &ToolPrefs{}
+	cs.SetToolPrefs(prefs)
+	cs.SetRemoteTools(&fakeRemote{})
+	prefs.SetToolPolicy("read_file", ToolOff)
+	if err := prefs.setKnown("fake", []KnownTool{{Name: "fake__write", Description: "Remote tool."}}); err != nil {
+		t.Fatal(err)
+	}
+	set := ConversationSettings{ToolPolicies: map[string]ToolPolicy{"fake__write": ToolOff}}
+
+	groups := cs.ToolStates(set)
+	if len(groups) != 2 || groups[0].Server != "" || groups[1].Server != "fake" {
+		t.Fatalf("グループ: %+v", groups)
+	}
+	find := func(g ToolGroupState, name string) ToolState {
+		for _, s := range g.Tools {
+			if s.Name == name {
+				return s
+			}
+		}
+		t.Fatalf("%s がありません", name)
+		return ToolState{}
+	}
+	if s := find(groups[0], "get_current_time"); s.Policy != ToolAllow || s.From != PolicyFromDefault || s.NeedsWorkDir {
+		t.Errorf("決まりの既定(読むだけ): %+v", s)
+	}
+	if s := find(groups[0], "write_file"); s.Policy != ToolAsk || s.From != PolicyFromDefault || !s.NeedsWorkDir {
+		t.Errorf("決まりの既定(書き換える・作業フォルダが要る): %+v", s)
+	}
+	if s := find(groups[0], "read_file"); s.Policy != ToolOff || s.From != PolicyFromPC {
+		t.Errorf("PC の既定: %+v", s)
+	}
+	if s := find(groups[1], "fake__write"); s.Policy != ToolOff || s.From != PolicyFromConversation || s.Description != "Remote tool." {
+		t.Errorf("会話の上書き: %+v", s)
+	}
+}

@@ -22,8 +22,10 @@ export type {
     ReplyStats,
     StoredMessage,
     ToolCall,
+    ToolGroupState,
     ToolPrefsView,
     ToolResult,
+    ToolState,
     Usage,
     WorkspaceSettings
 } from "./models.js";

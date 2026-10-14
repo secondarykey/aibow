@@ -205,6 +205,14 @@ export function ToolPrefs(): $CancellablePromise<aibow$0.ToolPrefsView> {
 }
 
 /**
+ * ToolStates は、会話の設定 settings でのツールの扱い(会話の設定の画面に出す)。
+ * 画面がまだ保存していない設定でも見られるよう、会話の ID ではなく設定を受け取る。
+ */
+export function ToolStates(settings: aibow$0.ConversationSettings): $CancellablePromise<aibow$0.ToolGroupState[] | null> {
+    return $Call.ByID(3731445479, settings);
+}
+
+/**
  * UpdateConversationSettings は会話の設定を変える。次の送信から効く。
  */
 export function UpdateConversationSettings(id: uuid$0.UUID, settings: aibow$0.ConversationSettings): $CancellablePromise<void> {

@@ -1,0 +1,159 @@
+// 会話の設定の画面の「ツール」: この会話でのツールの状態。
+//
+// グループ(組み込み / MCP のサーバー)のチェックは、この会話で使うか(入力欄の上の「この会話のツール」と同じ設定。builtin_off / mcp_servers)。
+// ツールごとの行は、この会話での扱いを見せるだけ(ツールごとに変えるのは 0009 の2段目以降)。
+// 扱いは Go の toolPolicy と同じ決め方で Go に決めてもらう(ChatService.ToolStates)。画面で同じ判断を書き直さない。
+// 使わないツールには、どこで決まったか(この会話の上書き / PC の既定 = 設定の画面の「ツール」)を添える。
+//
+// 使っているグループは一覧を開いて出し、使っていないグループは畳む(設定の画面の「ツール」と同じ)。▶ で開ける。
+import { useEffect, useState } from "react";
+import { LuChevronDown, LuChevronRight } from "react-icons/lu";
+import { ChatService } from "../../bindings/github.com/secondarykey/aibow/_cmd/aibow";
+import { ToolPolicy } from "../../bindings/github.com/secondarykey/aibow";
+import type { ConversationSettings, ToolGroupState, ToolState } from "../../bindings/github.com/secondarykey/aibow";
+import type { ServerInfo } from "../../bindings/github.com/secondarykey/aibow/mcp/client";
+import { errorMessage } from "../errors";
+import { TOOL_LABELS } from "../toolLabels";
+import { BUILTIN } from "./ToolBar";
+
+interface Props {
+  settings: ConversationSettings;
+  servers: ServerInfo[]; // settings.json の MCP のサーバー
+  onChange(patch: Partial<ConversationSettings>): void;
+}
+
+export function ConversationTools({ settings, servers, onChange }: Props) {
+  const [groups, setGroups] = useState<ToolGroupState[]>([]);
+  const [error, setError] = useState("");
+  const [opened, setOpened] = useState<Record<string, boolean>>({}); // 使っていないグループのうち、▶ で開いたもの
+
+  // ツールの扱いが変わるのは、会話の上書き(tool_policies)が変わったときだけ(PC の既定は設定の画面で変える)
+  const policies = JSON.stringify(settings.tool_policies ?? {});
+  useEffect(() => {
+    ChatService.ToolStates(settings).then(
+      g => {
+        setGroups(g ?? []);
+        setError("");
+      },
+      err => setError(errorMessage(err)),
+    );
+    // settings の中で扱いに効くのは tool_policies だけなので、それが変わったときに読み直す
+  }, [policies]);
+
+  const selected = settings.mcp_servers ?? [];
+  const toggleServer = (name: string, on: boolean) =>
+    onChange({ mcp_servers: on ? [...selected, name] : selected.filter(n => n !== name) });
+
+  return (
+    <div className="tool-settings">
+      {error && <div className="msg error">{error}</div>}
+      {groups.map(g => {
+        if (g.server === "") {
+          return (
+            <Group
+              key=""
+              name={BUILTIN}
+              title="aibow の中で動くツール"
+              on={!settings.builtin_off}
+              onToggle={on => onChange({ builtin_off: !on })}
+              open={opened[""]}
+              onToggleOpen={() => setOpened(o => ({ ...o, "": !o[""] }))}
+              tools={g.tools ?? []}
+              workDir={settings.work_dir}
+              label={t => TOOL_LABELS[t.name] ?? t.description}
+            />
+          );
+        }
+        // settings.json から消したサーバーは出さない(Go は settings.json のサーバーだけを返すので、ふつうは見つかる)
+        const info = servers.find(s => s.name === g.server);
+        if (!info) return null;
+        return (
+          <Group
+            key={g.server}
+            name={g.server}
+            title={info.http ? "URL でつなぐ MCP のサーバー" : "aibow が起動する MCP のサーバー"}
+            on={selected.includes(g.server)}
+            onToggle={on => toggleServer(g.server, on)}
+            open={opened[g.server]}
+            onToggleOpen={() => setOpened(o => ({ ...o, [g.server]: !o[g.server] }))}
+            tools={g.tools ?? []}
+            workDir={settings.work_dir}
+            needsWorkDir={info.uses_work_dir}
+            // モデルに見せる名前は「サーバーの名前__ツールの名前」。サーバーの名前の部分は見出しにあるので外す
+            prefix={g.server.replace(/[^A-Za-z0-9_-]/gu, "_") + "__"}
+            label={t => t.description}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+function Group({ name, title, on, onToggle, open, onToggleOpen, tools, workDir, needsWorkDir, prefix = "", label }: {
+  name: string;
+  title: string;
+  on: boolean;            // この会話で使う
+  onToggle(on: boolean): void;
+  open?: boolean;
+  onToggleOpen(): void;
+  tools: ToolState[];
+  workDir: string;
+  needsWorkDir?: boolean; // ${workdir} を使うサーバー(作業フォルダを決めた会話でしか起動しない)
+  prefix?: string;
+  label(t: ToolState): string;
+}) {
+  const usable = (t: ToolState) => t.policy !== ToolPolicy.ToolOff && !(t.needs_work_dir && !workDir);
+  const using = tools.filter(usable).length;
+  const shown = on || open;
+  return (
+    <div className={"tool-group" + (on ? " on" : "")}>
+      <div className="tool-group-head">
+        {!on && (
+          <button type="button" className="tool-open" onClick={onToggleOpen} title={open ? "畳む" : "ツールの一覧を開く"}>
+            {open ? <LuChevronDown /> : <LuChevronRight />}
+          </button>
+        )}
+        <label className="check" title={title}>
+          <input type="checkbox" checked={on} onChange={e => onToggle(e.target.checked)} />
+          <span className="tool-group-name">{name}</span>
+        </label>
+        {shown && tools.length > 0 && <span className="tool-count">{using} / {tools.length}</span>}
+        {needsWorkDir && !workDir && (
+          <span className="tool-tag" title="このサーバーは作業フォルダで起動します">作業フォルダが要る</span>
+        )}
+      </div>
+      {shown && (
+        <div className="tool-group-body">
+          {tools.length === 0 ? (
+            <p className="tool-none">(ツールの一覧はまだありません)</p>
+          ) : (
+            tools.map(t => {
+              const short = t.name.startsWith(prefix) ? t.name.slice(prefix.length) : t.name;
+              return (
+                <label key={t.name} className={"check tool-item" + (on ? "" : " unused")} title={`${t.name}\n${t.description}`}>
+                  <input type="checkbox" checked={usable(t)} disabled />
+                  <code>{short}</code>
+                  <StateTag tool={t} workDir={workDir} />
+                  <span className="tool-desc">{label(t)}</span>
+                </label>
+              );
+            })
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// 使えない理由。使うツールには何も付けない(確認する / 確認しないの表示は、確認を画面で扱うときに足す)
+function StateTag({ tool, workDir }: { tool: ToolState; workDir: string }) {
+  if (tool.policy === ToolPolicy.ToolOff) {
+    return tool.from === "conversation"
+      ? <span className="tool-tag" title="この会話の設定(tool_policies)で使わない">この会話で使わない</span>
+      : <span className="tool-tag" title="設定の画面の「ツール」(tools.json)で使わない">PC の既定で使わない</span>;
+  }
+  if (tool.needs_work_dir && !workDir) {
+    return <span className="tool-tag" title="作業フォルダを決めた会話でだけ使えます">作業フォルダが要る</span>;
+  }
+  return null;
+}

@@ -541,6 +541,21 @@ export interface ToolCall {
 }
 
 /**
+ * ToolGroupState は、会話の設定の画面に出すツールのグループ1つ(組み込み / MCP のサーバー1つ)。
+ */
+export interface ToolGroupState {
+    /**
+     * MCP のサーバーの名前。組み込みのツールなら空
+     */
+    "server": string;
+
+    /**
+     * MCP のサーバーは、最後に起動したときに見えたツール(tools.json の known)。まだ無ければ空
+     */
+    "tools": ToolState[] | null;
+}
+
+/**
  * ToolPolicy はツールの扱い。
  */
 export enum ToolPolicy {
@@ -621,6 +636,36 @@ export interface ToolResult {
      * MCP のサーバーのツールなら、そのサーバーの名前(settings.json の名前)。組み込みのツールは空
      */
     "server"?: string;
+}
+
+/**
+ * ToolState は、会話でのツール1つの扱い。
+ */
+export interface ToolState {
+    /**
+     * モデルに見せる名前
+     */
+    "name": string;
+
+    /**
+     * 説明の1行目
+     */
+    "description": string;
+
+    /**
+     * 使わない / 確認する / 確認しない(toolPolicy と同じ決め方)
+     */
+    "policy": ToolPolicy;
+
+    /**
+     * どこで決まったか(PolicyFrom…)
+     */
+    "from": string;
+
+    /**
+     * 作業フォルダを決めた会話でだけ使える(組み込みのファイル・コマンドのツール)
+     */
+    "needs_work_dir": boolean;
 }
 
 /**

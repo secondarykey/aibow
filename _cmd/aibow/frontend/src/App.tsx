@@ -289,6 +289,7 @@ export default function App() {
         onChange={convs.updateSettings}
         onMakeDefault={() => app.setDefaults(current)}
         lastPrompt={chat.lastPrompt}
+        servers={mcpServers}
       />
     );
   } else if (home) {

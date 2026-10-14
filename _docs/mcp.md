@@ -36,7 +36,7 @@ aibow ── tools/call ──────→ 結果(content)が返る → ツ�
 | `mcp/client/client_test.go` | テスト。SDK でテスト用のサーバーを作り、プロセスを起動せずにつなぐ(`NewInMemoryTransports`)。本物の子プロセスは、テストの実行ファイル自身をサーバーとして起動して確かめる |
 | `settingsfile.go` | 設定ファイル `settings.json` の読み込み(`mcpServers`) |
 | `toolprefs.go` | ツールの扱い(`ToolPolicy`: 使わない / 確認する / 確認しない)と、その PC の既定 `tools.json`(`ToolPrefs`) |
-| `agent.go` | `RemoteTools`(会話の仕組みから見た MCP の口)・送信の前にサーバーを起動する(`startRemote`)・組み込みのツールの後ろに並べる(`toolsFor`)・ツールの扱いを決める(`toolPolicy` / `needsConfirm`)・ツールの一覧を覚える(`rememberTools`) |
+| `agent.go` | `RemoteTools`(会話の仕組みから見た MCP の口)・送信の前にサーバーを起動する(`startRemote`)・組み込みのツールの後ろに並べる(`toolsFor`)・ツールの扱いを決める(`toolPolicy` / `policyOf` / `needsConfirm`)・会話の設定の画面に出す扱い(`ToolStates`)・ツールの一覧を覚える(`rememberTools`) |
 | `internal/proc/` | 子プロセスまでまとめて止める仕組み(`run_command` と共有) |
 
 - `mcp/client` は `tool` を import し、ルートの `aibow`(LLM・会話の仕組み)は import しない。会話の仕組みは MCP を知らず、`RemoteTools` の interface だけを見る
@@ -80,6 +80,9 @@ MCP のツールだけでなく、組み込みのツール(aibow の中で動く
 1. **会話ごとの上書き**(会話の設定の `tool_policies`。DB)。会話を消せば一緒に消える
 2. **PC の既定**(`tools.json`)。ツールごと(`tools`)→ グループごと(`builtin` / `servers`。確認する・確認しないを決める。後日の「サーバーごとにまとめて許可」のため)、の順に見る
 3. どれも決めていなければ:MCP のツールは「確認する」。組み込みのツールは、書き換えるツール・コマンドは「確認する」、読むだけのツールは「確認しない」(今までの動き)
+
+扱いを決めるのは `policyOf`(`toolPolicy` の中身)。ツールの実体が無くても(起動していない MCP のサーバーのツールでも)決められるよう、グループ・名前・書き換えるツールかで受け取り、どこで決まったか(会話 / PC / 決まりの既定)も返す。
+会話の設定の画面は、これを `ToolStates` で受け取って出す(画面で同じ判断を書き直さない。0009)
 
 | 値 | 意味 |
 |---|---|

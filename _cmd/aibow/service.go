@@ -283,6 +283,15 @@ func (s *ChatService) BuiltinTools() []aibow.KnownTool {
 	return aibow.BuiltinTools()
 }
 
+// ToolStates は、会話の設定 settings でのツールの扱い(会話の設定の画面に出す)。
+// 画面がまだ保存していない設定でも見られるよう、会話の ID ではなく設定を受け取る。
+func (s *ChatService) ToolStates(settings aibow.ConversationSettings) ([]aibow.ToolGroupState, error) {
+	if s.startupErr != nil {
+		return nil, s.startupErr
+	}
+	return s.convs.ToolStates(settings), nil
+}
+
 // ToolPrefs は、ツールの扱いの PC の既定(tools.json)と、サーバーを起動したときに見えたツールの一覧。
 func (s *ChatService) ToolPrefs() aibow.ToolPrefsView {
 	return s.prefs.View()

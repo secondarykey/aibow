@@ -400,21 +400,85 @@ func (cs *Conversations) toolsFor(set ConversationSettings) []tool.Tool {
 //
 // の順に見て、最初に決めてあったものを使う。
 func (cs *Conversations) toolPolicy(set ConversationSettings, t tool.Tool) ToolPolicy {
-	name := t.Def().Name
-	if p, ok := set.ToolPolicies[name]; ok {
-		return p
-	}
 	group := "" // 組み込みのツール
 	if r, ok := t.(tool.Remote); ok {
 		group = r.Server()
 	}
+	_, confirmable := t.(tool.Confirmable)
+	p, _ := cs.policyOf(set, group, t.Def().Name, confirmable)
+	return p
+}
+
+// どこでツールの扱いが決まったか(会話の設定の画面に出す。ToolState.From)
+const (
+	PolicyFromConversation = "conversation" // 会話ごとの上書き(tool_policies)
+	PolicyFromPC           = "pc"           // PC の既定(tools.json)
+	PolicyFromDefault      = "default"      // 決まりの既定
+)
+
+// policyOf は toolPolicy の中身。ツールの実体が無くても(起動していない MCP のサーバーのツールでも)決められるよう、
+// グループ・名前・書き換えるツールか(tool.Confirmable)で受け取り、どこで決まったかも返す。
+func (cs *Conversations) policyOf(set ConversationSettings, group, name string, confirmable bool) (ToolPolicy, string) {
+	if p, ok := set.ToolPolicies[name]; ok {
+		return p, PolicyFromConversation
+	}
 	if p, ok := cs.prefs.policy(group, name); ok {
-		return p
+		return p, PolicyFromPC
 	}
-	if _, ok := t.(tool.Confirmable); !ok && group == "" {
-		return ToolAllow
+	if !confirmable && group == "" {
+		return ToolAllow, PolicyFromDefault
 	}
-	return ToolAsk
+	return ToolAsk, PolicyFromDefault
+}
+
+// ToolGroupState は、会話の設定の画面に出すツールのグループ1つ(組み込み / MCP のサーバー1つ)。
+type ToolGroupState struct {
+	Server string      `json:"server"` // MCP のサーバーの名前。組み込みのツールなら空
+	Tools  []ToolState `json:"tools"`  // MCP のサーバーは、最後に起動したときに見えたツール(tools.json の known)。まだ無ければ空
+}
+
+// ToolState は、会話でのツール1つの扱い。
+type ToolState struct {
+	Name         string     `json:"name"`           // モデルに見せる名前
+	Description  string     `json:"description"`    // 説明の1行目
+	Policy       ToolPolicy `json:"policy"`         // 使わない / 確認する / 確認しない(toolPolicy と同じ決め方)
+	From         string     `json:"from"`           // どこで決まったか(PolicyFrom…)
+	NeedsWorkDir bool       `json:"needs_work_dir"` // 作業フォルダを決めた会話でだけ使える(組み込みのファイル・コマンドのツール)
+}
+
+// ToolStates は、会話の設定 set でのツールの扱いを、グループごとに返す(会話の設定の画面に出す)。
+// 会話で使うグループを選んでいるか(builtin_off / mcp_servers)は set を見れば分かるので、ここでは見ない。
+// 扱いは toolPolicy と同じ policyOf で決める(扱いを決める場所を1つにするため。画面で同じ判断を書き直さない)。
+func (cs *Conversations) ToolStates(set ConversationSettings) []ToolGroupState {
+	builtin := ToolGroupState{Tools: []ToolState{}}
+	add := func(t tool.Tool, needsWorkDir bool) {
+		_, confirmable := t.(tool.Confirmable)
+		p, from := cs.policyOf(set, "", t.Def().Name, confirmable)
+		builtin.Tools = append(builtin.Tools, ToolState{
+			Name: t.Def().Name, Description: firstLine(t.Def().Description), Policy: p, From: from, NeedsWorkDir: needsWorkDir,
+		})
+	}
+	for _, t := range tool.Builtin() {
+		add(t, false)
+	}
+	// 作業フォルダのツールは、定義が作業フォルダによらないので仮のフォルダで作る(BuiltinTools と同じ)
+	for _, t := range append(tool.Files("."), tool.RunCommand(".")) {
+		add(t, true)
+	}
+	groups := []ToolGroupState{builtin}
+	if cs.remote == nil {
+		return groups
+	}
+	known := cs.prefs.View().Known
+	for _, server := range cs.remote.Servers() {
+		g := ToolGroupState{Server: server, Tools: []ToolState{}}
+		for _, k := range known[server] {
+			p, from := cs.policyOf(set, server, k.Name, false)
+			g.Tools = append(g.Tools, ToolState{Name: k.Name, Description: k.Description, Policy: p, From: from})
+		}
+		groups = append(groups, g)
+	}
+	return groups
 }
 
 // usableServers は、会話で選んだ MCP のサーバーのうち、PC の既定でサーバーごと「使わない」にしていないもの。
