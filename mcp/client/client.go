@@ -21,7 +21,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"maps"
 	"net/http"
 	"net/url"
@@ -33,6 +32,7 @@ import (
 	"time"
 
 	"github.com/secondarykey/aibow/internal/proc"
+	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/tool"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -174,8 +174,6 @@ const (
 type Options struct {
 	// Version は、サーバーに名乗る aibow のバージョン(clientInfo)
 	Version string
-	// Logf はログの出し先。nil なら log.Printf
-	Logf func(format string, args ...any)
 }
 
 // Manager は settings.json に書いた MCP のサーバーを起動し、そのツールを渡す。
@@ -211,9 +209,6 @@ type server struct {
 
 // New は Manager を作る(サーバーはまだ起動しない)。configs は Validate 済みのもの。
 func New(configs map[string]ServerConfig, opt Options) *Manager {
-	if opt.Logf == nil {
-		opt.Logf = log.Printf
-	}
 	m := &Manager{configs: configs, opt: opt, running: map[serverKey]*server{}}
 	for name := range configs {
 		m.names = append(m.names, name)
@@ -326,14 +321,14 @@ func (m *Manager) ListTools(ctx context.Context, name string) ([]tool.Tool, erro
 		defer os.RemoveAll(dir) // サーバーを止めてから消す(defer は後に書いたものから動く)
 		k.workDir = dir
 	}
-	m.opt.Logf("MCP %s: ツールの一覧を受け取るために、一時的につなぎます", name)
+	log.Infof("MCP %s: ツールの一覧を受け取るために、一時的につなぎます", name)
 	s, err := m.connect(ctx, k, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("MCP のサーバー %s を起動できません: %w", name, err)
 	}
 	defer func() {
 		s.session.Close()
-		m.opt.Logf("MCP %s: ツールの一覧を受け取ったので止めました", name)
+		log.Infof("MCP %s: ツールの一覧を受け取ったので止めました", name)
 	}()
 	return s.tools, nil
 }
@@ -344,10 +339,10 @@ func (m *Manager) connect(ctx context.Context, k serverKey, cfg ServerConfig) (*
 	ctx, cancel := context.WithTimeout(ctx, limit)
 	defer cancel()
 	begin := time.Now()
-	m.opt.Logf("MCP %s: %s", k.name, cfg.describe(k.workDir))
+	log.Infof("MCP %s: %s", k.name, cfg.describe(k.workDir))
 
 	// サーバーのエラー出力(stderr)はログに出し、最後の行を覚えておく。起動に失敗したとき、理由はたいていそこに書いてある
-	stderr := &lineLogger{logf: m.opt.Logf, prefix: "MCP " + k.name + " (stderr) "}
+	stderr := &lineLogger{prefix: "MCP " + k.name + " (stderr) "}
 	t, err := m.transport(k.name, cfg, k.workDir, stderr)
 	if err != nil {
 		return nil, err
@@ -360,7 +355,7 @@ func (m *Manager) connect(ctx context.Context, k serverKey, cfg ServerConfig) (*
 		return startFailure(ctx, what, hint, limit, stderr, err)
 	}
 	// 送受信した JSON-RPC のメッセージを、そのままログに出す(SDK の LoggingTransport)。MCP の正体が見える
-	t = &mcp.LoggingTransport{Transport: t, Writer: &lineLogger{logf: m.opt.Logf, prefix: "MCP " + k.name + " "}}
+	t = &mcp.LoggingTransport{Transport: t, Writer: &lineLogger{prefix: "MCP " + k.name + " "}}
 
 	// できることは何も名乗らない(空の ClientCapabilities)。SDK の既定は、昔からの名残で「Roots に対応している」と名乗るが、
 	// aibow は Roots を使わず、作業フォルダは起動の引数で渡す。filesystem サーバーは、クライアントが Roots に対応していると
@@ -390,7 +385,7 @@ func (m *Manager) connect(ctx context.Context, k serverKey, cfg ServerConfig) (*
 			info = r.ServerInfo.Name + " " + r.ServerInfo.Version
 		}
 	}
-	m.opt.Logf("MCP %s: つながりました(%.1f 秒。MCP の版 %s・サーバー %s・ツール %d 個: %s)",
+	log.Infof("MCP %s: つながりました(%.1f 秒。MCP の版 %s・サーバー %s・ツール %d 個: %s)",
 		k.name, time.Since(begin).Seconds(), ver, info, len(tools), tool.Names(tools))
 
 	return s, nil
@@ -424,7 +419,7 @@ func (m *Manager) drop(s *server, err error) {
 	if !gone || closed {
 		return
 	}
-	m.opt.Logf("※ MCP %s: サーバーとのつながりが切れました(%v)。次の送信でつなぎ直します", s.key.name, err)
+	log.Warnf("MCP %s: サーバーとのつながりが切れました(%v)。次の送信でつなぎ直します", s.key.name, err)
 	go s.session.Close() // 子プロセスが残っていれば止める(Wait から呼ばれたときは、もう閉じている)
 }
 
@@ -483,10 +478,10 @@ func (m *Manager) Close() {
 	for _, s := range servers {
 		wg.Go(func() {
 			if err := s.session.Close(); err != nil {
-				m.opt.Logf("MCP %s: 止めました(%v)", s.key.name, err)
+				log.Infof("MCP %s: 止めました(%v)", s.key.name, err)
 				return
 			}
-			m.opt.Logf("MCP %s: 止めました", s.key.name)
+			log.Infof("MCP %s: 止めました", s.key.name)
 		})
 	}
 	wg.Wait()

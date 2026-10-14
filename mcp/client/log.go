@@ -7,17 +7,18 @@ import (
 	"strings"
 	"sync"
 	"unicode/utf8"
+
+	"github.com/secondarykey/aibow/log"
 )
 
 // logMaxChars はログの1行の長さの上限。ツールの定義の一覧やファイルの中身は長いので、先頭だけを出す
 const logMaxChars = 400
 
-// lineLogger は、書かれたものを1行ずつに分けてログに出す io.Writer。
+// lineLogger は、書かれたものを1行ずつに分けてログ(aibow/log)に出す io.Writer。
 //
 // SDK の LoggingTransport は「write: {JSON}」(aibow → サーバー)と「read: {JSON}」(サーバー → aibow)の形で書いてくるので、
 // 向きが分かる矢印に置き換える。サーバーのエラー出力(stderr)は、そのまま出す。
 type lineLogger struct {
-	logf   func(format string, args ...any)
 	prefix string
 
 	mu   sync.Mutex
@@ -47,7 +48,7 @@ func (l *lineLogger) Write(p []byte) (int, error) {
 		line := strings.TrimRight(string(l.buf[:i]), "\r")
 		l.buf = l.buf[i+1:]
 		if line != "" {
-			l.logf("%s%s", l.prefix, shorten(arrow(line)))
+			log.Info(l.prefix + shorten(arrow(line)))
 			l.tail = shorten(strings.TrimSpace(line))
 		}
 	}

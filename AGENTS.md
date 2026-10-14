@@ -36,6 +36,7 @@ aibow は、ローカルLLMを使ったアプリを**自分で作りながら仕
 | `store/` | 会話の保存先(SQLite) |
 | `mcp/client/` | MCP のクライアント(`client` パッケージ。SDK のパッケージ名 `mcp` と重ならないよう `mcp/` の下に置く。ステップ5で作るサーバーは `mcp/server/` に並べる)。`settings.json` の MCP のサーバーを起動し、そのツールを `tool.Tool` として見せる。`tool` を import し、ルートの `aibow` は import しない |
 | `internal/proc/` | 子プロセスまでまとめて止める仕組み(`tool` の `run_command` と `mcp/client` で使う) |
+| `log/` | ログの口(`log` パッケージ)。aibow のパッケージはログをここから出す。出し先は `SetLogger(*slog.Logger)` で決め、決めなければ `slog.Default()` |
 | `_cmd/aibow/` | デスクトップアプリ(Wails v3 + React)。別モジュール |
 | `_docs/` | 仕組みごとの説明(下の表)と、機能の仕様(`_docs/features/`)。利用者向けの手順は `setup.md`(準備と起動)・`usage.md`(使い方と設定)・`structure.md`(構成とファイル) |
 | `TODO.md` | 全体の進み具合とロードマップ |
@@ -73,12 +74,13 @@ aibow は、ローカルLLMを使ったアプリを**自分で作りながら仕
 ## 技術方針
 
 - **言語は Go**(1.27 以上。標準の `uuid` パッケージを使う)。Python など別言語の実装を持ち込まない
-- Go の外部パッケージは次の5つだけ。それ以外は標準ライブラリで書く
+- Go の外部パッケージは次の6つだけ。それ以外は標準ライブラリで書く
   - yzma(github.com/hybridgroup/yzma): llama.cpp の呼び出し。llama.cpp との版の組み合わせは [_docs/engine.md](_docs/engine.md)
   - Wails v3: 画面。`_cmd/aibow` だけで使い、ルートの `go.mod` には入れない
   - `modernc.org/sqlite`: 会話の保存。`store` パッケージだけで使う
   - `github.com/pkg/diff`: 書き換えるツールの実行前の確認で見せる差分(diff)の計算。`tool` パッケージだけで使う(0005 の 3-2 でユーザーと決めた)
   - `github.com/modelcontextprotocol/go-sdk`: MCP の公式 Go SDK。`mcp/client` パッケージだけで使う(0006 でユーザーと決めた)
+  - `github.com/wenteasy/log`: ログの出口(書式・レベル。slog のハンドラ)。`_cmd/aibow` だけで使う。ライブラリ(ルートと下のパッケージ)からは import しない(2026-10-14、ユーザーの指定)
 - C コンパイラなし(`CGO_ENABLED=0`)でビルドできる状態を保つ
 - 外部パッケージ(Go・npm とも)を足すときは、理由と代替案を示してユーザーに確認してから足す
 - チャットテンプレートなど、学習の対象になる仕組みはライブラリ任せにせず自分で書く
@@ -92,6 +94,7 @@ aibow は、ローカルLLMを使ったアプリを**自分で作りながら仕
 - 1つの関数に処理を詰め込みすぎず、流れが上から読めるようにする
 - エラーは握りつぶさず、原因と対処が分かる日本語のメッセージで画面かログに出す
 - 学習用のログ(トークン数、再利用数、速度、終了理由など)は残す。仕組みが観察できることが目的の一部
+- ログは、ライブラリ(ルートと下のパッケージ)では `aibow/log`(`log.Infof` / `log.Warnf` / `log.Errorf` など)から出す。標準の `log` や `slog` を直接使わない。注意は `Warn`、失敗は `Error`(以前の「※」はレベルで表す)。`_cmd/aibow` は `github.com/wenteasy/log` から出す(出口は `main.go` の `setupLog`)
 
 ## ユーザーとのやり取り
 

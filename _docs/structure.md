@@ -36,6 +36,7 @@ Ollama が保存したファイルを aibow が直接読むので、Ollama は�
 | `tool/` | ツールの形と、組み込みのツール(現在時刻・計算)・作業フォルダのツール(ファイルを並べる・読む・書き換える・コマンドを実行する)。LLM や会話の仕組みを知らない独立したパッケージ(MCP でツールだけを使うため) |
 | `mcp/client/` | MCP のクライアント。`settings.json` に書いた MCP のサーバーを起動してつなぎ、そのツールを `tool` の形で見せる(公式の Go SDK を使う) |
 | `internal/proc/` | 起動したプロセスを、子プロセスまでまとめて止める仕組み(コマンドのツールと MCP のサーバーで使う) |
+| `log/` | ログを出す口。aibow のパッケージはここからログを出す。aibow をライブラリとして使う人は `log.SetLogger` で出し先(`*slog.Logger`)を決められる(決めなければ `slog.Default()`) |
 | `settingsfile.go` | 設定ファイル `settings.json`(手で書く設定。今は MCP のサーバーだけ)の読み込み |
 | `toolprefs.go` | ツールの扱い(使わない / 確認する / 確認しない)と、その PC の既定 `tools.json` の読み書き |
 | `compact.go` | 長くなった会話を「会話の上限」に収める仕組み(古い発言を捨てる / 要約する)と、メーターの計算 |
@@ -60,6 +61,7 @@ llama.cpp の C の関数を Go から呼べるようにするだけの薄い層
 会話の保存には SQLite のドライバー [modernc.org/sqlite](https://pkg.go.dev/modernc.org/sqlite) を使っています。
 SQLite の C のコードを Go に変換したもので、こちらも C コンパイラは不要です。
 MCP のやり取りには公式の [Go SDK](https://github.com/modelcontextprotocol/go-sdk)(`mcp/client` だけで使う)、確認の差分の計算には [github.com/pkg/diff](https://github.com/pkg/diff)(`tool` だけで使う)を使っています。
+ログの書式と出口には [github.com/wenteasy/log](https://github.com/wenteasy/log)(`_cmd/aibow` だけで使う。標準の `log/slog` のハンドラ)を使っています。
 
 Wails に依存するのは `_cmd/aibow` だけです。`_cmd/aibow` は自分の `go.mod` を持つ別のモジュールにしてあり、
 ルートの `go.mod` は yzma・SQLite のドライバー・MCP の SDK・diff だけに依存します。`go.work` は「この2つのモジュールを一緒に扱う」という Go のワークスペースの設定で、

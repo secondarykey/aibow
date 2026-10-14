@@ -5,6 +5,7 @@ go 1.27.0
 require (
 	github.com/secondarykey/aibow v0.0.0
 	github.com/wailsapp/wails/v3 v3.0.0-beta.26
+	github.com/wenteasy/log v0.3.1
 )
 
 require (

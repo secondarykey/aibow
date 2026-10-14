@@ -22,12 +22,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"slices"
 	"strings"
 	"time"
 	"uuid"
 
+	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/tool"
 )
 
@@ -205,7 +205,7 @@ func (cs *Conversations) needsConfirm(set ConversationSettings, t tool.Tool) boo
 	}
 	_, confirmable := t.(tool.Confirmable)
 	if confirmable {
-		log.Printf("ツール %s は「確認しない」の扱いなので、聞かずに実行します", t.Def().Name)
+		log.Infof("ツール %s は「確認しない」の扱いなので、聞かずに実行します", t.Def().Name)
 	}
 	return false
 }
@@ -499,7 +499,7 @@ func (cs *Conversations) startRemote(ctx context.Context, conv Conversation, emi
 	}
 	started, errs := cs.remote.Start(ctx, set.WorkDir, cs.usableServers(set))
 	for _, err := range errs {
-		log.Printf("※ %v", err)
+		log.Warn(err.Error())
 		emit(ChatEvent{ConversationID: conv.ID, Type: "notice", Text: err.Error() + "(このサーバーのツールは使わずに続けます)"})
 	}
 	if len(started) > 0 {
@@ -513,7 +513,7 @@ func (cs *Conversations) startRemote(ctx context.Context, conv Conversation, emi
 func (cs *Conversations) rememberTools(set ConversationSettings, started []string) {
 	for _, server := range started {
 		if err := cs.prefs.setKnown(server, knownTools(cs.remote.Tools(set.WorkDir, []string{server}))); err != nil {
-			log.Printf("※ MCP のサーバー %s のツールの一覧を覚えられません: %v", server, err)
+			log.Warnf("MCP のサーバー %s のツールの一覧を覚えられません: %v", server, err)
 		}
 	}
 }
@@ -531,12 +531,12 @@ func (cs *Conversations) logRemoteTools(set ConversationSettings) {
 	before, err1 := cs.gen.CountTokens(Prompt{Tools: tool.Defs(local)})
 	after, err2 := cs.gen.CountTokens(Prompt{Tools: tool.Defs(all)})
 	if err := errors.Join(err1, err2); err != nil {
-		log.Printf("※ ツールの定義のトークン数を数えられません: %v", err)
+		log.Warnf("ツールの定義のトークン数を数えられません: %v", err)
 		return
 	}
-	log.Printf("ツール: 組み込み %d 個 + MCP %d 個。MCP のツールの定義で、プロンプトが約 %d トークン長くなります(ツールの定義の合計は約 %d トークン)",
+	log.Infof("ツール: 組み込み %d 個 + MCP %d 個。MCP のツールの定義で、プロンプトが約 %d トークン長くなります(ツールの定義の合計は約 %d トークン)",
 		len(local), len(all)-len(local), after-before, after)
 	if len(skipped) > 0 {
-		log.Printf("※ MCP のツールのうち、組み込みのツールと名前が重なる %s は出しません", strings.Join(skipped, ", "))
+		log.Warnf("MCP のツールのうち、組み込みのツールと名前が重なる %s は出しません", strings.Join(skipped, ", "))
 	}
 }

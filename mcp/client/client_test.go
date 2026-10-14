@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -15,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/tool"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -72,16 +74,31 @@ func newTestServer() *mcp.Server {
 	return s
 }
 
-// logs は Manager のログを集める。
+// logs は、このパッケージが aibow/log に出したログのメッセージを集める slog のハンドラ。
 type logs struct {
 	mu    sync.Mutex
 	lines []string
 }
 
-func (l *logs) logf(format string, args ...any) {
+// captureLogs は、テストのあいだだけログの出し先を logs にする(終わったら slog.Default() に戻す)。
+// 出し先はパッケージ全体で1つなので、t.Parallel のテストでは使えない。
+func captureLogs(t *testing.T) *logs {
+	t.Helper()
+	l := &logs{}
+	log.SetLogger(slog.New(l))
+	t.Cleanup(func() { log.SetLogger(nil) })
+	return l
+}
+
+func (l *logs) Enabled(context.Context, slog.Level) bool { return true }
+func (l *logs) WithAttrs([]slog.Attr) slog.Handler       { return l }
+func (l *logs) WithGroup(string) slog.Handler            { return l }
+
+func (l *logs) Handle(_ context.Context, r slog.Record) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.lines = append(l.lines, fmt.Sprintf(format, args...))
+	l.lines = append(l.lines, r.Message)
+	return nil
 }
 
 func (l *logs) contains(s string) bool {
@@ -94,8 +111,8 @@ func (l *logs) contains(s string) bool {
 // sessions に、サーバーの側のつながりが起動した順に入る(落ちたことにするときに閉じる)。
 func memoryManager(t *testing.T, configs map[string]ServerConfig) (*Manager, *logs, *[]*mcp.ServerSession) {
 	t.Helper()
-	l := &logs{}
-	m := New(configs, Options{Version: "test", Logf: l.logf})
+	l := captureLogs(t)
+	m := New(configs, Options{Version: "test"})
 	var sessions []*mcp.ServerSession
 	m.transport = func(string, ServerConfig, string, io.Writer) (mcp.Transport, error) {
 		ct, st := mcp.NewInMemoryTransports()
@@ -189,9 +206,10 @@ func TestListTools(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	captureLogs(t) // ログは見ないが、テストの出力に混ぜない
 	m := New(map[string]ServerConfig{
 		"self": {Command: exe, Args: []string{"--dir=" + workDirVar}, Env: map[string]string{"AIBOW_MCP_TEST_SERVER": "1"}},
-	}, Options{Logf: (&logs{}).logf})
+	}, Options{})
 	defer m.Close()
 
 	tools, err := m.ListTools(context.Background(), "self")
@@ -281,10 +299,10 @@ func TestRestartAfterServerDies(t *testing.T) {
 
 // 起動できないサーバーはエラーを返し、ほかのサーバーは起動する
 func TestStartError(t *testing.T) {
-	l := &logs{}
+	captureLogs(t) // ログは見ないが、テストの出力に混ぜない
 	m := New(map[string]ServerConfig{
 		"missing": {Command: filepath.Join(t.TempDir(), "no-such-server")},
-	}, Options{Logf: l.logf})
+	}, Options{})
 	defer m.Close()
 	started, errs := m.Start(context.Background(), "", m.Servers())
 	if len(started) != 0 || len(errs) != 1 || !strings.Contains(errs[0].Error(), "MCP のサーバー missing を起動できません") {
@@ -298,10 +316,11 @@ func TestStartFailureReason(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	captureLogs(t) // ログは見ないが、テストの出力に混ぜない
 	m := New(map[string]ServerConfig{
 		"broken": {Command: exe, Env: map[string]string{"AIBOW_MCP_TEST_SERVER": "fail"}},
 		"slow":   {Command: exe, Env: map[string]string{"AIBOW_MCP_TEST_SERVER": "hang"}, StartupTimeout: 1},
-	}, Options{Logf: (&logs{}).logf})
+	}, Options{})
 	defer m.Close()
 
 	begin := time.Now()
@@ -329,10 +348,10 @@ func TestCommandServer(t *testing.T) {
 		t.Fatal(err)
 	}
 	dir := t.TempDir()
-	l := &logs{}
+	l := captureLogs(t)
 	m := New(map[string]ServerConfig{
 		"self": {Command: exe, Args: []string{"--dir=" + workDirVar}, Env: map[string]string{"AIBOW_MCP_TEST_SERVER": "1"}},
-	}, Options{Version: "test", Logf: l.logf})
+	}, Options{Version: "test"})
 
 	if _, errs := m.Start(context.Background(), dir, m.Servers()); len(errs) != 0 {
 		t.Fatal(errs)
@@ -432,10 +451,10 @@ func TestHTTPServer(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	l := &logs{}
+	l := captureLogs(t)
 	m := New(map[string]ServerConfig{
 		"intra": {URL: srv.URL, Headers: map[string]string{"Authorization": "Bearer secret"}},
-	}, Options{Version: "test", Logf: l.logf})
+	}, Options{Version: "test"})
 	defer m.Close()
 
 	ctx := context.Background()
@@ -509,8 +528,8 @@ func TestResultText(t *testing.T) {
 }
 
 func TestLineLogger(t *testing.T) {
-	l := &logs{}
-	w := &lineLogger{logf: l.logf, prefix: "MCP x "}
+	l := captureLogs(t)
+	w := &lineLogger{prefix: "MCP x "}
 	fmt.Fprint(w, "write: {\"a\":1}\nread: {\"b\"")
 	fmt.Fprint(w, ":2}\r\n\nplain\n")
 	want := []string{`MCP x → {"a":1}`, `MCP x ← {"b":2}`, "MCP x plain"}

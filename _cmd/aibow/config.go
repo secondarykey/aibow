@@ -5,12 +5,13 @@ package main
 import (
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strconv"
 
 	"github.com/secondarykey/aibow"
+
+	"github.com/wenteasy/log"
 )
 
 // 設定の誤りはログで止めず、まとめて error で返す。
@@ -168,7 +169,7 @@ func pickInitialModel(cfg appConfig, app aibow.AppSettings, models []aibow.Model
 			return m, nil
 		}
 		// 消したモデルなどで見つからなくても、一覧の先頭で起動する
-		log.Printf("※ 最後に使ったモデルが見つかりません(%v)。一覧の先頭を使います", err)
+		log.Warnf("最後に使ったモデルが見つかりません(%v)。一覧の先頭を使います", err)
 	}
 	if len(models) == 0 {
 		return aibow.ModelEntry{}, fmt.Errorf("モデルが1つも見つかりません。models フォルダに GGUF を置くか、ollama pull してください")

@@ -18,7 +18,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -29,6 +28,7 @@ import (
 	"github.com/secondarykey/aibow/mcp/client"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
+	"github.com/wenteasy/log"
 )
 
 type ChatService struct {
@@ -160,22 +160,22 @@ func (s *ChatService) SwitchModel(id string) (*aibow.ModelInfo, error) {
 
 // loadModel はモデルを読み込み、成功したら「最後に使ったモデル」として保存する(次の起動で読み込む)。
 func (s *ChatService) loadModel(m aibow.ModelEntry) (*aibow.ModelInfo, error) {
-	log.Printf("モデルを読み込み中: %s (%s)", m.Name, m.Path)
+	log.Infof("モデルを読み込み中: %s (%s)", m.Name, m.Path)
 	i, err := s.engine.LoadModel(m)
 	if err != nil {
-		log.Printf("※ %v", err)
+		log.Error(err.Error())
 		return nil, err
 	}
 	logModel("読み込み完了", i)
 	if i.Format == "" {
-		log.Printf("※ このモデルの書式(種類: %s)には未対応です。送信するとエラーになります", i.Arch)
+		log.Warnf("このモデルの書式(種類: %s)には未対応です。送信するとエラーになります", i.Arch)
 	}
 	s.saveAppSetting(aibow.SettingLastModel, m.ID, func(a *aibow.AppSettings) { a.Workspace.Model = m.ID })
 	return i, nil
 }
 
 func logModel(what string, i *aibow.ModelInfo) {
-	log.Printf("%s (%.1f 秒): %s / %.2fB パラメータ / %.2f GB / %d 層 / GPU に載せる層: %d / 作業領域: %d トークン / 書式: %s",
+	log.Infof("%s (%.1f 秒): %s / %.2fB パラメータ / %.2f GB / %d 層 / GPU に載せる層: %d / 作業領域: %d トークン / 書式: %s",
 		what, i.LoadSec, i.Desc, i.ParamsB, i.SizeGB, i.Layers, i.GPULayers, i.NCtx, cmp.Or(i.Format, "未対応("+i.Arch+")"))
 }
 
@@ -206,11 +206,11 @@ func (s *ChatService) SetLimits(history, reply int) (*aibow.ModelInfo, error) {
 	w := aibow.WorkspaceSettings{HistoryTokens: history, ReplyTokens: reply}
 	i, err := s.engine.SetContextSize(w.ContextSize())
 	if err != nil {
-		log.Printf("※ %v", err)
+		log.Error(err.Error())
 		return nil, err
 	}
 	s.convs.SetLimits(history, reply)
-	log.Printf("会話の上限 %d + 返事の上限 %d = 作業領域 %d トークンにしました(モデルは読み直していません)",
+	log.Infof("会話の上限 %d + 返事の上限 %d = 作業領域 %d トークンにしました(モデルは読み直していません)",
 		history, reply, w.ContextSize())
 	s.saveAppSetting(aibow.SettingHistoryTokens, history, func(a *aibow.AppSettings) { a.Workspace.HistoryTokens = history })
 	s.saveAppSetting(aibow.SettingReplyTokens, reply, func(a *aibow.AppSettings) { a.Workspace.ReplyTokens = reply })
@@ -225,7 +225,7 @@ func (s *ChatService) SetGPULayers(n int) (*aibow.ModelInfo, error) {
 	}
 	i, err := s.engine.SetGPULayers(n)
 	if err != nil {
-		log.Printf("※ %v", err)
+		log.Error(err.Error())
 		return nil, err
 	}
 	if i != nil {
@@ -250,7 +250,7 @@ func (s *ChatService) saveAppSetting(key string, v any, apply func(*aibow.AppSet
 	defer s.appMu.Unlock()
 	apply(&s.app)
 	if err := aibow.SaveAppSetting(s.store, key, v); err != nil {
-		log.Printf("※ %v", err)
+		log.Error(err.Error())
 	}
 }
 
@@ -302,7 +302,7 @@ func (s *ChatService) SetToolPolicy(name string, policy aibow.ToolPolicy) error 
 	if err := s.prefs.SetToolPolicy(name, policy); err != nil {
 		return err
 	}
-	log.Printf("ツール %s の扱いの PC の既定: %s", name, policyLabel(policy))
+	log.Infof("ツール %s の扱いの PC の既定: %s", name, policyLabel(policy))
 	return nil
 }
 
@@ -316,7 +316,7 @@ func (s *ChatService) SetGroupDefault(group string, on bool) error {
 	if name == "" {
 		name = "組み込み"
 	}
-	log.Printf("ツールのグループ %s を新しい会話で最初から選ぶ: %v", name, on)
+	log.Infof("ツールのグループ %s を新しい会話で最初から選ぶ: %v", name, on)
 	return nil
 }
 
@@ -509,20 +509,20 @@ func (s *ChatService) run(ctx context.Context, id uuid.UUID, f func(ctx context.
 	f(ctx, func(ev aibow.ChatEvent) {
 		switch ev.Type {
 		case "summarizing":
-			log.Printf("要約を作っています…")
+			log.Infof("要約を作っています…")
 		case "compact":
 			logCompact(ev.Compact)
 		case "error":
-			log.Printf("エラー: %s", ev.Error)
+			log.Error(ev.Error)
 		case "confirm":
 			if c := ev.Confirm; c != nil {
-				log.Printf("確認を待っています: %s %s(%s)", c.Call.Name, c.Preview.Path, c.Preview.Note)
+				log.Infof("確認を待っています: %s %s(%s)", c.Call.Name, c.Preview.Path, c.Preview.Note)
 			}
 		case "reply":
 			// ツールを使うと1回の送信で何回も生成する。回ごとに出すと、KV キャッシュの再利用数の変化が見える
 			if r := ev.Reply; r != nil && r.Stats != nil {
 				st := r.Stats
-				log.Printf("プロンプト %d トークン(再利用 %d)%.2f 秒 / 生成 %d トークン %.2f 秒(%.1f tok/s)/ 終了理由: %s / ツール呼び出し %d 件",
+				log.Infof("プロンプト %d トークン(再利用 %d)%.2f 秒 / 生成 %d トークン %.2f 秒(%.1f tok/s)/ 終了理由: %s / ツール呼び出し %d 件",
 					st.PromptTokens, st.ReusedTokens, st.PromptSec, st.GenTokens, st.GenSec, tokPerSec(st.GenerateStats), st.StopReason, len(r.ToolCalls))
 			}
 		case "tool_result":
@@ -554,17 +554,17 @@ func logTool(m *aibow.StoredMessage) {
 	if r.Error {
 		status = m.Content
 	}
-	log.Printf("ツール %s(%s): 結果 %d 文字 / %.3f 秒 / %s", cmp.Or(r.Call.Name, "?"), strings.Join(args, ", "),
+	log.Infof("ツール %s(%s): 結果 %d 文字 / %.3f 秒 / %s", cmp.Or(r.Call.Name, "?"), strings.Join(args, ", "),
 		utf8.RuneCountInString(m.Content), r.Sec, status)
 	if c := r.Confirm; c != nil {
 		if c.Approved {
-			log.Printf("  確認: 実行した")
+			log.Infof("  確認: 実行した")
 		} else {
-			log.Printf("  確認: 拒否した(理由: %q)", c.Reason)
+			log.Infof("  確認: 拒否した(理由: %q)", c.Reason)
 		}
 	}
 	if r.Call.Raw != "" {
-		log.Printf("  モデルが書いた呼び出し: %q", r.Call.Raw)
+		log.Infof("  モデルが書いた呼び出し: %q", r.Call.Raw)
 	}
 }
 
@@ -572,15 +572,15 @@ func logTool(m *aibow.StoredMessage) {
 func logCompact(c *aibow.CompactInfo) {
 	switch c.Method {
 	case aibow.CompactTruncate:
-		log.Printf("compact(truncate): %d → %d トークン(古い発言 %d 件をモデルに渡しません)",
+		log.Infof("compact(truncate): %d → %d トークン(古い発言 %d 件をモデルに渡しません)",
 			c.BeforeTokens, c.AfterTokens, c.Dropped)
 	case aibow.CompactSummary:
 		if c.Error != "" {
-			log.Printf("※ compact(summary): %s", c.Error)
+			log.Warnf("compact(summary): %s", c.Error)
 			return
 		}
 		st := c.Compaction.Stats
-		log.Printf("compact(summary): %d → %d トークン(発言 %d 件を要約)/ 要約: 読ませた %d トークン(再利用 %d)・生成 %d トークン / %.1f 秒",
+		log.Infof("compact(summary): %d → %d トークン(発言 %d 件を要約)/ 要約: 読ませた %d トークン(再利用 %d)・生成 %d トークン / %.1f 秒",
 			c.BeforeTokens, c.AfterTokens, c.Dropped, st.PromptTokens, st.ReusedTokens, st.GenTokens, c.Sec)
 	}
 }

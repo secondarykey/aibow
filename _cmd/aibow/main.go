@@ -23,8 +23,9 @@ package main
 import (
 	"embed"
 	"io/fs"
-	"log"
+	"log/slog"
 	"maps"
+	"os"
 	"slices"
 	"strings"
 
@@ -34,6 +35,7 @@ import (
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
+	"github.com/wenteasy/log"
 )
 
 // windowFocusEventName は、ウィンドウがアクティブに戻ったことを画面に知らせるイベントの名前。
@@ -58,6 +60,8 @@ func init() {
 }
 
 func main() {
+	setupLog()
+
 	// 起動に失敗しても(lib が無いなど)ウィンドウは出し、理由を画面に表示する。
 	// リリース版(wails3 build)はコンソールが無く、ログだけでは何も見えずに終わってしまうため。
 	cfg, err := loadConfig()
@@ -70,7 +74,7 @@ func main() {
 		prefs = loadToolPrefs(&cfg)
 	}
 	for _, n := range cfg.notices {
-		log.Printf("※ %s", n)
+		log.Warn(n)
 	}
 	var st *store.SQLite
 	var settings aibow.AppSettings
@@ -84,7 +88,7 @@ func main() {
 		engine, initial, err = startEngine(cfg, settings)
 	}
 	if err != nil {
-		log.Printf("※ 起動できません: %v", err)
+		log.Errorf("起動できません: %v", err)
 	} else {
 		defer engine.Close()
 	}
@@ -124,11 +128,22 @@ func main() {
 		app.Event.Emit(windowFocusEventName)
 	})
 
-	log.Printf("aibow %s 起動", appVersion())
+	log.Infof("aibow %s 起動", appVersion())
 	// Run はウィンドウが閉じられるまで返らない。返ったら defer で VRAM を解放する。
 	if err := app.Run(); err != nil {
-		log.Fatal(err)
+		log.Error(err.Error())
+		os.Exit(1)
 	}
+}
+
+// setupLog はログの出口を決める。
+//
+// 出口は slog の既定(slog.SetDefault)にする。ライブラリの aibow(aibow/log)は、SetLogger を呼ばなければ
+// slog.Default() に書くので、アプリのログ(wenteasy/log の Info など)と同じところに集まる。
+// 書式は wenteasy/log の SimpleHandler(1件1行: 2026-10-14T16:00:00+09:00 [INFO  ] メッセージ)。
+// 出し先は今までの標準の log と同じ標準エラー出力(リリース版は見えない。ファイルに書くのはログの仕組みの次の段階)。
+func setupLog() {
+	slog.SetDefault(slog.New(log.NewSimpleHandler(os.Stderr, log.LevelInfo)))
 }
 
 // startMCP は設定ファイル(settings.json)を読み、MCP のサーバーの係(client.Manager)を作る。
@@ -141,11 +156,11 @@ func startMCP(cfg *appConfig) *client.Manager {
 		return nil
 	}
 	if len(sf.MCPServers) == 0 {
-		log.Printf("MCP のサーバー: なし(設定ファイル: %s)", absPath(cfg.settingsPath))
+		log.Infof("MCP のサーバー: なし(設定ファイル: %s)", absPath(cfg.settingsPath))
 		return nil
 	}
 	names := slices.Sorted(maps.Keys(sf.MCPServers))
-	log.Printf("MCP のサーバー: %s(設定ファイル: %s。要る最初の送信で起動します)", strings.Join(names, ", "), absPath(cfg.settingsPath))
+	log.Infof("MCP のサーバー: %s(設定ファイル: %s。要る最初の送信で起動します)", strings.Join(names, ", "), absPath(cfg.settingsPath))
 	return client.New(sf.MCPServers, client.Options{Version: appVersion()})
 }
 
@@ -165,17 +180,17 @@ func openStore(cfg appConfig) (*store.SQLite, aibow.AppSettings, error) {
 	if err != nil {
 		return nil, cfg.app, err
 	}
-	log.Printf("会話の保存先: %s", absPath(cfg.dbPath))
+	log.Infof("会話の保存先: %s", absPath(cfg.dbPath))
 	app, notes, err := aibow.LoadAppSettings(st, cfg.app)
 	if err != nil {
 		st.Close()
 		return nil, cfg.app, err
 	}
 	for _, n := range notes {
-		log.Printf("%s", n)
+		log.Info(n)
 	}
 	w := app.Workspace
-	log.Printf("会話の上限 %d + 返事の上限 %d = 作業領域 %d トークン", w.HistoryTokens, w.ReplyTokens, w.ContextSize())
+	log.Infof("会話の上限 %d + 返事の上限 %d = 作業領域 %d トークン", w.HistoryTokens, w.ReplyTokens, w.ContextSize())
 	return st, app, nil
 }
 
@@ -190,23 +205,23 @@ func startEngine(cfg appConfig, app aibow.AppSettings) (*aibow.Engine, *aibow.Mo
 		return nil, nil, err
 	}
 	for _, d := range engine.Devices {
-		log.Printf("計算装置: %s", d)
+		log.Infof("計算装置: %s", d)
 	}
 	if !engine.HasGPU {
-		log.Printf("※ GPU が見つかりません。CPU だけで計算するので遅くなります(README の「llama.cpp の取得」を確認)")
+		log.Warn("GPU が見つかりません。CPU だけで計算するので遅くなります(README の「llama.cpp の取得」を確認)")
 	}
 
 	// 使えるモデルの一覧
 	models := cfg.catalog.List()
-	log.Printf("モデルの置き場所: %s / Ollama: %s", absPath(cfg.catalog.ModelsDir), absPath(cfg.catalog.OllamaDir))
+	log.Infof("モデルの置き場所: %s / Ollama: %s", absPath(cfg.catalog.ModelsDir), absPath(cfg.catalog.OllamaDir))
 	for _, m := range models {
-		log.Printf("  %-8s %-40s %.1f GB", m.Source, m.Name, m.SizeGB)
+		log.Infof("  %-8s %-40s %.1f GB", m.Source, m.Name, m.SizeGB)
 	}
 
 	// 起動時のモデル。見つからなくても起動はして、画面で選べるようにする。
 	m, err := pickInitialModel(cfg, app, models)
 	if err != nil {
-		log.Printf("※ %v", err)
+		log.Warn(err.Error())
 		return engine, nil, nil
 	}
 	return engine, &m, nil
