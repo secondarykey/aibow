@@ -13,10 +13,10 @@
 ## どこに出るか
 
 - **アプリ(`_cmd/aibow`)**: `main` の最初に `startLog` が `log.Init` を呼ぶ。`slog.Default()` が wenteasy/log の `SimpleHandler`
-  (Info 以上)になり、aibow のログもアプリのログも、Wails 自身のログもそこに出る(`main.go` が `application.Options.Logger` に `slog.Default()` を渡す。WebView2 の行は標準の log で来るが、`slog.SetDefault` のあとは同じ出口に流れる)
+  (`Options.Root` 以上。dev は Info、exe は Notice)になり、aibow のログもアプリのログも、Wails 自身のログもそこに出る(`main.go` が `application.Options.Logger` に `slog.Default()` を渡す。WebView2 の行は標準の log で来るが、`slog.SetDefault` のあとは同じ出口に流れる。標準の log はレベルを持たないので、`Init` が `slog.SetLogLoggerLevel(Root)` で出すレベルに合わせ、exe でも捨てない)
   - `wails3 dev`(`isDev`): ターミナル(標準エラー出力)。`AIBOW_LOG_DIR` を指定したときだけファイルにも
   - exe(`wails3 build`): ファイル `%APPDATA%\aibow\logs\aibow_<日付>.log`(wenteasy/log の `RollingFileWriter`。日ごと。`AIBOW_LOG_DIR` で変えられる)。
-    exe(`-H windowsgui`)には標準エラー出力の行き先が無く、ファイルにしか残らないため。起動時に古いファイルを消し、今日を含めて 10 日分を残す(`Options.KeepDays`。日付はファイル名から読む。`aibow_<日付>.log` の形でないファイルは消さない)
+    exe(`-H windowsgui`)には標準エラー出力の行き先が無く、ファイルにしか残らないため。**Notice 以上だけ**を書く(常に残したいもの。生成の統計などの Info は wails3 dev で見る)。起動時に古いファイルを消し、今日を含めて 10 日分を残す(`Options.KeepDays`。日付はファイル名から読む。`aibow_<日付>.log` の形でないファイルは消さない)
 - **aibow をライブラリとして使う人**: `Init` は呼ばなくてよい。aibow のログは `slog.Default()` に出るので、
   自分の `slog.SetDefault` の出口に集まる。aibow のログだけ別にしたいときは `log.SetLogger(l)`
 
@@ -37,4 +37,4 @@
 
 `log_test.go` —— 出す関数とレベルの足切り・**記録される位置が呼んだ側になること**(ここの関数を通しても位置がずれない歯止め)・
 `SetLogger` をしなければ `slog.Default()` に出ること・`Init` が `slog.Default()` を向け、Notice などが名前で出ること・
-ファイルに書くこと・フォルダを作れなくても止まらないこと・古いファイルを消して決めた日数を残すこと(名前の形が違うファイルは消さない)。
+ファイルに書くこと・フォルダを作れなくても止まらないこと・古いファイルを消して決めた日数を残すこと(名前の形が違うファイルは消さない)・`Root` より下を出さず、標準の log の行は捨てないこと。

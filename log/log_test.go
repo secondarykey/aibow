@@ -3,6 +3,7 @@ package log
 import (
 	"bytes"
 	"io"
+	stdlog "log"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -109,7 +110,10 @@ func keepDefault(t *testing.T) {
 	t.Helper()
 	old := slog.Default()
 	SetLogger(nil)
-	t.Cleanup(func() { slog.SetDefault(old) })
+	t.Cleanup(func() {
+		slog.SetDefault(old)
+		slog.SetLogLoggerLevel(slog.LevelInfo)
+	})
 }
 
 // Init(Dir)は、Dir の aibow_<日付>.log に書く(リリース版の exe はここにしか残らない)
@@ -201,5 +205,29 @@ func TestInitKeepDays(t *testing.T) {
 	c.Close()
 	if _, err := os.Stat(old); !os.IsNotExist(err) {
 		t.Errorf("古いファイルが残っている: %v", err)
+	}
+}
+
+// Init(Root)は、そのレベルより下を出さない(exe は Notice)
+func TestInitRoot(t *testing.T) {
+	keepDefault(t)
+	dir := t.TempDir()
+	c, err := Init(Options{Dir: dir, Root: LevelNotice})
+	if err != nil {
+		t.Fatal(err)
+	}
+	Info("Info は出ない")
+	Notice("Notice は出る")
+	Warn("Warn も出る")
+	stdlog.Printf("[WebView2] 標準の log は捨てない")
+	c.Close()
+	b, err := os.ReadFile(FilePath(dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(b)
+	if strings.Contains(got, "出ない") || !strings.Contains(got, "[NOTICE] Notice は出る") || !strings.Contains(got, "[WARN  ] Warn も出る") ||
+		!strings.Contains(got, "[NOTICE] [WebView2] 標準の log は捨てない") {
+		t.Errorf("Notice 以上だけ:\n%s", got)
 	}
 }
