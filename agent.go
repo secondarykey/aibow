@@ -205,7 +205,7 @@ func (cs *Conversations) needsConfirm(set ConversationSettings, t tool.Tool) boo
 	}
 	_, confirmable := t.(tool.Confirmable)
 	if confirmable {
-		log.Infof("ツール %s は「確認しない」の扱いなので、聞かずに実行します", t.Def().Name)
+		log.Noticef("ツール %s は「確認しない」の扱いなので、聞かずに実行します", t.Def().Name)
 	}
 	return false
 }

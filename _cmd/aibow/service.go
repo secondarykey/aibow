@@ -175,7 +175,7 @@ func (s *ChatService) loadModel(m aibow.ModelEntry) (*aibow.ModelInfo, error) {
 }
 
 func logModel(what string, i *aibow.ModelInfo) {
-	log.Infof("%s (%.1f 秒): %s / %.2fB パラメータ / %.2f GB / %d 層 / GPU に載せる層: %d / 作業領域: %d トークン / 書式: %s",
+	log.Noticef("%s (%.1f 秒): %s / %.2fB パラメータ / %.2f GB / %d 層 / GPU に載せる層: %d / 作業領域: %d トークン / 書式: %s",
 		what, i.LoadSec, i.Desc, i.ParamsB, i.SizeGB, i.Layers, i.GPULayers, i.NCtx, cmp.Or(i.Format, "未対応("+i.Arch+")"))
 }
 
@@ -210,7 +210,7 @@ func (s *ChatService) SetLimits(history, reply int) (*aibow.ModelInfo, error) {
 		return nil, err
 	}
 	s.convs.SetLimits(history, reply)
-	log.Infof("会話の上限 %d + 返事の上限 %d = 作業領域 %d トークンにしました(モデルは読み直していません)",
+	log.Noticef("会話の上限 %d + 返事の上限 %d = 作業領域 %d トークンにしました(モデルは読み直していません)",
 		history, reply, w.ContextSize())
 	s.saveAppSetting(aibow.SettingHistoryTokens, history, func(a *aibow.AppSettings) { a.Workspace.HistoryTokens = history })
 	s.saveAppSetting(aibow.SettingReplyTokens, reply, func(a *aibow.AppSettings) { a.Workspace.ReplyTokens = reply })
@@ -302,7 +302,7 @@ func (s *ChatService) SetToolPolicy(name string, policy aibow.ToolPolicy) error 
 	if err := s.prefs.SetToolPolicy(name, policy); err != nil {
 		return err
 	}
-	log.Infof("ツール %s の扱いの PC の既定: %s", name, policyLabel(policy))
+	log.Noticef("ツール %s の扱いの PC の既定: %s", name, policyLabel(policy))
 	return nil
 }
 
@@ -316,7 +316,7 @@ func (s *ChatService) SetGroupDefault(group string, on bool) error {
 	if name == "" {
 		name = "組み込み"
 	}
-	log.Infof("ツールのグループ %s を新しい会話で最初から選ぶ: %v", name, on)
+	log.Noticef("ツールのグループ %s を新しい会話で最初から選ぶ: %v", name, on)
 	return nil
 }
 

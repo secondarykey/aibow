@@ -385,7 +385,7 @@ func (m *Manager) connect(ctx context.Context, k serverKey, cfg ServerConfig) (*
 			info = r.ServerInfo.Name + " " + r.ServerInfo.Version
 		}
 	}
-	log.Infof("MCP %s: つながりました(%.1f 秒。MCP の版 %s・サーバー %s・ツール %d 個: %s)",
+	log.Noticef("MCP %s: つながりました(%.1f 秒。MCP の版 %s・サーバー %s・ツール %d 個: %s)",
 		k.name, time.Since(begin).Seconds(), ver, info, len(tools), tool.Names(tools))
 
 	return s, nil

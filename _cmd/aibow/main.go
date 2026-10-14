@@ -139,7 +139,7 @@ func main() {
 		app.Event.Emit(windowFocusEventName)
 	})
 
-	log.Infof("aibow %s 起動", appVersion())
+	log.Noticef("aibow %s 起動", appVersion())
 	// Run はウィンドウが閉じられるまで返らない。返ったら defer で VRAM を解放する。
 	if err := app.Run(); err != nil {
 		log.Error(err.Error())
@@ -165,7 +165,7 @@ func startLog() (io.Closer, error) {
 	}
 	c, err := log.Init(log.Options{Dir: dir, Console: isDev})
 	if err == nil && dir != "" {
-		log.Infof("ログの書き出し先: %s", absPath(log.FilePath(dir)))
+		log.Noticef("ログの書き出し先: %s", absPath(log.FilePath(dir)))
 	}
 	return c, err
 }
@@ -204,14 +204,14 @@ func openStore(cfg appConfig) (*store.SQLite, aibow.AppSettings, error) {
 	if err != nil {
 		return nil, cfg.app, err
 	}
-	log.Infof("会話の保存先: %s", absPath(cfg.dbPath))
+	log.Noticef("会話の保存先: %s", absPath(cfg.dbPath))
 	app, notes, err := aibow.LoadAppSettings(st, cfg.app)
 	if err != nil {
 		st.Close()
 		return nil, cfg.app, err
 	}
 	for _, n := range notes {
-		log.Info(n)
+		log.Notice(n)
 	}
 	w := app.Workspace
 	log.Infof("会話の上限 %d + 返事の上限 %d = 作業領域 %d トークン", w.HistoryTokens, w.ReplyTokens, w.ContextSize())
@@ -229,7 +229,7 @@ func startEngine(cfg appConfig, app aibow.AppSettings) (*aibow.Engine, *aibow.Mo
 		return nil, nil, err
 	}
 	for _, d := range engine.Devices {
-		log.Infof("計算装置: %s", d)
+		log.Noticef("計算装置: %s", d)
 	}
 	if !engine.HasGPU {
 		log.Warn("GPU が見つかりません。CPU だけで計算するので遅くなります(README の「llama.cpp の取得」を確認)")
