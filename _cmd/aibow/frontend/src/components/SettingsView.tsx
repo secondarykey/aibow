@@ -1,30 +1,26 @@
-// 設定の画面: この会話の設定 / アプリ全体の設定 / ツール / モデルに渡した文字列
+// 設定の画面: 新しい会話の既定 / アプリ全体の設定 / ツール
 //
 // 会話の一覧の下の「設定」で開き、チャットの代わりに会話の場所に出す(別の画面として扱う)。
 // 「会話に戻る」か、一覧で会話を選ぶ・「+ 新規」を押すと閉じる。
+// 開いている会話だけの設定は、一覧の各行の歯車で開く会話の設定の画面(ConversationSettingsView)で変える。
+// 新しい会話はここの既定の写しから始まる(_docs/features/0009-conversation-settings.md)。
 import { useEffect, useState } from "react";
 import { LuArrowLeft } from "react-icons/lu";
 import type { AppSettings, ConversationSettings, WorkspaceSettings } from "../../bindings/github.com/secondarykey/aibow";
 import { ToolSettings } from "./ToolSettings";
+import { ConversationSettingsForm } from "./ConversationSettingsForm";
 
 interface Props {
-  settings: ConversationSettings | null; // 開いている会話の設定(新しい会話の画面では、これから作る会話の設定)
-  conversationTitle: string | null;      // 開いている会話の名前。新しい会話の画面なら null
-  onClose(): void;                       // 会話に戻る
+  onClose(): void;                        // 会話に戻る
   errors: { id: number; text: string }[]; // 設定の画面を開いてから出たエラー(ふだんは会話の表示に出るもの)
-  onChange(patch: Partial<ConversationSettings>): void;
-  onMakeDefault(): void;
   app: AppSettings | null;
+  onDefaultsChange(patch: Partial<ConversationSettings>): void; // 新しい会話の既定を変える
   appDisabled: boolean; // 生成中・読み込み中は変えられない(エンジンが1つのため)
   onApplyApp(w: WorkspaceSettings): void;
-  lastPrompt: string;
   onToolsChanged(): void; // ツールを使う / 使わないを変えた(メーターと、会話で選べる MCP のサーバーを読み直す)
 }
 
-export function SettingsView({
-  settings, conversationTitle, onClose, errors, onChange, onMakeDefault, app, appDisabled, onApplyApp, lastPrompt,
-  onToolsChanged,
-}: Props) {
+export function SettingsView({ onClose, errors, app, onDefaultsChange, appDisabled, onApplyApp, onToolsChanged }: Props) {
   return (
     <section className="settings-view">
       <div className="settings-inner">
@@ -34,93 +30,18 @@ export function SettingsView({
         </div>
         {errors.map(e => <div key={e.id} className="msg error">{e.text}</div>)}
 
-        <h2>
-          {conversationTitle === null ? "新しい会話の設定" : "この会話の設定"}
-          {conversationTitle && <span className="settings-target">{conversationTitle}</span>}
-        </h2>
-        {conversationTitle === null && <p className="hint">これから作る会話の設定です。最初に送信したときに、この設定で会話を作ります。</p>}
-        {settings && <ConversationSettingsForm settings={settings} onChange={onChange} onMakeDefault={onMakeDefault} />}
+        <h2 title="新しい会話は、この設定の写しから始まる。今ある会話には効かない">新しい会話の既定</h2>
+        {app && <ConversationSettingsForm settings={app.defaults} onChange={onDefaultsChange} />}
 
         <h2 className="section">アプリ全体の設定</h2>
         {app && <AppSettingsForm app={app} disabled={appDisabled} onApply={onApplyApp} />}
 
         <h2 className="section" title="この PC で、ツールを使うかどうか(全部の会話に効く。tools.json に保存する)">ツール</h2>
         <ToolSettings onChanged={onToolsChanged} />
-
-        <h2 className="section">モデルに渡した文字列</h2>
-        <p className="hint">
-          モデルは会話を覚えていません。送信のたびに、これまでの会話をこの書式の1本の文字列にして読ませています
-          (会話の上限を超えたら、compact で収めたもの。要約があれば system の後ろに入ります)。
-          最後の <code>&lt;|im_start|&gt;assistant</code> の続きを書かせることで返事になります。
-        </p>
-        <pre className="last-prompt">{lastPrompt || "(まだ送信していません)"}</pre>
       </div>
     </section>
   );
 }
-
-function ConversationSettingsForm({ settings, onChange, onMakeDefault }: {
-  settings: ConversationSettings;
-  onChange(patch: Partial<ConversationSettings>): void;
-  onMakeDefault(): void;
-}) {
-  return (
-    <>
-      <label htmlFor="system">システムプロンプト</label>
-      <textarea id="system" rows={4} value={settings.system} onChange={e => onChange({ system: e.target.value })} />
-
-      <label htmlFor="compact" title="会話がアプリ全体の設定の「会話の上限」を超えたときに、モデルに渡す履歴をどう収めるか">
-        会話が長くなったら(compact)
-      </label>
-      <select id="compact" value={settings.compact} onChange={e => onChange({ compact: e.target.value })}>
-        <option value="summary">要約する(summary)</option>
-        <option value="truncate">古い発言を捨てる(truncate)</option>
-        <option value="none">何もしない(none)</option>
-      </select>
-      <p className="hint">{COMPACT_HINTS[settings.compact] ?? ""}</p>
-
-      <label htmlFor="temp">temperature: {settings.temperature.toFixed(1)}</label>
-      <input
-        id="temp"
-        type="range"
-        min={0}
-        max={1.5}
-        step={0.1}
-        value={settings.temperature}
-        onChange={e => onChange({ temperature: parseFloat(e.target.value) })}
-      />
-      <p className="hint">0 に近いほど毎回同じ答え、大きいほどランダムになります。</p>
-
-      <label htmlFor="presence" title="直近に生成した言葉の点数を下げる強さ。思考の中で同じことを繰り返すのを防ぐ(0 で無効)">
-        presence penalty: {settings.presence_penalty.toFixed(1)}
-      </label>
-      <input
-        id="presence"
-        type="range"
-        min={0}
-        max={2}
-        step={0.1}
-        value={settings.presence_penalty}
-        onChange={e => onChange({ presence_penalty: parseFloat(e.target.value) })}
-      />
-
-      <label className="check">
-        <input type="checkbox" checked={settings.think} onChange={e => onChange({ think: e.target.checked })} />
-        思考する
-      </label>
-      <p className="hint">オフにすると、プロンプトの最後に空の思考 <code>&lt;think&gt;&lt;/think&gt;</code> を入れて、すぐ答えさせます。</p>
-
-      <button className="make-default" onClick={onMakeDefault}>この設定を新しい会話の既定にする</button>
-    </>
-  );
-}
-
-// compact の方式ごとの説明(_docs/features/0002-compact.md)
-const COMPACT_HINTS: Record<string, string> = {
-  summary: "古い部分をモデル自身に要約させ、「要約 + 最近の発言」を渡します。要約を作る分だけ待ち時間がかかります。",
-  truncate: "古い発言から順に、モデルに渡すのをやめます(保存した発言は消えません)。渡さなかった内容はモデルには完全に消えます。",
-  none: "何もしません。会話の上限を超えたら、生成する前に止まります。",
-};
 
 function AppSettingsForm({ app, disabled, onApply }: {
   app: AppSettings;

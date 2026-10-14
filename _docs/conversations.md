@@ -37,6 +37,7 @@
   - `builtin_off`(この会話で組み込みのツールを使わない。入力欄の上の「この会話のツール」で外したとき)は新しい会話の既定に入れない(新しい会話では使う)
   - `tool_policies`(この会話だけのツールの扱いの上書き)は新しい会話の既定に入れない(`asDefaults` で外す)。知らない値は保存しない(`validate`)。仕組みは [mcp.md](mcp.md)
 - 新しい会話は `app_settings` の既定の写しから始まる(新しい会話の画面で写しを変えると、その設定で作る)
+- 画面では、既定は設定の画面の「新しい会話の既定」、会話ごとの設定は一覧の各行の歯車で開く会話の設定の画面で変える([features/0009-conversation-settings.md](features/0009-conversation-settings.md))
 - アプリ全体の設定(会話の上限・返事の上限・GPU の層数・最後に使ったモデル = `WorkspaceSettings`)も `app_settings`
 - 画面で変えられる設定(会話の上限・返事の上限・GPU の層数・presence penalty)の環境変数は「DB にまだ値が無いときの初期値」で、画面で変えたら DB の値が優先
 

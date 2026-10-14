@@ -356,8 +356,13 @@ nav.conversations.collapsed .settings.active { color: var(--accent); }
   flex: 1; min-width: 0; text-align: left; padding: 7px 8px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+/* 行の歯車(会話の設定)と削除は、マウスを乗せた行・開いている行にだけ出す。歯車は開いている間、色を付けて出したままにする */
 .conversation .delete { padding: 4px 8px; color: var(--muted); visibility: hidden; }
-.conversation:hover .delete, .conversation.current .delete { visibility: visible; }
+.conversation .conv-settings { display: flex; padding: 4px 2px; color: var(--muted); visibility: hidden; }
+.conversation:hover .delete, .conversation.current .delete,
+.conversation:hover .conv-settings, .conversation.current .conv-settings,
+.conversation .conv-settings.active { visibility: visible; }
+.conversation .conv-settings:hover:not(:disabled), .conversation .conv-settings.active { color: var(--accent); }
 .conversation .dot {
   display: inline-block; width: 7px; height: 7px; border-radius: 50%;
   background: var(--accent); margin-right: 6px; vertical-align: middle;
@@ -382,7 +387,7 @@ nav.conversations.collapsed .settings.active { color: var(--accent); }
 }
 .settings-inner { max-width: 720px; margin: 0 auto; padding: 16px 16px 32px; }
 .settings-header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
-.settings-header h1 { font-size: 16px; margin: 0; flex: 1; }
+.settings-header h1 { font-size: 16px; margin: 0; flex: 1; display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .settings-header .back { display: flex; align-items: center; gap: 6px; }
 .settings-view .msg.error { margin-bottom: 10px; }
 .settings-view h2 { font-size: 14px; margin: 8px 0 6px; display: flex; align-items: baseline; gap: 8px; min-width: 0; }

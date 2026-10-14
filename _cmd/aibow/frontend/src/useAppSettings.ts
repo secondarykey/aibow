@@ -3,7 +3,9 @@
 // 会話ごとの設定と違い、変えるとエンジンに手を入れる必要がある:
 //   会話の上限・返事の上限 … 合計の大きさで作業領域(KV キャッシュの置き場)だけ作り直す。モデルは読み直さない
 //   GPU の層数             … 層を GPU と CPU のどちらに置くかは読み込み時に決まるので、モデルを読み直す
-import { useCallback, useState } from "react";
+//
+// 新しい会話の既定(設定の画面の「新しい会話の既定」)は、会話の設定と同じく変えたらすぐ保存する。今ある会話には効かない。
+import { useCallback, useRef, useState } from "react";
 import { ChatService } from "../bindings/github.com/secondarykey/aibow/_cmd/aibow";
 import type { AppSettings, ConversationSettings, WorkspaceSettings } from "../bindings/github.com/secondarykey/aibow";
 import type { Transcript } from "./transcript";
@@ -15,8 +17,12 @@ export interface AppSettingsState {
   settings: AppSettings | null;
   reload(): Promise<void>;
   apply(w: WorkspaceSettings): Promise<void>;
-  setDefaults(s: ConversationSettings): Promise<void>;
+  setDefaults(s: ConversationSettings): Promise<void>;           // 会話の設定を丸ごと既定にする(会話の設定の画面のボタン)
+  updateDefaults(patch: Partial<ConversationSettings>): void; // 既定の一部を変える(設定の画面の「新しい会話の既定」)
 }
+
+// 既定を変えてから Go に保存するまで待つ時間(useConversations の SAVE_DELAY_MS と同じ理由。1文字ごとに送らない)
+const SAVE_DELAY_MS = 400;
 
 export function useAppSettings(
   n: Notifier,
@@ -26,11 +32,18 @@ export function useAppSettings(
 ): AppSettingsState {
   const { notify, dismissKey } = n;
   const { addError } = t;
-  const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [settings, setSettingsState] = useState<AppSettings | null>(null);
+  // 既定の変更をまとめるときに、最新の設定を読むための ref
+  const settingsRef = useRef<AppSettings | null>(null);
+  const setSettings = useCallback((a: AppSettings | null) => {
+    settingsRef.current = a;
+    setSettingsState(a);
+  }, []);
+  const saveTimer = useRef<number | undefined>(undefined);
 
   const reload = useCallback(async () => {
     setSettings(await ChatService.AppSettings());
-  }, []);
+  }, [setSettings]);
 
   const apply = useCallback(async (w: WorkspaceSettings) => {
     if (!settings) return;
@@ -62,6 +75,7 @@ export function useAppSettings(
   }, [settings, reload, reloadModels, notify, dismissKey, addError, setBusy]);
 
   const setDefaults = useCallback(async (s: ConversationSettings) => {
+    window.clearTimeout(saveTimer.current); // まだ送っていない既定の変更で、あとから上書きしないように
     try {
       await ChatService.SetDefaultSettings(s);
       notify("この設定を新しい会話の既定にしました");
@@ -71,5 +85,18 @@ export function useAppSettings(
     }
   }, [reload, notify, addError]);
 
-  return { settings, reload, apply, setDefaults };
+  const updateDefaults = useCallback((patch: Partial<ConversationSettings>) => {
+    const cur = settingsRef.current;
+    if (!cur) return;
+    const defaults = { ...cur.defaults, ...patch };
+    setSettings({ ...cur, defaults });
+    window.clearTimeout(saveTimer.current);
+    // 保存したあとに読み直さない(打っている途中の文が、届いた古い値で戻らないように)
+    saveTimer.current = window.setTimeout(() => {
+      ChatService.SetDefaultSettings(defaults)
+        .catch(err => addError(`新しい会話の既定を保存できません: ${errorMessage(err)}`));
+    }, SAVE_DELAY_MS);
+  }, [setSettings, addError]);
+
+  return { settings, reload, apply, setDefaults, updateDefaults };
 }

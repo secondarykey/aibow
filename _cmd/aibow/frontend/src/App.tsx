@@ -1,8 +1,9 @@
 // App.tsx: 画面全体。左に会話の一覧(ウィンドウの上から下まで。上のハンバーガーで開閉)、
 // 右に「タイトルバー(Frameless のため自前。開いている会話の名前)+ チャット(下に入力欄とモデルの選択)」。
 // 会話を開いていないとき(起動時・「+ 新規」)は、チャットの代わりに新しい会話の画面(入力欄が真ん中)を出す。
-// 設定は別の画面として扱い、一覧の下の「設定」で開くと、チャットの代わりに会話の場所に出す(SettingsView)。
-// 「会話に戻る」・一覧で会話を選ぶ・「+ 新規」で閉じる。
+// 設定は別の画面として扱い、一覧の下の「設定」で開くと、チャットの代わりに会話の場所に出す(SettingsView。新しい会話の既定・アプリ全体)。
+// 一覧の各行の歯車で開く会話の設定(ConversationSettingsView。その会話だけの設定)も同じく会話の場所に出す。
+// どちらも「会話に戻る」・一覧で会話を選ぶ・「+ 新規」で閉じる。
 // 一覧と会話の間の仕切り(Splitter)をドラッグすると、一覧の幅が変わる。
 // ウィンドウが狭い(640px 以下)ときは、一覧を開くと会話を押しのけず、会話の上に重ねて出す。
 // 狭くなったときに一覧が開いていたら自動で閉じる(会話の場所が狭くなりすぎないように)。
@@ -32,11 +33,13 @@ import { Splitter, useListWidth } from "./components/Splitter";
 import { ChatView } from "./components/ChatView";
 import { NewChat } from "./components/NewChat";
 import { SettingsView } from "./components/SettingsView";
+import { ConversationSettingsView } from "./components/ConversationSettingsView";
 import { Composer } from "./components/Composer";
 import { WorkDirBar } from "./components/WorkDirBar";
 import { ToolBar } from "./components/ToolBar";
 import { ChatService } from "../bindings/github.com/secondarykey/aibow/_cmd/aibow";
 import type { ServerInfo } from "../bindings/github.com/secondarykey/aibow/mcp/client";
+import type { ConversationSettings } from "../bindings/github.com/secondarykey/aibow";
 import { ImeFocusRelay } from "./imeFocus";
 import { errorMessage } from "./errors";
 import { NARROW_QUERY, useMediaQuery } from "./mediaQuery";
@@ -46,7 +49,9 @@ export default function App() {
   const [busy, setBusy] = useState<Busy>("idle");
   // 設定の画面を開いているか。開いている間は、チャット(か新しい会話の画面)の代わりに設定を出す
   const [settingsOpen, setSettingsOpen] = useState(false);
-  // 設定の画面を開いたときの、表示の最後の id。これより後に出たエラー(設定の適用の失敗など)は設定の画面にも出す
+  // 会話の設定の画面を開いているか。開いている会話の設定を出す(行の歯車は、その会話を開いてから出す)
+  const [convSettingsOpen, setConvSettingsOpen] = useState(false);
+  // 設定の画面(か会話の設定の画面)を開いたときの、表示の最後の id。これより後に出たエラー(設定の適用の失敗など)はその画面にも出す
   const [settingsFrom, setSettingsFrom] = useState(0);
   // 入力欄に打っている文。設定の画面を開くと入力欄は消えるので、戻ったときに続きを打てるようにここで持つ
   const [text, setText] = useState("");
@@ -112,9 +117,10 @@ export default function App() {
   useEffect(reloadMcp, [reloadMcp]);
 
   // モデルや上限が変わると、同じ会話でもトークン数(メーター)が変わるので数え直す
+  // (新しい会話の既定を変えても今の会話には効かないので、見るのは作業領域の設定だけ)
   useEffect(() => {
     convs.refreshUsage().catch(() => {});
-  }, [models.current?.id, models.current?.n_ctx, app.settings, convs.refreshUsage]);
+  }, [models.current?.id, models.current?.n_ctx, app.settings?.workspace, convs.refreshUsage]);
 
   // ウィンドウに戻ってきたら一覧を作り直す(aibow を起動したまま ollama pull したときのため)
   useEffect(() => {
@@ -127,12 +133,17 @@ export default function App() {
 
   const currentId = convs.current?.conversation.id ?? null;
   const unavailable = busy === "unavailable";
+  // 開いている会話が無くなった(削除して新しい会話の画面に戻った)ら、会話の設定の画面も閉じる
+  useEffect(() => {
+    if (currentId === null) setConvSettingsOpen(false);
+  }, [currentId]);
 
   // 「+ 新規」: 新しい会話の画面に移る。会話そのものは、そこで最初に送信したときに作る
   const home = convs.current === null;
   const onNew = () => {
     closeOverlay();
     setSettingsOpen(false); // 設定の画面を開いていたら閉じて、新しい会話の画面に戻る
+    setConvSettingsOpen(false);
     if (home) {
       focusInput(); // すでに新しい会話の画面なら、入力欄に戻すだけ
       return;
@@ -198,36 +209,59 @@ export default function App() {
 
   // タイトルバーに出す名前は一覧から取る(名前の変更や最初の送信で付いたタイトルが、すぐ反映されるように)
   const convTitle = convs.list.find(c => c.id === currentId)?.title || "新しい会話";
-  const title = settingsOpen ? "設定" : convTitle;
+  const showConvSettings = convSettingsOpen && convs.current !== null;
+  const title = settingsOpen ? "設定" : showConvSettings ? "会話の設定" : convTitle;
 
+  const markSettingsFrom = () => setSettingsFrom(transcript.items.reduce((m, it) => Math.max(m, it.id), 0));
   const toggleSettings = () => {
     closeOverlay();
-    if (!settingsOpen) setSettingsFrom(transcript.items.reduce((m, it) => Math.max(m, it.id), 0));
+    if (!settingsOpen) markSettingsFrom();
+    setConvSettingsOpen(false); // 会話の設定の画面からは、設定の画面に切り替える
     setSettingsOpen(o => !o);
+  };
+  // 行の歯車: その会話の設定の画面を開く。開いている会話のものをもう一度押したら閉じる。
+  // 設定は開いている会話に対して変えるので、別の会話なら先に開く
+  const onConvSettings = (id: string) => {
+    closeOverlay();
+    if (showConvSettings && id === currentId) {
+      setConvSettingsOpen(false);
+      focusInput();
+      return;
+    }
+    setSettingsOpen(false);
+    markSettingsFrom();
+    if (id === currentId) {
+      setConvSettingsOpen(true);
+      return;
+    }
+    convs.open(id).then(() => setConvSettingsOpen(true), err => addError(errorMessage(err)));
   };
   // 一覧で会話を選んだら、設定の画面を閉じてその会話を出す
   const onOpen = (id: string) => {
     closeOverlay();
     setSettingsOpen(false);
+    setConvSettingsOpen(false);
     convs.open(id).then(focusInput, err => addError(errorMessage(err)));
+  };
+  // 新しい会話の既定を変えたら、新しい会話の画面でこれから作る会話の設定(既定の写し)にも入れる
+  const onDefaultsChange = (patch: Partial<ConversationSettings>) => {
+    app.updateDefaults(patch);
+    if (home) convs.updateSettings(patch);
   };
   const settingsErrors = transcript.items.filter(it => it.kind === "error" && it.id > settingsFrom);
 
   // 会話の場所に出すもの: 設定の画面 / 新しい会話の画面 / チャット
   let content;
+  const viewErrors = settingsErrors.map(it => ({ id: it.id, text: it.kind === "error" ? it.text : "" }));
   if (settingsOpen) {
     content = (
       <SettingsView
-        settings={settings}
-        conversationTitle={home ? null : convTitle}
-        errors={settingsErrors.map(it => ({ id: it.id, text: it.kind === "error" ? it.text : "" }))}
+        errors={viewErrors}
         onClose={() => setSettingsOpen(false)}
-        onChange={convs.updateSettings}
-        onMakeDefault={() => settings && app.setDefaults(settings)}
         app={app.settings}
+        onDefaultsChange={onDefaultsChange}
         appDisabled={busy !== "idle"}
         onApplyApp={app.apply}
-        lastPrompt={chat.lastPrompt}
         onToolsChanged={() => {
           reloadMcp();
           convs.refreshUsage().catch(err => addError(errorMessage(err)));
@@ -239,6 +273,22 @@ export default function App() {
             );
           }
         }}
+      />
+    );
+  } else if (showConvSettings && convs.current) {
+    const current = convs.current.conversation.settings;
+    content = (
+      <ConversationSettingsView
+        title={convTitle}
+        settings={current}
+        errors={viewErrors}
+        onClose={() => {
+          setConvSettingsOpen(false);
+          focusInput();
+        }}
+        onChange={convs.updateSettings}
+        onMakeDefault={() => app.setDefaults(current)}
+        lastPrompt={chat.lastPrompt}
       />
     );
   } else if (home) {
@@ -268,6 +318,8 @@ export default function App() {
     onNew,
     onDelete: (id: string) => convs.remove(id).then(focusInput, err => addError(errorMessage(err))),
     onRename: (id: string, title: string) => convs.rename(id, title).catch(err => addError(errorMessage(err))),
+    convSettingsId: showConvSettings ? currentId : null,
+    onConvSettings,
     settingsOpen,
     onToggleSettings: toggleSettings,
     onToggleOpen: () => setListOpen(o => !o),

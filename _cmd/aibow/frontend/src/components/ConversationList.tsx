@@ -1,4 +1,4 @@
-// 左側: 会話の一覧(更新の新しい順)。新規作成・切り替え・名前の変更・削除。
+// 左側: 会話の一覧(更新の新しい順)。新規作成・切り替え・名前の変更・会話の設定(行の歯車)・削除。
 // 下にアプリの名前とバージョン、右に設定の画面の開閉ボタン(アイコンだけ)。
 // ウィンドウの上から下までの列。上のハンバーガーで一覧を畳める。畳んだときもアイコンだけの細い列を残し、
 // ハンバーガー・新規・設定はそこに集める。上の空いているところはタイトルバーと同じくドラッグでウィンドウを動かせる。
@@ -21,6 +21,8 @@ interface Props {
   onNew(): void;
   onDelete(id: string): void;
   onRename(id: string, title: string): void;
+  convSettingsId: string | null;       // 会話の設定の画面を開いている会話
+  onConvSettings(id: string): void;    // 行の歯車: その会話の設定の画面を開く / 閉じる
   settingsOpen: boolean;
   onToggleSettings(): void;
   open: boolean; // 一覧を開いているか
@@ -29,7 +31,8 @@ interface Props {
 }
 
 export function ConversationList({
-  list, currentId, generatingId, waitingId, disabled, onOpen, onNew, onDelete, onRename, settingsOpen, onToggleSettings,
+  list, currentId, generatingId, waitingId, disabled, onOpen, onNew, onDelete, onRename, convSettingsId, onConvSettings,
+  settingsOpen, onToggleSettings,
   open, onToggleOpen, width,
 }: Props) {
   // 削除の確認を出している会話。消すと戻せないので、もう一度押してもらう
@@ -102,6 +105,12 @@ export function ConversationList({
                   : <span className="dot" title="返事を生成中" />)}
                 {title}
               </button>
+              <button
+                className={"conv-settings" + (c.id === convSettingsId ? " active" : "")}
+                title="会話の設定"
+                disabled={disabled}
+                onClick={() => onConvSettings(c.id)}
+              ><LuSettings /></button>
               <button
                 className="delete"
                 title={generating ? "返事を生成中の会話は削除できません" : "削除"}
