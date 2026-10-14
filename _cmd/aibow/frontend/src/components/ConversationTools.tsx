@@ -8,7 +8,7 @@
 // 扱いは Go の toolPolicy と同じ決め方で Go に決めてもらう(ChatService.ToolStates)。画面で同じ判断を書き直さない。
 // 既定と違うツールと、既定で使わないツールには、どこで決まったか(この会話 / 既定)を添える。
 //
-// 使っているグループは一覧を開いて出し、使っていないグループは畳む(設定の画面の「ツール」と同じ)。▶ で開ける。
+// グループは、使っていてもいなくても畳んで出し、▶ で開ける(設定の画面の「ツール」と同じ)。
 import { useEffect, useState } from "react";
 import { LuChevronDown, LuChevronRight } from "react-icons/lu";
 import { ChatService } from "../../bindings/github.com/secondarykey/aibow/_cmd/aibow";
@@ -28,7 +28,7 @@ interface Props {
 export function ConversationTools({ settings, servers, onChange }: Props) {
   const [groups, setGroups] = useState<ToolGroupState[]>([]);
   const [error, setError] = useState("");
-  const [opened, setOpened] = useState<Record<string, boolean>>({}); // 使っていないグループのうち、▶ で開いたもの
+  const [opened, setOpened] = useState<Record<string, boolean>>({}); // ▶ で開いたグループ(最初は全部畳む)
 
   // ツールの扱いが変わるのは、会話の上書き(tool_policies)が変わったときだけ(PC の既定は設定の画面で変える)
   const policies = JSON.stringify(settings.tool_policies ?? {});
@@ -118,20 +118,18 @@ function Group({ name, title, on, onToggle, open, onToggleOpen, tools, workDir, 
 }) {
   const usable = (t: ToolState) => t.policy !== ToolPolicy.ToolOff && !(t.needs_work_dir && !workDir);
   const using = tools.filter(usable).length;
-  const shown = on || open;
+  const shown = !!open;
   return (
     <div className={"tool-group" + (on ? " on" : "")}>
       <div className="tool-group-head">
-        {!on && (
-          <button type="button" className="tool-open" onClick={onToggleOpen} title={open ? "畳む" : "ツールの一覧を開く"}>
-            {open ? <LuChevronDown /> : <LuChevronRight />}
-          </button>
-        )}
+        <button type="button" className="tool-open" onClick={onToggleOpen} title={open ? "畳む" : "ツールの一覧を開く"}>
+          {open ? <LuChevronDown /> : <LuChevronRight />}
+        </button>
         <label className="check" title={title}>
           <input type="checkbox" checked={on} onChange={e => onToggle(e.target.checked)} />
           <span className="tool-group-name">{name}</span>
         </label>
-        {shown && tools.length > 0 && <span className="tool-count">{using} / {tools.length}</span>}
+        {tools.length > 0 && <span className="tool-count">{using} / {tools.length}</span>}
         {needsWorkDir && !workDir && (
           <span className="tool-tag" title="このサーバーは作業フォルダで起動します">作業フォルダが要る</span>
         )}

@@ -2,7 +2,7 @@
 //
 // ツールはグループに分けて出す: 組み込み(aibow の中で動くツール)と、MCP のサーバーごと。
 // グループのチェックは「新しい会話で最初から使う」の意味(使えなくするのではない。会話の「この会話のツール」からはいつでも選べる)。
-// チェックしたグループは一覧を開いて出す。外したグループは畳むが、▶ で開いてツールごとに選べる(会話で選んで使うこともあるため)。
+// グループは、チェックしていてもいなくても畳んで出し、▶ で開いてツールごとに選べる(ツールの多いサーバーで画面が長くならないように。0009)。
 //
 // ツールの扱いは「会話ごとの上書き → この PC の既定 → 決まりの既定」の順に決まる(Go の Conversations.toolPolicy)。
 // ここで変えるのは、この PC の既定のうち「使わない」だけ(既定では使わない、の意味。会話の設定の画面で、会話ごとに使うにできる)。
@@ -10,7 +10,7 @@
 // 会話の上限の節約になる。「確認しない」は後日、画面から選べるようにする(今は tools.json を手で書いたときだけ効く)。
 //
 // MCP のサーバーのツールの一覧は、サーバーを最後に起動したときに Go が tools.json に覚えたもの。
-// 使うグループで一覧がまだ無ければ、Go がサーバーを一時的に起動して受け取る(ChatService.LoadToolList)。読み直すボタンでも受け取り直せる。
+// 開いたグループで一覧がまだ無ければ、Go がサーバーを一時的に起動して受け取る(ChatService.LoadToolList)。読み直すボタンでも受け取り直せる。
 import { useCallback, useEffect, useRef, useState } from "react";
 import { LuChevronDown, LuChevronRight, LuLoaderCircle, LuRefreshCw } from "react-icons/lu";
 import { ChatService } from "../../bindings/github.com/secondarykey/aibow/_cmd/aibow";
@@ -33,7 +33,7 @@ export function ToolSettings({ onChanged }: Props) {
   const [loading, setLoading] = useState<Record<string, boolean>>({});   // ツールの一覧を受け取っている途中のサーバー
   const [listErrors, setListErrors] = useState<Record<string, string>>({}); // ツールの一覧を受け取れなかった理由
   const tried = useRef(new Set<string>()); // 一覧が無いので自動で受け取りにいったサーバー(失敗しても繰り返さない)
-  const [opened, setOpened] = useState<Record<string, boolean>>({}); // チェックを外したグループのうち、▶ で開いたもの
+  const [opened, setOpened] = useState<Record<string, boolean>>({}); // ▶ で開いたグループ(最初は全部畳む)
 
   const reload = useCallback(() => {
     ChatService.ToolPrefs().then(setPrefs, err => setError(errorMessage(err)));
@@ -57,8 +57,7 @@ export function ToolSettings({ onChanged }: Props) {
   useEffect(() => {
     if (!prefs) return;
     for (const s of servers) {
-      const shown = !prefs.notDefault.servers?.includes(s.name) || opened[s.name];
-      if (shown && (prefs.known?.[s.name]?.length ?? 0) === 0 && !tried.current.has(s.name)) {
+      if (opened[s.name] && (prefs.known?.[s.name]?.length ?? 0) === 0 && !tried.current.has(s.name)) {
         tried.current.add(s.name);
         loadList(s.name);
       }
@@ -124,7 +123,7 @@ export function ToolSettings({ onChanged }: Props) {
 }
 
 // ToolGroup はツールのグループ1つ(組み込み / MCP のサーバー1つ)。
-// チェックしている(新しい会話で最初から使う)グループは一覧を開いて出す。外したグループは畳み、▶ で開ける
+// チェック(新しい会話で最初から使う)にかかわらず畳んで出し、▶ で開ける
 function ToolGroup({ name, title, on, open, onToggleOpen, onToggle, tools, prefs, groupPolicy, prefix = "", label, onSetTools, loading, listError, onReload }: {
   name: string;
   title: string;
@@ -143,20 +142,18 @@ function ToolGroup({ name, title, on, open, onToggleOpen, onToggle, tools, prefs
   onReload?(): void;
 }) {
   const using = tools.filter(t => prefs.tools?.[t.name] !== ToolPolicy.ToolOff).length;
-  const shown = on || open;
+  const shown = !!open;
   return (
     <div className={"tool-group" + (on ? " on" : "")}>
       <div className="tool-group-head">
-        {!on && (
-          <button type="button" className="tool-open" onClick={onToggleOpen} title={open ? "畳む" : "ツールの一覧を開く"}>
-            {open ? <LuChevronDown /> : <LuChevronRight />}
-          </button>
-        )}
+        <button type="button" className="tool-open" onClick={onToggleOpen} title={open ? "畳む" : "ツールの一覧を開く"}>
+          {open ? <LuChevronDown /> : <LuChevronRight />}
+        </button>
         <label className="check" title={title}>
           <input type="checkbox" checked={on} onChange={e => onToggle(e.target.checked)} />
           <span className="tool-group-name">{name}</span>
         </label>
-        {shown && tools.length > 0 && <span className="tool-count">{using} / {tools.length}</span>}
+        {tools.length > 0 && <span className="tool-count">{using} / {tools.length}</span>}
         {onReload && shown && (
           <button type="button" className="tool-reload" disabled={loading} onClick={onReload} title="ツールの一覧を読み直す(サーバーを一時的に起動します)">
             {loading ? <LuLoaderCircle className="spin" /> : <LuRefreshCw />}
