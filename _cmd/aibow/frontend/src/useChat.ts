@@ -7,7 +7,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { CancelError, Events } from "@wailsio/runtime";
 import type { CancellablePromise } from "@wailsio/runtime";
 import { ChatService } from "../bindings/github.com/secondarykey/aibow/_cmd/aibow";
-import { ToolPolicy } from "../bindings/github.com/secondarykey/aibow";
+import type { ToolPolicy } from "../bindings/github.com/secondarykey/aibow";
 import type { ChatEvent, ConfirmRequest, StoredMessage } from "../bindings/github.com/secondarykey/aibow";
 import { messageItems, thinkLabel, toolCount, turnView, withConfirm } from "./transcript";
 import type { AssistantView, Transcript } from "./transcript";
@@ -38,7 +38,7 @@ interface Live {
 export interface Chat {
   generatingId: string | null; // 返事(か要約)を生成中の会話の ID
   confirmingId: string | null; // ツールの実行前の確認を待っている会話の ID(会話の一覧に「確認待ち」と出す)
-  answer(reqId: string, approved: boolean, reason: string): Promise<void>; // 確認に答える(「実行する」「拒否」)
+  answer(reqId: string, approved: boolean, reason: string, remember: ToolPolicy): Promise<void>; // 確認に答える(「実行する」「拒否」と、これから先の扱い)
   lastPrompt: string;          // 開いている会話で、モデルに実際に渡した文字列
   send(text: string): Promise<void>;
   compact(): Promise<void>;    // 今すぐ要約(開いている会話)
@@ -47,7 +47,7 @@ export interface Chat {
 
 export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conversations, n: Notifier): Chat {
   const { addUser, addError, addAssistant, updateAssistant, setSaved, remove, reset } = t;
-  const { current, draft, openCount, open, adopt, flushSettings, reloadList, setUsage } = convs;
+  const { current, draft, openCount, open, adopt, flushSettings, reloadList, setUsage, reloadSettings } = convs;
   const { notify } = n;
   const [generatingId, setGeneratingId] = useState<string | null>(null);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
@@ -307,17 +307,20 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
   const stop = useCallback(() => controller.current?.stop(), []);
 
   const lastPrompt = current ? prompts[current.conversation.id] ?? "" : "";
-  // 確認に答える。答えは Go の待っているループに届き、実行(か拒否の結果)の tool_result が返ってくる
-  const answer = useCallback(async (reqId: string, approved: boolean, reason: string) => {
+  // 確認に答える。答えは Go の待っているループに届き、実行(か拒否の結果)の tool_result が返ってくる。
+  // remember はこのツールのこの会話でのこれから先の扱い(空 = この1回だけ、allow = この会話では今後聞かない、off = 今後許可しない。0010)。
+  // Go が会話の上書きに書くので、先にまだ送っていない設定を送り(あとで丸ごと書き戻して、Go が書いた上書きを消さないように)、答えたら読み直す
+  const answer = useCallback(async (reqId: string, approved: boolean, reason: string, remember: ToolPolicy) => {
     const l = live.current;
     if (!l) return;
     try {
-      // 4つ目はこれから先の扱い(空 = この1回だけ)。カードの「この会話では今後聞かない」などは 0010 の2段目で足す
-      await ChatService.ConfirmTool(l.convId, reqId, approved, reason, ToolPolicy.$zero);
+      if (remember) await flushSettings();
+      await ChatService.ConfirmTool(l.convId, reqId, approved, reason, remember);
+      if (remember) await reloadSettings(l.convId);
     } catch (err) {
       addError(errorMessage(err));
     }
-  }, [addError]);
+  }, [addError, flushSettings, reloadSettings]);
 
   return { generatingId, confirmingId, answer, lastPrompt, send, compact, stop };
 }

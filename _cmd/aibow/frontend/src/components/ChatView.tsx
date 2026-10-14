@@ -1,5 +1,6 @@
 // 会話の表示: 吹き出し(ツールのカードを含む)・エラー・要約の区切り
 import { useEffect, useState } from "react";
+import type { ToolPolicy } from "../../bindings/github.com/secondarykey/aibow";
 import type { ReactNode } from "react";
 import { LuChevronDown, LuChevronRight, LuCircleStop } from "react-icons/lu";
 import { CopyButton } from "./CopyButton";
@@ -21,7 +22,7 @@ export function ChatView({ items, firstId, conversationId, onStop, onAnswer }: {
   firstId: string | null;
   conversationId: string | null;
   onStop(): void;
-  onAnswer(reqId: string, approved: boolean, reason: string): void; // ツールの実行前の確認に答える
+  onAnswer(reqId: string, approved: boolean, reason: string, remember: ToolPolicy): void; // ツールの実行前の確認に答える(remember はこれから先の扱い)
 }) {
   const faded = (msgId?: string) => (msgId && firstId && msgId < firstId ? " faded" : "");
   const fadedTitle = (msgId?: string) => (faded(msgId) ? FADED_TITLE : undefined);
@@ -60,7 +61,7 @@ function AssistantMessage({ view, faded, onStop, onAnswer }: {
   view: AssistantView;
   faded: boolean;
   onStop(): void;
-  onAnswer(reqId: string, approved: boolean, reason: string): void;
+  onAnswer(reqId: string, approved: boolean, reason: string, remember: ToolPolicy): void;
 }) {
   // コピーするのは答えの文だけ(ツールを使った送信では、各回の答えをつなげる)
   const answer = [...(view.steps ?? []).map(s => s.content), view.content].filter(Boolean).join("\n\n");

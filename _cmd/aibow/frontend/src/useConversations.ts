@@ -30,6 +30,7 @@ export interface Conversations {
   flushSettings(): Promise<void>;     // まだ Go に送っていない設定を送る(送信の前に呼ぶ)
   setUsage(id: string, usage: Usage | null): void; // 開いている会話のメーターを書き換える(chat イベントの usage)
   refreshUsage(): Promise<void>;      // メーターを Go に数え直してもらう(モデル・上限・会話の設定を変えたあと)
+  reloadSettings(id: string): Promise<void>; // Go が書き換えた会話の設定を読み直す(確認のカードの「この会話では今後聞かない」など)
 }
 
 // onError は、設定の保存のように裏で行う処理が失敗したときに呼ぶ
@@ -147,8 +148,16 @@ export function useConversations(onError: (text: string) => void): Conversations
     pending.current = { id: cur.conversation.id, settings, timer };
   }, [flushSettings, refreshUsage, setCurrent, setDraft, onError]);
 
+  const reloadSettings = useCallback(async (id: string) => {
+    const d = await ChatService.Conversation(id);
+    const cur = currentRef.current;
+    // 読み直している間に別の会話を開いた・設定を変え始めたときは、そちらを優先する
+    if (cur?.conversation.id !== id || pending.current) return;
+    setCurrent({ ...cur, conversation: { ...cur.conversation, settings: d.conversation.settings } });
+  }, [setCurrent]);
+
   return {
     list, current, draft, openCount, init, open, goHome, adopt, remove, rename, reloadList, updateSettings, flushSettings,
-    setUsage, refreshUsage,
+    setUsage, refreshUsage, reloadSettings,
   };
 }

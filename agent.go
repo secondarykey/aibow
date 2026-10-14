@@ -167,16 +167,13 @@ func (cs *Conversations) runFound(ctx context.Context, conv Conversation, c Tool
 		if conf, err = cs.confirm(ctx, conv.ID, c, ct, args, emit); err != nil {
 			return toolMessage(conv.ID, c, errorPrefix+err.Error(), true, 0)
 		}
-		// これから先の扱いも答えられていたら(「この会話では今後聞かない」など)、会話の上書きに書く
-		if conf.Remember != "" {
-			if err := cs.SetToolPolicy(conv.ID, t.Def().Name, conf.Remember); err != nil {
-				log.Warnf("ツール %s のこれから先の扱いを保存できません: %v", t.Def().Name, err)
-			} else {
-				log.Noticef("ツール %s のこの会話での扱いを %s にしました(確認のカードから)", t.Def().Name, conf.Remember)
-			}
-		}
 		if !conf.Approved {
-			res := toolMessage(conv.ID, c, rejected(conf.Reason), false, 0)
+			text := rejected(conf.Reason)
+			if conf.Remember == ToolOff {
+				// 「今後許可しない」: 次の送信からはモデルに見せないが、この送信の間は見えているので、呼び直さないように伝える
+				text += "。この会話では、このツールは今後使えません"
+			}
+			res := toolMessage(conv.ID, c, text, false, 0)
 			res.ToolResult.Confirm = conf
 			return res
 		}
@@ -265,7 +262,7 @@ func (cs *Conversations) confirm(ctx context.Context, conv uuid.UUID, c ToolCall
 		return nil, err
 	}
 	req := ConfirmRequest{ID: uuid.NewV7().String(), Call: c, Preview: pv}
-	p := &pendingConfirm{conv: conv, id: req.ID, answer: make(chan Confirmation, 1)}
+	p := &pendingConfirm{conv: conv, id: req.ID, tool: c.Name, answer: make(chan Confirmation, 1)}
 	cs.confirmMu.Lock()
 	cs.pending = p
 	cs.confirmMu.Unlock()
@@ -293,6 +290,7 @@ func (cs *Conversations) Confirm(conv uuid.UUID, id string, approved bool, reaso
 }
 
 // Answer は、確認を待っているツールに答える。a.Remember があれば、そのツールのこの会話でのこれから先の扱いにする(0010)。
+// 扱いは答えを渡す前に保存する(返ったときには保存済みなので、画面はすぐ会話の設定を読み直せる)。保存できなければ答えずにエラーを返す。
 func (cs *Conversations) Answer(conv uuid.UUID, id string, a Confirmation) error {
 	if a.Remember != "" && !a.Remember.validInConversation() {
 		return fmt.Errorf("これから先の扱い %q は知らない値です", a.Remember)
@@ -302,6 +300,12 @@ func (cs *Conversations) Answer(conv uuid.UUID, id string, a Confirmation) error
 	p := cs.pending
 	if p == nil || p.conv != conv || p.id != id {
 		return errors.New("この確認はもう待っていません(停止したか、すでに答えています)")
+	}
+	if a.Remember != "" {
+		if err := cs.SetToolPolicy(conv, p.tool, a.Remember); err != nil {
+			return fmt.Errorf("ツール %s のこれから先の扱いを保存できません: %w", p.tool, err)
+		}
+		log.Noticef("ツール %s のこの会話での扱いを %s にしました(確認のカードから)", p.tool, a.Remember)
 	}
 	cs.pending = nil // 2回押しても、答えは1回だけ届ける
 	a.Reason = strings.TrimSpace(a.Reason)

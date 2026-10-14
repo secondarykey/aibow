@@ -667,6 +667,9 @@ func TestConfirmRemember(t *testing.T) {
 			if !tc.ran && !strings.Contains(second.Content, "ありません") {
 				t.Errorf("隠したツールは「ありません」: %q", second.Content)
 			}
+			if !tc.ran && !strings.Contains(ms[2].Content, "今後使えません") {
+				t.Errorf("今後許可しないなら、拒否の結果で伝える: %q", ms[2].Content)
+			}
 			if got, _, _ := cs.Get(c.ID); got.Settings.ToolPolicies["fake__write"] != tc.remember {
 				t.Errorf("会話の上書きに書く: %v", got.Settings.ToolPolicies)
 			}

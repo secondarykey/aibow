@@ -116,6 +116,7 @@ type Conversations struct {
 type pendingConfirm struct {
 	conv   uuid.UUID
 	id     string
+	tool   string // 確認しているツールの名前(これから先の扱いを会話の上書きに書くとき使う)
 	answer chan Confirmation
 }
 

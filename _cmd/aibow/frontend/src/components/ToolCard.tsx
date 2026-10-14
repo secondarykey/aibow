@@ -3,11 +3,13 @@
 //
 // 書き換えるツール(write_file / edit_file)とコマンド(run_command)は、実行する前に確認を待つ。待っている間はカードを開いたままにし、
 // 何をするか(パス・上書きか)と差分(```diff。+ は緑、- は赤)、コマンドならコマンドそのもの、理由の欄と「拒否」「実行する」を出す。
+// 「今後許可しない」(拒否して、この会話ではモデルから隠す)と「この会話では今後聞かない」(実行して、この会話では確認しない)も選べる(0010)。
 // MCP のサーバーのツールは中身が見えないので、全部確認する。差分の代わりに、サーバーに渡す引数(JSON)を出す。
 // MCP のツールは、名前の前にサーバーの名前を小さく出す(モデルに見せる名前は「サーバーの名前__ツールの名前」なので、前の部分は外して出す)。
 // 答えると Go の待っているループに届き、実行(か拒否)の結果が届いたら、ほかのカードと同じく畳んだ1行に戻る。
 import { useState } from "react";
 import { LuBan, LuCheck, LuHourglass, LuLoaderCircle, LuWrench, LuX } from "react-icons/lu";
+import { ToolPolicy } from "../../bindings/github.com/secondarykey/aibow";
 import type { ConfirmRequest } from "../../bindings/github.com/secondarykey/aibow";
 import type { ToolView } from "../transcript";
 import { CodeBlock } from "./CodeBlock";
@@ -16,7 +18,7 @@ import { TOOL_LABELS } from "../toolLabels";
 interface Props {
   tool: ToolView;
   generating: boolean;
-  onAnswer(reqId: string, approved: boolean, reason: string): void;
+  onAnswer(reqId: string, approved: boolean, reason: string, remember: ToolPolicy): void;
 }
 
 export function ToolCard({ tool, generating, onAnswer }: Props) {
@@ -38,7 +40,10 @@ export function ToolCard({ tool, generating, onAnswer }: Props) {
         {state === "confirm" && <span className="tool-status"><LuHourglass /> 確認待ち</span>}
         {state === "running" && generating && <span className="tool-status"><LuLoaderCircle className="spin" /> 実行中…</span>}
         {state === "ok" && <span className="tool-status"><LuCheck /> {tool.sec?.toFixed(2)}秒</span>}
-        {state === "rejected" && <span className="tool-status"><LuBan /> 拒否</span>}
+        {state === "rejected" && <span className="tool-status"><LuBan /> {tool.decision?.remember === ToolPolicy.ToolOff ? "今後許可しない" : "拒否"}</span>}
+        {state === "ok" && tool.decision?.remember === ToolPolicy.ToolAllow && (
+          <span className="tool-tag" title="このツールは、この会話では今後確認せずに実行する">この会話では今後聞かない</span>
+        )}
         {state === "error" && <span className="tool-status"><LuX /> エラー</span>}
       </summary>
       <div className="tool-body">
@@ -73,9 +78,9 @@ function Confirm({ req, onAnswer }: { req: ConfirmRequest; onAnswer: Props["onAn
   const [reason, setReason] = useState("");
   // 答えてから結果が届くまでの間は押せなくする(2回押しても、Go は1回目しか受け取らない)
   const [sent, setSent] = useState(false);
-  const answer = (approved: boolean) => {
+  const answer = (approved: boolean, remember: ToolPolicy = ToolPolicy.$zero) => {
     setSent(true);
-    onAnswer(req.id, approved, approved ? "" : reason);
+    onAnswer(req.id, approved, approved ? "" : reason, remember);
   };
   const pv = req.preview;
   return (
@@ -101,7 +106,9 @@ function Confirm({ req, onAnswer }: { req: ConfirmRequest; onAnswer: Props["onAn
           disabled={sent}
           onChange={e => setReason(e.target.value)}
         />
+        <button disabled={sent} onClick={() => answer(false, ToolPolicy.ToolOff)} title="拒否して、この会話ではこのツールをモデルに見せない">今後許可しない</button>
         <button disabled={sent} onClick={() => answer(false)}>拒否</button>
+        <button disabled={sent} onClick={() => answer(true, ToolPolicy.ToolAllow)} title="実行して、この会話ではこのツールを今後確認しない">この会話では今後聞かない</button>
         <button className="primary" disabled={sent} onClick={() => answer(true)}>実行する</button>
       </div>
     </div>
