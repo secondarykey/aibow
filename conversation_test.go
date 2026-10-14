@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -581,5 +582,73 @@ func TestFillMissingLimits(t *testing.T) {
 	}
 	if n, _ := cs.FillMissingLimits(); n != 0 {
 		t.Errorf("2回目は何もしない: %d", n)
+	}
+}
+
+// 選んだ吹き出しをモデルに渡さない(0011)。「質問 → 壊れた図 → 直して → 直った図」から真ん中の2つを外すと、
+// 次の送信では「質問 → 直った図 → 次の質問」を渡す
+func TestExcludeMessages(t *testing.T) {
+	g := &fakeGen{replies: []fakeReply{{content: "壊れた図"}, {content: "直った図"}, {content: "次の答え"}}}
+	cs, _ := newTestConversations(t, g)
+	c := mustCreate(t, cs)
+	send(t, cs, c, "図を描いて")
+	send(t, cs, c, "直して")
+	_, ms, _ := cs.Get(c.ID)
+	broken, fix := ms[1], ms[2]
+	if err := cs.SetExcluded(c.ID, broken.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := cs.SetExcluded(c.ID, fix.ID, true); err != nil {
+		t.Fatal(err)
+	}
+
+	send(t, cs, c, "次の質問")
+	var got []string
+	for _, m := range g.gotMessages[1:] { // 先頭は system
+		got = append(got, m.Content)
+	}
+	if want := []string{"図を描いて", "直った図", "次の質問"}; !slices.Equal(got, want) {
+		t.Errorf("モデルに渡した発言: %v(期待: %v)", got, want)
+	}
+	if _, after, _ := cs.Get(c.ID); len(after) != 6 || !after[1].Excluded || !after[2].Excluded || after[3].Excluded {
+		t.Errorf("画面には全部残し、外した発言に印を付ける: %+v", after)
+	}
+
+	// 戻せば、また渡す
+	cs.SetExcluded(c.ID, fix.ID, false)
+	cs.SetExcluded(c.ID, broken.ID, false)
+	if u, _ := cs.Usage(c.ID); u.FirstID == nil || *u.FirstID != ms[0].ID {
+		t.Errorf("戻したら最初から渡す: %+v", u)
+	}
+
+	// 生成中の会話は変えられない
+	cs.generating.Store(&c.ID)
+	if err := cs.SetExcluded(c.ID, broken.ID, true); err == nil {
+		t.Error("生成中は変えられない")
+	}
+	cs.generating.Store(nil)
+}
+
+// 返事は、ツールの呼び出しと結果を一緒に外す(吹き出し1つ分)。ユーザーの発言は外さない
+func TestExcludeReplyWithTools(t *testing.T) {
+	g := &fakeGen{replies: []fakeReply{
+		{toolCalls: []ToolCall{toolCall("calculate", "expression", "1+1")}},
+		{content: "2 です"},
+	}}
+	cs, _, c := newToolConversation(t, g)
+	send(t, cs, c, "1+1 は?")
+	_, ms, _ := cs.Get(c.ID)
+	if len(ms) != 4 || ms[2].Role != "tool" {
+		t.Fatalf("発言の並び: %+v", ms)
+	}
+	if err := cs.SetExcluded(c.ID, ms[2].ID, true); err != nil { // 結果の発言を指しても、返事全体を外す
+		t.Fatal(err)
+	}
+	_, ms, _ = cs.Get(c.ID)
+	if ms[0].Excluded || !ms[1].Excluded || !ms[2].Excluded || !ms[3].Excluded {
+		t.Errorf("返事の発言を全部外す: %v %v %v %v", ms[0].Excluded, ms[1].Excluded, ms[2].Excluded, ms[3].Excluded)
+	}
+	if got := forModel(ms); len(got) != 1 || got[0].Role != "user" {
+		t.Errorf("モデルに渡す履歴: %+v", got)
 	}
 }

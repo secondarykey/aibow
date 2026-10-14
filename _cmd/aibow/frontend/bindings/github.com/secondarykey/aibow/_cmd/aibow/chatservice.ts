@@ -146,6 +146,14 @@ export function SetDefaultSettings(settings: aibow$0.ConversationSettings): $Can
 }
 
 /**
+ * SetExcluded は、吹き出し1つ分の発言を「モデルに渡さない」にする / 戻す(0011)。msgID は吹き出しの中の発言のどれか。
+ * 返事なら、ツールの呼び出しと結果も一緒に変わる。生成中の会話は変えられない。次の送信から効く。
+ */
+export function SetExcluded(id: uuid$0.UUID, msgID: uuid$0.UUID, excluded: boolean): $CancellablePromise<void> {
+    return $Call.ByID(1691141811, id, msgID, excluded);
+}
+
+/**
  * SetGPULayers は GPU に載せる層の数を変え、今のモデルを読み込み直す。
  * 失敗したときは元の層の数で読み直している。モデルが未読み込みなら nil を返す。
  */

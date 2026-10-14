@@ -124,6 +124,10 @@ footer.home .composer textarea { line-height: 1.5; min-height: calc(3 * 1.5em + 
 /* モデルに渡していない発言(要約に入った・truncate で外れた)。保存はされている */
 .msg.faded { opacity: .45; }
 .msg.faded:hover { opacity: .8; }
+/* ユーザーが選んで「モデルに渡さない」にした吹き出し(0011)。要約・truncate の薄い表示と見分けられるよう、点線の枠にする */
+.msg.excluded { opacity: .45; outline: 1px dashed var(--muted); outline-offset: 2px; }
+.msg.excluded:hover { opacity: .8; }
+.reply-action.exclude.on { color: var(--text); }
 .msg.error { color: var(--error); border: 1px solid var(--error); background: transparent; white-space: pre-wrap; }
 /* 応答待ち・打ち切りの説明など、本文の外の短い文。返事の本文(.md)には効かせない */
 .msg .body > p { margin: 0; white-space: pre-wrap; }

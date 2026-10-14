@@ -54,11 +54,12 @@ export interface AssistantView {
 // 送信した発言と返事には、Go が保存したときに付ける(user イベントと done の reply)。
 // createdAt は保存した時刻(Go の time.Time が RFC 3339 の文字列で届く)。発言の下と返事の最後に「N分前」で出す
 // divider は要約した位置の区切り。開くと要約の文が読める
+// excluded は、ユーザーが選んで「モデルに渡さない」にした吹き出し(0011。返事はツールの呼び出しと結果も一緒)
 export type Item =
-  | { id: number; kind: "user"; text: string; msgId?: string; createdAt?: string }
+  | { id: number; kind: "user"; text: string; msgId?: string; createdAt?: string; excluded?: boolean }
   | { id: number; kind: "error"; text: string }
   | { id: number; kind: "divider"; compaction: Compaction }
-  | ({ id: number; kind: "assistant"; msgId?: string } & AssistantView);
+  | ({ id: number; kind: "assistant"; msgId?: string; excluded?: boolean } & AssistantView);
 
 // id を除いた Item(種類ごとに Omit する。union にそのまま Omit を使うと共通の項目しか残らないため)
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
@@ -74,6 +75,7 @@ export interface Transcript {
   setSaved(id: number, m: Pick<StoredMessage, "id" | "created_at">): void;
   remove(id: number): void;
   reset(items: NewItem[]): void; // 別の会話を開いたときに、表示を丸ごと入れ替える
+  setExcluded(msgId: string, excluded: boolean): void; // 「モデルに渡さない」の印を付け替える(Go で変えたあと)
 }
 
 export function useTranscript(): Transcript {
@@ -103,6 +105,11 @@ export function useTranscript(): Transcript {
       )));
     }, []),
     remove: useCallback(id => setItems(prev => prev.filter(it => it.id !== id)), []),
+    setExcluded: useCallback((msgId, excluded) => {
+      setItems(prev => prev.map(it => (
+        (it.kind === "user" || it.kind === "assistant") && it.msgId === msgId ? { ...it, excluded } : it
+      )));
+    }, []),
     reset: useCallback(newItems => {
       setItems(newItems.map(it => ({ ...it, id: nextId.current++ }) as Item));
     }, []),
@@ -244,7 +251,7 @@ export function messageItems(messages: StoredMessage[], compactions: Compaction[
   let turn: StoredMessage[] = [];
   const flush = () => {
     if (turn.length === 0) return;
-    out.push({ kind: "assistant", msgId: turn[0].id, ...turnView(turn) });
+    out.push({ kind: "assistant", msgId: turn[0].id, excluded: turn.some(m => m.excluded), ...turnView(turn) });
     turn.forEach(dividers);
     turn = [];
   };
@@ -254,7 +261,7 @@ export function messageItems(messages: StoredMessage[], compactions: Compaction[
       continue;
     }
     flush();
-    out.push({ kind: "user", text: m.content, msgId: m.id, createdAt: m.created_at });
+    out.push({ kind: "user", text: m.content, msgId: m.id, createdAt: m.created_at, excluded: m.excluded });
     dividers(m);
   }
   flush();

@@ -447,6 +447,19 @@ func (s *ChatService) RenameConversation(id uuid.UUID, title string) error {
 	return s.convs.Rename(id, title)
 }
 
+// SetExcluded は、吹き出し1つ分の発言を「モデルに渡さない」にする / 戻す(0011)。msgID は吹き出しの中の発言のどれか。
+// 返事なら、ツールの呼び出しと結果も一緒に変わる。生成中の会話は変えられない。次の送信から効く。
+func (s *ChatService) SetExcluded(id, msgID uuid.UUID, excluded bool) error {
+	if s.startupErr != nil {
+		return s.startupErr
+	}
+	if err := s.convs.SetExcluded(id, msgID, excluded); err != nil {
+		return err
+	}
+	log.Infof("会話 %s の発言 %s を、モデルに%s", id, msgID, map[bool]string{true: "渡さないにしました", false: "渡すに戻しました"}[excluded])
+	return nil
+}
+
 // UpdateConversationSettings は会話の設定を変える。次の送信から効く。
 func (s *ChatService) UpdateConversationSettings(id uuid.UUID, settings aibow.ConversationSettings) error {
 	if s.startupErr != nil {

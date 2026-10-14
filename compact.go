@@ -108,7 +108,7 @@ func (cs *Conversations) Usage(id uuid.UUID) (Usage, error) {
 	if err != nil {
 		return Usage{}, err
 	}
-	return cs.usage(conv, history)
+	return cs.usage(conv, forModel(history))
 }
 
 func (cs *Conversations) usage(conv Conversation, history []StoredMessage) (Usage, error) {
@@ -613,6 +613,7 @@ func (cs *Conversations) Compact(ctx context.Context, id uuid.UUID, emit func(Ch
 		fail(err)
 		return
 	}
+	history = forModel(history) // モデルに渡さないにした発言は要約にも入れない(0011)
 	if err := cs.ensureWorkspace(conv, emit); err != nil {
 		fail(err)
 		return

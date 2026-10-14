@@ -107,6 +107,10 @@ CREATE INDEX compactions_by_conversation ON compactions(conversation_id, id);
 ALTER TABLE messages ADD COLUMN tool_calls TEXT;  -- assistant: その回のツール呼び出しの一覧(名前・引数)
 ALTER TABLE messages ADD COLUMN tool_result TEXT; -- tool: どの呼び出しの結果か・エラーか・かかった秒数(結果の文は content)
 `,
+	// 版 4: ユーザーが選んで「モデルに渡さない」にした発言(0011)。今までの発言は渡す(0)
+	`
+ALTER TABLE messages ADD COLUMN excluded INTEGER NOT NULL DEFAULT 0;
+`,
 }
 
 func migrate(db *sql.DB) error {
@@ -273,7 +277,7 @@ func (s *SQLite) DeleteConversation(id uuid.UUID) error {
 
 func (s *SQLite) messages(conv uuid.UUID) ([]aibow.StoredMessage, error) {
 	// UUIDv7 は先頭が作成時刻なので、ID の文字列順 = 作った順になる。順番用の列はいらない
-	rows, err := s.db.Query(`SELECT id, role, content, thinking, model, stats, tool_calls, tool_result, created_at
+	rows, err := s.db.Query(`SELECT id, role, content, thinking, model, stats, tool_calls, tool_result, excluded, created_at
 		FROM messages WHERE conversation_id = ? ORDER BY id`, conv.String())
 	if err != nil {
 		return nil, err
@@ -284,7 +288,7 @@ func (s *SQLite) messages(conv uuid.UUID) ([]aibow.StoredMessage, error) {
 		m := aibow.StoredMessage{ConversationID: conv}
 		var id, created string
 		var stats, calls, result sql.NullString // NULL が入りうる列は Null〜 で受ける
-		if err := rows.Scan(&id, &m.Role, &m.Content, &m.Thinking, &m.Model, &stats, &calls, &result, &created); err != nil {
+		if err := rows.Scan(&id, &m.Role, &m.Content, &m.Thinking, &m.Model, &stats, &calls, &result, &m.Excluded, &created); err != nil {
 			return nil, err
 		}
 		if m.ID, err = parseID(id); err != nil {
@@ -328,10 +332,25 @@ func (s *SQLite) AddMessage(m aibow.StoredMessage) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Exec(`INSERT INTO messages (id, conversation_id, role, content, thinking, model, stats, tool_calls, tool_result, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		m.ID.String(), m.ConversationID.String(), m.Role, m.Content, m.Thinking, m.Model, stats, calls, result, formatTime(m.CreatedAt))
+	_, err = s.db.Exec(`INSERT INTO messages (id, conversation_id, role, content, thinking, model, stats, tool_calls, tool_result, excluded, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		m.ID.String(), m.ConversationID.String(), m.Role, m.Content, m.Thinking, m.Model, stats, calls, result, m.Excluded, formatTime(m.CreatedAt))
 	return err
+}
+
+// SetMessagesExcluded は発言の「モデルに渡さない」の印を変える。返事1つ(ツールの結果を含む)は何件かになるので、まとめて1つのトランザクションで書く。
+func (s *SQLite) SetMessagesExcluded(ids []uuid.UUID, excluded bool) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, id := range ids {
+		if _, err := tx.Exec(`UPDATE messages SET excluded = ? WHERE id = ?`, excluded, id.String()); err != nil {
+			return fmt.Errorf("発言 %s の印を変えられません: %w", id, err)
+		}
+	}
+	return tx.Commit()
 }
 
 // nullJSON は v を JSON にする。empty なら NULL(その発言には無い値)。

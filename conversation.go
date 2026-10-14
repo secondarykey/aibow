@@ -147,6 +147,48 @@ func (cs *Conversations) withLimits(set ConversationSettings) ConversationSettin
 	return set
 }
 
+// forModel は、モデルに渡す履歴(ユーザーが選んで「モデルに渡さない」にした発言を外したもの。0011)。
+// 送信・メーター・今すぐ要約で、履歴を読んだところで通す。外したあとの並びで組(ユーザーの発言から次の発言の前まで)を数え直すので、
+// 「質問 → 壊れた図 → 直して → 直った図」から真ん中の2つを外すと、「質問」の組に「直った図」が続く。
+// 外すのは途中なので、そこから後ろは KV キャッシュが再利用できない(プロンプトの途中が変わるため)。
+func forModel(history []StoredMessage) []StoredMessage {
+	if !slices.ContainsFunc(history, func(m StoredMessage) bool { return m.Excluded }) {
+		return history
+	}
+	return slices.DeleteFunc(slices.Clone(history), func(m StoredMessage) bool { return m.Excluded })
+}
+
+// SetExcluded は、吹き出し1つ分の発言を「モデルに渡さない」にする / 戻す(0011)。msg は吹き出しの中の発言のどれか。
+// ユーザーの発言ならその1件、返事(assistant・tool)なら、前後のユーザーの発言の間にある発言を全部(ツールの呼び出しと結果を一緒に)。
+// 生成中の会話は変えられない(途中で履歴が変わらないように)。
+func (cs *Conversations) SetExcluded(id, msg uuid.UUID, excluded bool) error {
+	if g := cs.generating.Load(); g != nil && *g == id {
+		return errors.New("返事を生成中の会話では、モデルに渡すかを変えられません。終わってから変えてください")
+	}
+	_, history, err := cs.store.Conversation(id)
+	if err != nil {
+		return err
+	}
+	i := slices.IndexFunc(history, func(m StoredMessage) bool { return m.ID == msg })
+	if i < 0 {
+		return errors.New("発言が見つかりません(削除された可能性があります)")
+	}
+	from, to := i, i+1
+	if history[i].Role != "user" {
+		for from > 0 && history[from-1].Role != "user" {
+			from--
+		}
+		for to < len(history) && history[to].Role != "user" {
+			to++
+		}
+	}
+	ids := make([]uuid.UUID, 0, to-from)
+	for _, m := range history[from:to] {
+		ids = append(ids, m.ID)
+	}
+	return cs.store.SetMessagesExcluded(ids, excluded)
+}
+
 // ensureWorkspace は、エンジンの作業領域をこの会話の大きさ(会話の上限 + 返事の上限)にする。
 // 作業領域は1つだけなので、大きさの違う会話に送信するときに作り直す(会話を開いただけでは作り直さない)。
 // 作り直すと KV キャッシュは空になる(同じシステムプロンプト・ツールの説明の部分も読み直しになる)。
@@ -330,6 +372,7 @@ func (cs *Conversations) Send(ctx context.Context, id uuid.UUID, text string, em
 		fail(err)
 		return
 	}
+	history = forModel(history)
 
 	// 0. 作業領域をこの会話の大きさにする(会話の上限 + 返事の上限。要約も返事も、この中で生成する)。
 	// この会話で使う MCP のサーバーが動いていなければ、起動する(そのツールも会話の上限に数えるので、確かめる前に)

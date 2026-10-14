@@ -15,6 +15,7 @@
   - 版 1: 会話・発言・設定
   - 版 2: `compactions`(要約。[_docs/compact.md](../_docs/compact.md))
   - 版 3: `messages` に `tool_calls` / `tool_result`(ツール呼び出しと結果。JSON。[_docs/tools.md](../_docs/tools.md))
+  - 版 4: `messages` に `excluded`(ユーザーが選んで「モデルに渡さない」にした発言。0 / 1。[_docs/features/0011-exclude-messages.md](../_docs/features/0011-exclude-messages.md))
 - ID(`uuid.NewV7()`)は TEXT で入れる。発言の順番は ID の並びで決める(順番用の列は持たない)
 - DB ファイルの場所はこのパッケージでは決めない。`_cmd/aibow/config.go` が `AIBOW_DB`(既定は `%APPDATA%\aibow\aibow.db`)から決めて `Open` に渡す
 - 試すときは `AIBOW_DB` を一時フォルダのファイルにする(ユーザーの DB に試しの会話を混ぜない)

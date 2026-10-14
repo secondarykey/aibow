@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import type { ToolPolicy } from "../../bindings/github.com/secondarykey/aibow";
 import type { ReactNode } from "react";
-import { LuChevronDown, LuChevronRight, LuCircleStop } from "react-icons/lu";
+import { LuChevronDown, LuChevronRight, LuCircleStop, LuEye, LuEyeOff } from "react-icons/lu";
 import { CopyButton } from "./CopyButton";
 import type { Compaction } from "../../bindings/github.com/secondarykey/aibow";
 import { compactionStats } from "../transcript";
@@ -12,20 +12,28 @@ import { ToolCard } from "./ToolCard";
 import { useStickToBottom } from "../stickToBottom";
 
 const FADED_TITLE = "この発言はモデルに渡していません(要約に入ったか、会話の上限に収めるために外しました)";
+const EXCLUDED_TITLE = "モデルに渡さないにしています";
+
+// Exclude は吹き出しの「モデルに渡さない」を切り替える(0011)。msgId は吹き出しの中の発言のどれか(Go が吹き出し1つ分に広げる)
+export interface Exclude {
+  disabled: boolean; // 生成中の会話では変えられない
+  onChange(msgId: string, excluded: boolean): void;
+}
 
 // onStop は生成中の返事(要約中なら要約だけ)を止める。生成中の返事は1つだけ(生成は同時に1つ)なので、どの返事かは渡さない。
 // firstId はモデルに渡す最初の発言(Go の Usage.first_id)。これより前の発言は、要約に入ったか
 // truncate で外れて、モデルに渡していないので薄く表示する(発言そのものは保存されている)
 // conversationId は表示している会話の ID。会話を切り替えたら、一番下(最新の発言)から見せる
-export function ChatView({ items, firstId, conversationId, onStop, onAnswer }: {
+export function ChatView({ items, firstId, conversationId, onStop, onAnswer, exclude }: {
   items: Item[];
   firstId: string | null;
   conversationId: string | null;
   onStop(): void;
+  exclude: Exclude;
   onAnswer(reqId: string, approved: boolean, reason: string, remember: ToolPolicy): void; // ツールの実行前の確認に答える(remember はこれから先の扱い)
 }) {
   const faded = (msgId?: string) => (msgId && firstId && msgId < firstId ? " faded" : "");
-  const fadedTitle = (msgId?: string) => (faded(msgId) ? FADED_TITLE : undefined);
+  const fadedTitle = (msgId?: string, excluded?: boolean) => (excluded ? EXCLUDED_TITLE : faded(msgId) ? FADED_TITLE : undefined);
 
   // 何か増えたり書き換わったりしたら、一番下にいるときだけ一番下まで送る(上にスクロールして読んでいる間は送らない)。
   // 会話を切り替えたときと、自分で送信したとき(ユーザーの発言が増えたとき)は、どこを読んでいても一番下へ
@@ -40,8 +48,10 @@ export function ChatView({ items, firstId, conversationId, onStop, onAnswer }: {
             case "user":
               return (
                 <div key={it.id} className="user-turn">
-                  <div className={"msg user" + faded(it.msgId)} title={fadedTitle(it.msgId)}>{it.text}</div>
-                  <UserActions text={it.text} createdAt={it.createdAt} />
+                  <div className={"msg user" + faded(it.msgId) + (it.excluded ? " excluded" : "")} title={fadedTitle(it.msgId, it.excluded)}>{it.text}</div>
+                  <UserActions text={it.text} createdAt={it.createdAt}>
+                    {it.msgId && <ExcludeButton msgId={it.msgId} excluded={!!it.excluded} exclude={exclude} />}
+                  </UserActions>
                 </div>
               );
             case "error":
@@ -49,7 +59,17 @@ export function ChatView({ items, firstId, conversationId, onStop, onAnswer }: {
             case "divider":
               return <Divider key={it.id} compaction={it.compaction} />;
             case "assistant":
-              return <AssistantMessage key={it.id} view={it} faded={!!faded(it.msgId)} onStop={onStop} onAnswer={onAnswer} />;
+              return (
+                <AssistantMessage
+                  key={it.id}
+                  view={it}
+                  faded={!!faded(it.msgId)}
+                  onStop={onStop}
+                  onAnswer={onAnswer}
+                  excludeButton={it.msgId && <ExcludeButton msgId={it.msgId} excluded={!!it.excluded} exclude={exclude} />}
+                  excluded={!!it.excluded}
+                />
+              );
           }
         })}
       </div>
@@ -57,16 +77,21 @@ export function ChatView({ items, firstId, conversationId, onStop, onAnswer }: {
   );
 }
 
-function AssistantMessage({ view, faded, onStop, onAnswer }: {
+function AssistantMessage({ view, faded, onStop, onAnswer, excludeButton, excluded }: {
   view: AssistantView;
   faded: boolean;
   onStop(): void;
+  excludeButton?: ReactNode; // 「モデルに渡さない」の切り替え(保存済みの返事だけ)
+  excluded: boolean;
   onAnswer(reqId: string, approved: boolean, reason: string, remember: ToolPolicy): void;
 }) {
   // コピーするのは答えの文だけ(ツールを使った送信では、各回の答えをつなげる)
   const answer = [...(view.steps ?? []).map(s => s.content), view.content].filter(Boolean).join("\n\n");
   return (
-    <div className={"msg assistant" + (faded ? " faded" : "")} title={faded ? FADED_TITLE : undefined}>
+    <div
+      className={"msg assistant" + (faded ? " faded" : "") + (excluded ? " excluded" : "")}
+      title={excluded ? EXCLUDED_TITLE : faded ? FADED_TITLE : undefined}
+    >
       {view.summarizing && <Summarizing text={view.summary ?? ""} />}
       {view.compactNote && <p className="compact-note">{view.compactNote}</p>}
       {view.steps?.length ? (
@@ -94,7 +119,7 @@ function AssistantMessage({ view, faded, onStop, onAnswer }: {
         )}
       </div>
       {!view.generating && (answer || view.stats) && (
-        <ReplyActions content={answer} stats={view.stats} createdAt={view.createdAt} />
+        <ReplyActions content={answer} stats={view.stats} createdAt={view.createdAt}>{excludeButton}</ReplyActions>
       )}
       {view.generating && (
         <div className="stop-row">
@@ -108,13 +133,14 @@ function AssistantMessage({ view, faded, onStop, onAnswer }: {
 
 // 返事の最後の行: 答えのコピーと、詳細情報(モデル名・速さ・トークン数など)の開閉。
 // 詳細情報はふだんは使わないので畳んでおき、「詳細」を押したときだけ出す。生成中は出さない(停止ボタンだけ)
-function ReplyActions({ content, stats, createdAt }: { content: string; stats?: string; createdAt?: string }) {
+function ReplyActions({ content, stats, createdAt, children }: { content: string; stats?: string; createdAt?: string; children?: ReactNode }) {
   const [open, setOpen] = useState(false);
   return (
     <>
       <div className="reply-actions">
         {content && <CopyButton text={content} />}
         {createdAt && <MessageTime createdAt={createdAt} />}
+        {children}
         {stats && (
           <button className="reply-action" onClick={() => setOpen(o => !o)} aria-expanded={open} title="モデル名・速さ・トークン数など">
             {open ? <LuChevronDown /> : <LuChevronRight />} 詳細
@@ -127,12 +153,27 @@ function ReplyActions({ content, stats, createdAt }: { content: string; stats?: 
 }
 
 // 発言の下の行: 時刻とコピー。発言と同じく右に寄せる(返事の側とは並びを逆にして「時刻 コピー」)
-function UserActions({ text, createdAt }: { text: string; createdAt?: string }) {
+function UserActions({ text, createdAt, children }: { text: string; createdAt?: string; children?: ReactNode }) {
   return (
     <div className="user-actions">
+      {children}
       {createdAt && <MessageTime createdAt={createdAt} />}
       <CopyButton text={text} />
     </div>
+  );
+}
+
+// ExcludeButton は吹き出しの「モデルに渡さない」の切り替え(0011)。目のアイコンで、渡さないにしたら斜線の入った目のまま残す
+function ExcludeButton({ msgId, excluded, exclude }: { msgId: string; excluded: boolean; exclude: Exclude }) {
+  return (
+    <button
+      className={"reply-action exclude" + (excluded ? " on" : "")}
+      disabled={exclude.disabled}
+      title={exclude.disabled ? "返事を生成中は変えられません" : excluded ? "モデルに渡すに戻す" : "モデルに渡さない"}
+      onClick={() => exclude.onChange(msgId, !excluded)}
+    >
+      {excluded ? <LuEyeOff /> : <LuEye />}
+    </button>
   );
 }
 

@@ -105,6 +105,16 @@ func TestConversationsAndMessagesPersist(t *testing.T) {
 	if len(ms) != 2 || ms[0].ID != user.ID || ms[1].ID != reply.ID {
 		t.Fatalf("発言の並びが違います: %+v", ms)
 	}
+	// モデルに渡さない印(版 4。0011)
+	if ms[0].Excluded || ms[1].Excluded {
+		t.Errorf("印は最初は付いていない")
+	}
+	if err := s.SetMessagesExcluded([]uuid.UUID{reply.ID}, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, again, _ := s.Conversation(c.ID); again[0].Excluded || !again[1].Excluded {
+		t.Errorf("印を付けた発言だけ: %v %v", again[0].Excluded, again[1].Excluded)
+	}
 	got := ms[1]
 	if got.Thinking != "挨拶だ" || got.Model != "qwen3.5:4b" || got.Stats == nil || *got.Stats != *reply.Stats {
 		t.Errorf("返事の中身が違います: %+v / %+v", got, got.Stats)

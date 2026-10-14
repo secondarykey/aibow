@@ -537,6 +537,11 @@ export interface StoredMessage {
      * どの呼び出しの結果か(tool のみ)
      */
     "tool_result"?: ToolResult | null;
+
+    /**
+     * Excluded は、ユーザーが選んで「モデルに渡さない」にした発言(0011)。画面には薄く残し、モデルに渡す履歴からは外す(Conversations.forModel)
+     */
+    "excluded"?: boolean;
     "created_at": string;
 }
 

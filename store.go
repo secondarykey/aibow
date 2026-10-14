@@ -30,6 +30,8 @@ type Store interface {
 	// DeleteConversation は会話を消す。発言もいっしょに消える。
 	DeleteConversation(id uuid.UUID) error
 	AddMessage(m StoredMessage) error
+	// SetMessagesExcluded は発言の「モデルに渡さない」の印を変える(0011)。会話の中の発言の ID を渡す
+	SetMessagesExcluded(ids []uuid.UUID, excluded bool) error
 
 	// AddCompaction は要約を1件保存する(compact の summary)。
 	AddCompaction(c Compaction) error
@@ -162,7 +164,9 @@ type StoredMessage struct {
 	Stats          *ReplyStats `json:"stats"`                 // 生成の記録(assistant のみ)
 	ToolCalls      []ToolCall  `json:"tool_calls,omitempty"`  // その回のツール呼び出し(assistant のみ)
 	ToolResult     *ToolResult `json:"tool_result,omitempty"` // どの呼び出しの結果か(tool のみ)
-	CreatedAt      time.Time   `json:"created_at"`
+	// Excluded は、ユーザーが選んで「モデルに渡さない」にした発言(0011)。画面には薄く残し、モデルに渡す履歴からは外す(Conversations.forModel)
+	Excluded  bool      `json:"excluded,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // ToolResult はツールの結果1件の記録(結果の文そのものは StoredMessage.Content)。

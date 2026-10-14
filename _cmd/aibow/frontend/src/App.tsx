@@ -327,6 +327,20 @@ export default function App() {
           conversationId={currentId}
           onStop={chat.stop}
           onAnswer={chat.answer}
+          exclude={{
+            disabled: unavailable || (chat.generatingId !== null && chat.generatingId === currentId),
+            // 吹き出しを「モデルに渡さない」にする / 戻す(0011)。Go が吹き出し1つ分の発言に印を付け、メーターを数え直す
+            onChange: (msgId, excluded) => {
+              if (!currentId) return;
+              ChatService.SetExcluded(currentId, msgId, excluded).then(
+                () => {
+                  transcript.setExcluded(msgId, excluded);
+                  convs.refreshUsage().catch(err => addError(errorMessage(err)));
+                },
+                err => addError(errorMessage(err)),
+              );
+            },
+          }}
         />
         {input}
       </section>

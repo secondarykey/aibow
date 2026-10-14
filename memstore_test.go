@@ -118,6 +118,17 @@ func (s *memStore) AddMessage(m StoredMessage) error {
 	return nil
 }
 
+func (s *memStore) SetMessagesExcluded(ids []uuid.UUID, excluded bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.messages {
+		if slices.Contains(ids, s.messages[i].ID) {
+			s.messages[i].Excluded = excluded
+		}
+	}
+	return nil
+}
+
 func (s *memStore) AppSetting(key string) (string, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
