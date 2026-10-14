@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"aibow/tool"
+	"github.com/secondarykey/aibow/tool"
 )
 
 // newWorkDirConversation は、作業フォルダ(main.go が1つ)を決めた、ツールを使う会話を作る。

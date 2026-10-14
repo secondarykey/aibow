@@ -19,7 +19,7 @@ package aibow
 import (
 	"fmt"
 
-	"aibow/tool"
+	"github.com/secondarykey/aibow/tool"
 )
 
 // Message は会話の1件。role は "system" / "user" / "assistant" / "tool"。

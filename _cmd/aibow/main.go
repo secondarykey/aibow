@@ -28,9 +28,9 @@ import (
 	"slices"
 	"strings"
 
-	"aibow"
-	"aibow/mcpclient"
-	"aibow/store"
+	"github.com/secondarykey/aibow"
+	"github.com/secondarykey/aibow/mcp/client"
+	"github.com/secondarykey/aibow/store"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
@@ -61,7 +61,7 @@ func main() {
 	// 起動に失敗しても(lib が無いなど)ウィンドウは出し、理由を画面に表示する。
 	// リリース版(wails3 build)はコンソールが無く、ログだけでは何も見えずに終わってしまうため。
 	cfg, err := loadConfig()
-	var mcpm *mcpclient.Manager
+	var mcpm *client.Manager
 	var prefs *aibow.ToolPrefs
 	if err == nil {
 		if mcpm = startMCP(&cfg); mcpm != nil {
@@ -131,10 +131,10 @@ func main() {
 	}
 }
 
-// startMCP は設定ファイル(settings.json)を読み、MCP のサーバーの係(mcpclient.Manager)を作る。
+// startMCP は設定ファイル(settings.json)を読み、MCP のサーバーの係(client.Manager)を作る。
 // サーバーはまだ起動しない(要る最初の送信のときに起動する)。サーバーが書いてなければ nil。
 // 設定ファイルの書き間違いは、アプリを止めずに画面のお知らせで伝え、MCP を使わずに起動する。
-func startMCP(cfg *appConfig) *mcpclient.Manager {
+func startMCP(cfg *appConfig) *client.Manager {
 	sf, err := aibow.LoadSettingsFile(cfg.settingsPath)
 	if err != nil {
 		cfg.notices = append(cfg.notices, err.Error()+"(MCP のサーバーは使わずに起動しました)")
@@ -146,7 +146,7 @@ func startMCP(cfg *appConfig) *mcpclient.Manager {
 	}
 	names := slices.Sorted(maps.Keys(sf.MCPServers))
 	log.Printf("MCP のサーバー: %s(設定ファイル: %s。要る最初の送信で起動します)", strings.Join(names, ", "), absPath(cfg.settingsPath))
-	return mcpclient.New(sf.MCPServers, mcpclient.Options{Version: appVersion()})
+	return client.New(sf.MCPServers, client.Options{Version: appVersion()})
 }
 
 // loadToolPrefs は、ツールの扱いの PC の既定(tools.json)を読む。

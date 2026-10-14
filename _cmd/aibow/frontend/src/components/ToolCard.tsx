@@ -8,7 +8,7 @@
 // 答えると Go の待っているループに届き、実行(か拒否)の結果が届いたら、ほかのカードと同じく畳んだ1行に戻る。
 import { useState } from "react";
 import { LuBan, LuCheck, LuHourglass, LuLoaderCircle, LuWrench, LuX } from "react-icons/lu";
-import type { ConfirmRequest } from "../../bindings/aibow";
+import type { ConfirmRequest } from "../../bindings/github.com/secondarykey/aibow";
 import type { ToolView } from "../transcript";
 import { CodeBlock } from "./CodeBlock";
 import { TOOL_LABELS } from "../toolLabels";

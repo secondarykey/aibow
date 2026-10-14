@@ -1,4 +1,4 @@
-package mcpclient
+package client
 
 // log.go: MCP のやり取りとサーバーのエラー出力を、1行ずつログに出す部分(学習用)。
 

@@ -24,7 +24,7 @@ import (
 	"time"
 	"uuid"
 
-	"aibow/tool"
+	"github.com/secondarykey/aibow/tool"
 )
 
 // Usage は、会話がモデルに渡す文字列で、会話の上限をどれだけ使っているか(画面のメーター)。

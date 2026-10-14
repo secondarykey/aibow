@@ -9,9 +9,9 @@ import (
 	"time"
 	"uuid"
 
-	"aibow"
+	"github.com/secondarykey/aibow"
 
-	"aibow/tool"
+	"github.com/secondarykey/aibow/tool"
 )
 
 func openTemp(t *testing.T) (*SQLite, string) {

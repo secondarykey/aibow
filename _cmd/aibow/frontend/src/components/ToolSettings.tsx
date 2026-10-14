@@ -12,10 +12,10 @@
 // 使うグループで一覧がまだ無ければ、Go がサーバーを一時的に起動して受け取る(ChatService.LoadToolList)。読み直すボタンでも受け取り直せる。
 import { useCallback, useEffect, useRef, useState } from "react";
 import { LuChevronDown, LuChevronRight, LuLoaderCircle, LuRefreshCw } from "react-icons/lu";
-import { ChatService } from "../../bindings/aibow/cmd/aibow";
-import { ToolPolicy } from "../../bindings/aibow";
-import type { KnownTool, ToolPrefsView } from "../../bindings/aibow";
-import type { ServerInfo } from "../../bindings/aibow/mcpclient";
+import { ChatService } from "../../bindings/github.com/secondarykey/aibow/_cmd/aibow";
+import { ToolPolicy } from "../../bindings/github.com/secondarykey/aibow";
+import type { KnownTool, ToolPrefsView } from "../../bindings/github.com/secondarykey/aibow";
+import type { ServerInfo } from "../../bindings/github.com/secondarykey/aibow/mcp/client";
 import { errorMessage } from "../errors";
 import { TOOL_LABELS } from "../toolLabels";
 import { BUILTIN } from "./ToolBar";

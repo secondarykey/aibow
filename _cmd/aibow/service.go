@@ -25,8 +25,8 @@ import (
 	"unicode/utf8"
 	"uuid"
 
-	"aibow"
-	"aibow/mcpclient"
+	"github.com/secondarykey/aibow"
+	"github.com/secondarykey/aibow/mcp/client"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
@@ -41,7 +41,7 @@ type ChatService struct {
 	startupErr error
 
 	// mcp は settings.json の MCP のサーバー(書いてなければ nil)。prefs はツールの扱いの PC の既定(tools.json)
-	mcp   *mcpclient.Manager
+	mcp   *client.Manager
 	prefs *aibow.ToolPrefs
 
 	// version はアプリのバージョン(_cmd/aibow/version。画面の左下に出す)
@@ -68,7 +68,7 @@ type ChatService struct {
 
 // mcp は MCP のサーバー(settings.json にサーバーが無ければ nil)、prefs はツールの扱いの PC の既定(tools.json)。
 func NewChatService(engine *aibow.Engine, st aibow.Store, app aibow.AppSettings, catalog aibow.ModelCatalog,
-	initial *aibow.ModelEntry, mcp *mcpclient.Manager, prefs *aibow.ToolPrefs, version string, notices []string, startupErr error) *ChatService {
+	initial *aibow.ModelEntry, mcp *client.Manager, prefs *aibow.ToolPrefs, version string, notices []string, startupErr error) *ChatService {
 	quit, cancel := context.WithCancel(context.Background())
 	s := &ChatService{
 		engine: engine, catalog: catalog, app: app, initial: initial, notices: notices, startupErr: startupErr,
@@ -263,17 +263,17 @@ func (s *ChatService) Version() string {
 
 // MCPServers は、会話ごとに使うものを選ぶ MCP のサーバーの一覧(settings.json に書いたもの全部)。書いてなければ空。
 // 設定の画面の「ツール」のチェックは「新しい会話で最初から選ぶか」だけなので、チェックを外したものもここに出す。
-func (s *ChatService) MCPServers() []mcpclient.ServerInfo {
+func (s *ChatService) MCPServers() []client.ServerInfo {
 	if s.mcp == nil {
-		return []mcpclient.ServerInfo{}
+		return []client.ServerInfo{}
 	}
 	return s.mcp.Infos()
 }
 
 // AllMCPServers は settings.json に書いた MCP のサーバー全部(設定の画面の「ツール」に出す)。
-func (s *ChatService) AllMCPServers() []mcpclient.ServerInfo {
+func (s *ChatService) AllMCPServers() []client.ServerInfo {
 	if s.mcp == nil {
-		return []mcpclient.ServerInfo{}
+		return []client.ServerInfo{}
 	}
 	return s.mcp.Infos()
 }

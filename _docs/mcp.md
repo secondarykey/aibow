@@ -30,17 +30,17 @@ aibow ── tools/call ──────→ 結果(content)が返る → ツ�
 
 | ファイル | 役割 |
 |---|---|
-| `mcpclient/mcpclient.go` | サーバーの起動のしかた(`ServerConfig`)と、サーバーを起動・停止してツールを渡す係(`Manager`)。子プロセスの後片付け(`treeTransport`) |
-| `mcpclient/remote.go` | サーバーのツールを `tool.Tool` として見せる(`remoteTool`)。`tools/call` の結果を文章にする・長い結果を切る |
-| `mcpclient/log.go` | 送受信したメッセージとサーバーのエラー出力を、1行ずつログに出す |
-| `mcpclient/mcpclient_test.go` | テスト。SDK でテスト用のサーバーを作り、プロセスを起動せずにつなぐ(`NewInMemoryTransports`)。本物の子プロセスは、テストの実行ファイル自身をサーバーとして起動して確かめる |
+| `mcp/client/client.go` | サーバーの起動のしかた(`ServerConfig`)と、サーバーを起動・停止してツールを渡す係(`Manager`)。子プロセスの後片付け(`treeTransport`) |
+| `mcp/client/remote.go` | サーバーのツールを `tool.Tool` として見せる(`remoteTool`)。`tools/call` の結果を文章にする・長い結果を切る |
+| `mcp/client/log.go` | 送受信したメッセージとサーバーのエラー出力を、1行ずつログに出す |
+| `mcp/client/client_test.go` | テスト。SDK でテスト用のサーバーを作り、プロセスを起動せずにつなぐ(`NewInMemoryTransports`)。本物の子プロセスは、テストの実行ファイル自身をサーバーとして起動して確かめる |
 | `settingsfile.go` | 設定ファイル `settings.json` の読み込み(`mcpServers`) |
 | `toolprefs.go` | ツールの扱い(`ToolPolicy`: 使わない / 確認する / 確認しない)と、その PC の既定 `tools.json`(`ToolPrefs`) |
 | `agent.go` | `RemoteTools`(会話の仕組みから見た MCP の口)・送信の前にサーバーを起動する(`startRemote`)・組み込みのツールの後ろに並べる(`toolsFor`)・ツールの扱いを決める(`toolPolicy` / `needsConfirm`)・ツールの一覧を覚える(`rememberTools`) |
 | `internal/proc/` | 子プロセスまでまとめて止める仕組み(`run_command` と共有) |
 
-- `mcpclient` は `tool` を import し、ルートの `aibow`(LLM・会話の仕組み)は import しない。会話の仕組みは MCP を知らず、`RemoteTools` の interface だけを見る
-- やり取りは公式の Go SDK(`github.com/modelcontextprotocol/go-sdk`)に任せている。SDK のパッケージ名が `mcp` なので、こちらは `mcpclient`
+- `mcp/client` は `tool` を import し、ルートの `aibow`(LLM・会話の仕組み)は import しない。会話の仕組みは MCP を知らず、`RemoteTools` の interface だけを見る
+- やり取りは公式の Go SDK(`github.com/modelcontextprotocol/go-sdk`)に任せている。SDK のパッケージ名が `mcp` なので、こちらは `mcp/` の下に置いてパッケージ名を `client` にしている(ステップ5で作るサーバーは `mcp/server/` に並べる)
 - SDK が引っ張ってくる間接の依存:`google/jsonschema-go`・`segmentio/encoding`・`yosida95/uritemplate`・`golang.org/x/oauth2`・`golang.org/x/sync`・`golang.org/x/time`。どれも cgo なし(`CGO_ENABLED=0` でビルドできる)
 
 ## 設定ファイル
@@ -132,7 +132,7 @@ MCP のツールだけでなく、組み込みのツール(aibow の中で動く
 ## ツール
 
 - 組み込みのツールの後ろに、サーバーの名前の順に並べます(毎回同じ順にする。プロンプトが変わると KV キャッシュが効かなくなるため)
-- **ツールの名前には、サーバーの名前を前に付けます**(`filesystem__read_file`、`Blender__get_objects_summary`。`mcpclient.ToolName`)。
+- **ツールの名前には、サーバーの名前を前に付けます**(`filesystem__read_file`、`Blender__get_objects_summary`。`mcp/client` の `ToolName`)。
   MCP の決まりごとには名前空間が無く、ツールの名前は「1つのサーバーの中で重ならない」ことしか決まっていません。モデルに見えるのはツールの名前の平らな一覧で、
   呼び出しも名前だけなので、サーバーが違っても名前が同じだと区別できません(filesystem サーバーの `read_file` と、組み込みの `read_file`)。
   そこでクライアントの側でサーバーの名前を前に付けて、名前空間の代わりにします(Claude Code の `mcp__<サーバー>__<ツール>` と同じ考え方)
@@ -172,7 +172,7 @@ MCP filesystem ← {"jsonrpc":"2.0","id":3,"result":{"tools":[{"name":"read_file
 MCP filesystem: つながりました(10.6 秒。MCP の版 2025-11-25・サーバー secure-filesystem-server 1.0.0・ツール 14 個: …)
 ```
 
-SDK で作ったサーバー(テストのもの)とは 2026-07-28 版で話し、`server/discover` の次にすぐ `tools/list` が続きます(`go test -v -run TestCommandServer ./mcpclient` で見られます)。
+SDK で作ったサーバー(テストのもの)とは 2026-07-28 版で話し、`server/discover` の次にすぐ `tools/list` が続きます(`go test -v -run TestCommandServer ./mcp/client` で見られます)。
 
 ## 実例: Claude の Blender の拡張を使う(uv の環境のぶつかり)
 

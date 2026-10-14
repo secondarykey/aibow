@@ -9,7 +9,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"aibow/tool"
+	"github.com/secondarykey/aibow/tool"
 )
 
 // fakeGen はテスト用の Generator。決めておいた思考と答えを返し、渡された内容を記録する。

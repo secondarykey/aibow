@@ -18,7 +18,7 @@ import (
 	"time"
 	"uuid"
 
-	"aibow"
+	"github.com/secondarykey/aibow"
 
 	_ "modernc.org/sqlite" // "sqlite" ドライバーを登録する
 )

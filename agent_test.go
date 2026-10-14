@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"aibow/tool"
+	"github.com/secondarykey/aibow/tool"
 )
 
 // fakeTool はテスト用のツール。引数 x を1つ取り、run の結果を返す。

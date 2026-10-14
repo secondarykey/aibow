@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"aibow"
+	"github.com/secondarykey/aibow"
 )
 
 // 設定の誤りはログで止めず、まとめて error で返す。

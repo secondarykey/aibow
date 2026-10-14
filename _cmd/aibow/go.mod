@@ -1,9 +1,9 @@
-module aibow/cmd/aibow
+module github.com/secondarykey/aibow/_cmd/aibow
 
 go 1.27.0
 
 require (
-	aibow v0.0.0
+	github.com/secondarykey/aibow v0.0.0
 	github.com/wailsapp/wails/v3 v3.0.0-beta.26
 )
 
@@ -38,4 +38,4 @@ require (
 )
 
 // リポジトリのルートにある aibow パッケージ(LLM を動かす部分)を使う
-replace aibow => ../..
+replace github.com/secondarykey/aibow => ../..

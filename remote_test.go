@@ -9,10 +9,10 @@ import (
 	"strings"
 	"testing"
 
-	"aibow/tool"
+	"github.com/secondarykey/aibow/tool"
 )
 
-// fakeRemote は MCP のサーバー「fake」の代わり(本物は mcpclient.Manager)。Start で起動したことにして、ツールを出す。
+// fakeRemote は MCP のサーバー「fake」の代わり(本物は mcp/client の Manager)。Start で起動したことにして、ツールを出す。
 // 会話で fake を選んでいなければ、起動もせず、ツールも出さない。
 type fakeRemote struct {
 	tools    []tool.Tool

@@ -4,8 +4,8 @@
 // 選ぶと Go が今のモデルを解放して、新しいモデルを読み込む(数秒〜十数秒)。
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Events } from "@wailsio/runtime";
-import { ChatService } from "../bindings/aibow/cmd/aibow";
-import type { ModelEntry, ModelInfo } from "../bindings/aibow";
+import { ChatService } from "../bindings/github.com/secondarykey/aibow/_cmd/aibow";
+import type { ModelEntry, ModelInfo } from "../bindings/github.com/secondarykey/aibow";
 import type { Transcript } from "./transcript";
 import type { Notifier } from "./toast";
 import { errorMessage } from "./errors";

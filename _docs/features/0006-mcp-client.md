@@ -141,7 +141,7 @@ MCP(Model Context Protocol)は、ツールやデータを AI アプリにつな�
 
 ### 実装で決めたこと(Code が決めた)
 
-- パッケージは `mcpclient/`(SDK の `mcp` と重ねない)。会話の仕組みは `RemoteTools`(`Start` / `Tools`)の interface だけを見る。`tool` には「外で実行するツール」の印 `tool.Remote`(`Server()`)を足した
+- パッケージは `mcpclient/`(SDK の `mcp` と重ねない)。会話の仕組みは `RemoteTools`(`Start` / `Tools`)の interface だけを見る。`tool` には「外で実行するツール」の印 `tool.Remote`(`Server()`)を足した(2026-10-14 に `mcp/client/` へ移した。パッケージ名は `client`。ステップ5のサーバーを `mcp/server/` に並べるため)
 - `settings.json` の読み込みはルートの `settingsfile.go`(`aibow.LoadSettingsFile`)。画面で変える設定の `appsettings.go` と並べて、置き場所の違いが分かるように
 - 子プロセスまでまとめて止める仕組み(3-3 のジョブオブジェクト・プロセスグループ)を `tool` から `internal/proc` に移し、MCP のサーバーでも使う
 - サーバーの起動は送信の最初(会話の上限を確かめる前。MCP のツールの定義も上限に数えるため)。メーターの計算などでは起動しない(最初の送信の前のメーターには MCP のツールが入らない)

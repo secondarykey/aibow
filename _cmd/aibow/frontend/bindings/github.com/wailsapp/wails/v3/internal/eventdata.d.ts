@@ -7,7 +7,7 @@ import type { Events } from "@wailsio/runtime";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import type * as aibow$0 from "../../../../../aibow/models.js";
+import type * as aibow$0 from "../../../../secondarykey/aibow/models.js";
 
 declare module "@wailsio/runtime" {
     namespace Events {

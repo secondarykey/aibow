@@ -13,7 +13,7 @@ import (
 	"strings"
 	"unicode"
 
-	"aibow/tool"
+	"github.com/secondarykey/aibow/tool"
 )
 
 // qwen35 は Qwen3.5 の書式。GGUF の general.architecture が "qwen35" のモデルに使う。

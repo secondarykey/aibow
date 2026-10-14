@@ -28,7 +28,7 @@ import (
 	"time"
 	"uuid"
 
-	"aibow/tool"
+	"github.com/secondarykey/aibow/tool"
 )
 
 const (
@@ -380,7 +380,7 @@ func (cs *Conversations) toolsFor(set ConversationSettings) []tool.Tool {
 		if cs.toolPolicy(set, t) == ToolOff {
 			continue
 		}
-		// MCP のツールの名前にはサーバーの名前が前に付いている(filesystem__read_file。mcpclient.ToolName)ので、ふつうは重ならない。
+		// MCP のツールの名前にはサーバーの名前が前に付いている(filesystem__read_file。mcp/client の ToolName)ので、ふつうは重ならない。
 		// それでも重なったら出さない(先にあるほう = 組み込みのツールを使う)。同じ名前が2つあると、モデルも aibow も区別できないため。
 		// 重なったものは、起動したときにログに出す(logRemoteTools)
 		if tool.Find(tools, t.Def().Name) == nil {
@@ -438,7 +438,7 @@ func (cs *Conversations) localTools(set ConversationSettings) []tool.Tool {
 	return append(append(slices.Clip(cs.tools), tool.Files(set.WorkDir)...), tool.RunCommand(set.WorkDir))
 }
 
-// RemoteTools は、aibow の外のプログラムが実行するツールの置き場(MCP のサーバー。本物は mcpclient.Manager)。
+// RemoteTools は、aibow の外のプログラムが実行するツールの置き場(MCP のサーバー。本物は mcp/client の Manager)。
 // 会話の仕組みは MCP を知らない。ツールが tool.Tool の形で並んでいれば、エージェントループはそのまま使える。
 type RemoteTools interface {
 	// Servers は settings.json に書いたサーバーの名前(名前の順)

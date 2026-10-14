@@ -5,11 +5,11 @@
 // 「+ 新規」は一覧の一番上の行に置く(スクロールしても隠れないよう、一覧の外に固定する)。
 // 開いているときも畳んだときも同じアイコンを使い、開いているときだけ文字を添える
 import { useEffect, useRef, useState } from "react";
-import { ChatService } from "../../bindings/aibow/cmd/aibow";
+import { ChatService } from "../../bindings/github.com/secondarykey/aibow/_cmd/aibow";
 import type { KeyboardEvent } from "react";
 import { LuMenu, LuPlus, LuSettings } from "react-icons/lu";
 import { toggleMaximiseOnDoubleClick } from "./TitleBar";
-import type { Conversation } from "../../bindings/aibow";
+import type { Conversation } from "../../bindings/github.com/secondarykey/aibow";
 
 interface Props {
   list: Conversation[];

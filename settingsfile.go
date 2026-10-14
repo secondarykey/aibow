@@ -20,13 +20,13 @@ import (
 	"os"
 	"slices"
 
-	"aibow/mcpclient"
+	"github.com/secondarykey/aibow/mcp/client"
 )
 
 // SettingsFile は設定ファイルの中身。
 type SettingsFile struct {
 	// MCPServers は MCP のサーバー(名前 → 起動のしかた・つなぐ先)。形は多くのツールで使われている mcpServers に合わせている
-	MCPServers map[string]mcpclient.ServerConfig `json:"mcpServers"`
+	MCPServers map[string]client.ServerConfig `json:"mcpServers"`
 }
 
 // LoadSettingsFile は設定ファイルを読む。ファイルが無ければ空の設定を返す(MCP を使わないだけで、エラーにしない)。
@@ -49,7 +49,7 @@ func LoadSettingsFile(path string) (SettingsFile, error) {
 			return SettingsFile{}, fmt.Errorf("設定ファイル %s の mcpServers に、名前が空のサーバーがあります", path)
 		}
 		// サーバーの名前はツールの名前の前に付く(filesystem__read_file)。英数字・_・- 以外は _ になるので、重なると区別できない
-		p := mcpclient.ServerPrefix(name)
+		p := client.ServerPrefix(name)
 		if other, dup := prefixes[p]; dup {
 			return SettingsFile{}, fmt.Errorf("設定ファイル %s の mcpServers の %s と %s は、ツールの名前に付けると同じ %s__… になり、区別できません。"+
 				"名前を変えてください(英数字・_・- だけで書くと、そのまま使われます)", path, other, name, p)

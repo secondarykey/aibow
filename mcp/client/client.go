@@ -1,4 +1,4 @@
-// Package mcpclient は、aibow を MCP(Model Context Protocol)のクライアントにする部分。
+// Package client は、aibow を MCP(Model Context Protocol)のクライアントにする部分(mcp/client)。
 //
 // MCP は、ツールやデータを AI アプリにつなぐための決まりごと。中身は JSON-RPC 2.0 のメッセージのやり取りで、
 // ローカルでは「クライアント(aibow)がサーバーを子プロセスとして起動し、標準入出力で1行ずつ JSON を送り合う」(stdio のトランスポート)。
@@ -13,8 +13,8 @@
 // なので、遠くのツールも tool.Tool として見せれば、エージェントループ(ルートの agent.go)は何も変えずに使える。
 //
 // このパッケージは tool を import し、ルートの aibow(LLM・会話の仕組み)は import しない。
-// SDK の mcp パッケージと名前が重ならないよう、mcpclient にしている。
-package mcpclient
+// SDK のパッケージ名が mcp なので、こちらは mcp/ の下に置いて client にしている(ステップ5で作るサーバーは mcp/server に並べる)。
+package client
 
 import (
 	"context"
@@ -32,8 +32,8 @@ import (
 	"sync"
 	"time"
 
-	"aibow/internal/proc"
-	"aibow/tool"
+	"github.com/secondarykey/aibow/internal/proc"
+	"github.com/secondarykey/aibow/tool"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )

@@ -1,4 +1,4 @@
-package mcpclient
+package client
 
 // remote.go: MCP のサーバーのツールを tool.Tool として見せる部分。
 
@@ -11,7 +11,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"aibow/tool"
+	"github.com/secondarykey/aibow/tool"
 
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"

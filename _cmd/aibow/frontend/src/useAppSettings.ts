@@ -4,8 +4,8 @@
 //   会話の上限・返事の上限 … 合計の大きさで作業領域(KV キャッシュの置き場)だけ作り直す。モデルは読み直さない
 //   GPU の層数             … 層を GPU と CPU のどちらに置くかは読み込み時に決まるので、モデルを読み直す
 import { useCallback, useState } from "react";
-import { ChatService } from "../bindings/aibow/cmd/aibow";
-import type { AppSettings, ConversationSettings, WorkspaceSettings } from "../bindings/aibow";
+import { ChatService } from "../bindings/github.com/secondarykey/aibow/_cmd/aibow";
+import type { AppSettings, ConversationSettings, WorkspaceSettings } from "../bindings/github.com/secondarykey/aibow";
 import type { Transcript } from "./transcript";
 import type { Notifier } from "./toast";
 import type { Busy } from "./useModels";

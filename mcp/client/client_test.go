@@ -1,4 +1,4 @@
-package mcpclient
+package client
 
 import (
 	"context"
@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"aibow/tool"
+	"github.com/secondarykey/aibow/tool"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )

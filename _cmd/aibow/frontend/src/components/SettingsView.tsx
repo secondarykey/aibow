@@ -4,7 +4,7 @@
 // 「会話に戻る」か、一覧で会話を選ぶ・「+ 新規」を押すと閉じる。
 import { useEffect, useState } from "react";
 import { LuArrowLeft } from "react-icons/lu";
-import type { AppSettings, ConversationSettings, WorkspaceSettings } from "../../bindings/aibow";
+import type { AppSettings, ConversationSettings, WorkspaceSettings } from "../../bindings/github.com/secondarykey/aibow";
 import { ToolSettings } from "./ToolSettings";
 
 interface Props {

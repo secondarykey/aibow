@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"aibow/tool"
+	"github.com/secondarykey/aibow/tool"
 )
 
 // toolNamesOf はモデルに知らせたツールの名前

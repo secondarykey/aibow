@@ -1,4 +1,4 @@
-module aibow
+module github.com/secondarykey/aibow
 
 go 1.27.0
 

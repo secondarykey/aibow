@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"aibow/tool"
+	"github.com/secondarykey/aibow/tool"
 )
 
 // ToolCall の JSON が、tool パッケージに切り出す前と同じ平らな形であること。

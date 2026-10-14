@@ -10,10 +10,10 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 import * as aibow$0 from "../../models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as mcpclient$0 from "../../mcpclient/models.js";
+import * as client$0 from "../../mcp/client/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as uuid$0 from "../../../uuid/models.js";
+import * as uuid$0 from "../../../../../uuid/models.js";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -22,7 +22,7 @@ import * as $models from "./models.js";
 /**
  * AllMCPServers は settings.json に書いた MCP のサーバー全部(設定の画面の「ツール」に出す)。
  */
-export function AllMCPServers(): $CancellablePromise<mcpclient$0.ServerInfo[] | null> {
+export function AllMCPServers(): $CancellablePromise<client$0.ServerInfo[] | null> {
     return $Call.ByID(840001874);
 }
 
@@ -96,7 +96,7 @@ export function LoadToolList(server: string): $CancellablePromise<void> {
  * MCPServers は、会話ごとに使うものを選ぶ MCP のサーバーの一覧(settings.json に書いたもの全部)。書いてなければ空。
  * 設定の画面の「ツール」のチェックは「新しい会話で最初から選ぶか」だけなので、チェックを外したものもここに出す。
  */
-export function MCPServers(): $CancellablePromise<mcpclient$0.ServerInfo[] | null> {
+export function MCPServers(): $CancellablePromise<client$0.ServerInfo[] | null> {
     return $Call.ByID(287669679);
 }
 

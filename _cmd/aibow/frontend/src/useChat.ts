@@ -6,8 +6,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CancelError, Events } from "@wailsio/runtime";
 import type { CancellablePromise } from "@wailsio/runtime";
-import { ChatService } from "../bindings/aibow/cmd/aibow";
-import type { ChatEvent, ConfirmRequest, StoredMessage } from "../bindings/aibow";
+import { ChatService } from "../bindings/github.com/secondarykey/aibow/_cmd/aibow";
+import type { ChatEvent, ConfirmRequest, StoredMessage } from "../bindings/github.com/secondarykey/aibow";
 import { messageItems, thinkLabel, toolCount, turnView, withConfirm } from "./transcript";
 import type { AssistantView, Transcript } from "./transcript";
 import type { Conversations } from "./useConversations";

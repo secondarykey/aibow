@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { LuChevronDown, LuChevronRight, LuCircleStop } from "react-icons/lu";
 import { CopyButton } from "./CopyButton";
-import type { Compaction } from "../../bindings/aibow";
+import type { Compaction } from "../../bindings/github.com/secondarykey/aibow";
 import { compactionStats } from "../transcript";
 import type { AssistantView, Item } from "../transcript";
 import { RenderedText } from "./RenderedText";

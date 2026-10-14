@@ -6,7 +6,7 @@
 import * as tool$0 from "./tool/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as uuid$0 from "../uuid/models.js";
+import * as uuid$0 from "../../../uuid/models.js";
 
 /**
  * AppSettings はアプリ全体の設定。

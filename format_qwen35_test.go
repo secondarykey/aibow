@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"aibow/tool"
+	"github.com/secondarykey/aibow/tool"
 )
 
 // parse は pieces を順に届いたものとして Qwen3.5 の読み取りに通す。

@@ -5,9 +5,9 @@
 // 「新しい会話の画面」(current が null)では、会話はまだ作らない。最初の送信のときに作る(useChat.ts)。
 // 空の会話が一覧に並ばないようにするため。その画面で変えた設定は draft に持ち、作るときに渡す。
 import { useCallback, useRef, useState } from "react";
-import { ChatService } from "../bindings/aibow/cmd/aibow";
-import type { ConversationDetail } from "../bindings/aibow/cmd/aibow";
-import type { Conversation, ConversationSettings, Usage } from "../bindings/aibow";
+import { ChatService } from "../bindings/github.com/secondarykey/aibow/_cmd/aibow";
+import type { ConversationDetail } from "../bindings/github.com/secondarykey/aibow/_cmd/aibow";
+import type { Conversation, ConversationSettings, Usage } from "../bindings/github.com/secondarykey/aibow";
 import { errorMessage } from "./errors";
 
 // 設定を変えてから Go に保存するまで待つ時間。

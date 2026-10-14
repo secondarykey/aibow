@@ -8,7 +8,7 @@
 // 要約は「n を減らす」操作なので、別のボタンを並べずに数そのものを押せるようにしている。
 // 数を両側から矢印で挟み(→| n |←)、縮める操作だと分かるようにする。
 import { LuArrowLeftToLine, LuArrowRightToLine } from "react-icons/lu";
-import type { Usage } from "../../bindings/aibow";
+import type { Usage } from "../../bindings/github.com/secondarykey/aibow";
 
 // 橙にする割合。ここを超えたら、もうすぐ compact が働く
 const WARN_RATIO = 0.9;

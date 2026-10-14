@@ -22,7 +22,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"aibow/internal/proc"
+	"github.com/secondarykey/aibow/internal/proc"
 )
 
 const (

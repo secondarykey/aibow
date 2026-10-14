@@ -10,14 +10,14 @@ Wails v3 のデスクトップアプリです。ルートの `aibow` パッケ�
 |---|---|
 | `main.go` | Wails のアプリとウィンドウを作る(Frameless。タイトルバーは画面の `TitleBar.tsx`)。ウィンドウは起動時 720×820、最小 480×480 |
 | `appversion.go` / `build_dev.go` / `build_production.go` | 表示するバージョン(`wails3 dev` では patch +1 と `+dev`)。dev かどうかは `production` のビルドタグで見分ける([_docs/deploy.md](../../_docs/deploy.md)) |
-| `config.go` | 環境変数の読み込み。`settings.json` を読んで MCP のサーバーの係(`mcpclient.Manager`)を作るのは `main.go` の `startMCP`(アプリを閉じるときに止める)、`tools.json` を読むのは `loadToolPrefs` |
+| `config.go` | 環境変数の読み込み。`settings.json` を読んで MCP のサーバーの係(`mcp/client` の `Manager`)を作るのは `main.go` の `startMCP`(アプリを閉じるときに止める)、`tools.json` を読むのは `loadToolPrefs` |
 | `service.go` | `ChatService`。画面と `aibow.Conversations` / `Engine` の中継だけをする(モデル・会話・設定(`SetLimits` など)・メーター(`Usage`)・`Send` / `Compact` / `StopSummary`)。生成の回ごとの統計・compact・ツールの実行のログもここで出す |
 | `frontend/src/` | チャット画面(React + TypeScript)。Vite でビルドした `frontend/dist` を `go:embed` で埋め込む。中身は [_docs/ui.md](../../_docs/ui.md) と [_docs/rendering.md](../../_docs/rendering.md) |
 | `frontend/bindings/` | `wails3 generate bindings` の生成物(コミットする。手で直さない) |
 | `build/` / `Taskfile.yml` | `wails3 init`(react テンプレート)由来のビルド設定。ios / android / docker は削除して `.gitignore` 済み |
 | `version` | バージョンの唯一の正。`//go:embed` で exe に入る。扱いは [_docs/deploy.md](../../_docs/deploy.md) |
-| `Taskfile.local.yml` | ローカルデプロイ用の個人のファイル。**Git に入れない(ひな形もコミットしない)**。[_docs/deploy.md](../../_docs/deploy.md) |
-| `go.mod` / ルートの `go.work` | `_cmd/aibow` は別モジュール(Wails に依存)。`go.work` でルートとまとめる |
+| `frontend/bindings/` | `wails3 generate bindings` の生成物(コミットする。手で直さない)。Go のモジュール名のパスに出る(`bindings/github.com/secondarykey/aibow/…`。画面のアプリ自身は `…/_cmd/aibow`) |
+| `go.mod` / ルートの `go.work` | `_cmd/aibow` は別モジュール(`github.com/secondarykey/aibow/_cmd/aibow`。Wails に依存)。`go.work` と `replace` でルートとまとめる |
 | `lib\` / `models\` | llama.cpp の DLL とモデル。Git には入れない |
 
 - Wails に依存するコードは `_cmd/aibow` だけに置く。会話や生成の仕組みはルートの `aibow` パッケージに置き、`ChatService` は中継に徹する

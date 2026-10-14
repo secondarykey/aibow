@@ -24,7 +24,7 @@ import (
 	"unicode"
 	"uuid"
 
-	"aibow/tool"
+	"github.com/secondarykey/aibow/tool"
 )
 
 // Generator は返事を生成するもの。本物は Engine。テストでは偽物に差し替える。
