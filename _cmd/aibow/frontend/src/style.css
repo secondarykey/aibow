@@ -87,6 +87,9 @@ body {
    文字の色はメーターの色(橙・赤)を引き継ぐ。押せない間(生成中など)は、ほかのボタンと同じく薄くする */
 .meter-tokens { font: inherit; color: inherit; padding: 1px 5px; display: inline-flex; align-items: center; gap: 3px; }
 .meter-tokens svg { font-size: 11px; }
+/* メーターの右の歯車(会話の設定)。メーターの文字と高さ・色をそろえる */
+.model-bar .conv-settings { width: 26px; height: 26px; font-size: 15px; color: var(--muted); }
+.model-bar .conv-settings:hover:not(:disabled) { color: var(--text); }
 .model-select {
   font: inherit; font-size: 13px; padding: 4px 6px; border-radius: 6px; max-width: 320px;
   border: 1px solid var(--border); background: var(--bg); color: var(--text);
@@ -352,13 +355,8 @@ nav.conversations.collapsed .settings.active { color: var(--accent); }
   flex: 1; min-width: 0; text-align: left; padding: 7px 8px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-/* 行の歯車(会話の設定)と削除は、マウスを乗せた行・開いている行にだけ出す。歯車は開いている間、色を付けて出したままにする */
 .conversation .delete { padding: 4px 8px; color: var(--muted); visibility: hidden; }
-.conversation .conv-settings { display: flex; padding: 4px 2px; color: var(--muted); visibility: hidden; }
-.conversation:hover .delete, .conversation.current .delete,
-.conversation:hover .conv-settings, .conversation.current .conv-settings,
-.conversation .conv-settings.active { visibility: visible; }
-.conversation .conv-settings:hover:not(:disabled), .conversation .conv-settings.active { color: var(--accent); }
+.conversation:hover .delete, .conversation.current .delete { visibility: visible; }
 .conversation .dot {
   display: inline-block; width: 7px; height: 7px; border-radius: 50%;
   background: var(--accent); margin-right: 6px; vertical-align: middle;

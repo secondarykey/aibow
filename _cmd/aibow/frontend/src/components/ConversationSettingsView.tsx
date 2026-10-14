@@ -1,8 +1,8 @@
 // 会話の設定の画面: 開いている会話だけの設定 / この会話のツール / モデルに渡した文字列
 //
-// 会話の一覧の各行の歯車で開き、チャットの代わりに会話の場所に出す(設定の画面と同じく別の画面として扱う)。
+// 入力欄の下(メーターの右)の歯車で開き、チャットの代わりに会話の場所に出す(設定の画面と同じく別の画面として扱う)。
 // 会話は「新しい会話の既定」(設定の画面)の写しから始まり、ここで変えた設定はこの会話にだけ効く。
-// 「会話に戻る」・同じ歯車をもう一度・一覧で会話を選ぶ・「+ 新規」・一覧の下の歯車で閉じる。
+// 「会話に戻る」・一覧で会話を選ぶ・「+ 新規」・一覧の下の歯車で閉じる。
 import { LuArrowLeft } from "react-icons/lu";
 import type { ConversationSettings } from "../../bindings/github.com/secondarykey/aibow";
 import type { ServerInfo } from "../../bindings/github.com/secondarykey/aibow/mcp/client";

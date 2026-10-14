@@ -2,7 +2,7 @@
 // 右に「タイトルバー(Frameless のため自前。開いている会話の名前)+ チャット(下に入力欄とモデルの選択)」。
 // 会話を開いていないとき(起動時・「+ 新規」)は、チャットの代わりに新しい会話の画面(入力欄が真ん中)を出す。
 // 設定は別の画面として扱い、一覧の下の「設定」で開くと、チャットの代わりに会話の場所に出す(SettingsView。新しい会話の既定・アプリ全体)。
-// 一覧の各行の歯車で開く会話の設定(ConversationSettingsView。その会話だけの設定)も同じく会話の場所に出す。
+// 入力欄の下(メーターの右)の歯車で開く会話の設定(ConversationSettingsView。その会話だけの設定)も同じく会話の場所に出す。
 // どちらも「会話に戻る」・一覧で会話を選ぶ・「+ 新規」で閉じる。
 // 一覧と会話の間の仕切り(Splitter)をドラッグすると、一覧の幅が変わる。
 // ウィンドウが狭い(720px 以下)ときは、一覧を開くと会話を押しのけず、会話の上に重ねて出す。
@@ -37,6 +37,7 @@ import { ConversationSettingsView } from "./components/ConversationSettingsView"
 import { Composer } from "./components/Composer";
 import { WorkDirBar } from "./components/WorkDirBar";
 import { ToolBar } from "./components/ToolBar";
+import { LuSettings } from "react-icons/lu";
 import { ChatService } from "../bindings/github.com/secondarykey/aibow/_cmd/aibow";
 import type { ServerInfo } from "../bindings/github.com/secondarykey/aibow/mcp/client";
 import type { ConversationSettings } from "../bindings/github.com/secondarykey/aibow";
@@ -49,7 +50,7 @@ export default function App() {
   const [busy, setBusy] = useState<Busy>("idle");
   // 設定の画面を開いているか。開いている間は、チャット(か新しい会話の画面)の代わりに設定を出す
   const [settingsOpen, setSettingsOpen] = useState(false);
-  // 会話の設定の画面を開いているか。開いている会話の設定を出す(行の歯車は、その会話を開いてから出す)
+  // 会話の設定の画面を開いているか。開いている会話の設定を出す
   const [convSettingsOpen, setConvSettingsOpen] = useState(false);
   // 設定の画面(か会話の設定の画面)を開いたときの、表示の最後の id。これより後に出たエラー(設定の適用の失敗など)はその画面にも出す
   const [settingsFrom, setSettingsFrom] = useState(0);
@@ -204,11 +205,17 @@ export default function App() {
       <ModelBar models={models} disabled={busy !== "idle"} size={settings ? settings.history_tokens + settings.reply_tokens : undefined}>
         {convs.current && (
           // summary の会話では、メーターのトークン数を押すと今すぐ要約する(最近の発言は会話の上限の半分まで残す)
-          <Meter
-            usage={convs.current.usage}
-            onCompact={convs.current.conversation.settings.compact === "summary" ? chat.compact : undefined}
-            compactDisabled={busy !== "idle"}
-          />
+          <>
+            <Meter
+              usage={convs.current.usage}
+              onCompact={convs.current.conversation.settings.compact === "summary" ? chat.compact : undefined}
+              compactDisabled={busy !== "idle"}
+            />
+            {/* 会話の設定。会話の一覧を畳んでいても開けるよう、一覧ではなくここに置く(2026-10-15、ユーザーの指示) */}
+            <button className="icon-btn conv-settings" title="会話の設定" disabled={unavailable} onClick={() => openConvSettings()}>
+              <LuSettings />
+            </button>
+          </>
         )}
       </ModelBar>
     </>
@@ -226,22 +233,12 @@ export default function App() {
     setConvSettingsOpen(false); // 会話の設定の画面からは、設定の画面に切り替える
     setSettingsOpen(o => !o);
   };
-  // 行の歯車: その会話の設定の画面を開く。開いている会話のものをもう一度押したら閉じる。
-  // 設定は開いている会話に対して変えるので、別の会話なら先に開く
-  const onConvSettings = (id: string) => {
+  // メーターの右の歯車: 開いている会話の設定の画面を開く(閉じるのは「会話に戻る」など。開いている間は入力欄ごと隠れる)
+  const openConvSettings = () => {
     closeOverlay();
-    if (showConvSettings && id === currentId) {
-      setConvSettingsOpen(false);
-      focusInput();
-      return;
-    }
     setSettingsOpen(false);
     markSettingsFrom();
-    if (id === currentId) {
-      setConvSettingsOpen(true);
-      return;
-    }
-    convs.open(id).then(() => setConvSettingsOpen(true), err => addError(errorMessage(err)));
+    setConvSettingsOpen(true);
   };
   // 一覧で会話を選んだら、設定の画面を閉じてその会話を出す
   const onOpen = (id: string) => {
@@ -346,8 +343,6 @@ export default function App() {
     onNew,
     onDelete: (id: string) => convs.remove(id).then(focusInput, err => addError(errorMessage(err))),
     onRename: (id: string, title: string) => convs.rename(id, title).catch(err => addError(errorMessage(err))),
-    convSettingsId: showConvSettings ? currentId : null,
-    onConvSettings,
     settingsOpen,
     onToggleSettings: toggleSettings,
     onToggleOpen: () => setListOpen(o => !o),

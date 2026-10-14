@@ -2,7 +2,7 @@
 //
 // 会話の一覧の下の「設定」で開き、チャットの代わりに会話の場所に出す(別の画面として扱う)。
 // 「会話に戻る」か、一覧で会話を選ぶ・「+ 新規」を押すと閉じる。
-// 開いている会話だけの設定は、一覧の各行の歯車で開く会話の設定の画面(ConversationSettingsView)で変える。
+// 開いている会話だけの設定は、入力欄の下(メーターの右)の歯車で開く会話の設定の画面(ConversationSettingsView)で変える。
 // 新しい会話はここの既定の写しから始まる(_docs/features/0009-conversation-settings.md)。
 import { useEffect, useState } from "react";
 import { LuArrowLeft } from "react-icons/lu";
