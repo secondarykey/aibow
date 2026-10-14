@@ -32,6 +32,8 @@ type Store interface {
 	AddMessage(m StoredMessage) error
 	// SetMessagesExcluded は発言の「モデルに渡さない」の印を変える(0011)。会話の中の発言の ID を渡す
 	SetMessagesExcluded(ids []uuid.UUID, excluded bool) error
+	// DeleteMessages は発言を消す(最後の返事を作り直す・最後の発言を直して送り直す。0011)
+	DeleteMessages(ids []uuid.UUID) error
 
 	// AddCompaction は要約を1件保存する(compact の summary)。
 	AddCompaction(c Compaction) error

@@ -76,6 +76,8 @@ export interface Transcript {
   remove(id: number): void;
   reset(items: NewItem[]): void; // 別の会話を開いたときに、表示を丸ごと入れ替える
   setExcluded(msgId: string, excluded: boolean): void; // 「モデルに渡さない」の印を付け替える(Go で変えたあと)
+  // dropLastTurn は最後のユーザーの発言の後ろ(withUser なら発言も)を表示から外す(作り直す・送り直すの前。0011)
+  dropLastTurn(withUser: boolean): void;
 }
 
 export function useTranscript(): Transcript {
@@ -105,6 +107,13 @@ export function useTranscript(): Transcript {
       )));
     }, []),
     remove: useCallback(id => setItems(prev => prev.filter(it => it.id !== id)), []),
+    dropLastTurn: useCallback(withUser => {
+      setItems(prev => {
+        const last = lastIndex(prev, it => it.kind === "user");
+        if (last < 0) return prev;
+        return prev.slice(0, withUser ? last : last + 1);
+      });
+    }, []),
     setExcluded: useCallback((msgId, excluded) => {
       setItems(prev => prev.map(it => (
         (it.kind === "user" || it.kind === "assistant") && it.msgId === msgId ? { ...it, excluded } : it
@@ -114,6 +123,12 @@ export function useTranscript(): Transcript {
       setItems(newItems.map(it => ({ ...it, id: nextId.current++ }) as Item));
     }, []),
   };
+}
+
+// lastIndex は条件に合う最後の要素の位置。無ければ -1(Array.findLastIndex は tsconfig の lib が ES2023 より前なので使えない)
+export function lastIndex<T>(xs: T[], f: (x: T) => boolean): number {
+  for (let i = xs.length - 1; i >= 0; i--) if (f(xs[i])) return i;
+  return -1;
 }
 
 // ---- 保存された発言 → 表示 ---------------------------------------------------------------

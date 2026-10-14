@@ -41,12 +41,14 @@ export interface Chat {
   answer(reqId: string, approved: boolean, reason: string, remember: ToolPolicy): Promise<void>; // 確認に答える(「実行する」「拒否」と、これから先の扱い)
   lastPrompt: string;          // 開いている会話で、モデルに実際に渡した文字列
   send(text: string): Promise<void>;
+  regenerate(): Promise<void>; // 最後の返事を作り直す(開いている会話。0011)
+  resend(text: string): Promise<void>; // 最後の発言を直して送り直す(開いている会話。0011)
   compact(): Promise<void>;    // 今すぐ要約(開いている会話)
   stop(): void;
 }
 
 export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conversations, n: Notifier): Chat {
-  const { addUser, addError, addAssistant, updateAssistant, setSaved, remove, reset } = t;
+  const { addUser, addError, addAssistant, updateAssistant, setSaved, remove, reset, dropLastTurn } = t;
   const { current, draft, openCount, open, adopt, flushSettings, reloadList, setUsage, reloadSettings } = convs;
   const { notify } = n;
   const [generatingId, setGeneratingId] = useState<string | null>(null);
@@ -108,7 +110,9 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
 
   // run は送信と「今すぐ要約」の共通部分。生成中の吹き出しを出し、chat イベントで書き換え、done で終わる。
   // manual は「今すぐ要約」(返事は生成しない。終わったら吹き出しを消して、区切りが出るように開き直す)
-  const run = useCallback(async (id: string, start: () => CancellablePromise<void>, manual: boolean, userItemId: number | null) => {
+  // 戻り値は、この送信で届いたエラー(作り直す・送り直すで、開き直したあとに出し直すため)
+  const run = useCallback(async (id: string, start: () => CancellablePromise<void>, manual: boolean, userItemId: number | null): Promise<string[]> => {
+    const errors: string[] = [];
     const l: Live = {
       convId: id, itemId: null, userItemId, thinkStart: 0, processStart: 0, saved: [], confirm: null,
       view: { generating: true, waiting: true, thinking: "", thinkLabel: "", content: "", summarizing: manual, summary: "" },
@@ -227,6 +231,7 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
           show(liveProcess(false));
           return;
         case "error":
+          errors.push(ev.error ?? "");
           if (viewing.current === id) addError(ev.error ?? "");
           else console.warn(`別の会話でのエラー: ${ev.error}`);
           return;
@@ -280,6 +285,7 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
     setGeneratingId(null);
     setBusy("idle");
     reloadList().catch(() => {}); // タイトルと並び順(更新の新しい順)が変わる
+    return errors;
   }, [open, reloadList, setUsage, addError, addAssistant, updateAssistant, setSaved, remove, setBusy, notify]);
 
   const send = useCallback(async (text: string) => {
@@ -322,5 +328,32 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
     }
   }, [addError, flushSettings, reloadSettings]);
 
-  return { generatingId, confirmingId, answer, lastPrompt, send, compact, stop };
+  // retry は作り直す・送り直すの共通部分(0011)。表示から最後のやり取りを外してから、送信と同じ流れで返事を作る。
+  // 終わったら会話を開き直して、保存された内容に表示を合わせる(送れなかったときは Go が何も消していないので、元の表示に戻る)。
+  // 開き直すと表示が作り直されるので、届いたエラーはそのあとに出し直す
+  const retry = useCallback(async (withUser: boolean, text: string, start: (id: string) => CancellablePromise<void>) => {
+    if (controller.current || starting.current || !current) return;
+    const id = current.conversation.id;
+    starting.current = true;
+    try {
+      await flushSettings();
+    } catch (err) {
+      addError(errorMessage(err));
+      return;
+    } finally {
+      starting.current = false;
+    }
+    dropLastTurn(withUser);
+    const userItemId = withUser ? addUser(text) : null;
+    const errors = await run(id, () => start(id), false, userItemId);
+    if (errors.length && viewing.current === id) {
+      await open(id).catch(err => addError(errorMessage(err)));
+      errors.forEach(addError);
+    }
+  }, [current, flushSettings, dropLastTurn, addUser, run, open, addError]);
+
+  const regenerate = useCallback(() => retry(false, "", id => ChatService.Regenerate(id)), [retry]);
+  const resend = useCallback((text: string) => retry(true, text, id => ChatService.Resend(id, text)), [retry]);
+
+  return { generatingId, confirmingId, answer, lastPrompt, send, regenerate, resend, compact, stop };
 }

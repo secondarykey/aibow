@@ -511,6 +511,20 @@ func (s *ChatService) Send(ctx context.Context, id uuid.UUID, text string) {
 	})
 }
 
+// Regenerate は最後の返事を作り直す(0011)。途中経過と終わり(done)は Send と同じく chat イベントで送る。
+func (s *ChatService) Regenerate(ctx context.Context, id uuid.UUID) {
+	s.run(ctx, id, func(ctx context.Context, emit func(aibow.ChatEvent)) {
+		s.convs.Regenerate(ctx, id, emit)
+	})
+}
+
+// Resend は最後の発言を text に直して送り直す(0011)。途中経過と終わり(done)は Send と同じく chat イベントで送る。
+func (s *ChatService) Resend(ctx context.Context, id uuid.UUID, text string) {
+	s.run(ctx, id, func(ctx context.Context, emit func(aibow.ChatEvent)) {
+		s.convs.Resend(ctx, id, text, emit)
+	})
+}
+
 // Compact は「今すぐ要約」。会話の上限を超えていなくても、古い発言を要約する。
 // Send と同じく、途中経過(要約の文)と終わり(done)は chat イベントで送る。
 func (s *ChatService) Compact(ctx context.Context, id uuid.UUID) {

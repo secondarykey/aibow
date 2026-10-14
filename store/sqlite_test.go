@@ -115,6 +115,15 @@ func TestConversationsAndMessagesPersist(t *testing.T) {
 	if _, again, _ := s.Conversation(c.ID); again[0].Excluded || !again[1].Excluded {
 		t.Errorf("印を付けた発言だけ: %v %v", again[0].Excluded, again[1].Excluded)
 	}
+	defer func() {
+		// 発言を消す(作り直す・送り直す。0011)。ほかのテストの確かめが済んでから
+		if err := s.DeleteMessages([]uuid.UUID{reply.ID}); err != nil {
+			t.Fatal(err)
+		}
+		if _, left, _ := s.Conversation(c.ID); len(left) != 1 || left[0].ID != user.ID {
+			t.Errorf("消した発言だけが無くなる: %+v", left)
+		}
+	}()
 	got := ms[1]
 	if got.Thinking != "挨拶だ" || got.Model != "qwen3.5:4b" || got.Stats == nil || *got.Stats != *reply.Stats {
 		t.Errorf("返事の中身が違います: %+v / %+v", got, got.Stats)

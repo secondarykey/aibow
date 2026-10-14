@@ -147,6 +147,15 @@ func (cs *Conversations) withLimits(set ConversationSettings) ConversationSettin
 	return set
 }
 
+// ids は発言の ID の並び。
+func ids(ms []StoredMessage) []uuid.UUID {
+	out := make([]uuid.UUID, 0, len(ms))
+	for _, m := range ms {
+		out = append(out, m.ID)
+	}
+	return out
+}
+
 // forModel は、モデルに渡す履歴(ユーザーが選んで「モデルに渡さない」にした発言を外したもの。0011)。
 // 送信・メーター・今すぐ要約で、履歴を読んだところで通す。外したあとの並びで組(ユーザーの発言から次の発言の前まで)を数え直すので、
 // 「質問 → 壊れた図 → 直して → 直った図」から真ん中の2つを外すと、「質問」の組に「直った図」が続く。
@@ -182,11 +191,7 @@ func (cs *Conversations) SetExcluded(id, msg uuid.UUID, excluded bool) error {
 			to++
 		}
 	}
-	ids := make([]uuid.UUID, 0, to-from)
-	for _, m := range history[from:to] {
-		ids = append(ids, m.ID)
-	}
-	return cs.store.SetMessagesExcluded(ids, excluded)
+	return cs.store.SetMessagesExcluded(ids(history[from:to]), excluded)
 }
 
 // ensureWorkspace は、エンジンの作業領域をこの会話の大きさ(会話の上限 + 返事の上限)にする。
@@ -357,6 +362,64 @@ func (cs *Conversations) Generating() *uuid.UUID {
 // 途中経過は emit に ChatEvent で渡す。最後に必ず done を1回渡す。
 // ctx がキャンセルされると(画面の停止ボタン)、そこまでの返事を保存して終わる。
 func (cs *Conversations) Send(ctx context.Context, id uuid.UUID, text string, emit func(ChatEvent)) {
+	cs.turn(ctx, id, text, keepAll, emit)
+}
+
+// Regenerate は、最後の返事を作り直す(0011)。最後のユーザーの発言の後ろ(返事とツールの結果)を消し、
+// 今のモデル・設定でもう一度返事を作る。ツールをオンにした・9B に切り替えた、など条件を変えてやり直すときのため。
+// 途中経過と終わりは Send と同じく emit で渡す。前の返事でツールが行ったこと(ファイルの書き換えなど)は元に戻らない。
+func (cs *Conversations) Regenerate(ctx context.Context, id uuid.UUID, emit func(ChatEvent)) {
+	cs.turn(ctx, id, "", dropReply, emit)
+}
+
+// Resend は、最後のユーザーの発言を text に直して送り直す(0011)。最後の発言とその返事を消してから送る。
+func (cs *Conversations) Resend(ctx context.Context, id uuid.UUID, text string, emit func(ChatEvent)) {
+	cs.turn(ctx, id, text, dropLastTurn, emit)
+}
+
+// やり直しの種類(turn の drop)。保存された発言のうち、消して送り直す部分を決める
+type dropFunc func(history []StoredMessage) (keep []StoredMessage, drop []StoredMessage, err error)
+
+// keepAll はふつうの送信: 何も消さない。
+func keepAll(history []StoredMessage) ([]StoredMessage, []StoredMessage, error) {
+	return history, nil, nil
+}
+
+// dropReply は作り直す: 最後のユーザーの発言は残し、その後ろ(返事とツールの結果)を消す。
+func dropReply(history []StoredMessage) ([]StoredMessage, []StoredMessage, error) {
+	last := lastUserIndex(history)
+	if last < 0 {
+		return nil, nil, errors.New("作り直す返事がありません")
+	}
+	if history[last].Excluded {
+		return nil, nil, errors.New("最後の発言を「モデルに渡さない」にしているので、作り直せません。戻してから作り直してください")
+	}
+	// 残す側は Clip する(あとで append したときに、消す側と同じ配列を書き換えないように)
+	return slices.Clip(history[:last+1]), history[last+1:], nil
+}
+
+// dropLastTurn は送り直す: 最後のユーザーの発言とその返事を消す。
+func dropLastTurn(history []StoredMessage) ([]StoredMessage, []StoredMessage, error) {
+	last := lastUserIndex(history)
+	if last < 0 {
+		return nil, nil, errors.New("送り直す発言がありません")
+	}
+	return slices.Clip(history[:last]), history[last:], nil
+}
+
+// lastUserIndex は最後のユーザーの発言の位置。無ければ -1(compact.go の lastUser は無ければ 0)。
+func lastUserIndex(history []StoredMessage) int {
+	for i := len(history) - 1; i >= 0; i-- {
+		if history[i].Role == "user" {
+			return i
+		}
+	}
+	return -1
+}
+
+// turn は Send / Regenerate / Resend の共通部分。drop で保存された発言から消す部分を決め、text が空でなければ新しい発言として送る。
+// 消すのは、会話の上限に収まるかを確かめてから(送れないときに、前のやり取りだけが消えないように)。
+func (cs *Conversations) turn(ctx context.Context, id uuid.UUID, text string, drop dropFunc, emit func(ChatEvent)) {
 	var reply *StoredMessage
 	defer func() { emit(ChatEvent{ConversationID: id, Type: "done", Reply: reply}) }()
 	fail := func(err error) { emit(ChatEvent{ConversationID: id, Type: "error", Error: err.Error()}) }
@@ -367,12 +430,17 @@ func (cs *Conversations) Send(ctx context.Context, id uuid.UUID, text string, em
 	}
 	defer cs.generating.Store(nil)
 
-	conv, history, err := cs.Get(id)
+	conv, saved, err := cs.Get(id)
 	if err != nil {
 		fail(err)
 		return
 	}
-	history = forModel(history)
+	saved, dropped, err := drop(saved)
+	if err != nil {
+		fail(err)
+		return
+	}
+	history := forModel(saved)
 
 	// 0. 作業領域をこの会話の大きさにする(会話の上限 + 返事の上限。要約も返事も、この中で生成する)。
 	// この会話で使う MCP のサーバーが動いていなければ、起動する(そのツールも会話の上限に数えるので、確かめる前に)
@@ -382,19 +450,31 @@ func (cs *Conversations) Send(ctx context.Context, id uuid.UUID, text string, em
 	}
 	cs.startRemote(ctx, conv, emit)
 
-	// 1. 会話の上限に収められるかを確かめてから、ユーザーの発言を保存する。
-	// タイトルがまだ無ければ(最初の発言なら)、その先頭をタイトルにする
-	user := StoredMessage{ID: uuid.NewV7(), ConversationID: id, Role: "user", Content: text, CreatedAt: time.Now()}
-	history = append(history, user)
+	// 1. 会話の上限に収められるかを確かめてから、(やり直しなら前の部分を消して)ユーザーの発言を保存する。
+	// タイトルがまだ無ければ(最初の発言なら)、その先頭をタイトルにする。作り直す(text が空)なら、最後の発言をそのまま使う
+	var user *StoredMessage
+	if text != "" {
+		user = &StoredMessage{ID: uuid.NewV7(), ConversationID: id, Role: "user", Content: text, CreatedAt: time.Now()}
+		history = append(history, *user)
+	}
 	if err := cs.checkFits(conv.Settings, history); err != nil {
 		fail(err)
 		return
 	}
-	if err := cs.save(user, titleFrom(text)); err != nil {
-		fail(err)
-		return
+	if len(dropped) > 0 {
+		if err := cs.store.DeleteMessages(ids(dropped)); err != nil {
+			fail(fmt.Errorf("前のやり取りを消せません: %w", err))
+			return
+		}
+		log.Infof("会話 %s のやり直し: 発言 %d 件を消しました", id, len(dropped))
 	}
-	emit(ChatEvent{ConversationID: id, Type: "user", Message: &user})
+	if user != nil {
+		if err := cs.save(*user, titleFrom(text)); err != nil {
+			fail(err)
+			return
+		}
+		emit(ChatEvent{ConversationID: id, Type: "user", Message: user})
+	}
 
 	// 2. 返事を生成して保存する。モデルに渡す内容は毎回、会話の上限に収めてから決める(compact.go)。
 	// ツールを呼んだら、実行して結果を渡し、ツールを呼ばなくなるまで生成を繰り返す(agent.go)

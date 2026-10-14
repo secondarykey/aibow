@@ -118,6 +118,13 @@ func (s *memStore) AddMessage(m StoredMessage) error {
 	return nil
 }
 
+func (s *memStore) DeleteMessages(ids []uuid.UUID) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.messages = slices.DeleteFunc(s.messages, func(m StoredMessage) bool { return slices.Contains(ids, m.ID) })
+	return nil
+}
+
 func (s *memStore) SetMessagesExcluded(ids []uuid.UUID, excluded bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

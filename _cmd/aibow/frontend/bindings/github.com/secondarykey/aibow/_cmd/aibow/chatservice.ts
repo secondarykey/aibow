@@ -117,10 +117,24 @@ export function NewConversation(settings: aibow$0.ConversationSettings | null): 
 }
 
 /**
+ * Regenerate は最後の返事を作り直す(0011)。途中経過と終わり(done)は Send と同じく chat イベントで送る。
+ */
+export function Regenerate(id: uuid$0.UUID): $CancellablePromise<void> {
+    return $Call.ByID(637434261, id);
+}
+
+/**
  * RenameConversation は会話のタイトルを変える。空にはできない。
  */
 export function RenameConversation(id: uuid$0.UUID, title: string): $CancellablePromise<void> {
     return $Call.ByID(2233376402, id, title);
+}
+
+/**
+ * Resend は最後の発言を text に直して送り直す(0011)。途中経過と終わり(done)は Send と同じく chat イベントで送る。
+ */
+export function Resend(id: uuid$0.UUID, text: string): $CancellablePromise<void> {
+    return $Call.ByID(761391552, id, text);
 }
 
 /**

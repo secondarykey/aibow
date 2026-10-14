@@ -652,3 +652,102 @@ func TestExcludeReplyWithTools(t *testing.T) {
 		t.Errorf("モデルに渡す履歴: %+v", got)
 	}
 }
+
+// collect は、Regenerate / Resend の途中経過を集める
+func collect(f func(emit func(ChatEvent))) []ChatEvent {
+	var evs []ChatEvent
+	f(func(ev ChatEvent) { evs = append(evs, ev) })
+	return evs
+}
+
+func contents(ms []StoredMessage) []string {
+	var out []string
+	for _, m := range ms {
+		out = append(out, m.Content)
+	}
+	return out
+}
+
+// 最後の返事を作り直す: 最後の発言の後ろを消して、もう一度返事を作る(0011)。ツールの呼び出しと結果も消える
+func TestRegenerate(t *testing.T) {
+	g := &fakeGen{replies: []fakeReply{
+		{content: "A1"},
+		{toolCalls: []ToolCall{toolCall("calculate", "expression", "1+1")}},
+		{content: "A2"},
+		{content: "A2 作り直し"},
+	}}
+	cs, _, c := newToolConversation(t, g)
+	send(t, cs, c, "Q1")
+	send(t, cs, c, "Q2")
+	if _, ms, _ := cs.Get(c.ID); len(ms) != 6 {
+		t.Fatalf("発言の数: %d", len(ms))
+	}
+
+	evs := collect(func(emit func(ChatEvent)) { cs.Regenerate(context.Background(), c.ID, emit) })
+	if errs := errorsOf(evs); len(errs) != 0 {
+		t.Fatalf("エラー: %v", errs)
+	}
+	_, ms, _ := cs.Get(c.ID)
+	if got, want := contents(ms), []string{"Q1", "A1", "Q2", "A2 作り直し"}; !slices.Equal(got, want) {
+		t.Errorf("保存された発言: %v(期待: %v)", got, want)
+	}
+	var passed []string
+	for _, m := range g.gotMessages[1:] {
+		passed = append(passed, m.Content)
+	}
+	if want := []string{"Q1", "A1", "Q2"}; !slices.Equal(passed, want) {
+		t.Errorf("モデルに渡した発言: %v(期待: %v)", passed, want)
+	}
+	for _, ev := range evs {
+		if ev.Type == "user" {
+			t.Error("作り直しでは発言を保存し直さない")
+		}
+	}
+}
+
+// 最後の発言を直して送り直す: 最後の発言とその返事を消して、直した文で送る(0011)
+func TestResend(t *testing.T) {
+	g := &fakeGen{replies: []fakeReply{{content: "A1"}, {content: "A2"}, {content: "A2 直した"}}}
+	cs, _ := newTestConversations(t, g)
+	c := mustCreate(t, cs)
+	send(t, cs, c, "Q1")
+	send(t, cs, c, "Q2")
+
+	evs := collect(func(emit func(ChatEvent)) { cs.Resend(context.Background(), c.ID, "Q2 直した", emit) })
+	if errs := errorsOf(evs); len(errs) != 0 {
+		t.Fatalf("エラー: %v", errs)
+	}
+	_, ms, _ := cs.Get(c.ID)
+	if got, want := contents(ms), []string{"Q1", "A1", "Q2 直した", "A2 直した"}; !slices.Equal(got, want) {
+		t.Errorf("保存された発言: %v(期待: %v)", got, want)
+	}
+
+	// 収まらないときは、消さずに止める(前のやり取りだけが消えないように)
+	setLimits(t, cs, &c, 10, 100)
+	evs = collect(func(emit func(ChatEvent)) { cs.Resend(context.Background(), c.ID, strings.Repeat("長", 50), emit) })
+	if errs := errorsOf(evs); len(errs) != 1 {
+		t.Fatalf("収まらなければエラー: %v", errs)
+	}
+	if _, after, _ := cs.Get(c.ID); !slices.Equal(contents(after), contents(ms)) {
+		t.Errorf("送れなかったときは消さない: %v", contents(after))
+	}
+}
+
+// 作り直せないとき: 発言が無い・最後の発言をモデルに渡さないにしている
+func TestRegenerateErrors(t *testing.T) {
+	g := &fakeGen{content: "A"}
+	cs, _ := newTestConversations(t, g)
+	c := mustCreate(t, cs)
+	if errs := errorsOf(collect(func(emit func(ChatEvent)) { cs.Regenerate(context.Background(), c.ID, emit) })); len(errs) != 1 {
+		t.Errorf("発言が無ければ作り直せない: %v", errs)
+	}
+	send(t, cs, c, "Q")
+	_, ms, _ := cs.Get(c.ID)
+	cs.SetExcluded(c.ID, ms[0].ID, true)
+	if errs := errorsOf(collect(func(emit func(ChatEvent)) { cs.Regenerate(context.Background(), c.ID, emit) })); len(errs) != 1 {
+		t.Errorf("最後の発言を渡さないにしていたら作り直せない: %v", errs)
+	}
+	if _, after, _ := cs.Get(c.ID); len(after) != 2 {
+		t.Errorf("作り直せなかったときは消さない: %d", len(after))
+	}
+}

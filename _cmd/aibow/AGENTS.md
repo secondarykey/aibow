@@ -64,6 +64,7 @@ Ollama の保存先は Ollama と同じ `OLLAMA_MODELS`。意味と既定値は 
   送信の途中の要約中だけは `ChatService.StopSummary()` で要約だけを止める(その回は truncate で返事に進む。[_docs/compact.md](../../_docs/compact.md))
 - 会話は、新しい会話の画面で最初に送信したときに `ChatService.NewConversation(settings)` で作る(空の会話を作らない)
 - 吹き出しを「モデルに渡さない」にする / 戻すのは `ChatService.SetExcluded(会話の ID, 吹き出しの中の発言の ID, 渡さないか)`(0011)
+- 最後の返事を作り直すのは `ChatService.Regenerate(会話の ID)`、最後の発言を直して送り直すのは `ChatService.Resend(会話の ID, 文)`(0011)。どちらも `Send` と同じく chat イベントで途中経過を送り、`done` で終わる(作り直すでは `user` イベントは来ない)
 - ツールの実行前の確認には `ChatService.ConfirmTool(会話の ID, confirm イベントの ID, 実行するか, 理由, これから先の扱い)` で答える(これから先の扱いは `ToolPolicy` の値。空ならこの1回だけ。0010)。作業フォルダは `ChatService.ChooseWorkDir` でフォルダを選ぶダイアログを出す
 - ツールと MCP:会話で選べる MCP のサーバーは `MCPServers`(設定の画面は `AllMCPServers`)、組み込みのツールの一覧は `BuiltinTools`、ツールの扱いの PC の既定(`tools.json`)は `ToolPrefs` / `SetToolPolicy` / `SetGroupDefault`(新しい会話で最初から使うか)、MCP のサーバーのツールの一覧を受け取り直すのは `LoadToolList`、会話の設定の画面に出す会話でのツールの扱いは `ToolStates`(会話の設定を渡す)、設定の画面に出す PC での扱いは `ToolDefaults`、グループごとまとめて確認しないは `SetGroupPolicy`。仕組みは [_docs/mcp.md](../../_docs/mcp.md)
 - 左下に出すバージョンは `ChatService.Version`(`wails3 dev` では patch +1 と `+dev`。`appversion.go`)

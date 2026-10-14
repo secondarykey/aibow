@@ -338,6 +338,21 @@ func (s *SQLite) AddMessage(m aibow.StoredMessage) error {
 	return err
 }
 
+// DeleteMessages は発言を消す。返事1つ(ツールの結果を含む)は何件かになるので、まとめて1つのトランザクションで消す。
+func (s *SQLite) DeleteMessages(ids []uuid.UUID) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, id := range ids {
+		if _, err := tx.Exec(`DELETE FROM messages WHERE id = ?`, id.String()); err != nil {
+			return fmt.Errorf("発言 %s を消せません: %w", id, err)
+		}
+	}
+	return tx.Commit()
+}
+
 // SetMessagesExcluded は発言の「モデルに渡さない」の印を変える。返事1つ(ツールの結果を含む)は何件かになるので、まとめて1つのトランザクションで書く。
 func (s *SQLite) SetMessagesExcluded(ids []uuid.UUID, excluded bool) error {
 	tx, err := s.db.Begin()

@@ -2,10 +2,10 @@
 import { useEffect, useState } from "react";
 import type { ToolPolicy } from "../../bindings/github.com/secondarykey/aibow";
 import type { ReactNode } from "react";
-import { LuChevronDown, LuChevronRight, LuCircleStop, LuEye, LuEyeOff } from "react-icons/lu";
+import { LuChevronDown, LuChevronRight, LuCircleStop, LuEye, LuEyeOff, LuPencil, LuRefreshCw } from "react-icons/lu";
 import { CopyButton } from "./CopyButton";
 import type { Compaction } from "../../bindings/github.com/secondarykey/aibow";
-import { compactionStats } from "../transcript";
+import { compactionStats, lastIndex } from "../transcript";
 import type { AssistantView, Item } from "../transcript";
 import { RenderedText } from "./RenderedText";
 import { ToolCard } from "./ToolCard";
@@ -13,6 +13,13 @@ import { useStickToBottom } from "../stickToBottom";
 
 const FADED_TITLE = "この発言はモデルに渡していません(要約に入ったか、会話の上限に収めるために外しました)";
 const EXCLUDED_TITLE = "モデルに渡さないにしています";
+
+// Retry は最後のやり取りのやり直し(0011): 最後の返事を作り直す・最後の発言を直して送り直す
+export interface Retry {
+  disabled: boolean; // 生成中・読み込み中は押せない
+  onRegenerate(): void;
+  onResend(text: string): void;
+}
 
 // Exclude は吹き出しの「モデルに渡さない」を切り替える(0011)。msgId は吹き出しの中の発言のどれか(Go が吹き出し1つ分に広げる)
 export interface Exclude {
@@ -24,12 +31,13 @@ export interface Exclude {
 // firstId はモデルに渡す最初の発言(Go の Usage.first_id)。これより前の発言は、要約に入ったか
 // truncate で外れて、モデルに渡していないので薄く表示する(発言そのものは保存されている)
 // conversationId は表示している会話の ID。会話を切り替えたら、一番下(最新の発言)から見せる
-export function ChatView({ items, firstId, conversationId, onStop, onAnswer, exclude }: {
+export function ChatView({ items, firstId, conversationId, onStop, onAnswer, exclude, retry }: {
   items: Item[];
   firstId: string | null;
   conversationId: string | null;
   onStop(): void;
   exclude: Exclude;
+  retry: Retry;
   onAnswer(reqId: string, approved: boolean, reason: string, remember: ToolPolicy): void; // ツールの実行前の確認に答える(remember はこれから先の扱い)
 }) {
   const faded = (msgId?: string) => (msgId && firstId && msgId < firstId ? " faded" : "");
@@ -39,17 +47,42 @@ export function ChatView({ items, firstId, conversationId, onStop, onAnswer, exc
   // 会話を切り替えたときと、自分で送信したとき(ユーザーの発言が増えたとき)は、どこを読んでいても一番下へ
   const userCount = items.filter(it => it.kind === "user").length;
   const ref = useStickToBottom<HTMLDivElement>(items, `${conversationId}:${userCount}`);
+  // やり直せるのは最後のやり取りだけ: 最後の発言(直す)と、その後ろの最後の返事(作り直す)
+  const lastUser = lastIndex(items, it => it.kind === "user");
+  const lastAssistant = lastIndex(items, it => it.kind === "assistant");
+  // 直している発言(吹き出しの中で直す)。会話を切り替えたらやめる
+  const [editing, setEditing] = useState<number | null>(null);
+  useEffect(() => setEditing(null), [conversationId]);
 
   return (
     <div className="chat" ref={ref}>
       <div className="chat-inner">
-        {items.map(it => {
+        {items.map((it, i) => {
           switch (it.kind) {
             case "user":
+              if (editing === it.id) {
+                return (
+                  <EditUser
+                    key={it.id}
+                    initial={it.text}
+                    disabled={retry.disabled}
+                    onCancel={() => setEditing(null)}
+                    onSend={text => {
+                      setEditing(null);
+                      retry.onResend(text);
+                    }}
+                  />
+                );
+              }
               return (
                 <div key={it.id} className="user-turn">
                   <div className={"msg user" + faded(it.msgId) + (it.excluded ? " excluded" : "")} title={fadedTitle(it.msgId, it.excluded)}>{it.text}</div>
                   <UserActions text={it.text} createdAt={it.createdAt}>
+                    {i === lastUser && it.msgId && (
+                      <button className="reply-action" disabled={retry.disabled} title="この発言を直して送り直す(この発言と返事は消える)" onClick={() => setEditing(it.id)}>
+                        <LuPencil />
+                      </button>
+                    )}
                     {it.msgId && <ExcludeButton msgId={it.msgId} excluded={!!it.excluded} exclude={exclude} />}
                   </UserActions>
                 </div>
@@ -66,7 +99,21 @@ export function ChatView({ items, firstId, conversationId, onStop, onAnswer, exc
                   faded={!!faded(it.msgId)}
                   onStop={onStop}
                   onAnswer={onAnswer}
-                  excludeButton={it.msgId && <ExcludeButton msgId={it.msgId} excluded={!!it.excluded} exclude={exclude} />}
+                  excludeButton={it.msgId && (
+                    <>
+                      <ExcludeButton msgId={it.msgId} excluded={!!it.excluded} exclude={exclude} />
+                      {i === lastAssistant && i > lastUser && (
+                        <button
+                          className="reply-action"
+                          disabled={retry.disabled}
+                          title="この返事を作り直す(今のモデル・設定で。この返事は消える)"
+                          onClick={retry.onRegenerate}
+                        >
+                          <LuRefreshCw />
+                        </button>
+                      )}
+                    </>
+                  )}
                   excluded={!!it.excluded}
                 />
               );
@@ -159,6 +206,27 @@ function UserActions({ text, createdAt, children }: { text: string; createdAt?: 
       {children}
       {createdAt && <MessageTime createdAt={createdAt} />}
       <CopyButton text={text} />
+    </div>
+  );
+}
+
+// EditUser は最後の発言を直す欄(0011)。「送り直す」で、この発言と返事を消して直した文で送る
+function EditUser({ initial, disabled, onCancel, onSend }: {
+  initial: string;
+  disabled: boolean;
+  onCancel(): void;
+  onSend(text: string): void;
+}) {
+  const [text, setText] = useState(initial);
+  return (
+    <div className="user-turn">
+      <div className="msg user editing">
+        <textarea value={text} rows={Math.min(10, Math.max(2, text.split("\n").length))} autoFocus onChange={e => setText(e.target.value)} />
+      </div>
+      <div className="edit-actions">
+        <button onClick={onCancel}>やめる</button>
+        <button className="primary" disabled={disabled || !text.trim()} onClick={() => onSend(text.trim())}>送り直す</button>
+      </div>
     </div>
   );
 }

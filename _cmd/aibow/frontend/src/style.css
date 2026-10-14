@@ -128,6 +128,13 @@ footer.home .composer textarea { line-height: 1.5; min-height: calc(3 * 1.5em + 
 .msg.excluded { opacity: .45; outline: 1px dashed var(--muted); outline-offset: 2px; }
 .msg.excluded:hover { opacity: .8; }
 .reply-action.exclude.on { color: var(--text); }
+/* 最後の発言を直す欄(0011)。吹き出しと同じ幅で、中に文の入力欄 */
+.msg.user.editing { width: min(100%, 640px); padding: 6px; }
+.msg.user.editing textarea {
+  width: 100%; font: inherit; resize: vertical; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--bg); color: var(--text); padding: 6px;
+}
+.edit-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 4px; }
 .msg.error { color: var(--error); border: 1px solid var(--error); background: transparent; white-space: pre-wrap; }
 /* 応答待ち・打ち切りの説明など、本文の外の短い文。返事の本文(.md)には効かせない */
 .msg .body > p { margin: 0; white-space: pre-wrap; }
