@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 
 // 狭いウィンドウ。会話の一覧を会話の上に重ねて出す幅(App.tsx)
-export const NARROW_QUERY = "(max-width: 640px)";
+export const NARROW_QUERY = "(max-width: 720px)";
 
 export function useMediaQuery(query: string): boolean {
   const [matches, setMatches] = useState(() => window.matchMedia(query).matches);
