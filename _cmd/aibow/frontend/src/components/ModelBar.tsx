@@ -1,4 +1,6 @@
-// チャットの入力欄の下: モデルの選択と、読み込み中のモデルの情報。右端に会話のメーター
+// チャットの入力欄の下: モデルの選択。右端に会話のメーター。
+// 読み込んだモデルの情報(パラメータ数・GPU / CPU・作業領域・読み込み時間)は、いつも出しておかず、
+// モデルの選択にマウスを乗せたときの吹き出しに出す(2026-10-15、ユーザーの指示)
 import type { ReactNode } from "react";
 import type { Models } from "../useModels";
 
@@ -23,18 +25,23 @@ export function ModelBar({ models, disabled, size, children }: Props) {
   // llama.cpp は大きさを 256 の倍数に切り上げることがあるので、その差は同じとみなす
   const workspace = size ?? current?.n_ctx ?? 0;
   const resize = current !== null && size !== undefined && (current.n_ctx < size || current.n_ctx >= size + 256);
+  // 吹き出しの文。1行目は何を選ぶ欄か、続けて読み込んだモデルの情報
   const info = loading
-    ? "読み込み中…"
+    ? ["読み込み中…"]
     : current
-      ? `${current.params_b.toFixed(1)}B ・ ${gpu ? "GPU" : "CPU"} ・ 作業領域 ${workspace.toLocaleString()}${resize ? "(送信時に作り直し)" : ""} ・ 読み込み ${current.load_sec.toFixed(1)}s`
-      : "モデル未読み込み";
-  const infoTitle = current ? `${current.desc}\n今確保している作業領域: ${current.n_ctx.toLocaleString()} トークン` : "";
+      ? [
+        `${current.name}(${current.params_b.toFixed(1)}B ・ ${gpu ? "GPU" : "CPU"} ・ 読み込み ${current.load_sec.toFixed(1)}s)`,
+        `作業領域: ${workspace.toLocaleString()} トークン${resize ? `(今は ${current.n_ctx.toLocaleString()}。送信時に作り直し)` : ""}`,
+        current.desc,
+      ]
+      : ["モデル未読み込み"];
+  const title = ["使うモデル(models フォルダと Ollama のモデル)", ...info].filter(Boolean).join("\n");
 
   return (
     <div className="model-bar">
       <select
         className="model-select"
-        title="使うモデル(models フォルダと Ollama のモデル)"
+        title={title}
         value={current?.id ?? ""}
         disabled={disabled}
         onChange={e => models.switchModel(e.target.value)}
@@ -51,7 +58,6 @@ export function ModelBar({ models, disabled, size, children }: Props) {
         })}
         {outside && <option value={current.id}>{current.name}</option>}
       </select>
-      <span className="model-info" title={infoTitle}>{info}</span>
       {children && <span className="model-bar-end">{children}</span>}
     </div>
   );

@@ -122,7 +122,7 @@ export default function App() {
     convs.refreshUsage().catch(() => {});
   }, [models.current?.id, models.current?.n_ctx, app.settings?.workspace, convs.refreshUsage]);
 
-  // 返事を書き終えたら、モデルの情報を取り直す(送信の前に作業領域を作り直していることがあるため。入力欄の下の「作業領域」)
+  // 返事を書き終えたら、モデルの情報を取り直す(送信の前に作業領域を作り直していることがあるため。モデルの選択の吹き出しの「作業領域」)
   const prevBusy = useRef(busy);
   useEffect(() => {
     if (prevBusy.current === "generating" && busy === "idle") models.reload().catch(() => {});
