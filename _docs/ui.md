@@ -12,7 +12,7 @@
 | `App.tsx` | 画面全体をまとめる。一覧の開閉(狭いウィンドウでは重ねて出す)、会話の場所に出すもの(チャット / 新しい会話 / 設定) |
 | `useModels.ts` / `useConversations.ts` / `useChat.ts` / `useAppSettings.ts` | Go とのやり取り |
 | `transcript.ts` | 会話の表示(吹き出し・ツールのカード・エラー・区切り)の持ち方。保存された発言から表示を作る |
-| `components/` | 表示。`ConversationList` / `Splitter` / `TitleBar` / `ChatView` / `ToolCard` / `Composer` / `WorkDirBar` / `ModelBar` / `Meter` / `NewChat` / `SettingsView` / `ConversationSettingsView` / `ConversationSettingsForm` / `CopyButton` など。返事の中身は [rendering.md](rendering.md) |
+| `components/` | 表示。`ConversationList` / `Splitter` / `TitleBar` / `ChatView` / `ToolCard` / `Composer` / `WorkDirBar` / `ModelBar` / `Meter` / `NewChat` / `SettingsView` / `ConversationSettingsView` / `ConversationSettingsForm` / `ToolSettings` / `ConversationTools` / `ConfirmChip` / `CopyButton` など。返事の中身は [rendering.md](rendering.md) |
 | `mediaQuery.ts` | 画面の幅・OS のライト / ダークを見る(`useMediaQuery`。狭いウィンドウの境目 `NARROW_QUERY`) |
 | `stickToBottom.ts` | 「一番下にいるときだけ追いかける」スクロール |
 | `toast.tsx` / `imeFocus.tsx` / `errors.ts` | トースト / IME の付け直し / Go のエラーの文の取り出し |
