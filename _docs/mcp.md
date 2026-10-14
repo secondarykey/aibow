@@ -1,7 +1,9 @@
-# MCP(クライアント)
+# MCP(クライアントとサーバー)
 
-aibow を MCP(Model Context Protocol)のクライアントにして、既製の MCP サーバーのツールをモデルに使わせる仕組みの説明です。
-仕様は [features/0006-mcp-client.md](features/0006-mcp-client.md)。ツール呼び出しとエージェントループそのものは [tools.md](tools.md)。
+aibow を MCP(Model Context Protocol)のクライアントにして、既製の MCP サーバーのツールをモデルに使わせる仕組みと、
+aibow のツールを MCP のサーバーとして出す仕組み(自作の MCP サーバー。末尾の「自作の MCP サーバー」)の説明です。
+仕様は [features/0006-mcp-client.md](features/0006-mcp-client.md)(クライアント)と [features/0007-mcp-server.md](features/0007-mcp-server.md)(サーバー)。
+ツール呼び出しとエージェントループそのものは [tools.md](tools.md)。
 
 ## MCP とは
 
@@ -199,3 +201,68 @@ aibow から同じものを使うと、次のことが分かりました。
 - 送受信した JSON-RPC のメッセージ(`→` が aibow から、`←` がサーバーから。1行 400 文字まで)。SDK の `LoggingTransport` を使っている
 - サーバーのエラー出力(`MCP <名前> (stderr) …`)
 - MCP のツールの定義で、プロンプトが何トークン長くなるか(`ツール: 組み込み N 個 + MCP M 個。…約 K トークン長くなります`)と、名前が重なって出さなかったツール
+
+## 自作の MCP サーバー(aibow-mcp。ステップ5)
+
+aibow のツール(`tool` パッケージ。時刻・計算・ファイルの読み書き・コマンド)を MCP のサーバーとして出します。
+上のクライアントの反対側で、`tools/list` に定義の一覧を、`tools/call` に実行の結果を返します。
+
+```
+MCP のクライアント(Claude Code・aibow など)── 起動する(aibow-mcp <作業フォルダ>)──→ aibow-mcp
+                                          ── tools/list ──→ tool のツールの定義(名前・説明・引数は aibow の組み込みと同じ)
+                                          ── tools/call ──→ tool のツールを実行した結果
+```
+
+### ファイル
+
+| ファイル | 役割 |
+|---|---|
+| `mcp/server/server.go` | サーバーの中身(`server.New`)。`tool` のツールを SDK の `Server.AddTool` に渡し、`tools/call` を `tool.Tool.Run` につなぐ |
+| `mcp/server/server_test.go` | テスト。プロセスを起動せずに(`NewInMemoryTransports`)SDK のクライアントでつなぎ、一覧・呼び出し・エラー・確認の要るツールを確かめる |
+| `_cmd/aibow-mcp/main.go` | 標準入出力のサーバーの exe。引数(作業フォルダ)を読んで `server.New` を `StdioTransport` で動かすだけ |
+
+- 中身を `package main` に書かないのは、テストでプロセスを起動せずにつなぐため・aibow の中でメモリ内のつなぎ方で動かすため(5-4)
+- `mcp/server` は `tool` と SDK だけを使い、LLM・会話の仕組み・画面を import しない
+- 画面のアプリ(`_cmd/aibow`)と別の exe にしているのは、Windows の画面のアプリは標準入出力を持たない GUI のプログラムで、標準入出力で話すサーバーに向かないため
+
+### 作り
+
+- **ツールの定義は組み込みとまったく同じ**(`tool.Def` の名前・説明・引数の JSON Schema をそのまま `inputSchema` にする)。自分で作るサーバーなので、4B が書きやすい形のまま出せる
+- `tools/list` の並びは SDK が名前の順にする(ここで足した順ではない)
+- **読むだけの印**:確認の要らないツール(`tool.Confirmable` でないもの)に `readOnlyHint` を付ける。クライアントへのヒントで、MCP の仕様でも「信じてはいけない」とされている。aibow はまだ信じない(0007 の決定事項 9)
+- **引数**:MCP では引数が JSON の値(数は数、真偽値は真偽値)で届くが、確かめるのは `tool.CheckArgs` に任せる(知らない引数・足りない引数・型の違いを、組み込みと同じ文で返す)。
+  `CheckArgs` は Qwen3.5 の書式に合わせて「値は文字列で届く」前提なので、JSON の値をいったん文字列に戻して渡す(文字列はそのまま、ほかは JSON の書き方のまま)。`null` は書かなかったのと同じ
+- **ツールの失敗は `isError` の結果で返す**(Go の error にしない)。MCP では、error は呼び出しそのものが成り立たなかったとき(知らないツールなど)に使い、
+  ツールの失敗(ファイルが無い、など)は結果の中身としてモデルに読ませて立て直させる決まり(aibow の「エラー: …」と同じ考え方)
+- **時間の上限**:サーバーの側でも、組み込みと同じ上限(10 秒。`run_command` は 120 秒)で止める。Claude Code などほかのクライアントがどうするかは分からないため
+- **停止**:クライアントが止めると、SDK が `notifications/cancelled` を送り、サーバーはそのリクエストの処理の context を止める(SDK の `jsonrpc2.Connection.Cancel`)。ツールは ctx を見て後片付けをして返す
+- **確認の要るツール**(`write_file`・`edit_file`・`run_command`)は、サーバーからユーザーに確かめる仕組み(MRTR。5-3 で作る)ができるまで**実行せず**、「確かめる仕組みにまだ対応していないため実行しません」を `isError` で返す。確かめずに書き換えることはしない
+- **Environment の説明**:`run_command` の説明は「Environment の節に書いたシェルで動かす」と言っている。aibow はシステムプロンプトにその節を書くが、
+  ほかのクライアントは書かないので、作業フォルダとシェルをサーバーの `instructions`(つないだときにクライアントに渡す説明)に入れる
+- **ログ**は標準エラー出力に書く(`log.Init` の `Console`)。標準出力に何か書くと、クライアントが MCP のメッセージとして読もうとして壊れる。
+  起動(版・作業フォルダ・ツール)は Notice、ツールの実行(名前・秒数・結果の文字数・失敗の理由)は Info。aibow から起動すると、aibow のログに `MCP <名前> (stderr) …` として入る
+- 版(`serverInfo.version`)は exe に Go が書き込む版(`go install …@v1.2.3` ならその版、手元のビルドならコミットから作った版)
+
+### 実際のやり取り
+
+aibow のクライアント(`mcp/client`)からは、新しい 2026-07-28 版で話します(挨拶なし。`server/discover` の次にすぐ `tools/list`)。つながるまで約 0.1 秒でした。
+
+```
+MCP aibow → {"jsonrpc":"2.0","id":1,"method":"server/discover","params":{"_meta":{…,"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}
+MCP aibow ← {"jsonrpc":"2.0","id":1,"result":{"resultType":"complete","_meta":{"io.modelcontextprotocol/serverInfo":{"name":"aibow-mcp",…}},…
+MCP aibow → {"jsonrpc":"2.0","id":2,"method":"tools/list",…
+MCP aibow: つながりました(0.1 秒。MCP の版 2026-07-28・サーバー aibow-mcp …・ツール 7 個: aibow__calculate, aibow__edit_file, …)
+MCP aibow → {"jsonrpc":"2.0","id":3,"method":"tools/call",…
+MCP aibow (stderr) … [INFO  ] ツール read_file: 実行しました(0.00 秒・結果 15 文字)
+```
+
+古い版のクライアント(`initialize` で始めるもの)とも話せます。ターミナルから1行ずつ JSON を流しても確かめられます(Git Bash)。
+
+```bash
+{ printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"bash","version":"0"}}}' '{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}' '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"read_file","arguments":{"path":"README.md"}}}'; sleep 1; } | aibow-mcp .
+```
+
+標準入力が閉じると、サーバーは「クライアントが去った」とみなして、答えを書く前に終わります。`sleep 1` は、答えが返るまで標準入力を開けておくためです。
+
+SDK はリクエストを並行に処理するので、続けて送ったリクエストの答えが、送った順と入れ替わって返ることがあります(id で対応を取る。JSON-RPC の決まり)。
+

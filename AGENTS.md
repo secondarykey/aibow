@@ -14,13 +14,15 @@ aibow は、ローカルLLMを使ったアプリを**自分で作りながら仕
 
 完成品を早く作ることより、**各段階で何が起きているかが読んで分かること**を優先してください。
 
-## 全体の構成(ステップ4: MCP クライアント)
+## 全体の構成(ステップ5: MCP サーバー自作。作業中)
 
 ```
 ウィンドウ(_cmd/aibow/frontend の React) ⇄ Wails v3 ⇄ aibow ⇄ yzma ⇄ llama.cpp(_cmd/aibow/lib\ の DLL)⇄ GPU
                                                      ⇅          ↑ _cmd/aibow/models\*.gguf / Ollama の保存フォルダ
                                           aibow/store(SQLite: %APPDATA%\aibow\aibow.db)
                                           aibow/mcp/client ⇄ MCP のサーバー(%APPDATA%\aibow\settings.json に書いたもの。子プロセス)
+
+MCP のクライアント(Claude Code・aibow など)⇄ 標準入出力 ⇄ aibow-mcp(_cmd/aibow-mcp)= aibow/mcp/server ⇄ aibow/tool
 ```
 
 - **Ollama などの外部 LLM サーバーは使わない**。aibow のプロセスの中で llama.cpp を直接動かす。
@@ -34,10 +36,12 @@ aibow は、ローカルLLMを使ったアプリを**自分で作りながら仕
 | ルート(`aibow` パッケージ。モジュール名は `github.com/secondarykey/aibow`) | LLM を動かす部分と会話の仕組み。Wails を import しないライブラリ |
 | `tool/` | ツール(`tool` パッケージ)。ツールの形と組み込みのツール・作業フォルダのツール。LLM・書式・会話・保存を import しない(MCP でツールだけを使うため) |
 | `store/` | 会話の保存先(SQLite) |
-| `mcp/client/` | MCP のクライアント(`client` パッケージ。SDK のパッケージ名 `mcp` と重ならないよう `mcp/` の下に置く。ステップ5で作るサーバーは `mcp/server/` に並べる)。`settings.json` の MCP のサーバーを起動し、そのツールを `tool.Tool` として見せる。`tool` を import し、ルートの `aibow` は import しない |
+| `mcp/client/` | MCP のクライアント(`client` パッケージ。SDK のパッケージ名 `mcp` と重ならないよう `mcp/` の下に置く。サーバーは `mcp/server/` に並べる)。`settings.json` の MCP のサーバーを起動し、そのツールを `tool.Tool` として見せる。`tool` を import し、ルートの `aibow` は import しない |
+| `mcp/server/` | MCP のサーバー(`server` パッケージ。ステップ5)。`tool` のツールを MCP のツールとして出す。`tool` と SDK だけを使い、ルートの `aibow` は import しない |
 | `internal/proc/` | 子プロセスまでまとめて止める仕組み(`tool` の `run_command` と `mcp/client` で使う) |
 | `log/` | aibow のログ(`log` パッケージ)。aibow のコードはログをここから出す。土台は wenteasy/log だが、使う人には `slog.Level` と `*slog.Logger` しか見せない。出口はアプリが `Init` で組み、ライブラリとして使う人は `SetLogger(*slog.Logger)` で aibow のログだけ別にできる(決めなければ `slog.Default()`)。詳しくは [log/AGENTS.md](log/AGENTS.md) |
 | `_cmd/aibow/` | デスクトップアプリ(Wails v3 + React)。別モジュール |
+| `_cmd/aibow-mcp/` | MCP のサーバーの exe(標準入出力)。引数を読んで `mcp/server` を起動するだけ。ルートのモジュールに入れている(Wails を使わないため) |
 | `_docs/` | 仕組みごとの説明(下の表)と、機能の仕様(`_docs/features/`)。利用者向けの手順は `setup.md`(準備と起動)・`usage.md`(使い方と設定)・`structure.md`(構成とファイル) |
 | `TODO.md` | 全体の進み具合とロードマップ |
 
@@ -47,7 +51,7 @@ aibow は、ローカルLLMを使ったアプリを**自分で作りながら仕
 |---|---|
 | 生成・モデルの読み込みと切り替え・トークン化・プロンプトの書式・思考の振り分け・モデルの一覧 | [_docs/engine.md](_docs/engine.md) |
 | ツール呼び出し・エージェントループ・書式の interface(`Format`)・ツールの追加・作業フォルダ・ファイルとコマンドのツール・実行前の確認 | [_docs/tools.md](_docs/tools.md) |
-| MCP のクライアント・設定ファイル(`settings.json`)・MCP のサーバーの起動と終了・ツールの扱い(使わない / 確認する / 確認しない)と信頼 | [_docs/mcp.md](_docs/mcp.md) |
+| MCP のクライアント・設定ファイル(`settings.json`)・MCP のサーバーの起動と終了・ツールの扱い(使わない / 確認する / 確認しない)と信頼・自作の MCP サーバー(`mcp/server`・`aibow-mcp`) | [_docs/mcp.md](_docs/mcp.md) |
 | 会話の履歴・会話ごとの設定(会話の上限・返事の上限も)・アプリの設定・保存の約束(`Store`)・モデルに渡さない発言・作り直す / 送り直す | [_docs/conversations.md](_docs/conversations.md) |
 | 会話の上限・compact(truncate / summary)・メーター | [_docs/compact.md](_docs/compact.md) |
 | SQLite の実装・マイグレーション | [store/AGENTS.md](store/AGENTS.md) |
@@ -80,7 +84,7 @@ aibow は、ローカルLLMを使ったアプリを**自分で作りながら仕
   - Wails v3: 画面。`_cmd/aibow` だけで使い、ルートの `go.mod` には入れない
   - `modernc.org/sqlite`: 会話の保存。`store` パッケージだけで使う
   - `github.com/pkg/diff`: 書き換えるツールの実行前の確認で見せる差分(diff)の計算。`tool` パッケージだけで使う(0005 の 3-2 でユーザーと決めた)
-  - `github.com/modelcontextprotocol/go-sdk`: MCP の公式 Go SDK。`mcp/client` パッケージだけで使う(0006 でユーザーと決めた)
+  - `github.com/modelcontextprotocol/go-sdk`: MCP の公式 Go SDK。`mcp/` の下(`mcp/client`・`mcp/server`)と、それを起動するだけの `_cmd/aibow-mcp` で使う(0006・0007 でユーザーと決めた)
   - `github.com/wenteasy/log`: ログの土台(レベルの段階と、出口の部品 `SimpleHandler` など)。`log` パッケージだけで使い、aibow を使う人には wenteasy/log の型を見せない(2026-10-14、ユーザーの指定。shinte/ikkyoku の log と同じ形)
 - C コンパイラなし(`CGO_ENABLED=0`)でビルドできる状態を保つ
 - 外部パッケージ(Go・npm とも)を足すときは、理由と代替案を示してユーザーに確認してから足す
@@ -112,7 +116,7 @@ aibow は、ローカルLLMを使ったアプリを**自分で作りながら仕
 gofmt -l .                       # 整形が必要なファイルを表示(何も出なければ OK。_cmd も含む)
 go test ./...                    # 書式(公式テンプレートとの一致)、思考とツール呼び出しの振り分け、ツール、エージェントループ、Ollama の目録、会話の仕組み、compact、設定の引き継ぎ、SQLite(マイグレーション)のテスト(モデル不要)
 (cd _cmd/aibow && wails3 build)  # バインディング生成 → 画面の型チェックとビルド(tsc + vite)→ Go のビルド
-go vet ./... ./_cmd/aibow        # よくある間違いを静的チェック(./... は _cmd を含まないので並べる)
+go vet ./... ./_cmd/aibow ./_cmd/aibow-mcp  # よくある間違いを静的チェック(./... は _cmd を含まないので並べる)
 ```
 
 `_cmd/aibow` は `frontend/dist` を埋め込むので、画面を一度もビルドしていないと `go vet` / `go build` が「パターンに一致するファイルが無い」で失敗します。先に `wails3 build` を実行します。

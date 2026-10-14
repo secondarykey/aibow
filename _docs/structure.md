@@ -35,6 +35,7 @@ Ollama が保存したファイルを aibow が直接読むので、Ollama は�
 | `agent.go` | エージェントループ。モデルがツールを呼んだら実行し、結果を渡して続きを書かせる、をツールを呼ばなくなるまで繰り返す |
 | `tool/` | ツールの形と、組み込みのツール(現在時刻・計算)・作業フォルダのツール(ファイルを並べる・読む・書き換える・コマンドを実行する)。LLM や会話の仕組みを知らない独立したパッケージ(MCP でツールだけを使うため) |
 | `mcp/client/` | MCP のクライアント。`settings.json` に書いた MCP のサーバーを起動してつなぎ、そのツールを `tool` の形で見せる(公式の Go SDK を使う) |
+| `mcp/server/` | 自作の MCP のサーバー。`tool` のツールを MCP のツールとして出す(公式の Go SDK を使う) |
 | `internal/proc/` | 起動したプロセスを、子プロセスまでまとめて止める仕組み(コマンドのツールと MCP のサーバーで使う) |
 | `log/` | aibow のログ。aibow のコードはここからログを出す。aibow をライブラリとして使う人は `log.SetLogger` で aibow のログの出し先(`*slog.Logger`)を決められる(決めなければ `slog.Default()`) |
 | `settingsfile.go` | 設定ファイル `settings.json`(手で書く設定。今は MCP のサーバーだけ)の読み込み |
@@ -44,6 +45,7 @@ Ollama が保存したファイルを aibow が直接読むので、Ollama は�
 | `appsettings.go` | アプリの設定(GPU の層数・最後に使ったモデル)と新しい会話の既定の設定(会話の上限・返事の上限も入る) |
 | `store/sqlite.go` | 会話・発言・要約を SQLite のファイルに保存する部分(テーブルの作り変え = マイグレーションもここ) |
 | `*_test.go` | テスト(モデルなしで実行できる) |
+| `_cmd/aibow-mcp/main.go` | 自作の MCP のサーバーの exe(標準入出力で話す)。引数の作業フォルダを読んで `mcp/server` を動かすだけ。ルートのモジュールに入っている |
 | `_cmd/aibow/main.go` | デスクトップアプリの起動(Wails のアプリとウィンドウを作る) |
 | `_cmd/aibow/config.go` | 環境変数から設定を読む(`settings.json` を読んで MCP の係を作るのは `main.go`) |
 | `_cmd/aibow/service.go` | 画面から呼ばれる Go のメソッド(モデル・会話・設定・メーター・送信・今すぐ要約)。会話の仕組みとの中継だけをする |
@@ -60,7 +62,7 @@ llama.cpp の呼び出しには [yzma](https://github.com/hybridgroup/yzma) と�
 llama.cpp の C の関数を Go から呼べるようにするだけの薄い層で、C コンパイラ(cgo)は不要です。
 会話の保存には SQLite のドライバー [modernc.org/sqlite](https://pkg.go.dev/modernc.org/sqlite) を使っています。
 SQLite の C のコードを Go に変換したもので、こちらも C コンパイラは不要です。
-MCP のやり取りには公式の [Go SDK](https://github.com/modelcontextprotocol/go-sdk)(`mcp/client` だけで使う)、確認の差分の計算には [github.com/pkg/diff](https://github.com/pkg/diff)(`tool` だけで使う)を使っています。
+MCP のやり取りには公式の [Go SDK](https://github.com/modelcontextprotocol/go-sdk)(`mcp/` の下と、それを起動する `_cmd/aibow-mcp` だけで使う)、確認の差分の計算には [github.com/pkg/diff](https://github.com/pkg/diff)(`tool` だけで使う)を使っています。
 ログの土台には [github.com/wenteasy/log](https://github.com/wenteasy/log)(`log` パッケージだけで使う。標準の `log/slog` に段階とハンドラを足すもの)を使っています。aibow を使う人には wenteasy/log の型は見えません。
 
 Wails に依存するのは `_cmd/aibow` だけです。`_cmd/aibow` は自分の `go.mod` を持つ別のモジュールにしてあり、
