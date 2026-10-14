@@ -8,7 +8,7 @@ Wails v3 のデスクトップアプリです。ルートの `aibow` パッケ�
 
 | ファイル | 役割 |
 |---|---|
-| `main.go` | Wails のアプリとウィンドウを作る(Frameless。タイトルバーは画面の `TitleBar.tsx`)。ウィンドウは起動時 720×820、最小 480×480。最初に `startLog`(aibow/log の `Init`)でログの出口を組む。`wails3 dev`(`isDev`)はターミナル、exe は `%APPDATA%\aibow\logs\aibow_<日付>.log`(`AIBOW_LOG_DIR`)。書けなくても起動は止めず、画面のお知らせで伝える |
+| `main.go` | Wails のアプリとウィンドウを作る(Frameless。タイトルバーは画面の `TitleBar.tsx`)。ウィンドウは起動時 720×820、最小 480×480。最初に `startLog`(aibow/log の `Init`)でログの出口を組む。`wails3 dev`(`isDev`)はターミナル、exe は `%APPDATA%\aibow\logs\aibow_<日付>.log`(`AIBOW_LOG_DIR`。10 日分を残して古いものは起動時に消す。`logKeepDays`)。書けなくても起動は止めず、画面のお知らせで伝える |
 | `appversion.go` / `build_dev.go` / `build_production.go` | 表示するバージョン(`wails3 dev` では patch +1 と `+dev`)。dev かどうかは `production` のビルドタグで見分ける([_docs/deploy.md](../../_docs/deploy.md)) |
 | `config.go` | 環境変数の読み込み。`settings.json` を読んで MCP のサーバーの係(`mcp/client` の `Manager`)を作るのは `main.go` の `startMCP`(アプリを閉じるときに止める)、`tools.json` を読むのは `loadToolPrefs` |
 | `service.go` | `ChatService`。画面と `aibow.Conversations` / `Engine` の中継だけをする(モデル・会話・設定(`SetLimits` など)・メーター(`Usage`)・`Send` / `Compact` / `StopSummary`)。生成の回ごとの統計・compact・ツールの実行のログもここで出す |

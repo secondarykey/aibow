@@ -147,12 +147,15 @@ func main() {
 	}
 }
 
+// logKeepDays は、exe がログファイルを残す日数(今日を含む)。起動のたびに、それより古いものを消す。
+const logKeepDays = 10
+
 // startLog はログの出口を組む(aibow/log の Init)。
 //
 //   - wails3 dev(isDev):ターミナルに出す(標準エラー出力)。AIBOW_LOG_DIR を指定したときだけ、ファイルにも書く
 //   - リリース版の exe:ファイルに書く(%APPDATA%\aibow\logs\aibow_<日付>.log。AIBOW_LOG_DIR で変えられる)。
 //     リリース版(-H windowsgui)には標準エラー出力の行き先が無く、ファイルにしか残らないため
-//     (0006 で、起動できない理由がどこにも残らず困った)
+//     (0006 で、起動できない理由がどこにも残らず困った)。今日を含めて logKeepDays 日分を残し、古いものは起動時に消す
 //
 // ログが書けなくてもアプリは止めない。理由は error で返し、画面のお知らせに出す。
 func startLog() (io.Closer, error) {
@@ -163,7 +166,11 @@ func startLog() (io.Closer, error) {
 			return c, errors.New("ログを書くフォルダが決められないので、ログはファイルに残りません。AIBOW_LOG_DIR でフォルダを指定してください")
 		}
 	}
-	c, err := log.Init(log.Options{Dir: dir, Console: isDev})
+	opts := log.Options{Dir: dir, Console: isDev}
+	if !isDev {
+		opts.KeepDays = logKeepDays // exe は古いログを消す(dev で AIBOW_LOG_DIR に書いたものは消さない)
+	}
+	c, err := log.Init(opts)
 	if err == nil && dir != "" {
 		log.Noticef("ログの書き出し先: %s", absPath(log.FilePath(dir)))
 	}

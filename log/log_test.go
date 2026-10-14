@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // use は、テストのあいだだけ出し先を buf の TextHandler にする(位置を出す)。
@@ -156,4 +157,49 @@ func TestInitBadDir(t *testing.T) {
 		t.Fatal("Close できるものを返す")
 	}
 	c.Close()
+}
+
+// removeOld は今日を含めて keepDays 日分を残し、それより古い aibow_<日付>.log だけを消す
+func TestRemoveOld(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Date(2026, 10, 14, 17, 0, 0, 0, time.Local)
+	names := map[string]bool{ // ファイル名 → 残るか
+		"aibow_20261014.log": true,  // 今日
+		"aibow_20261005.log": true,  // 10 日前まで(今日を含めて 10 日分)
+		"aibow_20261004.log": false, // 11 日前
+		"aibow_20250101.log": false,
+		"aibow_abc.log":      true, // 日付でない
+		"other_20250101.log": true, // aibow のものではない
+		"aibow_20250101.txt": true,
+	}
+	for name := range names {
+		if err := os.WriteFile(filepath.Join(dir, name), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	removeOld(dir, 10, now)
+	for name, keep := range names {
+		_, err := os.Stat(filepath.Join(dir, name))
+		if got := err == nil; got != keep {
+			t.Errorf("%s: 残る %v, want %v", name, got, keep)
+		}
+	}
+}
+
+// Init(KeepDays)は、書き始める前に古いファイルを消す
+func TestInitKeepDays(t *testing.T) {
+	keepDefault(t)
+	dir := t.TempDir()
+	old := filepath.Join(dir, FilePrefix+"_20000101.log")
+	if err := os.WriteFile(old, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Init(Options{Dir: dir, KeepDays: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Close()
+	if _, err := os.Stat(old); !os.IsNotExist(err) {
+		t.Errorf("古いファイルが残っている: %v", err)
+	}
 }

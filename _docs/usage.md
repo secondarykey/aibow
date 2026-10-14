@@ -162,7 +162,7 @@ MCP(Model Context Protocol)のサーバーのツールも使えます。サー�
 | `AIBOW_LIB` | `lib` | llama.cpp の DLL があるフォルダ(相対パスはカレントフォルダが基準) |
 | `AIBOW_DB` | `%APPDATA%\aibow\aibow.db` | 会話を保存する SQLite のファイル。フォルダが無ければ作る |
 | `AIBOW_SETTINGS` | `%APPDATA%\aibow\settings.json` | 設定ファイル(手で書く設定。今は MCP のサーバーの `mcpServers` だけ)。無ければ MCP を使わない |
-| `AIBOW_LOG_DIR` | `%APPDATA%\aibow\logs` | ログファイル(`aibow_<日付>.log`。日ごと)を書くフォルダ。フォルダが無ければ作る。`wails3 build` で作った exe は既定でここに書く。`wails3 dev` はターミナルに出し、この変数を指定したときだけファイルにも書く |
+| `AIBOW_LOG_DIR` | `%APPDATA%\aibow\logs` | ログファイル(`aibow_<日付>.log`。日ごと)を書くフォルダ。exe は起動時に古いファイルを消し、今日を含めて 10 日分を残す。フォルダが無ければ作る。`wails3 build` で作った exe は既定でここに書く。`wails3 dev` はターミナルに出し、この変数を指定したときだけファイルにも書く |
 | `AIBOW_TOOLS` | `%APPDATA%\aibow\tools.json` | ツールの扱いの、この PC の既定(設定の画面で変えたものを aibow が書く) |
 | `AIBOW_HISTORY_TOKENS` | `8192` | 会話の上限(モデルに渡す、これまでの会話のトークン数の上限)。超えたら会話ごとの compact の方式で収める |
 | `AIBOW_MAX_TOKENS` | `8192` | 返事の上限(1回の返事で生成するトークン数の上限。思考 + 答えの合計) |
