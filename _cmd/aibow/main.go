@@ -22,7 +22,7 @@ package main
 
 import (
 	"embed"
-	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -63,15 +63,14 @@ func init() {
 
 func main() {
 	// ログの出口を最初に組む(設定の読み込みのログから残すため)。aibow のライブラリのログも、アプリのログもここに集まる
-	logs, logErr := startLog()
+	logs, logNotices := startLog()
 	defer logs.Close()
 
 	// 起動に失敗しても(lib が無いなど)ウィンドウは出し、理由を画面に表示する。
 	// リリース版(wails3 build)はコンソールが無く、ログだけでは何も見えずに終わってしまうため。
 	cfg, err := loadConfig()
-	if logErr != nil {
-		cfg.notices = append(cfg.notices, logErr.Error()) // ログが書けなくても起動は止めず、画面で伝える
-	}
+	// ログが書けない・前回は異常終了した、などは起動を止めず、画面のお知らせで伝える
+	cfg.notices = append(cfg.notices, logNotices...)
 	var mcpm *client.Manager
 	var prefs *aibow.ToolPrefs
 	if err == nil {
@@ -157,13 +156,16 @@ const logKeepDays = 10
 //     リリース版(-H windowsgui)には標準エラー出力の行き先が無く、ファイルにしか残らないため
 //     (0006 で、起動できない理由がどこにも残らず困った)。Notice 以上だけを書き、今日を含めて logKeepDays 日分を残して古いものは起動時に消す
 //
-// ログが書けなくてもアプリは止めない。理由は error で返し、画面のお知らせに出す。
-func startLog() (io.Closer, error) {
+// 異常終了(Go の panic・ランタイムの致命的なエラー)の内容も、ファイルに書くときは同じフォルダの aibow_crash.log に残す
+// (log.CatchCrash)。前回の記録が残っていれば改名して残し、「前回は異常終了しました」を画面とログで伝える(main がお知らせとして出す)。
+//
+// ログが書けなくてもアプリは止めない。理由や前回の異常終了は、画面のお知らせに出す文として返す。
+func startLog() (io.Closer, []string) {
 	dir := os.Getenv("AIBOW_LOG_DIR")
 	if dir == "" && !isDev {
 		if dir = configFile("logs"); dir == "" {
 			c, _ := log.Init(log.Options{})
-			return c, errors.New("ログを書くフォルダが決められないので、ログはファイルに残りません。AIBOW_LOG_DIR でフォルダを指定してください")
+			return c, []string{"ログを書くフォルダが決められないので、ログはファイルに残りません。AIBOW_LOG_DIR でフォルダを指定してください"}
 		}
 	}
 	opts := log.Options{Dir: dir, Console: isDev, Root: log.LevelInfo}
@@ -173,10 +175,24 @@ func startLog() (io.Closer, error) {
 		opts.KeepDays = logKeepDays // exe は古いログを消す(dev で AIBOW_LOG_DIR に書いたものは消さない)
 	}
 	c, err := log.Init(opts)
-	if err == nil && dir != "" {
-		log.Noticef("ログの書き出し先: %s", absPath(log.FilePath(dir)))
+	if err != nil {
+		return c, []string{err.Error()}
 	}
-	return c, err
+	if dir == "" {
+		return c, nil // dev でファイルに書かないとき(異常終了はターミナルに出る)
+	}
+	log.Noticef("ログの書き出し先: %s", absPath(log.FilePath(dir)))
+
+	// お知らせは main が画面に出し、ログにも Warn で書く(ここでは書かない。二重になるため)
+	var notices []string
+	previous, err := log.CatchCrash(dir)
+	if previous != "" {
+		notices = append(notices, fmt.Sprintf("前回は異常終了しました。記録: %s", absPath(previous)))
+	}
+	if err != nil {
+		notices = append(notices, fmt.Sprintf("異常終了の記録を残す準備ができません(起動は続けます): %v", err))
+	}
+	return c, notices
 }
 
 // startMCP は設定ファイル(settings.json)を読み、MCP のサーバーの係(client.Manager)を作る。

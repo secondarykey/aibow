@@ -24,3 +24,4 @@
 - 同じ条件で10回起動し直しても再現せず、原因は未特定。同じモデルファイルは Linux(CPU)の aibow と llama.cpp 単体では正常に動く
 - 再発したら `AIBOW_LLAMA_LOG=1` でログを取り、そのとき動いていた他のアプリも確認する
 - C 側の assert はプロセスごと終了させるので、Go 側の「元のモデルに戻す」処理では防げない
+- exe の異常終了の記録(`aibow_crash.log`。Go の `debug.SetCrashOutput`)にも残らない。Go のランタイムを通らず、C の標準エラー出力に書かれて終わるため。再発を追うなら `wails3 dev` で `AIBOW_LLAMA_LOG=1` にしてターミナルを見る

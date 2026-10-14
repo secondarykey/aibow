@@ -9,6 +9,7 @@
 |---|---|
 | `log.go` | 出す関数(Trace / Debug / Info / Notice / Warn / Error と `…f`)。段階(`Level*`。値は wenteasy/log と同じ `slog.Level`)。出し先の `SetLogger` / `Logger` |
 | `setup.go` | `Init(Options)`。出口(ファイル `Dir/aibow_<日付>.log`・標準エラー出力)を組んで `slog.Default()` を向ける(アプリの main の最初に 1 回)。`FilePath` は今日のファイルの場所 |
+| `crash.go` | `CatchCrash`。異常終了(Go の panic・ランタイムの致命的なエラー)の内容をログの隣の `aibow_crash.log` にも書かせる(`debug.SetCrashOutput`)。前回の記録が残っていれば `aibow_crash_<日時>.log` に改名して返す(= 前回は異常終了した)。形は ikkyoku の `CatchCrash` と同じ |
 
 ## どこに出るか
 
@@ -32,9 +33,14 @@
 - ⚠️ **ライブラリの部分(ルートと下のパッケージ)から `Init` や `slog.SetDefault` を呼ばないこと。** 出口を決めるのはアプリ
 - ⚠️ **ログが書けなくてもアプリは動かす。** `Init` はファイルを作れなくても出せる出口だけで組み、理由をエラーで返す(アプリは画面のお知らせに出す)。
   返す `io.Closer` は nil にしない
+- ⚠️ **前回の異常終了の記録は改名して残すこと**(消さない・上書きしない)。次の `CatchCrash` が `aibow_crash.log` を空で作り直すので、退けておかないと消える。
+  改名した記録は `aibow_<日付>.log` の形ではないので、古いログを消すとき(`removeOld`)にも消えない
+- 拾える異常終了は Go のランタイムを通るものだけ。画面から呼ばれたメソッドの中の panic は Wails が recover して Logger に Error で書く(ログファイルに入る)。
+  llama.cpp の C の部分の異常終了(GGML_ASSERT など)は拾えない([_docs/known-issues.md](../_docs/known-issues.md))
 
 ## テスト(`go test ./log/`)
 
 `log_test.go` —— 出す関数とレベルの足切り・**記録される位置が呼んだ側になること**(ここの関数を通しても位置がずれない歯止め)・
 `SetLogger` をしなければ `slog.Default()` に出ること・`Init` が `slog.Default()` を向け、Notice などが名前で出ること・
 ファイルに書くこと・フォルダを作れなくても止まらないこと・古いファイルを消して決めた日数を残すこと(名前の形が違うファイルは消さない)・`Root` より下を出さず、標準の log の行は捨てないこと。
+`crash_test.go` —— 本当に panic させた子プロセス(テストの実行ファイル自身)の内容が `aibow_crash.log` に残ること・前回の記録を改名して残すこと・空のファイルは異常終了と見なさないこと・古いログの片付けで記録が消えないこと。
