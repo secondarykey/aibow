@@ -8,8 +8,8 @@
 | ファイル | 役割 |
 |---|---|
 | `log.go` | 出す関数(Trace / Debug / Info / Notice / Warn / Error と `…f`)。段階(`Level*`。値は wenteasy/log と同じ `slog.Level`)。出し先の `SetLogger` / `Logger` |
-| `setup.go` | `Init(Options)`。出口(ファイル `Dir/aibow_<日付>.log`・標準エラー出力)を組んで `slog.Default()` を向ける(アプリの main の最初に 1 回)。`FilePath` は今日のファイルの場所 |
-| `crash.go` | `CatchCrash`。異常終了(Go の panic・ランタイムの致命的なエラー)の内容をログの隣の `aibow_crash.log` にも書かせる(`debug.SetCrashOutput`)。前回の記録が残っていれば `aibow_crash_<日時>.log` に改名して返す(= 前回は異常終了した)。形は ikkyoku の `CatchCrash` と同じ |
+| `setup.go` | `Init(Options)`。出口(ファイル `Dir/aibow_<日付>.log`・標準エラー出力)を組んで `slog.Default()` を向ける(アプリの main の最初に 1 回)。ファイルの名前の頭は `Options.Prefix`(空なら `aibow`。aibow-mcp は `aibow-mcp`)。`FilePath` は今日のファイルの場所 |
+| `crash.go` | `CatchCrash`。異常終了(Go の panic・ランタイムの致命的なエラー)の内容をログの隣の `aibow_crash.log`(名前は `CrashFile()`。頭は `Options.Prefix`)にも書かせる(`debug.SetCrashOutput`)。前回の記録が残っていれば `aibow_crash_<日時>.log` に改名して返す(= 前回は異常終了した)。形は ikkyoku の `CatchCrash` と同じ |
 
 ## どこに出るか
 
@@ -18,6 +18,9 @@
   - `wails3 dev`(`isDev`): ターミナル(標準エラー出力)。`AIBOW_LOG_DIR` を指定したときだけファイルにも
   - exe(`wails3 build`): ファイル `%APPDATA%\aibow\logs\aibow_<日付>.log`(wenteasy/log の `RollingFileWriter`。日ごと。`AIBOW_LOG_DIR` で変えられる)。
     exe(`-H windowsgui`)には標準エラー出力の行き先が無く、ファイルにしか残らないため。**Notice 以上だけ**を書く(常に残したいもの。生成の統計などの Info は wails3 dev で見る)。起動時に古いファイルを消し、今日を含めて 10 日分を残す(`Options.KeepDays`。日付はファイル名から読む。`aibow_<日付>.log` の形でないファイルは消さない)
+- **MCP のサーバー(`_cmd/aibow-mcp`)**: アプリにならい、同じフォルダ(`%APPDATA%\aibow\logs`。`AIBOW_LOG_DIR`)の `aibow-mcp_<日付>.log` に書く(`Options.Prefix`)。
+  標準エラー出力にもいつも出す(クライアントが取り込む)。レベルは Info・10 日分。作業フォルダごとに複数のプロセスが同じファイルに書くので、`SetLogger(Logger().With("pid", …))` で各行に pid を付ける。
+  異常終了は `aibow-mcp_crash.log`(画面が無いので、前回の記録はログに Warn で書く)。0007 の決定事項 11
 - **aibow をライブラリとして使う人**: `Init` は呼ばなくてよい。aibow のログは `slog.Default()` に出るので、
   自分の `slog.SetDefault` の出口に集まる。aibow のログだけ別にしたいときは `log.SetLogger(l)`
 

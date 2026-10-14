@@ -113,6 +113,7 @@ func keepDefault(t *testing.T) {
 	t.Cleanup(func() {
 		slog.SetDefault(old)
 		slog.SetLogLoggerLevel(slog.LevelInfo)
+		prefix = FilePrefix // Init(Prefix)で変えたファイルの名前の頭を戻す
 	})
 }
 
@@ -181,7 +182,7 @@ func TestRemoveOld(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	removeOld(dir, 10, now)
+	removeOld(dir, FilePrefix, 10, now)
 	for name, keep := range names {
 		_, err := os.Stat(filepath.Join(dir, name))
 		if got := err == nil; got != keep {
@@ -205,6 +206,43 @@ func TestInitKeepDays(t *testing.T) {
 	c.Close()
 	if _, err := os.Stat(old); !os.IsNotExist(err) {
 		t.Errorf("古いファイルが残っている: %v", err)
+	}
+}
+
+// Init(Prefix)は、別の頭のファイル(aibow-mcp_<日付>.log)に書き、古いものを消すときもアプリのファイルには触らない
+// (同じフォルダに MCP のサーバー aibow-mcp のログを置くため)
+func TestInitPrefix(t *testing.T) {
+	keepDefault(t)
+	dir := t.TempDir()
+	app := filepath.Join(dir, FilePrefix+"_20000101.log") // アプリの古いログ(サーバーは消さない)
+	mine := filepath.Join(dir, "aibow-mcp_20000101.log")  // サーバーの古いログ(消す)
+	for _, p := range []string{app, mine} {
+		if err := os.WriteFile(p, nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	c, err := Init(Options{Dir: dir, KeepDays: 10, Prefix: "aibow-mcp"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	Info("サーバーのログ")
+	c.Close()
+
+	if got := filepath.Base(FilePath(dir)); !strings.HasPrefix(got, "aibow-mcp_") {
+		t.Errorf("FilePath = %s", got)
+	}
+	if got := CrashFile(); got != "aibow-mcp_crash.log" {
+		t.Errorf("CrashFile = %s", got)
+	}
+	b, err := os.ReadFile(FilePath(dir))
+	if err != nil || !strings.Contains(string(b), "サーバーのログ") {
+		t.Errorf("ファイルに書かれていない: %q %v", b, err)
+	}
+	if _, err := os.Stat(app); err != nil {
+		t.Errorf("アプリのログを消した: %v", err)
+	}
+	if _, err := os.Stat(mine); !os.IsNotExist(err) {
+		t.Errorf("サーバーの古いログが残っている: %v", err)
 	}
 }
 

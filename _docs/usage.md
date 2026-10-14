@@ -164,7 +164,7 @@ aibow-mcp [作業フォルダ]
 - Claude Code なら `claude mcp add aibow -- <aibow-mcp.exe の場所> <作業フォルダ>` で足せます。ほかのアプリでも、`mcpServers` に `command` と `args` を書けば使えます
 - ツールの名前・説明・引数は aibow の組み込みと同じです
 - **書き換えるツール(`write_file`・`edit_file`・`run_command`)は、まだ実行しません**(実行する前にユーザーに確かめる仕組みを作るまで。呼ぶと「実行しません」のエラーが返ります)
-- ログは標準エラー出力に出ます(アプリのログに取り込まれます)
+- ログは `%APPDATA%\aibow\logs\aibow-mcp_<日付>.log`(アプリと同じフォルダ。`AIBOW_LOG_DIR` で変えられます)と標準エラー出力に出ます。ツールの実行も残り、各行の終わりの `pid=…` で、どのサーバー(作業フォルダごとに1つ)の行か分かります
 - 仕組みは [mcp.md](mcp.md) の「自作の MCP サーバー」
 
 ## 設定の変更
@@ -199,7 +199,7 @@ aibow-mcp [作業フォルダ]
 | `AIBOW_LIB` | `lib` | llama.cpp の DLL があるフォルダ(相対パスはカレントフォルダが基準) |
 | `AIBOW_DB` | `%APPDATA%\aibow\aibow.db` | 会話を保存する SQLite のファイル。フォルダが無ければ作る |
 | `AIBOW_SETTINGS` | `%APPDATA%\aibow\settings.json` | 設定ファイル(手で書く設定。今は MCP のサーバーの `mcpServers` だけ)。無ければ MCP を使わない |
-| `AIBOW_LOG_DIR` | `%APPDATA%\aibow\logs` | ログファイル(`aibow_<日付>.log`。日ごと)を書くフォルダ。exe は Notice 以上(起動した版・使ったモデル・変えた設定・注意・エラーなど)だけを書き、起動時に古いファイルを消して今日を含めて 10 日分を残す。異常終了したときは同じフォルダの `aibow_crash_<日時>.log` に内容が残る(次の起動で画面に知らせる)。フォルダが無ければ作る。`wails3 build` で作った exe は既定でここに書く。`wails3 dev` はターミナルに出し、この変数を指定したときだけファイルにも書く |
+| `AIBOW_LOG_DIR` | `%APPDATA%\aibow\logs` | ログファイル(`aibow_<日付>.log`。日ごと)を書くフォルダ。exe は Notice 以上(起動した版・使ったモデル・変えた設定・注意・エラーなど)だけを書き、起動時に古いファイルを消して今日を含めて 10 日分を残す。異常終了したときは同じフォルダの `aibow_crash_<日時>.log` に内容が残る(次の起動で画面に知らせる)。MCP のサーバー `aibow-mcp` も同じフォルダの `aibow-mcp_<日付>.log` に書く(Info 以上・10 日分)。フォルダが無ければ作る。`wails3 build` で作った exe は既定でここに書く。`wails3 dev` はターミナルに出し、この変数を指定したときだけファイルにも書く |
 | `AIBOW_TOOLS` | `%APPDATA%\aibow\tools.json` | ツールの扱いの、この PC の既定(設定の画面で変えたものを aibow が書く) |
 | `AIBOW_HISTORY_TOKENS` | `8192` | 新しい会話の既定の会話の上限(モデルに渡す、これまでの会話のトークン数の上限)。超えたら会話ごとの compact の方式で収める |
 | `AIBOW_MAX_TOKENS` | `8192` | 新しい会話の既定の返事の上限(1回の返事で生成するトークン数の上限。思考 + 答えの合計) |

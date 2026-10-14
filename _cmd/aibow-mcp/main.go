@@ -3,7 +3,8 @@
 //	aibow-mcp [作業フォルダ]
 //
 // クライアント(aibow・Claude Code など)が子プロセスとして起動し、標準入出力で1行ずつ JSON を送り合う(stdio のトランスポート)。
-// 標準出力は MCP のメッセージ専用なので、ログは標準エラー出力に書く(クライアントがそれを自分のログに取り込む)。
+// 標準出力は MCP のメッセージ専用なので、ログは標準エラー出力(クライアントがそれを自分のログに取り込む)と、
+// アプリと同じフォルダのファイル(aibow-mcp_<日付>.log。log.go)に書く。
 //
 // 中身は mcp/server にあり、ここは引数を読んで起動するだけ(_cmd/aibow と、中身のルートの aibow の関係と同じ)。
 // 画面のアプリ(Wails)とは別の exe にしているのは、Windows の画面のアプリは標準入出力を持たない GUI のプログラムで、
@@ -33,12 +34,9 @@ func main() {
 	}
 	flag.Parse()
 
-	// ログは標準エラー出力だけに書く(標準出力に何か書くと、クライアントが MCP のメッセージとして読もうとして壊れる)
-	closer, err := log.Init(log.Options{Console: true, Root: log.LevelInfo})
+	// ログは標準エラー出力とファイルに書く(標準出力に何か書くと、クライアントが MCP のメッセージとして読もうとして壊れる)
+	closer := startLog()
 	defer closer.Close()
-	if err != nil {
-		log.Warn(err.Error())
-	}
 
 	if err := run(); err != nil {
 		log.Error(err.Error())

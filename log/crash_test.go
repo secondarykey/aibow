@@ -13,7 +13,7 @@ import (
 // 前回の記録を残すこと(改名して返す)・空のファイルは異常終了ではないこと・古いログの片付けで消えないこと
 func TestKeepPreviousCrash(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, CrashFile)
+	path := filepath.Join(dir, CrashFile())
 
 	if got := keepPreviousCrash(dir); got != "" {
 		t.Fatalf("ファイルが無いのに %q", got)
@@ -39,13 +39,13 @@ func TestKeepPreviousCrash(t *testing.T) {
 		t.Fatalf("元の名前が残っている: %v", err)
 	}
 
-	removeOld(dir, 1, time.Now().AddDate(1, 0, 0)) // 1 年後に片付けても消えない
+	removeOld(dir, FilePrefix, 1, time.Now().AddDate(1, 0, 0)) // 1 年後に片付けても消えない
 	if _, err := os.Stat(got); err != nil {
 		t.Fatalf("古いログの片付けで記録が消えた: %v", err)
 	}
 }
 
-// 本当に異常終了させて、CrashFile に内容が残ることを確かめる。
+// 本当に異常終了させて、CrashFile() に内容が残ることを確かめる。
 // テストの実行ファイル自身を、環境変数 AIBOW_CRASH_DIR を付けて起動し直し、その中で CatchCrash してから panic させる。
 func TestCatchCrash(t *testing.T) {
 	if dir := os.Getenv("AIBOW_CRASH_DIR"); dir != "" {
@@ -63,7 +63,7 @@ func TestCatchCrash(t *testing.T) {
 	if err := cmd.Run(); err == nil {
 		t.Fatal("異常終了するはず")
 	}
-	b, err := os.ReadFile(filepath.Join(dir, CrashFile))
+	b, err := os.ReadFile(filepath.Join(dir, CrashFile()))
 	if err != nil {
 		t.Fatal(err)
 	}
