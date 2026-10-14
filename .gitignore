@@ -6,8 +6,9 @@
 lib/
 models/
 
-# Claude Code の個人用の設定と作業用のフォルダ(worktree)。
-# チームで共有する .claude/settings.json などを将来置けるよう、.claude/ 全体ではなくこの2つだけを除外する
+# . で始まるファイル・フォルダは、個人の設定やエージェントの作業場所(.claude/ など)なので丸ごと除外する。
+# リポジトリで共有する Git と GitHub の設定だけを例外として戻す
 .*
-.claude/settings.local.json
-.claude/worktrees/
+!.github
+!.gitignore
+!.gitattributes

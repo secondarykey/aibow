@@ -1,0 +1,2 @@
+# テストの期待値は1バイトまで比べるので、改行コードを変換しない(core.autocrlf=true の環境でも LF のまま)
+**/testdata/** -text
