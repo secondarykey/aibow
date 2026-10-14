@@ -114,6 +114,13 @@
 - 確かめたこと:SDK のクライアントで、プロセスを起動せずにつなぐテスト(`mcp/server/server_test.go`)。exe に古い版の `initialize` から1行ずつ JSON を流して答えが返る。
   aibow の `mcp/client` から exe を起動し、2026-07-28 版でつながって(約 0.1 秒)`read_file` が動く。標準入力が閉じると、答えを書く前でもサーバーは終わる
 
+### 5-2 で決めたこと・確かめたこと(2026-10-15)
+
+- aibow の `settings.json` に `aibow-mcp` を書いてつなぎ、動くことをユーザーが確かめた(書き方は [usage.md](../usage.md) の「aibow のツールをほかのアプリから使う」)
+- `callTimeout`(秒)を `startupTimeout` と同じ形で足した(`ServerConfig.CallTimeout`。書かなければ 60 秒。0 より小さいとエラー)。ツールを作るときにサーバーの上限を持たせる(`remoteTool.limit`)。
+  時間切れのエラーの文に「callTimeout に秒数を書くと延ばせます」を添えた。確認を待つ時間を数えない作りは 5-3(確認が入るとき)
+- モデルを使わずに測った比べは [tuning.md](../tuning.md) の「自作の MCP サーバー aibow-mcp」(MCP を通る分は 1 回 0.3 ms ほど・定義は名前の前の部分の 49 文字だけ長い)。ユーザーの使用感はこれから
+
 ## やらないこと(先回りしない)
 
 - Streamable HTTP で出す(決定事項 7)

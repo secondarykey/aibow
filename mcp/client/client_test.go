@@ -270,8 +270,25 @@ func TestRun(t *testing.T) {
 	if err != nil || pv.Server != "util" || !strings.Contains(pv.Args, `"paths": [`) {
 		t.Errorf("確認には、サーバーの名前と整えた引数を出す: %+v, %v", pv, err)
 	}
-	if echo.(tool.TimeLimiter).TimeLimit() != callTimeout {
-		t.Error("時間の上限はツールが決める")
+	if echo.(tool.TimeLimiter).TimeLimit() != defaultCallTimeout {
+		t.Error("時間の上限はツールが決める(callTimeout を書かなければ既定)")
+	}
+}
+
+// settings.json の callTimeout は、そのサーバーのツールの時間の上限になる(サーバーごと)
+func TestCallTimeout(t *testing.T) {
+	m, _, _ := memoryManager(t, map[string]ServerConfig{
+		"long":  {Command: "util-server", CallTimeout: 130},
+		"short": {Command: "util-server"},
+	})
+	ctx := context.Background()
+	m.Start(ctx, "", m.Servers())
+	tools := m.Tools("", m.Servers())
+	if got := tool.Find(tools, "long__slow").(tool.TimeLimiter).TimeLimit(); got != 130*time.Second {
+		t.Errorf("long の上限 = %v", got)
+	}
+	if got := tool.Find(tools, "short__slow").(tool.TimeLimiter).TimeLimit(); got != defaultCallTimeout {
+		t.Errorf("short の上限 = %v", got)
 	}
 }
 
@@ -420,6 +437,9 @@ func TestValidate(t *testing.T) {
 	}
 	if err := (ServerConfig{Command: "npx", StartupTimeout: -1}).Validate(); err == nil {
 		t.Error("startupTimeout は 1 以上")
+	}
+	if err := (ServerConfig{Command: "npx", CallTimeout: -1}).Validate(); err == nil {
+		t.Error("callTimeout は 1 以上")
 	}
 	if got := (ServerConfig{Command: "npx", StartupTimeout: 180}).startupTimeout(); got != 180*time.Second {
 		t.Errorf("startupTimeout: %v", got)

@@ -62,6 +62,10 @@ type ServerConfig struct {
 	// StartupTimeout は、起動してつながる(ツールの一覧を受け取る)までの上限の秒数。書かなければ 60 秒。
 	// 初回の npx・uv は、パッケージのダウンロードや環境の組み立てで 60 秒を超えることがあるので、サーバーごとに延ばせるようにしている
 	StartupTimeout int `json:"startupTimeout,omitempty"`
+
+	// CallTimeout は、ツール1回の実行の上限の秒数。書かなければ 60 秒。
+	// サーバーの中で何をするかはサーバーごとに違う(自作の aibow-mcp の run_command は 120 秒まで動く)ので、サーバーごとに変えられるようにしている
+	CallTimeout int `json:"callTimeout,omitempty"`
 }
 
 // workDirVar は、args と env の値の中で会話の作業フォルダに置き換える文字列。
@@ -75,6 +79,9 @@ const workDirVar = "${workdir}"
 func (c ServerConfig) Validate() error {
 	if c.StartupTimeout < 0 {
 		return fmt.Errorf("startupTimeout は秒数(1 以上)で書いてください: %d", c.StartupTimeout)
+	}
+	if c.CallTimeout < 0 {
+		return fmt.Errorf("callTimeout は秒数(1 以上)で書いてください: %d", c.CallTimeout)
 	}
 	switch {
 	case c.Type == "sse":
@@ -110,6 +117,14 @@ func (c ServerConfig) startupTimeout() time.Duration {
 		return time.Duration(c.StartupTimeout) * time.Second
 	}
 	return defaultStartupTimeout
+}
+
+// callTimeout はツール1回の実行の上限。
+func (c ServerConfig) callTimeout() time.Duration {
+	if c.CallTimeout > 0 {
+		return time.Duration(c.CallTimeout) * time.Second
+	}
+	return defaultCallTimeout
 }
 
 // isHTTP は url のサーバー(Streamable HTTP)か。
@@ -166,6 +181,9 @@ const (
 	// defaultStartupTimeout はサーバーの起動(つないでツールの一覧を受け取るまで)の時間の上限の既定。
 	// 初回の npx はパッケージをダウンロードするので長めにしている。サーバーごとに startupTimeout で変えられる
 	defaultStartupTimeout = 60 * time.Second
+	// defaultCallTimeout はツール1回の実行の時間の上限の既定(組み込みのツールの 10 秒より長め。サーバーの中で何をするか分からないため)。
+	// サーバーごとに callTimeout で変えられる
+	defaultCallTimeout = 60 * time.Second
 	// closeWait は、閉じるときに標準入力を閉じてから、サーバーが自分で終わるのを待つ時間。過ぎたら止める
 	closeWait = 2 * time.Second
 )
@@ -369,7 +387,7 @@ func (m *Manager) connect(ctx context.Context, k serverKey, cfg ServerConfig) (*
 	s := &server{key: k, session: session}
 	// つながりが切れた(サーバーが落ちた・再起動した)と分かったら、一覧から外す。次の Start でつなぎ直す
 	broken := func(err error) { m.drop(s, err) }
-	tools, err := listTools(ctx, k.name, session, broken)
+	tools, err := listTools(ctx, k.name, cfg.callTimeout(), session, broken)
 	if err != nil {
 		session.Close()
 		return nil, fail("ツールの一覧を受け取れません", err)
@@ -424,13 +442,13 @@ func (m *Manager) drop(s *server, err error) {
 }
 
 // listTools はサーバーのツールの一覧を受け取り、tool.Tool にする。
-func listTools(ctx context.Context, name string, session *mcp.ClientSession, broken func(error)) ([]tool.Tool, error) {
+func listTools(ctx context.Context, name string, limit time.Duration, session *mcp.ClientSession, broken func(error)) ([]tool.Tool, error) {
 	var tools []tool.Tool
 	for t, err := range session.Tools(ctx, nil) { // 一覧が何ページかに分かれていても、全部たどる
 		if err != nil {
 			return nil, err
 		}
-		rt, err := newRemoteTool(name, session, t, broken)
+		rt, err := newRemoteTool(name, limit, session, t, broken)
 		if err != nil {
 			return nil, err
 		}

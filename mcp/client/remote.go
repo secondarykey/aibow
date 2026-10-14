@@ -18,8 +18,6 @@ import (
 )
 
 const (
-	// callTimeout はツール1回の実行の時間の上限(組み込みのツールの 10 秒より長め。サーバーの中で何をするか分からないため)
-	callTimeout = 60 * time.Second
 	// resultMaxChars はモデルに渡す結果の長さの上限(read_file と同じ)。
 	// 組み込みのツールは自分で切るが、MCP のサーバーは切らずに返してくることがある(filesystem の directory_tree など)
 	resultMaxChars = 8000
@@ -33,9 +31,10 @@ const (
 type remoteTool struct {
 	server  string
 	session *mcp.ClientSession
-	def     tool.Def    // モデルに見せる定義。名前は「サーバーの名前__ツールの名前」(ToolName)
-	name    string      // サーバーが付けたツールの名前(tools/call にはこちらを送る)
-	broken  func(error) // つながりが切れたと分かったときに呼ぶ(Manager が一覧から外し、次の送信でつなぎ直す)
+	def     tool.Def      // モデルに見せる定義。名前は「サーバーの名前__ツールの名前」(ToolName)
+	name    string        // サーバーが付けたツールの名前(tools/call にはこちらを送る)
+	limit   time.Duration // 1回の実行の時間の上限(settings.json の callTimeout。サーバーごと)
+	broken  func(error)   // つながりが切れたと分かったときに呼ぶ(Manager が一覧から外し、次の送信でつなぎ直す)
 }
 
 var (
@@ -73,7 +72,7 @@ func ServerPrefix(server string) string {
 // inputSchema(引数の JSON Schema)は、0004 の tool.Def の引数と同じ形なので、そのまま使える。
 // ただし SDK は inputSchema を map[string]any で渡してくるので、サーバーが書いた順(type → properties → required など)は残らず、
 // JSON にし直すとキーの名前の順になる。モデルが読むには困らない。
-func newRemoteTool(server string, session *mcp.ClientSession, t *mcp.Tool, broken func(error)) (*remoteTool, error) {
+func newRemoteTool(server string, limit time.Duration, session *mcp.ClientSession, t *mcp.Tool, broken func(error)) (*remoteTool, error) {
 	schema := t.InputSchema
 	if schema == nil {
 		schema = map[string]any{"type": "object", "properties": map[string]any{}}
@@ -83,7 +82,7 @@ func newRemoteTool(server string, session *mcp.ClientSession, t *mcp.Tool, broke
 		return nil, fmt.Errorf("ツール %s の inputSchema を読めません: %w", t.Name, err)
 	}
 	return &remoteTool{
-		server: server, session: session, broken: broken,
+		server: server, session: session, broken: broken, limit: limit,
 		def:  tool.Def{Name: ToolName(server, t.Name), Description: t.Description, Parameters: params},
 		name: t.Name,
 	}, nil
@@ -91,7 +90,7 @@ func newRemoteTool(server string, session *mcp.ClientSession, t *mcp.Tool, broke
 
 func (t *remoteTool) Def() tool.Def            { return t.def }
 func (t *remoteTool) Server() string           { return t.server }
-func (t *remoteTool) TimeLimit() time.Duration { return callTimeout }
+func (t *remoteTool) TimeLimit() time.Duration { return t.limit }
 func (t *remoteTool) Preview(args tool.Args) (tool.Preview, error) {
 	b, err := json.MarshalIndent(args, "", "  ")
 	if err != nil {
@@ -110,7 +109,7 @@ func (t *remoteTool) Run(ctx context.Context, args tool.Args) (string, error) {
 	res, err := t.session.CallTool(ctx, &mcp.CallToolParams{Name: t.name, Arguments: map[string]any(args)})
 	switch {
 	case errors.Is(ctx.Err(), context.DeadlineExceeded):
-		return "", fmt.Errorf("時間の上限(%d 秒)を超えたため止めました", int(callTimeout.Seconds()))
+		return "", fmt.Errorf("時間の上限(%d 秒)を超えたため止めました(settings.json の callTimeout に秒数を書くと延ばせます)", int(t.limit.Seconds()))
 	case ctx.Err() != nil:
 		return "", errors.New("停止されました")
 	case err != nil:
