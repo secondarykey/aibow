@@ -54,8 +54,8 @@ github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu
 github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
 github.com/wailsapp/wails/v3 v3.0.0-beta.26 h1:Cs7E3wSD6kouJGDzbbvqeFBIbNOzuUMjf0kto3/a7Oc=
 github.com/wailsapp/wails/v3 v3.0.0-beta.26/go.mod h1:5DR/EG5FHU8+BNV7tQYQ/rJMjoFsVlYpM+0gp1+gcTI=
-github.com/wenteasy/log v0.3.1 h1:BxwEjT4IbMdFGV6/yvU533D6zR0f1cNkwZiSAqtfqKE=
-github.com/wenteasy/log v0.3.1/go.mod h1:RLWYNT1JF1QFeep67J1y6aJptZQLtph647dysVu9EKA=
+github.com/wenteasy/log v0.3.2 h1:kQ1k8wlgwKKvRBl8HmDqabw4MnK2knOohBoKSdzWyLE=
+github.com/wenteasy/log v0.3.2/go.mod h1:RLWYNT1JF1QFeep67J1y6aJptZQLtph647dysVu9EKA=
 github.com/yosida95/uritemplate/v3 v3.0.2 h1:Ed3Oyj9yrmi9087+NczuL5BwkIc4wvTb5zIM+UJPGz4=
 github.com/yosida95/uritemplate/v3 v3.0.2/go.mod h1:ILOh0sOhIJR3+L/8afwt/kE++YT040gmv5BQTMR2HP4=
 golang.org/x/mod v0.41.0 h1:qJmnOUb4YB+FsEuM3HcWucdZASCPGhsX6uljO6pog0c=
