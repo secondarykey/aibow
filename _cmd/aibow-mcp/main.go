@@ -18,7 +18,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"runtime/debug"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -27,12 +26,19 @@ import (
 )
 
 func main() {
+	showVersion := flag.Bool("version", false, "バージョンを表示して終わる")
 	flag.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(), "使い方: %s [作業フォルダ]\n\n", filepath.Base(os.Args[0]))
+		fmt.Fprintf(flag.CommandLine.Output(), "使い方: %s [-version] [作業フォルダ]\n\n", filepath.Base(os.Args[0]))
 		fmt.Fprintln(flag.CommandLine.Output(), "aibow のツールを MCP のサーバー(標準入出力)として出します。")
 		fmt.Fprintln(flag.CommandLine.Output(), "作業フォルダを渡すと、その中のファイルを扱うツールとコマンドのツールも出します。")
+		flag.PrintDefaults()
 	}
 	flag.Parse()
+	if *showVersion {
+		// サーバーとして動く前なので、標準出力に書いてよい
+		fmt.Println(server.Name, appVersion())
+		return
+	}
 
 	// ログは標準エラー出力とファイルに書く(標準出力に何か書くと、クライアントが MCP のメッセージとして読もうとして壊れる)
 	closer := startLog()
@@ -55,7 +61,7 @@ func run() error {
 		return err
 	}
 
-	s := server.New(server.Options{WorkDir: dir, Version: version()})
+	s := server.New(server.Options{WorkDir: dir, Version: appVersion()})
 	names := make([]string, 0)
 	for _, t := range server.Tools(dir) {
 		names = append(names, t.Def().Name)
@@ -64,7 +70,7 @@ func run() error {
 	if where == "" {
 		where = "なし(作業フォルダのツールは出しません)"
 	}
-	log.Noticef("%s %s を起動しました(作業フォルダ: %s・ツール %d 個: %v)", server.Name, version(), where, len(names), names)
+	log.Noticef("%s %s を起動しました(作業フォルダ: %s・ツール %d 個: %v)", server.Name, appVersion(), where, len(names), names)
 
 	// Ctrl+C で止める(ターミナルで試すとき用)。ふだんはクライアントが標準入力を閉じると Run が返る
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -94,12 +100,4 @@ func workDir(arg string) (string, error) {
 		return "", fmt.Errorf("作業フォルダ %s はフォルダではありません", abs)
 	}
 	return abs, nil
-}
-
-// version は、この exe の版。go install …@v1.2.3 で入れたならその版、手元でビルドしたなら Go が付けたコミットの版(無ければ "(devel)")。
-func version() string {
-	if bi, ok := debug.ReadBuildInfo(); ok && bi.Main.Version != "" {
-		return bi.Main.Version
-	}
-	return "(devel)"
 }

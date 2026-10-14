@@ -108,7 +108,8 @@
 - 時間の上限はサーバーの側でもかける(組み込みと同じ 10 秒・`run_command` は 120 秒)。ほかのクライアントがどうするかは分からないため
 - `run_command` の説明が指す「Environment の節」(作業フォルダとシェル)は、サーバーの `instructions` に入れる(aibow 以外のクライアントはその節を書かないため)
 - `tools/list` の並びは SDK が名前の順にする(足した順ではない)
-- サーバーの版は exe に Go が書き込む版(`debug.ReadBuildInfo`)。`_cmd/aibow` の `version` ファイルとは別
+- サーバーの版はアプリと同じ(2026-10-15、ユーザーの指示。アプリのバージョンの仕組みにならう)。`_cmd/version.go` が `_cmd/aibow/version` を `_cmd/aibow-mcp/version` に書き写し、exe に埋め込む。
+  開発中かどうかは、exe か `go run` で起動したかで見分け(ユーザーの指示)、`go run` なら `0.5.2+dev` の形にする。`aibow-mcp -version` で表示できる
 - 送受信のメッセージを1行ずつログに出す部分(`mcp/client/log.go`)は、まだサーバーでは使わない(aibow から使うときは aibow の側に出るため)。`mcp/internal/` に移すのは、サーバーでも要るようになったとき
 - 確かめたこと:SDK のクライアントで、プロセスを起動せずにつなぐテスト(`mcp/server/server_test.go`)。exe に古い版の `initialize` から1行ずつ JSON を流して答えが返る。
   aibow の `mcp/client` から exe を起動し、2026-07-28 版でつながって(約 0.1 秒)`read_file` が動く。標準入力が閉じると、答えを書く前でもサーバーは終わる

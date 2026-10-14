@@ -160,6 +160,8 @@ go build -o aibow-mcp.exe ./_cmd/aibow-mcp
 aibow-mcp [作業フォルダ]
 ```
 
+- `aibow-mcp -version` でバージョンを表示します(アプリと同じバージョン。`go run` で動かしたものは `0.5.2+dev` のように次のバージョンに `+dev` が付きます)
+
 - 作業フォルダを渡すと、その中のファイルを扱うツールとコマンドのツールも出します(フォルダの外には出られません)。渡さなければ時刻と計算だけです
 - Claude Code なら `claude mcp add aibow -- <aibow-mcp.exe の場所> <作業フォルダ>` で足せます。ほかのアプリでも、`mcpServers` に `command` と `args` を書けば使えます
 - ツールの名前・説明・引数は aibow の組み込みと同じです

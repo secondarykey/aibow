@@ -244,7 +244,9 @@ MCP のクライアント(Claude Code・aibow など)── 起動する(aibow-m
   起動(版・作業フォルダ・ツール)は Notice、ツールの実行(名前・秒数・結果の文字数・失敗の理由)は Info。aibow から起動すると、aibow のログにも `MCP <名前> (stderr) …` として入る
   (ただし aibow の exe は Notice 以上しかファイルに残さないので、サーバーの行はサーバー自身のファイルで見る)。
   作業フォルダごとに複数のプロセスが同じ日のファイルに書くので、各行の終わりに `pid=…` を付けている。異常終了は `aibow-mcp_crash.log` に残る
-- 版(`serverInfo.version`)は exe に Go が書き込む版(`go install …@v1.2.3` ならその版、手元のビルドならコミットから作った版)
+- 版(`serverInfo.version`・起動のログ・`aibow-mcp -version`)はアプリと同じ。`_cmd/aibow/version` の写しの `_cmd/aibow-mcp/version` を埋め込む(`go run _cmd/version.go` が書き写す)。
+  exe(`go build`・`go install`)は `version` のまま、`go run` で起動したものは patch を1つ上げて `+dev`(`0.5.1` なら `0.5.2+dev`。`appversion.go`)。
+  アプリはビルドタグ(`production`)で見分けるが、aibow-mcp は Taskfile を通さずに作るので、自分の exe が `go-build…` の一時フォルダにあるか(= `go run`)で見分ける
 
 ### 実際のやり取り
 

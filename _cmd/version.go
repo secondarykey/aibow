@@ -2,6 +2,8 @@
 //
 // _cmd/aibow/version(テキスト1行)が唯一の正。ここから build/config.yml と frontend/package.json に書き写す。
 // config.yml の値は wails3 update build-assets で exe のバージョン情報(build/windows/info.json など)になる。
+// MCP のサーバー(_cmd/aibow-mcp)も同じバージョンを名乗るので、_cmd/aibow-mcp/version にも書き写す
+// (//go:embed は自分のフォルダの下のファイルしか埋め込めず、_cmd/aibow/version を直接は使えないため)。
 //
 //	go run _cmd/version.go          version の値で config.yml / package.json をそろえる
 //	go run _cmd/version.go 1.2.3    バージョンを指定して書き換える
@@ -28,6 +30,8 @@ const (
 	versionFile = "./_cmd/aibow/version"
 	configYml   = "./_cmd/aibow/build/config.yml"
 	packJsn     = "./_cmd/aibow/frontend/package.json"
+	// subVersionFile は MCP のサーバー(aibow-mcp)が埋め込むバージョン。version の写しで、手で書き換えない
+	subVersionFile = "./_cmd/aibow-mcp/version"
 )
 
 // 値の部分だけを置き換え、インデントや行末コメントは残す。
@@ -148,7 +152,7 @@ func run(args []string) error {
 		return err
 	}
 	// ★ 複数コマンドがある場合はここに追加
-	for _, f := range []string{versionFile /*, subVersionFile */} {
+	for _, f := range []string{versionFile} {
 		if err := os.WriteFile(f, []byte(rtn.String()+"\n"), 0644); err != nil {
 			return err
 		}
@@ -247,6 +251,11 @@ func write(v *ver) error {
 		}
 		fmt.Println("Write:", o.path)
 	}
+	// 写しのバージョンのファイルは丸ごと書く(引数なしで同期したときにも、ずれていればそろう)
+	if err := os.WriteFile(subVersionFile, []byte(v.String()+"\n"), 0644); err != nil {
+		return err
+	}
+	fmt.Println("Write:", subVersionFile)
 	return nil
 }
 
