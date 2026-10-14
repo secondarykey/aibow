@@ -23,19 +23,18 @@ package main
 import (
 	"embed"
 	"io/fs"
-	"log/slog"
 	"maps"
 	"os"
 	"slices"
 	"strings"
 
 	"github.com/secondarykey/aibow"
+	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/mcp/client"
 	"github.com/secondarykey/aibow/store"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
-	"github.com/wenteasy/log"
 )
 
 // windowFocusEventName は、ウィンドウがアクティブに戻ったことを画面に知らせるイベントの名前。
@@ -60,7 +59,7 @@ func init() {
 }
 
 func main() {
-	setupLog()
+	log.Init() // ログの出口を組む(aibow/log。標準エラー出力へ)。aibow のライブラリのログも、アプリのログもここに集まる
 
 	// 起動に失敗しても(lib が無いなど)ウィンドウは出し、理由を画面に表示する。
 	// リリース版(wails3 build)はコンソールが無く、ログだけでは何も見えずに終わってしまうため。
@@ -134,16 +133,6 @@ func main() {
 		log.Error(err.Error())
 		os.Exit(1)
 	}
-}
-
-// setupLog はログの出口を決める。
-//
-// 出口は slog の既定(slog.SetDefault)にする。ライブラリの aibow(aibow/log)は、SetLogger を呼ばなければ
-// slog.Default() に書くので、アプリのログ(wenteasy/log の Info など)と同じところに集まる。
-// 書式は wenteasy/log の SimpleHandler(1件1行: 2026-10-14T16:00:00+09:00 [INFO  ] メッセージ)。
-// 出し先は今までの標準の log と同じ標準エラー出力(リリース版は見えない。ファイルに書くのはログの仕組みの次の段階)。
-func setupLog() {
-	slog.SetDefault(slog.New(log.NewSimpleHandler(os.Stderr, log.LevelInfo)))
 }
 
 // startMCP は設定ファイル(settings.json)を読み、MCP のサーバーの係(client.Manager)を作る。

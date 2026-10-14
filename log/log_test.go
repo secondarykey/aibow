@@ -2,7 +2,9 @@ package log
 
 import (
 	"bytes"
+	"io"
 	"log/slog"
+	"os"
 	"strings"
 	"testing"
 )
@@ -61,5 +63,37 @@ func TestDefault(t *testing.T) {
 	}
 	if Logger() != slog.Default() {
 		t.Error("Logger は slog.Default() を返す")
+	}
+}
+
+// Init は slog.Default() を wenteasy/log の SimpleHandler(標準エラー出力)に向ける。
+// 足した段階(Trace・Notice)は、slog の書き方(INFO+2 など)ではなく名前で出る。
+func TestInit(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldStderr, oldDefault := os.Stderr, slog.Default()
+	os.Stderr = w
+	t.Cleanup(func() {
+		os.Stderr = oldStderr
+		slog.SetDefault(oldDefault)
+	})
+	SetLogger(nil)
+
+	Init()
+	Noticef("aibow から %s", "Notice")
+	Trace("Info より下は出ない")
+	slog.Warn("slog を直接呼んでも同じ出口")
+	w.Close()
+	b, _ := io.ReadAll(r)
+	got := string(b)
+	for _, want := range []string{"[NOTICE] aibow から Notice", "[WARN  ] slog を直接呼んでも同じ出口"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("%q が無い:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "出ない") {
+		t.Errorf("Init の既定は Info 以上:\n%s", got)
 	}
 }

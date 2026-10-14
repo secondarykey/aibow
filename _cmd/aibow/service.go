@@ -25,10 +25,10 @@ import (
 	"uuid"
 
 	"github.com/secondarykey/aibow"
+	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/mcp/client"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
-	"github.com/wenteasy/log"
 )
 
 type ChatService struct {

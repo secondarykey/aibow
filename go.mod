@@ -6,6 +6,7 @@ require (
 	github.com/hybridgroup/yzma v1.29.1
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/pkg/diff v0.0.0-20241224192749-4e6772a4315c
+	github.com/wenteasy/log v0.3.1
 	modernc.org/sqlite v1.60.1
 )
 

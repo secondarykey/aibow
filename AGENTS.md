@@ -36,7 +36,7 @@ aibow は、ローカルLLMを使ったアプリを**自分で作りながら仕
 | `store/` | 会話の保存先(SQLite) |
 | `mcp/client/` | MCP のクライアント(`client` パッケージ。SDK のパッケージ名 `mcp` と重ならないよう `mcp/` の下に置く。ステップ5で作るサーバーは `mcp/server/` に並べる)。`settings.json` の MCP のサーバーを起動し、そのツールを `tool.Tool` として見せる。`tool` を import し、ルートの `aibow` は import しない |
 | `internal/proc/` | 子プロセスまでまとめて止める仕組み(`tool` の `run_command` と `mcp/client` で使う) |
-| `log/` | ログの口(`log` パッケージ)。aibow のパッケージはログをここから出す。出し先は `SetLogger(*slog.Logger)` で決め、決めなければ `slog.Default()` |
+| `log/` | aibow のログ(`log` パッケージ)。aibow のコードはログをここから出す。土台は wenteasy/log だが、使う人には `slog.Level` と `*slog.Logger` しか見せない。出口はアプリが `Init` で組み、ライブラリとして使う人は `SetLogger(*slog.Logger)` で aibow のログだけ別にできる(決めなければ `slog.Default()`)。詳しくは [log/AGENTS.md](log/AGENTS.md) |
 | `_cmd/aibow/` | デスクトップアプリ(Wails v3 + React)。別モジュール |
 | `_docs/` | 仕組みごとの説明(下の表)と、機能の仕様(`_docs/features/`)。利用者向けの手順は `setup.md`(準備と起動)・`usage.md`(使い方と設定)・`structure.md`(構成とファイル) |
 | `TODO.md` | 全体の進み具合とロードマップ |
@@ -51,6 +51,7 @@ aibow は、ローカルLLMを使ったアプリを**自分で作りながら仕
 | 会話の履歴・会話ごとの設定・アプリ全体の設定・保存の約束(`Store`) | [_docs/conversations.md](_docs/conversations.md) |
 | 会話の上限・compact(truncate / summary)・メーター | [_docs/compact.md](_docs/compact.md) |
 | SQLite の実装・マイグレーション | [store/AGENTS.md](store/AGENTS.md) |
+| ログの出し方・出口(`Init`)・ライブラリとして使う人のログ(`SetLogger`) | [log/AGENTS.md](log/AGENTS.md) |
 | アプリの起動・`ChatService`・環境変数の読み込み・Go と画面のやり取り | [_cmd/aibow/AGENTS.md](_cmd/aibow/AGENTS.md) |
 | 画面(配置・会話の一覧・発言と返事の操作・フォーカス・スクロール・ウィンドウの移動とリサイズ・IME) | [_docs/ui.md](_docs/ui.md) |
 | 返事の表示(Markdown・コードの色付け・mermaid の図と書き出し) | [_docs/rendering.md](_docs/rendering.md) |
@@ -80,7 +81,7 @@ aibow は、ローカルLLMを使ったアプリを**自分で作りながら仕
   - `modernc.org/sqlite`: 会話の保存。`store` パッケージだけで使う
   - `github.com/pkg/diff`: 書き換えるツールの実行前の確認で見せる差分(diff)の計算。`tool` パッケージだけで使う(0005 の 3-2 でユーザーと決めた)
   - `github.com/modelcontextprotocol/go-sdk`: MCP の公式 Go SDK。`mcp/client` パッケージだけで使う(0006 でユーザーと決めた)
-  - `github.com/wenteasy/log`: ログの出口(書式・レベル。slog のハンドラ)。`_cmd/aibow` だけで使う。ライブラリ(ルートと下のパッケージ)からは import しない(2026-10-14、ユーザーの指定)
+  - `github.com/wenteasy/log`: ログの土台(レベルの段階と、出口の部品 `SimpleHandler` など)。`log` パッケージだけで使い、aibow を使う人には wenteasy/log の型を見せない(2026-10-14、ユーザーの指定。shinte/ikkyoku の log と同じ形)
 - C コンパイラなし(`CGO_ENABLED=0`)でビルドできる状態を保つ
 - 外部パッケージ(Go・npm とも)を足すときは、理由と代替案を示してユーザーに確認してから足す
 - チャットテンプレートなど、学習の対象になる仕組みはライブラリ任せにせず自分で書く
@@ -94,7 +95,7 @@ aibow は、ローカルLLMを使ったアプリを**自分で作りながら仕
 - 1つの関数に処理を詰め込みすぎず、流れが上から読めるようにする
 - エラーは握りつぶさず、原因と対処が分かる日本語のメッセージで画面かログに出す
 - 学習用のログ(トークン数、再利用数、速度、終了理由など)は残す。仕組みが観察できることが目的の一部
-- ログは、ライブラリ(ルートと下のパッケージ)では `aibow/log`(`log.Infof` / `log.Warnf` / `log.Errorf` など)から出す。標準の `log` や `slog` を直接使わない。注意は `Warn`、失敗は `Error`(以前の「※」はレベルで表す)。`_cmd/aibow` は `github.com/wenteasy/log` から出す(出口は `main.go` の `setupLog`)
+- ログは `aibow/log`(`log.Infof` / `log.Warnf` / `log.Errorf` など)から出す。標準の `log` や `slog`、wenteasy/log を直接使わない(`_cmd/aibow` も同じ)。注意は `Warn`、失敗は `Error`(以前の「※」はレベルで表す)
 
 ## ユーザーとのやり取り
 

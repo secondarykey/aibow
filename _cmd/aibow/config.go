@@ -10,8 +10,7 @@ import (
 	"strconv"
 
 	"github.com/secondarykey/aibow"
-
-	"github.com/wenteasy/log"
+	"github.com/secondarykey/aibow/log"
 )
 
 // 設定の誤りはログで止めず、まとめて error で返す。
