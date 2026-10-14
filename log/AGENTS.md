@@ -3,7 +3,7 @@
 **aibow のログ。** aibow のコードは `log.Info(msg, "key", v)`(slog と同じ形)・
 `log.Infof(format, ...)`(printf)などで出す。土台は `github.com/wenteasy/log`(v0.3.2)。
 形は shinte/ikkyoku の `log` に揃え、ライブラリとして使う人のために `SetLogger` を足してある。
-作り方の決まりごとの正は wenteasy/log の README「使う側のやり方(自分の log パッケージを作る)」(ひな形・よくある間違い)。この形を崩すときは、先にそちらと揃える。
+決めたこと・やり残しは [_docs/features/0008-log.md](../_docs/features/0008-log.md)。作り方の決まりごとの正は wenteasy/log の README「使う側のやり方(自分の log パッケージを作る)」(ひな形・よくある間違い)。この形を崩すときは、先にそちらと揃える。
 
 | ファイル | 役割 |
 |---|---|
