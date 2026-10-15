@@ -131,15 +131,21 @@ func handler(t tool.Tool) mcp.ToolHandler {
 	}
 }
 
+// TimeLimit は、ツール1回の実行の時間の上限(上限を自分で決めるツールはその値、ほかは 10 秒)。
+// aibow の中でこのサーバーを動かすとき(mcp/client の Local)、クライアントはこれより少し長く待つ
+func TimeLimit(t tool.Tool) time.Duration {
+	if l, ok := t.(tool.TimeLimiter); ok {
+		return l.TimeLimit()
+	}
+	return defaultTimeLimit
+}
+
 // run はツールを時間の上限つきで実行する。
 //
 // ctx は SDK がリクエストごとに作るもので、クライアントが止める知らせ(notifications/cancelled)を送ると止まる。
 // ツールは ctx が止まったら後片付けをして返す約束(run_command は子プロセスまでまとめて止める)なので、それを待って返す
 func run(ctx context.Context, t tool.Tool, args tool.Args) (string, error) {
-	limit := defaultTimeLimit
-	if l, ok := t.(tool.TimeLimiter); ok {
-		limit = l.TimeLimit()
-	}
+	limit := TimeLimit(t)
 	tctx, cancel := context.WithTimeout(ctx, limit)
 	defer cancel()
 	text, err := t.Run(tctx, args)

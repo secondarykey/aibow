@@ -27,6 +27,17 @@ type Interactive interface {
 	RunInteractive(ctx context.Context, args Args, ask Ask) (string, error)
 }
 
+// SelfConfirming は、実行する前の確認を自分で求めるツール(aibow の中で動く自作の MCP サーバーの書き換えるツール。0007 の 5-4)。
+//
+// 会話の仕組みは呼ぶ前に確認せず、RunInteractive の中でツール(サーバー)が差分を送ってきたときに1回だけ聞く。
+// 確認が要るツールかどうか(扱いの決まりの既定)は、Confirmable で表す(Preview は呼ばれない)。
+// 信頼できるもの(aibow が自分で立てたサーバー)にだけ付ける。settings.json のサーバーには付けない(サーバーの名乗りは偽れるため)。
+type SelfConfirming interface {
+	Interactive
+	Confirmable
+	SelfConfirming()
+}
+
 // RejectedText は、ユーザーが実行を拒否したときにモデルに返す結果の文。
 // 会話の仕組み(組み込みのツールの確認)と MCP のサーバー(サーバーからの確認)で同じ文にする。
 func RejectedText(reason string) string {

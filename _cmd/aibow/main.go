@@ -73,6 +73,9 @@ func main() {
 	cfg.notices = append(cfg.notices, logNotices...)
 	var mcpm *client.Manager
 	var prefs *aibow.ToolPrefs
+	// 組み込みのツールは、aibow の中で自作の MCP サーバーを動かし、MCP 越しに呼ぶ(0007 の 5-4)。サーバーは要る最初のときに動かす
+	local := client.NewLocal(client.Options{Version: appVersion()})
+	defer local.Close()
 	if err == nil {
 		if mcpm = startMCP(&cfg); mcpm != nil {
 			defer mcpm.Close() // アプリを閉じたら、起動した MCP のサーバーも止める(子プロセスまで)
@@ -114,7 +117,7 @@ func main() {
 		// なお WebView2 の行([WebView2] …)は標準の log で来るが、slog.SetDefault のあとは標準の log も同じ出口に流れる
 		Logger: slog.Default(),
 		Services: []application.Service{
-			application.NewService(NewChatService(engine, st, settings, cfg.catalog, initial, mcpm, prefs, appVersion(), cfg.notices, err)),
+			application.NewService(NewChatService(engine, st, settings, cfg.catalog, initial, local, mcpm, prefs, appVersion(), cfg.notices, err)),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),

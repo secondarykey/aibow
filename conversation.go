@@ -90,6 +90,9 @@ type Conversations struct {
 	store Store
 	gen   Generator
 	tools []tool.Tool // 「ツールを使う」が ON の会話で、モデルが使えるツール(作業フォルダのツールは会話ごとに足す。toolsFor)
+	// local は aibow の中で動くツール(組み込みと作業フォルダのツール)を渡す係。nil なら tool パッケージのツールを直接呼ぶ。
+	// アプリは、aibow の中の自作の MCP サーバー越しに呼ぶもの(mcp/client の Local)を渡す(SetLocalTools。0007 の 5-4)
+	local LocalTools
 
 	// remote は MCP のサーバーのツール(nil なら使わない)。設定ファイルにサーバーが書いてあるときだけ、アプリが渡す(SetRemoteTools)
 	remote RemoteTools

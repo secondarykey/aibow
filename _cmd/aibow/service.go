@@ -68,7 +68,7 @@ type ChatService struct {
 
 // mcp は MCP のサーバー(settings.json にサーバーが無ければ nil)、prefs はツールの扱いの PC の既定(tools.json)。
 func NewChatService(engine *aibow.Engine, st aibow.Store, app aibow.AppSettings, catalog aibow.ModelCatalog,
-	initial *aibow.ModelEntry, mcp *client.Manager, prefs *aibow.ToolPrefs, version string, notices []string, startupErr error) *ChatService {
+	initial *aibow.ModelEntry, local *client.Local, mcp *client.Manager, prefs *aibow.ToolPrefs, version string, notices []string, startupErr error) *ChatService {
 	quit, cancel := context.WithCancel(context.Background())
 	s := &ChatService{
 		engine: engine, catalog: catalog, app: app, initial: initial, notices: notices, startupErr: startupErr,
@@ -77,6 +77,8 @@ func NewChatService(engine *aibow.Engine, st aibow.Store, app aibow.AppSettings,
 	if startupErr == nil {
 		s.store = st
 		s.convs = aibow.NewConversations(st, engine, app)
+		// 組み込みのツールは aibow の中の自作の MCP サーバー越しに呼ぶ(0007 の 5-4)
+		s.convs.SetLocalTools(local)
 		if mcp != nil { // nil の *Manager を interface に入れると nil に見えなくなるので、確かめてから渡す
 			s.convs.SetRemoteTools(mcp)
 		}

@@ -375,15 +375,13 @@ func TestRestartAfterServerDies(t *testing.T) {
 	m.Start(ctx, "", m.Servers())
 	(*sessions)[0].Close()
 
+	// 一覧から外してからログを書く(drop)ので、両方がそろうまで待つ(一覧が空になった直後に見ると、まだログが無いことがある)
 	deadline := time.Now().Add(5 * time.Second)
-	for len(m.Tools("", m.Servers())) != 0 {
+	for len(m.Tools("", m.Servers())) != 0 || !l.contains("つながりが切れました") {
 		if time.Now().After(deadline) {
-			t.Fatal("落ちたサーバーのツールが残っている")
+			t.Fatalf("落ちたサーバーのツールが残っているか、落ちたことをログに出していない: %v", names(m.Tools("", m.Servers())))
 		}
 		time.Sleep(10 * time.Millisecond)
-	}
-	if !l.contains("つながりが切れました") {
-		t.Error("落ちたことをログに出す")
 	}
 	if started, errs := m.Start(ctx, "", m.Servers()); !slices.Equal(started, []string{"util"}) || len(errs) != 0 {
 		t.Errorf("起動し直す: %v %v", started, errs)

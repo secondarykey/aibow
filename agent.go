@@ -261,6 +261,10 @@ func (cs *Conversations) lookupTool(set ConversationSettings, c ToolCall) (tool.
 // 「確認しない」は、設定の画面の「ツール」(PC の既定)と会話の設定の画面の「ツール」(この会話だけ)で選ぶ(0010)。
 // ふだんは確認するツール(書き換えるツール・コマンド・MCP のツール)を聞かずに実行するときは、ログに出す。
 func (cs *Conversations) needsConfirm(set ConversationSettings, t tool.Tool) bool {
+	if _, ok := t.(tool.SelfConfirming); ok {
+		// 確認は、実行の途中でツール(aibow の中の自作の MCP サーバー)が差分を送ってきたときに1回だけ聞く(askFor。聞くかは扱いで決める)
+		return false
+	}
 	if cs.toolPolicy(set, t) != ToolAllow {
 		return true
 	}
@@ -604,9 +608,26 @@ func (cs *Conversations) usableServers(set ConversationSettings) []string {
 	return out
 }
 
+// LocalTools は、aibow の中で動くツール(組み込みと作業フォルダのツール)を渡す係(0007 の 5-4)。
+//
+// 会話の仕組みは、ツールが tool パッケージを直接呼ぶものか、aibow の中の自作の MCP サーバー越しに呼ぶものかを知らない。
+// 名前・グループ(組み込み)・扱いの決まりの既定は、どちらでも同じ。
+type LocalTools interface {
+	// Tools は、作業フォルダ workDir の会話で使う、aibow の中のツール(workDir が空なら、作業フォルダを使わないツールだけ)
+	Tools(workDir string) []tool.Tool
+}
+
+// SetLocalTools は、aibow の中で動くツールを渡す係を決める(アプリの起動時に1回)。決めなければ tool パッケージのツールを直接呼ぶ。
+func (cs *Conversations) SetLocalTools(l LocalTools) {
+	cs.local = l
+}
+
 // localTools は、aibow の中で動くツール(組み込みと、作業フォルダのツール)。使うかどうかは見ない(toolsFor が見る)。
 // 作業フォルダを決めた会話だけ、そのフォルダの中を扱うツールを足す(作業フォルダは会話ごとなので、ここで作る)。
 func (cs *Conversations) localTools(set ConversationSettings) []tool.Tool {
+	if cs.local != nil {
+		return cs.local.Tools(set.WorkDir)
+	}
 	if set.WorkDir == "" {
 		return cs.tools
 	}
