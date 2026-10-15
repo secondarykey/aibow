@@ -291,6 +291,39 @@ export default function App() {
     setConvSettingsOpen(false);
     convs.open(id).then(focusInput, err => addError(errorMessage(err)));
   };
+
+  // 見ていない会話の様子をトーストで知らせる(返事が終わった・エラーで終わった・確認を待っている)。
+  // 見ている会話は表示で分かるので出さない。押すとその会話を開く。会話ごとに key を分け、新しい様子で置き換える
+  const notifyConversation = (id: string, what: "done" | "error" | "waiting") => {
+    const name = `「${convs.list.find(c => c.id === id)?.title || "新しい会話"}」`;
+    const text = what === "done" ? `${name}の返事が終わりました`
+      : what === "error" ? `${name}がエラーで終わりました`
+        : `${name}でツールの実行の確認を待っています`;
+    toasts.notify(text, {
+      key: `conversation:${id}`,
+      ms: what === "done" ? 6000 : 10000,
+      tone: what === "error" ? "error" : undefined,
+      onClick: () => onOpen(id),
+      hint: "押すとこの会話を開きます",
+    });
+  };
+  // 終わった会話(useChat の ended)が増えたら知らせる。開いて消えたときは知らせない
+  const lastEnded = useRef(chat.ended);
+  useEffect(() => {
+    for (const [id, how] of Object.entries(chat.ended)) {
+      if (lastEnded.current[id] !== how) notifyConversation(id, how);
+    }
+    lastEnded.current = chat.ended;
+  }, [chat.ended]);
+  // 確認を待ち始めた会話が、見ている会話でなければ知らせる
+  useEffect(() => {
+    const id = chat.confirmingId;
+    if (id !== null && id !== currentId) notifyConversation(id, "waiting");
+  }, [chat.confirmingId]);
+  // 会話を開いたら、その会話のトーストは要らないので消す
+  useEffect(() => {
+    if (currentId !== null) toasts.dismissKey(`conversation:${currentId}`);
+  }, [currentId]);
   // 新しい会話の既定を変えたら、新しい会話の画面でこれから作る会話の設定(既定の写し)にも入れる
   const onDefaultsChange = (patch: Partial<ConversationSettings>) => {
     app.updateDefaults(patch);

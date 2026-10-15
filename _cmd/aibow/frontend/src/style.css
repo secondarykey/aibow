@@ -542,5 +542,8 @@ footer { border-top: 1px solid var(--border); background: var(--panel); padding:
   box-shadow: 0 4px 14px rgba(0, 0, 0, .25); animation: toast-in .15s ease-out;
 }
 .toast .spin { flex-shrink: 0; color: var(--accent); animation: spin 1s linear infinite; }
+.toast.error { border-color: var(--error); }
+.toast.clickable { cursor: pointer; }
+.toast.clickable:hover { background: var(--bg); }
 @keyframes toast-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
 @keyframes spin { to { transform: rotate(360deg); } }

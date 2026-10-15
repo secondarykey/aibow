@@ -2,6 +2,7 @@
 //
 // モデルの読み込みや設定の変更など、会話の中身ではないお知らせはここに出す(会話の表示には混ぜない)。
 // エラーは見落とされないよう、今までどおり会話の表示に出す(transcript.ts の addError)。
+// 見ていない会話の様子(返事が終わった・エラー・確認待ち)もここで知らせる(App.tsx)。押すとその会話を開く(onClick)。
 import { useCallback, useRef, useState } from "react";
 import { LuLoaderCircle } from "react-icons/lu";
 
@@ -13,12 +14,18 @@ export interface ToastItem {
   text: string;
   key?: string;     // 同じ key のトーストは置き換える(「読み込み中…」→「読み込みました」)
   sticky?: boolean; // 消さずに出したままにする(終わるまで時間がかかる処理。くるくる回るアイコンを付ける)
+  tone?: "error";   // エラーのお知らせ(赤い枠)
+  onClick?(): void; // 押したときにすること(消すのに加えて)
+  hint?: string;    // マウスを乗せたときの説明(onClick で何が起きるか)
 }
 
 export interface NotifyOptions {
   key?: string;
   sticky?: boolean;
   ms?: number; // 消えるまでの時間(既定 TOAST_MS)。読む量が多いお知らせは長くする。クリックでも消える
+  tone?: "error";
+  onClick?(): void;
+  hint?: string;
 }
 
 export interface Notifier {
@@ -71,7 +78,12 @@ export function Toasts({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss(i
   return (
     <div className="toasts">
       {toasts.map(t => (
-        <div key={t.id} className="toast" onClick={() => onDismiss(t.id)}>
+        <div
+          key={t.id}
+          className={"toast" + (t.tone ? " " + t.tone : "") + (t.onClick ? " clickable" : "")}
+          title={t.hint}
+          onClick={() => { t.onClick?.(); onDismiss(t.id); }}
+        >
           {t.sticky && <LuLoaderCircle className="spin" />}
           <span>{t.text}</span>
         </div>
