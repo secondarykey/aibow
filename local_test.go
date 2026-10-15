@@ -6,13 +6,14 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/secondarykey/aibow/format"
 	"github.com/secondarykey/aibow/mcp/client"
 )
 
 // 組み込みのツールを aibow の中の自作の MCP サーバー越しに呼ぶ(0007 の 5-4)。書き換えるツールの確認は、サーバーが送ってきた差分の1回だけ
 func TestLocalToolsThroughMCP(t *testing.T) {
 	g := &fakeGen{replies: []fakeReply{
-		{toolCalls: []ToolCall{toolCall("write_file", "path", "a.txt", "content", "hello\n")}},
+		{toolCalls: []format.ToolCall{toolCall("write_file", "path", "a.txt", "content", "hello\n")}},
 		{content: "書きました"},
 	}}
 	cs, c, dir := newWorkDirConversation(t, g)
@@ -43,7 +44,7 @@ func TestLocalToolsThroughMCP(t *testing.T) {
 // 「確認しない」にした組み込みのツールは、サーバーからの確認も聞かずに受け入れる
 func TestLocalToolsAllowed(t *testing.T) {
 	g := &fakeGen{replies: []fakeReply{
-		{toolCalls: []ToolCall{toolCall("write_file", "path", "a.txt", "content", "hi")}},
+		{toolCalls: []format.ToolCall{toolCall("write_file", "path", "a.txt", "content", "hi")}},
 		{content: "書きました"},
 	}}
 	cs, c, dir := newWorkDirConversation(t, g)

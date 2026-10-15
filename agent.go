@@ -28,6 +28,7 @@ import (
 	"time"
 	"uuid"
 
+	"github.com/secondarykey/aibow/format"
 	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/tool"
 )
@@ -140,7 +141,7 @@ func (cs *Conversations) runTurn(ctx context.Context, conv Conversation, history
 //
 // ツールの扱いは、呼ぶたびに会話の設定を読み直して決める。送信の途中(ループの中)で会話の上書きが変わっても
 // (確認のカードの「この会話では今後聞かない」など。0010)、次の呼び出しから効くように。
-func (cs *Conversations) runTool(ctx context.Context, conv Conversation, c ToolCall, emit func(ChatEvent)) StoredMessage {
+func (cs *Conversations) runTool(ctx context.Context, conv Conversation, c format.ToolCall, emit func(ChatEvent)) StoredMessage {
 	if fresh, _, err := cs.store.Conversation(conv.ID); err == nil {
 		conv.Settings = fresh.Settings.normalized()
 	}
@@ -156,7 +157,7 @@ func (cs *Conversations) runTool(ctx context.Context, conv Conversation, c ToolC
 }
 
 // runFound は、見つかったツールを(確認が要るなら確認してから)実行する。
-func (cs *Conversations) runFound(ctx context.Context, conv Conversation, c ToolCall, t tool.Tool, args tool.Args, emit func(ChatEvent)) StoredMessage {
+func (cs *Conversations) runFound(ctx context.Context, conv Conversation, c format.ToolCall, t tool.Tool, args tool.Args, emit func(ChatEvent)) StoredMessage {
 	var conf *Confirmation
 	var err error
 	if cs.needsConfirm(conv.Settings, t) {
@@ -211,7 +212,7 @@ func (cs *Conversations) runFound(ctx context.Context, conv Conversation, c Tool
 // 聞くかどうかは、呼ぶ前の確認と同じく、ツールの扱いで決める(会話の設定を読み直す。カードで「この会話では今後聞かない」にしたら、すぐ効く)。
 // 「確認しない」なら聞かずに受け入れる。聞いたときは、今の確認のカード(サーバーが送ってきた差分など)を出し、答えを asked に、
 // 待った時間を waited に入れる(結果に答えを残すためと、実行の秒数から待った時間を外すため)。
-func (cs *Conversations) askFor(conv Conversation, c ToolCall, t tool.Tool, args tool.Args, emit func(ChatEvent), asked **Confirmation, waited *time.Duration) tool.Ask {
+func (cs *Conversations) askFor(conv Conversation, c format.ToolCall, t tool.Tool, args tool.Args, emit func(ChatEvent), asked **Confirmation, waited *time.Duration) tool.Ask {
 	return func(ctx context.Context, pv tool.Preview) (tool.Answer, error) {
 		set := conv.Settings
 		if fresh, _, err := cs.store.Conversation(conv.ID); err == nil {
@@ -241,7 +242,7 @@ type fixedPreview struct {
 func (f fixedPreview) Preview(tool.Args) (tool.Preview, error) { return f.pv, nil }
 
 // lookupTool は呼び出しを確かめて、実行するツールと引数を返す。
-func (cs *Conversations) lookupTool(set ConversationSettings, c ToolCall) (tool.Tool, tool.Args, error) {
+func (cs *Conversations) lookupTool(set ConversationSettings, c format.ToolCall) (tool.Tool, tool.Args, error) {
 	if c.Error != "" {
 		return nil, nil, errors.New(c.Error) // 書式が崩れていて読み取れなかった
 	}
@@ -309,7 +310,7 @@ func didYouMean(tools []tool.Tool, name string) string {
 // 「ループを途中で止めて、ユーザーの返事を待つ」のは、チャネルで待つだけでできる。
 // 待つ間は時間の上限に数えない(ユーザーが読む時間なので)。停止ボタン(ctx)では止まる。
 // 確認の内容を作れないとき(置き換える場所が見つからない、など)は、聞かずにエラーを返す。
-func (cs *Conversations) confirm(ctx context.Context, conv uuid.UUID, c ToolCall, t tool.Confirmable, args tool.Args, emit func(ChatEvent)) (*Confirmation, error) {
+func (cs *Conversations) confirm(ctx context.Context, conv uuid.UUID, c format.ToolCall, t tool.Confirmable, args tool.Args, emit func(ChatEvent)) (*Confirmation, error) {
 	pv, err := t.Preview(args)
 	if err != nil {
 		return nil, err
@@ -451,7 +452,7 @@ func (cs *Conversations) fitResult(set ConversationSettings, history []StoredMes
 }
 
 // toolMessage はツールの結果の発言を作る。
-func toolMessage(conv uuid.UUID, c ToolCall, text string, isErr bool, sec float64) StoredMessage {
+func toolMessage(conv uuid.UUID, c format.ToolCall, text string, isErr bool, sec float64) StoredMessage {
 	return StoredMessage{
 		ID: uuid.NewV7(), ConversationID: conv, Role: "tool", Content: text,
 		ToolResult: &ToolResult{Call: c, Error: isErr, Sec: sec},
@@ -724,8 +725,8 @@ func (cs *Conversations) logRemoteTools(set ConversationSettings) {
 			skipped = append(skipped, t.Def().Name)
 		}
 	}
-	before, err1 := cs.gen.CountTokens(Prompt{Tools: tool.Defs(local)})
-	after, err2 := cs.gen.CountTokens(Prompt{Tools: tool.Defs(all)})
+	before, err1 := cs.gen.CountTokens(format.Prompt{Tools: tool.Defs(local)})
+	after, err2 := cs.gen.CountTokens(format.Prompt{Tools: tool.Defs(all)})
 	if err := errors.Join(err1, err2); err != nil {
 		log.Warnf("ツールの定義のトークン数を数えられません: %v", err)
 		return

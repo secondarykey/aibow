@@ -25,23 +25,26 @@ import (
 	"unicode"
 	"uuid"
 
+	"github.com/secondarykey/aibow/engine"
+	"github.com/secondarykey/aibow/format"
 	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/tool"
 )
 
-// Generator は返事を生成するもの。本物は Engine。テストでは偽物に差し替える。
+// Generator は返事を生成するもの。本物は engine.Engine。テストでは偽物に差し替える。
 //
-// 会話の仕組みは、モデルに渡す内容を「構造」(Prompt)のまま渡し、結果も構造(Output)で受け取る。
-// 文字列への書式の当て方・出力の振り分け方(モデルの系統ごとに違う)は Generator の側が持つ(format.go)。
+// 会話の仕組みは、モデルに渡す内容を「構造」(format.Prompt)のまま渡し、結果も構造(format.Output)で受け取る。
+// 文字列への書式の当て方・出力の振り分け方(モデルの系統ごとに違う)は Generator の側が持つ(format パッケージ)。
+// この interface は会話の仕組みが「何を使うか」を表すので、使う側(ここ)に置く。
 type Generator interface {
-	Generate(ctx context.Context, p Prompt, opt GenerateOptions,
-		onPrompt func(prompt string), onThinking, onContent func(text string)) (Output, error)
+	Generate(ctx context.Context, p format.Prompt, opt engine.GenerateOptions,
+		onPrompt func(prompt string), onThinking, onContent func(text string)) (format.Output, engine.GenerateStats, error)
 	// CountTokens は、p に書式を当てた文字列のトークン数を数える。会話の上限に収まっているかの判断に使う(compact.go)
-	CountTokens(p Prompt) (int, error)
+	CountTokens(p format.Prompt) (int, error)
 	// EnsureContextSize は、作業領域を n トークンの大きさにする(同じ大きさなら何もしない)。作り直したら true。
 	// 会話ごとに会話の上限・返事の上限が違うので、送信の前に呼ぶ(ensureWorkspace)
 	EnsureContextSize(n int) (bool, error)
-	Info() *ModelInfo
+	Info() *engine.ModelInfo
 }
 
 // ChatEvent は送信の途中経過。Send がコールバックで1つずつ渡す。
@@ -63,23 +66,23 @@ type Generator interface {
 //	notice   : エラーではないお知らせ(Text。画面はトーストに出す)。例: 今すぐ要約で、要約するものが無かった
 //	done     : 終わり。必ず最後に1回だけ送る。保存した最後の返事があれば Reply に入る
 type ChatEvent struct {
-	ConversationID uuid.UUID       `json:"conversation_id"` // どの会話の送信か。画面は表示中の会話のものだけを出す
-	Type           string          `json:"type"`
-	Text           string          `json:"text,omitempty"`
-	Error          string          `json:"error,omitempty"`
-	Reply          *StoredMessage  `json:"reply,omitempty"`
-	Message        *StoredMessage  `json:"message,omitempty"`
-	Usage          *Usage          `json:"usage,omitempty"`
-	Compact        *CompactInfo    `json:"compact,omitempty"`
-	ToolCall       *ToolCall       `json:"tool_call,omitempty"`
-	Confirm        *ConfirmRequest `json:"confirm,omitempty"`
+	ConversationID uuid.UUID        `json:"conversation_id"` // どの会話の送信か。画面は表示中の会話のものだけを出す
+	Type           string           `json:"type"`
+	Text           string           `json:"text,omitempty"`
+	Error          string           `json:"error,omitempty"`
+	Reply          *StoredMessage   `json:"reply,omitempty"`
+	Message        *StoredMessage   `json:"message,omitempty"`
+	Usage          *Usage           `json:"usage,omitempty"`
+	Compact        *CompactInfo     `json:"compact,omitempty"`
+	ToolCall       *format.ToolCall `json:"tool_call,omitempty"`
+	Confirm        *ConfirmRequest  `json:"confirm,omitempty"`
 }
 
 // ConfirmRequest は、ツールを実行する前にユーザーに確かめる内容(confirm イベント)。
 type ConfirmRequest struct {
-	ID      string       `json:"id"`      // 答えるときに渡す(古い確認への答えを取り違えないため)
-	Call    ToolCall     `json:"call"`    // どの呼び出しか
-	Preview tool.Preview `json:"preview"` // 何をするか(パス・上書きか・差分)
+	ID      string          `json:"id"`      // 答えるときに渡す(古い確認への答えを取り違えないため)
+	Call    format.ToolCall `json:"call"`    // どの呼び出しか
+	Preview tool.Preview    `json:"preview"` // 何をするか(パス・上書きか・差分)
 }
 
 // ErrGenerating は、別の送信の生成中に送信されたときのエラー。
@@ -505,9 +508,9 @@ func (cs *Conversations) save(m StoredMessage, autoTitle string) error {
 
 // generate は返事を生成して、保存する形(StoredMessage)にして返す。
 // 何も生成されなかったときは nil を返す。
-func (cs *Conversations) generate(ctx context.Context, conv Conversation, messages []Message, emit func(ChatEvent)) (*StoredMessage, error) {
+func (cs *Conversations) generate(ctx context.Context, conv Conversation, messages []format.Message, emit func(ChatEvent)) (*StoredMessage, error) {
 	set := conv.Settings
-	opt := GenerateOptions{
+	opt := engine.GenerateOptions{
 		Temperature:     float32(set.Temperature),
 		MaxTokens:       cs.limitsOf(set).reply,
 		PresencePenalty: float32(set.PresencePenalty),
@@ -537,7 +540,7 @@ func (cs *Conversations) generate(ctx context.Context, conv Conversation, messag
 		}
 	}
 
-	out, err := cs.gen.Generate(ctx, cs.promptFor(set, messages), opt,
+	out, st, err := cs.gen.Generate(ctx, cs.promptFor(set, messages), opt,
 		func(p string) { emit(ChatEvent{ConversationID: conv.ID, Type: "prompt", Text: p}) },
 		onText("thinking"), onText("content"),
 	)
@@ -547,7 +550,6 @@ func (cs *Conversations) generate(ctx context.Context, conv Conversation, messag
 	if out.Thinking == "" && out.Content == "" && len(out.ToolCalls) == 0 {
 		return nil, nil
 	}
-	st := out.Stats
 
 	now := time.Now()
 	stats := &ReplyStats{GenerateStats: st, FirstSec: firstAt.Sub(start).Seconds()}
@@ -628,8 +630,8 @@ func (cs *Conversations) environment(set ConversationSettings) string {
 //
 // summary はこれまでの会話の要約(compact.go)。システムプロンプトの後ろに見出しを付けて足す。
 // システムプロンプトが空でも、要約があれば system を作る。
-func promptMessages(system, summary string, history []StoredMessage) []Message {
-	var out []Message
+func promptMessages(system, summary string, history []StoredMessage) []format.Message {
+	var out []format.Message
 	s := strings.TrimSpace(system)
 	if summary != "" {
 		if s != "" {
@@ -638,18 +640,18 @@ func promptMessages(system, summary string, history []StoredMessage) []Message {
 		s += summaryHeading + "\n" + summary
 	}
 	if s != "" {
-		out = append(out, Message{Role: "system", Content: s})
+		out = append(out, format.Message{Role: "system", Content: s})
 	}
 	for _, m := range history {
-		out = append(out, Message{Role: m.Role, Content: m.Content, Thinking: m.Thinking, ToolCalls: m.ToolCalls})
+		out = append(out, format.Message{Role: m.Role, Content: m.Content, Thinking: m.Thinking, ToolCalls: m.ToolCalls})
 	}
 	return out
 }
 
 // promptFor は、会話の設定でモデルに渡す内容(書式を当てる前の構造)を作る。
 // 「ツールを使う」が ON ならツールの定義も入れる。
-func (cs *Conversations) promptFor(set ConversationSettings, messages []Message) Prompt {
-	return Prompt{Messages: messages, Tools: tool.Defs(cs.toolsFor(set)), Think: set.Think}
+func (cs *Conversations) promptFor(set ConversationSettings, messages []format.Message) format.Prompt {
+	return format.Prompt{Messages: messages, Tools: tool.Defs(cs.toolsFor(set)), Think: set.Think}
 }
 
 // noAnswerNote は、答えが出ないまま終わったときに答えの代わりに残す文。

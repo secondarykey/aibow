@@ -3,6 +3,9 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as format$0 from "./format/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as tool$0 from "./tool/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -52,7 +55,7 @@ export interface ChatEvent {
     "message"?: StoredMessage | null;
     "usage"?: Usage | null;
     "compact"?: CompactInfo | null;
-    "tool_call"?: ToolCall | null;
+    "tool_call"?: format$0.ToolCall | null;
     "confirm"?: ConfirmRequest | null;
 }
 
@@ -199,7 +202,7 @@ export interface ConfirmRequest {
     /**
      * どの呼び出しか
      */
-    "call": ToolCall;
+    "call": format$0.ToolCall;
 
     /**
      * 何をするか(パス・上書きか・差分)
@@ -336,91 +339,6 @@ export interface KnownTool {
 }
 
 /**
- * ModelEntry は一覧の1件。
- */
-export interface ModelEntry {
-    /**
-     * 例: "ollama:qwen3.5:4b" / "file:models\Qwen_Qwen3.5-4B-Q4_K_M.gguf"
-     */
-    "id": string;
-
-    /**
-     * 画面に出す名前
-     */
-    "name": string;
-
-    /**
-     * "ollama" か "file"
-     */
-    "source": string;
-
-    /**
-     * ファイルサイズ
-     */
-    "size_gb": number;
-}
-
-/**
- * ModelInfo は画面に表示するための、読み込み中のモデルの情報。
- */
-export interface ModelInfo {
-    /**
-     * ModelEntry の ID
-     */
-    "id": string;
-
-    /**
-     * 表示名
-     */
-    "name": string;
-
-    /**
-     * llama.cpp が返す説明。例: "qwen35 4B Q4_K - Medium"
-     */
-    "desc": string;
-
-    /**
-     * モデルの種類(GGUF の general.architecture)。例: "qwen35"
-     */
-    "arch": string;
-
-    /**
-     * 使う書式の名前。空なら未対応の種類のモデル(生成できない)
-     */
-    "format": string;
-
-    /**
-     * パラメータ数(十億単位)
-     */
-    "params_b": number;
-
-    /**
-     * 重みのサイズ
-     */
-    "size_gb": number;
-
-    /**
-     * 層の数
-     */
-    "layers": number;
-
-    /**
-     * GPU に載せる層の数(指定値)
-     */
-    "gpu_layers": number;
-
-    /**
-     * 作業領域の大きさ(コンテキスト長)
-     */
-    "n_ctx": number;
-
-    /**
-     * 読み込みにかかった秒数
-     */
-    "load_sec": number;
-}
-
-/**
  * NotDefault は、新しい会話で最初から選ばないグループ。
  */
 export interface NotDefault {
@@ -489,7 +407,7 @@ export interface ReplyStats {
 /**
  * StoredMessage は保存された発言1件。
  * 
- * モデルに渡すのは Role・Content・Thinking・ToolCalls(format.go の Message)。思考をプロンプトに入れるかは書式が決める。
+ * モデルに渡すのは Role・Content・Thinking・ToolCalls(format.Message)。思考をプロンプトに入れるかは書式が決める。
  * Model・Stats・ToolResult は、画面で後から見返すために残している。
  * 
  * 1回の送信でツールを使うと、発言は次のように並ぶ(どれも1件ずつ保存する):
@@ -531,7 +449,7 @@ export interface StoredMessage {
     /**
      * その回のツール呼び出し(assistant のみ)
      */
-    "tool_calls"?: ToolCall[] | null;
+    "tool_calls"?: format$0.ToolCall[] | null;
 
     /**
      * どの呼び出しの結果か(tool のみ)
@@ -543,28 +461,6 @@ export interface StoredMessage {
      */
     "excluded"?: boolean;
     "created_at": string;
-}
-
-/**
- * ToolCall はモデルが書いたツール呼び出し1つ。書式に依存しない形にしたもの。
- * 
- * 名前と引数(tool.Call)に、書式の崩れの情報を足している。崩れは書式の話なので tool パッケージには持たせない。
- * 書式が崩れて読み取れなかった呼び出しは、Raw にモデルが書いた生の文字列、Error に理由を持つ。
- * 実行はせず、エラーの結果としてモデルに返して立て直させる。次のプロンプトには Raw をそのまま入れ、
- * モデルが自分の書いたものを見られるようにする。
- * 
- * tool.Call を埋め込んでいるので、JSON は {"name", "args", "raw", "error"} の平らな形になる
- * (tool パッケージに切り出す前と同じ形。保存済みの会話をそのまま読める)。
- */
-export interface ToolCall {
-    "name": string;
-
-    /**
-     * 書いた順(プロンプトに書き戻すときも同じ順にするため)
-     */
-    "args": tool$0.Arg[] | null;
-    "raw"?: string;
-    "error"?: string;
 }
 
 /**
@@ -649,7 +545,7 @@ export interface ToolResult {
     /**
      * どの呼び出しの結果か(書式に依存しない形。名前・引数)
      */
-    "call": ToolCall;
+    "call": format$0.ToolCall;
 
     /**
      * エラーだったか(Content は「エラー: …」)

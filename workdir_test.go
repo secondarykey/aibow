@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/secondarykey/aibow/format"
 	"github.com/secondarykey/aibow/tool"
 )
 
@@ -96,8 +97,8 @@ func TestAgentReadsFileInWorkDir(t *testing.T) {
 		t.Fatal(err)
 	}
 	g := &fakeGen{replies: []fakeReply{
-		{toolCalls: []ToolCall{toolCall("list_files")}},
-		{toolCalls: []ToolCall{toolCall("read_file", "path", "main.go", "offset", "3")}}, // 数の引数も文字列で届く
+		{toolCalls: []format.ToolCall{toolCall("list_files")}},
+		{toolCalls: []format.ToolCall{toolCall("read_file", "path", "main.go", "offset", "3")}}, // 数の引数も文字列で届く
 		{content: "main 関数だけがあります"},
 	}}
 	cs, _, c := newToolConversation(t, g)

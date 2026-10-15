@@ -1,6 +1,6 @@
-package aibow
+package format
 
-// format_qwen35.go: Qwen3.5 の書式(format.go の Format の実装)。
+// qwen35.go: Qwen3.5 の書式(format.go の Format の実装)。
 //
 // Qwen3.5 の公式テンプレート(GGUF の tokenizer.chat_template に入っている Jinja テンプレート)を、
 // このアプリで使う部分だけ Go で書き直したもの。空白や改行の1文字まで同じになるよう、

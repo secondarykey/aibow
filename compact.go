@@ -24,6 +24,8 @@ import (
 	"time"
 	"uuid"
 
+	"github.com/secondarykey/aibow/engine"
+	"github.com/secondarykey/aibow/format"
 	"github.com/secondarykey/aibow/tool"
 )
 
@@ -49,10 +51,10 @@ type CompactInfo struct {
 
 // passing は「モデルに渡す内容」。送信のときと、メーターを出すときに組み立てる。
 type passing struct {
-	summary  *Compaction // 使う要約。無ければ nil
-	first    int         // history のこの位置から後ろを渡す
-	messages []Message   // システムプロンプト(+ 要約)+ 発言(history[first:])
-	tokens   int         // messages にチャットテンプレートを当てた文字列のトークン数
+	summary  *Compaction      // 使う要約。無ければ nil
+	first    int              // history のこの位置から後ろを渡す
+	messages []format.Message // システムプロンプト(+ 要約)+ 発言(history[first:])
+	tokens   int              // messages にチャットテンプレートを当てた文字列のトークン数
 }
 
 // usage は passing をメーターの形にする。
@@ -67,7 +69,7 @@ func (p passing) usage(history []StoredMessage, limit int) Usage {
 
 // count は、チャットテンプレートを当てた文字列(= 実際にモデルに渡す文字列)のトークン数を数える。
 // ツールを使う会話では、ツールの説明もシステムプロンプトに入るので、その分も数える。
-func (cs *Conversations) count(p Prompt) (int, error) {
+func (cs *Conversations) count(p format.Prompt) (int, error) {
 	return cs.gen.CountTokens(p)
 }
 
@@ -353,7 +355,7 @@ func (cs *Conversations) latestSummary(id uuid.UUID, history []StoredMessage) (*
 // summaryMessages は要約を作らせるときに渡す発言。前回の要約と、その続きの会話を1つの user の発言にする。
 // 会話は ChatML の発言として並べず、「ユーザー: …」の文章にする。発言として並べると、
 // モデルは要約ではなく、会話の続き(最後の質問への返事)を書こうとしてしまうため。
-func summaryMessages(prev string, part []StoredMessage) []Message {
+func summaryMessages(prev string, part []StoredMessage) []format.Message {
 	var b strings.Builder
 	b.WriteString("## 前回までの要約\n")
 	if prev == "" {
@@ -381,7 +383,7 @@ func summaryMessages(prev string, part []StoredMessage) []Message {
 			fmt.Fprintf(&b, "ツールの結果(%s): %s\n", name, headRunes(m.Content, summaryToolResultRunes))
 		}
 	}
-	return []Message{{Role: "system", Content: summaryInstruction}, {Role: "user", Content: b.String()}}
+	return []format.Message{{Role: "system", Content: summaryInstruction}, {Role: "user", Content: b.String()}}
 }
 
 // summaryToolResultRunes は、要約に渡すツールの結果・引数の長さ(文字数)。長いものは先頭だけにする
@@ -478,7 +480,7 @@ func (cs *Conversations) summaryEnd(history []StoredMessage, prev *Compaction, f
 		prevText = prev.Summary
 	}
 	fits := func(end int) (bool, error) {
-		n, err := cs.count(Prompt{Messages: summaryMessages(prevText, history[from:end])})
+		n, err := cs.count(format.Prompt{Messages: summaryMessages(prevText, history[from:end])})
 		return n <= budget, err
 	}
 	// 候補は from より後ろの組の始まりと keep。長くなるほど収まりにくいので、後ろから二分探索する
@@ -549,7 +551,7 @@ func (cs *Conversations) summarizePart(ctx context.Context, conv Conversation, h
 
 // generateSummary はモデルに要約を書かせる。答えが出なかった・途中で切れた・停止されたときはエラーにする
 // (中途半端な要約を保存して、以後ずっとモデルに渡し続けないため)。
-func (cs *Conversations) generateSummary(ctx context.Context, id uuid.UUID, msgs []Message, emit func(ChatEvent)) (string, GenerateStats, error) {
+func (cs *Conversations) generateSummary(ctx context.Context, id uuid.UUID, msgs []format.Message, emit func(ChatEvent)) (string, engine.GenerateStats, error) {
 	// 停止ボタン(StopSummary)で、送信全体ではなく要約だけを止められるようにする
 	sctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -563,11 +565,10 @@ func (cs *Conversations) generateSummary(ctx context.Context, id uuid.UUID, msgs
 	}()
 
 	emit(ChatEvent{ConversationID: id, Type: "summarizing"})
-	opt := GenerateOptions{Temperature: summaryTemperature, MaxTokens: summaryMaxTokens}
-	out, err := cs.gen.Generate(sctx, Prompt{Messages: msgs, Think: false}, opt, func(string) {}, func(string) {}, func(t string) {
+	opt := engine.GenerateOptions{Temperature: summaryTemperature, MaxTokens: summaryMaxTokens}
+	out, st, err := cs.gen.Generate(sctx, format.Prompt{Messages: msgs, Think: false}, opt, func(string) {}, func(string) {}, func(t string) {
 		emit(ChatEvent{ConversationID: id, Type: "summary", Text: t})
 	})
-	st := out.Stats
 	if err != nil {
 		return "", st, err
 	}

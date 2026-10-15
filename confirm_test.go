@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/secondarykey/aibow/format"
 	"github.com/secondarykey/aibow/tool"
 )
 
@@ -63,7 +64,7 @@ func fileText(t *testing.T, dir, name string) string {
 // 「実行する」と答えると書き換わり、確認の結果が保存される。確認には差分が付く
 func TestConfirmApprove(t *testing.T) {
 	g := &fakeGen{replies: []fakeReply{
-		{toolCalls: []ToolCall{toolCall("edit_file", "path", "main.go", "old_string", "package main", "new_string", "package app")}},
+		{toolCalls: []format.ToolCall{toolCall("edit_file", "path", "main.go", "old_string", "package main", "new_string", "package app")}},
 		{content: "直しました"},
 	}}
 	cs, c, dir := newWorkDirConversation(t, g)
@@ -97,7 +98,7 @@ func TestConfirmApprove(t *testing.T) {
 // 「拒否」すると実行せず、理由をモデルに返してループを続ける
 func TestConfirmReject(t *testing.T) {
 	g := &fakeGen{replies: []fakeReply{
-		{toolCalls: []ToolCall{toolCall("write_file", "path", "main.go", "content", "消しました\n")}},
+		{toolCalls: []format.ToolCall{toolCall("write_file", "path", "main.go", "content", "消しました\n")}},
 		{content: "では別の方法にします"},
 	}}
 	cs, c, dir := newWorkDirConversation(t, g)
@@ -122,7 +123,7 @@ func TestConfirmReject(t *testing.T) {
 		t.Errorf("拒否の結果がモデルに渡っていません(生成 %d 回)", len(g.calls))
 	}
 	// 理由が空なら、その旨を書く
-	g.replies = []fakeReply{{toolCalls: []ToolCall{toolCall("write_file", "path", "a.txt", "content", "x")}}, {content: "はい"}}
+	g.replies = []fakeReply{{toolCalls: []format.ToolCall{toolCall("write_file", "path", "a.txt", "content", "x")}}, {content: "はい"}}
 	sendAnswering(cs, context.Background(), c, "もう一度", func(r *ConfirmRequest) bool { return cs.Confirm(c.ID, r.ID, false, "") == nil })
 	if rs := toolResults(t, cs, c); rs[len(rs)-1].Content != "ユーザーが実行を拒否しました。理由: (書かれていません)" {
 		t.Errorf("理由が空のとき: %q", rs[len(rs)-1].Content)
@@ -132,7 +133,7 @@ func TestConfirmReject(t *testing.T) {
 // 確認を待っている間に停止できる。待っていた呼び出しにも、後ろの呼び出しにも「停止」の結果を残す
 func TestConfirmStopWhileWaiting(t *testing.T) {
 	g := &fakeGen{replies: []fakeReply{
-		{toolCalls: []ToolCall{
+		{toolCalls: []format.ToolCall{
 			toolCall("write_file", "path", "a.txt", "content", "x"),
 			toolCall("write_file", "path", "b.txt", "content", "y"),
 		}},
@@ -163,7 +164,7 @@ func TestConfirmStopWhileWaiting(t *testing.T) {
 // 確認の内容を作れない(置き換える場所が見つからない)ときは、聞かずにエラーをモデルに返す
 func TestConfirmNotAskedWhenPreviewFails(t *testing.T) {
 	g := &fakeGen{replies: []fakeReply{
-		{toolCalls: []ToolCall{toolCall("edit_file", "path", "main.go", "old_string", "1\tpackage main", "new_string", "x")}},
+		{toolCalls: []format.ToolCall{toolCall("edit_file", "path", "main.go", "old_string", "1\tpackage main", "new_string", "x")}},
 		{content: "読み直します"},
 	}}
 	cs, c, _ := newWorkDirConversation(t, g)
@@ -178,7 +179,7 @@ func TestConfirmNotAskedWhenPreviewFails(t *testing.T) {
 // run_command も実行前に確認し、実行すると出力と終了コードがモデルに渡る
 func TestRunCommandThroughAgent(t *testing.T) {
 	g := &fakeGen{replies: []fakeReply{
-		{toolCalls: []ToolCall{toolCall("run_command", "command", "echo hi")}},
+		{toolCalls: []format.ToolCall{toolCall("run_command", "command", "echo hi")}},
 		{content: "hi と出ました"},
 	}}
 	cs, c, _ := newWorkDirConversation(t, g)
@@ -211,7 +212,7 @@ func TestTimeLimiterResultAfterTimeout(t *testing.T) {
 		time.Sleep(20 * time.Millisecond) // 後片付け
 		return "", errors.New("時間の上限を超えたため止めました。ここまでの出力: 途中")
 	}}}
-	g := &fakeGen{replies: []fakeReply{{toolCalls: []ToolCall{toolCall("limited")}}, {content: "途中でした"}}}
+	g := &fakeGen{replies: []fakeReply{{toolCalls: []format.ToolCall{toolCall("limited")}}, {content: "途中でした"}}}
 	cs, _, c := newToolConversation(t, g, lt)
 	send(t, cs, c, "やって")
 	if rs := toolResults(t, cs, c); len(rs) != 1 || !strings.Contains(rs[0].Content, "ここまでの出力: 途中") {

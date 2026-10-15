@@ -1,4 +1,6 @@
-package aibow
+// Package models は、使えるモデル(GGUF ファイル)の一覧を作る。
+// 何にも依存しない(llama.cpp も読まない)。ファイルの場所を探すだけで、読み込むのは engine パッケージ。
+package models
 
 // models.go: 使えるモデルの一覧を作る部分。
 //
@@ -19,8 +21,8 @@ import (
 	"strings"
 )
 
-// ModelEntry は一覧の1件。
-type ModelEntry struct {
+// Entry は一覧の1件。
+type Entry struct {
 	ID     string  `json:"id"`      // 例: "ollama:qwen3.5:4b" / "file:models\Qwen_Qwen3.5-4B-Q4_K_M.gguf"
 	Name   string  `json:"name"`    // 画面に出す名前
 	Source string  `json:"source"`  // "ollama" か "file"
@@ -30,17 +32,17 @@ type ModelEntry struct {
 
 // ---- models フォルダの *.gguf ----------------------------------------------------------
 
-func listFileModels(dir string) []ModelEntry {
+func listFileModels(dir string) []Entry {
 	files, _ := filepath.Glob(filepath.Join(dir, "*.gguf"))
-	var list []ModelEntry
+	var list []Entry
 	for _, f := range files {
 		list = append(list, fileEntry(f))
 	}
 	return list
 }
 
-func fileEntry(path string) ModelEntry {
-	e := ModelEntry{ID: "file:" + path, Name: filepath.Base(path), Source: "file", Path: path}
+func fileEntry(path string) Entry {
+	e := Entry{ID: "file:" + path, Name: filepath.Base(path), Source: "file", Path: path}
 	if st, err := os.Stat(path); err == nil {
 		e.SizeGB = float64(st.Size()) / (1 << 30)
 	}
@@ -59,9 +61,9 @@ func fileEntry(path string) ModelEntry {
 // その中で mediaType が "application/vnd.ollama.image.model" のものが GGUF 本体。
 // (ほかにチャットテンプレートやライセンスの blob もあるが、aibow は使わない)
 
-// OllamaModelsDir は Ollama の保存フォルダを返す。
+// OllamaDir は Ollama の保存フォルダを返す。
 // Ollama と同じく、環境変数 OLLAMA_MODELS があればそちらを使う。
-func OllamaModelsDir() string {
+func OllamaDir() string {
 	if d := os.Getenv("OLLAMA_MODELS"); d != "" {
 		return d
 	}
@@ -82,9 +84,9 @@ type ollamaManifest struct {
 
 const ollamaModelLayer = "application/vnd.ollama.image.model"
 
-func listOllamaModels(dir string) []ModelEntry {
+func listOllamaModels(dir string) []Entry {
 	root := filepath.Join(dir, "manifests")
-	var list []ModelEntry
+	var list []Entry
 	filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return nil
@@ -99,7 +101,7 @@ func listOllamaModels(dir string) []ModelEntry {
 			return nil // クラウド専用モデルなど、本体のファイルがないものは飛ばす
 		}
 		name := ollamaName(parts)
-		list = append(list, ModelEntry{
+		list = append(list, Entry{
 			ID: "ollama:" + name, Name: name, Source: "ollama",
 			SizeGB: float64(size) / (1 << 30), Path: blob,
 		})
@@ -152,15 +154,15 @@ func ollamaName(p []string) string {
 
 // ---- 一覧の作成と検索 ---------------------------------------------------------------------
 
-// ModelCatalog は使えるモデルの一覧を作る。画面を開くたびに作り直すので、
+// Catalog は使えるモデルの一覧を作る。画面を開くたびに作り直すので、
 // aibow を起動したまま `ollama pull` しても、再読み込みで一覧に出てくる。
-type ModelCatalog struct {
+type Catalog struct {
 	ModelsDir string // models フォルダ
 	OllamaDir string // Ollama の保存フォルダ
 }
 
-func (c ModelCatalog) List() []ModelEntry {
-	list := []ModelEntry{} // 0件でも JSON で null ではなく [] になるように
+func (c Catalog) List() []Entry {
+	list := []Entry{} // 0件でも JSON で null ではなく [] になるように
 	list = append(list, listFileModels(c.ModelsDir)...)
 	return append(list, listOllamaModels(c.OllamaDir)...)
 }
@@ -168,7 +170,7 @@ func (c ModelCatalog) List() []ModelEntry {
 // Find は ID でモデルを探す。
 // "ollama:名前" か "file:パス" のほか、GGUF ファイルのパスを直接書いてもよい(AIBOW_MODEL 用)。
 // models フォルダの外にあるファイルも、パスを指定すれば使える。
-func (c ModelCatalog) Find(id string) (ModelEntry, error) {
+func (c Catalog) Find(id string) (Entry, error) {
 	for _, m := range c.List() {
 		if m.ID == id {
 			return m, nil
@@ -180,5 +182,5 @@ func (c ModelCatalog) Find(id string) (ModelEntry, error) {
 			return fileEntry(path), nil
 		}
 	}
-	return ModelEntry{}, fmt.Errorf("モデル %q が見つかりません", id)
+	return Entry{}, fmt.Errorf("モデル %q が見つかりません", id)
 }

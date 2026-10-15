@@ -7,8 +7,8 @@
 
 | ファイル | 役割 |
 |---|---|
-| `format.go` | 書式の interface(`Format` / `OutputParser`)と、会話の仕組みとエンジンの間で受け渡す形(`Message` / `Prompt` / `Output` / `ToolCall`)。モデルの種類で書式を選ぶ表 |
-| `format_qwen35.go` | Qwen3.5 の書式。プロンプトの組み立て(ツールの説明・呼び出し・結果・ループ中の思考)と、出力の振り分け(思考・答え・`<tool_call>`) |
+| `format/format.go` | `format` パッケージ。書式の interface(`Format` / `OutputParser`)と、会話の仕組みとエンジンの間で受け渡す形(`Message` / `Prompt` / `Output` / `ToolCall`)。モデルの種類で書式を選ぶ表(`format.For`) |
+| `format/qwen35.go` | Qwen3.5 の書式。プロンプトの組み立て(ツールの説明・呼び出し・結果・ループ中の思考)と、出力の振り分け(思考・答え・`<tool_call>`) |
 | `tool/tool.go` | `tool` パッケージ。ツールの interface(`Tool`)・定義(`Def`)・呼び出し(`Call`: 名前と引数だけ)・引数(`Arg`)。引数を JSON Schema と照らし合わせる `CheckArgs` |
 | `tool/time.go` / `tool/calc.go` | 組み込みのツール `get_current_time` / `calculate` |
 | `tool/files.go` | 作業フォルダのツールの共通部分(`Files`・`os.Root` で開く・パスを作業フォルダからの相対にする) |
@@ -19,10 +19,10 @@
 | `internal/proc/` | 子プロセスまでまとめて止める仕組み(Windows はジョブオブジェクト、それ以外はプロセスグループ)。`run_command` と MCP のサーバーで使う(0006 で `tool` から移した) |
 | `tool/confirm.go` | 実行前に確認が要るツールの印(`Confirmable`)と、確認の画面に出す内容(`Preview`: パス・上書きか・差分)。差分は `github.com/pkg/diff` |
 | `agent.go` | エージェントループ(`runTurn`)とツールの実行(10 秒の上限・20 回の上限・停止・会話の上限に入らない結果・実行前の確認の待ち) |
-| `format_qwen35_test.go` | 書式のテスト。プロンプトは公式テンプレートを jinja2 で通した期待値と1文字まで比べる |
-| `testdata/qwen35/` | 書式のテストの会話(`cases.json`)と期待値(`*.txt`)、期待値を作るスクリプト(`gen_expected.py`) |
+| `format/qwen35_test.go` | 書式のテスト。プロンプトは公式テンプレートを jinja2 で通した期待値と1文字まで比べる |
+| `format/testdata/qwen35/` | 書式のテストの会話(`cases.json`)と期待値(`*.txt`)、期待値を作るスクリプト(`gen_expected.py`) |
 | `tool/tool_test.go` / `tool/files_test.go` / `tool/write_test.go` / `agent_test.go` / `workdir_test.go` / `confirm_test.go` | ツール(外に出られないこと・読み方の切り方を含む)とループ・作業フォルダのテスト(偽物の生成器を使う。モデル不要) |
-| `format_test.go` | `ToolCall` の JSON が切り出す前と同じ平らな形か(保存済みの会話を読めるか)のテスト |
+| `format/format_test.go` | `ToolCall` の JSON が切り出す前と同じ平らな形か(保存済みの会話を読めるか)のテスト |
 
 ## 書式(Format)
 
@@ -61,13 +61,13 @@ Conversations ← Output(思考・答え・ToolCall)            ← Engine ← F
 ### 期待値の作り方(テスト)
 
 プロンプトの組み立ては、公式テンプレートと空白・改行の1文字まで一致させる。
-期待値は GGUF の中のテンプレートを jinja2 で実際に通して作り、`testdata/qwen35/*.txt` に置いている。
+期待値は GGUF の中のテンプレートを jinja2 で実際に通して作り、`format/testdata/qwen35/*.txt` に置いている。
 
 ```bash
-python testdata/qwen35/gen_expected.py ~/.ollama/models/blobs/sha256-<qwen3.5 の GGUF>
+python format/testdata/qwen35/gen_expected.py ~/.ollama/models/blobs/sha256-<qwen3.5 の GGUF>
 ```
 
-- 会話は `testdata/qwen35/cases.json` に書き、Python と Go のテストが同じものを読む。ケースを足したら期待値を作り直す
+- 会話は `format/testdata/qwen35/cases.json` に書き、Python と Go のテストが同じものを読む。ケースを足したら期待値を作り直す
 - `testdata/` は `.gitattributes` で改行コードを変換しない(1バイトまで比べるため)
 
 ## エージェントループ(agent.go)
@@ -94,7 +94,7 @@ python testdata/qwen35/gen_expected.py ~/.ollama/models/blobs/sha256-<qwen3.5 �
 依存の向きが import としてそのまま見える:
 
 ```
-書式(format_qwen35.go)── 定義(tool.Def)をプロンプトに書き、呼び出しを読み取る ──→ tool
+書式(format/qwen35.go)── 定義(tool.Def)をプロンプトに書き、呼び出しを読み取る ──→ tool
 会話の仕組み(agent.go)── 実行する(回数・時間の上限・停止・結果の保存はこちら)──→ tool
 tool ── 何も知らない
 ```

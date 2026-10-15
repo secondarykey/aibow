@@ -1,4 +1,9 @@
-package aibow
+// Package engine は、llama.cpp を直接呼んで文章を生成する部分(モデルの読み込み・生成・トークン数・KV キャッシュ)。
+//
+// 会話の保存・compact・エージェントループ(ルートの aibow)は知らない。プロンプトを構造(format.Prompt)で受け取り、
+// 書式(format パッケージ)を当てて生成し、振り分けた結果(format.Output)と生成の記録(GenerateStats)を返すだけ。
+// そのため、会話の仕組みなしで「生成だけ」を使う側(ステップ6の OpenAI 互換 API)からも使える。
+package engine
 
 // engine.go: llama.cpp を直接呼んで文章を生成する部分。
 //
@@ -6,7 +11,7 @@ package aibow
 //
 //	1. llama.cpp のライブラリ(DLL)を読み込む
 //	2. モデル(GGUF ファイル)を読み込み、GPU に載せる
-//	3. 会話をモデルの書式(format.go)の文字列にして、トークン(数値の列)に変換する
+//	3. 会話をモデルの書式(format パッケージ)の文字列にして、トークン(数値の列)に変換する
 //	4. トークン列をモデルに通す(decode)→ 次のトークンの確率が出る
 //	5. 確率から1つ選ぶ(sample)→ 文字に戻し、書式で思考・答え・ツール呼び出しに振り分けて画面へ → 4 に戻る
 //
@@ -23,11 +28,14 @@ import (
 	"time"
 
 	"github.com/hybridgroup/yzma/pkg/llama"
+
+	"github.com/secondarykey/aibow/format"
+	"github.com/secondarykey/aibow/models"
 )
 
-// EngineConfig はエンジンの設定。_cmd/aibow で環境変数とアプリ設定から作る。
+// Config はエンジンの設定。_cmd/aibow で環境変数とアプリ設定から作る。
 // NCtx と GPULayers は、あとから EnsureContextSize / SetGPULayers で変えられる。
-type EngineConfig struct {
+type Config struct {
 	LibPath   string // llama.cpp の DLL が入っているフォルダ
 	NCtx      int    // 作業領域の大きさ: 一度に扱えるトークン数(プロンプト + 返事)。会話の上限 + 返事の上限(会話ごとに違う)
 	GPULayers int    // GPU に載せる層の数。モデルの層数以上なら全部 GPU
@@ -35,7 +43,7 @@ type EngineConfig struct {
 }
 
 // GenerateOptions は1回の生成の設定(サンプリングと長さ)。会話ごとの設定から作る。
-// 思考の ON/OFF はプロンプトの書き方で決まるので、Prompt の方に持つ。
+// 思考の ON/OFF はプロンプトの書き方で決まるので、format.Prompt の方に持つ。
 type GenerateOptions struct {
 	Temperature float32 // 0 なら greedy(毎回一番点数の高いトークン)
 	MaxTokens   int     // 1回の返事で生成するトークン数の上限
@@ -47,7 +55,7 @@ type GenerateOptions struct {
 
 // ModelInfo は画面に表示するための、読み込み中のモデルの情報。
 type ModelInfo struct {
-	ID        string  `json:"id"`         // ModelEntry の ID
+	ID        string  `json:"id"`         // models.Entry の ID
 	Name      string  `json:"name"`       // 表示名
 	Desc      string  `json:"desc"`       // llama.cpp が返す説明。例: "qwen35 4B Q4_K - Medium"
 	Arch      string  `json:"arch"`       // モデルの種類(GGUF の general.architecture)。例: "qwen35"
@@ -63,6 +71,7 @@ type ModelInfo struct {
 }
 
 // GenerateStats は1回の生成の記録。画面の統計行に出す。
+// 書式で振り分けた結果(format.Output)とは別に、Generate が返す。
 type GenerateStats struct {
 	PromptTokens int     `json:"prompt_tokens"` // プロンプトのトークン数
 	ReusedTokens int     `json:"reused_tokens"` // そのうち KV キャッシュを再利用できた数
@@ -75,7 +84,7 @@ type GenerateStats struct {
 // Engine は llama.cpp と、今読み込んでいるモデル1つ、その作業領域(コンテキスト)を持つ。
 // モデルは LoadModel で入れ替えられる。
 type Engine struct {
-	cfg     EngineConfig
+	cfg     Config
 	Devices []string // llama.cpp が見つけた計算装置
 	HasGPU  bool     // GPU が見つかったか
 
@@ -83,8 +92,8 @@ type Engine struct {
 	mu    sync.Mutex
 	model llama.Model // 0 なら未読み込み
 	vocab llama.Vocab // 書き換えるときは mu と vocabMu の両方を持つ
-	// format はモデルの書式(format.go)。未対応の種類のモデルなら nil。vocab と同じく mu と vocabMu の両方で守る
-	format Format
+	// format はモデルの書式。未対応の種類のモデルなら nil。vocab と同じく mu と vocabMu の両方で守る
+	format format.Format
 	arch   string // モデルの種類(未対応のときのエラーに使う)
 	lctx   llama.Context
 
@@ -111,8 +120,8 @@ var ErrNoModel = errors.New("モデルが読み込まれていません。入力
 // ErrBusy は、生成中やモデルの読み込み中に、別の依頼が来たときのエラー。
 var ErrBusy = errors.New("生成中、またはモデルの読み込み中です。終わるまで待つか、停止してください")
 
-// NewEngine は llama.cpp のライブラリを読み込む。モデルはまだ読み込まない。
-func NewEngine(cfg EngineConfig) (*Engine, error) {
+// New は llama.cpp のライブラリを読み込む。モデルはまだ読み込まない。
+func New(cfg Config) (*Engine, error) {
 	if err := llama.Load(cfg.LibPath); err != nil {
 		return nil, fmt.Errorf("llama.cpp のライブラリを読み込めません(AIBOW_LIB=%q): %w", cfg.LibPath, err)
 	}
@@ -151,7 +160,7 @@ func (e *Engine) Info() *ModelInfo {
 }
 
 // LoadModel はモデルを入れ替える。数秒〜十数秒かかる。
-func (e *Engine) LoadModel(m ModelEntry) (*ModelInfo, error) {
+func (e *Engine) LoadModel(m models.Entry) (*ModelInfo, error) {
 	if !e.mu.TryLock() {
 		return nil, ErrBusy
 	}
@@ -181,7 +190,7 @@ func (e *Engine) SetGPULayers(n int) (*ModelInfo, error) {
 //
 // VRAM 8GB に2つのモデルは同時に載らないことが多いので、先に今のモデルを解放してから読み込む。
 // 読めなかったときは undo で設定を戻し、元のモデルを読み込み直して戻す。
-func (e *Engine) replace(m ModelEntry, undo func()) (*ModelInfo, error) {
+func (e *Engine) replace(m models.Entry, undo func()) (*ModelInfo, error) {
 	prev := e.info.Load()
 	e.unload()
 
@@ -247,7 +256,7 @@ func (e *Engine) EnsureContextSize(n int) (bool, error) {
 }
 
 // load はモデルとコンテキストを作る。e.mu を持った状態で呼ぶ。
-func (e *Engine) load(m ModelEntry) (*ModelInfo, error) {
+func (e *Engine) load(m models.Entry) (*ModelInfo, error) {
 	start := time.Now()
 
 	// NGpuLayers が「何層を VRAM に置くか」。
@@ -271,10 +280,10 @@ func (e *Engine) load(m ModelEntry) (*ModelInfo, error) {
 	e.lctx = lctx
 	// 書式はモデルの種類で選ぶ。GGUF にはモデルの種類が general.architecture として書かれている
 	arch, _ := llama.ModelMetaValStr(model, "general.architecture")
-	format := formatFor(arch)
+	f := format.For(arch)
 	e.vocabMu.Lock()
 	e.vocab = llama.ModelGetVocab(model)
-	e.format, e.arch = format, arch
+	e.format, e.arch = f, arch
 	e.vocabMu.Unlock()
 	e.cached = nil // 新しい作業領域なので KV キャッシュは空
 	info := &ModelInfo{
@@ -290,8 +299,8 @@ func (e *Engine) load(m ModelEntry) (*ModelInfo, error) {
 		LoadSec:   time.Since(start).Seconds(),
 		path:      m.Path,
 	}
-	if format != nil {
-		info.Format = format.Name()
+	if f != nil {
+		info.Format = f.Name()
 	}
 	e.info.Store(info)
 	return info, nil
@@ -314,9 +323,9 @@ func (e *Engine) newContext() (llama.Context, error) {
 	return lctx, nil
 }
 
-// entry は、読み込み中のモデルを読み直すための ModelEntry を返す。
-func (i *ModelInfo) entry() ModelEntry {
-	return ModelEntry{ID: i.ID, Name: i.Name, Path: i.path}
+// entry は、読み込み中のモデルを読み直すための models.Entry を返す。
+func (i *ModelInfo) entry() models.Entry {
+	return models.Entry{ID: i.ID, Name: i.Name, Path: i.path}
 }
 
 // unload はモデルと作業領域を解放する(VRAM が空く)。e.mu を持った状態で呼ぶ。
@@ -344,14 +353,14 @@ func (e *Engine) unload() {
 // 同じ文章でも、モデル(の語彙と書式)が変わればトークン数は変わる。会話の仕組みは、上限に収まっているかを
 // この数で判断する(数を保存して使い回さず、毎回、今のモデルで数え直す)。
 // 特別なトークン(<|im_start|> など)は1トークンとして数える(Generate と同じ数え方)。
-func (e *Engine) CountTokens(p Prompt) (int, error) {
+func (e *Engine) CountTokens(p format.Prompt) (int, error) {
 	e.vocabMu.RLock()
 	defer e.vocabMu.RUnlock()
 	if e.vocab == 0 {
 		return 0, ErrNoModel
 	}
 	if e.format == nil {
-		return 0, unsupportedFormat(e.arch)
+		return 0, format.Unsupported(e.arch)
 	}
 	return len(e.tokenize(e.format.BuildPrompt(p))), nil
 }
@@ -373,25 +382,26 @@ func (e *Engine) Close() {
 }
 
 // Generate は会話の続き(アシスタントの返事)を生成する。
-// 文字が出るたびに onThinking / onContent が呼ばれる。返事全体は、書式で振り分けた形(Output)で返す。
+// 文字が出るたびに onThinking / onContent が呼ばれる。返事全体は、書式で振り分けた形(format.Output)と、
+// 生成の記録(GenerateStats)で返す。失敗したときも、そこまでの記録は返す。
 // ctx がキャンセルされる(画面で「停止」が押される)と途中で止まる。
 func (e *Engine) Generate(
 	ctx context.Context,
-	p Prompt,
+	p format.Prompt,
 	opt GenerateOptions,
 	onPrompt func(prompt string),
 	onThinking, onContent func(text string),
-) (Output, error) {
+) (format.Output, GenerateStats, error) {
 	var st GenerateStats
 	if !e.mu.TryLock() {
-		return Output{}, ErrBusy
+		return format.Output{}, st, ErrBusy
 	}
 	defer e.mu.Unlock()
 	if e.model == 0 {
-		return Output{}, ErrNoModel
+		return format.Output{}, st, ErrNoModel
 	}
 	if e.format == nil {
-		return Output{}, unsupportedFormat(e.arch)
+		return format.Output{}, st, format.Unsupported(e.arch)
 	}
 
 	// 3. 会話 → 文字列(書式を当てる)→ トークン列
@@ -403,7 +413,7 @@ func (e *Engine) Generate(
 	nCtx := int(llama.NCtx(e.lctx))
 	if len(tokens) >= nCtx {
 		// 会話の仕組み(compact.go)が会話の上限に収めてから渡すので、ふつうはここに来ない
-		return Output{Stats: st}, fmt.Errorf("会話が長すぎます(%d トークン / 作業領域 %d)。新しい会話で始め直すか、設定の会話の上限を増やしてください", len(tokens), nCtx)
+		return format.Output{}, st, fmt.Errorf("会話が長すぎます(%d トークン / 作業領域 %d)。新しい会話で始め直すか、設定の会話の上限を増やしてください", len(tokens), nCtx)
 	}
 
 	// 4. プロンプトをモデルに読ませる。KV キャッシュに残っている部分は飛ばす。
@@ -412,7 +422,7 @@ func (e *Engine) Generate(
 	for i := st.ReusedTokens; i < len(tokens); i += batchSize {
 		end := min(i+batchSize, len(tokens))
 		if err := e.decode(tokens[i:end]); err != nil {
-			return Output{Stats: st}, err
+			return format.Output{}, st, err
 		}
 	}
 	st.PromptSec = time.Since(start).Seconds()
@@ -465,15 +475,13 @@ func (e *Engine) Generate(
 
 		// 選んだトークンをモデルに読ませて、その次の確率を計算させる
 		if err := e.decode([]llama.Token{tok}); err != nil {
-			return Output{Stats: st}, err
+			return format.Output{}, st, err
 		}
 	}
 	send(parser.Push(u8.Flush()))
 	send(parser.Flush())
 	st.GenSec = time.Since(start).Seconds()
-	out := parser.Result()
-	out.Stats = st
-	return out, nil
+	return parser.Result(), st, nil
 }
 
 // decode はトークン列をモデルに通し、KV キャッシュに追加する。

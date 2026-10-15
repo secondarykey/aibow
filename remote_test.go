@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/secondarykey/aibow/format"
 	"github.com/secondarykey/aibow/tool"
 )
 
@@ -92,7 +93,7 @@ func promptToolNames(call fakeCall) []string {
 // 送信の前にサーバーを起動し、そのツールをプロンプトに入れる。実行の前に確認し、結果にサーバーの名前を残す
 func TestRemoteTools(t *testing.T) {
 	g := &fakeGen{replies: []fakeReply{
-		{toolCalls: []ToolCall{toolCall("remote_list", "paths", `["a", "b"]`)}},
+		{toolCalls: []format.ToolCall{toolCall("remote_list", "paths", `["a", "b"]`)}},
 		{content: "2つあります"},
 	}}
 	cs, c, dir := newWorkDirConversation(t, g)
@@ -180,7 +181,7 @@ func TestDefaultServers(t *testing.T) {
 // サーバーの名前を落として呼んだら、正しい名前を「〜のことですか?」でモデルに返す(勝手に読み替えない)
 func TestRemoteToolDidYouMean(t *testing.T) {
 	g := &fakeGen{replies: []fakeReply{
-		{toolCalls: []ToolCall{toolCall("list_directory", "path", ".")}},
+		{toolCalls: []format.ToolCall{toolCall("list_directory", "path", ".")}},
 		{content: "呼び直します"},
 	}}
 	cs, c, _ := newWorkDirConversation(t, g)
@@ -248,9 +249,9 @@ func TestToolPolicy(t *testing.T) {
 // 「使わない」はモデルに見せず、「確認しない」は聞かずに実行する。会話A で許し、会話B では許さない、ができる
 func TestToolPolicyInConversations(t *testing.T) {
 	g := &fakeGen{replies: []fakeReply{
-		{toolCalls: []ToolCall{toolCall("fake__write", "paths", `["a"]`)}},
+		{toolCalls: []format.ToolCall{toolCall("fake__write", "paths", `["a"]`)}},
 		{content: "書きました"},
-		{toolCalls: []ToolCall{toolCall("fake__write", "paths", `["a"]`)}},
+		{toolCalls: []format.ToolCall{toolCall("fake__write", "paths", `["a"]`)}},
 		{content: "書きました"},
 	}}
 	cs, a, _ := newWorkDirConversation(t, g)
@@ -348,7 +349,7 @@ func TestLocalToolPolicy(t *testing.T) {
 // サーバーごと「使わない」にした MCP のサーバーは、会話で選んであっても起動しない
 func TestLocalToolPolicyInConversation(t *testing.T) {
 	g := &fakeGen{replies: []fakeReply{
-		{toolCalls: []ToolCall{toolCall("read_file", "path", "main.go")}},
+		{toolCalls: []format.ToolCall{toolCall("read_file", "path", "main.go")}},
 		{content: "読みました"},
 	}}
 	cs, c, _ := newWorkDirConversation(t, g)
@@ -641,8 +642,8 @@ func TestConfirmRemember(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			g := &fakeGen{replies: []fakeReply{
-				{toolCalls: []ToolCall{toolCall("fake__write", "paths", `["a"]`)}},
-				{toolCalls: []ToolCall{toolCall("fake__write", "paths", `["b", "c"]`)}},
+				{toolCalls: []format.ToolCall{toolCall("fake__write", "paths", `["a"]`)}},
+				{toolCalls: []format.ToolCall{toolCall("fake__write", "paths", `["b", "c"]`)}},
 				{content: "書きました"},
 			}}
 			cs, c, _ := newWorkDirConversation(t, g)
@@ -731,7 +732,7 @@ func (t *askingTool) RunInteractive(ctx context.Context, args tool.Args, ask too
 // 答えはカードに残し、確認を待った時間は実行の秒数に入れない
 func TestServerAsks(t *testing.T) {
 	g := &fakeGen{replies: []fakeReply{
-		{toolCalls: []ToolCall{toolCall("fake__write", "paths", `["a"]`)}},
+		{toolCalls: []format.ToolCall{toolCall("fake__write", "paths", `["a"]`)}},
 		{content: "書きました"},
 	}}
 	cs, c, _ := newWorkDirConversation(t, g)
@@ -767,7 +768,7 @@ func TestServerAsks(t *testing.T) {
 // 「確認しない」の扱いなら、呼ぶ前もサーバーからの確認も聞かずに受け入れる
 func TestServerAsksAllowed(t *testing.T) {
 	g := &fakeGen{replies: []fakeReply{
-		{toolCalls: []ToolCall{toolCall("fake__write", "paths", `["a"]`)}},
+		{toolCalls: []format.ToolCall{toolCall("fake__write", "paths", `["a"]`)}},
 		{content: "書きました"},
 	}}
 	cs, c, _ := newWorkDirConversation(t, g)
@@ -788,7 +789,7 @@ func TestServerAsksAllowed(t *testing.T) {
 // サーバーからの確認を「今後許可しない」で拒否したら、拒否の文に「今後使えません」を添え、会話の上書きを off にする
 func TestServerAsksRememberOff(t *testing.T) {
 	g := &fakeGen{replies: []fakeReply{
-		{toolCalls: []ToolCall{toolCall("fake__write", "paths", `["a"]`)}},
+		{toolCalls: []format.ToolCall{toolCall("fake__write", "paths", `["a"]`)}},
 		{content: "やめました"},
 	}}
 	cs, c, _ := newWorkDirConversation(t, g)

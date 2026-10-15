@@ -25,17 +25,19 @@ import (
 	"uuid"
 
 	"github.com/secondarykey/aibow"
+	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/mcp/client"
+	"github.com/secondarykey/aibow/models"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 type ChatService struct {
-	engine  *aibow.Engine        // 起動に失敗したときは nil
+	engine  *engine.Engine       // 起動に失敗したときは nil
 	store   aibow.Store          // 起動に失敗したときは nil
 	convs   *aibow.Conversations // 起動に失敗したときは nil
-	catalog aibow.ModelCatalog
+	catalog models.Catalog
 
 	// startupErr は起動に失敗した理由(lib が無いなど)。画面に表示する
 	startupErr error
@@ -55,7 +57,7 @@ type ChatService struct {
 	notices []string
 
 	// initial は起動時に読み込むモデル。nil なら読み込まない(画面で選ぶ)。
-	initial *aibow.ModelEntry
+	initial *models.Entry
 	// loading は起動時に読み込み中のモデルの名前。読み込み中でなければ nil。
 	loading atomic.Pointer[string]
 
@@ -67,16 +69,16 @@ type ChatService struct {
 }
 
 // mcp は MCP のサーバー(settings.json にサーバーが無ければ nil)、prefs はツールの扱いの PC の既定(tools.json)。
-func NewChatService(engine *aibow.Engine, st aibow.Store, app aibow.AppSettings, catalog aibow.ModelCatalog,
-	initial *aibow.ModelEntry, local *client.Local, mcp *client.Manager, prefs *aibow.ToolPrefs, version string, notices []string, startupErr error) *ChatService {
+func NewChatService(eng *engine.Engine, st aibow.Store, app aibow.AppSettings, catalog models.Catalog,
+	initial *models.Entry, local *client.Local, mcp *client.Manager, prefs *aibow.ToolPrefs, version string, notices []string, startupErr error) *ChatService {
 	quit, cancel := context.WithCancel(context.Background())
 	s := &ChatService{
-		engine: engine, catalog: catalog, app: app, initial: initial, notices: notices, startupErr: startupErr,
+		engine: eng, catalog: catalog, app: app, initial: initial, notices: notices, startupErr: startupErr,
 		quit: quit, cancelQuit: cancel, mcp: mcp, prefs: prefs, version: version,
 	}
 	if startupErr == nil {
 		s.store = st
-		s.convs = aibow.NewConversations(st, engine, app)
+		s.convs = aibow.NewConversations(st, eng, app)
 		// 組み込みのツールは aibow の中の自作の MCP サーバー越しに呼ぶ(0007 の 5-4)
 		s.convs.SetLocalTools(local)
 		if mcp != nil { // nil の *Manager を interface に入れると nil に見えなくなるので、確かめてから渡す
@@ -107,7 +109,7 @@ func (s *ChatService) ServiceStartup(ctx context.Context, options application.Se
 }
 
 // loadInitial は起動時のモデルを読み込み、終わったら models イベントで画面に知らせる。
-func (s *ChatService) loadInitial(m aibow.ModelEntry) {
+func (s *ChatService) loadInitial(m models.Entry) {
 	s.loadModel(m)
 	s.loading.Store(nil)
 	application.Get().Event.Emit(modelsEventName)
@@ -126,18 +128,18 @@ const modelsEventName = "models"
 
 // ModelsResult は Models の戻り値。
 type ModelsResult struct {
-	Models  []aibow.ModelEntry `json:"models"`
-	Current *aibow.ModelInfo   `json:"current"`           // 未読み込みなら null
-	Loading string             `json:"loading,omitempty"` // 起動時に読み込み中のモデルの名前
-	GPU     bool               `json:"gpu"`
-	Error   string             `json:"error,omitempty"` // 起動に失敗した理由。あれば何もできない
-	Notices []string           `json:"notices"`         // 起動時に伝えること(使われなくなった環境変数など)
+	Models  []models.Entry    `json:"models"`
+	Current *engine.ModelInfo `json:"current"`           // 未読み込みなら null
+	Loading string            `json:"loading,omitempty"` // 起動時に読み込み中のモデルの名前
+	GPU     bool              `json:"gpu"`
+	Error   string            `json:"error,omitempty"` // 起動に失敗した理由。あれば何もできない
+	Notices []string          `json:"notices"`         // 起動時に伝えること(使われなくなった環境変数など)
 }
 
 // Models は使えるモデルの一覧と、今読み込んでいるモデルを返す。
 func (s *ChatService) Models() ModelsResult {
 	if s.startupErr != nil {
-		return ModelsResult{Models: []aibow.ModelEntry{}, Error: s.startupErr.Error(), Notices: s.notices}
+		return ModelsResult{Models: []models.Entry{}, Error: s.startupErr.Error(), Notices: s.notices}
 	}
 	r := ModelsResult{
 		Models:  s.catalog.List(),
@@ -156,7 +158,7 @@ func (s *ChatService) Models() ModelsResult {
 // Go で error を返すと、JavaScript 側では Promise が reject される。
 //
 // モデルはアプリ全体で1つ(VRAM に1つしか載らない)。会話を切り替えてもモデルは変わらない。
-func (s *ChatService) SwitchModel(id string) (*aibow.ModelInfo, error) {
+func (s *ChatService) SwitchModel(id string) (*engine.ModelInfo, error) {
 	if s.startupErr != nil {
 		return nil, s.startupErr
 	}
@@ -168,7 +170,7 @@ func (s *ChatService) SwitchModel(id string) (*aibow.ModelInfo, error) {
 }
 
 // loadModel はモデルを読み込み、成功したら「最後に使ったモデル」として保存する(次の起動で読み込む)。
-func (s *ChatService) loadModel(m aibow.ModelEntry) (*aibow.ModelInfo, error) {
+func (s *ChatService) loadModel(m models.Entry) (*engine.ModelInfo, error) {
 	log.Infof("モデルを読み込み中: %s (%s)", m.Name, m.Path)
 	i, err := s.engine.LoadModel(m)
 	if err != nil {
@@ -183,7 +185,7 @@ func (s *ChatService) loadModel(m aibow.ModelEntry) (*aibow.ModelInfo, error) {
 	return i, nil
 }
 
-func logModel(what string, i *aibow.ModelInfo) {
+func logModel(what string, i *engine.ModelInfo) {
 	log.Noticef("%s (%.1f 秒): %s / %.2fB パラメータ / %.2f GB / %d 層 / GPU に載せる層: %d / 作業領域: %d トークン / 書式: %s",
 		what, i.LoadSec, i.Desc, i.ParamsB, i.SizeGB, i.Layers, i.GPULayers, i.NCtx, cmp.Or(i.Format, "未対応("+i.Arch+")"))
 }
@@ -228,7 +230,7 @@ func (s *ChatService) TryLimits(history, reply int) (bool, error) {
 
 // SetGPULayers は GPU に載せる層の数を変え、今のモデルを読み込み直す。
 // 失敗したときは元の層の数で読み直している。モデルが未読み込みなら nil を返す。
-func (s *ChatService) SetGPULayers(n int) (*aibow.ModelInfo, error) {
+func (s *ChatService) SetGPULayers(n int) (*engine.ModelInfo, error) {
 	if s.startupErr != nil {
 		return nil, s.startupErr
 	}
@@ -415,7 +417,7 @@ func (s *ChatService) Usage(id uuid.UUID) (*aibow.Usage, error) {
 		return nil, s.startupErr
 	}
 	u, err := s.convs.Usage(id)
-	if errors.Is(err, aibow.ErrNoModel) {
+	if errors.Is(err, engine.ErrNoModel) {
 		return nil, nil
 	}
 	if err != nil {
@@ -595,7 +597,7 @@ func (s *ChatService) run(ctx context.Context, id uuid.UUID, f func(ctx context.
 	})
 }
 
-func tokPerSec(st aibow.GenerateStats) float64 {
+func tokPerSec(st engine.GenerateStats) float64 {
 	if st.GenSec == 0 {
 		return 0
 	}

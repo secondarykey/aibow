@@ -17,8 +17,8 @@ aibow は、ローカルLLMを使ったアプリを**自分で作りながら仕
 ## 全体の構成(ステップ5: MCP サーバー自作)
 
 ```
-ウィンドウ(_cmd/aibow/frontend の React) ⇄ Wails v3 ⇄ aibow ⇄ yzma ⇄ llama.cpp(_cmd/aibow/lib\ の DLL)⇄ GPU
-                                                     ⇅          ↑ _cmd/aibow/models\*.gguf / Ollama の保存フォルダ
+ウィンドウ(_cmd/aibow/frontend の React) ⇄ Wails v3 ⇄ aibow ⇄ aibow/engine ⇄ yzma ⇄ llama.cpp(_cmd/aibow/lib\ の DLL)⇄ GPU
+                                                     ⇅          ↑ aibow/format(書式)・aibow/models(_cmd/aibow/models\*.gguf / Ollama の保存フォルダ)
                                           aibow/store(SQLite: %APPDATA%\aibow\aibow.db)
                                           aibow/mcp/client ⇄ MCP のサーバー(%APPDATA%\aibow\settings.json に書いたもの。子プロセス)
 
@@ -34,7 +34,10 @@ aibow の組み込みのツール: 会話の仕組み ⇄ aibow/mcp/client の L
 
 | 場所 | 中身 |
 |---|---|
-| ルート(`aibow` パッケージ。モジュール名は `github.com/secondarykey/aibow`) | LLM を動かす部分と会話の仕組み。Wails を import しないライブラリ |
+| ルート(`aibow` パッケージ。モジュール名は `github.com/secondarykey/aibow`) | 会話の仕組み(会話・エージェントループ・compact・設定・保存の約束 `Store`・生成の約束 `Generator`)。Wails を import しないライブラリ |
+| `engine/` | llama.cpp で生成する部分(`engine` パッケージ。モデルの読み込み・生成・トークン数・KV キャッシュ)。`format` と `models` を使い、会話の仕組みは知らない(生成だけを使えるように。0012 の 6-0) |
+| `format/` | 書式(`format` パッケージ。チャットテンプレートと、会話の仕組みとエンジンの間で受け渡す形 `Message` / `Prompt` / `Output` / `ToolCall`)。`tool` だけを使う |
+| `models/` | 使えるモデルの一覧(`models` パッケージ。GGUF と Ollama の目録)。何にも依存しない |
 | `tool/` | ツール(`tool` パッケージ)。ツールの形と組み込みのツール・作業フォルダのツール。LLM・書式・会話・保存を import しない(MCP でツールだけを使うため) |
 | `store/` | 会話の保存先(SQLite) |
 | `mcp/client/` | MCP のクライアント(`client` パッケージ。SDK のパッケージ名 `mcp` と重ならないよう `mcp/` の下に置く。サーバーは `mcp/server/` に並べる)。`settings.json` の MCP のサーバーを起動し、そのツールを `tool.Tool` として見せる。aibow の中で `mcp/server` を動かし、組み込みのツールを MCP 越しに渡す(`Local`)。`tool` と `mcp/server` を import し、ルートの `aibow` は import しない |
@@ -51,7 +54,7 @@ aibow の組み込みのツール: 会話の仕組み ⇄ aibow/mcp/client の L
 
 | 作業内容 | 読むもの |
 |---|---|
-| 生成・モデルの読み込みと切り替え・トークン化・プロンプトの書式・思考の振り分け・モデルの一覧 | [_docs/engine.md](_docs/engine.md) |
+| 生成・モデルの読み込みと切り替え・トークン化・プロンプトの書式・思考の振り分け・モデルの一覧・`engine` / `format` / `models` のパッケージの分け方 | [_docs/engine.md](_docs/engine.md) |
 | ツール呼び出し・エージェントループ・書式の interface(`Format`)・ツールの追加・作業フォルダ・ファイルとコマンドのツール・実行前の確認 | [_docs/tools.md](_docs/tools.md) |
 | MCP のクライアント・設定ファイル(`settings.json`)・MCP のサーバーの起動と終了・ツールの扱い(使わない / 確認する / 確認しない)と信頼・自作の MCP サーバー(`mcp/server`・`aibow-mcp`) | [_docs/mcp.md](_docs/mcp.md) |
 | 会話の履歴・会話ごとの設定(会話の上限・返事の上限も)・アプリの設定・保存の約束(`Store`)・モデルに渡さない発言・作り直す / 送り直す | [_docs/conversations.md](_docs/conversations.md) |
@@ -82,7 +85,7 @@ aibow の組み込みのツール: 会話の仕組み ⇄ aibow/mcp/client の L
 
 - **言語は Go**(1.27 以上。標準の `uuid` パッケージを使う)。Python など別言語の実装を持ち込まない
 - Go の外部パッケージは次の6つだけ。それ以外は標準ライブラリで書く
-  - yzma(github.com/hybridgroup/yzma): llama.cpp の呼び出し。llama.cpp との版の組み合わせは [_docs/engine.md](_docs/engine.md)
+  - yzma(github.com/hybridgroup/yzma): llama.cpp の呼び出し。`engine` パッケージだけで使う。llama.cpp との版の組み合わせは [_docs/engine.md](_docs/engine.md)
   - Wails v3: 画面。`_cmd/aibow` だけで使い、ルートの `go.mod` には入れない
   - `modernc.org/sqlite`: 会話の保存。`store` パッケージだけで使う
   - `github.com/pkg/diff`: 書き換えるツールの実行前の確認で見せる差分(diff)の計算。`tool` パッケージだけで使う(0005 の 3-2 でユーザーと決めた)

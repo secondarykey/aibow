@@ -1,4 +1,4 @@
-package aibow
+package models
 
 import (
 	"os"
@@ -45,7 +45,7 @@ func TestListOllamaModels(t *testing.T) {
 		}
 	}
 
-	c := ModelCatalog{ModelsDir: filepath.Join(dir, "none"), OllamaDir: dir}
+	c := Catalog{ModelsDir: filepath.Join(dir, "none"), OllamaDir: dir}
 	if _, err := c.Find("ollama:qwen3.5:4b"); err != nil {
 		t.Error(err)
 	}

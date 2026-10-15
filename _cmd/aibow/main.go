@@ -32,8 +32,10 @@ import (
 	"strings"
 
 	"github.com/secondarykey/aibow"
+	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/mcp/client"
+	"github.com/secondarykey/aibow/models"
 	"github.com/secondarykey/aibow/store"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -93,19 +95,19 @@ func main() {
 	}
 	var st *store.SQLite
 	var settings aibow.AppSettings
-	var engine *aibow.Engine
-	var initial *aibow.ModelEntry
+	var eng *engine.Engine
+	var initial *models.Entry
 	if err == nil {
 		st, settings, err = openStore(cfg)
 	}
 	if err == nil {
 		defer st.Close()
-		engine, initial, err = startEngine(cfg, settings)
+		eng, initial, err = startEngine(cfg, settings)
 	}
 	if err != nil {
 		log.Errorf("起動できません: %v", err)
 	} else {
-		defer engine.Close()
+		defer eng.Close()
 	}
 
 	assets, _ := fs.Sub(frontendFiles, "frontend/dist")
@@ -117,7 +119,7 @@ func main() {
 		// なお WebView2 の行([WebView2] …)は標準の log で来るが、slog.SetDefault のあとは標準の log も同じ出口に流れる
 		Logger: slog.Default(),
 		Services: []application.Service{
-			application.NewService(NewChatService(engine, st, settings, cfg.catalog, initial, local, mcpm, prefs, appVersion(), cfg.notices, err)),
+			application.NewService(NewChatService(eng, st, settings, cfg.catalog, initial, local, mcpm, prefs, appVersion(), cfg.notices, err)),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
@@ -275,35 +277,35 @@ func openStore(cfg appConfig) (*store.SQLite, aibow.AppSettings, error) {
 
 // startEngine は llama.cpp を読み込み、起動時に読み込むモデルを決める。
 // モデルの読み込み自体は、ウィンドウを出してから ChatService が裏で行う。
-func startEngine(cfg appConfig, app aibow.AppSettings) (*aibow.Engine, *aibow.ModelEntry, error) {
+func startEngine(cfg appConfig, app aibow.AppSettings) (*engine.Engine, *models.Entry, error) {
 	ec := cfg.engine
 	// 画面で変えた値(DB)か、環境変数の値。
 	// 作業領域は会話ごとに違う(会話の上限 + 返事の上限)。起動時は新しい会話の画面から始まるので、新しい会話の既定の大きさで作り、
 	// 大きさの違う会話に送信するときに作り直す(Conversations.ensureWorkspace)
 	ec.NCtx, ec.GPULayers = app.Defaults.ContextSize(), app.Workspace.GPULayers
-	engine, err := aibow.NewEngine(ec)
+	eng, err := engine.New(ec)
 	if err != nil {
 		return nil, nil, err
 	}
-	for _, d := range engine.Devices {
+	for _, d := range eng.Devices {
 		log.Noticef("計算装置: %s", d)
 	}
-	if !engine.HasGPU {
+	if !eng.HasGPU {
 		log.Warn("GPU が見つかりません。CPU だけで計算するので遅くなります(README の「llama.cpp の取得」を確認)")
 	}
 
 	// 使えるモデルの一覧
-	models := cfg.catalog.List()
+	list := cfg.catalog.List()
 	log.Infof("モデルの置き場所: %s / Ollama: %s", absPath(cfg.catalog.ModelsDir), absPath(cfg.catalog.OllamaDir))
-	for _, m := range models {
+	for _, m := range list {
 		log.Infof("  %-8s %-40s %.1f GB", m.Source, m.Name, m.SizeGB)
 	}
 
 	// 起動時のモデル。見つからなくても起動はして、画面で選べるようにする。
-	m, err := pickInitialModel(cfg, app, models)
+	m, err := pickInitialModel(cfg, app, list)
 	if err != nil {
 		log.Warn(err.Error())
-		return engine, nil, nil
+		return eng, nil, nil
 	}
-	return engine, &m, nil
+	return eng, &m, nil
 }

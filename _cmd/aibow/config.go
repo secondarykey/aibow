@@ -10,7 +10,9 @@ import (
 	"strconv"
 
 	"github.com/secondarykey/aibow"
+	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/log"
+	"github.com/secondarykey/aibow/models"
 )
 
 // 設定の誤りはログで止めず、まとめて error で返す。
@@ -59,8 +61,8 @@ func (r *envReader) float(key string, def float64) float64 {
 // lib と models はモデルを動かすこのアプリの持ち物なので、アプリのフォルダに置く。
 // 別の場所に置いたとき(worktree から本体の lib を使うときなど)だけ環境変数で指定する。
 type appConfig struct {
-	engine       aibow.EngineConfig
-	catalog      aibow.ModelCatalog
+	engine       engine.Config
+	catalog      models.Catalog
 	dbPath       string // 会話を保存する SQLite のファイル
 	settingsPath string // 設定ファイル(settings.json。手で書く設定。今は MCP のサーバーだけ)
 	toolsPath    string // ツールの扱いの PC の既定(tools.json。画面で変えたものを aibow が書く)
@@ -80,13 +82,13 @@ const defaultSystemPrompt = "あなたは親切なアシスタントです。日
 func loadConfig() (appConfig, error) {
 	var env envReader
 	c := appConfig{
-		engine: aibow.EngineConfig{
+		engine: engine.Config{
 			LibPath:  env.str("AIBOW_LIB", "lib"),
 			LlamaLog: os.Getenv("AIBOW_LLAMA_LOG") == "1",
 		},
-		catalog: aibow.ModelCatalog{
+		catalog: models.Catalog{
 			ModelsDir: env.str("AIBOW_MODELS_DIR", "models"),
-			OllamaDir: aibow.OllamaModelsDir(),
+			OllamaDir: models.OllamaDir(),
 		},
 		dbPath:       env.str("AIBOW_DB", configFile("aibow.db")),
 		settingsPath: env.str("AIBOW_SETTINGS", configFile("settings.json")),
@@ -159,7 +161,7 @@ func absPath(p string) string {
 
 // pickInitialModel は起動時に読み込むモデルを決める。
 // AIBOW_MODEL → 最後に使ったモデル → 一覧の先頭、の順。
-func pickInitialModel(cfg appConfig, app aibow.AppSettings, models []aibow.ModelEntry) (aibow.ModelEntry, error) {
+func pickInitialModel(cfg appConfig, app aibow.AppSettings, list []models.Entry) (models.Entry, error) {
 	if cfg.initialModel != "" {
 		return cfg.catalog.Find(cfg.initialModel)
 	}
@@ -171,8 +173,8 @@ func pickInitialModel(cfg appConfig, app aibow.AppSettings, models []aibow.Model
 		// 消したモデルなどで見つからなくても、一覧の先頭で起動する
 		log.Warnf("最後に使ったモデルが見つかりません(%v)。一覧の先頭を使います", err)
 	}
-	if len(models) == 0 {
-		return aibow.ModelEntry{}, fmt.Errorf("モデルが1つも見つかりません。models フォルダに GGUF を置くか、ollama pull してください")
+	if len(list) == 0 {
+		return models.Entry{}, fmt.Errorf("モデルが1つも見つかりません。models フォルダに GGUF を置くか、ollama pull してください")
 	}
-	return models[0], nil
+	return list[0], nil
 }

@@ -1,4 +1,4 @@
-package aibow
+package format
 
 import (
 	"encoding/json"
@@ -30,4 +30,17 @@ func TestToolCallJSONIsFlat(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{"name":"calculate","args":[],"raw":"x","error":"y"}`), &call); err != nil || call.Name != "calculate" {
 		t.Errorf("tool.Call として: %+v, %v", call, err)
 	}
+}
+
+// toolCall はモデルが書いた(書式から読み取った)呼び出しを作る。kv は引数の名前と値を交互に並べる。
+func toolCall(name string, kv ...string) ToolCall {
+	args := []tool.Arg{}
+	for i := 0; i+1 < len(kv); i += 2 {
+		args = append(args, tool.Arg{Name: kv[i], Value: kv[i+1]})
+	}
+	return ToolCall{Call: tool.Call{Name: name, Args: args}}
+}
+
+func calc(expr string) ToolCall {
+	return toolCall("calculate", "expression", expr)
 }

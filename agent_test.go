@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/secondarykey/aibow/format"
 	"github.com/secondarykey/aibow/tool"
 )
 
@@ -41,15 +42,15 @@ func newToolConversation(t *testing.T, g *fakeGen, extra ...tool.Tool) (*Convers
 }
 
 // toolCall はモデルが書いた(書式から読み取った)呼び出しを作る。kv は引数の名前と値を交互に並べる。
-func toolCall(name string, kv ...string) ToolCall {
+func toolCall(name string, kv ...string) format.ToolCall {
 	args := []tool.Arg{}
 	for i := 0; i+1 < len(kv); i += 2 {
 		args = append(args, tool.Arg{Name: kv[i], Value: kv[i+1]})
 	}
-	return ToolCall{Call: tool.Call{Name: name, Args: args}}
+	return format.ToolCall{Call: tool.Call{Name: name, Args: args}}
 }
 
-func calc(expr string) ToolCall {
+func calc(expr string) format.ToolCall {
 	return toolCall("calculate", "expression", expr)
 }
 
@@ -73,7 +74,7 @@ func eventTypes(evs []ChatEvent) string {
 // 呼び出し → 結果 → 答え、の流れ。結果は role tool で保存され、次の生成に渡る
 func TestAgentCallsToolAndAnswers(t *testing.T) {
 	g := &fakeGen{replies: []fakeReply{
-		{thinking: "計算しよう", toolCalls: []ToolCall{calc("1234 * 5678")}},
+		{thinking: "計算しよう", toolCalls: []format.ToolCall{calc("1234 * 5678")}},
 		{thinking: "結果が出た", content: "7006652 です"},
 	}}
 	cs, _, c := newToolConversation(t, g)
@@ -118,8 +119,8 @@ func TestAgentCallsToolAndAnswers(t *testing.T) {
 // 1回の送信で、ツールを2回以上呼ぶ流れ(時刻を聞いてから計算する)
 func TestAgentRunsSeveralRounds(t *testing.T) {
 	g := &fakeGen{replies: []fakeReply{
-		{content: "時刻を見ます。", toolCalls: []ToolCall{toolCall("get_current_time", "timezone", "Asia/Tokyo")}},
-		{toolCalls: []ToolCall{calc("365 - 286"), calc("7/2")}},
+		{content: "時刻を見ます。", toolCalls: []format.ToolCall{toolCall("get_current_time", "timezone", "Asia/Tokyo")}},
+		{toolCalls: []format.ToolCall{calc("365 - 286"), calc("7/2")}},
 		{content: "あと 79 日です"},
 	}}
 	cs, _, c := newToolConversation(t, g)
@@ -139,7 +140,7 @@ func TestAgentReturnsErrorsToTheModel(t *testing.T) {
 		return "", errors.New("壊れています")
 	}}
 	g := &fakeGen{replies: []fakeReply{
-		{toolCalls: []ToolCall{
+		{toolCalls: []format.ToolCall{
 			{Raw: "<tool_call>{}</tool_call>", Error: "書式が崩れていて呼び出しを読み取れません"},
 			toolCall("web_search"),
 			toolCall("calculate", "expr", "1+1"),
@@ -172,7 +173,7 @@ func TestAgentReturnsErrorsToTheModel(t *testing.T) {
 func TestAgentStopsAtTheLimit(t *testing.T) {
 	g := &fakeGen{}
 	for range maxToolCalls + 5 {
-		g.replies = append(g.replies, fakeReply{toolCalls: []ToolCall{calc("1+1")}})
+		g.replies = append(g.replies, fakeReply{toolCalls: []format.ToolCall{calc("1+1")}})
 	}
 	cs, _, c := newToolConversation(t, g)
 	evs := sendRaw(cs, c, "ずっと計算して")
@@ -206,7 +207,7 @@ func TestAgentStopDuringTool(t *testing.T) {
 		return "", ctx.Err()
 	}}
 	g := &fakeGen{replies: []fakeReply{
-		{toolCalls: []ToolCall{toolCall("wait"), calc("1+1")}},
+		{toolCalls: []format.ToolCall{toolCall("wait"), calc("1+1")}},
 		{content: "ここは生成されない"},
 	}}
 	cs, _, c := newToolConversation(t, g, blocking)
@@ -225,7 +226,7 @@ func TestAgentStopDuringTool(t *testing.T) {
 // 停止ボタン: 生成中に止めたら、書きかけの呼び出しは実行しない
 func TestAgentStopDuringGeneration(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	g := &fakeGen{replies: []fakeReply{{waitCancel: true, toolCalls: []ToolCall{calc("1+1")}}}}
+	g := &fakeGen{replies: []fakeReply{{waitCancel: true, toolCalls: []format.ToolCall{calc("1+1")}}}}
 	cs, _, c := newToolConversation(t, g)
 	go func() {
 		for cs.Generating() == nil { // 生成の記録(g.calls)はここから読まない(別の goroutine が書くため)
@@ -248,7 +249,7 @@ func TestAgentToolTimeout(t *testing.T) {
 		time.Sleep(time.Second)
 		return "遅い", nil
 	}}
-	g := &fakeGen{replies: []fakeReply{{toolCalls: []ToolCall{toolCall("slow")}}, {content: "だめでした"}}}
+	g := &fakeGen{replies: []fakeReply{{toolCalls: []format.ToolCall{toolCall("slow")}}, {content: "だめでした"}}}
 	cs, _, c := newToolConversation(t, g, slow)
 	start := time.Now()
 	send(t, cs, c, "遅いのを")
@@ -280,7 +281,7 @@ func TestToolsOffLeavesToolsOutOfThePrompt(t *testing.T) {
 		t.Errorf("OFF のほうがトークン数が少ないはず: ON %d / OFF %d", on.Tokens, off.Tokens)
 	}
 	// OFF の会話でモデルがツールを呼んでも、実行しない(知らないツールのエラーとして返す)
-	g.replies = []fakeReply{{toolCalls: []ToolCall{calc("1+1")}}, {content: "失礼しました"}}
+	g.replies = []fakeReply{{toolCalls: []format.ToolCall{calc("1+1")}}, {content: "失礼しました"}}
 	send(t, cs, c, "計算して")
 	_, ms, _ := cs.Get(c.ID)
 	if m := ms[len(ms)-2]; m.Role != "tool" || !strings.Contains(m.Content, "ツール calculate はありません(使えるツール: なし)") {
@@ -297,7 +298,7 @@ func TestTruncateKeepsToolTurnsTogether(t *testing.T) {
 	cs.UpdateSettings(c.ID, set)
 	c.Settings = set
 	for i := range 3 {
-		g.replies = []fakeReply{{toolCalls: []ToolCall{calc(fmt.Sprint(i))}}, {content: strings.Repeat("答", 50)}}
+		g.replies = []fakeReply{{toolCalls: []format.ToolCall{calc(fmt.Sprint(i))}}, {content: strings.Repeat("答", 50)}}
 		send(t, cs, c, fmt.Sprintf("質問%d", i))
 	}
 	_, ms, _ := cs.Get(c.ID)
@@ -320,7 +321,7 @@ func TestTruncateKeepsToolTurnsTogether(t *testing.T) {
 func TestSummaryIncludesToolCalls(t *testing.T) {
 	part := []StoredMessage{
 		{Role: "user", Content: "計算して"},
-		{Role: "assistant", ToolCalls: []ToolCall{calc("1+1")}},
+		{Role: "assistant", ToolCalls: []format.ToolCall{calc("1+1")}},
 		{Role: "tool", Content: strings.Repeat("結", summaryToolResultRunes+50), ToolResult: &ToolResult{Call: calc("1+1")}},
 		{Role: "assistant", Content: "2 です"},
 	}
@@ -339,7 +340,7 @@ func TestAgentRejectsResultThatDoesNotFit(t *testing.T) {
 	huge := fakeTool{name: "huge", run: func(context.Context, tool.Args) (string, error) {
 		return strings.Repeat("大", 5000), nil
 	}}
-	g := &fakeGen{replies: []fakeReply{{toolCalls: []ToolCall{toolCall("huge")}}, {content: "範囲を絞ります"}}}
+	g := &fakeGen{replies: []fakeReply{{toolCalls: []format.ToolCall{toolCall("huge")}}, {content: "範囲を絞ります"}}}
 	cs, _, c := newToolConversation(t, g, huge)
 	setLimits(t, cs, &c, 4000, 100)
 	evs := sendRaw(cs, c, "大きいのを")
@@ -366,7 +367,7 @@ func TestCompactNowWhenLatestTurnIsTooLong(t *testing.T) {
 	big := fakeTool{name: "big", run: func(context.Context, tool.Args) (string, error) {
 		return strings.Repeat("大", 2500), nil
 	}}
-	g := &fakeGen{replies: []fakeReply{{toolCalls: []ToolCall{toolCall("big")}}, {content: "受け取りました"}}}
+	g := &fakeGen{replies: []fakeReply{{toolCalls: []format.ToolCall{toolCall("big")}}, {content: "受け取りました"}}}
 	cs, _, c := newToolConversation(t, g, big)
 	setLimits(t, cs, &c, 4000, 100)
 	send(t, cs, c, "大きいのを")

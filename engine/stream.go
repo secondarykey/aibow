@@ -1,4 +1,6 @@
-package aibow
+package engine
+
+// stream.go: 生成したトークンを、文字として完成した単位で取り出す部分。
 
 import (
 	"strings"
@@ -48,14 +50,3 @@ func (u *utf8Buffer) Flush() string {
 
 // replacementChar は文字にならないバイトの代わりに入れる文字(U+FFFD)。
 const replacementChar = "\uFFFD"
-
-// partialSuffix は、s の末尾が tag の先頭の何文字分と一致しているかを返す。
-// 例: partialSuffix("考えた</th", "</think>") == 4
-func partialSuffix(s, tag string) int {
-	for n := min(len(tag)-1, len(s)); n > 0; n-- {
-		if strings.HasSuffix(s, tag[:n]) {
-			return n
-		}
-	}
-	return 0
-}

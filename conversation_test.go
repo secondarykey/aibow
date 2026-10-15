@@ -10,6 +10,8 @@ import (
 	"testing"
 	"unicode/utf8"
 
+	"github.com/secondarykey/aibow/engine"
+	"github.com/secondarykey/aibow/format"
 	"github.com/secondarykey/aibow/tool"
 )
 
@@ -25,32 +27,32 @@ type fakeGen struct {
 	// (要約 → 返事、のように1回の送信で何度も生成するときに使う)
 	replies []fakeReply
 
-	gotMessages []Message
-	gotOpt      GenerateOptions
+	gotMessages []format.Message
+	gotOpt      engine.GenerateOptions
 	gotThink    bool
 	calls       []fakeCall // 呼ばれたすべての生成
 }
 
 type fakeReply struct {
 	thinking, content, stopReason string
-	toolCalls                     []ToolCall // モデルが書いたツール呼び出し(書式から読み取った形)
+	toolCalls                     []format.ToolCall // モデルが書いたツール呼び出し(書式から読み取った形)
 	err                           error
 	waitCancel                    bool // ctx がキャンセルされるまで待ち、停止された扱いで終わる
 }
 
 type fakeCall struct {
-	messages []Message
+	messages []format.Message
 	tools    []tool.Def
-	opt      GenerateOptions
+	opt      engine.GenerateOptions
 	think    bool
 	prompt   string // 書式を当てた文字列
 }
 
 // fakeGen の書式は本物と同じ Qwen3.5(トークン数を数えるとき、プロンプトを画面に渡すときに使う)
-var testFormat = qwen35{}
+var testFormat = format.For("qwen35")
 
-func (g *fakeGen) Info() *ModelInfo {
-	return &ModelInfo{ID: "file:fake", Name: "fake-model", Arch: "qwen35", Format: testFormat.Name()}
+func (g *fakeGen) Info() *engine.ModelInfo {
+	return &engine.ModelInfo{ID: "file:fake", Name: "fake-model", Arch: "qwen35", Format: testFormat.Name()}
 }
 
 // EnsureContextSize は、作業領域の大きさを覚えるだけ(大きさが変わったら作り直したことにする)。
@@ -67,12 +69,12 @@ func (g *fakeGen) EnsureContextSize(n int) (bool, error) {
 	return true, nil
 }
 
-func (g *fakeGen) CountTokens(p Prompt) (int, error) {
+func (g *fakeGen) CountTokens(p format.Prompt) (int, error) {
 	return utf8.RuneCountInString(testFormat.BuildPrompt(p)), nil
 }
 
-func (g *fakeGen) Generate(ctx context.Context, p Prompt, opt GenerateOptions,
-	onPrompt func(string), onThinking, onContent func(string)) (Output, error) {
+func (g *fakeGen) Generate(ctx context.Context, p format.Prompt, opt engine.GenerateOptions,
+	onPrompt func(string), onThinking, onContent func(string)) (format.Output, engine.GenerateStats, error) {
 	g.gotMessages, g.gotOpt, g.gotThink = p.Messages, opt, p.Think
 	g.calls = append(g.calls, fakeCall{p.Messages, p.Tools, opt, p.Think, testFormat.BuildPrompt(p)})
 	onPrompt(testFormat.BuildPrompt(p))
@@ -84,7 +86,7 @@ func (g *fakeGen) Generate(ctx context.Context, p Prompt, opt GenerateOptions,
 		r, g.replies = g.replies[0], g.replies[1:]
 	}
 	if r.err != nil {
-		return Output{}, r.err
+		return format.Output{}, engine.GenerateStats{}, r.err
 	}
 	if r.waitCancel {
 		<-ctx.Done()
@@ -100,11 +102,11 @@ func (g *fakeGen) Generate(ctx context.Context, p Prompt, opt GenerateOptions,
 	if reason == "" {
 		reason = "eos"
 	}
-	return Output{Thinking: r.thinking, Content: r.content, ToolCalls: r.toolCalls, Stats: GenerateStats{GenTokens: 10, StopReason: reason}}, nil
+	return format.Output{Thinking: r.thinking, Content: r.content, ToolCalls: r.toolCalls}, engine.GenerateStats{GenTokens: 10, StopReason: reason}, nil
 }
 
 // sameMessages は、モデルに渡した発言が want と同じかを返す。
-func sameMessages(got, want []Message) bool { return reflect.DeepEqual(got, want) }
+func sameMessages(got, want []format.Message) bool { return reflect.DeepEqual(got, want) }
 
 // testDefaults は新しい会話の既定。会話の上限と返事の上限は、fakeGen が1文字を1トークンと数えるので、文字数で考える
 var testDefaults = ConversationSettings{System: "あなたはテスト用です。", Temperature: 0.7, Think: true, PresencePenalty: 1.5, Compact: CompactSummary,
@@ -180,7 +182,7 @@ func TestSendSavesThinkingButDoesNotPassIt(t *testing.T) {
 	// 2回目の送信: 過去の思考はモデルに渡らない
 	g.thinking, g.content = "", "元気です。"
 	send(t, cs, c, "元気?")
-	want := []Message{
+	want := []format.Message{
 		{Role: "system", Content: "あなたはテスト用です。"},
 		{Role: "user", Content: "やあ"},
 		{Role: "assistant", Content: "こんにちは!", Thinking: "挨拶だな。"},
@@ -189,7 +191,7 @@ func TestSendSavesThinkingButDoesNotPassIt(t *testing.T) {
 	if !sameMessages(g.gotMessages, want) {
 		t.Fatalf("モデルに渡した発言が違います:\n%+v\n期待: %+v", g.gotMessages, want)
 	}
-	if p := testFormat.BuildPrompt(Prompt{Messages: g.gotMessages, Think: true}); strings.Contains(p, "挨拶だな") {
+	if p := testFormat.BuildPrompt(format.Prompt{Messages: g.gotMessages, Think: true}); strings.Contains(p, "挨拶だな") {
 		t.Errorf("モデルに渡した文字列に過去の思考が入っています:\n%s", p)
 	}
 }
@@ -242,7 +244,7 @@ func TestSettingsArePerConversation(t *testing.T) {
 
 	send(t, cs, a, "x")
 	// 返事の上限は会話ごとではなく、アプリ全体の設定
-	if g.gotOpt != (GenerateOptions{Temperature: 0, MaxTokens: 100, PresencePenalty: 0}) || g.gotThink {
+	if g.gotOpt != (engine.GenerateOptions{Temperature: 0, MaxTokens: 100, PresencePenalty: 0}) || g.gotThink {
 		t.Errorf("a の設定が効いていません: %+v think=%v", g.gotOpt, g.gotThink)
 	}
 	if g.gotMessages[0].Role != "user" {
@@ -632,7 +634,7 @@ func TestExcludeMessages(t *testing.T) {
 // 返事は、ツールの呼び出しと結果を一緒に外す(吹き出し1つ分)。ユーザーの発言は外さない
 func TestExcludeReplyWithTools(t *testing.T) {
 	g := &fakeGen{replies: []fakeReply{
-		{toolCalls: []ToolCall{toolCall("calculate", "expression", "1+1")}},
+		{toolCalls: []format.ToolCall{toolCall("calculate", "expression", "1+1")}},
 		{content: "2 です"},
 	}}
 	cs, _, c := newToolConversation(t, g)
@@ -672,7 +674,7 @@ func contents(ms []StoredMessage) []string {
 func TestRegenerate(t *testing.T) {
 	g := &fakeGen{replies: []fakeReply{
 		{content: "A1"},
-		{toolCalls: []ToolCall{toolCall("calculate", "expression", "1+1")}},
+		{toolCalls: []format.ToolCall{toolCall("calculate", "expression", "1+1")}},
 		{content: "A2"},
 		{content: "A2 作り直し"},
 	}}

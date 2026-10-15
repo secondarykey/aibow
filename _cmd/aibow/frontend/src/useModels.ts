@@ -5,7 +5,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Events } from "@wailsio/runtime";
 import { ChatService } from "../bindings/github.com/secondarykey/aibow/_cmd/aibow";
-import type { ModelEntry, ModelInfo } from "../bindings/github.com/secondarykey/aibow";
+// Go の models パッケージ。"…/aibow/models" と書くと、Wails が aibow パッケージに作る models.ts の方が選ばれるので、index まで書く
+import type { Entry as ModelEntry } from "../bindings/github.com/secondarykey/aibow/models/index";
+import type { ModelInfo } from "../bindings/github.com/secondarykey/aibow/engine";
 import type { Transcript } from "./transcript";
 import type { Notifier } from "./toast";
 import { errorMessage } from "./errors";

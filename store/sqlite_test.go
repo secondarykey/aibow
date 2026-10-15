@@ -11,6 +11,8 @@ import (
 
 	"github.com/secondarykey/aibow"
 
+	"github.com/secondarykey/aibow/engine"
+	"github.com/secondarykey/aibow/format"
 	"github.com/secondarykey/aibow/tool"
 )
 
@@ -62,7 +64,7 @@ func TestConversationsAndMessagesPersist(t *testing.T) {
 	reply := aibow.StoredMessage{
 		ID: uuid.NewV7(), ConversationID: c.ID, Role: "assistant", Content: "こんにちは", Thinking: "挨拶だ",
 		Model: "qwen3.5:4b", CreatedAt: base,
-		Stats: &aibow.ReplyStats{GenerateStats: aibow.GenerateStats{GenTokens: 12, StopReason: "eos"}, FirstSec: 0.5, ThinkSec: 1.25},
+		Stats: &aibow.ReplyStats{GenerateStats: engine.GenerateStats{GenTokens: 12, StopReason: "eos"}, FirstSec: 0.5, ThinkSec: 1.25},
 	}
 	// 追加の順番をわざと逆にしても、読み出しは ID(作った順)で並ぶ
 	for _, m := range []aibow.StoredMessage{reply, user} {
@@ -276,9 +278,9 @@ func TestMigrationFromVersion1(t *testing.T) {
 func TestToolMessagesPersist(t *testing.T) {
 	s, path := openTemp(t)
 	c := newConv(t, s, time.Now())
-	call := aibow.ToolCall{Call: tool.Call{Name: "calculate", Args: []tool.Arg{{Name: "expression", Value: "7/2"}}}}
-	broken := aibow.ToolCall{Raw: "<tool_call>?</tool_call>", Error: "書式が崩れています"}
-	reply := aibow.StoredMessage{ID: uuid.NewV7(), ConversationID: c.ID, Role: "assistant", ToolCalls: []aibow.ToolCall{call, broken}, CreatedAt: time.Now()}
+	call := format.ToolCall{Call: tool.Call{Name: "calculate", Args: []tool.Arg{{Name: "expression", Value: "7/2"}}}}
+	broken := format.ToolCall{Raw: "<tool_call>?</tool_call>", Error: "書式が崩れています"}
+	reply := aibow.StoredMessage{ID: uuid.NewV7(), ConversationID: c.ID, Role: "assistant", ToolCalls: []format.ToolCall{call, broken}, CreatedAt: time.Now()}
 	result := aibow.StoredMessage{ID: uuid.NewV7(), ConversationID: c.ID, Role: "tool", Content: "3.5",
 		ToolResult: &aibow.ToolResult{Call: call, Sec: 0.01, Confirm: &aibow.Confirmation{Approved: false, Reason: "消さないで"}}, CreatedAt: time.Now()}
 	for _, m := range []aibow.StoredMessage{reply, result} {

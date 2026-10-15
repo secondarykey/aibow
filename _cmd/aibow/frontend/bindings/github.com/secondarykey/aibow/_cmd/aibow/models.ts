@@ -4,6 +4,12 @@
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as aibow$0 from "../../models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as engine$0 from "../../engine/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as models$0 from "../../models/models.js";
 
 /**
  * ConversationDetail は会話1つと、その発言。
@@ -32,12 +38,12 @@ export interface ConversationDetail {
  * ModelsResult は Models の戻り値。
  */
 export interface ModelsResult {
-    "models": aibow$0.ModelEntry[] | null;
+    "models": models$0.Entry[] | null;
 
     /**
      * 未読み込みなら null
      */
-    "current": aibow$0.ModelInfo | null;
+    "current": engine$0.ModelInfo | null;
 
     /**
      * 起動時に読み込み中のモデルの名前

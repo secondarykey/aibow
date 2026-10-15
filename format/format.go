@@ -1,6 +1,7 @@
-package aibow
+package format
 
-// format.go: チャットテンプレート(書式)の「約束」(interface)。
+// Package format は、チャットテンプレート(書式)。会話を、モデルが学習時に見てきた形の文字列にし、
+// 生成した文字列を思考・答え・ツール呼び出しに振り分ける。
 //
 // LLM は「メッセージの配列」を理解するわけではなく、ただの文字列の続きを予測しているだけ。
 // 会話をどんな文字列にすれば「アシスタントの返事」を書いてくれるかは、モデルが学習時に見てきた書式で決まる。
@@ -8,16 +9,18 @@ package aibow
 // 同じ Qwen でも、Qwen3 と Qwen3.5 ではツール呼び出しの書き方が違う。
 //
 // 一方、会話の保存・compact・エージェントループ・ツールの中身は、モデルに関係なく共通にできる。
-// そこで、系統ごとに違う部分を Format にまとめ、エンジンだけがそれを使う:
+// そこで、系統ごとに違う部分を Format にまとめ、エンジン(engine パッケージ)だけがそれを使う:
 //
 //	会話の仕組み ─ Prompt(発言・ツール・思考の ON/OFF。構造のまま)→ Engine ─ Format.BuildPrompt → 文字列 → llama.cpp
 //	会話の仕組み ← Output(思考・答え・ツール呼び出し。構造のまま)← Engine ← Format.NewParser ← 生成した文字列
 //
-// 会話の仕組みは、<|im_start|> や <think> や <tool_call> のような書式の文字列を一切扱わない。
-// 今ある実装は Qwen3.5 用(format_qwen35.go)だけ。
+// 会話の仕組み(ルートの aibow)は、<|im_start|> や <think> や <tool_call> のような書式の文字列を一切扱わない。
+// このパッケージは llama.cpp も会話の保存も知らない(使うのは tool だけ)。書式だけを取り出して試せる。
+// 今ある実装は Qwen3.5 用(qwen35.go)だけ。
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/secondarykey/aibow/tool"
 )
@@ -42,11 +45,13 @@ type Prompt struct {
 }
 
 // Output は1回の生成の結果を、書式を外した「構造」にしたもの。
+//
+// 生成の記録(トークン数・速さ・終了の理由)は書式の話ではないので、ここには持たない
+// (エンジンが engine.GenerateStats として別に返す)。
 type Output struct {
 	Thinking  string
 	Content   string     // 答え。ツール呼び出しの部分は含まない
 	ToolCalls []ToolCall // モデルが書いたツール呼び出し(書いた順)
-	Stats     GenerateStats
 }
 
 // ToolCall はモデルが書いたツール呼び出し1つ。書式に依存しない形にしたもの。
@@ -86,7 +91,7 @@ type OutputParser interface {
 	Flush() (thinking, content string)
 	// Stop は、ここで生成を止めるべきかを返す(例: ツールの結果をモデルが自分で書き始めた)
 	Stop() bool
-	// Result は生成全体を振り分けた結果を返す(Flush の後に呼ぶ。Stats は空)
+	// Result は生成全体を振り分けた結果を返す(Flush の後に呼ぶ)
 	Result() Output
 }
 
@@ -95,16 +100,29 @@ var formats = map[string]func() Format{
 	"qwen35": func() Format { return qwen35{} },
 }
 
-// formatFor はモデルの種類に合う書式を返す。未対応なら nil。
-func formatFor(arch string) Format {
+// For はモデルの種類に合う書式を返す。未対応なら nil。
+func For(arch string) Format {
 	if f, ok := formats[arch]; ok {
 		return f()
 	}
 	return nil
 }
 
-// unsupportedFormat は、書式に対応していない種類のモデルで生成しようとしたときのエラー。
-func unsupportedFormat(arch string) error {
+// Unsupported は、書式に対応していない種類のモデルで生成しようとしたときのエラー。
+func Unsupported(arch string) error {
 	return fmt.Errorf("このモデルの書式(種類: %s)には未対応です。対応しているのは Qwen3.5(qwen35)だけです。"+
 		"書式が合わないまま会話すると、モデルが会話の区切りを理解できずにおかしな返事になるため、生成しません", arch)
+}
+
+// partialSuffix は、s の末尾が tag の先頭の何文字分と一致しているかを返す。
+// 例: partialSuffix("考えた</th", "</think>") == 4
+//
+// OutputParser が、タグの書きかけかもしれない末尾を持っておくのに使う。
+func partialSuffix(s, tag string) int {
+	for n := min(len(tag)-1, len(s)); n > 0; n-- {
+		if strings.HasSuffix(s, tag[:n]) {
+			return n
+		}
+	}
+	return 0
 }

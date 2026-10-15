@@ -1,6 +1,6 @@
-"""Qwen3.5 の公式チャットテンプレートを jinja2 で実際に通し、format_qwen35.go のテストの期待値を作る。
+"""Qwen3.5 の公式チャットテンプレートを jinja2 で実際に通し、format/qwen35.go のテストの期待値を作る。
 
-    python testdata/qwen35/gen_expected.py <Qwen3.5 の GGUF のパス>
+    python format/testdata/qwen35/gen_expected.py <Qwen3.5 の GGUF のパス>
 
 - テンプレートは GGUF の tokenizer.chat_template から読む(Ollama の qwen3.5:4b なら
   ~/.ollama/models/blobs/ の中の、manifest で application/vnd.ollama.image.model になっているファイル)

@@ -1,6 +1,6 @@
 # 0012: OpenAI 互換 API
 
-- 状態: ⬜ 未着手(2026-10-16 に仕様を書いた)
+- 状態: 🔧 作業中(2026-10-16 に仕様を書いた。6-0 は済み)
 - ロードマップ: ステップ 6
 - 決めた日: 2026-10-16(Chat でユーザーと決めた)
 - 前提: 0004(書式の interface `Format`・ツール呼び出しの読み取り)・0005(`tool` パッケージ。0005 の決定事項 11「使う相手が現れたときに分ける」)・0007(別の exe `aibow-mcp` の形・ログ・バージョン)・0008(ログ)
@@ -49,6 +49,21 @@ aibow の「頭」(llama.cpp で動かすモデルと書式)を、OpenAI 互換�
   - ルートの `aibow` は会話の仕組みに絞る(`Generator` の interface は会話の仕組みの側に残す)
 - 型の置き場所の細かい線(例:`Output` が持つ `GenerateStats` をどちらに置くか、`formatFor` を誰が持つか)は Code が引き、この仕様に書き足す。依存の向き(`engine` → `format` → `tool`、ルート → `engine` など)が輪にならないことだけ守る
 - 動きは変えない:今のテストがそのまま(移した先で)通ること、`wails3 build`・`go vet` が通ること。`_docs/engine.md`・`_docs/structure.md`・AGENTS.md の構成の表を直す
+
+#### 6-0 で Code が引いた線(2026-10-16。済み)
+
+- 依存の向き:ルートの `aibow` → `engine` → `format` → `tool`、`engine` → `models`。ルートは `format` も直接使う(`Message` などを組み立てるため)。輪は無い
+- **生成の記録 `GenerateStats` は `engine` に置き、`format.Output` から外した**。`Engine.Generate` は `(format.Output, engine.GenerateStats, error)` を返す。
+  トークン数・速さ・終了の理由は書式の話ではなく、`format` に置くと書式が生成の測り方を知ることになるため。`OutputParser.Result()` も振り分けた結果だけを返す(以前は「Stats は空」と断っていた)。
+  ルートの `Generator` の interface も同じ形に変えた。保存の形(`ReplyStats` が `GenerateStats` を埋め込む)と JSON は変わらない
+- **書式を選ぶ `formatFor` は `format.For(arch)` として `format` に置き、エンジンが呼ぶ**(モデルを読み込んだときに GGUF の種類で選ぶのはエンジンなので)。対応していないときのエラーも `format.Unsupported(arch)` として外に見せる。
+  タグの書きかけを数える `partialSuffix` は書式の振り分けだけが使うので `format` に、UTF-8 の切れ目の `utf8Buffer` はエンジンだけが使うので `engine` に分けた
+- `Generator` の interface はルートに残した(interface は使う側に置く。本物は `engine.Engine`)
+- 名前はパッケージ名と重ねない形にした:`models.Entry`(以前の `ModelEntry`)・`models.Catalog`(`ModelCatalog`)・`models.OllamaDir()`(`OllamaModelsDir`)・`engine.Config`(`EngineConfig`)・`engine.New`(`NewEngine`)。
+  `engine.Engine`・`engine.ModelInfo`・`engine.GenerateOptions` / `GenerateStats` / `ErrNoModel` / `ErrBusy` と、`format` の型(`Message` / `Prompt` / `Output` / `ToolCall` / `Format` / `OutputParser`)は名前を変えていない
+- 画面:Wails が作るバインディングの置き場所が変わった(`ModelEntry` → `…/aibow/models/index` の `Entry`、`ModelInfo` → `…/aibow/engine`)。
+  `…/aibow/models` と書くと、Wails が `aibow` パッケージに作る `models.ts` の方が選ばれるので、`index` まで書く(`useModels.ts`)
+- `.gitignore` の `lib/`・`models/` は、どの階層の `models/` も除外していたので、`/_cmd/*/lib/`・`/_cmd/*/models/` にした(新しい `models/` パッケージと、そのバインディングが除外されていた)
 
 ### 6-1 文字だけの API
 

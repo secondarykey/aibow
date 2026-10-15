@@ -13,6 +13,9 @@ import (
 	"path/filepath"
 	"time"
 	"uuid"
+
+	"github.com/secondarykey/aibow/engine"
+	"github.com/secondarykey/aibow/format"
 )
 
 // Store は会話とアプリ設定の保存先。
@@ -150,22 +153,22 @@ func (s ConversationSettings) validate() error {
 
 // StoredMessage は保存された発言1件。
 //
-// モデルに渡すのは Role・Content・Thinking・ToolCalls(format.go の Message)。思考をプロンプトに入れるかは書式が決める。
+// モデルに渡すのは Role・Content・Thinking・ToolCalls(format.Message)。思考をプロンプトに入れるかは書式が決める。
 // Model・Stats・ToolResult は、画面で後から見返すために残している。
 //
 // 1回の送信でツールを使うと、発言は次のように並ぶ(どれも1件ずつ保存する):
 //
 //	user → assistant(ToolCalls あり)→ tool → tool → assistant(ToolCalls あり)→ tool → assistant(答え)
 type StoredMessage struct {
-	ID             uuid.UUID   `json:"id"` // UUIDv7。発言の順番はこの並びで決まる
-	ConversationID uuid.UUID   `json:"conversation_id"`
-	Role           string      `json:"role"`                  // system / user / assistant / tool
-	Content        string      `json:"content"`               // 答え。答えが出なかった回は理由の文。tool はツールの結果の文
-	Thinking       string      `json:"thinking"`              // 思考
-	Model          string      `json:"model"`                 // どのモデルの返事か(assistant のみ)
-	Stats          *ReplyStats `json:"stats"`                 // 生成の記録(assistant のみ)
-	ToolCalls      []ToolCall  `json:"tool_calls,omitempty"`  // その回のツール呼び出し(assistant のみ)
-	ToolResult     *ToolResult `json:"tool_result,omitempty"` // どの呼び出しの結果か(tool のみ)
+	ID             uuid.UUID         `json:"id"` // UUIDv7。発言の順番はこの並びで決まる
+	ConversationID uuid.UUID         `json:"conversation_id"`
+	Role           string            `json:"role"`                  // system / user / assistant / tool
+	Content        string            `json:"content"`               // 答え。答えが出なかった回は理由の文。tool はツールの結果の文
+	Thinking       string            `json:"thinking"`              // 思考
+	Model          string            `json:"model"`                 // どのモデルの返事か(assistant のみ)
+	Stats          *ReplyStats       `json:"stats"`                 // 生成の記録(assistant のみ)
+	ToolCalls      []format.ToolCall `json:"tool_calls,omitempty"`  // その回のツール呼び出し(assistant のみ)
+	ToolResult     *ToolResult       `json:"tool_result,omitempty"` // どの呼び出しの結果か(tool のみ)
 	// Excluded は、ユーザーが選んで「モデルに渡さない」にした発言(0011)。画面には薄く残し、モデルに渡す履歴からは外す(Conversations.forModel)
 	Excluded  bool      `json:"excluded,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
@@ -173,11 +176,11 @@ type StoredMessage struct {
 
 // ToolResult はツールの結果1件の記録(結果の文そのものは StoredMessage.Content)。
 type ToolResult struct {
-	Call    ToolCall      `json:"call"`              // どの呼び出しの結果か(書式に依存しない形。名前・引数)
-	Error   bool          `json:"error"`             // エラーだったか(Content は「エラー: …」)
-	Sec     float64       `json:"sec"`               // 実行にかかった秒数(確認を待った時間は入らない)
-	Confirm *Confirmation `json:"confirm,omitempty"` // 実行前の確認の結果。確認が要らないツール・確認する前に止まった呼び出しは nil
-	Server  string        `json:"server,omitempty"`  // MCP のサーバーのツールなら、そのサーバーの名前(settings.json の名前)。組み込みのツールは空
+	Call    format.ToolCall `json:"call"`              // どの呼び出しの結果か(書式に依存しない形。名前・引数)
+	Error   bool            `json:"error"`             // エラーだったか(Content は「エラー: …」)
+	Sec     float64         `json:"sec"`               // 実行にかかった秒数(確認を待った時間は入らない)
+	Confirm *Confirmation   `json:"confirm,omitempty"` // 実行前の確認の結果。確認が要らないツール・確認する前に止まった呼び出しは nil
+	Server  string          `json:"server,omitempty"`  // MCP のサーバーのツールなら、そのサーバーの名前(settings.json の名前)。組み込みのツールは空
 }
 
 // Confirmation は、実行前の確認(書き換えるツール)へのユーザーの答え。再起動しても見えるよう、結果と一緒に保存する。
@@ -207,17 +210,17 @@ type Compaction struct {
 // CompactStats は要約1件の記録。画面の区切りを開いたときに見せる。
 // トークン数は、そのときのモデルで数えた値(モデルが変わると変わるので、判断には使わない)。
 type CompactStats struct {
-	GenerateStats         // 要約の生成の記録(要約を作るのに読ませたトークン数・生成したトークン数など)
-	BeforeTokens  int     `json:"before_tokens"` // 要約する前の、モデルに渡す文字列のトークン数
-	AfterTokens   int     `json:"after_tokens"`  // 要約したあとの、モデルに渡す文字列のトークン数
-	Messages      int     `json:"messages"`      // 今回の要約に入れた発言の数
-	Sec           float64 `json:"sec"`           // 要約にかかった秒数
+	engine.GenerateStats         // 要約の生成の記録(要約を作るのに読ませたトークン数・生成したトークン数など)
+	BeforeTokens         int     `json:"before_tokens"` // 要約する前の、モデルに渡す文字列のトークン数
+	AfterTokens          int     `json:"after_tokens"`  // 要約したあとの、モデルに渡す文字列のトークン数
+	Messages             int     `json:"messages"`      // 今回の要約に入れた発言の数
+	Sec                  float64 `json:"sec"`           // 要約にかかった秒数
 }
 
 // ReplyStats は返事1件の記録。エンジンの GenerateStats に、会話の仕組みで測った値を足したもの。
 // 再起動した後も、画面の統計行や「思考の過程(N秒)」を作り直せるように保存する。
 type ReplyStats struct {
-	GenerateStats
+	engine.GenerateStats
 	FirstSec float64 `json:"first_sec"` // 送信から最初の文字が出るまでの秒数
 	ThinkSec float64 `json:"think_sec"` // 思考にかかった秒数
 	NoAnswer bool    `json:"no_answer"` // 答えが出ないまま終わり、Content が理由の文になっている

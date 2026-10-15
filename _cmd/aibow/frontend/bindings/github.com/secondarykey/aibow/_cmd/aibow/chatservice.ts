@@ -10,6 +10,9 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 import * as aibow$0 from "../../models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as engine$0 from "../../engine/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as client$0 from "../../mcp/client/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -171,7 +174,7 @@ export function SetExcluded(id: uuid$0.UUID, msgID: uuid$0.UUID, excluded: boole
  * SetGPULayers は GPU に載せる層の数を変え、今のモデルを読み込み直す。
  * 失敗したときは元の層の数で読み直している。モデルが未読み込みなら nil を返す。
  */
-export function SetGPULayers(n: number): $CancellablePromise<aibow$0.ModelInfo | null> {
+export function SetGPULayers(n: number): $CancellablePromise<engine$0.ModelInfo | null> {
     return $Call.ByID(128737747, n);
 }
 
@@ -215,7 +218,7 @@ export function StopSummary(): $CancellablePromise<void> {
  * 
  * モデルはアプリ全体で1つ(VRAM に1つしか載らない)。会話を切り替えてもモデルは変わらない。
  */
-export function SwitchModel(id: string): $CancellablePromise<aibow$0.ModelInfo | null> {
+export function SwitchModel(id: string): $CancellablePromise<engine$0.ModelInfo | null> {
     return $Call.ByID(1702876432, id);
 }
 

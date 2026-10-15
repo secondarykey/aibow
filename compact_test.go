@@ -7,11 +7,14 @@ import (
 	"strings"
 	"testing"
 	"unicode/utf8"
+
+	"github.com/secondarykey/aibow/engine"
+	"github.com/secondarykey/aibow/format"
 )
 
 // promptLen は、発言の列を実際にモデルに渡す文字列にしたときのトークン数(fakeGen の数え方)。
-func promptLen(msgs []Message, think bool) int {
-	return utf8.RuneCountInString(testFormat.BuildPrompt(Prompt{Messages: msgs, Think: think}))
+func promptLen(msgs []format.Message, think bool) int {
+	return utf8.RuneCountInString(testFormat.BuildPrompt(format.Prompt{Messages: msgs, Think: think}))
 }
 
 // usages は送信のイベントから usage だけを取り出す。
@@ -69,7 +72,7 @@ func TestUsageWithoutModel(t *testing.T) {
 	cs, _ := newTestConversations(t, &fakeGen{})
 	c := mustCreate(t, cs)
 	cs.gen = noModelGen{}
-	if _, err := cs.Usage(c.ID); err != ErrNoModel {
+	if _, err := cs.Usage(c.ID); err != engine.ErrNoModel {
 		t.Errorf("モデルが無ければ数えられない: %v", err)
 	}
 }
@@ -77,11 +80,11 @@ func TestUsageWithoutModel(t *testing.T) {
 // noModelGen はモデルが読み込まれていない Generator。
 type noModelGen struct{}
 
-func (noModelGen) Info() *ModelInfo                    { return nil }
-func (noModelGen) CountTokens(Prompt) (int, error)     { return 0, ErrNoModel }
-func (noModelGen) EnsureContextSize(int) (bool, error) { return false, nil }
-func (noModelGen) Generate(context.Context, Prompt, GenerateOptions, func(string), func(string), func(string)) (Output, error) {
-	return Output{}, ErrNoModel
+func (noModelGen) Info() *engine.ModelInfo                { return nil }
+func (noModelGen) CountTokens(format.Prompt) (int, error) { return 0, engine.ErrNoModel }
+func (noModelGen) EnsureContextSize(int) (bool, error)    { return false, nil }
+func (noModelGen) Generate(context.Context, format.Prompt, engine.GenerateOptions, func(string), func(string), func(string)) (format.Output, engine.GenerateStats, error) {
+	return format.Output{}, engine.GenerateStats{}, engine.ErrNoModel
 }
 
 // longTalk は、組(ユーザーの発言 + 返事)を n 個持つ会話を作る。返事は同じ長さにする。
@@ -145,7 +148,7 @@ func TestTruncateDropsOldTurnsAsPairs(t *testing.T) {
 	g.content = "ok"
 	evs := send(t, cs, c, "質問4")
 
-	want := append([]Message{{Role: "system", Content: c.Settings.System}}, promptMessages("", "", append(ms[4:], next))...)
+	want := append([]format.Message{{Role: "system", Content: c.Settings.System}}, promptMessages("", "", append(ms[4:], next))...)
 	if !sameMessages(g.gotMessages, want) {
 		t.Fatalf("モデルに渡した発言: %+v\n期待: %+v", g.gotMessages, want)
 	}
@@ -237,7 +240,7 @@ func overLimit(t *testing.T, cs *Conversations, c Conversation) Usage {
 }
 
 // systemOf は、モデルに渡した発言の system を返す。
-func systemOf(msgs []Message) string {
+func systemOf(msgs []format.Message) string {
 	if len(msgs) > 0 && msgs[0].Role == "system" {
 		return msgs[0].Content
 	}
@@ -258,7 +261,7 @@ func TestSummaryRunsBeforeTheReply(t *testing.T) {
 
 	// 要約の生成: 思考オフ・temperature 低め・上限 1024。前回の要約は無く、古い発言が文章で渡る
 	sum := g.calls[len(g.calls)-2]
-	if sum.opt != (GenerateOptions{Temperature: summaryTemperature, MaxTokens: summaryMaxTokens}) || sum.think {
+	if sum.opt != (engine.GenerateOptions{Temperature: summaryTemperature, MaxTokens: summaryMaxTokens}) || sum.think {
 		t.Errorf("要約の生成の設定: %+v think=%v", sum.opt, sum.think)
 	}
 	if systemOf(sum.messages) != summaryInstruction || !strings.Contains(sum.messages[1].Content, "## 前回までの要約\n(なし)") ||
