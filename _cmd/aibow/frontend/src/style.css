@@ -376,9 +376,12 @@ nav.conversations.collapsed .settings.active { color: var(--accent); }
 .dot.generating { animation: blink 1.2s ease-in-out infinite; }
 .dot.waiting { background: #d97706; }
 @keyframes blink { 50% { opacity: .25; } }
-/* 一覧を畳んでいるときは、ハンバーガーの右上に小さく出す */
+/* 一覧を畳んでいるときは、ハンバーガーの右下に出す。三本線と重なっても見分けられるよう、一覧の背景の色で縁取る */
 .menu-btn { position: relative; }
-.menu-btn .dot.badge { position: absolute; top: 5px; right: 5px; margin: 0; width: 7px; height: 7px; }
+.menu-btn .dot.badge {
+  position: absolute; right: 3px; bottom: 3px; margin: 0; width: 10px; height: 10px;
+  box-shadow: 0 0 0 2px var(--panel);
+}
 .conversation.editing { padding: 3px 4px; }
 .conversation .title-input {
   flex: 1; min-width: 0; font: inherit; font-size: 13px; padding: 4px 6px; border-radius: 6px;
