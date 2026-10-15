@@ -1,16 +1,15 @@
 // 会話の一覧と会話の間の仕切り(スプリットバー)。つかんで左右に動かすと、一覧の幅が変わる。
-// ダブルクリックで元の幅に戻す。幅は WebView2 の localStorage に覚えておき、次の起動でも同じ幅で始める
-// (画面の見た目だけの好みなので、Go の設定(app_settings)には入れていない)。
+// ダブルクリックで元の幅に戻す。幅は WebView2 の localStorage に覚えておき、次の起動でも同じ幅で始める(stored.ts)。
 //
 // Frameless のウィンドウでは、画面のランタイムが mousedown を見てウィンドウを動かす(--wails-draggable: drag の場所)。
 // 仕切りは drag の場所の中に置かないので、つかんでもウィンドウは動かない。
 import { useCallback, useRef, useState } from "react";
 import type { PointerEvent } from "react";
+import { STORED_LIST_WIDTH, loadStored, saveStored } from "../stored";
 
 const DEFAULT_WIDTH = 230; // 一覧の既定の幅(px)
 const MIN_WIDTH = 160;     // これより狭いと会話の名前がほとんど読めない
 const MIN_CHAT = 280;      // 会話の側に必ず残す幅(ウィンドウの最小の幅 480 でも会話が読めるように)
-const STORAGE_KEY = "aibow.listWidth";
 
 // clamp は一覧の幅を、狭すぎず、会話の側を押しつぶさない範囲に収める
 function clamp(w: number): number {
@@ -18,22 +17,14 @@ function clamp(w: number): number {
   return Math.round(Math.min(Math.max(w, MIN_WIDTH), max));
 }
 
-// localStorage は使えないこともある(壊れている・無効にされている)ので、失敗したら既定の幅で始める
+// 覚えていなければ(読めなければ)既定の幅で始める
 function load(): number {
-  try {
-    const v = Number(window.localStorage.getItem(STORAGE_KEY));
-    return v > 0 ? clamp(v) : DEFAULT_WIDTH;
-  } catch {
-    return DEFAULT_WIDTH;
-  }
+  const v = Number(loadStored(STORED_LIST_WIDTH));
+  return v > 0 ? clamp(v) : DEFAULT_WIDTH;
 }
 
 function save(w: number) {
-  try {
-    window.localStorage.setItem(STORAGE_KEY, String(w));
-  } catch {
-    // 覚えておけなくても、今の起動の間は効いているので困らない
-  }
+  saveStored(STORED_LIST_WIDTH, String(w));
 }
 
 // useListWidth は一覧の幅。set はドラッグ中に呼び、commit で覚えておく

@@ -19,7 +19,7 @@ export interface Conversations {
   current: ConversationDetail | null; // 開いている会話。null なら新しい会話の画面
   draft: ConversationSettings | null; // 新しい会話の画面で、これから作る会話の設定(既定の写し)
   openCount: number;                  // 会話を開く・新しい会話の画面に移るたびに増える。表示を作り直す合図
-  init(): Promise<void>;              // 起動時: 新しい会話の画面で始める
+  init(lastId: string | null): Promise<void>; // 起動時: 最後に開いていた会話を開く。無ければ(消した・新しい会話の画面だった)新しい会話の画面で始める
   open(id: string): Promise<void>;
   goHome(): Promise<void>;            // 新しい会話の画面に移る
   adopt(c: Conversation): void;       // 新しい会話の画面で作った会話を、開いている会話にする(表示は作り直さない)
@@ -96,10 +96,12 @@ export function useConversations(onError: (text: string) => void): Conversations
     reloadList().catch(() => {});
   }, [setCurrent, setDraft, reloadList]);
 
-  const init = useCallback(async () => {
-    await reloadList();
-    await goHome();
-  }, [reloadList, goHome]);
+  const init = useCallback(async (lastId: string | null) => {
+    const l = (await ChatService.Conversations()) ?? [];
+    setList(l);
+    if (lastId !== null && l.some(c => c.id === lastId)) await open(lastId);
+    else await goHome();
+  }, [open, goHome]);
 
   const remove = useCallback(async (id: string) => {
     if (pending.current?.id === id) {

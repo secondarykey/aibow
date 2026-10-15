@@ -88,6 +88,37 @@ func TestQwen35ParserReadsToolCalls(t *testing.T) {
 	}
 }
 
+// 文の中・コードブロックの中に書かれた <tool_call> は呼び出しと見ず、答えの文字のまま出すこと。
+// 仕組みを説明する答えで `<tool_call>` と書かれ、そこから後ろが「読み取れない呼び出し」になって、
+// モデルが同じ答えを書き直し続けたことがある(2026-10-16)
+func TestQwen35ParserIgnoresToolCallInText(t *testing.T) {
+	cases := []struct{ name, text string }{
+		{"文の中(インラインのコード)", "## aibow\n\n- **ツール呼び出し**: エージェントループの実装(`<tool_call>` を読み取る)\n\n" +
+			"### ロードマップ\n| ステップ | 完了度 |\n|---|---|\n| 1. チャット | 完了 |"},
+		{"文の中(囲みなし)", "モデルは <tool_call> と書いてツールを呼ぶ。"},
+		{"コードブロックの中", "書き方:\n\n```\n<tool_call>\n<function=calculate>\n</function>\n</tool_call>\n```\n\n以上です。"},
+		{"~~~ のコードブロックの中", "~~~xml\n<tool_call>\n~~~\n"},
+	}
+	for _, c := range cases {
+		for _, pieces := range [][]string{{c.text}, runes(c.text)} {
+			_, ct, out, stopped := parse(false, pieces...)
+			if ct != c.text || out.Content != c.text || len(out.ToolCalls) != 0 || stopped {
+				t.Errorf("%s: 画面 %q / 結果 %+v(止めた: %v)", c.name, ct, out, stopped)
+			}
+		}
+	}
+
+	// 文の中で触れたあとに、行の頭から書いた本物の呼び出しは読み取る
+	text := "`<tool_call>` で呼びます。計算します。\n\n<tool_call>\n<function=calculate>\n<parameter=expression>\n1+1\n</parameter>\n</function>\n</tool_call>"
+	for _, pieces := range [][]string{{text}, runes(text)} {
+		_, ct, out, _ := parse(false, pieces...)
+		want := []ToolCall{calc("1+1")}
+		if out.Content != "`<tool_call>` で呼びます。計算します。" || !reflect.DeepEqual(out.ToolCalls, want) || strings.Contains(ct, "<function") {
+			t.Errorf("触れたあとの呼び出し: 画面 %q / 結果 %+v", ct, out)
+		}
+	}
+}
+
 // プロンプトに書き戻した呼び出しを読むと、元と同じになること(書き方と読み方が対になっている)
 func TestQwen35CallsRoundTrip(t *testing.T) {
 	calls := []ToolCall{

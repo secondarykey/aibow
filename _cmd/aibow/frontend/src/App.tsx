@@ -44,6 +44,12 @@ import type { ConversationSettings } from "../bindings/github.com/secondarykey/a
 import { ImeFocusRelay } from "./imeFocus";
 import { errorMessage } from "./errors";
 import { NARROW_QUERY, useMediaQuery } from "./mediaQuery";
+import { STORED_LAST_CONVERSATION, STORED_LIST_OPEN, loadStored, saveStored } from "./stored";
+
+// wideListOpen は、広いときに一覧を開いておくか(ハンバーガーで自分で開け閉めしたとき覚えたもの。覚えていなければ開く)
+function wideListOpen(): boolean {
+  return loadStored(STORED_LIST_OPEN) !== "false";
+}
 
 export default function App() {
   // 生成とモデルの読み込みは同時にできない(Go 側のコンテキストが1つしかないため)
@@ -57,10 +63,14 @@ export default function App() {
   // 入力欄に打っている文。設定の画面を開くと入力欄は消えるので、戻ったときに続きを打てるようにここで持つ
   const [text, setText] = useState("");
   const narrow = useMediaQuery(NARROW_QUERY);
-  const [listOpen, setListOpen] = useState(() => !window.matchMedia(NARROW_QUERY).matches);
-  // 狭くなったら一覧を閉じる。狭いまま開いたときは、閉じずに会話の上に重ねて出す(overlay)
+  // 一覧を開いているか。広いときは、広いときに自分で開け閉めした状態(stored.ts。起動をまたいで覚える)にする。狭いときは閉じて始める
+  const [listOpen, setListOpen] = useState(
+    () => !window.matchMedia(NARROW_QUERY).matches && wideListOpen(),
+  );
+  // 狭くなったら一覧を閉じる。狭いまま開いたときは、閉じずに会話の上に重ねて出す(overlay)。
+  // 広くなったら、広いときに自分で開け閉めした状態に戻す(狭いときに重ねて出していたかどうかは引き継がない)
   useEffect(() => {
-    if (narrow) setListOpen(false);
+    setListOpen(!narrow && wideListOpen());
   }, [narrow]);
   const overlay = narrow && listOpen;
   // 重ねて出している一覧は、会話を選ぶ・「+ 新規」・「設定」を押したら閉じる(選んだものが見えるように)
@@ -88,15 +98,17 @@ export default function App() {
   const chat = useChat(transcript, setBusy, convs, toasts);
   const app = useAppSettings(toasts, transcript, setBusy, models.reload);
 
-  // 起動時: 新しい会話の画面に移ってから、モデルの一覧を取る。
+  // 起動時: 最後に開いていた会話(無ければ新しい会話の画面)に移ってから、モデルの一覧を取る。
   // 画面を移ると表示が作り直されるので、「読み込み中…」のメモが消えないよう、この順にする。
   // StrictMode では effect が2回呼ばれるので、1回だけにする(2回だと会話が2つ作られることがある)
   const started = useRef(false);
+  const restored = useRef(false); // 起動時に最後の会話を開き終えたか(開いている会話を覚え始める合図)
   useEffect(() => {
     if (started.current) return;
     started.current = true;
     (async () => {
-      const initErr = await convs.init().then(() => null, (err: unknown) => err);
+      const initErr = await convs.init(loadStored(STORED_LAST_CONVERSATION)).then(() => null, (err: unknown) => err);
+      restored.current = true;
       const ok = await models.reload().catch(err => {
         addError(`モデル一覧を取得できません: ${errorMessage(err)}`);
         return false;
@@ -140,11 +152,43 @@ export default function App() {
   }, [busy, models.reload]);
 
   const currentId = convs.current?.conversation.id ?? null;
+  // 開いている会話を覚えておき、次の起動で開く(新しい会話の画面なら消す)。
+  // 起動して最後の会話を開くまで(restored)は、まだ何も開いていない(null)ので覚え直さない
+  useEffect(() => {
+    if (restored.current) saveStored(STORED_LAST_CONVERSATION, currentId);
+  }, [currentId]);
   const unavailable = busy === "unavailable";
   // 開いている会話が無くなった(削除して新しい会話の画面に戻った)ら、会話の設定の画面も閉じる
   useEffect(() => {
     if (currentId === null) setConvSettingsOpen(false);
   }, [currentId]);
+
+  // 名前を変えている会話。一覧のダブルクリックか F2 で入力欄になる。
+  // 狭いときに重ねて出す一覧は、1回目のクリックで会話を開いて閉じてしまい、ダブルクリックが届かない。そこで F2 でも入れるようにし、
+  // 一覧の外(入力欄など)で押しても効くよう、状態は一覧ではなくここで持つ(狭いときは一覧が2つ出ているため)
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  // F2 のために一覧を開いたか。開いたのなら、名前を決めたら閉じて元に戻す
+  const openedForRename = useRef(false);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "F2" || e.isComposing || currentId === null || unavailable || renamingId !== null) return;
+      e.preventDefault();
+      if (!listOpen) {
+        openedForRename.current = true;
+        setListOpen(true);
+      }
+      setRenamingId(currentId);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [currentId, unavailable, renamingId, listOpen]);
+  const endRename = () => {
+    setRenamingId(null);
+    if (openedForRename.current) {
+      openedForRename.current = false;
+      setListOpen(false);
+    }
+  };
 
   // 「+ 新規」: 新しい会話の画面に移る。会話そのものは、そこで最初に送信したときに作る
   const home = convs.current === null;
@@ -247,6 +291,39 @@ export default function App() {
     setConvSettingsOpen(false);
     convs.open(id).then(focusInput, err => addError(errorMessage(err)));
   };
+
+  // 見ていない会話の様子をトーストで知らせる(返事が終わった・エラーで終わった・確認を待っている)。
+  // 見ている会話は表示で分かるので出さない。押すとその会話を開く。会話ごとに key を分け、新しい様子で置き換える
+  const notifyConversation = (id: string, what: "done" | "error" | "waiting") => {
+    const name = `「${convs.list.find(c => c.id === id)?.title || "新しい会話"}」`;
+    const text = what === "done" ? `${name}の返事が終わりました`
+      : what === "error" ? `${name}がエラーで終わりました`
+        : `${name}でツールの実行の確認を待っています`;
+    toasts.notify(text, {
+      key: `conversation:${id}`,
+      ms: what === "done" ? 6000 : 10000,
+      tone: what === "error" ? "error" : undefined,
+      onClick: () => onOpen(id),
+      hint: "押すとこの会話を開きます",
+    });
+  };
+  // 終わった会話(useChat の ended)が増えたら知らせる。開いて消えたときは知らせない
+  const lastEnded = useRef(chat.ended);
+  useEffect(() => {
+    for (const [id, how] of Object.entries(chat.ended)) {
+      if (lastEnded.current[id] !== how) notifyConversation(id, how);
+    }
+    lastEnded.current = chat.ended;
+  }, [chat.ended]);
+  // 確認を待ち始めた会話が、見ている会話でなければ知らせる
+  useEffect(() => {
+    const id = chat.confirmingId;
+    if (id !== null && id !== currentId) notifyConversation(id, "waiting");
+  }, [chat.confirmingId]);
+  // 会話を開いたら、その会話のトーストは要らないので消す
+  useEffect(() => {
+    if (currentId !== null) toasts.dismissKey(`conversation:${currentId}`);
+  }, [currentId]);
   // 新しい会話の既定を変えたら、新しい会話の画面でこれから作る会話の設定(既定の写し)にも入れる
   const onDefaultsChange = (patch: Partial<ConversationSettings>) => {
     app.updateDefaults(patch);
@@ -353,14 +430,23 @@ export default function App() {
     currentId,
     generatingId: chat.generatingId,
     waitingId: chat.confirmingId,
+    ended: chat.ended,
     disabled: unavailable,
     onOpen,
     onNew,
     onDelete: (id: string) => convs.remove(id).then(focusInput, err => addError(errorMessage(err))),
     onRename: (id: string, title: string) => convs.rename(id, title).catch(err => addError(errorMessage(err))),
+    renamingId,
+    onStartRename: setRenamingId,
+    onEndRename: endRename,
     settingsOpen,
     onToggleSettings: toggleSettings,
-    onToggleOpen: () => setListOpen(o => !o),
+    onToggleOpen: () => {
+      // 自分で開け閉めしたときだけ覚える(狭くなって自動で閉じた・F2 のために開いた、は覚えない)。
+      // 狭いときに重ねて出す一覧は、そのときだけのものなので覚えない
+      if (!narrow) saveStored(STORED_LIST_OPEN, String(!listOpen));
+      setListOpen(!listOpen);
+    },
     width: listWidth.width,
   };
 

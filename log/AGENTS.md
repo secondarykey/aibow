@@ -15,7 +15,8 @@
 
 - **アプリ(`_cmd/aibow`)**: `main` の最初に `startLog` が `log.Init` を呼ぶ。`slog.Default()` が wenteasy/log の `SimpleHandler`
   (`Options.Root` 以上。dev は Info、exe は Notice)になり、aibow のログもアプリのログも、Wails 自身のログもそこに出る(`main.go` が `application.Options.Logger` に `slog.Default()` を渡す。WebView2 の行は標準の log で来るが、`slog.SetDefault` のあとは同じ出口に流れる。標準の log はレベルを持たないので、`Init` が `slog.SetLogLoggerLevel(Root)` で出すレベルに合わせ、exe でも捨てない)
-  - `wails3 dev`(`isDev`): ターミナル(標準エラー出力)。`AIBOW_LOG_DIR` を指定したときだけファイルにも
+  - `wails3 dev`(`isDev`): ターミナル(標準エラー出力)とファイル `%APPDATA%\aibow\logs\aibow-dev_<日付>.log` の両方(Info 以上。`AIBOW_LOG_DIR` で変えられる。10 日分)。
+    ターミナルは流れて消えるので、あとから調べられるようにファイルにも残す(2026-10-16、ユーザーの指示)。ふだんの exe と同時に動かすことがあるので、ファイルの頭を `aibow-dev` にして分ける(`Options.Prefix`。異常終了は `aibow-dev_crash.log`)
   - exe(`wails3 build`): ファイル `%APPDATA%\aibow\logs\aibow_<日付>.log`(wenteasy/log の `RollingFileWriter`。日ごと。`AIBOW_LOG_DIR` で変えられる)。
     exe(`-H windowsgui`)には標準エラー出力の行き先が無く、ファイルにしか残らないため。**Notice 以上だけ**を書く(常に残したいもの。生成の統計などの Info は wails3 dev で見る)。起動時に古いファイルを消し、今日を含めて 10 日分を残す(`Options.KeepDays`。日付はファイル名から読む。`aibow_<日付>.log` の形でないファイルは消さない)
 - **MCP のサーバー(`_cmd/aibow-mcp`)**: アプリにならい、同じフォルダ(`%APPDATA%\aibow\logs`。`AIBOW_LOG_DIR`)の `aibow-mcp_<日付>.log` に書く(`Options.Prefix`)。

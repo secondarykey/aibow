@@ -35,8 +35,12 @@ interface Live {
   confirm: ConfirmRequest | null;
 }
 
+// Ended は、ほかの会話を見ている間に送信が終わった会話の終わり方(会話の一覧の印。開くと消える)
+export type Ended = "done" | "error";
+
 export interface Chat {
   generatingId: string | null; // 返事(か要約)を生成中の会話の ID
+  ended: Record<string, Ended>; // ほかの会話を見ている間に送信が終わった会話(会話の ID → 終わり方)。起動をまたいでは覚えない
   confirmingId: string | null; // ツールの実行前の確認を待っている会話の ID(会話の一覧に「確認待ち」と出す)
   answer(reqId: string, approved: boolean, reason: string, remember: ToolPolicy): Promise<void>; // 確認に答える(「実行する」「拒否」と、これから先の扱い)
   lastPrompt: string;          // 開いている会話で、モデルに実際に渡した文字列
@@ -58,6 +62,9 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
 
   const live = useRef<Live | null>(null);
   const viewing = useRef<string | null>(null); // 表示している会話の ID
+  const [ended, setEnded] = useState<Record<string, Ended>>({});
+  // ほかの会話を見ている間に届いたエラー。エラーは保存しないので、ここで持っておき、その会話を開いたときに出す
+  const heldErrors = useRef<Record<string, string[]>>({});
   // 生成中の呼び出し(stop() で停止できる)。生成中でなければ null
   const controller = useRef<{ stop(): void } | null>(null);
   // 送信を受け付けてから生成が始まるまでの間に、もう一度送られないようにする
@@ -90,6 +97,14 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
       l.itemId = l.convId === id && current.generating ? addAssistant(l.view) : null;
       l.userItemId = null;
     }
+    // 見ていない間に終わった会話を開いたら、一覧の印を消し、届いていたエラーを出す
+    heldErrors.current[id]?.forEach(addError);
+    delete heldErrors.current[id];
+    setEnded(e => {
+      if (!(id in e)) return e;
+      const { [id]: _, ...rest } = e;
+      return rest;
+    });
     // 開くたびに増える openCount だけを見る(設定の変更で current が変わっても作り直さない)
   }, [openCount]);
 
@@ -159,6 +174,13 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
 
     // 返事は Send の戻り値ではなく、chat イベントで少しずつ届く。done が来たら終わり。
     let compacted = false; // 今すぐ要約で、要約が保存された
+    let failed = false;    // エラーが届いた(一覧の印を赤にする)
+    // エラーは、見ている会話なら表示に出し、ほかの会話なら開いたときに出すよう持っておく
+    const showError = (text: string) => {
+      failed = true;
+      if (viewing.current === id) addError(text);
+      else (heldErrors.current[id] ??= []).push(text);
+    };
     let finish = () => {};
     const finished = new Promise<void>(resolve => (finish = resolve));
     listener.current = ev => {
@@ -232,8 +254,7 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
           return;
         case "error":
           errors.push(ev.error ?? "");
-          if (viewing.current === id) addError(ev.error ?? "");
-          else console.warn(`別の会話でのエラー: ${ev.error}`);
+          showError(ev.error ?? "");
           return;
         case "notice":
           // エラーではないお知らせ(今すぐ要約で、要約するものが無かった、など)。会話の表示ではなくトーストに出す
@@ -274,7 +295,7 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
     call.catch(err => {
       if (err instanceof CancelError) return; // 停止ボタン。done イベントは Go から届く
       // Go のメソッドを呼べなかった(done イベントは来ない)
-      addError(`呼び出しエラー: ${errorMessage(err)}`);
+      showError(`呼び出しエラー: ${errorMessage(err)}`);
       done();
       finish();
     });
@@ -282,6 +303,8 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
     listener.current = null;
     controller.current = null;
     live.current = null;
+    // ほかの会話を見ている間に終わったら、一覧に印を出す(エラーなら赤、そうでなければ青)
+    if (viewing.current !== id) setEnded(e => ({ ...e, [id]: failed ? "error" : "done" }));
     setGeneratingId(null);
     setBusy("idle");
     reloadList().catch(() => {}); // タイトルと並び順(更新の新しい順)が変わる
@@ -355,5 +378,5 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
   const regenerate = useCallback(() => retry(false, "", id => ChatService.Regenerate(id)), [retry]);
   const resend = useCallback((text: string) => retry(true, text, id => ChatService.Resend(id, text)), [retry]);
 
-  return { generatingId, confirmingId, answer, lastPrompt, send, regenerate, resend, compact, stop };
+  return { generatingId, ended, confirmingId, answer, lastPrompt, send, regenerate, resend, compact, stop };
 }

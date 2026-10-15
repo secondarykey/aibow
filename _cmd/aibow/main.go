@@ -131,15 +131,22 @@ func main() {
 
 	// Frameless: OS のタイトルバーと枠を消し、画面(frontend/src/components/TitleBar.tsx)で作る。
 	// Title は画面には出ないが、タスクバーや Alt+Tab に出る。
-	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
+	// 前に閉じたときの位置と大きさがあれば、そこに開く(windowstate.go)
+	opts := application.WebviewWindowOptions{
 		Title:     "aibow " + appVersion(),
-		Width:     720, // 起動時の大きさ(広げたいときは最大化かリサイズ)
+		Width:     720, // 初めて起動したときの大きさ(広げたいときは最大化かリサイズ)
 		Height:    820,
-		MinWidth:  480, // 最小の幅。画面の端に細く置いておけるよう、起動時の幅より狭くできる
-		MinHeight: 480, // 最小の高さ。これより低いと、入力欄とモデルの行で会話がほとんど見えなくなる
+		MinWidth:  windowMinWidth,
+		MinHeight: windowMinHeight,
 		Frameless: true,
 		URL:       "/",
-	})
+	}
+	saved, hasSaved := loadWindowState(cfg.windowPath)
+	if hasSaved {
+		applyWindowState(&opts, saved)
+	}
+	window := app.Window.NewWithOptions(opts)
+	tracker := trackWindow(app, window, cfg.windowPath, saved, hasSaved)
 
 	// Windows の WebView2 は、別のウィンドウから戻ってきたときに IME(日本語入力)の状態が
 	// 戻らず、入力欄で変換できなくなることがある。戻ってきたことを画面に知らせ、
@@ -151,21 +158,40 @@ func main() {
 
 	log.Noticef("aibow %s 起動", appVersion())
 	// Run はウィンドウが閉じられるまで返らない。返ったら defer で VRAM を解放する。
-	if err := app.Run(); err != nil {
-		log.Error(err.Error())
+	runErr := app.Run()
+	// 終わったら、覚えておいたウィンドウの位置と大きさを書く。
+	// OnShutdown は使わない:Windows では最後のウィンドウを閉じる(× や Alt+F4)と、OnShutdown を呼ばずに終わるため(beta.26)
+	tracker.save()
+	if runErr != nil {
+		log.Error(runErr.Error())
 		os.Exit(1)
 	}
 }
 
-// logKeepDays は、exe がログファイルを残す日数(今日を含む)。起動のたびに、それより古いものを消す。
+// ウィンドウの最小の大きさ。幅は画面の端に細く置いておけるよう、初めの幅(720)より狭くできる。
+// 高さはこれより低いと、入力欄とモデルの行で会話がほとんど見えなくなる
+const (
+	windowMinWidth  = 480
+	windowMinHeight = 480
+)
+
+// logKeepDays は、ログファイルを残す日数(今日を含む)。起動のたびに、それより古いものを消す。
 const logKeepDays = 10
+
+// devLogPrefix は、wails3 dev で動かしたときのログファイルの名前の頭(aibow-dev_<日付>.log・aibow-dev_crash.log)。
+// ふだん使う exe と同時に動かすことがあるので、exe のファイル(aibow_…)と分ける
+// (同じファイルに2つのプロセスが書くと行が入り混じり、異常終了の記録も取り合いになる。aibow-mcp と同じ考え方)
+const devLogPrefix = "aibow-dev"
 
 // startLog はログの出口を組む(aibow/log の Init)。
 //
-//   - wails3 dev(isDev):ターミナルに出す(標準エラー出力)。AIBOW_LOG_DIR を指定したときだけ、ファイルにも書く
-//   - リリース版の exe:ファイルに書く(%APPDATA%\aibow\logs\aibow_<日付>.log。AIBOW_LOG_DIR で変えられる)。
+//   - wails3 dev(isDev):ターミナル(標準エラー出力)と、ファイル(%APPDATA%\aibow\logs\aibow-dev_<日付>.log)の両方に Info 以上を書く。
+//     ターミナルは流れて消えるので、あとから不具合を調べられるようにファイルにも残す(2026-10-16、ユーザーの指示。前は AIBOW_LOG_DIR を指定したときだけ)
+//   - リリース版の exe:ファイルに書く(%APPDATA%\aibow\logs\aibow_<日付>.log)。
 //     リリース版(-H windowsgui)には標準エラー出力の行き先が無く、ファイルにしか残らないため
-//     (0006 で、起動できない理由がどこにも残らず困った)。Notice 以上だけを書き、今日を含めて logKeepDays 日分を残して古いものは起動時に消す
+//     (0006 で、起動できない理由がどこにも残らず困った)。Notice 以上だけを書く
+//
+// フォルダは AIBOW_LOG_DIR で変えられる。どちらも今日を含めて logKeepDays 日分を残し、古いものは起動時に消す(頭の違うファイルには触らない)
 //
 // 異常終了(Go の panic・ランタイムの致命的なエラー)の内容も、ファイルに書くときは同じフォルダの aibow_crash.log に残す
 // (log.CatchCrash)。前回の記録が残っていれば改名して残し、「前回は異常終了しました」を画面とログで伝える(main がお知らせとして出す)。
@@ -173,24 +199,23 @@ const logKeepDays = 10
 // ログが書けなくてもアプリは止めない。理由や前回の異常終了は、画面のお知らせに出す文として返す。
 func startLog() (io.Closer, []string) {
 	dir := os.Getenv("AIBOW_LOG_DIR")
-	if dir == "" && !isDev {
+	if dir == "" {
 		if dir = configFile("logs"); dir == "" {
-			c, _ := log.Init(log.Options{})
+			c, _ := log.Init(log.Options{Console: isDev})
 			return c, []string{"ログを書くフォルダが決められないので、ログはファイルに残りません。AIBOW_LOG_DIR でフォルダを指定してください"}
 		}
 	}
-	opts := log.Options{Dir: dir, Console: isDev, Root: log.LevelInfo}
-	if !isDev {
-		// exe は常に残したいもの(Notice)以上だけ。生成の統計などの Info は、学習・開発中に wails3 dev で見る
+	opts := log.Options{Dir: dir, KeepDays: logKeepDays}
+	if isDev {
+		// dev は生成の統計などの Info も出す(学習・開発中に観察するもの)
+		opts.Console, opts.Root, opts.Prefix = true, log.LevelInfo, devLogPrefix
+	} else {
+		// exe は常に残したいもの(Notice)以上だけ
 		opts.Root = log.LevelNotice
-		opts.KeepDays = logKeepDays // exe は古いログを消す(dev で AIBOW_LOG_DIR に書いたものは消さない)
 	}
 	c, err := log.Init(opts)
 	if err != nil {
 		return c, []string{err.Error()}
-	}
-	if dir == "" {
-		return c, nil // dev でファイルに書かないとき(異常終了はターミナルに出る)
 	}
 	log.Noticef("ログの書き出し先: %s", absPath(log.FilePath(dir)))
 

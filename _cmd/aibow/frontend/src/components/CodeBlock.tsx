@@ -1,4 +1,5 @@
 // 返事の中のコードブロック。右上にそのコードだけをコピーするボタンを出す。
+//   - 言語が書かれていれば、マウスを乗せたときの吹き出し(title)に出す(色付けの見た目だけでは何の言語か分かりにくいため)
 //   - 言語が書かれていれば、highlight.js で色を付ける(highlight.ts)
 //   - 言語が mermaid なら図にする(mermaid.ts)。図とコードは切り替えられる
 // 図とコードの切り替えは、コードのアイコンのトグル(押している間はコードを見せる)。
@@ -23,7 +24,7 @@ interface Props {
 export function CodeBlock({ code, lang, closed }: Props) {
   if (lang === "mermaid" && closed) return <MermaidBlock code={code} />;
   return (
-    <div className="code-block">
+    <div className="code-block" title={lang || undefined}>
       <Code code={code} lang={lang} />
       <CopyButton text={code} className="code-copy" />
     </div>
@@ -89,7 +90,7 @@ function MermaidBlock({ code }: { code: string }) {
 
   const codeView = <pre><code>{code}</code></pre>;
   return (
-    <div className="mermaid-block">
+    <div className="mermaid-block" title="mermaid">
       <div className="mermaid-tools">
         {diagram.state === "done" && (
           <button

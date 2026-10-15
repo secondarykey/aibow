@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import { LuChevronDown, LuChevronRight, LuCircleStop, LuEye, LuEyeOff, LuPencil, LuRefreshCw } from "react-icons/lu";
 import { CopyButton } from "./CopyButton";
 import type { Compaction } from "../../bindings/github.com/secondarykey/aibow";
-import { compactionStats, lastIndex } from "../transcript";
+import { compactionSize, compactionStats, lastIndex } from "../transcript";
 import type { AssistantView, Item } from "../transcript";
 import { RenderedText } from "./RenderedText";
 import { ToolCard } from "./ToolCard";
@@ -302,11 +302,12 @@ function Summarizing({ text }: { text: string }) {
   );
 }
 
-// 要約した位置の区切り。開くと要約の文(モデルに渡しているもの)と記録が読める
+// 要約した位置の区切り。見出しに前後の大きさを添え、開くと要約の文(モデルに渡しているもの)と記録が読める
 function Divider({ compaction }: { compaction: Compaction }) {
+  const size = compactionSize(compaction);
   return (
     <details className="divider">
-      <summary>― ここまでを要約しました ―</summary>
+      <summary>― ここまでを要約しました{size && ` ${size}`} ―</summary>
       <div className="divider-body">
         <RenderedText text={compaction.summary} />
         <div className="stats">{compactionStats(compaction)}</div>

@@ -66,6 +66,7 @@ type appConfig struct {
 	dbPath       string // 会話を保存する SQLite のファイル
 	settingsPath string // 設定ファイル(settings.json。手で書く設定。今は MCP のサーバーだけ)
 	toolsPath    string // ツールの扱いの PC の既定(tools.json。画面で変えたものを aibow が書く)
+	windowPath   string // ウィンドウの位置と大きさ(window.json。閉じるときに aibow が書く。windowstate.go)
 	initialModel string // AIBOW_MODEL。空なら最後に使ったモデル → 一覧の先頭
 
 	// app は、画面で変えられるアプリ全体の設定の初期値。
@@ -93,6 +94,7 @@ func loadConfig() (appConfig, error) {
 		dbPath:       env.str("AIBOW_DB", configFile("aibow.db")),
 		settingsPath: env.str("AIBOW_SETTINGS", configFile("settings.json")),
 		toolsPath:    env.str("AIBOW_TOOLS", configFile("tools.json")),
+		windowPath:   env.str("AIBOW_WINDOW", configFile("window.json")),
 		initialModel: os.Getenv("AIBOW_MODEL"),
 		app: aibow.AppSettings{
 			Workspace: aibow.WorkspaceSettings{
