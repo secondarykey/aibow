@@ -10,21 +10,23 @@
 // 会話の名前の左の印(丸):
 //   生成中   … 青の点滅
 //   確認待ち … 橙(点滅しない。ツールを実行する前の確認に答えるまで、送信が止まっている)
+//   エラー   … 赤(点滅しない。ほかの会話を見ている間にエラーで終わった。その会話を開くと消え、エラーが表示に出る)
 //   終わった … 青(点滅しない。ほかの会話を見ている間に返事が終わった。その会話を開くと消える)
-// 一覧を畳んでいるときは、いちばん気にしてほしい印(確認待ち → 生成中 → 終わった)をハンバーガーに小さく出す
+// 一覧を畳んでいるときは、いちばん気にしてほしい印(確認待ち → エラー → 生成中 → 終わった)をハンバーガーに出す
 import { useEffect, useRef, useState } from "react";
 import { ChatService } from "../../bindings/github.com/secondarykey/aibow/_cmd/aibow";
 import type { KeyboardEvent } from "react";
 import { LuMenu, LuPlus, LuSettings } from "react-icons/lu";
 import { toggleMaximiseOnDoubleClick } from "./TitleBar";
 import type { Conversation } from "../../bindings/github.com/secondarykey/aibow";
+import type { Ended } from "../useChat";
 
 interface Props {
   list: Conversation[];
   currentId: string | null;
   generatingId: string | null;
   waitingId: string | null; // ツールの実行前の確認を待っている会話(生成中の印を「確認待ち」にする)
-  doneIds: string[];        // ほかの会話を見ている間に返事が終わった会話(開くと消える。App.tsx が持つ)
+  ended: Record<string, Ended>; // ほかの会話を見ている間に送信が終わった会話と終わり方(開くと消える。useChat が持つ)
   disabled: boolean;
   onOpen(id: string): void;
   onNew(): void;
@@ -41,15 +43,15 @@ interface Props {
 }
 
 export function ConversationList({
-  list, currentId, generatingId, waitingId, doneIds, disabled, onOpen, onNew, onDelete, onRename, renamingId, onStartRename, onEndRename,
+  list, currentId, generatingId, waitingId, ended, disabled, onOpen, onNew, onDelete, onRename, renamingId, onStartRename, onEndRename,
   settingsOpen, onToggleSettings, open, onToggleOpen, width,
 }: Props) {
   // 削除の確認を出している会話。消すと戻せないので、もう一度押してもらう
   const [confirming, setConfirming] = useState<string | null>(null);
 
   const markOf = (id: string): Mark | null =>
-    id === generatingId ? (id === waitingId ? "waiting" : "generating") : doneIds.includes(id) ? "done" : null;
-  // 畳んでいるときにハンバーガーに出す印。消した会話が doneIds に残っていても出さないよう、一覧にある会話だけを見る
+    id === generatingId ? (id === waitingId ? "waiting" : "generating") : ended[id] ?? null;
+  // 畳んでいるときにハンバーガーに出す印。消した会話が ended に残っていても出さないよう、一覧にある会話だけを見る
   const marks = list.map(c => markOf(c.id));
   const menuMark = open ? null : MARK_ORDER.find(m => marks.includes(m)) ?? null;
 
@@ -141,13 +143,14 @@ export function ConversationList({
 }
 
 // Mark は会話の名前の左に出す印の種類(CSS の .dot.<種類>)。
-type Mark = "waiting" | "generating" | "done";
+type Mark = "waiting" | "generating" | Ended;
 
 // MARK_ORDER は、畳んだ一覧のハンバーガーに1つだけ出すときに、どれを先に出すか(気にしてほしい順)
-const MARK_ORDER: Mark[] = ["waiting", "generating", "done"];
+const MARK_ORDER: Mark[] = ["waiting", "error", "generating", "done"];
 
 const MARK_LABEL: Record<Mark, string> = {
   waiting: "ツールの実行の確認待ち",
+  error: "エラーで終わった(開くとエラーが出ます)",
   generating: "返事を生成中",
   done: "返事が終わった",
 };
@@ -155,6 +158,7 @@ const MARK_LABEL: Record<Mark, string> = {
 // MARK_BADGE_LABEL は、ハンバーガーの印にマウスを乗せたときの説明(どの会話かは一覧を開くと分かる)
 const MARK_BADGE_LABEL: Record<Mark, string> = {
   waiting: "ツールの実行の確認を待っている会話があります",
+  error: "エラーで終わった会話があります",
   generating: "返事を生成中の会話があります",
   done: "返事が終わった会話があります",
 };

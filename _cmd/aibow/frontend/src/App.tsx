@@ -163,21 +163,6 @@ export default function App() {
     if (currentId === null) setConvSettingsOpen(false);
   }, [currentId]);
 
-  // ほかの会話を見ている間に返事が終わった会話。一覧の名前の左に青い印を出し、その会話を開いたら消す。
-  // 生成していた会話(generatingId)が変わったとき、終わった会話がそのとき開いている会話でなければ足す。起動をまたいでは覚えない
-  const [doneIds, setDoneIds] = useState<string[]>([]);
-  const lastGenerating = useRef<string | null>(null);
-  useEffect(() => {
-    const prev = lastGenerating.current;
-    lastGenerating.current = chat.generatingId;
-    if (prev !== null && prev !== chat.generatingId && prev !== currentId) {
-      setDoneIds(ids => (ids.includes(prev) ? ids : [...ids, prev]));
-    }
-  }, [chat.generatingId, currentId]);
-  useEffect(() => {
-    if (currentId !== null) setDoneIds(ids => ids.filter(id => id !== currentId));
-  }, [currentId]);
-
   // 名前を変えている会話。一覧のダブルクリックか F2 で入力欄になる。
   // 狭いときに重ねて出す一覧は、1回目のクリックで会話を開いて閉じてしまい、ダブルクリックが届かない。そこで F2 でも入れるようにし、
   // 一覧の外(入力欄など)で押しても効くよう、状態は一覧ではなくここで持つ(狭いときは一覧が2つ出ているため)
@@ -412,7 +397,7 @@ export default function App() {
     currentId,
     generatingId: chat.generatingId,
     waitingId: chat.confirmingId,
-    doneIds,
+    ended: chat.ended,
     disabled: unavailable,
     onOpen,
     onNew,

@@ -372,9 +372,10 @@ nav.conversations.collapsed .settings.active { color: var(--accent); }
   display: inline-block; width: 7px; height: 7px; border-radius: 50%;
   background: var(--accent); margin-right: 6px; vertical-align: middle;
 }
-/* 会話の印(ConversationList.tsx): 生成中は青の点滅、確認待ちは橙、ほかの会話を見ている間に終わったら青(点滅しない) */
+/* 会話の印(ConversationList.tsx): 生成中は青の点滅、確認待ちは橙、ほかの会話を見ている間に終わったら青、エラーで終わったら赤(点滅しない) */
 .dot.generating { animation: blink 1.2s ease-in-out infinite; }
 .dot.waiting { background: #d97706; }
+.dot.error { background: var(--error); }
 @keyframes blink { 50% { opacity: .25; } }
 /* 一覧を畳んでいるときは、ハンバーガーの右下に出す。三本線と重なっても見分けられるよう、一覧の背景の色で縁取る */
 .menu-btn { position: relative; }
