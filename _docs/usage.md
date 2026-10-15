@@ -164,7 +164,10 @@ aibow-mcp [作業フォルダ]
 - `aibow-mcp -version` でバージョンを表示します(アプリと同じバージョン。`go run` で動かしたものは `0.5.2+dev` のように次のバージョンに `+dev` が付きます)
 
 - 作業フォルダを渡すと、その中のファイルを扱うツールとコマンドのツールも出します(フォルダの外には出られません)。渡さなければ時刻と計算だけです
-- Claude Code なら `claude mcp add aibow -- <aibow-mcp.exe の場所> <作業フォルダ>` で足せます。ほかのアプリでも、`mcpServers` に `command` と `args` を書けば使えます
+- Claude Code なら `claude mcp add -s local aibow -- <aibow-mcp.exe の場所> <作業フォルダ>` で足せます(`-s local` はそのフォルダだけで使う登録。消すときは同じフォルダで `claude mcp remove -s local aibow`)。
+  作業フォルダは絶対パスで書いてください(書き忘れると、時刻と計算の2つしか出ません)。ほかのアプリでも、`mcpServers` に `command` と `args` を書けば使えます
+- Claude Code は自前のファイルの書き換えやコマンドのツールを持っていて、ふつうはそちらを使います。aibow のツールを試すときは
+  `claude --disallowedTools "Write,Edit,Bash,PowerShell,NotebookEdit"` で起動すると、その起動の間だけ自前のツールを使わなくなります(Windows には Bash とは別に PowerShell のツールがあります)
 - ツールの名前・説明・引数は aibow の組み込みと同じです
 - **書き換えるツール(`write_file`・`edit_file`・`run_command`)は、実行する前にサーバーが差分を見せて確かめます**。aibow では今と同じ差分のカードが出ます(`settings.json` に書いたサーバーなので、その前に引数のカードも出ます。2回)。
   ほかのアプリでは、そのアプリの確認の画面に差分の文が出ます。確認(elicitation)に対応していないアプリからは、書き換えるツールは使えません(「書き換えません」のエラーが返ります)
