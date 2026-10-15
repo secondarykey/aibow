@@ -1,4 +1,5 @@
 // 左側: 会話の一覧(更新の新しい順)。新規作成・切り替え・名前の変更・削除。
+// 名前の変更はダブルクリックか F2(F2 は App.tsx が受けて renamingId を決める)。
 // 会話の設定の歯車は、一覧を畳んでいても開けるよう、入力欄の下(メーターの右)に置く(App.tsx)。
 // 下にアプリの名前とバージョン、右に設定の画面の開閉ボタン(アイコンだけ)。
 // ウィンドウの上から下までの列。上のハンバーガーで一覧を畳める。畳んだときもアイコンだけの細い列を残し、
@@ -22,6 +23,9 @@ interface Props {
   onNew(): void;
   onDelete(id: string): void;
   onRename(id: string, title: string): void;
+  renamingId: string | null; // 名前を変えている会話(入力欄にする)
+  onStartRename(id: string): void;
+  onEndRename(): void;
   settingsOpen: boolean;
   onToggleSettings(): void;
   open: boolean; // 一覧を開いているか
@@ -30,13 +34,11 @@ interface Props {
 }
 
 export function ConversationList({
-  list, currentId, generatingId, waitingId, disabled, onOpen, onNew, onDelete, onRename, settingsOpen, onToggleSettings,
-  open, onToggleOpen, width,
+  list, currentId, generatingId, waitingId, disabled, onOpen, onNew, onDelete, onRename, renamingId, onStartRename, onEndRename,
+  settingsOpen, onToggleSettings, open, onToggleOpen, width,
 }: Props) {
   // 削除の確認を出している会話。消すと戻せないので、もう一度押してもらう
   const [confirming, setConfirming] = useState<string | null>(null);
-  // 名前を変えている会話(ダブルクリックで入力欄になる)
-  const [editing, setEditing] = useState<string | null>(null);
 
   const menu = (
     <button className="icon-btn" title={open ? "会話の一覧を閉じる" : "会話の一覧を開く"} onClick={onToggleOpen}>
@@ -67,13 +69,13 @@ export function ConversationList({
           const title = c.title || "新しい会話";
           const generating = c.id === generatingId;
           const cls = ["conversation", c.id === currentId && "current", generating && "generating"].filter(Boolean).join(" ");
-          if (editing === c.id) {
+          if (renamingId === c.id) {
             return (
               <li key={c.id} className={cls + " editing"}>
                 <TitleInput
                   initial={c.title}
                   onDone={title => {
-                    setEditing(null);
+                    onEndRename();
                     if (title !== null && title.trim() && title.trim() !== c.title) onRename(c.id, title);
                   }}
                 />
@@ -93,10 +95,10 @@ export function ConversationList({
             <li key={c.id} className={cls}>
               <button
                 className="title"
-                title={`${title}(ダブルクリックで名前を変更)`}
+                title={`${title}(ダブルクリックか F2 で名前を変更)`}
                 disabled={disabled}
                 onClick={() => onOpen(c.id)}
-                onDoubleClick={() => setEditing(c.id)}
+                onDoubleClick={() => onStartRename(c.id)}
               >
                 {generating && (c.id === waitingId
                   ? <span className="dot waiting" title="ツールの実行の確認待ち" />
@@ -152,7 +154,11 @@ function TitleInput({ initial, onDone }: { initial: string; onDone(title: string
     // IME で変換中の Enter は確定なので、名前の確定にしない(Composer と同じ確かめ方)
     if (composing.current || e.nativeEvent.isComposing || e.keyCode === 229) return;
     if (e.key === "Enter") finish(text);
-    if (e.key === "Escape") finish(null);
+    if (e.key === "Escape") {
+      // 取り消すだけにする。重ねて出した一覧を Esc で閉じる仕組み(App.tsx)まで届けない
+      e.stopPropagation();
+      finish(null);
+    }
   };
 
   return (

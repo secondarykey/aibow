@@ -146,6 +146,33 @@ export default function App() {
     if (currentId === null) setConvSettingsOpen(false);
   }, [currentId]);
 
+  // 名前を変えている会話。一覧のダブルクリックか F2 で入力欄になる。
+  // 狭いときに重ねて出す一覧は、1回目のクリックで会話を開いて閉じてしまい、ダブルクリックが届かない。そこで F2 でも入れるようにし、
+  // 一覧の外(入力欄など)で押しても効くよう、状態は一覧ではなくここで持つ(狭いときは一覧が2つ出ているため)
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  // F2 のために一覧を開いたか。開いたのなら、名前を決めたら閉じて元に戻す
+  const openedForRename = useRef(false);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "F2" || e.isComposing || currentId === null || unavailable || renamingId !== null) return;
+      e.preventDefault();
+      if (!listOpen) {
+        openedForRename.current = true;
+        setListOpen(true);
+      }
+      setRenamingId(currentId);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [currentId, unavailable, renamingId, listOpen]);
+  const endRename = () => {
+    setRenamingId(null);
+    if (openedForRename.current) {
+      openedForRename.current = false;
+      setListOpen(false);
+    }
+  };
+
   // 「+ 新規」: 新しい会話の画面に移る。会話そのものは、そこで最初に送信したときに作る
   const home = convs.current === null;
   const onNew = () => {
@@ -358,6 +385,9 @@ export default function App() {
     onNew,
     onDelete: (id: string) => convs.remove(id).then(focusInput, err => addError(errorMessage(err))),
     onRename: (id: string, title: string) => convs.rename(id, title).catch(err => addError(errorMessage(err))),
+    renamingId,
+    onStartRename: setRenamingId,
+    onEndRename: endRename,
     settingsOpen,
     onToggleSettings: toggleSettings,
     onToggleOpen: () => setListOpen(o => !o),
