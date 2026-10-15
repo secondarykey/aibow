@@ -135,7 +135,7 @@
   自前の書き換えとコマンドを止めて(`--disallowedTools "Write,Edit,Bash,PowerShell,NotebookEdit"`。Windows の Claude Code には Bash とは別に PowerShell のツールがある)`write_file` を頼むと、
   **Claude Code の画面にサーバーからの確認が出た**(Claude Code は elicitation に対応している)。
   気づいたこと:作業フォルダを渡し忘れると、aibow-mcp は時刻と計算の2つだけを出し、モデルは「write_file がありません」と答える
-- まだ確かめていないこと:aibow の画面で実際に2回の確認が出ること(ユーザーの環境)
+- aibow の画面(2026-10-15、ユーザーが確かめた):`settings.json` の aibow-mcp の `write_file` で、呼ぶ前の確認(引数)とサーバーからの確認(差分)が、**同じツールのカードの中で入れ替わって**2回出た(1つの呼び出しに1つのカード。終わったあとに残るのは2回目の答え)。ユーザーは思考の過程にカードが2枚並ぶと思っていたので、1回しか聞かれなかったように見えた。5-4 で aibow の中のサーバーは1回になる
 
 ## やらないこと(先回りしない)
 
