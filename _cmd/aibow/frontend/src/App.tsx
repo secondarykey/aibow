@@ -46,6 +46,11 @@ import { errorMessage } from "./errors";
 import { NARROW_QUERY, useMediaQuery } from "./mediaQuery";
 import { STORED_LAST_CONVERSATION, STORED_LIST_OPEN, loadStored, saveStored } from "./stored";
 
+// wideListOpen は、広いときに一覧を開いておくか(ハンバーガーで自分で開け閉めしたとき覚えたもの。覚えていなければ開く)
+function wideListOpen(): boolean {
+  return loadStored(STORED_LIST_OPEN) !== "false";
+}
+
 export default function App() {
   // 生成とモデルの読み込みは同時にできない(Go 側のコンテキストが1つしかないため)
   const [busy, setBusy] = useState<Busy>("idle");
@@ -58,13 +63,14 @@ export default function App() {
   // 入力欄に打っている文。設定の画面を開くと入力欄は消えるので、戻ったときに続きを打てるようにここで持つ
   const [text, setText] = useState("");
   const narrow = useMediaQuery(NARROW_QUERY);
-  // 一覧を開いているか。広いときは前回の起動で自分で開け閉めした状態から始める(stored.ts)。狭いときは閉じて始める
+  // 一覧を開いているか。広いときは、広いときに自分で開け閉めした状態(stored.ts。起動をまたいで覚える)にする。狭いときは閉じて始める
   const [listOpen, setListOpen] = useState(
-    () => !window.matchMedia(NARROW_QUERY).matches && loadStored(STORED_LIST_OPEN) !== "false",
+    () => !window.matchMedia(NARROW_QUERY).matches && wideListOpen(),
   );
-  // 狭くなったら一覧を閉じる。狭いまま開いたときは、閉じずに会話の上に重ねて出す(overlay)
+  // 狭くなったら一覧を閉じる。狭いまま開いたときは、閉じずに会話の上に重ねて出す(overlay)。
+  // 広くなったら、広いときに自分で開け閉めした状態に戻す(狭いときに重ねて出していたかどうかは引き継がない)
   useEffect(() => {
-    if (narrow) setListOpen(false);
+    setListOpen(!narrow && wideListOpen());
   }, [narrow]);
   const overlay = narrow && listOpen;
   // 重ねて出している一覧は、会話を選ぶ・「+ 新規」・「設定」を押したら閉じる(選んだものが見えるように)
