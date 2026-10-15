@@ -291,6 +291,11 @@ func pyJSON(raw []byte) string {
 // 思考と答えは thinkSplitter で分け、答えの中に <tool_call> が出てきたら、そこから先は「呼び出しの部分」として
 // 取っておき、生成が終わってから読み取る。タグは何トークンかに分かれて届くことがあるので、
 // "<tool_call>" の書きかけかもしれない末尾は、次が届くまで出さずに持っておく(思考の振り分けと同じ考え方)。
+//
+// ただし、呼び出しと見るのは「行の頭」にあって「コードブロック(``` / ~~~)の外」にある <tool_call> だけ。
+// テンプレートは呼び出しを必ず行の頭から書く(答えの後ろに空行を置いてから)。文の中の `<tool_call>` は、
+// 仕組みを説明している答えなどで書かれたもので、呼び出しではない。これも呼び出しと見ると、答えがそこで切れ、
+// 「読み取れない呼び出し」のエラーを返されたモデルが同じ答えを書き直し続ける(2026-10-16 に起きた)。
 const (
 	qwen35CallStart = "<tool_call>"
 	qwen35CallEnd   = "</tool_call>"
@@ -326,19 +331,52 @@ func (q *qwen35Parser) pushContent(text string, last bool) string {
 		return ""
 	}
 	q.held += text
-	if i := strings.Index(q.held, qwen35CallStart); i >= 0 {
-		out := q.held[:i]
-		q.calls.WriteString(q.held[i:])
-		q.held = ""
-		return out
+	out := ""
+	for {
+		i := strings.Index(q.held, qwen35CallStart)
+		if i < 0 {
+			break
+		}
+		if isCallPosition(q.content.String() + out + q.held[:i]) {
+			out += q.held[:i]
+			q.calls.WriteString(q.held[i:])
+			q.held = ""
+			return out
+		}
+		// 文の中・コードブロックの中の <tool_call> は、答えの文字としてそのまま出す
+		n := i + len(qwen35CallStart)
+		out += q.held[:n]
+		q.held = q.held[n:]
 	}
 	keep := 0
 	if !last {
 		keep = partialSuffix(q.held, qwen35CallStart)
 	}
-	out := q.held[:len(q.held)-keep]
+	out += q.held[:len(q.held)-keep]
 	q.held = q.held[len(q.held)-keep:]
 	return out
+}
+
+// isCallPosition は、答えの before の続きに出てきた <tool_call> を、呼び出しの始まりと見るかを返す。
+// 行の頭(答えの最初か、改行の直後)で、コードブロックの外にあるときだけ呼び出しと見る。
+func isCallPosition(before string) bool {
+	if before != "" && !strings.HasSuffix(before, "\n") {
+		return false
+	}
+	return !insideCodeFence(before)
+}
+
+// insideCodeFence は、text の終わりがコードブロック(``` か ~~~ の行で囲んだところ)の中かを返す。
+// 囲みの行(字下げ 3 文字まで)が出るたびに、中と外が入れ替わる。
+func insideCodeFence(text string) bool {
+	inside := false
+	for line := range strings.SplitSeq(text, "\n") {
+		t := strings.TrimLeft(line, " ")
+		if len(line)-len(t) <= 3 && (strings.HasPrefix(t, "```") || strings.HasPrefix(t, "~~~")) {
+			inside = !inside
+		}
+	}
+	return inside
 }
 
 func (q *qwen35Parser) keep(thinking, content string) (string, string) {

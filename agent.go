@@ -37,7 +37,22 @@ const (
 	// maxToolCalls は1回の送信でツールを実行する回数の上限。モデルが同じ呼び出しを繰り返して終わらないのを防ぐ。
 	// コーディング(読む → 直す → 動かす)は回数がかさむので 20 回(0004 では 8 回だった。停止ボタンでも止められる)
 	maxToolCalls = 20
+
+	// maxBrokenRounds は、呼び出しが全部「読み取れない呼び出し」だった回が続いてよい数。これを超えたら止める。
+	// 書式の崩れは maxToolCalls に数えない(立て直しの機会を減らさないため)ので、モデルが同じ崩れ方を繰り返すと
+	// 終わらなくなる(2026-10-16 に起きた。答えの中の `<tool_call>` を呼び出しと読んでいた)。立て直せるのはふつう1〜2回なので 3 回
+	maxBrokenRounds = 3
 )
+
+// allBroken は、呼び出しが全部、書式が崩れて読み取れなかったものかを返す。
+func allBroken(calls []format.ToolCall) bool {
+	for _, c := range calls {
+		if c.Error == "" {
+			return false
+		}
+	}
+	return len(calls) > 0
+}
 
 // toolTimeout はツール1回の実行の時間の上限(テストで短くするので変数にしている)。
 // 上限を自分で決めるツール(tool.TimeLimiter。run_command は 120 秒)は、そちらを使う
@@ -54,7 +69,8 @@ const errorPrefix = "エラー: "
 // 保存した最後の返事を返す(何も生成しなかったら nil)。途中で止めたときは、その理由をエラーで返す。
 func (cs *Conversations) runTurn(ctx context.Context, conv Conversation, history []StoredMessage, emit func(ChatEvent)) (*StoredMessage, error) {
 	var last *StoredMessage
-	calls := 0 // この送信でツールを実行した回数
+	calls := 0  // この送信でツールを実行した回数
+	broken := 0 // 呼び出しが全部読み取れなかった回が、いくつ続いているか
 	for round := 1; ; round++ {
 		// 1. モデルに渡す内容を決める。2回目からは、ツールの結果を足しても収まるかを先に確かめる
 		if round > 1 {
@@ -117,12 +133,22 @@ func (cs *Conversations) runTurn(ctx context.Context, conv Conversation, history
 			emit(ChatEvent{ConversationID: conv.ID, Type: "tool_result", Message: &res})
 		}
 
-		// 5. 止められた・上限に達したら、もう生成しない。そうでなければ結果を渡して続きを書かせる
+		// 5. 止められた・上限に達した・崩れた呼び出しが続いたら、もう生成しない。そうでなければ結果を渡して続きを書かせる
 		if ctx.Err() != nil {
 			return last, nil
 		}
 		if overLimit {
 			return last, fmt.Errorf("1回の送信で実行できるツール(%d 回)を超えたため、止めました。続けるときは、もう一度送信してください", maxToolCalls)
+		}
+		if allBroken(r.ToolCalls) {
+			broken++
+		} else {
+			broken = 0
+		}
+		if broken >= maxBrokenRounds {
+			log.Warnf("読み取れない呼び出しが %d 回続いたため、止めました", broken)
+			return last, fmt.Errorf("読み取れないツールの呼び出しが %d 回続いたため、止めました。"+
+				"モデルが書式を立て直せていません。頼み方を変えるか、崩れた返事を「渡さない」にしてから、もう一度送信してください", broken)
 		}
 	}
 

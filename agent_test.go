@@ -198,6 +198,27 @@ func TestAgentStopsAtTheLimit(t *testing.T) {
 	}
 }
 
+// 読み取れない呼び出しは maxToolCalls に数えないので、それだけの回が maxBrokenRounds 回続いたら止める。
+// 間に読み取れた呼び出しがあれば数え直す(立て直せたのなら続けてよい)
+func TestAgentStopsOnRepeatedBrokenCalls(t *testing.T) {
+	broken := fakeReply{toolCalls: []format.ToolCall{{Raw: "<tool_call>\n| 表 |", Error: "書式が崩れていて呼び出しを読み取れません"}}}
+	g := &fakeGen{replies: []fakeReply{broken, broken, {toolCalls: []format.ToolCall{calc("1+1")}}}}
+	for range maxBrokenRounds + 5 {
+		g.replies = append(g.replies, broken)
+	}
+	cs, _, c := newToolConversation(t, g)
+	evs := sendRaw(cs, c, "まとめて")
+
+	errs := errorsOf(evs)
+	if len(errs) != 1 || !strings.Contains(errs[0], fmt.Sprintf("%d 回続いた", maxBrokenRounds)) {
+		t.Errorf("エラー: %v", errs)
+	}
+	// 崩れ 2 回 → 読めた 1 回(数え直し)→ 崩れ maxBrokenRounds 回で止まる
+	if want := 3 + maxBrokenRounds; len(g.calls) != want {
+		t.Errorf("生成 %d 回(期待: %d 回)", len(g.calls), want)
+	}
+}
+
 // 停止ボタン: ツールの実行中に止めても、ループごと止まる(結果は「停止」として残る)
 func TestAgentStopDuringTool(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
