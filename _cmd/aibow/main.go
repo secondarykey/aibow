@@ -131,15 +131,22 @@ func main() {
 
 	// Frameless: OS のタイトルバーと枠を消し、画面(frontend/src/components/TitleBar.tsx)で作る。
 	// Title は画面には出ないが、タスクバーや Alt+Tab に出る。
-	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
+	// 前に閉じたときの位置と大きさがあれば、そこに開く(windowstate.go)
+	opts := application.WebviewWindowOptions{
 		Title:     "aibow " + appVersion(),
-		Width:     720, // 起動時の大きさ(広げたいときは最大化かリサイズ)
+		Width:     720, // 初めて起動したときの大きさ(広げたいときは最大化かリサイズ)
 		Height:    820,
-		MinWidth:  480, // 最小の幅。画面の端に細く置いておけるよう、起動時の幅より狭くできる
-		MinHeight: 480, // 最小の高さ。これより低いと、入力欄とモデルの行で会話がほとんど見えなくなる
+		MinWidth:  windowMinWidth,
+		MinHeight: windowMinHeight,
 		Frameless: true,
 		URL:       "/",
-	})
+	}
+	saved, hasSaved := loadWindowState(cfg.windowPath)
+	if hasSaved {
+		applyWindowState(&opts, saved)
+	}
+	window := app.Window.NewWithOptions(opts)
+	tracker := trackWindow(app, window, cfg.windowPath, saved, hasSaved)
 
 	// Windows の WebView2 は、別のウィンドウから戻ってきたときに IME(日本語入力)の状態が
 	// 戻らず、入力欄で変換できなくなることがある。戻ってきたことを画面に知らせ、
@@ -151,11 +158,22 @@ func main() {
 
 	log.Noticef("aibow %s 起動", appVersion())
 	// Run はウィンドウが閉じられるまで返らない。返ったら defer で VRAM を解放する。
-	if err := app.Run(); err != nil {
-		log.Error(err.Error())
+	runErr := app.Run()
+	// 終わったら、覚えておいたウィンドウの位置と大きさを書く。
+	// OnShutdown は使わない:Windows では最後のウィンドウを閉じる(× や Alt+F4)と、OnShutdown を呼ばずに終わるため(beta.26)
+	tracker.save()
+	if runErr != nil {
+		log.Error(runErr.Error())
 		os.Exit(1)
 	}
 }
+
+// ウィンドウの最小の大きさ。幅は画面の端に細く置いておけるよう、初めの幅(720)より狭くできる。
+// 高さはこれより低いと、入力欄とモデルの行で会話がほとんど見えなくなる
+const (
+	windowMinWidth  = 480
+	windowMinHeight = 480
+)
 
 // logKeepDays は、exe がログファイルを残す日数(今日を含む)。起動のたびに、それより古いものを消す。
 const logKeepDays = 10

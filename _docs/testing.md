@@ -13,6 +13,8 @@
 
 - 会話の DB は、試すときは `AIBOW_DB` を一時フォルダのファイルにする(ユーザーの `%APPDATA%\aibow\aibow.db` に試しの会話を混ぜない)
 - exe(`wails3 build`)を起動するときは、`AIBOW_LOG_DIR` も一時フォルダにする(ユーザーの `%APPDATA%\aibow\logs` に試しのログを混ぜない)
+- `AIBOW_WINDOW` も一時フォルダのファイルにする(閉じるときにウィンドウの位置と大きさを書くので、ユーザーの `%APPDATA%\aibow\window.json` を書き換えないように)。
+  一覧の開閉・幅・最後の会話は WebView2 の localStorage に覚えるので、WebView2 のデータフォルダも分けておく(Windows は [env-windows.md](env-windows.md))
 
 ## 確認する項目
 

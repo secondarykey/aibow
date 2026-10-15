@@ -13,6 +13,7 @@
 | `useModels.ts` / `useConversations.ts` / `useChat.ts` / `useAppSettings.ts` | Go とのやり取り |
 | `transcript.ts` | 会話の表示(吹き出し・ツールのカード・エラー・区切り)の持ち方。保存された発言から表示を作る |
 | `components/` | 表示。`ConversationList` / `Splitter` / `TitleBar` / `ChatView` / `ToolCard` / `Composer` / `WorkDirBar` / `ModelBar` / `Meter` / `NewChat` / `SettingsView` / `ConversationSettingsView` / `ConversationSettingsForm` / `ToolSettings` / `ConversationTools` / `ConfirmChip` / `CopyButton` など。返事の中身は [rendering.md](rendering.md) |
+| `stored.ts` | 画面の見た目の好み(一覧の幅・一覧を開いているか・最後に開いていた会話)を localStorage に覚える |
 | `mediaQuery.ts` | 画面の幅・OS のライト / ダークを見る(`useMediaQuery`。狭いウィンドウの境目 `NARROW_QUERY`) |
 | `stickToBottom.ts` | 「一番下にいるときだけ追いかける」スクロール |
 | `toast.tsx` / `imeFocus.tsx` / `errors.ts` | トースト / IME の付け直し / Go のエラーの文の取り出し |
@@ -30,7 +31,7 @@
   一覧で会話を選ぶ・「+ 新規」でも閉じる。入力欄の打ちかけの文は App が持つので消えない。
   中身は新しい会話の既定(会話の上限・返事の上限も)・アプリの設定(GPU の層数)・ツール。開いている会話には関係しない(0009)
 - 会話の設定の画面(`ConversationSettingsView.tsx`): 入力欄の下、メーターの右の歯車で開く([下](#会話の設定の画面))。設定の画面と同じく会話の場所に出す
-- ウィンドウは起動時 720×820、最小 480×480(`main.go`)
+- ウィンドウは初めて起動したとき 720×820、最小 480×480(`main.go`)。次からは閉じたときの位置と大きさで開く([下](#次の起動で戻すもの))
 
 ## 会話の一覧
 
@@ -163,6 +164,26 @@
 - 「一番下にいたか」は scroll イベントではなく描画のたびのスクロール位置で決める(イベントは次のフレームに届くので、数ミリ秒ごとの断片に間に合わない)
 - スクロールバーは `::-webkit-scrollbar` でつまみだけのフラットな形にし、色はテーマの `--scrollbar` / `--scrollbar-hover`。
   標準の `scrollbar-color` は使わない(指定すると Chromium は `::-webkit-scrollbar` を無視する)
+
+## 次の起動で戻すもの
+
+閉じたときと同じ様子で開く(2026-10-16、ユーザーの指示)。
+
+| 戻すもの | 覚える先 | 覚えるとき |
+|---|---|---|
+| ウィンドウの位置・大きさ・最大化 | Go の `windowstate.go` → `%APPDATA%\aibow\window.json`(`AIBOW_WINDOW`) | 動かした・大きさを変えたときに覚え、終わるとき(`app.Run` が返ったあと)に書く |
+| 一覧の幅 | localStorage `aibow.listWidth`(`Splitter.tsx`) | 仕切りを放したとき |
+| 一覧を開いているか | localStorage `aibow.listOpen`(`App.tsx`) | 広いときに、ハンバーガーで自分で開け閉めしたとき |
+| 最後に開いていた会話 | localStorage `aibow.lastConversation`(`App.tsx`) | 開いている会話が変わったとき(新しい会話の画面なら消す) |
+
+- ウィンドウの位置と大きさは、ウィンドウを作る前に Go が知る必要があるのでファイルに、ほかは画面だけの好みなので localStorage に置く。どれも会話の DB には入れない(その PC の画面の都合で、会話をサーバーに置く形にしても手元に残るもの)
+- 位置と大きさは DIP(拡大率で割った値)。作るときのオプション(`X`・`Y`・`Width`・`Height` と `InitialPosition: WindowXY`)で渡す(`SetPosition` / `SetSize` は `Run` の前だと無視される。wails3 スキルの window-state.md)
+- 閉じるときのウィンドウからは正しい値が取れないことがあるので(特に Frameless)、`events.Windows.WindowDidMove` / `WindowDidResize` のたびに覚えておき、その値を書く。
+  最大化・最小化しているときは位置と大きさを覚えない(元に戻したときの大きさを残す)。最大化は、ウィンドウの準備ができてから(`WindowRuntimeReady`)行う(オプションの `StartState` で最大化すると、そのあと `X`・`Y` に動かされる)
+- **`OnShutdown` は使わない**:Windows では最後のウィンドウを閉じる(× や Alt+F4)と、`OnShutdown` を呼ばずに終わる(beta.26。最後のウィンドウを閉じたときは終了の処理を通らず、終了のメッセージを直接送るため)。`app.Run` は返るので、その後で書く
+- 覚えた位置の上の端(タイトルバーのあたり)がどの画面の作業領域にも入っていなければ、真ん中に出す(画面の情報は `Run` の後でしか取れないので、`WindowRuntimeReady` で確かめる)
+- 狭いウィンドウ(720px 以下)で起動したときは、覚えた「開いている」にかかわらず一覧は閉じて始める(前からの決まり)。狭いときに重ねて出した一覧・F2 のために開いた一覧は覚えない
+- 最後に開いていた会話が消えていたら、新しい会話の画面で始める
 
 ## ウィンドウの移動とリサイズ(Frameless)
 

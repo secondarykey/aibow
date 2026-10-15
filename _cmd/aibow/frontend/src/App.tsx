@@ -44,6 +44,7 @@ import type { ConversationSettings } from "../bindings/github.com/secondarykey/a
 import { ImeFocusRelay } from "./imeFocus";
 import { errorMessage } from "./errors";
 import { NARROW_QUERY, useMediaQuery } from "./mediaQuery";
+import { STORED_LAST_CONVERSATION, STORED_LIST_OPEN, loadStored, saveStored } from "./stored";
 
 export default function App() {
   // 生成とモデルの読み込みは同時にできない(Go 側のコンテキストが1つしかないため)
@@ -57,7 +58,10 @@ export default function App() {
   // 入力欄に打っている文。設定の画面を開くと入力欄は消えるので、戻ったときに続きを打てるようにここで持つ
   const [text, setText] = useState("");
   const narrow = useMediaQuery(NARROW_QUERY);
-  const [listOpen, setListOpen] = useState(() => !window.matchMedia(NARROW_QUERY).matches);
+  // 一覧を開いているか。広いときは前回の起動で自分で開け閉めした状態から始める(stored.ts)。狭いときは閉じて始める
+  const [listOpen, setListOpen] = useState(
+    () => !window.matchMedia(NARROW_QUERY).matches && loadStored(STORED_LIST_OPEN) !== "false",
+  );
   // 狭くなったら一覧を閉じる。狭いまま開いたときは、閉じずに会話の上に重ねて出す(overlay)
   useEffect(() => {
     if (narrow) setListOpen(false);
@@ -88,15 +92,17 @@ export default function App() {
   const chat = useChat(transcript, setBusy, convs, toasts);
   const app = useAppSettings(toasts, transcript, setBusy, models.reload);
 
-  // 起動時: 新しい会話の画面に移ってから、モデルの一覧を取る。
+  // 起動時: 最後に開いていた会話(無ければ新しい会話の画面)に移ってから、モデルの一覧を取る。
   // 画面を移ると表示が作り直されるので、「読み込み中…」のメモが消えないよう、この順にする。
   // StrictMode では effect が2回呼ばれるので、1回だけにする(2回だと会話が2つ作られることがある)
   const started = useRef(false);
+  const restored = useRef(false); // 起動時に最後の会話を開き終えたか(開いている会話を覚え始める合図)
   useEffect(() => {
     if (started.current) return;
     started.current = true;
     (async () => {
-      const initErr = await convs.init().then(() => null, (err: unknown) => err);
+      const initErr = await convs.init(loadStored(STORED_LAST_CONVERSATION)).then(() => null, (err: unknown) => err);
+      restored.current = true;
       const ok = await models.reload().catch(err => {
         addError(`モデル一覧を取得できません: ${errorMessage(err)}`);
         return false;
@@ -140,6 +146,11 @@ export default function App() {
   }, [busy, models.reload]);
 
   const currentId = convs.current?.conversation.id ?? null;
+  // 開いている会話を覚えておき、次の起動で開く(新しい会話の画面なら消す)。
+  // 起動して最後の会話を開くまで(restored)は、まだ何も開いていない(null)ので覚え直さない
+  useEffect(() => {
+    if (restored.current) saveStored(STORED_LAST_CONVERSATION, currentId);
+  }, [currentId]);
   const unavailable = busy === "unavailable";
   // 開いている会話が無くなった(削除して新しい会話の画面に戻った)ら、会話の設定の画面も閉じる
   useEffect(() => {
@@ -390,7 +401,12 @@ export default function App() {
     onEndRename: endRename,
     settingsOpen,
     onToggleSettings: toggleSettings,
-    onToggleOpen: () => setListOpen(o => !o),
+    onToggleOpen: () => {
+      // 自分で開け閉めしたときだけ覚える(狭くなって自動で閉じた・F2 のために開いた、は覚えない)。
+      // 狭いときに重ねて出す一覧は、そのときだけのものなので覚えない
+      if (!narrow) saveStored(STORED_LIST_OPEN, String(!listOpen));
+      setListOpen(!listOpen);
+    },
     width: listWidth.width,
   };
 
