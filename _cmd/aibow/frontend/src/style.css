@@ -368,13 +368,17 @@ nav.conversations.collapsed .settings.active { color: var(--accent); }
 }
 .conversation .delete { padding: 4px 8px; color: var(--muted); visibility: hidden; }
 .conversation:hover .delete, .conversation.current .delete { visibility: visible; }
-.conversation .dot {
+.dot {
   display: inline-block; width: 7px; height: 7px; border-radius: 50%;
   background: var(--accent); margin-right: 6px; vertical-align: middle;
 }
-/* 確認待ち: 生成中の印を橙にして点滅させる(答えるまで送信が止まっているので、ほかの会話を見ていても気づけるように) */
-.conversation .dot.waiting { background: #d97706; animation: blink 1.2s ease-in-out infinite; }
+/* 会話の印(ConversationList.tsx): 生成中は青の点滅、確認待ちは橙、ほかの会話を見ている間に終わったら青(点滅しない) */
+.dot.generating { animation: blink 1.2s ease-in-out infinite; }
+.dot.waiting { background: #d97706; }
 @keyframes blink { 50% { opacity: .25; } }
+/* 一覧を畳んでいるときは、ハンバーガーの右上に小さく出す */
+.menu-btn { position: relative; }
+.menu-btn .dot.badge { position: absolute; top: 5px; right: 5px; margin: 0; width: 7px; height: 7px; }
 .conversation.editing { padding: 3px 4px; }
 .conversation .title-input {
   flex: 1; min-width: 0; font: inherit; font-size: 13px; padding: 4px 6px; border-radius: 6px;

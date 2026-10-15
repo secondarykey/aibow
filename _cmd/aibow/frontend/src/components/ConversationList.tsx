@@ -6,6 +6,12 @@
 // ハンバーガー・新規・設定はそこに集める。上の空いているところはタイトルバーと同じくドラッグでウィンドウを動かせる。
 // 「+ 新規」は一覧の一番上の行に置く(スクロールしても隠れないよう、一覧の外に固定する)。
 // 開いているときも畳んだときも同じアイコンを使い、開いているときだけ文字を添える
+//
+// 会話の名前の左の印(丸):
+//   生成中   … 青の点滅
+//   確認待ち … 橙(点滅しない。ツールを実行する前の確認に答えるまで、送信が止まっている)
+//   終わった … 青(点滅しない。ほかの会話を見ている間に返事が終わった。その会話を開くと消える)
+// 一覧を畳んでいるときは、いちばん気にしてほしい印(確認待ち → 生成中 → 終わった)をハンバーガーに小さく出す
 import { useEffect, useRef, useState } from "react";
 import { ChatService } from "../../bindings/github.com/secondarykey/aibow/_cmd/aibow";
 import type { KeyboardEvent } from "react";
@@ -18,6 +24,7 @@ interface Props {
   currentId: string | null;
   generatingId: string | null;
   waitingId: string | null; // ツールの実行前の確認を待っている会話(生成中の印を「確認待ち」にする)
+  doneIds: string[];        // ほかの会話を見ている間に返事が終わった会話(開くと消える。App.tsx が持つ)
   disabled: boolean;
   onOpen(id: string): void;
   onNew(): void;
@@ -34,15 +41,26 @@ interface Props {
 }
 
 export function ConversationList({
-  list, currentId, generatingId, waitingId, disabled, onOpen, onNew, onDelete, onRename, renamingId, onStartRename, onEndRename,
+  list, currentId, generatingId, waitingId, doneIds, disabled, onOpen, onNew, onDelete, onRename, renamingId, onStartRename, onEndRename,
   settingsOpen, onToggleSettings, open, onToggleOpen, width,
 }: Props) {
   // 削除の確認を出している会話。消すと戻せないので、もう一度押してもらう
   const [confirming, setConfirming] = useState<string | null>(null);
 
+  const markOf = (id: string): Mark | null =>
+    id === generatingId ? (id === waitingId ? "waiting" : "generating") : doneIds.includes(id) ? "done" : null;
+  // 畳んでいるときにハンバーガーに出す印。消した会話が doneIds に残っていても出さないよう、一覧にある会話だけを見る
+  const marks = list.map(c => markOf(c.id));
+  const menuMark = open ? null : MARK_ORDER.find(m => marks.includes(m)) ?? null;
+
   const menu = (
-    <button className="icon-btn" title={open ? "会話の一覧を閉じる" : "会話の一覧を開く"} onClick={onToggleOpen}>
+    <button
+      className="icon-btn menu-btn"
+      title={(open ? "会話の一覧を閉じる" : "会話の一覧を開く") + (menuMark ? `(${MARK_BADGE_LABEL[menuMark]})` : "")}
+      onClick={onToggleOpen}
+    >
       <LuMenu />
+      {menuMark && <span className={"dot badge " + menuMark} />}
     </button>
   );
   const settingsCls = settingsOpen ? "settings active" : "settings";
@@ -68,6 +86,7 @@ export function ConversationList({
         {list.map(c => {
           const title = c.title || "新しい会話";
           const generating = c.id === generatingId;
+          const mark = markOf(c.id);
           const cls = ["conversation", c.id === currentId && "current", generating && "generating"].filter(Boolean).join(" ");
           if (renamingId === c.id) {
             return (
@@ -100,9 +119,7 @@ export function ConversationList({
                 onClick={() => onOpen(c.id)}
                 onDoubleClick={() => onStartRename(c.id)}
               >
-                {generating && (c.id === waitingId
-                  ? <span className="dot waiting" title="ツールの実行の確認待ち" />
-                  : <span className="dot" title="返事を生成中" />)}
+                {mark && <span className={"dot " + mark} title={MARK_LABEL[mark]} />}
                 {title}
               </button>
               <button
@@ -122,6 +139,25 @@ export function ConversationList({
     </nav>
   );
 }
+
+// Mark は会話の名前の左に出す印の種類(CSS の .dot.<種類>)。
+type Mark = "waiting" | "generating" | "done";
+
+// MARK_ORDER は、畳んだ一覧のハンバーガーに1つだけ出すときに、どれを先に出すか(気にしてほしい順)
+const MARK_ORDER: Mark[] = ["waiting", "generating", "done"];
+
+const MARK_LABEL: Record<Mark, string> = {
+  waiting: "ツールの実行の確認待ち",
+  generating: "返事を生成中",
+  done: "返事が終わった",
+};
+
+// MARK_BADGE_LABEL は、ハンバーガーの印にマウスを乗せたときの説明(どの会話かは一覧を開くと分かる)
+const MARK_BADGE_LABEL: Record<Mark, string> = {
+  waiting: "ツールの実行の確認を待っている会話があります",
+  generating: "返事を生成中の会話があります",
+  done: "返事が終わった会話があります",
+};
 
 // AppName はアプリの名前とバージョン(Go の _cmd/aibow/version)。
 function AppName() {
