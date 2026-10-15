@@ -283,12 +283,20 @@ export function messageItems(messages: StoredMessage[], compactions: Compaction[
   return out;
 }
 
-// compactionStats は区切りを開いたときに出す、要約の記録の1行。
+// compactionSize は区切りの見出しに添える、要約の前後の大きさ(モデルに渡す文字列のトークン数)。
+// 例: "12,000 → 3,000 tok(25%)"。% は要約したあとが前の何割になったか。記録が無い(古い要約)なら空
+export function compactionSize(c: Compaction): string {
+  const s = c.stats;
+  if (!s || s.before_tokens <= 0) return "";
+  const pct = Math.round((s.after_tokens / s.before_tokens) * 100);
+  return `${s.before_tokens.toLocaleString()} → ${s.after_tokens.toLocaleString()} tok(${pct}%)`;
+}
+
+// compactionStats は区切りを開いたときに出す、要約の記録の1行。前後の大きさは見出しに出すので、ここには入れない
 export function compactionStats(c: Compaction): string {
   const s = c.stats;
   const parts = [c.model || "(モデル不明)"];
   if (s) {
-    parts.push(`${s.before_tokens.toLocaleString()} → ${s.after_tokens.toLocaleString()} tok`);
     parts.push(`発言 ${s.messages} 件を要約`);
     parts.push(`読ませた ${s.prompt_tokens.toLocaleString()} tok(再利用 ${s.reused_tokens})・生成 ${s.gen_tokens} tok`);
     parts.push(`${s.sec.toFixed(1)}s`);
