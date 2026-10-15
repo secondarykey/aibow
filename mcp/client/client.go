@@ -375,11 +375,16 @@ func (m *Manager) connect(ctx context.Context, k serverKey, cfg ServerConfig) (*
 	// 送受信した JSON-RPC のメッセージを、そのままログに出す(SDK の LoggingTransport)。MCP の正体が見える
 	t = &mcp.LoggingTransport{Transport: t, Writer: &lineLogger{prefix: "MCP " + k.name + " "}}
 
-	// できることは何も名乗らない(空の ClientCapabilities)。SDK の既定は、昔からの名残で「Roots に対応している」と名乗るが、
-	// aibow は Roots を使わず、作業フォルダは起動の引数で渡す。filesystem サーバーは、クライアントが Roots に対応していると
-	// Roots で受け取ったフォルダを引数のフォルダの代わりに使うので、名乗ると引数の作業フォルダが使われなくなるおそれがある
-	client := mcp.NewClient(&mcp.Implementation{Name: "aibow", Version: m.opt.Version},
-		&mcp.ClientOptions{Capabilities: &mcp.ClientCapabilities{}})
+	// できることは、ユーザーへの確認(elicitation のフォーム)だけを名乗る(0007 の 5-3。aibow-mcp が書き換える前に差分を見せて確かめるため)。
+	// SDK の既定は、昔からの名残で「Roots に対応している」とも名乗るが、aibow は Roots を使わず、作業フォルダは起動の引数で渡す。
+	// filesystem サーバーは、クライアントが Roots に対応していると Roots で受け取ったフォルダを引数のフォルダの代わりに使うので、
+	// 名乗ると引数の作業フォルダが使われなくなるおそれがある。
+	// 確認の送り直し(MRTR)は SDK に任せず remoteTool.RunInteractive で書く(確認を待つ時間を、時間の上限に数えないため)。
+	// 古い版のサーバーがリクエスト(elicitation/create)で聞いてくる形には答えない(ElicitationHandler を渡していないので、SDK がエラーを返す)
+	client := mcp.NewClient(&mcp.Implementation{Name: "aibow", Version: m.opt.Version}, &mcp.ClientOptions{
+		Capabilities:   &mcp.ClientCapabilities{Elicitation: &mcp.ElicitationCapabilities{Form: &mcp.FormElicitationCapabilities{}}},
+		MultiRoundTrip: &mcp.MultiRoundTripOptions{Disabled: true},
+	})
 	session, err := client.Connect(ctx, t, nil)
 	if err != nil {
 		return nil, fail("つなげません", err)

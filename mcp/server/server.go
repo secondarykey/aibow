@@ -97,12 +97,6 @@ func mcpTool(t tool.Tool) *mcp.Tool {
 	return m
 }
 
-// errNoConfirm は、確認の要るツール(書き換えるツール・コマンド)を呼ばれたときのエラー。
-//
-// aibow の中では、書き換える前にユーザーに差分を見せて確かめている。サーバーの側からユーザーに確かめる仕組み(MRTR)は 5-3 で作るので、
-// それまでは実行しない(確かめずに書き換えることはしない。0007 の決定事項 6 と同じ扱い)
-var errNoConfirm = errors.New("このサーバーは、実行する前にユーザーに確かめる仕組みにまだ対応していないため、このツールは実行しません")
-
 // handler は、ツール1つの tools/call を受けて実行する。
 //
 // ツールが失敗したとき(ファイルが無い、引数が違う、など)は、Go の error ではなく isError の結果で返す。
@@ -116,9 +110,14 @@ func handler(t tool.Tool) mcp.ToolHandler {
 			log.Infof("ツール %s: 引数が違います: %v", def.Name, err)
 			return errorResult(err), nil
 		}
-		if _, ok := t.(tool.Confirmable); ok {
-			log.Infof("ツール %s: 確認が要るツールなので実行しません", def.Name)
-			return errorResult(errNoConfirm), nil
+		if ct, ok := t.(tool.Confirmable); ok {
+			// 書き換えるツールは、ユーザーに確かめてから実行する(confirm.go)
+			run, res := confirmed(req, ct, args)
+			if !run {
+				logConfirm(def.Name, res)
+				return res, nil
+			}
+			log.Infof("ツール %s: ユーザーが実行を認めました", def.Name)
 		}
 		start := time.Now()
 		text, err := run(ctx, t, args)

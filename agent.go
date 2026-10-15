@@ -168,7 +168,7 @@ func (cs *Conversations) runFound(ctx context.Context, conv Conversation, c Tool
 			return toolMessage(conv.ID, c, errorPrefix+err.Error(), true, 0)
 		}
 		if !conf.Approved {
-			text := rejected(conf.Reason)
+			text := tool.RejectedText(conf.Reason)
 			if conf.Remember == ToolOff {
 				// 「今後許可しない」: 次の送信からはモデルに見せないが、この送信の間は見えているので、呼び直さないように伝える
 				text += "。この会話では、このツールは今後使えません"
@@ -181,8 +181,23 @@ func (cs *Conversations) runFound(ctx context.Context, conv Conversation, c Tool
 
 	// 時間を測るのは実行だけ(確認を待った時間は入れない)
 	start := time.Now()
-	text, err := cs.execute(ctx, t, args)
-	sec := time.Since(start).Seconds()
+	var text string
+	var waited time.Duration
+	if it, ok := t.(tool.Interactive); ok {
+		// MCP のサーバーのツールは、実行の途中でサーバーが確認を求めてくることがある(0007 の 5-3)。
+		// 時間の上限はツールが自分で数える(確認を待つ時間を数えないため)ので、execute は通さない
+		var asked *Confirmation
+		text, err = it.RunInteractive(ctx, args, cs.askFor(conv, c, t, args, emit, &asked, &waited))
+		if asked != nil {
+			conf = asked // カードに残すのは、サーバーからの確認の答え(差分を見て決めたほう)
+		}
+	} else {
+		text, err = cs.execute(ctx, t, args)
+	}
+	sec := (time.Since(start) - waited).Seconds()
+	if err == nil && conf != nil && !conf.Approved && conf.Remember == ToolOff {
+		text += "。この会話では、このツールは今後使えません" // サーバーからの確認を「今後許可しない」で拒否した(上と同じ)
+	}
 	res := toolMessage(conv.ID, c, text, false, sec)
 	if err != nil {
 		res = toolMessage(conv.ID, c, errorPrefix+err.Error(), true, sec)
@@ -190,6 +205,40 @@ func (cs *Conversations) runFound(ctx context.Context, conv Conversation, c Tool
 	res.ToolResult.Confirm = conf
 	return res
 }
+
+// askFor は、MCP のサーバーが実行の途中で確認を求めてきたときに、ユーザーに聞く関数を作る(0007 の 5-3)。
+//
+// 聞くかどうかは、呼ぶ前の確認と同じく、ツールの扱いで決める(会話の設定を読み直す。カードで「この会話では今後聞かない」にしたら、すぐ効く)。
+// 「確認しない」なら聞かずに受け入れる。聞いたときは、今の確認のカード(サーバーが送ってきた差分など)を出し、答えを asked に、
+// 待った時間を waited に入れる(結果に答えを残すためと、実行の秒数から待った時間を外すため)。
+func (cs *Conversations) askFor(conv Conversation, c ToolCall, t tool.Tool, args tool.Args, emit func(ChatEvent), asked **Confirmation, waited *time.Duration) tool.Ask {
+	return func(ctx context.Context, pv tool.Preview) (tool.Answer, error) {
+		set := conv.Settings
+		if fresh, _, err := cs.store.Conversation(conv.ID); err == nil {
+			set = fresh.Settings.normalized()
+		}
+		if cs.toolPolicy(set, t) == ToolAllow {
+			log.Noticef("ツール %s: サーバーからの確認を、「確認しない」の扱いなので聞かずに受け入れます", t.Def().Name)
+			return tool.Answer{Approved: true}, nil
+		}
+		begin := time.Now()
+		got, err := cs.confirm(ctx, conv.ID, c, fixedPreview{Tool: t, pv: pv}, args, emit)
+		*waited += time.Since(begin)
+		if err != nil {
+			return tool.Answer{}, err
+		}
+		*asked = got
+		return tool.Answer{Approved: got.Approved, Reason: got.Reason}, nil
+	}
+}
+
+// fixedPreview は、確認の内容が先に決まっているもの(サーバーが送ってきた差分など)を、確認のカードに出すための入れ物。
+type fixedPreview struct {
+	tool.Tool
+	pv tool.Preview
+}
+
+func (f fixedPreview) Preview(tool.Args) (tool.Preview, error) { return f.pv, nil }
 
 // lookupTool は呼び出しを確かめて、実行するツールと引数を返す。
 func (cs *Conversations) lookupTool(set ConversationSettings, c ToolCall) (tool.Tool, tool.Args, error) {
@@ -335,14 +384,6 @@ func (cs *Conversations) SetToolPolicy(id uuid.UUID, name string, policy ToolPol
 	}
 	c.Settings = set
 	return cs.store.UpdateConversation(c)
-}
-
-// rejected は、拒否されたときにモデルに返す結果の文。
-func rejected(reason string) string {
-	if reason == "" {
-		reason = "(書かれていません)"
-	}
-	return "ユーザーが実行を拒否しました。理由: " + reason
 }
 
 // execute はツールを実行する。時間の上限を付け、ツールが ctx を見ずに止まらなくても、待つのは上限まで。

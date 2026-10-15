@@ -48,7 +48,8 @@ export function ToolCard({ tool, generating, onAnswer }: Props) {
       </summary>
       <div className="tool-body">
         {tool.confirm ? (
-          <Confirm req={tool.confirm} onAnswer={onAnswer} />
+          // key: 1つの呼び出しで確認が2回来る(呼ぶ前の確認と、MCP のサーバーからの確認。0007)ので、確認ごとに作り直して「答えた」の状態を持ち越さない
+          <Confirm key={tool.confirm.id} req={tool.confirm} onAnswer={onAnswer} />
         ) : tool.raw ? (
           <>
             <div className="tool-label">モデルが書いた呼び出し</div>
@@ -92,10 +93,10 @@ function Confirm({ req, onAnswer }: { req: ConfirmRequest; onAnswer: Props["onAn
       </div>
       {pv.command
         ? <CodeBlock code={pv.command} lang="" closed />
-        : pv.server || pv.args
-          ? <CodeBlock code={pv.args ?? "{}"} lang="json" closed /> // MCP のツールと、読むだけのツールを「確認する」にしたときは引数を見せる
-          : pv.diff
+        : pv.diff // MCP のサーバー(aibow-mcp)が送ってきた差分も、組み込みと同じに出す
           ? <CodeBlock code={pv.diff.replace(/\n$/, "")} lang="diff" closed />
+          : pv.args
+          ? <CodeBlock code={pv.args} lang="json" closed /> // MCP のツールと、読むだけのツールを「確認する」にしたときは引数を見せる
           : <p className="tool-none">(大きいため差分は出していません)</p>}
       <div className="confirm-actions">
         <input

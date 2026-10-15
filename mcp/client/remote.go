@@ -11,6 +11,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/secondarykey/aibow/log"
+	"github.com/secondarykey/aibow/mcp/internal/meta"
 	"github.com/secondarykey/aibow/tool"
 
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
@@ -21,6 +23,8 @@ const (
 	// resultMaxChars はモデルに渡す結果の長さの上限(read_file と同じ)。
 	// 組み込みのツールは自分で切るが、MCP のサーバーは切らずに返してくることがある(filesystem の directory_tree など)
 	resultMaxChars = 8000
+	// maxRounds は、1回の呼び出しで確認(MRTR)を往復する回数の上限。サーバーがいつまでも聞いてくるときに止める(SDK の自動の送り直しと同じ 10 回)
+	maxRounds = 10
 )
 
 // remoteTool は MCP のサーバーのツール1つ。
@@ -41,6 +45,7 @@ var (
 	_ tool.Remote      = (*remoteTool)(nil)
 	_ tool.Confirmable = (*remoteTool)(nil)
 	_ tool.TimeLimiter = (*remoteTool)(nil)
+	_ tool.Interactive = (*remoteTool)(nil)
 )
 
 // ToolName は、MCP のサーバーのツールをモデルに見せるときの名前。サーバーの名前を前に付ける(filesystem__read_file)。
@@ -99,34 +104,133 @@ func (t *remoteTool) Preview(args tool.Args) (tool.Preview, error) {
 	return tool.Preview{Note: "MCP", Server: t.server, Args: string(b)}, nil
 }
 
-// Run は tools/call でサーバーにツールを実行させる。
+// Run は tools/call でサーバーにツールを実行させる。サーバーが確認を求めてきたら、エラーにする(聞く手段が無いため)。
+// 会話の仕組みは RunInteractive を使う。
+func (t *remoteTool) Run(ctx context.Context, args tool.Args) (string, error) {
+	return t.RunInteractive(ctx, args, nil)
+}
+
+// RunInteractive は tools/call でサーバーにツールを実行させる。サーバーが確認を求めてきたら(MRTR)、ask でユーザーに聞いて送り直す。
+//
+//	aibow → tools/call(引数)
+//	aibow ← resultType: "input_required"・inputRequests(聞きたいこと)・requestState
+//	        ask でユーザーに聞く(確認のカード)
+//	aibow → tools/call(同じ引数 + inputResponses(答え)・requestState)
+//	aibow ← 結果
+//
+// SDK はこの送り直しを自動で行えるが、止めて(MultiRoundTrip.Disabled)ここで書いている。
+// 自動だと1つの ctx の中で回るので、ユーザーが確認のカードを読んでいる時間まで時間の上限(callTimeout)に数えてしまうため。
+// ここでは、サーバーとの1往復ごとに上限をかける。往復がコードに見えるのも、学ぶ題材として良い。
 //
 // 時間切れ・停止のときは、SDK が取り消しの知らせ(notifications/cancelled)をサーバーに送って、すぐに返ってくる。
-func (t *remoteTool) Run(ctx context.Context, args tool.Args) (string, error) {
+func (t *remoteTool) RunInteractive(ctx context.Context, args tool.Args, ask tool.Ask) (string, error) {
 	if args == nil {
 		args = tool.Args{}
 	}
-	res, err := t.session.CallTool(ctx, &mcp.CallToolParams{Name: t.name, Arguments: map[string]any(args)})
+	params := &mcp.CallToolParams{Name: t.name, Arguments: map[string]any(args)}
+	for round := 1; ; round++ {
+		res, err := t.call(ctx, params)
+		if err != nil {
+			return "", err
+		}
+		if !res.NeedsInput() {
+			text := truncate(resultText(res.Content))
+			if res.IsError {
+				// ツールの中のエラー(ファイルが無い、など)。モデルに読ませて立て直させる
+				return "", errors.New(text)
+			}
+			return text, nil
+		}
+		if round >= maxRounds {
+			return "", fmt.Errorf("MCP のサーバー %s が確認を %d 回求めてきたため、止めました", t.server, round)
+		}
+		answers, err := t.answer(ctx, res.InputRequests, ask, round)
+		if err != nil {
+			return "", err
+		}
+		// 送り直しは、同じ引数に答えと合言葉(requestState。サーバーが前の回のことを思い出すためのもの)を付ける
+		params = &mcp.CallToolParams{Name: t.name, Arguments: map[string]any(args), InputResponses: answers, RequestState: res.RequestState}
+	}
+}
+
+// call は tools/call を1回送る。時間の上限はこの1往復だけにかける。
+func (t *remoteTool) call(ctx context.Context, params *mcp.CallToolParams) (*mcp.CallToolResult, error) {
+	rctx, cancel := context.WithTimeout(ctx, t.limit)
+	defer cancel()
+	res, err := t.session.CallTool(rctx, params)
 	switch {
-	case errors.Is(ctx.Err(), context.DeadlineExceeded):
-		return "", fmt.Errorf("時間の上限(%d 秒)を超えたため止めました(settings.json の callTimeout に秒数を書くと延ばせます)", int(t.limit.Seconds()))
+	case errors.Is(ctx.Err(), context.DeadlineExceeded) || (ctx.Err() == nil && errors.Is(rctx.Err(), context.DeadlineExceeded)):
+		return nil, fmt.Errorf("時間の上限(%d 秒)を超えたため止めました(settings.json の callTimeout に秒数を書くと延ばせます)", int(t.limit.Seconds()))
 	case ctx.Err() != nil:
-		return "", errors.New("停止されました")
+		return nil, errors.New("停止されました")
 	case err != nil:
 		// サーバーが JSON-RPC のエラーで答えた(知らないツール・引数の形が違う、など)なら、つながりは生きている。
 		// それ以外(HTTP でつなげない・サーバーが落ちた)は、つながりが切れたとみなして、次の送信でつなぎ直す
 		if !answeredByServer(err) && t.broken != nil {
 			t.broken(err)
-			return "", fmt.Errorf("MCP のサーバー %s とのつながりが切れました。次の送信でつなぎ直します: %w", t.server, err)
+			return nil, fmt.Errorf("MCP のサーバー %s とのつながりが切れました。次の送信でつなぎ直します: %w", t.server, err)
 		}
-		return "", fmt.Errorf("MCP のサーバー %s で実行できません: %w", t.server, err)
+		return nil, fmt.Errorf("MCP のサーバー %s で実行できません: %w", t.server, err)
 	}
-	text := truncate(resultText(res.Content))
-	if res.IsError {
-		// ツールの中のエラー(ファイルが無い、など)。モデルに読ませて立て直させる
-		return "", errors.New(text)
+	return res, nil
+}
+
+// answer は、サーバーが聞いてきたこと(inputRequests)をユーザーに聞き、答え(inputResponses)にする。
+//
+// aibow が答えられるのは、ユーザーへの確認(elicitation)だけ。ほかの問い合わせ(sampling: クライアントの LLM で生成させる、など)には対応していない。
+// 答えは、実行する = accept、拒否 = decline。拒否の理由は content の reason に入れる
+// (MCP の決まりでは content は accept のときのものだが、aibow-mcp は decline でも理由を読んでモデルに渡す。ほかのサーバーは読まないだけ)。
+func (t *remoteTool) answer(ctx context.Context, reqs mcp.InputRequestMap, ask tool.Ask, round int) (mcp.InputResponseMap, error) {
+	if len(reqs) == 0 {
+		// 空の inputRequests は「今は混んでいるので、あとで送り直して」の意味(MRTR の決まり)。aibow は送り直さずに止める
+		return nil, fmt.Errorf("MCP のサーバー %s が混んでいるため、実行できませんでした", t.server)
 	}
-	return text, nil
+	answers := mcp.InputResponseMap{}
+	for id, ir := range reqs {
+		ep, ok := ir.(*mcp.ElicitParams)
+		if !ok {
+			return nil, fmt.Errorf("MCP のサーバー %s が、aibow の対応していない問い合わせ(%T)を求めました", t.server, ir)
+		}
+		if ask == nil {
+			return nil, fmt.Errorf("MCP のサーバー %s が確認を求めましたが、ユーザーに聞く手段がありません", t.server)
+		}
+		log.Infof("MCP %s: %s がユーザーの確認を求めています(%d 回目の往復。%s)", t.server, t.name, round, firstLine(ep.Message))
+		a, err := ask(ctx, previewOf(t.server, ep))
+		if err != nil {
+			return nil, err
+		}
+		r := &mcp.ElicitResult{Action: "decline", Content: map[string]any{}}
+		if a.Approved {
+			r.Action = "accept"
+		} else if a.Reason != "" {
+			r.Content["reason"] = a.Reason
+		}
+		log.Infof("MCP %s: %s の確認の答え: %s", t.server, t.name, r.Action)
+		answers[id] = r
+	}
+	return answers, nil
+}
+
+// previewOf は、サーバーが聞いてきたことを、確認のカードの中身(tool.Preview)にする。
+// aibow-mcp は _meta にカードの中身(差分など)を入れてくるので、それをそのまま使う。ほかのサーバーは、聞いてきた文(message)を出す。
+//
+// どちらもサーバーが書いたもので、本当にそのとおりのことをするかは分からない(信頼していないサーバーの差分を、そのまま信じないこと)。
+// settings.json のサーバーは、呼ぶ前の確認(引数)も今までどおり出す(0007)
+func previewOf(server string, ep *mcp.ElicitParams) tool.Preview {
+	if raw, ok := ep.Meta[meta.Preview]; ok {
+		var pv tool.Preview
+		if b, err := json.Marshal(raw); err == nil && json.Unmarshal(b, &pv) == nil && pv.Note != "" {
+			pv.Server = server
+			return pv
+		}
+	}
+	return tool.Preview{Note: "サーバーからの確認", Server: server, Args: ep.Message}
+}
+
+// firstLine は文の最初の行(ログに出す用)。
+func firstLine(s string) string {
+	line, _, _ := strings.Cut(s, "\n")
+	return line
 }
 
 // answeredByServer は、エラーがサーバーからの答え(JSON-RPC のエラー)か。

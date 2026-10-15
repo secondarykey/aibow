@@ -156,7 +156,8 @@ MCP のツールだけでなく、組み込みのツール(aibow の中で動く
     勝手に読み替えないのは、取り違えたことが見えなくなるため。名前空間を付ける前の会話の履歴に、前の部分の無い呼び出しが残っていると、4B はそれをまねした
 - `inputSchema` はそのまま定義の引数にします。ただし SDK は `inputSchema` を `map[string]any` で渡してくるので、サーバーが書いた順は残らず、JSON にし直すとキーの名前の順になります
 - 引数は Qwen3.5 の書式で文字列として届くので、`tool.CheckArgs` が JSON Schema の型で変換します(真偽値・配列・オブジェクトも。[tools.md](tools.md))
-- **全部、実行前に確認します**(`tool.Confirmable`)。中身が見えないので差分は作れず、確認のカードにはサーバーの名前と、渡す引数(JSON)を出します。
+- **全部、実行前に確認します**(`tool.Confirmable`。扱いが「確認しない」なら聞かない)。中身が見えないので差分は作れず、確認のカードにはサーバーの名前と、渡す引数(JSON)を出します。
+- **サーバーからの確認(MRTR)にも答えます**(0007 の 5-3。下の「サーバーからの確認」)。aibow-mcp の書き換えるツールは、実行の途中で差分を送ってきて確かめます
   サーバーは「読むだけ」(`readOnlyHint`)などの印を付けられますが、MCP の仕様でも信じてはいけないヒントとされています。信頼して確認を省く仕組みは TODO.md のロードマップの外
 - 結果の `content` のうち文章をつなぎます。画像などは「(画像 image/png は渡せません)」のように種類だけを書きます。`isError` はエラーの結果にします
 - 結果は 8,000 文字で切ります(組み込みのツールは自分で切るが、MCP のサーバーは切らずに返してくることがある)
@@ -218,7 +219,9 @@ MCP のクライアント(Claude Code・aibow など)── 起動する(aibow-m
 | ファイル | 役割 |
 |---|---|
 | `mcp/server/server.go` | サーバーの中身(`server.New`)。`tool` のツールを SDK の `Server.AddTool` に渡し、`tools/call` を `tool.Tool.Run` につなぐ |
-| `mcp/server/server_test.go` | テスト。プロセスを起動せずに(`NewInMemoryTransports`)SDK のクライアントでつなぎ、一覧・呼び出し・エラー・確認の要るツールを確かめる |
+| `mcp/server/confirm.go` | 書き換えるツールを実行する前に、サーバーの側からユーザーに確かめる(MRTR。`confirmed`)。差分を `_meta` と `message` に入れ、送り直しで答えと合言葉(`requestState`)を確かめる |
+| `mcp/server/server_test.go` / `confirm_test.go` | テスト。プロセスを起動せずに(`NewInMemoryTransports`)SDK のクライアントでつなぎ、一覧・呼び出し・エラー・確認(受け入れ・拒否・確認に対応していないクライアント・確認のあとでファイルが変わった)・停止でコマンドの子プロセスまで止まることを確かめる |
+| `mcp/internal/meta/` | クライアントとサーバーの両方で使う `_meta` の名前(`aibow/preview`) |
 | `_cmd/aibow-mcp/main.go` | 標準入出力のサーバーの exe。引数(作業フォルダ)を読んで `server.New` を `StdioTransport` で動かすだけ |
 
 - 中身を `package main` に書かないのは、テストでプロセスを起動せずにつなぐため・aibow の中でメモリ内のつなぎ方で動かすため(5-4)
@@ -236,7 +239,8 @@ MCP のクライアント(Claude Code・aibow など)── 起動する(aibow-m
   ツールの失敗(ファイルが無い、など)は結果の中身としてモデルに読ませて立て直させる決まり(aibow の「エラー: …」と同じ考え方)
 - **時間の上限**:サーバーの側でも、組み込みと同じ上限(10 秒。`run_command` は 120 秒)で止める。Claude Code などほかのクライアントがどうするかは分からないため
 - **停止**:クライアントが止めると、SDK が `notifications/cancelled` を送り、サーバーはそのリクエストの処理の context を止める(SDK の `jsonrpc2.Connection.Cancel`)。ツールは ctx を見て後片付けをして返す
-- **確認の要るツール**(`write_file`・`edit_file`・`run_command`)は、サーバーからユーザーに確かめる仕組み(MRTR。5-3 で作る)ができるまで**実行せず**、「確かめる仕組みにまだ対応していないため実行しません」を `isError` で返す。確かめずに書き換えることはしない
+- **確認の要るツール**(`write_file`・`edit_file`・`run_command`)は、実行する前にサーバーの側からユーザーに確かめる(下の「サーバーからの確認」)。
+  確認(elicitation)に対応していないクライアントには、**書き換えずに**「このクライアントは実行前の確認(elicitation)に対応していないため、書き換えません」を `isError` で返す(0007 の決定事項 6)
 - **Environment の説明**:`run_command` の説明は「Environment の節に書いたシェルで動かす」と言っている。aibow はシステムプロンプトにその節を書くが、
   ほかのクライアントは書かないので、作業フォルダとシェルをサーバーの `instructions`(つないだときにクライアントに渡す説明)に入れる
 - **ログ**は標準エラー出力と、アプリと同じフォルダのファイル(`%APPDATA%\aibow\logs\aibow-mcp_<日付>.log`。`AIBOW_LOG_DIR`)に書く(`_cmd/aibow-mcp/log.go`。形はアプリの `startLog` にならう)。
@@ -270,4 +274,36 @@ MCP aibow (stderr) … [INFO  ] ツール read_file: 実行しました(0.00 秒
 標準入力が閉じると、サーバーは「クライアントが去った」とみなして、答えを書く前に終わります。`sleep 1` は、答えが返るまで標準入力を開けておくためです。
 
 SDK はリクエストを並行に処理するので、続けて送ったリクエストの答えが、送った順と入れ替わって返ることがあります(id で対応を取る。JSON-RPC の決まり)。
+
+### サーバーからの確認(MRTR。0007 の 5-3)
+
+組み込みの書き換えるツールは、実行する前に aibow が差分を見せて確かめている([tools.md](tools.md))。サーバーに移すとクライアントからは中身が見えないので、
+**サーバーが差分を作り、実行の途中で「これでよいか」をクライアントに聞く**。2026-07-28 版の MCP の MRTR(Multi Round-Trip Requests)を使う。
+
+```
+aibow → tools/call write_file(引数)
+aibow ← resultType: "input_required"・inputRequests {"confirm": elicitation(message・_meta の aibow/preview に差分・フォームは「拒否の理由」だけ)}・requestState(合言葉)
+        確認のカードを出して、ユーザーの答えを待つ
+aibow → tools/call write_file(同じ引数 + inputResponses {"confirm": {action: accept / decline, content: {reason}}}・requestState)
+aibow ← 結果(書いた / 拒否しました。理由: …)
+```
+
+- **サーバーは何も覚えない**(ステートレス)。送り直しでは同じハンドラがもう一度呼ばれるので、差分を作り直し、その SHA-256 が `requestState`(1回目に見せたもの)と同じかを確かめてから書く。
+  違えば「確認のあとでファイルが変わったため書き換えませんでした」(見せた差分と違うことをしない)
+- **古い版のクライアント**(Claude Code など、2026-07-28 版より前で話すもの)には、SDK がサーバーからのリクエスト(`elicitation/create`)で聞き、同じハンドラを答え付きで呼び直す。ハンドラの書き方は同じ。
+  クライアントが確認に対応しているかは `req.ClientCapabilities()`(新しい版はリクエストの `_meta`、古い版は最初の挨拶)で見る
+- 確認の内容は2つの形で送る:`message`(人が読む文。ほかのクライアントはこれを出す)と、`_meta` の `aibow/preview`(`tool.Preview`。aibow のクライアントは今の差分のカードで出す)
+- 拒否の理由は、答えの `content` の `reason` で受け取る(MCP の決まりでは `content` は受け入れたときのものだが、aibow のクライアントは拒否でも入れて送る)
+
+aibow のクライアントの側(`mcp/client/remote.go` の `RunInteractive`):
+
+- **送り直しは SDK に任せず、自分で書く**(`ClientOptions.MultiRoundTrip.Disabled`)。SDK の自動の送り直しは1つの ctx の中で回るので、ユーザーがカードを読んでいる時間まで `callTimeout` に数えてしまう。
+  サーバーとの1往復ごとに上限をかけ、確認を待つ時間は数えない
+- 名乗る能力は、確認(`elicitation` のフォーム)だけ。古い版のサーバーがリクエスト(`elicitation/create`)で聞いてくる形には答えない(`ElicitationHandler` を渡していないので、SDK がエラーを返す)
+- 聞くのは会話の仕組み(`tool.Interactive` の `RunInteractive` に、聞く関数 `tool.Ask` を渡す。`agent.go` の `askFor`)。ツールの扱いが「確認しない」なら聞かずに受け入れる。
+  聞いたときは今の確認のカードを出し、ボタン(「この会話では今後聞かない」「今後許可しない」など)も今までどおり効く。カードに残す答えは、サーバーからの確認の答え
+- `settings.json` のサーバー(`aibow-mcp.exe` も)は、呼ぶ前の確認(引数)も今までどおり出すので、確認が2回出る(サーバーの名乗りは偽れるので、名乗りでは信頼しない)。
+  aibow の中で自作サーバーを動かす 5-4 では、呼ぶ前の確認を省いて1回にする
+- サーバーが送ってきた差分は、サーバーが書いたもの。本当にそのとおりのことをするかは分からないので、信頼していないサーバーの差分をそのまま信じないこと
+- ログ:`MCP <名前>: write_file がユーザーの確認を求めています(1 回目の往復。…)`・`確認の答え: accept`。サーバーの側は `ユーザーに確認を求めます(input_required …)`・`ユーザーが実行を認めました`
 

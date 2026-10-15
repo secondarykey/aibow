@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/secondarykey/aibow/tool"
 )
@@ -703,5 +704,112 @@ func TestSetToolPolicy(t *testing.T) {
 	}
 	if err := p.SetGroupPolicy("", ToolAllow); err != nil || p.View().Builtin != ToolAllow {
 		t.Errorf("組み込みのグループ: %v %v", err, p.View().Builtin)
+	}
+}
+
+// askingTool は、実行の途中でユーザーに確認を求める MCP のツールの代わり(aibow-mcp の書き換えるツール。tool.Interactive)。
+// 確認には差分を見せ、受け入れられたら「書きました」、拒否されたら拒否の文を返す(サーバーと同じ)
+type askingTool struct {
+	remoteTool
+	asked int
+}
+
+func (t *askingTool) RunInteractive(ctx context.Context, args tool.Args, ask tool.Ask) (string, error) {
+	t.asked++
+	a, err := ask(ctx, tool.Preview{Path: "a.txt", Note: "上書き", Diff: "+hello\n"})
+	if err != nil {
+		return "", err
+	}
+	if !a.Approved {
+		return tool.RejectedText(a.Reason), nil
+	}
+	t.ran = true
+	return "書きました", nil
+}
+
+// サーバーからの確認は、今の確認のカード(差分)で出す。settings.json のサーバーは、呼ぶ前の確認(引数)も出す(2回)。
+// 答えはカードに残し、確認を待った時間は実行の秒数に入れない
+func TestServerAsks(t *testing.T) {
+	g := &fakeGen{replies: []fakeReply{
+		{toolCalls: []ToolCall{toolCall("fake__write", "paths", `["a"]`)}},
+		{content: "書きました"},
+	}}
+	cs, c, _ := newWorkDirConversation(t, g)
+	write := &askingTool{remoteTool: remoteTool{name: "fake__write"}}
+	cs.SetRemoteTools(&fakeRemote{tools: []tool.Tool{write}})
+	cs.SetToolPrefs(&ToolPrefs{})
+	useFake(t, cs, &c)
+
+	var reqs []*ConfirmRequest
+	evs := sendAnswering(cs, context.Background(), c, "書いて", func(q *ConfirmRequest) bool {
+		reqs = append(reqs, q)
+		time.Sleep(300 * time.Millisecond) // ユーザーがカードを読んでいる時間
+		return cs.Confirm(c.ID, q.ID, true, "") == nil
+	})
+	if errs := errorsOf(evs); len(errs) != 0 {
+		t.Fatalf("エラー: %v", errs)
+	}
+	if len(reqs) != 2 || reqs[0].Preview.Server != "fake" || reqs[1].Preview.Diff != "+hello\n" {
+		t.Fatalf("呼ぶ前の確認(引数)とサーバーからの確認(差分)の2回: %+v", reqs)
+	}
+	rs := toolResults(t, cs, c)
+	if len(rs) != 1 || rs[0].Content != "書きました" || !write.ran {
+		t.Fatalf("結果: %+v", rs)
+	}
+	if rs[0].ToolResult.Confirm == nil || !rs[0].ToolResult.Confirm.Approved {
+		t.Errorf("サーバーからの確認の答えを残す: %+v", rs[0].ToolResult.Confirm)
+	}
+	if sec := rs[0].ToolResult.Sec; sec >= 0.3 {
+		t.Errorf("確認を待った時間は実行の秒数に入れない: %.2f 秒", sec)
+	}
+}
+
+// 「確認しない」の扱いなら、呼ぶ前もサーバーからの確認も聞かずに受け入れる
+func TestServerAsksAllowed(t *testing.T) {
+	g := &fakeGen{replies: []fakeReply{
+		{toolCalls: []ToolCall{toolCall("fake__write", "paths", `["a"]`)}},
+		{content: "書きました"},
+	}}
+	cs, c, _ := newWorkDirConversation(t, g)
+	write := &askingTool{remoteTool: remoteTool{name: "fake__write"}}
+	cs.SetRemoteTools(&fakeRemote{tools: []tool.Tool{write}})
+	prefs := &ToolPrefs{}
+	prefs.SetServerPolicy("fake", ToolAllow)
+	cs.SetToolPrefs(prefs)
+	useFake(t, cs, &c)
+
+	asked := 0
+	sendAnswering(cs, context.Background(), c, "書いて", func(*ConfirmRequest) bool { asked++; return false })
+	if asked != 0 || write.asked != 1 || !write.ran {
+		t.Errorf("聞かずに受け入れる: カード %d 回・サーバーの確認 %d 回・実行 %v", asked, write.asked, write.ran)
+	}
+}
+
+// サーバーからの確認を「今後許可しない」で拒否したら、拒否の文に「今後使えません」を添え、会話の上書きを off にする
+func TestServerAsksRememberOff(t *testing.T) {
+	g := &fakeGen{replies: []fakeReply{
+		{toolCalls: []ToolCall{toolCall("fake__write", "paths", `["a"]`)}},
+		{content: "やめました"},
+	}}
+	cs, c, _ := newWorkDirConversation(t, g)
+	write := &askingTool{remoteTool: remoteTool{name: "fake__write"}}
+	cs.SetRemoteTools(&fakeRemote{tools: []tool.Tool{write}})
+	cs.SetToolPrefs(&ToolPrefs{})
+	useFake(t, cs, &c)
+
+	n := 0
+	sendAnswering(cs, context.Background(), c, "書いて", func(q *ConfirmRequest) bool {
+		n++
+		if n == 1 {
+			return cs.Confirm(c.ID, q.ID, true, "") == nil // 呼ぶ前の確認は通す
+		}
+		return cs.Answer(c.ID, q.ID, Confirmation{Reason: "違う", Remember: ToolOff}) == nil
+	})
+	rs := toolResults(t, cs, c)
+	if len(rs) != 1 || write.ran || !strings.Contains(rs[0].Content, "理由: 違う") || !strings.Contains(rs[0].Content, "今後使えません") {
+		t.Fatalf("拒否の結果: %+v", rs)
+	}
+	if got, _, _ := cs.Get(c.ID); got.Settings.ToolPolicies["fake__write"] != ToolOff {
+		t.Errorf("会話の上書きに書く: %v", got.Settings.ToolPolicies)
 	}
 }

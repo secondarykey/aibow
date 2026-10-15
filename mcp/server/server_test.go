@@ -165,27 +165,3 @@ func TestCallErrors(t *testing.T) {
 		})
 	}
 }
-
-// 確認の要るツール(書き換えるツール・コマンド)は、確認の仕組み(5-3)ができるまで実行しない
-func TestConfirmableNotRun(t *testing.T) {
-	dir := t.TempDir()
-	cs := connect(t, Options{WorkDir: dir})
-	calls := []struct {
-		tool string
-		args map[string]any
-	}{
-		{"write_file", map[string]any{"path": "new.txt", "content": "hello"}},
-		{"run_command", map[string]any{"command": "echo hi> made.txt"}},
-	}
-	for _, c := range calls {
-		text, isErr := call(t, cs, c.tool, c.args)
-		if !isErr || !strings.Contains(text, "実行しません") {
-			t.Errorf("%s = %q (isError %v)", c.tool, text, isErr)
-		}
-	}
-	for _, f := range []string{"new.txt", "made.txt"} {
-		if _, err := os.Stat(filepath.Join(dir, f)); !os.IsNotExist(err) {
-			t.Errorf("%s が作られています(実行してはいけない)", f)
-		}
-	}
-}

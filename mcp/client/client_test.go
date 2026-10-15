@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/secondarykey/aibow/log"
+	"github.com/secondarykey/aibow/mcp/internal/meta"
 	"github.com/secondarykey/aibow/tool"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -70,6 +71,33 @@ func newTestServer() *mcp.Server {
 	add("where", `{"type": "object"}`, func(context.Context, *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		wd, _ := os.Getwd()
 		return text(wd + "\n" + strings.Join(os.Args[1:], " ")), nil
+	})
+	return s
+}
+
+// newAskServer は、書き換える前にユーザーに確かめるツール ask だけを出すテスト用のサーバー(aibow-mcp と同じ MRTR の形)。
+// 1回目は確認を求め、2回目に答え(と送り返された requestState)を見て返す
+func newAskServer() *mcp.Server {
+	s := mcp.NewServer(&mcp.Implementation{Name: "ask-server", Version: "0.1"}, nil)
+	text := func(s string) *mcp.CallToolResult {
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: s}}}
+	}
+	s.AddTool(&mcp.Tool{Name: "ask", InputSchema: json.RawMessage(`{"type": "object"}`)}, func(_ context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		a, ok := req.Params.InputResponses["confirm"].(*mcp.ElicitResult)
+		if !ok {
+			return &mcp.CallToolResult{
+				InputRequests: mcp.InputRequestMap{"confirm": &mcp.ElicitParams{
+					Message: "write a.txt?",
+					Meta:    mcp.Meta{meta.Preview: map[string]any{"path": "a.txt", "note": "上書き", "diff": "+hello\n"}},
+				}},
+				RequestState: "state-1",
+			}, nil
+		}
+		if req.Params.RequestState != "state-1" {
+			return text("requestState が送り返されていない"), nil
+		}
+		reason, _ := a.Content["reason"].(string)
+		return text(a.Action + ":" + reason), nil
 	})
 	return s
 }
@@ -272,6 +300,54 @@ func TestRun(t *testing.T) {
 	}
 	if echo.(tool.TimeLimiter).TimeLimit() != defaultCallTimeout {
 		t.Error("時間の上限はツールが決める(callTimeout を書かなければ既定)")
+	}
+}
+
+// サーバーが確認を求めてきたら(MRTR)、ask で聞いて答えと requestState を付けて送り直す。確認を待つ時間は時間の上限に数えない
+func TestRunInteractive(t *testing.T) {
+	m, l, _ := memoryManager(t, map[string]ServerConfig{"util": {Command: "util-server", CallTimeout: 1}})
+	m.transport = func(string, ServerConfig, string, io.Writer) (mcp.Transport, error) {
+		ct, st := mcp.NewInMemoryTransports()
+		if _, err := newAskServer().Connect(context.Background(), st, nil); err != nil {
+			return nil, err
+		}
+		return ct, nil
+	}
+	ctx := context.Background()
+	m.Start(ctx, "", m.Servers())
+	ask := tool.Find(m.Tools("", m.Servers()), "util__ask").(tool.Interactive)
+
+	var got []tool.Preview
+	answer := func(a tool.Answer, wait time.Duration) tool.Ask {
+		return func(_ context.Context, pv tool.Preview) (tool.Answer, error) {
+			got = append(got, pv)
+			time.Sleep(wait)
+			return a, nil
+		}
+	}
+	// 上限(1 秒)より長く待っても、確認を待つ時間は数えないので止まらない
+	if out, err := ask.RunInteractive(ctx, nil, answer(tool.Answer{Approved: true}, 1200*time.Millisecond)); err != nil || out != "accept:" {
+		t.Errorf("受け入れ: %q, %v", out, err)
+	}
+	if len(got) != 1 || got[0].Path != "a.txt" || got[0].Diff != "+hello\n" || got[0].Server != "util" {
+		t.Errorf("_meta の確認の内容をカードに出す: %+v", got)
+	}
+	if out, err := ask.RunInteractive(ctx, nil, answer(tool.Answer{Reason: "違う"}, 0)); err != nil || out != "decline:違う" {
+		t.Errorf("拒否と理由: %q, %v", out, err)
+	}
+	if _, err := ask.(tool.Tool).Run(ctx, nil); err == nil || !strings.Contains(err.Error(), "聞く手段がありません") {
+		t.Errorf("聞く手段が無ければエラー: %v", err)
+	}
+	if !l.contains("ユーザーの確認を求めています") || !l.contains("確認の答え: accept") {
+		t.Error("確認の往復をログに出す")
+	}
+}
+
+// _meta に確認の内容が無いサーバーは、聞いてきた文をそのまま出す
+func TestPreviewOfMessage(t *testing.T) {
+	pv := previewOf("other", &mcp.ElicitParams{Message: "本当に消しますか?"})
+	if pv.Server != "other" || pv.Args != "本当に消しますか?" || pv.Diff != "" {
+		t.Errorf("message を出す: %+v", pv)
 	}
 }
 
