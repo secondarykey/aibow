@@ -369,8 +369,8 @@ nav.conversations.collapsed .settings.active { color: var(--accent); }
 .conversation .delete { padding: 4px 8px; color: var(--muted); visibility: hidden; }
 .conversation:hover .delete, .conversation.current .delete { visibility: visible; }
 .dot {
-  display: inline-block; width: 7px; height: 7px; border-radius: 50%;
-  background: var(--accent); margin-right: 6px; vertical-align: middle;
+  display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+  background: var(--accent); margin: 0 2px 2px 0; vertical-align: middle;
 }
 /* 会話の印(ConversationList.tsx): 生成中は青の点滅、確認待ちは橙、ほかの会話を見ている間に終わったら青、エラーで終わったら赤(点滅しない) */
 .dot.generating { animation: blink 1.2s ease-in-out infinite; }
