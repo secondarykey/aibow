@@ -209,6 +209,23 @@ aibow-api [-model モデル] [-ctx 作業領域の大きさ] [-port ポート]
   リクエストごとに、プロンプトのトークン数・KV キャッシュを使い回せた数・生成の速さ・終了の理由が1行出ます
 - 仕組みは [api.md](api.md)
 
+### Cline からつなぐ
+
+VS Code の Cline(4.1.23 で確かめた)の設定(歯車)で、次のようにします。
+
+| 欄 | 値 |
+|---|---|
+| API Provider | OpenAI Compatible |
+| Base URL | `http://127.0.0.1:8089/v1` |
+| API Key | 何でもよい(aibow-api は見ない。空だと先に進めないことがある) |
+| Model ID | 起動したモデルの ID(例: `ollama:qwen3.5:4b`。`/v1/models` が返すもの) |
+| Supports Images(MODEL CONFIGURATION) | オフ |
+| Context Window Size(MODEL CONFIGURATION) | aibow-api の `-ctx` と同じ(既定 32768) |
+
+- Cline はネイティブのツール呼び出し(`tools`)で送ってきます。最初のプロンプトは 3,000 トークンほどです
+- モデルを変えるときは、aibow-api を `-model` で起動し直し、Cline の Model ID も合わせます
+- 比べた結果は [tuning.md](tuning.md) の「Cline からつないで比べる」
+
 curl で試すときは次のようにします(Windows の Git Bash でも動きます)。
 
 ```bash
