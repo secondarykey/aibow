@@ -45,6 +45,8 @@ Ollama が保存したファイルを aibow が直接読むので、Ollama は�
 | `appsettings.go` | アプリの設定(GPU の層数・最後に使ったモデル)と新しい会話の既定の設定(会話の上限・返事の上限も入る) |
 | `store/sqlite.go` | 会話・発言・要約を SQLite のファイルに保存する部分(テーブルの作り変え = マイグレーションもここ) |
 | `*_test.go` | テスト(モデルなしで実行できる) |
+| `api/` | OpenAI 互換の API(`/v1/models`・`/v1/chat/completions`)。`engine` で生成し、会話の仕組みは持たない(履歴を持つのはクライアント)。HTTP は標準ライブラリの `net/http` |
+| `_cmd/aibow-api/` | OpenAI 互換の API の exe。`main.go` は引数と環境変数を読み、モデルを読み込んで `api` を `127.0.0.1` で待ち受けるだけ、`log.go` はログの出口(`aibow-api_<日付>.log`)、`version` / `appversion.go` はアプリと同じバージョン。ルートのモジュールに入っている。画面のアプリと同時には使わない |
 | `_cmd/aibow-mcp/` | 自作の MCP のサーバーの exe(標準入出力で話す)。`main.go` は引数の作業フォルダを読んで `mcp/server` を動かすだけ、`log.go` はログの出口(アプリと同じフォルダの `aibow-mcp_<日付>.log`)、`version` / `appversion.go` はアプリと同じバージョン(`_cmd/aibow/version` の写し)。ルートのモジュールに入っている |
 | `_cmd/aibow/main.go` | デスクトップアプリの起動(Wails のアプリとウィンドウを作る) |
 | `_cmd/aibow/config.go` | 環境変数から設定を読む(`settings.json` を読んで MCP の係を作るのは `main.go`) |

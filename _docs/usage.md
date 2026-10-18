@@ -181,6 +181,43 @@ aibow-mcp [作業フォルダ]
 - ログは `%APPDATA%\aibow\logs\aibow-mcp_<日付>.log`(アプリと同じフォルダ。`AIBOW_LOG_DIR` で変えられます)と標準エラー出力に出ます。ツールの実行も残り、各行の終わりの `pid=…` で、どのサーバー(作業フォルダごとに1つ)の行か分かります
 - 仕組みは [mcp.md](mcp.md) の「自作の MCP サーバー」
 
+## aibow のモデルをほかのアプリから使う(aibow-api)
+
+aibow が動かすモデルを、OpenAI 互換の API(`/v1/models`・`/v1/chat/completions`)として、ほかのアプリ(Cline など)から使えます。
+画面のアプリとは別の exe です。リポジトリのフォルダで次のようにビルドします(`go install ./_cmd/aibow-api` なら Go の bin フォルダに入ります)。
+
+```bash
+go build -o aibow-api.exe ./_cmd/aibow-api
+```
+
+```
+aibow-api [-model モデル] [-ctx 作業領域の大きさ] [-port ポート]
+```
+
+- **画面のアプリと同時には使わないでください**(VRAM にモデルを2つ載せられないため。使うときはアプリを閉じます)
+- `-model` は `ollama:qwen3.5:4b` のような ID・`qwen3.5:4b` のような一覧の名前・GGUF ファイルのパス。書かなければ `AIBOW_MODEL`、それも無ければ一覧の先頭です。
+  リクエストの `model` ではモデルを切り替えません(いつも起動したときのモデルで答えます)
+- `-ctx` は作業領域の大きさ(プロンプト + 返事のトークン数。既定 32768。`AIBOW_API_CTX`)。履歴がこれに入らないリクエストは、400 のエラー(`code: context_length_exceeded`)で断ります(compact はしません)
+- `-port` は待ち受けのポート(既定 8089。`AIBOW_API_PORT`)。待ち受けは `127.0.0.1` だけで、PC の外からはつなげません
+- llama.cpp とモデルの場所・GPU の層数・返事の上限の既定・presence penalty は、アプリと同じ環境変数(下の表)で決めます。画面の設定(DB)は読みません。
+  `AIBOW_LIB` の既定はカレントフォルダの `lib` なので、リポジトリのフォルダで起動するときは `AIBOW_LIB=_cmd/aibow/lib AIBOW_MODELS_DIR=_cmd/aibow/models aibow-api` のように指定します
+- 思考は返事の `reasoning_content` に分けて返します。リクエストに `"chat_template_kwargs": {"enable_thinking": false}` を書くと思考しません(書かなければ思考します)
+- 同時に来たリクエストは、順番に1つずつ答えます。つながりを切ると(クライアントの停止ボタンなど)、生成を止めます
+- ツール呼び出し(`tools`)にはまだ対応していません
+- `aibow-api -version` でバージョンを表示します。ログは `%APPDATA%ibow\logsibow-api_<日付>.log` と標準エラー出力に出ます。
+  リクエストごとに、プロンプトのトークン数・KV キャッシュを使い回せた数・生成の速さ・終了の理由が1行出ます
+- 仕組みは [api.md](api.md)
+
+curl で試すときは次のようにします(Windows の Git Bash でも動きます)。
+
+```bash
+curl http://127.0.0.1:8089/v1/models
+```
+
+```bash
+curl http://127.0.0.1:8089/v1/chat/completions -H "Content-Type: application/json" -d '{"messages":[{"role":"user","content":"hello"}],"stream":true}'
+```
+
 ## 設定の変更
 
 設定は2つの画面に分かれています。どちらも、チャットの代わりに会話の場所に開きます。
@@ -213,13 +250,15 @@ aibow-mcp [作業フォルダ]
 | `AIBOW_LIB` | `lib` | llama.cpp の DLL があるフォルダ(相対パスはカレントフォルダが基準) |
 | `AIBOW_DB` | `%APPDATA%\aibow\aibow.db` | 会話を保存する SQLite のファイル。フォルダが無ければ作る |
 | `AIBOW_SETTINGS` | `%APPDATA%\aibow\settings.json` | 設定ファイル(手で書く設定。今は MCP のサーバーの `mcpServers` だけ)。無ければ MCP を使わない |
-| `AIBOW_LOG_DIR` | `%APPDATA%\aibow\logs` | ログファイル(`aibow_<日付>.log`。日ごと)を書くフォルダ。exe は Notice 以上(起動した版・使ったモデル・変えた設定・注意・エラーなど)だけを書き、起動時に古いファイルを消して今日を含めて 10 日分を残す。異常終了したときは同じフォルダの `aibow_crash_<日時>.log` に内容が残る(次の起動で画面に知らせる)。MCP のサーバー `aibow-mcp` も同じフォルダの `aibow-mcp_<日付>.log` に書く(Info 以上・10 日分)。フォルダが無ければ作る。`wails3 build` で作った exe は既定でここに書く。`wails3 dev` はターミナルに出し、ここの `aibow-dev_<日付>.log` にも書く(Info 以上・10 日分。exe のログと混ざらないよう名前を分けている) |
+| `AIBOW_LOG_DIR` | `%APPDATA%\aibow\logs` | ログファイル(`aibow_<日付>.log`。日ごと)を書くフォルダ。exe は Notice 以上(起動した版・使ったモデル・変えた設定・注意・エラーなど)だけを書き、起動時に古いファイルを消して今日を含めて 10 日分を残す。異常終了したときは同じフォルダの `aibow_crash_<日時>.log` に内容が残る(次の起動で画面に知らせる)。MCP のサーバー `aibow-mcp` も同じフォルダの `aibow-mcp_<日付>.log` に、OpenAI 互換 API の `aibow-api` は `aibow-api_<日付>.log` に書く(どちらも Info 以上・10 日分)。フォルダが無ければ作る。`wails3 build` で作った exe は既定でここに書く。`wails3 dev` はターミナルに出し、ここの `aibow-dev_<日付>.log` にも書く(Info 以上・10 日分。exe のログと混ざらないよう名前を分けている) |
 | `AIBOW_TOOLS` | `%APPDATA%\aibow\tools.json` | ツールの扱いの、この PC の既定(設定の画面で変えたものを aibow が書く) |
 | `AIBOW_WINDOW` | `%APPDATA%\aibow\window.json` | ウィンドウの位置・大きさ・最大化(閉じるときに aibow が書き、次の起動でそこに開く)。消すと初めの大きさ(720×820)で真ん中に開く |
 | `AIBOW_HISTORY_TOKENS` | `8192` | 新しい会話の既定の会話の上限(モデルに渡す、これまでの会話のトークン数の上限)。超えたら会話ごとの compact の方式で収める |
 | `AIBOW_MAX_TOKENS` | `8192` | 新しい会話の既定の返事の上限(1回の返事で生成するトークン数の上限。思考 + 答えの合計) |
 | `AIBOW_GPU_LAYERS` | `999` | GPU に載せる層の数。VRAM に入りきらないモデルは減らす(残りは CPU で計算) |
 | `AIBOW_PRESENCE_PENALTY` | `1.5` | すでに生成した言葉を選ばれにくくする強さ。思考の堂々巡りを抑える。`0` で無効 |
+| `AIBOW_API_CTX` | `32768` | `aibow-api` の作業領域の大きさ(プロンプト + 返事のトークン数)。引数の `-ctx` が優先 |
+| `AIBOW_API_PORT` | `8089` | `aibow-api` の待ち受けのポート(`127.0.0.1` だけ)。引数の `-port` が優先 |
 | `AIBOW_LLAMA_LOG` | なし | `1` にすると llama.cpp 自身の詳しいログ(どの層をどこに置いたか、読めない理由など)を出す。起動時に数千行出る |
 
 作業領域(コンテキスト長)は「会話の上限 + 返事の上限」から計算します(会話ごと。起動したときは新しい会話の既定の大きさで確保します)。増やすと長い会話ができますが、VRAM を使います(Qwen3.5 4B で 1 トークンあたり約 32KB)。
