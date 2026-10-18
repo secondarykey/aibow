@@ -40,8 +40,10 @@ type chatRequest struct {
 		EnableThinking *bool `json:"enable_thinking"`
 	} `json:"chat_template_kwargs"`
 
-	// Tools はツールの定義。ツール呼び出しの変換は 6-2 で作るので、今は数だけを見てログに出す
-	Tools []json.RawMessage `json:"tools"`
+	// Tools はツールの定義(JSON Schema)。書式がシステムプロンプトに書く(tools.go)
+	Tools []requestTool `json:"tools"`
+	// ToolChoice は "auto"・"none"・"required"・特定のツールの指定。"none" ならツールを知らせない(useTools)
+	ToolChoice json.RawMessage `json:"tool_choice"`
 }
 
 // chatMessage はリクエストの発言1件。
@@ -52,9 +54,10 @@ type chatMessage struct {
 	// ReasoningContent は、前の返事の思考(この API が返したもの)。クライアントが履歴に入れて送り返してきたときに読む
 	ReasoningContent string `json:"reasoning_content"`
 
-	// ToolCalls・ToolCallID はツール呼び出し(6-2)。今は来たらエラーにする
-	ToolCalls  []json.RawMessage `json:"tool_calls"`
-	ToolCallID string            `json:"tool_call_id"`
+	// ToolCalls は、前の返事のツール呼び出し(この API が返したもの)
+	ToolCalls []toolCall `json:"tool_calls"`
+	// ToolCallID は tool の役の発言が、どの呼び出しの結果か。Qwen3.5 の書式は id を使わず、呼び出しと結果の順番で対応させるので読まない
+	ToolCallID string `json:"tool_call_id"`
 }
 
 // contentPart は Content を配列で送ってきたときの部品1つ。
@@ -94,11 +97,19 @@ func (m chatMessage) text() (string, error) {
 //
 //   - system(と、OpenAI の新しい名前 developer)は先頭に置く。先頭に続けて複数あれば1つにつなぐ。
 //     Qwen3.5 の公式テンプレートは途中の system をエラーにするので、途中にあればエラーにする
-//   - assistant の reasoning_content は思考(Thinking)に戻す。書式が、ツールのループの途中の返事だけ思考を入れる
-//   - ツール呼び出し(tool の役・tool_calls)は 6-2 で作るので、今はエラーにする
+//   - assistant の reasoning_content は思考(Thinking)に、tool_calls は書式の呼び出しに戻す。書式が、ツールのループの途中の返事だけ思考を入れる
+//   - tool の役の発言(ツールの結果)は、そのまま書式の tool の発言にする(書式が <tool_response> で包む)
+//   - tools は tool.Def にして、モデルに知らせる(tool_choice が "none" なら知らせない)
 func toPrompt(req chatRequest, think bool) (format.Prompt, error) {
 	if len(req.Messages) == 0 {
 		return format.Prompt{}, fmt.Errorf("messages が空です")
+	}
+	defs, err := toDefs(req.Tools)
+	if err != nil {
+		return format.Prompt{}, err
+	}
+	if !useTools(req.ToolChoice) {
+		defs = nil
 	}
 	var system []string
 	var msgs []format.Message
@@ -106,9 +117,6 @@ func toPrompt(req chatRequest, think bool) (format.Prompt, error) {
 		text, err := m.text()
 		if err != nil {
 			return format.Prompt{}, fmt.Errorf("messages[%d]: %w", i, err)
-		}
-		if len(m.ToolCalls) > 0 || m.Role == "tool" {
-			return format.Prompt{}, fmt.Errorf("messages[%d]: ツール呼び出し(tool_calls・tool の役)にはまだ対応していません", i)
 		}
 		switch m.Role {
 		case "system", "developer":
@@ -119,15 +127,21 @@ func toPrompt(req chatRequest, think bool) (format.Prompt, error) {
 		case "user":
 			msgs = append(msgs, format.Message{Role: "user", Content: text})
 		case "assistant":
-			msgs = append(msgs, format.Message{Role: "assistant", Content: text, Thinking: m.ReasoningContent})
+			calls, err := fromRequestCalls(m.ToolCalls)
+			if err != nil {
+				return format.Prompt{}, fmt.Errorf("messages[%d]: %w", i, err)
+			}
+			msgs = append(msgs, format.Message{Role: "assistant", Content: text, Thinking: m.ReasoningContent, ToolCalls: calls})
+		case "tool":
+			msgs = append(msgs, format.Message{Role: "tool", Content: text})
 		default:
-			return format.Prompt{}, fmt.Errorf("messages[%d]: 役 %q には対応していません(system・developer・user・assistant)", i, m.Role)
+			return format.Prompt{}, fmt.Errorf("messages[%d]: 役 %q には対応していません(system・developer・user・assistant・tool)", i, m.Role)
 		}
 	}
 	if len(system) > 0 {
 		msgs = append([]format.Message{{Role: "system", Content: strings.Join(system, "\n\n")}}, msgs...)
 	}
-	return format.Prompt{Messages: msgs, Think: think}, nil
+	return format.Prompt{Messages: msgs, Tools: defs, Think: think}, nil
 }
 
 // ---- レスポンス ------------------------------------------------------------------------
@@ -152,16 +166,18 @@ type choice struct {
 
 // message はストリーミングなしの返事。content は空でも書く。
 type message struct {
-	Role             string `json:"role"`
-	Content          string `json:"content"`
-	ReasoningContent string `json:"reasoning_content,omitempty"` // 思考(llama.cpp の server と同じ名前)
+	Role             string     `json:"role"`
+	Content          string     `json:"content"`
+	ReasoningContent string     `json:"reasoning_content,omitempty"` // 思考(llama.cpp の server と同じ名前)
+	ToolCalls        []toolCall `json:"tool_calls,omitempty"`
 }
 
 // delta はストリーミングの増えた分。書くものがある欄だけを出す。
 type delta struct {
-	Role             string `json:"role,omitempty"`
-	Content          string `json:"content,omitempty"`
-	ReasoningContent string `json:"reasoning_content,omitempty"`
+	Role             string     `json:"role,omitempty"`
+	Content          string     `json:"content,omitempty"`
+	ReasoningContent string     `json:"reasoning_content,omitempty"`
+	ToolCalls        []toolCall `json:"tool_calls,omitempty"`
 }
 
 // usage は使ったトークン数。completion_tokens は思考と答えの合計。

@@ -61,7 +61,7 @@ OpenAI 互換のクライアント(Cline など)⇄ HTTP(127.0.0.1)⇄ aibow-api
 | 生成・モデルの読み込みと切り替え・トークン化・プロンプトの書式・思考の振り分け・モデルの一覧・`engine` / `format` / `models` のパッケージの分け方 | [_docs/engine.md](_docs/engine.md) |
 | ツール呼び出し・エージェントループ・書式の interface(`Format`)・ツールの追加・作業フォルダ・ファイルとコマンドのツール・実行前の確認 | [_docs/tools.md](_docs/tools.md) |
 | MCP のクライアント・設定ファイル(`settings.json`)・MCP のサーバーの起動と終了・ツールの扱い(使わない / 確認する / 確認しない)と信頼・自作の MCP サーバー(`mcp/server`・`aibow-mcp`) | [_docs/mcp.md](_docs/mcp.md) |
-| OpenAI 互換の API(`api`・`aibow-api`)・リクエストの変換・ストリーミング・思考の返し方・順番待ち | [_docs/api.md](_docs/api.md) |
+| OpenAI 互換の API(`api`・`aibow-api`)・リクエストの変換・ツール呼び出しの変換(`tools` ⇄ `tool_calls`)・ストリーミング・思考の返し方・順番待ち | [_docs/api.md](_docs/api.md) |
 | 会話の履歴・会話ごとの設定(会話の上限・返事の上限も)・アプリの設定・保存の約束(`Store`)・モデルに渡さない発言・作り直す / 送り直す | [_docs/conversations.md](_docs/conversations.md) |
 | 会話の上限・compact(truncate / summary)・メーター | [_docs/compact.md](_docs/compact.md) |
 | SQLite の実装・マイグレーション | [store/AGENTS.md](store/AGENTS.md) |

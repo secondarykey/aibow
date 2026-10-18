@@ -8,7 +8,8 @@ package api
 //	2. 書式を当てたトークン数を数え、作業領域に入らなければエラーを返す(compact はしない。履歴を持つのはクライアントなので)
 //	3. 生成の順番を待つ(生成は1つずつ)
 //	4. 生成する。ストリーミングなら、文字が出るたびに Server-Sent Events の塊を送る
-//	5. 学習用のログ(KV キャッシュを使い回せた数・速さ・終了の理由)を出す
+//	5. モデルが書いたツール呼び出しを tool_calls にする(tools.go)
+//	6. 学習用のログ(KV キャッシュを使い回せた数・速さ・終了の理由・呼び出しの数)を出す
 
 import (
 	"encoding/json"
@@ -20,6 +21,7 @@ import (
 	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/format"
 	"github.com/secondarykey/aibow/log"
+	"github.com/secondarykey/aibow/tool"
 )
 
 // maxBody はリクエストの本文の上限。履歴の全部が毎回来るので大きめにする(作業領域 32K トークンでも数百 KB)
@@ -45,10 +47,6 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request_error", "", err.Error())
 		return
-	}
-	if len(req.Tools) > 0 {
-		// 黙って捨てると、クライアントがツールを使えない理由が分からないので、ログに残す
-		log.Warnf("リクエストに tools が %d 個ありますが、ツール呼び出しにはまだ対応していないので、モデルには知らせません", len(req.Tools))
 	}
 
 	info := s.gen.Info()
@@ -91,6 +89,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		created: s.now().Unix(),
 		model:   info.ID,
 		msgs:    len(p.Messages),
+		tools:   p.Tools,
 		wait:    wait,
 	}
 	if req.Stream {
@@ -130,6 +129,7 @@ type call struct {
 	created int64
 	model   string
 	msgs    int           // 発言の数(ログ用)
+	tools   []tool.Def    // モデルに知らせたツール(呼び出しの型を決めるのに使う)
 	wait    time.Duration // 順番を待った時間(ログ用)
 }
 
@@ -137,20 +137,21 @@ type call struct {
 func (s *Server) complete(w http.ResponseWriter, r *http.Request, c call, p format.Prompt, opt engine.GenerateOptions) {
 	nop := func(string) {}
 	out, st, err := s.gen.Generate(r.Context(), p, opt, nop, nop, nop)
-	logResult(c, false, st, err)
 	if err != nil {
+		logResult(c, false, st, 0, err)
 		writeError(w, http.StatusInternalServerError, "server_error", "", err.Error())
 		return
 	}
+	calls, extra := toResponseCalls(out.ToolCalls, c.tools)
+	logResult(c, false, st, len(calls), nil)
 	if st.StopReason == "cancel" {
 		return // つながりが切れた。返す相手がいない
 	}
-	warnToolCalls(out)
-	fr := finishReason(st.StopReason)
+	fr := finishReason(st.StopReason, len(calls))
 	writeJSON(w, http.StatusOK, completion{
 		ID: c.id, Object: "chat.completion", Created: c.created, Model: c.model,
 		Choices: []choice{{
-			Message:      &message{Role: "assistant", Content: out.Content, ReasoningContent: out.Thinking},
+			Message:      &message{Role: "assistant", Content: joinContent(out.Content, extra), ReasoningContent: out.Thinking, ToolCalls: calls},
 			FinishReason: &fr,
 		}},
 		Usage: usageOf(st),
@@ -163,6 +164,10 @@ func (s *Server) complete(w http.ResponseWriter, r *http.Request, c call, p form
 // 最初の塊で役(assistant)を、続く塊で増えた文字(delta)を、最後の塊で終了の理由を送り、
 // 終わりの印として「data: [DONE]」を書く。塊を書くたびに Flush して、すぐに相手に届ける
 // (Flush しないと、net/http が溜めてからまとめて送るので、少しずつ見えない)。
+//
+// ツール呼び出しは、生成が終わってから1つにつき1つの塊で、引数まで全部を送る(0012 の 6-2 で Code が決めた)。
+// 書式は <tool_call> から後ろを持っておいて生成の後で読み取る(途中では呼び出しが閉じているか分からない)ので、少しずつは送れない。
+// OpenAI の形では arguments を何回かに分けて送ってもよいことになっていて、クライアントはつなげて読むので、1回で全部でも読める。
 func (s *Server) stream(w http.ResponseWriter, r *http.Request, c call, p format.Prompt, opt engine.GenerateOptions, includeUsage bool) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -186,17 +191,26 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request, c call, p format
 	out, st, err := s.gen.Generate(r.Context(), p, opt, func(string) {},
 		func(t string) { send(chunk(delta{ReasoningContent: t}, nil)) },
 		func(t string) { send(chunk(delta{Content: t}, nil)) })
-	logResult(c, true, st, err)
 	if err != nil {
+		logResult(c, true, st, 0, err)
 		// ステータスはもう 200 で送ってしまったので、エラーは塊の1つとして送る(OpenAI も途中のエラーはこの形)
 		send(errorBody{Error: errorObject{Message: err.Error(), Type: "server_error"}})
 		return
 	}
+	calls, extra := toResponseCalls(out.ToolCalls, c.tools)
+	logResult(c, true, st, len(calls), nil)
 	if st.StopReason == "cancel" {
 		return
 	}
-	warnToolCalls(out)
-	fr := finishReason(st.StopReason)
+	if extra != "" {
+		// 書式が崩れた呼び出しは、答えの続きとして送る(答えの後ろには、ストリーミングなしと同じく空行を挟む)
+		send(chunk(delta{Content: joinContent(out.Content, extra)[len(out.Content):]}, nil))
+	}
+	for i := range calls {
+		calls[i].Index = &i
+		send(chunk(delta{ToolCalls: calls[i : i+1]}, nil))
+	}
+	fr := finishReason(st.StopReason, len(calls))
 	send(chunk(delta{}, &fr))
 	if includeUsage {
 		send(completion{
@@ -210,9 +224,13 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request, c call, p format
 
 // finishReason は、エンジンの終了の理由を OpenAI の finish_reason にする。
 //
+//	ツール呼び出しを返すとき                                       → tool_calls(クライアントはツールを実行して、結果を足して送り直す)
 //	eos(発言の終わりのトークン)・stop(書式が決めた位置で止めた) → stop
 //	length(返事の上限)・context(作業領域がいっぱい)            → length
-func finishReason(stop string) string {
+func finishReason(stop string, calls int) string {
+	if calls > 0 {
+		return "tool_calls"
+	}
 	switch stop {
 	case "length", "context":
 		return "length"
@@ -226,16 +244,20 @@ func usageOf(st engine.GenerateStats) *usage {
 	return u
 }
 
-// warnToolCalls は、ツールを知らせていないのにモデルがツール呼び出しを書いたときにログに残す(返事には入れない)。
-func warnToolCalls(out format.Output) {
-	if len(out.ToolCalls) > 0 {
-		log.Warnf("モデルがツール呼び出しを %d 個書きましたが、ツール呼び出しにはまだ対応していないので返しません", len(out.ToolCalls))
+// joinContent は、答えの後ろに、書式が崩れて読み取れなかった呼び出し(モデルが書いたまま)を空行を挟んで足す。
+func joinContent(content, extra string) string {
+	switch {
+	case extra == "":
+		return content
+	case content == "":
+		return extra
 	}
+	return content + "\n\n" + extra
 }
 
 // logResult は学習用のログ。リクエストごとに1行。
 // 「KV キャッシュの再利用」が、続けて送ったリクエストで前回の分を使い回せたかを表す(API はステートレスなので、ここが速さを決める)。
-func logResult(c call, stream bool, st engine.GenerateStats, err error) {
+func logResult(c call, stream bool, st engine.GenerateStats, calls int, err error) {
 	mode := "まとめて"
 	if stream {
 		mode = "ストリーミング"
@@ -248,6 +270,6 @@ func logResult(c call, stream bool, st engine.GenerateStats, err error) {
 	if st.GenSec > 0 {
 		speed = float64(st.GenTokens) / st.GenSec
 	}
-	log.Infof("%s・発言 %d 件 / 順番待ち %.2f 秒 / プロンプト %d トークン(KV キャッシュの再利用 %d)%.2f 秒 / 生成 %d トークン %.2f 秒(%.1f tok/s)/ 終了理由: %s",
-		mode, c.msgs, c.wait.Seconds(), st.PromptTokens, st.ReusedTokens, st.PromptSec, st.GenTokens, st.GenSec, speed, st.StopReason)
+	log.Infof("%s・発言 %d 件・ツール %d 個 / 順番待ち %.2f 秒 / プロンプト %d トークン(KV キャッシュの再利用 %d)%.2f 秒 / 生成 %d トークン %.2f 秒(%.1f tok/s)/ 終了理由: %s / ツール呼び出し %d 件",
+		mode, c.msgs, len(c.tools), c.wait.Seconds(), st.PromptTokens, st.ReusedTokens, st.PromptSec, st.GenTokens, st.GenSec, speed, st.StopReason, calls)
 }

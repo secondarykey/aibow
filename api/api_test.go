@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/format"
+	"github.com/secondarykey/aibow/tool"
 )
 
 // fakeGen はモデルなしで試すための偽物の生成。思考と答えを決まった切れ目で返す。
@@ -22,6 +24,7 @@ type fakeGen struct {
 	think   []string
 	content []string
 	stop    string
+	calls   []format.ToolCall // モデルが書いたことにする呼び出し
 
 	mu      sync.Mutex
 	prompts []format.Prompt
@@ -61,6 +64,7 @@ func (f *fakeGen) Generate(ctx context.Context, p format.Prompt, opt engine.Gene
 		onContent(c)
 		out.Content += c
 	}
+	out.ToolCalls = f.calls
 	return out, engine.GenerateStats{PromptTokens: f.tokens, ReusedTokens: 3, GenTokens: 7, GenSec: 1, StopReason: f.stop}, nil
 }
 
@@ -214,7 +218,8 @@ func TestBadRequests(t *testing.T) {
 		`{"messages":[]}`,
 		`{"messages":[{"role":"user","content":"a"},{"role":"system","content":"b"}]}`,
 		`{"messages":[{"role":"user","content":[{"type":"image_url"}]}]}`,
-		`{"messages":[{"role":"tool","content":"a","tool_call_id":"1"}]}`,
+		`{"messages":[{"role":"user","content":"a"}],"tools":[{"type":"retrieval"}]}`,
+		`{"messages":[{"role":"assistant","content":"","tool_calls":[{"type":"function","function":{"name":"f","arguments":"[1]"}}]}]}`,
 		`{"messages":[{"role":"user","content":"a"}],"max_tokens":0}`,
 	} {
 		res := post(t, ts.URL, body)
@@ -256,5 +261,106 @@ func TestQueue(t *testing.T) {
 		if c := <-codes; c != 200 {
 			t.Errorf("ステータス %d", c)
 		}
+	}
+}
+
+const toolsJSON = `"tools":[{"type":"function","function":{"name":"read_file","description":"Read a file",
+	"parameters":{"type":"object","properties":{"path":{"type":"string"},"n":{"type":"integer"},"flags":{"type":"array"},"ok":{"type":["boolean","null"]}},"required":["path"]}}}]`
+
+// モデルが書いた呼び出し(値は文字列)を返す偽物。1つは書式が崩れている
+func toolGen() *fakeGen {
+	return &fakeGen{nCtx: 100, tokens: 10, content: []string{"読みます"}, stop: "stop", calls: []format.ToolCall{
+		{Call: tool.Call{Name: "read_file", Args: []tool.Arg{
+			{Name: "path", Value: "a.go"}, {Name: "n", Value: "5"}, {Name: "flags", Value: `["x", "y"]`}, {Name: "ok", Value: "True"}, {Name: "memo", Value: "7"},
+		}}},
+		{Raw: "<tool_call>\n<function=read_file>", Error: "書式が崩れていて…"},
+	}}
+}
+
+func TestToolCalls(t *testing.T) {
+	g := toolGen()
+	ts := newTestServer(g)
+	defer ts.Close()
+
+	// 履歴に、前の呼び出しとその結果を入れる。引数の数・配列は JSON の値のまま来る
+	res := post(t, ts.URL, `{"messages":[
+		{"role":"user","content":"読んで"},
+		{"role":"assistant","content":null,"reasoning_content":"読もう","tool_calls":[{"id":"call_1","type":"function",
+			"function":{"name":"read_file","arguments":"{\"path\":\"b.go\",\"n\":3,\"flags\":[\"z\", 1],\"ok\":false}"}}]},
+		{"role":"tool","tool_call_id":"call_1","content":"package b"}],`+toolsJSON+`}`)
+	defer res.Body.Close()
+	var got completion
+	json.NewDecoder(res.Body).Decode(&got)
+
+	p := g.prompts[0]
+	if len(p.Tools) != 1 || p.Tools[0].Name != "read_file" || !strings.Contains(string(p.Tools[0].Parameters), `"required":["path"]`) {
+		t.Errorf("ツールの定義が違う: %+v", p.Tools)
+	}
+	a := p.Messages[1]
+	wantArgs := []tool.Arg{{Name: "path", Value: "b.go"}, {Name: "n", Value: "3"}, {Name: "flags", Value: `["z", 1]`}, {Name: "ok", Value: "false"}}
+	if a.Thinking != "読もう" || len(a.ToolCalls) != 1 || a.ToolCalls[0].Name != "read_file" || !slices.Equal(a.ToolCalls[0].Args, wantArgs) {
+		t.Errorf("履歴の呼び出しが違う: %+v", a)
+	}
+	if m := p.Messages[2]; m.Role != "tool" || m.Content != "package b" {
+		t.Errorf("ツールの結果が違う: %+v", m)
+	}
+
+	c := got.Choices[0]
+	if *c.FinishReason != "tool_calls" || len(c.Message.ToolCalls) != 1 {
+		t.Fatalf("返事が違う: %+v", c)
+	}
+	// 型の決まった値はモデルが書いた文字のまま JSON の値に。知らない引数(memo)は文字列のまま
+	tc := c.Message.ToolCalls[0]
+	if !strings.HasPrefix(tc.ID, "call_") || tc.Type != "function" || tc.Function.Name != "read_file" ||
+		tc.Function.Arguments != `{"path":"a.go","n":5,"flags":["x", "y"],"ok":true,"memo":"7"}` || tc.Index != nil {
+		t.Errorf("呼び出しが違う: %+v", tc)
+	}
+	// 崩れた呼び出しは、答えの後ろに文字列で
+	if c.Message.Content != "読みます\n\n<tool_call>\n<function=read_file>" {
+		t.Errorf("答えが違う: %q", c.Message.Content)
+	}
+}
+
+func TestToolCallsStream(t *testing.T) {
+	g := toolGen()
+	g.calls = append(g.calls[:1], g.calls[0]) // 崩れたものの代わりに、2つ目の呼び出し
+	ts := newTestServer(g)
+	defer ts.Close()
+
+	res := post(t, ts.URL, `{"messages":[{"role":"user","content":"読んで"}],"stream":true,`+toolsJSON+`}`)
+	defer res.Body.Close()
+	var chunks []completion
+	sc := bufio.NewScanner(res.Body)
+	for sc.Scan() {
+		if l, ok := strings.CutPrefix(sc.Text(), "data: {"); ok {
+			var c completion
+			json.Unmarshal([]byte("{"+l), &c)
+			chunks = append(chunks, c)
+		}
+	}
+	// 役 → 答え → 呼び出し ×2(1つずつ、index 付き)→ 終了の理由
+	if len(chunks) != 5 {
+		t.Fatalf("塊の数 %d", len(chunks))
+	}
+	for i, n := range []int{2, 3} {
+		d := chunks[n].Choices[0].Delta
+		if len(d.ToolCalls) != 1 || d.ToolCalls[0].Index == nil || *d.ToolCalls[0].Index != i || d.ToolCalls[0].Function.Name != "read_file" {
+			t.Errorf("塊 %d の呼び出しが違う: %+v", n, d)
+		}
+	}
+	if *chunks[4].Choices[0].FinishReason != "tool_calls" {
+		t.Errorf("finish_reason %s", *chunks[4].Choices[0].FinishReason)
+	}
+}
+
+// tool_choice が none なら、ツールをモデルに知らせない
+func TestToolChoiceNone(t *testing.T) {
+	g := &fakeGen{nCtx: 100, tokens: 1, stop: "eos"}
+	ts := newTestServer(g)
+	defer ts.Close()
+	res := post(t, ts.URL, `{"messages":[{"role":"user","content":"a"}],"tool_choice":"none",`+toolsJSON+`}`)
+	res.Body.Close()
+	if len(g.prompts[0].Tools) != 0 {
+		t.Error("ツールを知らせてしまった")
 	}
 }

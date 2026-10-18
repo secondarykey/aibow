@@ -203,7 +203,8 @@ aibow-api [-model モデル] [-ctx 作業領域の大きさ] [-port ポート]
   `AIBOW_LIB` の既定はカレントフォルダの `lib` なので、リポジトリのフォルダで起動するときは `AIBOW_LIB=_cmd/aibow/lib AIBOW_MODELS_DIR=_cmd/aibow/models aibow-api` のように指定します
 - 思考は返事の `reasoning_content` に分けて返します。リクエストに `"chat_template_kwargs": {"enable_thinking": false}` を書くと思考しません(書かなければ思考します)
 - 同時に来たリクエストは、順番に1つずつ答えます。つながりを切ると(クライアントの停止ボタンなど)、生成を止めます
-- ツール呼び出し(`tools`)にはまだ対応していません
+- ツール呼び出し(`tools`・`tool_calls`)に対応しています。モデルが呼び出しを書くと `finish_reason: tool_calls` で返すので、クライアントがツールを実行して結果(`tool` の役)を足して送り直します。
+  書式が崩れて読み取れなかった呼び出しは、答えの文字列として返します
 - `aibow-api -version` でバージョンを表示します。ログは `%APPDATA%ibow\logsibow-api_<日付>.log` と標準エラー出力に出ます。
   リクエストごとに、プロンプトのトークン数・KV キャッシュを使い回せた数・生成の速さ・終了の理由が1行出ます
 - 仕組みは [api.md](api.md)
