@@ -4,7 +4,7 @@
 - ロードマップ: ロードマップ2(ステップ 7〜12)
 - 書いた日: 2026-10-19(Chat が書いた。ステップ6が終わったあとの相談)
 - 前提: 0012(OpenAI 互換 API・`aibow-api`)、0007(自作の MCP サーバー)、0009(会話の個別設定)
-- 関係する資料: brender の `_docs/server-transport.md`(ブラウザに出す方法。brender で先に試す)
+- 関係する資料: brender の `_docs/server-transport.md`(ブラウザに出す方法の経緯)と Skill `brender-server-mode`(brender で実装した今の形。2026-10-19)
 
 ## 目的
 
@@ -16,7 +16,7 @@ aibow を**組織で使えるようにする**(最終目的)。学ぶためだ�
 - 最終目的は組織で使うこと。なので、会話ごとサーバーに置く形(下の B)まで行く
 - ツール(git・ビルド・テストなどのコマンド)は、コードのある**手元で動かすのが基本**(ユーザーの指摘)。コード・ツールチェーン・git の認証(push の鍵)が手元にあるため
 - **別の exe にしない**:ブラウザに出すのに Wails v3 の Server Build(`-tags server`)は使わない(ビルドの時に切り替えるので別の exe になる)。デスクトップアプリのまま、Transport の差し替え(`AssetServerTransport`)でブラウザにも出す
-- ブラウザに出す方法は **brender で先に試し、aibow はその形に合わせる**
+- ブラウザに出す方法は **brender で先に試し、aibow はその形に合わせる**(brender で実装した。2026-10-19。下の「ブラウザに出す方法」)
 - ロードマップ2の並び(TODO.md)。**ステップ 7・8 は brender の結果を待たずに進められる**(brender の結果を使うのはステップ9から)
 
 ## 切り方
@@ -44,18 +44,40 @@ MCP はツールとデータを AI アプリにつなぐ規格で、どの形で
   ステップ7のプロファイル化は自分用で作るが、あとで管理者が作ってチームに配る形に育つ線で作る
 - **モデルを選ぶ人が変わる**:GPU が1台なら、読み込めるモデルは同時に1つか2つ。組織では「モデルは管理者が用意し、利用者はプロファイルで選ぶ」形になりそう
 
-## ブラウザに出す方法(2026-10-19。Chat が Wails のソースを読んで調べた)
+## ブラウザに出す方法(2026-10-19。brender で実装した)
 
-詳しくは brender の `_docs/server-transport.md`。要点と、aibow に当てはめたこと:
+brender で実装し、ウィンドウの側も含めて動くことを確かめた。経緯は brender の `_docs/server-transport.md`、今の形は brender の Skill `brender-server-mode`。aibow のステップ9はこの形に合わせる。
 
-- Server Build(`-tags server`)は別の exe になるので使わない。参考:Server Build のイベントの WebSocket は認証を通らず、送り先を1人に絞れない
-- Transport の差し替え(`application.Options.Transport` の `AssetServerTransport`):`ServeAssets` で Wails が渡す配信を自前の HTTP サーバーに載せると、同じプロセスのまま、ブラウザからもバインディングを呼べる見込み(公式の例 `v3/examples/websocket-transport`)。
-  aibow の Wails は v3.0.0-beta.26。読んだファイルは brender の beta.23 と同じ中身
-- バインディングのメソッドの `ctx` は HTTP のリクエストから作られ、値が引き継がれる。手前の middleware で入れた利用者をメソッドの中で読める
-- aibow で気をつけること:
-  - `ChatEvent` は今 `app.Event.Emit` で流している(`_cmd/aibow/service.go`)。デスクトップのビルドには Wails のイベントをブラウザに送る仕組みが無いので、ブラウザには**自前の SSE** で流す。会話の中身が乗るので、ステップ10からは**その人にだけ**送る
-  - 作業フォルダを選ぶダイアログ(`app.Dialog.OpenFile`、`service.go`)はブラウザでは使えない。ブラウザ(B)には手元のツールが無いので、ブラウザでは作業フォルダを出さない、で自然につながる
-  - 登録したサービスのメソッドは全部ブラウザから呼べるようになる。ウィンドウからの呼び出しかどうかはヘッダーで見分けられていてブラウザも偽れるので、それで信用しない(brender のメモの「気をつけること 1」)
+```
+ウィンドウ(WebView) ──wails://──→ Wails の配信 ──→ バインディング(ctx に利用者なし → 自分)
+ブラウザ ──HTTP──→ 自前の http.Server(ログインの確認)
+                    └ POST /wails/runtime → 守り → Wails の配信 ──→ バインディング(ctx に利用者・ブラウザの印)
+```
+
+brender の形(aibow でもそのまま使えるもの):
+
+- **自作の Transport**:`*application.HTTPTransport` を埋め込み(ウィンドウの通り道はそのまま)、`ServeAssets(h)` で受け取った Wails の配信を自前のサーバに渡すだけ。
+  **`WailsEventListener`(`DispatchWailsEvent`)を持たせない**(持たせるとウィンドウへのイベントが届かなくなる)。サーバモードでないときは Transport を nil(Wails の既定)にする
+- **`POST /wails/runtime` の守り**(自前のサーバで、Wails の配信に渡す前に):
+  - 通す `object` は 0(メソッドの呼び出し)と 10(取り消し)だけ。**Wails の決まった API はウィンドウ無しでも通り、`Application.Quit` でアプリが終わる・`Events.Emit` で好きなイベントを出せる**ため、ほかは 403 で断る
+  - チャンクで分けた送り方(`x-wails-chunk-id`)は中身を確かめられないので断る。本文の上限は 64 MiB
+  - ログインが要る設定で `ctx` に利用者が無ければ 401
+  - `x-wails-window-*` のヘッダーを消し、`ctx` に**ブラウザからの印**を付ける(brender の `api.WithBrowser` / `api.FromBrowser`)。印を付けるのは自前のサーバだけなので偽れない。ヘッダーや `application.WindowKey` では判定しない
+- **画面**:`@wailsio/runtime` の `setTransport()`(公式の差し替え口)で、ブラウザの呼び出しを `POST /wails/runtime` に送る。401 なら読み直してログイン画面へ。
+  ブラウザかどうかは、サーバが `index.html` に差し込む印(brender は `window.__brender_server_mode`)で見分け、見た目の分かれ道(ウィンドウ操作・ダイアログなど)にだけ使う。API の呼び出しは分けない
+- **エラー**:メソッドが error を返すと、Wails は 422 で `{"message": …}` を返す。権限のエラーも Wails が ERROR のログに出す
+- **イベント**:デスクトップのビルドには Wails のイベントをブラウザに送る仕組みが無いので、ブラウザへは自前の SSE で送る(brender は Wails のイベントと SSE の両方へ配る `emit` を1つにしている)
+- **登録したサービスのメソッドは全部ブラウザから呼べる**。ウィンドウを開く・サーバの機械の画面を使うメソッドは、ブラウザの印があれば断る。admin だけの操作は、サービスの手前ではなくメソッドの中(brender は `api` の層)で確かめる
+- Wails の版:brender も aibow と同じ v3.0.0-beta.26 にした。画面の `@wailsio/runtime` は npm の版が Go の側と一致しないので `latest` のまま
+
+aibow で気をつけること:
+
+- **`ChatEvent`** は今 `app.Event.Emit` で流している(`_cmd/aibow/service.go` の `run`)。ブラウザには**自前の SSE** で流す。会話の中身が乗るので、ステップ10からは**その人にだけ**送る(brender の SSE は全員に送る作り)
+- **送信は長い呼び出しになる**:`Send`・`Regenerate`・`Resend`・`Compact` は、生成が終わるまで返らない(停止ボタンは呼び出しの取り消し = `object` 10 で `ctx` を止める)。
+  ブラウザからは、1回の送信が1本の長い HTTP のリクエストになる。自前のサーバに書き込みの時間の上限(`WriteTimeout`)を付けないこと(brender の自前のサーバは付けていない)。
+  Wails は呼び出しが返ると `ctx` を取り消すので、呼び出しの後まで続く処理は `context.WithoutCancel` を使う(brender の `Workspace.CreateMovie`)
+- **作業フォルダを選ぶダイアログ**(`app.Dialog.OpenFile`、`service.go`)はブラウザでは使えない。ブラウザ(B)には手元のツールが無いので、ブラウザでは作業フォルダを出さない、で自然につながる。ダイアログのメソッドはブラウザの印で断る
+- メソッドの多くは `ctx` を受けていない(`ChatService` の公開メソッド 34 のうち `ctx` を受けるのは 6)。ステップ10で利用者を見分けるには、brender と同じく第1引数に `ctx` を足す
 
 ## ステップごとの論点(仕様を書くときに決める)
 
