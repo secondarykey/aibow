@@ -106,8 +106,10 @@ type Conversations struct {
 	// エンジン(作業領域)が1つしかないので、生成は同時に1つだけ。
 	generating atomic.Pointer[uuid.UUID]
 
-	mu       sync.Mutex
-	defaults ConversationSettings // 新しい会話の既定の設定
+	mu sync.Mutex
+	// profile は、新しい会話で最初に選ばれるプロファイル(0014)。新しい会話の既定は、このプロファイルの値。
+	// PrepareProfiles の前は、NewConversations に渡した既定から作った仮のもの(保存していないので ID が空)
+	profile Profile
 
 	// stopSummary は生成中の要約だけを止める関数(StopSummary)。要約していなければ nil
 	summaryMu   sync.Mutex
@@ -132,16 +134,18 @@ type limits struct {
 	reply   int // 返事の上限: 1回の返事で生成するトークン数の上限
 }
 
-// NewConversations は会話の仕組みを作る。app からは新しい会話の既定の設定を使う。
+// NewConversations は会話の仕組みを作る。app からは新しい会話の既定の設定と最後に使ったモデルを使う
+// (プロファイルがまだ無いときに、プロファイル「既定」の値にする。PrepareProfiles)。
 func NewConversations(store Store, gen Generator, app AppSettings) *Conversations {
-	return &Conversations{store: store, gen: gen, tools: tool.Builtin(), defaults: app.Defaults.asDefaults()}
+	initial := Profile{Name: DefaultProfileName, Values: valuesOf(app.Defaults.asDefaults(), app.Workspace.Model)}
+	return &Conversations{store: store, gen: gen, tools: tool.Builtin(), profile: initial}
 }
 
 // limitsOf は会話の上限と返事の上限。会話の設定の値を使う。
 // 持っていない(0 の)ものは、新しい会話の既定の値を使う(この機能より前の会話は起動時に埋めるので、ふつうは来ない。FillMissingLimits)。
 func (cs *Conversations) limitsOf(set ConversationSettings) limits {
 	cs.mu.Lock()
-	d := cs.defaults
+	d := cs.profile.Values
 	cs.mu.Unlock()
 	return limits{history: cmp.Or(set.HistoryTokens, d.HistoryTokens), reply: cmp.Or(set.ReplyTokens, d.ReplyTokens)}
 }
@@ -260,6 +264,7 @@ func (cs *Conversations) Get(id uuid.UUID) (Conversation, []StoredMessage, error
 // Create は新しい会話を作る。settings が nil なら「新しい会話の既定の設定」をコピーする。
 // 画面は、新しい会話の画面で既定の写しを変えてから、最初の送信のときに settings を渡して作る。
 // どちらにしてもコピーなので、会話の中で設定を変えても既定やほかの会話には効かない。
+// 会話は、新しい会話で最初に選ばれるプロファイルから作ったものとして覚える(0014。プロファイルを選んで作るのはステップ 7 の 4)。
 func (cs *Conversations) Create(settings *ConversationSettings) (Conversation, error) {
 	s := cs.Defaults()
 	if settings != nil {
@@ -273,6 +278,7 @@ func (cs *Conversations) Create(settings *ConversationSettings) (Conversation, e
 	c := Conversation{
 		ID:        uuid.NewV7(),
 		Settings:  s,
+		ProfileID: cs.DefaultProfile().ID,
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
@@ -318,45 +324,40 @@ func (cs *Conversations) UpdateSettings(id uuid.UUID, s ConversationSettings) er
 	return cs.store.UpdateConversation(c)
 }
 
-// Defaults は新しい会話の既定の設定を返す。
+// Defaults は新しい会話の既定の設定(新しい会話で最初に選ばれるプロファイルの値)を返す。
 //
-// 使う MCP のサーバーと組み込みのツールを使うかは、保存した既定ではなく、設定の画面の「ツール」のグループのチェックで決める
-// (「ツール」のチェックが「新しい会話で最初から使う」の意味。決める場所を1つにするため、保存した既定には入れない)。
+// 使う MCP のサーバーは、プロファイルに書いたもののうち、この PC の settings.json にあるものだけ(無いものは無視する。0014 の 1)。
+// プロファイルのグループは、設定の画面の「ツール」のグループのチェックで変える(SetDefaultGroup)。
 // チェックを外したものも、会話の「この会話のツール」からはいつでも選べる。
 func (cs *Conversations) Defaults() ConversationSettings {
-	cs.mu.Lock()
-	d := cs.defaults
-	cs.mu.Unlock()
-	d.MCPServers = cs.defaultServers()
-	d.BuiltinOff = !cs.prefs.groupDefault("")
+	d := cs.DefaultProfile().Values.settings()
+	d.MCPServers = cs.existingServers(d.MCPServers)
 	return d
 }
 
-// defaultServers は、新しい会話で最初から使う MCP のサーバー(settings.json のうち、「ツール」でチェックを外していないもの)。
-func (cs *Conversations) defaultServers() []string {
+// existingServers は、names のうち settings.json にある MCP のサーバー(settings.json の順)。
+func (cs *Conversations) existingServers(names []string) []string {
 	out := []string{}
 	if cs.remote == nil {
 		return out
 	}
 	for _, name := range cs.remote.Servers() {
-		if cs.prefs.groupDefault(name) {
+		if slices.Contains(names, name) {
 			out = append(out, name)
 		}
 	}
 	return out
 }
 
-// SetDefaults は新しい会話の既定の設定を変えて保存する。今ある会話には効かない。
+// SetDefaults は新しい会話の既定の設定(新しい会話で最初に選ばれるプロファイルの値)を変えて保存する。今ある会話には効かない。
 // 作業フォルダは既定に入れない(asDefaults)。
+// 使うツールのグループ(組み込み・MCP のサーバー)とモデルは変えない(グループは設定の画面の「ツール」で決める。SetDefaultGroup)。
 func (cs *Conversations) SetDefaults(s ConversationSettings) error {
-	s = s.asDefaults()
-	cs.mu.Lock()
-	defer cs.mu.Unlock()
-	if err := SaveAppSetting(cs.store, SettingDefaults, s); err != nil {
-		return err
-	}
-	cs.defaults = s
-	return nil
+	return cs.updateProfile(func(v *ProfileValues) {
+		next := valuesOf(s.asDefaults(), v.Model)
+		next.BuiltinOff, next.MCPServers = v.BuiltinOff, v.MCPServers
+		*v = next
+	})
 }
 
 // Generating は生成中の会話の ID を返す。生成していなければ nil。

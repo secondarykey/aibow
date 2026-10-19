@@ -337,3 +337,102 @@ func TestMigrationFromVersion2(t *testing.T) {
 		t.Fatalf("今ある発言: %+v %v", ms, err)
 	}
 }
+
+// プロファイル(0014)を保存して読める。会話はどのプロファイルから作ったかを覚え、使っている会話があるプロファイルは消せない
+func TestProfilesPersist(t *testing.T) {
+	s, path := openTemp(t)
+	now := time.Now()
+	p := aibow.Profile{
+		ID: uuid.NewV7(), Name: "既定", CreatedAt: now, UpdatedAt: now,
+		Values: aibow.ProfileValues{Model: "ollama:qwen3.5:4b", System: "sys", Temperature: 0.7, Compact: aibow.CompactSummary,
+			HistoryTokens: 8192, ReplyTokens: 4096, MCPServers: []string{"filesystem"}},
+	}
+	if err := s.CreateProfile(p); err != nil {
+		t.Fatal(err)
+	}
+	c := aibow.Conversation{ID: uuid.NewV7(), Settings: settings, ProfileID: p.ID, CreatedAt: now, UpdatedAt: now}
+	if err := s.CreateConversation(c); err != nil {
+		t.Fatal(err)
+	}
+	free := newConv(t, s, now) // プロファイルを持たない会話(NULL)
+	s.Close()
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	got, err := s.Profile(p.ID)
+	if err != nil || got.Name != "既定" || !reflect.DeepEqual(got.Values, p.Values) || got.Archived {
+		t.Fatalf("読めない: %+v %v", got, err)
+	}
+	if c2, _, _ := s.Conversation(c.ID); c2.ProfileID != p.ID {
+		t.Errorf("会話のプロファイル: %v", c2.ProfileID)
+	}
+	if f, _, _ := s.Conversation(free.ID); f.ProfileID != (uuid.UUID{}) {
+		t.Errorf("プロファイルを持たない会話は空: %v", f.ProfileID)
+	}
+
+	// 名前・値・しまったかを書き換える
+	got.Name, got.Values.Think, got.Archived, got.UpdatedAt = "コマンドなし", true, true, now.Add(time.Minute)
+	if err := s.UpdateProfile(got); err != nil {
+		t.Fatal(err)
+	}
+	if list, _ := s.ListProfiles(); len(list) != 1 || list[0].Name != "コマンドなし" || !list[0].Values.Think || !list[0].Archived {
+		t.Errorf("書き換えた: %+v", list)
+	}
+	if err := s.UpdateProfile(aibow.Profile{ID: uuid.NewV7()}); !errors.Is(err, aibow.ErrProfileNotFound) {
+		t.Errorf("無いプロファイルの書き換え: %v", err)
+	}
+
+	// 使っている会話があれば消せない。会話を消せば消せる
+	if err := s.DeleteProfile(p.ID); !errors.Is(err, aibow.ErrProfileInUse) {
+		t.Fatalf("使っている会話があれば消せない: %v", err)
+	}
+	if err := s.DeleteConversation(c.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteProfile(p.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Profile(p.ID); !errors.Is(err, aibow.ErrProfileNotFound) {
+		t.Errorf("消えていない: %v", err)
+	}
+	// 外部キー:無いプロファイルから作った会話は保存できない
+	bad := aibow.Conversation{ID: uuid.NewV7(), Settings: settings, ProfileID: uuid.NewV7(), CreatedAt: now, UpdatedAt: now}
+	if err := s.CreateConversation(bad); err == nil {
+		t.Error("無いプロファイルを指す会話を保存できてしまう")
+	}
+}
+
+// 版 4 の DB(プロファイルより前)を開くと、表と列が足され、今ある会話はプロファイルを持たない(NULL)まま読める
+func TestMigrationFromVersion4(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "old.db")
+	db, err := sql.Open("sqlite", path+"?_pragma=foreign_keys(1)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(migrations[0] + migrations[1] + migrations[2] + migrations[3] + "PRAGMA user_version = 4;"); err != nil {
+		t.Fatal(err)
+	}
+	old := uuid.NewV7()
+	now := formatTime(time.Now())
+	if _, err := db.Exec(`INSERT INTO conversations VALUES (?, '古い会話', '{"system":"sys","history_tokens":8192,"reply_tokens":4096}', ?, ?)`,
+		old.String(), now, now); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	c, _, err := s.Conversation(old)
+	if err != nil || c.Title != "古い会話" || c.ProfileID != (uuid.UUID{}) {
+		t.Fatalf("今ある会話: %+v %v", c, err)
+	}
+	if list, err := s.ListProfiles(); err != nil || len(list) != 0 {
+		t.Errorf("プロファイルはまだ無い: %+v %v", list, err)
+	}
+}

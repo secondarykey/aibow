@@ -13,9 +13,14 @@ import (
 
 // app_settings のキー
 const (
-	SettingGPULayers = "gpu_layers"            // GPU に載せる層の数
-	SettingLastModel = "last_model"            // 最後に使ったモデルの ID。次の起動で読み込む
-	SettingDefaults  = "conversation_defaults" // 新しい会話の既定の設定(会話の上限・返事の上限も入る)
+	SettingGPULayers = "gpu_layers" // GPU に載せる層の数
+	SettingLastModel = "last_model" // 最後に使ったモデルの ID。次の起動で読み込む
+	// SettingDefaultProfile は、新しい会話で最初に選ばれるプロファイルの ID(0014)。新しい会話の既定は、このプロファイルの値
+	SettingDefaultProfile = "default_profile"
+
+	// SettingDefaults は、プロファイルより前の「新しい会話の既定の設定」(会話の上限・返事の上限も入る)。
+	// 今はプロファイル「既定」への引き継ぎ(PrepareProfiles)のためだけに読み、書かない(0014)
+	SettingDefaults = "conversation_defaults"
 
 	// 会話の上限・返事の上限は、以前はアプリ全体の設定で、ここに置いていた。
 	// 今は新しい会話の既定(SettingDefaults)に入る。既定にまだ入っていないときの引き継ぎのためだけに読む(0009)
@@ -32,8 +37,7 @@ const minHistoryTokens = 2048
 
 // WorkspaceSettings はモデルの読み込みに関わる設定の塊。変えるとモデルの読み直しになる。
 //
-// あとで「プロファイル」(設定に名前を付けて切り替える)を作るときは、この塊をそのままプロファイルの中に移す。
-// 今のアプリの設定は「名前のない既定のプロファイル」という位置づけ。
+// モデルはプロファイルの値にも入る(0014。会話ごとにモデルを持つのはステップ 7 の 2)。GPU の層数はこの PC のものなので、プロファイルに入れない。
 // 会話の上限・返事の上限(作業領域の大きさ)は、会話ごとの設定に移した(ConversationSettings。0009)。
 type WorkspaceSettings struct {
 	Model     string `json:"model"`      // 最後に使ったモデルの ID(app_settings のキーは last_model)
@@ -43,7 +47,7 @@ type WorkspaceSettings struct {
 // AppSettings はアプリの設定と、新しい会話の既定の設定。
 type AppSettings struct {
 	Workspace WorkspaceSettings    `json:"workspace"`
-	Defaults  ConversationSettings `json:"defaults"` // 新しい会話の既定の設定
+	Defaults  ConversationSettings `json:"defaults"` // 新しい会話の既定の設定(新しい会話で最初に選ばれるプロファイルの値)
 }
 
 // LoadAppSettings は保存先からアプリ全体の設定を読む。
@@ -53,7 +57,9 @@ type AppSettings struct {
 // notes は、古い版の設定を引き継いだときのお知らせ(ログに出す)。
 //
 // 新しい会話の既定の会話の上限・返事の上限は、古い置き場(history_tokens / reply_tokens、もっと古い n_ctx)→
-// 既定の設定(conversation_defaults)の順に読み、後から読んだものが勝つ(既定に入っていれば、それを使う)。
+// 既定の設定(conversation_defaults)→ 新しい会話で最初に選ばれるプロファイルの順に読み、後から読んだものが勝つ。
+// プロファイルが無ければ(この機能より前の DB か、初めての起動)、プロファイルの手前までの値になる。
+// その値から、起動したときに PrepareProfiles がプロファイル「既定」を作る。
 func LoadAppSettings(s Store, initial AppSettings) (a AppSettings, notes []string, err error) {
 	a = initial
 	found := map[string]bool{}
@@ -90,8 +96,28 @@ func LoadAppSettings(s Store, initial AppSettings) (a AppSettings, notes []strin
 	// 既定に会話の上限・返事の上限が入っていなければ(0 なら)、古い置き場か初期値のまま
 	a.Defaults.HistoryTokens = cmp.Or(a.Defaults.HistoryTokens, legacy.HistoryTokens)
 	a.Defaults.ReplyTokens = cmp.Or(a.Defaults.ReplyTokens, legacy.ReplyTokens)
+
+	// プロファイルがあれば、新しい会話の既定はその値(作業領域の最初の大きさにも使うので、ここで読む)
+	if p, ok, err := storedDefaultProfile(s); err != nil {
+		return initial, nil, err
+	} else if ok {
+		a.Defaults = p.Values.settings()
+	}
 	a.Defaults = a.Defaults.asDefaults()
 	return a, notes, nil
+}
+
+// storedDefaultProfile は、新しい会話で最初に選ばれるプロファイルを読む。まだ無ければ ok=false。
+func storedDefaultProfile(s Store) (Profile, bool, error) {
+	list, err := s.ListProfiles()
+	if err != nil || len(list) == 0 {
+		return Profile{}, false, err
+	}
+	i, err := markIndex(s, list)
+	if err != nil || i < 0 {
+		return Profile{}, false, err // 印が無ければ、PrepareProfiles が付け直す
+	}
+	return list[i], true, nil
 }
 
 // migrateNCtx は、古い版の「コンテキスト長」(n_ctx)と、新しい会話の既定の「返事の上限」(max_tokens)を、

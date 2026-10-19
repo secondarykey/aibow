@@ -68,8 +68,9 @@ type toolsFile struct {
 	Tools map[string]ToolPolicy `json:"tools,omitempty"`
 	// Known は、サーバーを最後に起動したときに見えたツールの一覧。起動のたびに置き換える
 	Known map[string][]KnownTool `json:"known,omitempty"`
-	// NotDefault は、新しい会話で最初から選ばないグループ(設定の画面の「ツール」で、グループのチェックを外したもの)。
-	// 使えなくするのではない。会話の「この会話のツール」からは、いつでも選べる
+	// NotDefault は、新しい会話で最初から選ばないグループ(プロファイルより前の、設定の画面の「ツール」のグループのチェック)。
+	// 今はグループのチェックをプロファイルの「使うツールのグループ」に書くので(0014)、プロファイル「既定」への引き継ぎのためだけに読む。
+	// 足したばかりのサーバーをここに入れるのは、引き継ぐ前の起動で足したサーバーを「既定」に入れないため(NoteServers)
 	NotDefault NotDefault `json:"notDefault,omitzero"`
 	// Seen は、aibow がすでに見た MCP のサーバー(settings.json の名前)。ここに無いサーバーは、足したばかりのもの。
 	// 足したばかりのサーバーは、新しい会話で最初から選ばない(NotDefault に入れる)。足しただけで全部の新しい会話のプロンプトに
@@ -282,7 +283,7 @@ func (p *ToolPrefs) SetBuiltinPolicy(policy ToolPolicy) error {
 }
 
 // SetGroupPolicy は、グループ(組み込みなら空、MCP ならサーバーの名前)の全部のツールの確認の扱いの PC の既定を変えて、tools.json に書く。
-// 確認する(ask)・確認しない(allow)・決めていない(空)だけ(グループごとの「使わない」は「新しい会話で最初から選ばない」= SetGroupDefault)。
+// 確認する(ask)・確認しない(allow)・決めていない(空)だけ(グループごとの「使わない」は「新しい会話で最初から選ばない」= プロファイルの使うツールのグループ。Conversations.SetDefaultGroup)。
 func (p *ToolPrefs) SetGroupPolicy(group string, policy ToolPolicy) error {
 	if policy != "" && policy != ToolAsk && policy != ToolAllow {
 		return fmt.Errorf("グループの扱いは確認する(ask)か確認しない(allow)です: %q", policy)
@@ -310,22 +311,8 @@ func setPolicy(m map[string]ToolPolicy, key string, policy ToolPolicy) map[strin
 	return m
 }
 
-// SetGroupDefault は、グループ(組み込みなら空、MCP ならサーバーの名前)を新しい会話で最初から選ぶかを変えて、tools.json に書く。
-func (p *ToolPrefs) SetGroupDefault(group string, on bool) error {
-	return p.update(func(f *toolsFile) {
-		if group == "" {
-			f.NotDefault.Builtin = !on
-			return
-		}
-		f.NotDefault.Servers = slices.DeleteFunc(f.NotDefault.Servers, func(n string) bool { return n == group })
-		if !on {
-			f.NotDefault.Servers = append(f.NotDefault.Servers, group)
-			slices.Sort(f.NotDefault.Servers)
-		}
-	}, "")
-}
-
 // groupDefault は、グループを新しい会話で最初から選ぶか(決めていなければ選ぶ)。
+// プロファイルより前の値で、プロファイル「既定」への引き継ぎ(Conversations.migrateDefaults)のためだけに読む。
 func (p *ToolPrefs) groupDefault(group string) bool {
 	if p == nil {
 		return true

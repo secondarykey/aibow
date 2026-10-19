@@ -179,7 +179,8 @@ export function SetGPULayers(n: number): $CancellablePromise<engine$0.ModelInfo 
 }
 
 /**
- * SetGroupDefault は、ツールのグループを新しい会話で最初から選ぶかを変える(tools.json に書く)。
+ * SetGroupDefault は、ツールのグループを新しい会話で最初から選ぶかを変える
+ * (新しい会話で最初に選ばれるプロファイルの「使うツールのグループ」に書く。0014)。
  * group が空なら組み込みのツール、そうでなければ MCP のサーバー。画面ではグループのチェック。
  */
 export function SetGroupDefault(group: string, on: boolean): $CancellablePromise<void> {
@@ -231,6 +232,8 @@ export function ToolDefaults(): $CancellablePromise<aibow$0.ToolGroupState[] | n
 
 /**
  * ToolPrefs は、ツールの扱いの PC の既定(tools.json)と、サーバーを起動したときに見えたツールの一覧。
+ * 「新しい会話で最初から選ばない」グループ(NotDefault。画面のグループのチェック)は、tools.json ではなく
+ * 新しい会話で最初に選ばれるプロファイルの値から作る(0014。画面の形はプロファイルの画面を作るまで変えない)。
  */
 export function ToolPrefs(): $CancellablePromise<aibow$0.ToolPrefsView> {
     return $Call.ByID(2378033441);

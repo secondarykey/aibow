@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -85,6 +86,15 @@ func NewChatService(eng *engine.Engine, st aibow.Store, app aibow.AppSettings, c
 			s.convs.SetRemoteTools(mcp)
 		}
 		s.convs.SetToolPrefs(prefs)
+		// 新しい会話の既定はプロファイルの値。プロファイルより前の DB なら、今の既定からプロファイル「既定」を作り、今ある会話を紐づける(0014)。
+		// ツールのグループを引き継ぐので、MCP のサーバーとツールの扱いを渡したあとに呼ぶ
+		if notes, err := s.convs.PrepareProfiles(); err != nil {
+			log.Error(err.Error())
+		} else {
+			for _, n := range notes {
+				log.Notice(n)
+			}
+		}
 		// 会話の上限・返事の上限を会話ごとにする前に作った会話には、今の既定の値を写す(既定を変えても今ある会話は変わらない、の約束。0009)
 		if n, err := s.convs.FillMissingLimits(); err != nil {
 			log.Error(err.Error())
@@ -319,8 +329,21 @@ func (s *ChatService) ToolStates(settings aibow.ConversationSettings) ([]aibow.T
 }
 
 // ToolPrefs は、ツールの扱いの PC の既定(tools.json)と、サーバーを起動したときに見えたツールの一覧。
+// 「新しい会話で最初から選ばない」グループ(NotDefault。画面のグループのチェック)は、tools.json ではなく
+// 新しい会話で最初に選ばれるプロファイルの値から作る(0014。画面の形はプロファイルの画面を作るまで変えない)。
 func (s *ChatService) ToolPrefs() aibow.ToolPrefsView {
-	return s.prefs.View()
+	v := s.prefs.View()
+	if s.convs == nil {
+		return v
+	}
+	d := s.convs.Defaults()
+	v.NotDefault = aibow.NotDefault{Builtin: d.BuiltinOff, Servers: []string{}}
+	for _, info := range s.AllMCPServers() {
+		if !slices.Contains(d.MCPServers, info.Name) {
+			v.NotDefault.Servers = append(v.NotDefault.Servers, info.Name)
+		}
+	}
+	return v
 }
 
 // LoadToolList は、MCP のサーバーを一時的に起動してツールの一覧を受け取り、tools.json に覚える(設定の画面で、一覧が無いときと「読み直す」)。
@@ -341,10 +364,14 @@ func (s *ChatService) SetToolPolicy(name string, policy aibow.ToolPolicy) error 
 	return nil
 }
 
-// SetGroupDefault は、ツールのグループを新しい会話で最初から選ぶかを変える(tools.json に書く)。
+// SetGroupDefault は、ツールのグループを新しい会話で最初から選ぶかを変える
+// (新しい会話で最初に選ばれるプロファイルの「使うツールのグループ」に書く。0014)。
 // group が空なら組み込みのツール、そうでなければ MCP のサーバー。画面ではグループのチェック。
 func (s *ChatService) SetGroupDefault(group string, on bool) error {
-	if err := s.prefs.SetGroupDefault(group, on); err != nil {
+	if s.startupErr != nil {
+		return s.startupErr
+	}
+	if err := s.convs.SetDefaultGroup(group, on); err != nil {
 		return err
 	}
 	name := group
