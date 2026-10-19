@@ -7,6 +7,8 @@ import { useEffect, useRef, useState } from "react";
 import { LuArrowLeft } from "react-icons/lu";
 import type { ConversationSettings } from "../../bindings/github.com/secondarykey/aibow";
 import type { ServerInfo } from "../../bindings/github.com/secondarykey/aibow/mcp/client";
+// Go の models パッケージ。"…/aibow/models" と書くと aibow パッケージの models.ts が選ばれるので、index まで書く
+import type { Entry as ModelEntry } from "../../bindings/github.com/secondarykey/aibow/models/index";
 import { ConversationSettingsForm, LimitsForm } from "./ConversationSettingsForm";
 import { ConversationTools } from "./ConversationTools";
 import { CopyButton } from "./CopyButton";
@@ -16,6 +18,7 @@ interface Props {
   title: string;                          // 会話の名前
   onRename(title: string): void;          // 名前を変える(一覧のダブルクリック・F2 と同じ)
   settings: ConversationSettings;
+  models: ModelEntry[]; // 選べるモデル
   errors: { id: number; text: string }[]; // この画面を開いてから出たエラー(ふだんは会話の表示に出るもの)
   onClose(): void;                        // 会話に戻る
   onChange(patch: Partial<ConversationSettings>): void;
@@ -65,7 +68,7 @@ function TitleField({ title, onRename }: { title: string; onRename(title: string
   );
 }
 
-export function ConversationSettingsView({ id, title, onRename, settings, errors, onClose, onChange, onMakeDefault, lastPrompt, servers, limitsDisabled, onApplyLimits,
+export function ConversationSettingsView({ id, title, onRename, settings, models, errors, onClose, onChange, onMakeDefault, lastPrompt, servers, limitsDisabled, onApplyLimits,
 }: Props) {
   return (
     <section className="settings-view">
@@ -86,7 +89,7 @@ export function ConversationSettingsView({ id, title, onRename, settings, errors
           <CopyButton text={id} />
         </div>
 
-        <ConversationSettingsForm settings={settings} onChange={onChange} />
+        <ConversationSettingsForm settings={settings} models={models} onChange={onChange} />
         <LimitsForm history={settings.history_tokens} reply={settings.reply_tokens} disabled={limitsDisabled} onApply={onApplyLimits} />
         <button className="make-default" onClick={onMakeDefault}>この設定を新しい会話の既定にする</button>
 

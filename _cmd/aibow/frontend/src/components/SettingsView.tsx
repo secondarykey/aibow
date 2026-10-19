@@ -11,11 +11,14 @@ import { LuArrowLeft } from "react-icons/lu";
 import type { AppSettings, ConversationSettings, DisplaySettings, WorkspaceSettings } from "../../bindings/github.com/secondarykey/aibow";
 import { ToolSettings } from "./ToolSettings";
 import { ConversationSettingsForm, LimitsForm, NumberInput } from "./ConversationSettingsForm";
+// Go の models パッケージ。"…/aibow/models" と書くと aibow パッケージの models.ts が選ばれるので、index まで書く
+import type { Entry as ModelEntry } from "../../bindings/github.com/secondarykey/aibow/models/index";
 
 interface Props {
   onClose(): void;                        // 会話に戻る
   errors: { id: number; text: string }[]; // 設定の画面を開いてから出たエラー(ふだんは会話の表示に出るもの)
   app: AppSettings | null;
+  models: ModelEntry[]; // 選べるモデル(新しい会話の既定のモデル)
   onDefaultsChange(patch: Partial<ConversationSettings>): void; // 新しい会話の既定を変える
   onApplyDefaultLimits(history: number, reply: number): void;   // 新しい会話の既定の会話の上限・返事の上限(作業領域を作り直してみてから保存する)
   appDisabled: boolean; // 生成中・読み込み中は変えられない(エンジンが1つのため)
@@ -31,7 +34,7 @@ const TABS: { id: Tab; label: string; title: string }[] = [
   { id: "conversation", label: "会話", title: "新しい会話の既定と、ツールを使うかどうか(会話の既定になるもの)" },
 ];
 
-export function SettingsView({ onClose, errors, app, onDefaultsChange, onApplyDefaultLimits, appDisabled, onApplyApp, onDisplayChange, onToolsChanged }: Props) {
+export function SettingsView({ onClose, errors, app, models, onDefaultsChange, onApplyDefaultLimits, appDisabled, onApplyApp, onDisplayChange, onToolsChanged }: Props) {
   // 開くたびに「基本設定」から(開いている間だけ覚える)
   const [tab, setTab] = useState<Tab>("basic");
   return (
@@ -73,7 +76,7 @@ export function SettingsView({ onClose, errors, app, onDefaultsChange, onApplyDe
             <h2 title="新しい会話は、この設定の写しから始まる。今ある会話には効かない">新しい会話の既定</h2>
             {app && (
               <>
-                <ConversationSettingsForm settings={app.defaults} onChange={onDefaultsChange} />
+                <ConversationSettingsForm settings={app.defaults} models={models} onChange={onDefaultsChange} />
                 <LimitsForm
                   history={app.defaults.history_tokens}
                   reply={app.defaults.reply_tokens}

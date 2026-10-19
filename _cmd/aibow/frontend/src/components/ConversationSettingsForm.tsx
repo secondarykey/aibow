@@ -1,4 +1,4 @@
-// 会話の設定の入力欄(システムプロンプト・compact・temperature・presence penalty・思考)。
+// 会話の設定の入力欄(モデル・システムプロンプト・compact・temperature・presence penalty・思考)。
 //
 // 同じ欄を2か所で使う: 会話の設定の画面(一覧の歯車。その会話の設定)と、設定の画面(新しい会話の既定)。
 // 新しい会話は既定の写しから始まり、そのあとは会話ごとに変える(_docs/features/0009-conversation-settings.md)。
@@ -7,13 +7,18 @@
 // 作業領域(会話の上限 + 返事の上限)を作り直して VRAM に入るかを確かめてから保存するため。
 import { useEffect, useState } from "react";
 import type { ConversationSettings } from "../../bindings/github.com/secondarykey/aibow";
+// Go の models パッケージ。"…/aibow/models" と書くと aibow パッケージの models.ts が選ばれるので、index まで書く
+import type { Entry as ModelEntry } from "../../bindings/github.com/secondarykey/aibow/models/index";
 
-export function ConversationSettingsForm({ settings, onChange }: {
+export function ConversationSettingsForm({ settings, models, onChange }: {
   settings: ConversationSettings;
+  models: ModelEntry[]; // 選べるモデル(models フォルダと Ollama)
   onChange(patch: Partial<ConversationSettings>): void;
 }) {
   return (
     <>
+      <ModelSelect value={settings.model} models={models} onChange={model => onChange({ model })} />
+
       <label htmlFor="system">システムプロンプト</label>
       <textarea id="system" rows={4} value={settings.system} onChange={e => onChange({ system: e.target.value })} />
 
@@ -57,6 +62,36 @@ export function ConversationSettingsForm({ settings, onChange }: {
         思考する
       </label>
       <p className="hint">オフにすると、プロンプトの最後に空の思考 <code>&lt;think&gt;&lt;/think&gt;</code> を入れて、すぐ答えさせます。</p>
+    </>
+  );
+}
+
+// ModelSelect は、会話のモデル(新しい会話の既定では、新しい会話のモデル)の選択(0014 の 3)。
+// ここでは値を変えるだけで、モデルは読み込まない(会話のモデルは、その会話で送信するときに読み込む)。
+// 入力欄の下のモデルの選択は、選んだらすぐ読み込む(今から使うものを選ぶ欄なので)。
+function ModelSelect({ value, models, onChange }: { value: string; models: ModelEntry[]; onChange(id: string): void }) {
+  const groups = [
+    { source: "file", label: "models フォルダ" },
+    { source: "ollama", label: "Ollama" },
+  ];
+  // 一覧に無いモデル(消したモデルや、AIBOW_MODEL で一覧の外のファイルを指定したもの)も、今の値として出しておく
+  const outside = value !== "" && !models.some(m => m.id === value);
+  return (
+    <>
+      <label htmlFor="model" title="この設定で使うモデル。変えても、ここでは読み込まない(送信するときに読み込む)">モデル</label>
+      <select id="model" value={value} onChange={e => onChange(e.target.value)}>
+        {value === "" && <option value="">決めていない(読み込んでいるモデル)</option>}
+        {groups.map(g => {
+          const items = models.filter(m => m.source === g.source);
+          if (!items.length) return null;
+          return (
+            <optgroup key={g.source} label={g.label}>
+              {items.map(m => <option key={m.id} value={m.id}>{`${m.name}(${m.size_gb.toFixed(1)} GB)`}</option>)}
+            </optgroup>
+          );
+        })}
+        {outside && <option value={value}>{`${value}(見つかりません)`}</option>}
+      </select>
     </>
   );
 }

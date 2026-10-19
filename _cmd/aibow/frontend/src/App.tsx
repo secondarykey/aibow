@@ -381,6 +381,7 @@ export default function App() {
         errors={viewErrors}
         onClose={() => setSettingsOpen(false)}
         app={app.settings}
+        models={models.models}
         onDefaultsChange={onDefaultsChange}
         onApplyDefaultLimits={(h, r) => applyLimits(h, r, onDefaultsChange)}
         appDisabled={busy !== "idle"}
@@ -407,6 +408,7 @@ export default function App() {
         title={convTitle}
         onRename={title => convs.rename(convs.current!.conversation.id, title).catch(err => addError(errorMessage(err)))}
         settings={current}
+        models={models.models}
         errors={viewErrors}
         onClose={() => {
           setConvSettingsOpen(false);
