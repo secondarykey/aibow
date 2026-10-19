@@ -26,6 +26,7 @@ import (
 
 	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/format"
+	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/tool"
 )
 
@@ -183,10 +184,13 @@ func (cs *Conversations) prepare(ctx context.Context, conv Conversation, history
 			if ctx.Err() != nil {
 				return passing{}, ctx.Err() // 送信全体が止められた
 			}
-			// 要約できなかった回は、保存せず、その回だけ truncate で収めて返事を生成する
+			// 要約できなかった回は、保存せず、その回だけ truncate で収めて返事を生成する。
+			// 画面では、何が起きたか・代わりに何をしたか・どうすればよいかが分かるようにする(赤いエラーだけでは何をすればよいか分からなかった)
 			emit(ChatEvent{ConversationID: conv.ID, Type: "compact", Compact: &CompactInfo{
 				Method: CompactSummary, BeforeTokens: p.tokens,
-				Error: fmt.Sprintf("要約を作れませんでした(%v)。この回は、古い発言を外して(truncate)返事を生成します", err),
+				Error: fmt.Sprintf("要約を作れませんでした(%v)。\n"+
+					"この回は要約の代わりに、入りきらない古い発言をモデルに渡さずに(truncate)返事を作ります。発言は消えていません。"+
+					"次に送信するときに、もう一度要約を試します。%s", err, summaryFailHelp(err)),
 			}})
 		}
 		// 成功しても失敗しても、今ある最新の要約(何回かに分けた途中までの分も含む)で数え直す。
@@ -300,17 +304,34 @@ func (cs *Conversations) truncateNow(conv Conversation, summary *Compaction, his
 
 // 要約を作るときの生成の設定。要約は「考える」より「まとめる」作業なので、思考はオフにし、
 // temperature を低めにして、事実から外れた言い換えをしにくくする。
+// 繰り返しを抑える presence penalty は、返事と同じく会話の設定の値を使う(小さいモデルが同じ箇条書きを繰り返し、
+// 上限まで書き続けるのを防ぐ。数えるのは生成したトークンだけなので、会話から名前を写すのは妨げない)
 const (
-	summaryMaxTokens   = 1024 // 要約1回で生成するトークン数の上限
 	summaryTemperature = 0.3
-	summaryMaxRunes    = 800 // 指示で伝える要約の文字数。上限トークン数に収まるよう、少なめに伝える
+	minSummaryTokens   = 1024 // 要約1回で生成するトークン数の上限の最低値
 )
+
+// summaryMaxTokens は、要約1回で生成するトークン数の上限。会話の上限の 1/4(最低 minSummaryTokens)。
+// 要約は、残す最近の発言(会話の上限の半分まで)と一緒に会話の上限に収まる必要があるので、1/4 なら残りに入る。
+// 会話の上限を広げた会話では、要約も長く書けるようになる(以前は 1024 固定で、要約が育つと切れていた。2026-10-19、ユーザーと決めた)
+func summaryMaxTokens(history int) int {
+	return max(minSummaryTokens, history/4)
+}
+
+// summaryRunes は、指示で伝える要約の文字数。上限トークン数の半分(100 字単位)。
+// 日本語は1文字がおよそ 0.7〜1 トークンで、小さいモデルは字数を守りきれないので、上限の半分くらいを目安に伝える
+// (以前は上限 1024 に 800 字と伝えていて、少しはみ出すと切れた)
+func summaryRunes(maxTokens int) int {
+	return maxTokens / 2 / 100 * 100
+}
 
 // summaryHeading は、モデルに渡すときに要約の前に付ける見出し(システムプロンプトの後ろに付ける)。
 const summaryHeading = "# これまでの会話の要約(古い部分は省略されています)"
 
 // summaryInstruction は要約を作るときのシステムプロンプト(_docs/features/0002-compact.md で決めた文面)。
-var summaryInstruction = fmt.Sprintf(`あなたは会話の要約係です。「前回までの要約」と「その続きの会話」を、1つの要約にまとめ直してください。
+// 「収まらないときに何を削るか」は、要約を積み重ねると要約が育ち続けるので足した(2026-10-19)
+func summaryInstruction(runes int) string {
+	return fmt.Sprintf(`あなたは会話の要約係です。「前回までの要約」と「その続きの会話」を、1つの要約にまとめ直してください。
 この要約は、このあと会話を続けるときに、これまでの会話の代わりとしてアシスタントに渡されます。
 
 必ず残すこと:
@@ -323,7 +344,24 @@ var summaryInstruction = fmt.Sprintf(`あなたは会話の要約係です。「
 - 日本語の箇条書きで、%d字以内
 - 挨拶や言い回しは省き、事実だけを書く
 - 会話に無いことを付け足さない
-- 要約だけを出力する(「以下が要約です」などの前置きは書かない)`, summaryMaxRunes)
+- 要約だけを出力する(「以下が要約です」などの前置きは書かない)
+
+字数に収まらないとき:
+- 今の話題に関係の薄い古いこと(前回までの要約の項目も)から削るか、短くまとめる
+- 同じことを2回書かない`, runes)
+}
+
+// errSummaryStopped は、要約を画面の停止ボタンで止めたとき。失敗ではないので、対処は添えない
+var errSummaryStopped = errors.New("要約を停止しました")
+
+// summaryFailHelp は、要約に失敗したときに画面に添える「どうすればよいか」。
+func summaryFailHelp(err error) string {
+	if errors.Is(err, errSummaryStopped) {
+		return ""
+	}
+	return "\n何度も続くときは、大きいモデル(9B など)に切り替える・会話の設定で会話の上限を増やす(要約の上限も増える)・" +
+		"会話の設定で compact を truncate(要約せずに古い発言を外す)にする、のどれかを試してください。"
+}
 
 // errNothingToSummarize は、要約できる古い発言が無いときのエラー。最近の発言が上限の半分に収まっていて、要約するまでもない。
 var errNothingToSummarize = errors.New("要約できる古い発言がありません(最近の発言が、会話の上限の半分に収まっています)")
@@ -355,7 +393,7 @@ func (cs *Conversations) latestSummary(id uuid.UUID, history []StoredMessage) (*
 // summaryMessages は要約を作らせるときに渡す発言。前回の要約と、その続きの会話を1つの user の発言にする。
 // 会話は ChatML の発言として並べず、「ユーザー: …」の文章にする。発言として並べると、
 // モデルは要約ではなく、会話の続き(最後の質問への返事)を書こうとしてしまうため。
-func summaryMessages(prev string, part []StoredMessage) []format.Message {
+func summaryMessages(prev string, part []StoredMessage, maxTokens int) []format.Message {
 	var b strings.Builder
 	b.WriteString("## 前回までの要約\n")
 	if prev == "" {
@@ -383,7 +421,7 @@ func summaryMessages(prev string, part []StoredMessage) []format.Message {
 			fmt.Fprintf(&b, "ツールの結果(%s): %s\n", name, headRunes(m.Content, summaryToolResultRunes))
 		}
 	}
-	return []format.Message{{Role: "system", Content: summaryInstruction}, {Role: "user", Content: b.String()}}
+	return []format.Message{{Role: "system", Content: summaryInstruction(summaryRunes(maxTokens))}, {Role: "user", Content: b.String()}}
 }
 
 // summaryToolResultRunes は、要約に渡すツールの結果・引数の長さ(文字数)。長いものは先頭だけにする
@@ -437,12 +475,13 @@ func (cs *Conversations) summarize(ctx context.Context, conv Conversation, histo
 
 	// 2. history[from:keep] を要約する。作業領域(会話の上限 + 返事の上限)に入る分ずつ
 	ctxSize := lim.history + lim.reply
+	maxTokens := summaryMaxTokens(lim.history)
 	for from < keep {
-		end, err := cs.summaryEnd(history, latest, from, keep, ctxSize-summaryMaxTokens)
+		end, err := cs.summaryEnd(history, latest, from, keep, maxTokens, ctxSize-maxTokens)
 		if err != nil {
 			return nil, err
 		}
-		c, err := cs.summarizePart(ctx, conv, history, latest, from, end, emit)
+		c, err := cs.summarizePart(ctx, conv, history, latest, from, end, maxTokens, emit)
 		if err != nil {
 			return nil, err
 		}
@@ -474,13 +513,14 @@ func (cs *Conversations) keepFrom(set ConversationSettings, history []StoredMess
 
 // summaryEnd は、history[from:end] を前回の要約と一緒に要約させるとき、要約の指示が budget に収まる一番大きい end を返す。
 // end は組の切れ目(組の始まりか keep)にする。1組も収まらなければエラー。
-func (cs *Conversations) summaryEnd(history []StoredMessage, prev *Compaction, from, keep, budget int) (int, error) {
+// maxTokens は要約の上限(指示に書く字数が変わるので、指示の長さに効く)。
+func (cs *Conversations) summaryEnd(history []StoredMessage, prev *Compaction, from, keep, maxTokens, budget int) (int, error) {
 	prevText := ""
 	if prev != nil {
 		prevText = prev.Summary
 	}
 	fits := func(end int) (bool, error) {
-		n, err := cs.count(format.Prompt{Messages: summaryMessages(prevText, history[from:end])})
+		n, err := cs.count(format.Prompt{Messages: summaryMessages(prevText, history[from:end], maxTokens)})
 		return n <= budget, err
 	}
 	// 候補は from より後ろの組の始まりと keep。長くなるほど収まりにくいので、後ろから二分探索する
@@ -504,10 +544,10 @@ func (cs *Conversations) summaryEnd(history []StoredMessage, prev *Compaction, f
 	return ends[best], nil
 }
 
-// summarizePart は、前回の要約 prev と history[from:end] を要約し直して保存する。
+// summarizePart は、前回の要約 prev と history[from:end] を要約し直して保存する。maxTokens は要約の上限。
 // 要約の文は summary イベントで流す。保存したら compact イベントで知らせる。
 func (cs *Conversations) summarizePart(ctx context.Context, conv Conversation, history []StoredMessage,
-	prev *Compaction, from, end int, emit func(ChatEvent)) (*Compaction, error) {
+	prev *Compaction, from, end, maxTokens int, emit func(ChatEvent)) (*Compaction, error) {
 	set := conv.Settings
 	before, err := cs.passFrom(set, prev, history, from)
 	if err != nil {
@@ -519,7 +559,8 @@ func (cs *Conversations) summarizePart(ctx context.Context, conv Conversation, h
 	if prev != nil {
 		prevText = prev.Summary
 	}
-	text, st, err := cs.generateSummary(ctx, conv.ID, summaryMessages(prevText, history[from:end]), emit)
+	opt := engine.GenerateOptions{Temperature: summaryTemperature, MaxTokens: maxTokens, PresencePenalty: float32(set.PresencePenalty)}
+	text, st, err := cs.generateSummary(ctx, conv.ID, summaryMessages(prevText, history[from:end], maxTokens), opt, emit)
 	if err != nil {
 		return nil, err
 	}
@@ -551,7 +592,7 @@ func (cs *Conversations) summarizePart(ctx context.Context, conv Conversation, h
 
 // generateSummary はモデルに要約を書かせる。答えが出なかった・途中で切れた・停止されたときはエラーにする
 // (中途半端な要約を保存して、以後ずっとモデルに渡し続けないため)。
-func (cs *Conversations) generateSummary(ctx context.Context, id uuid.UUID, msgs []format.Message, emit func(ChatEvent)) (string, engine.GenerateStats, error) {
+func (cs *Conversations) generateSummary(ctx context.Context, id uuid.UUID, msgs []format.Message, opt engine.GenerateOptions, emit func(ChatEvent)) (string, engine.GenerateStats, error) {
 	// 停止ボタン(StopSummary)で、送信全体ではなく要約だけを止められるようにする
 	sctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -565,7 +606,6 @@ func (cs *Conversations) generateSummary(ctx context.Context, id uuid.UUID, msgs
 	}()
 
 	emit(ChatEvent{ConversationID: id, Type: "summarizing"})
-	opt := engine.GenerateOptions{Temperature: summaryTemperature, MaxTokens: summaryMaxTokens}
 	out, st, err := cs.gen.Generate(sctx, format.Prompt{Messages: msgs, Think: false}, opt, func(string) {}, func(string) {}, func(t string) {
 		emit(ChatEvent{ConversationID: id, Type: "summary", Text: t})
 	})
@@ -573,11 +613,15 @@ func (cs *Conversations) generateSummary(ctx context.Context, id uuid.UUID, msgs
 		return "", st, err
 	}
 	text := strings.TrimSpace(out.Content)
+	// 学習用: 日本語1文字が何トークンになったか(要約の上限と、指示で伝える字数の決め方の手がかり)
+	runes := len([]rune(text))
+	log.Infof("要約: %d 字 / %d トークン(上限 %d・指示 %d 字。1字あたり %.2f トークン)・終了理由 %s",
+		runes, st.GenTokens, opt.MaxTokens, summaryRunes(opt.MaxTokens), float64(st.GenTokens)/float64(max(runes, 1)), st.StopReason)
 	switch {
 	case st.StopReason == "cancel":
-		return "", st, errors.New("要約を停止しました")
+		return "", st, errSummaryStopped
 	case st.StopReason == "length":
-		return "", st, fmt.Errorf("要約が上限(%d トークン)で途中で切れました", summaryMaxTokens)
+		return "", st, fmt.Errorf("要約が長くなりすぎて、上限(%d トークン)で途中で切れました", opt.MaxTokens)
 	case st.StopReason == "context":
 		return "", st, errors.New("要約の途中で作業領域がいっぱいになりました")
 	case text == "":
@@ -624,7 +668,7 @@ func (cs *Conversations) Compact(ctx context.Context, id uuid.UUID, emit func(Ch
 			// 失敗ではなく「要約するものが無かった」なので、エラーではなくお知らせにする
 			emit(ChatEvent{ConversationID: id, Type: "notice", Text: err.Error()})
 		} else {
-			fail(fmt.Errorf("要約を作れませんでした: %w", err))
+			fail(fmt.Errorf("要約を作れませんでした: %w%s", err, summaryFailHelp(err)))
 		}
 	}
 	if u, err := cs.usage(conv, history); err == nil {

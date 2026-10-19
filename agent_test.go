@@ -346,7 +346,7 @@ func TestSummaryIncludesToolCalls(t *testing.T) {
 		{Role: "tool", Content: strings.Repeat("結", summaryToolResultRunes+50), ToolResult: &ToolResult{Call: calc("1+1")}},
 		{Role: "assistant", Content: "2 です"},
 	}
-	text := summaryMessages("", part)[1].Content
+	text := summaryMessages("", part, minSummaryTokens)[1].Content
 	for _, want := range []string{"ユーザー: 計算して\n", "アシスタント: (ツール calculate を呼んだ: expression=1+1)\n",
 		"ツールの結果(calculate): " + strings.Repeat("結", summaryToolResultRunes) + "…\n", "アシスタント: 2 です\n"} {
 		if !strings.Contains(text, want) {

@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ToolPolicy } from "../../bindings/github.com/secondarykey/aibow";
 import type { MouseEvent, ReactNode } from "react";
-import { LuChevronDown, LuChevronRight, LuCircleStop, LuEye, LuEyeOff, LuListFilter, LuPencil, LuRefreshCw } from "react-icons/lu";
+import { LuChevronDown, LuChevronRight, LuCircleStop, LuEye, LuEyeOff, LuListFilter, LuPencil, LuRefreshCw, LuTriangleAlert } from "react-icons/lu";
 import { CopyButton } from "./CopyButton";
 import type { Compaction } from "../../bindings/github.com/secondarykey/aibow";
 import { compactionSize, compactionStats, lastIndex } from "../transcript";
@@ -191,7 +191,7 @@ function AssistantMessage({ view, faded, onStop, onAnswer, excludeButton, exclud
       title={excluded ? EXCLUDED_TITLE : faded ? FADED_TITLE : undefined}
     >
       {view.summarizing && <Summarizing text={view.summary ?? ""} />}
-      {view.compactNote && <p className="compact-note">{view.compactNote}</p>}
+      {view.compactNote && <CompactNote note={view.compactNote} draft={view.compactDraft} />}
       {view.steps?.length ? (
         // ツールを使った送信: 答えより前(各回の思考 → 途中の答え → カード、最後の回の思考)を1つの枠にまとめて畳む
         // 確認を待っているカードがあれば、枠を開いたままにする(畳んでいると、待っていることに気づけない)
@@ -353,6 +353,25 @@ function Summarizing({ text }: { text: string }) {
       <summary title="押すと、作っている要約の文を見る">古い発言を要約しています…</summary>
       {text && <div className="summarizing-text" ref={box}>{text}</div>}
     </details>
+  );
+}
+
+// CompactNote は、要約できなかったお知らせ。返事は truncate で続けて作るので、エラー(赤)ではなく注意として出す。
+// 文は Go が「何が起きたか・代わりに何をしたか・どうすればよいか」を書く。途中まで書いた要約があれば、畳んで見られるようにする
+function CompactNote({ note, draft }: { note: string; draft?: string }) {
+  return (
+    <div className="compact-note">
+      <LuTriangleAlert className="icon" />
+      <div>
+        {note}
+        {draft && (
+          <details>
+            <summary>途中まで書いた要約を見る({draft.length.toLocaleString()} 字)</summary>
+            <div className="summarizing-text">{draft}</div>
+          </details>
+        )}
+      </div>
+    </div>
   );
 }
 

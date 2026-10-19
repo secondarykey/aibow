@@ -37,6 +37,10 @@
     要約に入っていないのが最新の組だけで、それが半分を超えている(`errOnlyLatestTurn`。「次に送信すると要約の対象になる」と伝える)
 - ツールを使う会話では、ツールの説明もトークン数に入る(メーターも同じ)
 - 送信の途中の要約中だけは `ChatService.StopSummary()` で要約だけを止められる(その回は truncate で返事に進む。仕様の「失敗したとき」)
+- 要約の生成(`summarizePart` → `generateSummary`): 上限は会話の上限の 1/4・最低 1024(`summaryMaxTokens`)、指示で伝える字数はその半分(`summaryRunes`)、
+  presence penalty は会話の設定の値、思考オフ、temperature 0.3。要約ごとに字数とトークン数をログ(Info)に出す(0002 の「使ってみて変えたこと」)
+- 要約に失敗したとき(送信の途中)は、compact イベントの `Error` に「理由・代わりに truncate したこと・何度も続くときの対処」(`summaryFailHelp`)を入れる。
+  画面は注意(赤ではない)として出し、途中まで書いた要約の文を畳んで残す(`ChatView.tsx` の `CompactNote`。`compactDraft`)
 
 ## 関連
 

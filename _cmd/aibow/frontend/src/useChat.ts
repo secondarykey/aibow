@@ -218,7 +218,11 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
         case "compact": {
           const c = ev.compact;
           if (!c || c.method !== "summary") return; // truncate は、メーターと薄い表示で分かる
-          show({ summarizing: false, summary: "", waiting: true, compactNote: c.error || undefined });
+          // 失敗したときは、途中まで書いた要約の文を残す(畳んで出す。なぜ失敗したかを見られるように)
+          show({
+            summarizing: false, summary: "", waiting: true,
+            compactNote: c.error || undefined, compactDraft: (c.error && l.view.summary) || undefined,
+          });
           if (c.error) return;
           if (manual) compacted = true;
           else reopen(); // 返事を書いている間に、区切りと薄い表示が見えるように
