@@ -47,7 +47,9 @@ type Profile struct {
 // ProfileValues は、プロファイルの値(会話を作るときに写すもの)。
 // 会話の設定(ConversationSettings)のうち、この PC に依存しないものと、モデル。
 type ProfileValues struct {
-	// Model はモデルの ID(models の目録の ID)。会話ごとにモデルを持つのはステップ 7 の 2 で、今は記録だけ
+	// Model はモデルの ID(models の目録の ID)。会話を作るときに、会話のモデルとして写す。
+	// プロファイルの値を保存したとき(「この設定を新しい会話の既定にする」など)だけ変わる。入力欄の下でモデルを選んでも変わらない
+	// (選ぶのは「この会話のモデル」。0014 の 3)
 	Model           string  `json:"model"`
 	System          string  `json:"system"`
 	Temperature     float64 `json:"temperature"`
@@ -67,11 +69,11 @@ type ProfileValues struct {
 // 中身(固定した項目・使えないツール)はステップ 7 の 3 で足す。今は表の列と JSON の置き場だけ。
 type ProfileRules struct{}
 
-// valuesOf は、会話の設定とモデルから、プロファイルの値を作る。作業フォルダ・会話だけのツールの扱いは入れない。
-func valuesOf(s ConversationSettings, model string) ProfileValues {
+// valuesOf は、会話の設定から、プロファイルの値を作る。作業フォルダ・会話だけのツールの扱いは入れない。
+func valuesOf(s ConversationSettings) ProfileValues {
 	s = s.normalized()
 	return ProfileValues{
-		Model:  model,
+		Model:  s.Model,
 		System: s.System, Temperature: s.Temperature, Think: s.Think, PresencePenalty: s.PresencePenalty, Compact: s.Compact,
 		HistoryTokens: s.HistoryTokens, ReplyTokens: s.ReplyTokens,
 		BuiltinOff: s.BuiltinOff, MCPServers: slices.Clone(s.MCPServers),
@@ -81,6 +83,7 @@ func valuesOf(s ConversationSettings, model string) ProfileValues {
 // settings は、プロファイルの値を会話の設定の形にする(会話を作るときの写しの元)。
 func (v ProfileValues) settings() ConversationSettings {
 	return ConversationSettings{
+		Model:  v.Model,
 		System: v.System, Temperature: v.Temperature, Think: v.Think, PresencePenalty: v.PresencePenalty, Compact: v.Compact,
 		HistoryTokens: v.HistoryTokens, ReplyTokens: v.ReplyTokens,
 		BuiltinOff: v.BuiltinOff, MCPServers: slices.Clone(v.MCPServers),

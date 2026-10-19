@@ -94,6 +94,8 @@ body {
   font: inherit; font-size: 13px; padding: 4px 6px; border-radius: 6px; max-width: 320px;
   border: 1px solid var(--border); background: var(--bg); color: var(--text);
 }
+/* 会話のモデルが、読み込んでいるモデルと違う(送信するときに読み直す)。破線の枠で、まだ読み込んでいないことを表す */
+.model-select.model-reload { border-style: dashed; color: var(--muted); }
 button {
   font: inherit; font-size: 13px; padding: 6px 12px; border-radius: 6px;
   border: 1px solid var(--border); background: var(--panel); color: var(--text); cursor: pointer;

@@ -78,6 +78,11 @@ type Conversation struct {
 // 会話を作るときは「新しい会話の既定」(プロファイルの値。profile.go)の写しから始まる。写しなので、既定をあとで変えても今ある会話は変わらない。
 // 古い会話の JSON に max_tokens(返事の上限の昔の名前)が残っていても、読むときに無視される。
 type ConversationSettings struct {
+	// Model はこの会話のモデル(models の目録の ID。0014 の 3)。モデルは VRAM に1つしか載らないので、
+	// 送信(今すぐ要約・作り直すも)の前に、読み込んでいるモデルと違えば読み直す(Conversations.ensureWorkspace)。
+	// 会話を開いただけでは読み直さない(一覧を見て回るだけで読み直しが続かないように)。
+	// 空はこの機能より前の会話(起動したときに FillMissingModels で、最後に使ったモデルを写す)
+	Model           string  `json:"model"`
 	System          string  `json:"system"`           // システムプロンプト。空なら付けない
 	Temperature     float64 `json:"temperature"`      // 0 なら毎回一番点数の高いトークンを選ぶ
 	Think           bool    `json:"think"`            // 思考させるか

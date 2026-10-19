@@ -159,13 +159,26 @@ func (e *Engine) Info() *ModelInfo {
 	return e.info.Load()
 }
 
-// LoadModel はモデルを入れ替える。数秒〜十数秒かかる。
+// LoadModel はモデルを入れ替える。数秒〜十数秒かかる。GPU に載せる層の数は今の値(Config.GPULayers)のまま。
 func (e *Engine) LoadModel(m models.Entry) (*ModelInfo, error) {
 	if !e.mu.TryLock() {
 		return nil, ErrBusy
 	}
 	defer e.mu.Unlock()
 	return e.replace(m, func() {})
+}
+
+// LoadModelWithLayers は、GPU に載せる層の数を gpuLayers にしてモデルを入れ替える。
+// 載せられる層の数はモデルの大きさと VRAM で決まるので、画面のアプリはモデルごとに覚えた値で読み込む(0014 の 4)。
+// 読めなかったときは、層の数も元に戻して元のモデルを読み直す。
+func (e *Engine) LoadModelWithLayers(m models.Entry, gpuLayers int) (*ModelInfo, error) {
+	if !e.mu.TryLock() {
+		return nil, ErrBusy
+	}
+	defer e.mu.Unlock()
+	old := e.cfg.GPULayers
+	e.cfg.GPULayers = gpuLayers
+	return e.replace(m, func() { e.cfg.GPULayers = old })
 }
 
 // SetGPULayers は GPU に載せる層の数を変え、今のモデルを読み込み直す。

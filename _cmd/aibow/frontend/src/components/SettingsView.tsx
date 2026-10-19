@@ -66,7 +66,7 @@ function AppSettingsForm({ app, disabled, onApply }: {
 
   return (
     <>
-      <label htmlFor="gpu-layers" title="GPU に載せる層の数。モデルの層数以上なら全部 GPU。変えるとモデルを読み直す">
+      <label htmlFor="gpu-layers" title="読み込んでいるモデルの、GPU に載せる層の数(モデルごとに覚える)。モデルの層数以上なら全部 GPU。変えるとモデルを読み直す">
         GPU に載せる層の数
       </label>
       <NumberInput id="gpu-layers" value={gpu} min={0} step={1} onChange={setGpu} />

@@ -58,7 +58,8 @@ LLM を動かす部分(`engine/`・`format/`・`models/` の3つのパッケー�
   (会話の側でも生成中の会話を1つだけ持つ。[conversations.md](conversations.md))
 - 語彙(vocab)は `Engine.vocabMu` でも守っていて、`CountTokens` は生成中でも呼べる(別の会話を開いたときのメーターのため)
 - モデルの切り替えは「今のモデルを解放 → 新しいモデルを読み込む」の順(VRAM 8GB に2つは載らないため)。失敗したら元のモデルを読み直す
-- GPU の層数の変更(`SetGPULayers`)も同じ仕組みで読み直す。
+- GPU の層数の変更(`SetGPULayers`)も同じ仕組みで読み直す。画面のアプリはモデルごとに層の数を覚えていて、その値で読み込む(`LoadModelWithLayers`。読めなければ層の数も戻す。0014 の 4)。
+  どのモデルを読み込むかは会話ごと(会話の仕組みが送信の前に `aibow.ModelLoader` で読み込む。[conversations.md](conversations.md))。
   作業領域の大きさの変更(`Engine.EnsureContextSize`。同じ大きさなら何もしない)はコンテキストだけを作り直し、モデルは読み直さない。
   会話ごとに大きさが違うので、会話の仕組みが送信の前に呼ぶ。画面で上限を「適用」したときも `ChatService.TryLimits` から呼び、VRAM に入るかを確かめる(0009)。
   作業領域(`n_ctx`)の決め方は [compact.md](compact.md)

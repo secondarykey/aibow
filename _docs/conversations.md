@@ -15,6 +15,7 @@
 | `memstore_test.go` | テスト用のメモリ上の保存先 |
 | `conversation_test.go` | 会話の仕組みと設定の引き継ぎのテスト。モデル不要 |
 | `profile_test.go` | プロファイルの引き継ぎ(「既定」を作る・会話を紐づける・印の付け直し)のテスト。モデル不要 |
+| `model_test.go` | 会話ごとのモデル(送信の前に読み直す・モデルを写す)とモデルごとの GPU の層数のテスト。モデル不要 |
 
 `Store` の SQLite 実装は [store/AGENTS.md](../store/AGENTS.md) を参照。
 
@@ -47,12 +48,17 @@
 - 画面では、既定は設定の画面の「新しい会話の既定」、会話ごとの設定は一覧の各行の歯車で開く会話の設定の画面で変える([features/0009-conversation-settings.md](features/0009-conversation-settings.md))
 - 会話の上限・返事の上限(`history_tokens` / `reply_tokens`)も会話ごとの設定(0009)。会話を作るときに既定から写すので、既定を変えても今ある会話は変わらない。
   この機能より前に作った会話(0 のもの)には、起動したときに今の既定の値を写して保存する(`FillMissingLimits`)。作業領域の作り直しは [compact.md](compact.md)
-- アプリの設定(GPU の層数・最後に使ったモデル = `WorkspaceSettings`)も `app_settings`。会話の設定に無いものだけを持つ
+- アプリの設定(GPU の層数・最後に使ったモデル = `WorkspaceSettings`)も `app_settings`。会話の設定に無いものだけを持つ。
+  GPU の層数はモデルごと(`model_gpu_layers`。モデルの ID → 層の数。`LayersFor`)で、まだ覚えていないモデルは全体の値(`gpu_layers`)。
+  前の版の DB は、今の層の数を最後に使ったモデルの値として覚える(`LoadAppSettings`。0014 の 4・10)
+- **モデルは会話ごと**(`model`。モデルの ID。0014 の 3)。送信・作り直す・今すぐ要約の前に、読み込んでいるモデルと違えば読み込む(`ensureWorkspace` → `ensureModel`。
+  読み込むのはアプリが渡す係 `ModelLoader`。目録とモデルごとの層の数はアプリが持つ)。会話を開いただけでは読み直さない。読み直したら `model_loading` / `model` のイベントで知らせる。
+  新しい会話はプロファイルのモデルを写す(プロファイルにモデルが無ければ読み込んでいるモデル)。この機能より前の会話には、起動したときに最後に使ったモデルを写す(`FillMissingModels`)
 - 新しい会話で最初に選ばれるプロファイルの ID も `app_settings`(`default_profile`)
 
 ## プロファイル(0014)
 
-「新しい会話の既定」に名前を付けたもの。仕様と進み具合は [features/0014-profiles.md](features/0014-profiles.md)。今あるのは保存と引き継ぎ(作業の順番の 1)まで。
+「新しい会話の既定」に名前を付けたもの。仕様と進み具合は [features/0014-profiles.md](features/0014-profiles.md)。今あるのは保存と引き継ぎ・会話ごとのモデル(作業の順番の 1・2)まで。
 
 - **値は写し、決まりは参照**。値(`ProfileValues`:システムプロンプト・temperature・思考・presence penalty・compact の方式・会話の上限・返事の上限・モデル・使うツールのグループ)は会話を作るときに写す。
   決まり(`ProfileRules`:固定した項目・使えないツール)は、会話が覚えているプロファイル(`Conversation.ProfileID`)からそのつど引く(中身は作業の順番の 3 で足す。今は空)
@@ -63,6 +69,7 @@
     `tools.json` の `notDefault`(最初から使わないグループ)から「既定」を作り、`default_profile` の印を付ける。決まりは無し
   - 印のプロファイルが無い・しまってあるときは、しまっていない最初のプロファイルに付け直す
   - プロファイルを持たない会話(この機能より前の会話)を、印のプロファイルに紐づける。中身は実際に既定の写しなので、動きは変わらない
+- プロファイルのモデルは、プロファイルの値を保存したとき(`SetDefaults`。「この設定を新しい会話の既定にする」で会話のモデルも写る)だけ変わる。入力欄の下でモデルを選んでも変わらない(選ぶのは会話のモデル)
 - 新しい会話の既定を変える(`SetDefaults`)・ツールのグループのチェック(`SetDefaultGroup`)は、印のプロファイルを書き換える。前の置き場(`conversation_defaults`・`tools.json` の `notDefault`)には書かない
 - `PrepareProfiles` の前(ライブラリとして使うとき)は、`NewConversations` に渡した既定から作った仮のプロファイル(保存していない)。既定は保存できず、会話はプロファイルを持たずに作られる
 - 画面で変えられる設定(新しい会話の既定の会話の上限・返事の上限・presence penalty と、GPU の層数)の環境変数は「DB にまだ値が無いときの初期値」で、画面で変えたら DB の値が優先

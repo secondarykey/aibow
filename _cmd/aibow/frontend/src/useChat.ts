@@ -51,7 +51,8 @@ export interface Chat {
   stop(): void;
 }
 
-export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conversations, n: Notifier): Chat {
+// onModelLoaded は、送信の前に Go が会話のモデルを読み直したときに呼ぶ(読み込んでいるモデルの表示を取り直す。0014 の 3)
+export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conversations, n: Notifier, onModelLoaded: () => Promise<unknown>): Chat {
   const { addUser, addError, addAssistant, updateAssistant, setSaved, remove, reset, dropLastTurn } = t;
   const { current, draft, openCount, open, adopt, flushSettings, reloadList, setUsage, reloadSettings } = convs;
   const { notify } = n;
@@ -256,6 +257,14 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
           errors.push(ev.error ?? "");
           showError(ev.error ?? "");
           return;
+        case "model_loading":
+          // 送信の前に、この会話のモデルを読み込んでいる(モデルの違う会話に切り替えた最初の送信。数秒〜十数秒)
+          notify(ev.text ?? "", { key: "model", sticky: true });
+          return;
+        case "model":
+          notify(ev.text ?? "", { key: "model" });
+          onModelLoaded().catch(() => {});
+          return;
         case "notice":
           // エラーではないお知らせ(今すぐ要約で、要約するものが無かった、など)。会話の表示ではなくトーストに出す
           if (viewing.current === id) notify(ev.text ?? "", { ms: 8000 });
@@ -309,7 +318,7 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
     setBusy("idle");
     reloadList().catch(() => {}); // タイトルと並び順(更新の新しい順)が変わる
     return errors;
-  }, [open, reloadList, setUsage, addError, addAssistant, updateAssistant, setSaved, remove, setBusy, notify]);
+  }, [open, reloadList, setUsage, addError, addAssistant, updateAssistant, setSaved, remove, setBusy, notify, onModelLoaded]);
 
   const send = useCallback(async (text: string) => {
     if (controller.current || starting.current) return;

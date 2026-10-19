@@ -64,6 +64,8 @@ type Generator interface {
 //	confirm  : ツールを実行する前に、ユーザーの確認を待っている(Confirm)。答えは Conversations.Confirm で返す
 //	error    : エラー
 //	notice   : エラーではないお知らせ(Text。画面はトーストに出す)。例: 今すぐ要約で、要約するものが無かった
+//	model_loading : 送信の前に、会話のモデルを読み込み始めた(Text にお知らせの文。0014 の 3)
+//	model    : 会話のモデルを読み込んだ(Text にお知らせの文。画面は読み込んでいるモデルの表示を取り直す)
 //	done     : 終わり。必ず最後に1回だけ送る。保存した最後の返事があれば Reply に入る
 type ChatEvent struct {
 	ConversationID uuid.UUID        `json:"conversation_id"` // どの会話の送信か。画面は表示中の会話のものだけを出す
@@ -101,6 +103,8 @@ type Conversations struct {
 	remote RemoteTools
 	// prefs はツールの扱いの PC の既定(tools.json)。nil なら何も決めていない扱い(SetToolPrefs)
 	prefs *ToolPrefs
+	// models は、会話のモデルを読み込む係(SetModelLoader)。nil なら読み直さず、読み込んでいるモデルで生成する
+	models ModelLoader
 
 	// generating は生成中の会話の ID。生成していなければ nil。
 	// エンジン(作業領域)が1つしかないので、生成は同時に1つだけ。
@@ -134,10 +138,23 @@ type limits struct {
 	reply   int // 返事の上限: 1回の返事で生成するトークン数の上限
 }
 
+// ModelLoader は、会話のモデルを読み込む係(0014 の 3)。アプリが渡す(SetModelLoader)。
+// モデルの目録(どの ID がどのファイルか)と、モデルごとの GPU の層数(この PC のもの)はアプリが持つので、会話の仕組みは ID だけを渡す。
+type ModelLoader interface {
+	LoadModel(id string) (*engine.ModelInfo, error)
+}
+
+// SetModelLoader は、会話のモデルを読み込む係を渡す。渡さなければ、読み込んでいるモデルで生成する(ライブラリとして使うとき・テスト)。
+func (cs *Conversations) SetModelLoader(m ModelLoader) {
+	cs.models = m
+}
+
 // NewConversations は会話の仕組みを作る。app からは新しい会話の既定の設定と最後に使ったモデルを使う
 // (プロファイルがまだ無いときに、プロファイル「既定」の値にする。PrepareProfiles)。
 func NewConversations(store Store, gen Generator, app AppSettings) *Conversations {
-	initial := Profile{Name: DefaultProfileName, Values: valuesOf(app.Defaults.asDefaults(), app.Workspace.Model)}
+	d := app.Defaults.asDefaults()
+	d.Model = cmp.Or(d.Model, app.Workspace.Model) // プロファイルより前の既定にはモデルが無い
+	initial := Profile{Name: DefaultProfileName, Values: valuesOf(d)}
 	return &Conversations{store: store, gen: gen, tools: tool.Builtin(), profile: initial}
 }
 
@@ -204,10 +221,13 @@ func (cs *Conversations) SetExcluded(id, msg uuid.UUID, excluded bool) error {
 	return cs.store.SetMessagesExcluded(ids(history[from:to]), excluded)
 }
 
-// ensureWorkspace は、エンジンの作業領域をこの会話の大きさ(会話の上限 + 返事の上限)にする。
-// 作業領域は1つだけなので、大きさの違う会話に送信するときに作り直す(会話を開いただけでは作り直さない)。
+// ensureWorkspace は、エンジンのモデルと作業領域をこの会話のものにする(モデルは会話のモデル、作業領域は会話の上限 + 返事の上限)。
+// モデルも作業領域も1つだけなので、違う会話に送信するときに読み直す・作り直す(会話を開いただけではしない)。
 // 作り直すと KV キャッシュは空になる(同じシステムプロンプト・ツールの説明の部分も読み直しになる)。
 func (cs *Conversations) ensureWorkspace(conv Conversation, emit func(ChatEvent)) error {
+	if err := cs.ensureModel(conv, emit); err != nil {
+		return err
+	}
 	lim := cs.limitsOf(conv.Settings)
 	n := lim.history + lim.reply
 	changed, err := cs.gen.EnsureContextSize(n)
@@ -221,6 +241,53 @@ func (cs *Conversations) ensureWorkspace(conv Conversation, emit func(ChatEvent)
 			Text: fmt.Sprintf("この会話の大きさに合わせて、作業領域を %d トークンに作り直しました", n)})
 	}
 	return nil
+}
+
+// ensureModel は、読み込んでいるモデルがこの会話のモデルと違えば、会話のモデルを読み込む(0014 の 3)。
+// モデルの違う会話に切り替えた最初の送信は、読み直しの分(数秒〜十数秒)待つ。読み直したらお知らせ(トースト)とログで知らせる。
+// 会話がモデルを持たない(この機能より前の会話)・読み込む係が無いときは、読み込んでいるモデルのまま。
+func (cs *Conversations) ensureModel(conv Conversation, emit func(ChatEvent)) error {
+	want := conv.Settings.Model
+	if want == "" || cs.models == nil {
+		return nil
+	}
+	if info := cs.gen.Info(); info != nil && info.ID == want {
+		return nil
+	}
+	emit(ChatEvent{ConversationID: conv.ID, Type: "model_loading", Text: fmt.Sprintf("この会話のモデル %s を読み込み中…", want)})
+	info, err := cs.models.LoadModel(want)
+	if err != nil {
+		return fmt.Errorf("この会話のモデル(%s)を読み込めません。入力欄の下でモデルを選び直してください: %w", want, err)
+	}
+	log.Infof("会話 %s のモデル %s を読み込みました(%.1f 秒)", conv.ID, info.Name, info.LoadSec)
+	emit(ChatEvent{ConversationID: conv.ID, Type: "model",
+		Text: fmt.Sprintf("この会話のモデル %s を読み込みました(%.1f 秒)", info.Name, info.LoadSec)})
+	return nil
+}
+
+// FillMissingModels は、モデルを持っていない会話(会話ごとのモデルにする前に作った会話)に model(最後に使ったモデル)を写して保存する。
+// 起動したときに1回呼ぶ。写した会話の数を返す。model が空(まだモデルを使ったことが無い)なら何もしない。
+// 写しておかないと、その会話は「読み込んでいるモデル」で生成し続け、ほかの会話でモデルを変えると一緒に変わってしまう。
+func (cs *Conversations) FillMissingModels(model string) (int, error) {
+	if model == "" {
+		return 0, nil
+	}
+	list, err := cs.store.ListConversations()
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, c := range list {
+		if c.Settings.Model != "" {
+			continue
+		}
+		c.Settings.Model = model
+		if err := cs.store.UpdateConversation(c); err != nil {
+			return n, fmt.Errorf("会話 %s にモデルを入れられません: %w", c.ID, err)
+		}
+		n++
+	}
+	return n, nil
 }
 
 // FillMissingLimits は、会話の上限・返事の上限を持っていない会話(会話ごとの設定にする前に作った会話)に、
@@ -271,6 +338,12 @@ func (cs *Conversations) Create(settings *ConversationSettings) (Conversation, e
 		s = settings.normalized()
 	}
 	s = cs.withLimits(s) // 会話の上限・返事の上限も会話の値として持つ(画面が渡さなかったら既定の値)
+	if s.Model == "" {
+		// プロファイルにモデルが無い(初めての起動でまだモデルを選んでいなかった)なら、読み込んでいるモデルにする
+		if info := cs.gen.Info(); info != nil {
+			s.Model = info.ID
+		}
+	}
 	if err := s.validate(); err != nil {
 		return Conversation{}, err
 	}
@@ -354,7 +427,8 @@ func (cs *Conversations) existingServers(names []string) []string {
 // 使うツールのグループ(組み込み・MCP のサーバー)とモデルは変えない(グループは設定の画面の「ツール」で決める。SetDefaultGroup)。
 func (cs *Conversations) SetDefaults(s ConversationSettings) error {
 	return cs.updateProfile(func(v *ProfileValues) {
-		next := valuesOf(s.asDefaults(), v.Model)
+		next := valuesOf(s.asDefaults())
+		next.Model = cmp.Or(next.Model, v.Model) // モデルを持たない設定(この機能より前の会話)なら、今のモデルのまま
 		next.BuiltinOff, next.MCPServers = v.BuiltinOff, v.MCPServers
 		*v = next
 	})

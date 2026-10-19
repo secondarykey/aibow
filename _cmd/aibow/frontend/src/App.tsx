@@ -95,7 +95,7 @@ export default function App() {
   const { addError } = transcript;
   const models = useModels(toasts, transcript, setBusy);
   const convs = useConversations(addError);
-  const chat = useChat(transcript, setBusy, convs, toasts);
+  const chat = useChat(transcript, setBusy, convs, toasts, models.reload);
   const app = useAppSettings(toasts, transcript, setBusy, models.reload);
 
   // 起動時: 最後に開いていた会話(無ければ新しい会話の画面)に移ってから、モデルの一覧を取る。
@@ -128,6 +128,12 @@ export default function App() {
     );
   }, [addError]);
   useEffect(reloadMcp, [reloadMcp]);
+
+  // GPU に載せる層の数はモデルごとに覚えている(0014 の 4)ので、読み込んでいるモデルが変わったら設定の画面の値を取り直す
+  const currentModel = models.current?.id;
+  useEffect(() => {
+    if (currentModel && restored.current) app.reload().catch(() => {});
+  }, [currentModel, app.reload]);
 
   // モデルや上限が変わると、同じ会話でもトークン数(メーター)が変わるので数え直す
   // (新しい会話の既定を変えても今の会話には効かないので、見るのは作業領域の設定だけ)
@@ -246,7 +252,19 @@ export default function App() {
           </div>
         )}
       />
-      <ModelBar models={models} disabled={busy !== "idle"} size={settings ? settings.history_tokens + settings.reply_tokens : undefined}>
+      <ModelBar
+        models={models}
+        disabled={busy !== "idle"}
+        size={settings ? settings.history_tokens + settings.reply_tokens : undefined}
+        selected={settings?.model || undefined}
+        onSelect={id => {
+          // 選ぶのは「この会話のモデル」(新しい会話の画面では、これから作る会話のモデル)。選んだらすぐ読み込む(0014 の 3)
+          // 読み込めなかったときは、会話のモデルを変えない(元のモデルに戻っている)
+          models.switchModel(id).then(ok => {
+            if (ok && settings) convs.updateSettings({ model: id });
+          });
+        }}
+      >
         {convs.current && (
           // summary の会話では、メーターのトークン数を押すと今すぐ要約する(最近の発言は会話の上限の半分まで残す)
           <>

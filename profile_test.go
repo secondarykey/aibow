@@ -35,6 +35,7 @@ func TestPrepareProfilesMigratesDefaults(t *testing.T) {
 	// 前の版で保存した既定と、プロファイルを持たない会話
 	legacy := testDefaults
 	legacy.System, legacy.HistoryTokens = "前の版の既定", 6000
+	legacy.Model = "" // プロファイルより前の既定にはモデルが無い
 	SaveAppSetting(st, SettingDefaults, legacy)
 	old := Conversation{ID: uuid.NewV7(), Title: "前の会話", Settings: legacy, CreatedAt: time.Now(), UpdatedAt: time.Now()}
 	st.CreateConversation(old)
@@ -50,7 +51,8 @@ func TestPrepareProfilesMigratesDefaults(t *testing.T) {
 		t.Fatalf("「既定」を1つ作る: %+v", list)
 	}
 	p := list[0]
-	want := valuesOf(legacy.asDefaults(), "ollama:qwen3.5:4b")
+	want := valuesOf(legacy.asDefaults())
+	want.Model = "ollama:qwen3.5:4b"
 	want.BuiltinOff, want.MCPServers = true, []string{"fake"}
 	if p.Name != DefaultProfileName || !reflect.DeepEqual(p.Values, want) {
 		t.Errorf("値:\n%+v\n期待:\n%+v", p.Values, want)

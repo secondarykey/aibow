@@ -46,6 +46,9 @@ Ollama の保存先は Ollama と同じ `OLLAMA_MODELS`。意味と既定値は 
 ## 起動と終了
 
 - 起動時のモデルはウィンドウを出してから裏で読み込み、終わったら `models` イベントで画面に知らせる
+- モデルは会話ごと(0014 の 3)。送信の前に会話の仕組みが会話のモデルを読み込むときは、`modelLoader`(`aibow.ModelLoader`。`ChatService` のメソッドにすると画面から呼べてしまうので別の型)が `loadModel` を呼ぶ。
+  `loadModel` はモデルごとに覚えた GPU の層数で読み込む(`WorkspaceSettings.LayersFor`)。`SetGPULayers` は読み込んでいるモデルの値として覚え(`model_gpu_layers`)、`AppSettings` はその値を返す。
+  画面は入力欄の下でモデルを選んだとき、`SwitchModel` で読み込めたら会話のモデルを変える
 - 起動に失敗しても(lib が無い、環境変数の値が不正など)ウィンドウは出し、`Models()` の `error` で理由を画面に出す。
   リリース版(`wails3 build`)はコンソールが無く、`log.Fatal` だと何も見えずに終わるため。起動時のエラーで `log.Fatal` しない
 - アプリ終了時は `ServiceShutdown` で生成を止める

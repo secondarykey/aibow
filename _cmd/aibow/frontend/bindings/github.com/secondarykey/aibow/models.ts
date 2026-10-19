@@ -41,6 +41,8 @@ export interface AppSettings {
  * 	confirm  : ツールを実行する前に、ユーザーの確認を待っている(Confirm)。答えは Conversations.Confirm で返す
  * 	error    : エラー
  * 	notice   : エラーではないお知らせ(Text。画面はトーストに出す)。例: 今すぐ要約で、要約するものが無かった
+ * 	model_loading : 送信の前に、会話のモデルを読み込み始めた(Text にお知らせの文。0014 の 3)
+ * 	model    : 会話のモデルを読み込んだ(Text にお知らせの文。画面は読み込んでいるモデルの表示を取り直す)
  * 	done     : 終わり。必ず最後に1回だけ送る。保存した最後の返事があれば Reply に入る
  */
 export interface ChatEvent {
@@ -259,6 +261,14 @@ export interface Conversation {
  * 古い会話の JSON に max_tokens(返事の上限の昔の名前)が残っていても、読むときに無視される。
  */
 export interface ConversationSettings {
+    /**
+     * Model はこの会話のモデル(models の目録の ID。0014 の 3)。モデルは VRAM に1つしか載らないので、
+     * 送信(今すぐ要約・作り直すも)の前に、読み込んでいるモデルと違えば読み直す(Conversations.ensureWorkspace)。
+     * 会話を開いただけでは読み直さない(一覧を見て回るだけで読み直しが続かないように)。
+     * 空はこの機能より前の会話(起動したときに FillMissingModels で、最後に使ったモデルを写す)
+     */
+    "model": string;
+
     /**
      * システムプロンプト。空なら付けない
      */
@@ -643,7 +653,13 @@ export interface WorkspaceSettings {
     "model": string;
 
     /**
-     * GPU に載せる層の数
+     * GPU に載せる層の数。まだ覚えていないモデルに使う
      */
     "gpu_layers": number;
+
+    /**
+     * ModelGPULayers は、モデルごとに覚えた GPU に載せる層の数(モデルの ID → 層の数)。
+     * 載せられる層の数はモデルの大きさと PC の VRAM で決まるので、モデルごとにこの PC に覚える(プロファイルには入れない。0014 の 4)
+     */
+    "model_gpu_layers": { [_ in string]?: number } | null;
 }

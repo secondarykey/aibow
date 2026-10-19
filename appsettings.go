@@ -13,8 +13,10 @@ import (
 
 // app_settings のキー
 const (
-	SettingGPULayers = "gpu_layers" // GPU に載せる層の数
-	SettingLastModel = "last_model" // 最後に使ったモデルの ID。次の起動で読み込む
+	SettingGPULayers = "gpu_layers" // GPU に載せる層の数(まだ覚えていないモデルに使う値)
+	// SettingModelGPULayers は、モデルごとの GPU に載せる層の数(モデルの ID → 層の数。0014 の 4)
+	SettingModelGPULayers = "model_gpu_layers"
+	SettingLastModel      = "last_model" // 最後に使ったモデルの ID。次の起動で読み込む
 	// SettingDefaultProfile は、新しい会話で最初に選ばれるプロファイルの ID(0014)。新しい会話の既定は、このプロファイルの値
 	SettingDefaultProfile = "default_profile"
 
@@ -41,7 +43,18 @@ const minHistoryTokens = 2048
 // 会話の上限・返事の上限(作業領域の大きさ)は、会話ごとの設定に移した(ConversationSettings。0009)。
 type WorkspaceSettings struct {
 	Model     string `json:"model"`      // 最後に使ったモデルの ID(app_settings のキーは last_model)
-	GPULayers int    `json:"gpu_layers"` // GPU に載せる層の数
+	GPULayers int    `json:"gpu_layers"` // GPU に載せる層の数。まだ覚えていないモデルに使う
+	// ModelGPULayers は、モデルごとに覚えた GPU に載せる層の数(モデルの ID → 層の数)。
+	// 載せられる層の数はモデルの大きさと PC の VRAM で決まるので、モデルごとにこの PC に覚える(プロファイルには入れない。0014 の 4)
+	ModelGPULayers map[string]int `json:"model_gpu_layers"`
+}
+
+// LayersFor は、モデル model を読み込むときに GPU に載せる層の数。覚えていなければ全体の値(GPULayers)。
+func (w WorkspaceSettings) LayersFor(model string) int {
+	if n, ok := w.ModelGPULayers[model]; ok {
+		return n
+	}
+	return w.GPULayers
 }
 
 // AppSettings はアプリの設定と、新しい会話の既定の設定。
@@ -72,12 +85,25 @@ func LoadAppSettings(s Store, initial AppSettings) (a AppSettings, notes []strin
 		{SettingReplyTokens, &a.Defaults.ReplyTokens},
 		{SettingGPULayers, &a.Workspace.GPULayers},
 		{SettingLastModel, &a.Workspace.Model},
+		{SettingModelGPULayers, &a.Workspace.ModelGPULayers},
 	} {
 		ok, err := loadAppSetting(s, kv.key, kv.v)
 		if err != nil {
 			return initial, nil, err
 		}
 		found[kv.key] = ok
+	}
+
+	// モデルごとの層の数より前の DB:今の層の数を、最後に使ったモデルの値として覚える(0014 の 10)
+	if !found[SettingModelGPULayers] && found[SettingGPULayers] && a.Workspace.Model != "" {
+		a.Workspace.ModelGPULayers = map[string]int{a.Workspace.Model: a.Workspace.GPULayers}
+		if err := SaveAppSetting(s, SettingModelGPULayers, a.Workspace.ModelGPULayers); err != nil {
+			return initial, nil, err
+		}
+		notes = append(notes, fmt.Sprintf("GPU に載せる層の数 %d を、モデル %s の値として覚えました", a.Workspace.GPULayers, a.Workspace.Model))
+	}
+	if a.Workspace.ModelGPULayers == nil {
+		a.Workspace.ModelGPULayers = map[string]int{}
 	}
 
 	if !found[SettingHistoryTokens] && !found[SettingReplyTokens] {
