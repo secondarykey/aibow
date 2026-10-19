@@ -43,11 +43,10 @@
   - `work_dir`(作業フォルダの絶対パス。空なら決めていない)は**新しい会話の既定に入れない**(`asDefaults` で外す)。相対パスは保存しない(`validate`)。
     決めた会話では、ファイルのツール・コマンドのツールと環境の説明がプロンプトに入る(使わないにしたツールは除く。[tools.md](tools.md))
   - `mcp_servers`(この会話で使う MCP のサーバーの名前)と `builtin_off`(この会話で組み込みのツールを使わない。入力欄の上の「この会話のツール」で外したとき)は、
-    「この設定を新しい会話の既定にする」では変えない(`SetDefaults` は使うツールのグループを残す)。新しい会話では、プロファイルの「使うツールのグループ」
-    (設定の画面の「ツール」のグループのチェック。`SetDefaultGroup`)を写す。settings.json に無いサーバーは無視する(`Conversations.Defaults`)。読むときは空の配列にそろえる(`normalized`)
+    新しい会話では、プロファイルの「使うツールのグループ」(設定の画面のプロファイルの「ツール」)を写す。settings.json に無いサーバーは無視する(`Conversations.Defaults`)。読むときは空の配列にそろえる(`normalized`)
   - `tool_policies`(この会話だけのツールの扱いの上書き。会話の設定の画面の「ツール」で `on` / `off` を書く)は新しい会話の既定に入れない(`asDefaults` で外す)。知らない値は保存しない(`validate`)。仕組みは [mcp.md](mcp.md)
 - 新しい会話は、新しい会話で最初に選ばれるプロファイルの値の写しから始まる(新しい会話の画面で写しを変えると、その設定で作る)。会話はそのプロファイルを覚える(`Conversation.ProfileID`)。詳しくは下の「プロファイル」
-- 画面では、既定は設定の画面の「新しい会話の既定」、会話ごとの設定は一覧の各行の歯車で開く会話の設定の画面で変える([features/0009-conversation-settings.md](features/0009-conversation-settings.md))
+- 画面では、既定は設定の画面の「会話」のプロファイル、会話ごとの設定は一覧の各行の歯車で開く会話の設定の画面で変える([features/0009-conversation-settings.md](features/0009-conversation-settings.md))
 - 会話の上限・返事の上限(`history_tokens` / `reply_tokens`)も会話ごとの設定(0009)。会話を作るときに既定から写すので、既定を変えても今ある会話は変わらない。
   この機能より前に作った会話(0 のもの)には、起動したときに今の既定の値を写して保存する(`FillMissingLimits`)。作業領域の作り直しは [compact.md](compact.md)
 - アプリの設定(GPU の層数・最後に使ったモデル = `WorkspaceSettings`)も `app_settings`。会話の設定に無いものだけを持つ。
@@ -63,7 +62,7 @@
 
 ## プロファイル(0014)
 
-「新しい会話の既定」に名前を付けたもの。仕様と進み具合は [features/0014-profiles.md](features/0014-profiles.md)。今あるのは保存と引き継ぎ・会話ごとのモデル・決まり(作業の順番の 1〜3)まで。プロファイルを編集する画面は 4。
+「新しい会話の既定」に名前を付けたもの。仕様と進み具合は [features/0014-profiles.md](features/0014-profiles.md)。作業の順番の 1〜4(保存と引き継ぎ・会話ごとのモデル・決まり・画面の最初の形)まで済み。
 
 - **値は写し、決まりは参照**。値(`ProfileValues`:システムプロンプト・temperature・思考・presence penalty・compact の方式・会話の上限・返事の上限・モデル・使うツールのグループ)は会話を作るときに写す。
   決まり(`ProfileRules`:固定した項目・使えないツール)は、会話が覚えているプロファイル(`Conversation.ProfileID`)からそのつど引く(`rules.go`)
@@ -81,8 +80,11 @@
     `tools.json` の `notDefault`(最初から使わないグループ)から「既定」を作り、`default_profile` の印を付ける。決まりは無し
   - 印のプロファイルが無い・しまってあるときは、しまっていない最初のプロファイルに付け直す
   - プロファイルを持たない会話(この機能より前の会話)を、印のプロファイルに紐づける。中身は実際に既定の写しなので、動きは変わらない
-- プロファイルのモデルは、プロファイルの値を保存したとき(`SetDefaults`。「この設定を新しい会話の既定にする」で会話のモデルも写る)だけ変わる。入力欄の下でモデルを選んでも変わらない(選ぶのは会話のモデル)
-- 新しい会話の既定を変える(`SetDefaults`)・ツールのグループのチェック(`SetDefaultGroup`)は、印のプロファイルを書き換える。前の置き場(`conversation_defaults`・`tools.json` の `notDefault`)には書かない
+- プロファイルのモデルは、プロファイルの値を保存したとき(設定の画面で変える・会話の設定の画面の「プロファイルに保存」)だけ変わる。入力欄の下でモデルを選んでも変わらない(選ぶのは会話のモデル)
+- **プロファイルの管理**(`profile.go`):`Profiles`(使っている会話の数・印つき)・`CreateProfile`・`UpdateProfile`(名前・値・決まり)・`SetProfileArchived`(しまう / 戻す。印のものはしまえない)・
+  `DeleteProfile`(使っている会話が無いときだけ。印のものは消せない)・`SetDefaultProfile`(印を付け替える。しまったものは選べない)・`DefaultsOf`(プロファイルから作るときの設定)・
+  `CreateIn`(選んだプロファイルから会話を作る。しまったものからは作れない)・`SaveToProfile` / `SaveAsProfile`(会話の今の設定で上書き / 新しいプロファイル。使うツールのグループも写す)
+- `SetDefaults` / `SetDefaultGroup` は印のプロファイルを書き換える(ライブラリとして使うとき向け。画面は `UpdateProfile` を使う)。前の置き場(`conversation_defaults`・`tools.json` の `notDefault`)には書かない
 - `PrepareProfiles` の前(ライブラリとして使うとき)は、`NewConversations` に渡した既定から作った仮のプロファイル(保存していない)。既定は保存できず、会話はプロファイルを持たずに作られる
 - 画面で変えられる設定(新しい会話の既定の会話の上限・返事の上限・presence penalty と、GPU の層数)の環境変数は「DB にまだ値が無いときの初期値」で、画面で変えたら DB の値が優先
 
