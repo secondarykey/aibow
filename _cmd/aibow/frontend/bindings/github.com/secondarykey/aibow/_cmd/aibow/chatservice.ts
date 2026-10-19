@@ -236,6 +236,7 @@ export function SwitchModel(id: string): $CancellablePromise<engine$0.ModelInfo 
 
 /**
  * ToolDefaults は、会話の上書きが無いときのツールの扱い(PC の既定と決まりの既定。設定の画面の「ツール」に出す)。
+ * この PC の既定なので、プロファイルの決まりは当てない。
  */
 export function ToolDefaults(): $CancellablePromise<aibow$0.ToolGroupState[] | null> {
     return $Call.ByID(3034059471);
@@ -251,11 +252,12 @@ export function ToolPrefs(): $CancellablePromise<aibow$0.ToolPrefsView> {
 }
 
 /**
- * ToolStates は、会話の設定 settings でのツールの扱い(会話の設定の画面に出す)。
- * 画面がまだ保存していない設定でも見られるよう、会話の ID ではなく設定を受け取る。
+ * ToolStates は、会話 id の設定 settings でのツールの扱い(会話の設定の画面に出す)。
+ * 画面がまだ保存していない設定でも見られるよう、設定を受け取る。会話の ID は、プロファイルの決まり(使えない)を引くために使う
+ * (空なら新しい会話 = 新しい会話で最初に選ばれるプロファイル。0014)。
  */
-export function ToolStates(settings: aibow$0.ConversationSettings): $CancellablePromise<aibow$0.ToolGroupState[] | null> {
-    return $Call.ByID(3731445479, settings);
+export function ToolStates(id: uuid$0.UUID, settings: aibow$0.ConversationSettings): $CancellablePromise<aibow$0.ToolGroupState[] | null> {
+    return $Call.ByID(3731445479, id, settings);
 }
 
 /**

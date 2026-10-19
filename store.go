@@ -112,6 +112,10 @@ type ConversationSettings struct {
 	// PC の既定(tools.json)より優先する。会話を消せば一緒に消える(toolprefs.go)。
 	// 画面(会話の設定の画面の「ツール」)で変えるのは、使う(on)/ 使わない(off)だけ
 	ToolPolicies map[string]ToolPolicy `json:"tool_policies,omitempty"`
+
+	// profile は、この会話のプロファイル(決まりを引くため。0014 の 6)。保存しない(会話の仕組みが読むたびに入れる。withProfile)。
+	// nil ならプロファイルを持たない(決まり無し)
+	profile *Profile
 }
 
 // ContextSize は確保する作業領域の大きさ(トークン数)。

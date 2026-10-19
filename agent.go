@@ -168,8 +168,8 @@ func (cs *Conversations) runTurn(ctx context.Context, conv Conversation, history
 // ツールの扱いは、呼ぶたびに会話の設定を読み直して決める。送信の途中(ループの中)で会話の上書きが変わっても
 // (確認のカードの「この会話では今後聞かない」など。0010)、次の呼び出しから効くように。
 func (cs *Conversations) runTool(ctx context.Context, conv Conversation, c format.ToolCall, emit func(ChatEvent)) StoredMessage {
-	if fresh, _, err := cs.store.Conversation(conv.ID); err == nil {
-		conv.Settings = fresh.Settings.normalized()
+	if fresh, _, err := cs.load(conv.ID); err == nil {
+		conv.Settings = fresh.Settings
 	}
 	t, args, err := cs.lookupTool(conv.Settings, c)
 	if err != nil {
@@ -241,8 +241,8 @@ func (cs *Conversations) runFound(ctx context.Context, conv Conversation, c form
 func (cs *Conversations) askFor(conv Conversation, c format.ToolCall, t tool.Tool, args tool.Args, emit func(ChatEvent), asked **Confirmation, waited *time.Duration) tool.Ask {
 	return func(ctx context.Context, pv tool.Preview) (tool.Answer, error) {
 		set := conv.Settings
-		if fresh, _, err := cs.store.Conversation(conv.ID); err == nil {
-			set = fresh.Settings.normalized()
+		if fresh, _, err := cs.load(conv.ID); err == nil {
+			set = fresh.Settings
 		}
 		if cs.toolPolicy(set, t) == ToolAllow {
 			log.Noticef("ツール %s: サーバーからの確認を、「確認しない」の扱いなので聞かずに受け入れます", t.Def().Name)
@@ -403,6 +403,14 @@ func (cs *Conversations) SetToolPolicy(id uuid.UUID, name string, policy ToolPol
 	if err != nil {
 		return err
 	}
+	// プロファイルで使えないツールは、会話の上書きを書けない(確認のカードの「この会話では今後聞かない」なども)
+	p, err := cs.profileFor(c.ProfileID)
+	if err != nil {
+		return err
+	}
+	if g, ok := cs.groupOfTool(name); policy != "" && p != nil && (slices.Contains(p.Rules.Off.Tools, name) || ok && p.Rules.offGroup(g)) {
+		return errOff(p, "ツール "+name)
+	}
 	set := c.Settings.normalized()
 	set.ToolPolicies = maps.Clone(set.ToolPolicies)
 	if policy == "" {
@@ -516,6 +524,7 @@ func (cs *Conversations) toolsFor(set ConversationSettings) []tool.Tool {
 
 // toolPolicy は、会話でのツールの扱い(使わない / 確認する / 確認しない)を決める。扱いを決めるのはここだけ。
 //
+//  0. プロファイルで使えない(0014 の 5。会話のプロファイルの決まり)。会話の上書きでも使えるようにはできない
 //  1. 会話ごとの上書き(会話の設定の tool_policies)。「使う」(on)は使うかだけを決め、確認するかは 2・3 で決める
 //  2. PC の既定(tools.json)。グループ(組み込み / MCP のサーバー)ごと「使わない」なら使わない。
 //     そうでなければ、ツールごと → グループごとの順(ToolPrefs.policy)
@@ -535,6 +544,7 @@ func (cs *Conversations) toolPolicy(set ConversationSettings, t tool.Tool) ToolP
 
 // どこでツールの扱いが決まったか(会話の設定の画面に出す。ToolState.From)
 const (
+	PolicyFromProfile      = "profile"      // プロファイルの決まり(使えない。0014)
 	PolicyFromConversation = "conversation" // 会話ごとの上書き(tool_policies)
 	PolicyFromPC           = "pc"           // PC の既定(tools.json)
 	PolicyFromDefault      = "default"      // 決まりの既定
@@ -545,6 +555,9 @@ const (
 //
 // 返す扱いは off / ask / allow のどれか(on は返さない。使うことにしたうえで、確認するかを返す)。
 func (cs *Conversations) policyOf(set ConversationSettings, group, name string, confirmable bool) (ToolPolicy, string) {
+	if set.profile != nil && set.profile.Rules.offTool(group, name) {
+		return ToolOff, PolicyFromProfile
+	}
 	p, ok := set.ToolPolicies[name]
 	if ok && p != ToolOn {
 		return p, PolicyFromConversation
@@ -594,7 +607,7 @@ func (cs *Conversations) ToolStates(set ConversationSettings) []ToolGroupState {
 	add := func(t tool.Tool, needsWorkDir bool) {
 		_, confirmable := t.(tool.Confirmable)
 		p, from := cs.policyOf(set, "", t.Def().Name, confirmable)
-		def, _ := cs.policyOf(ConversationSettings{}, "", t.Def().Name, confirmable)
+		def, _ := cs.policyOf(ConversationSettings{profile: set.profile}, "", t.Def().Name, confirmable)
 		builtin.Tools = append(builtin.Tools, ToolState{
 			Name: t.Def().Name, Description: firstLine(t.Def().Description), Policy: p, From: from, Default: def, NeedsWorkDir: needsWorkDir,
 		})
@@ -615,7 +628,7 @@ func (cs *Conversations) ToolStates(set ConversationSettings) []ToolGroupState {
 		g := ToolGroupState{Server: server, Tools: []ToolState{}}
 		for _, k := range known[server] {
 			p, from := cs.policyOf(set, server, k.Name, false)
-			def, _ := cs.policyOf(ConversationSettings{}, server, k.Name, false)
+			def, _ := cs.policyOf(ConversationSettings{profile: set.profile}, server, k.Name, false)
 			g.Tools = append(g.Tools, ToolState{Name: k.Name, Description: k.Description, Policy: p, From: from, Default: def})
 		}
 		groups = append(groups, g)
@@ -623,11 +636,35 @@ func (cs *Conversations) ToolStates(set ConversationSettings) []ToolGroupState {
 	return groups
 }
 
-// usableServers は、会話で選んだ MCP のサーバーのうち、PC の既定でサーバーごと「使わない」にしていないもの。
+// ConversationToolStates は、会話 id のプロファイルの決まりを当てて、設定 set でのツールの扱いを返す(ToolStates)。
+// id が空なら、新しい会話(新しい会話で最初に選ばれるプロファイル)。画面から来た set は決まりを持たないので、ここで足す。
+func (cs *Conversations) ConversationToolStates(id uuid.UUID, set ConversationSettings) ([]ToolGroupState, error) {
+	var p *Profile
+	if id == (uuid.UUID{}) {
+		if d := cs.DefaultProfile(); d.ID != (uuid.UUID{}) {
+			p = &d
+		}
+	} else {
+		c, _, err := cs.store.Conversation(id)
+		if err != nil {
+			return nil, err
+		}
+		if p, err = cs.profileFor(c.ProfileID); err != nil {
+			return nil, err
+		}
+	}
+	set.profile = p
+	return cs.ToolStates(set), nil
+}
+
+// usableServers は、会話で選んだ MCP のサーバーのうち、プロファイルで使えないものでも、PC の既定でサーバーごと「使わない」にしたものでもないもの。
 // 使わないサーバーは、選んであっても起動しない。
 func (cs *Conversations) usableServers(set ConversationSettings) []string {
 	var out []string
 	for _, name := range set.MCPServers {
+		if set.profile != nil && set.profile.Rules.offGroup(name) {
+			continue
+		}
 		if p, ok := cs.prefs.groupPolicy(name); !ok || p != ToolOff {
 			out = append(out, name)
 		}

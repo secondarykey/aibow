@@ -11,10 +11,12 @@
 | `conversation.go` | 会話の仕組み(`Conversations`)。発言の保存、タイトルの自動付与と名前の変更、生成、答えが出なかった回の理由の文、生成は同時に1つ。ツールを使うループは `agent.go`([tools.md](tools.md)) |
 | `store.go` | 保存先の約束(`Store` interface)と、会話・発言・要約の型(`Conversation` / `StoredMessage` / `ReplyStats` / `ToolResult` / `Compaction`) |
 | `appsettings.go` | アプリの設定と新しい会話の既定(`app_settings` の読み書き)。モデルの読み込みに関わる設定は `WorkspaceSettings` にまとめる。新しい会話の既定は、プロファイルがあればその値を読む。前の置き場(`conversation_defaults`、もっと古い `history_tokens` / `reply_tokens`・`n_ctx`)は、プロファイル「既定」に引き継ぐためだけに読む。環境変数は DB に値が無いときの初期値 |
-| `profile.go` | 設定のプロファイル(`Profile`。0014)。値(`ProfileValues`)と決まり(`ProfileRules`)、起動したときの引き継ぎ(`PrepareProfiles`)、新しい会話で最初に選ばれるプロファイルの値の変更(`SetDefaults` / `SetDefaultGroup` が使う) |
+| `profile.go` | 設定のプロファイル(`Profile`。0014)。値(`ProfileValues`)、起動したときの引き継ぎ(`PrepareProfiles`)、新しい会話で最初に選ばれるプロファイルの値の変更(`SetDefaults` / `SetDefaultGroup` が使う) |
+| `rules.go` | プロファイルの決まり(`ProfileRules`:固定・使えない)の判定。使うときの設定に当てる(`withProfile`)・保存のときに断る(`checkRules`)・固定した項目は保存してある値を残す(`keepStored`) |
 | `memstore_test.go` | テスト用のメモリ上の保存先 |
 | `conversation_test.go` | 会話の仕組みと設定の引き継ぎのテスト。モデル不要 |
 | `profile_test.go` | プロファイルの引き継ぎ(「既定」を作る・会話を紐づける・印の付け直し)のテスト。モデル不要 |
+| `rules_test.go` | 決まり(固定した項目はプロファイルの値・あとから固定しても効く・保存のときに断る・使えないツールとグループ)のテスト。モデル不要 |
 | `model_test.go` | 会話ごとのモデル(送信の前に読み直す・モデルを写す)とモデルごとの GPU の層数のテスト。モデル不要 |
 
 `Store` の SQLite 実装は [store/AGENTS.md](../store/AGENTS.md) を参照。
@@ -61,10 +63,17 @@
 
 ## プロファイル(0014)
 
-「新しい会話の既定」に名前を付けたもの。仕様と進み具合は [features/0014-profiles.md](features/0014-profiles.md)。今あるのは保存と引き継ぎ・会話ごとのモデル(作業の順番の 1・2)まで。
+「新しい会話の既定」に名前を付けたもの。仕様と進み具合は [features/0014-profiles.md](features/0014-profiles.md)。今あるのは保存と引き継ぎ・会話ごとのモデル・決まり(作業の順番の 1〜3)まで。プロファイルを編集する画面は 4。
 
 - **値は写し、決まりは参照**。値(`ProfileValues`:システムプロンプト・temperature・思考・presence penalty・compact の方式・会話の上限・返事の上限・モデル・使うツールのグループ)は会話を作るときに写す。
-  決まり(`ProfileRules`:固定した項目・使えないツール)は、会話が覚えているプロファイル(`Conversation.ProfileID`)からそのつど引く(中身は作業の順番の 3 で足す。今は空)
+  決まり(`ProfileRules`:固定した項目・使えないツール)は、会話が覚えているプロファイル(`Conversation.ProfileID`)からそのつど引く(`rules.go`)
+- **決まりの当て方**(扱いを決めるのは Go の1か所。画面は結果を出すだけ):
+  - `Conversations.Get` / `List`(と送信の途中の読み直し)は、会話のプロファイルを読んで設定に当てる(`withProfile`)。固定した項目(`rules.fixed`。`Fix…` の名前)はプロファイルの値になる。
+    会話に保存してある値は書き換えない(使うときだけ。固定を外すと会話の値に戻る。2026-10-20、ユーザーと決めた)。決まりは設定の保存しない欄(`profile`)に入り、ツールの扱い(`policyOf`)が見る
+  - 保存のとき(`UpdateSettings`・`Create`・`SetToolPolicy`)は `checkRules` で断る:固定した項目をプロファイルの値から変える・使えないツールの上書きを足す / 変える(消すのはよい)・使えないグループを新しく選ぶ。
+    固定した項目は保存してある値のまま残す(`keepStored`)
+  - 新しい会話の既定(`Defaults`)では、使えないグループを選ばない
+  - 画面には `ChatService.Conversation` の `profile`(会話のプロファイル)と、`ToolStates(会話の ID, 設定)` の `from: "profile"` で返す
 - この PC に依存しないものだけを入れる。作業フォルダ・GPU の層数・MCP のサーバーの起動のしかた(`settings.json`)・ツールごとの確認の扱い(`tools.json`)は入れない
 - 保存は `profiles` の表(値と決まりは JSON)。会話の `profile_id` は外部キーで、使っている会話があるプロファイルは消せない(`Store.DeleteProfile` が `ErrProfileInUse`)。消したいときは「しまう」(`archived`)
 - **起動したときの引き継ぎ**(`Conversations.PrepareProfiles`。`SetRemoteTools`・`SetToolPrefs` のあとに1回):

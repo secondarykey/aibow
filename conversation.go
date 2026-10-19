@@ -312,20 +312,31 @@ func (cs *Conversations) FillMissingLimits() (int, error) {
 	return n, nil
 }
 
-// List は会話の一覧を、更新の新しい順に返す。
+// List は会話の一覧を、更新の新しい順に返す。設定はプロファイルの決まりを当てたもの(固定した項目はプロファイルの値)。
 func (cs *Conversations) List() ([]Conversation, error) {
 	list, err := cs.store.ListConversations()
-	for i := range list {
-		list[i].Settings = list[i].Settings.normalized()
+	if err != nil {
+		return list, err
 	}
-	return list, err
+	profiles := map[uuid.UUID]*Profile{} // 同じプロファイルを何度も読まない
+	for i := range list {
+		id := list[i].ProfileID
+		p, ok := profiles[id]
+		if !ok {
+			if p, err = cs.profileFor(id); err != nil {
+				return nil, err
+			}
+			profiles[id] = p
+		}
+		list[i].Settings = withProfile(list[i].Settings.normalized(), p)
+	}
+	return list, nil
 }
 
 // Get は会話1つと、その発言を古い順に返す。
+// 設定は、使うときの設定(プロファイルの決まりを当てたもの。固定した項目はプロファイルの値)。送信も画面もこれを使う。
 func (cs *Conversations) Get(id uuid.UUID) (Conversation, []StoredMessage, error) {
-	c, ms, err := cs.store.Conversation(id)
-	c.Settings = c.Settings.normalized()
-	return c, ms, err
+	return cs.load(id)
 }
 
 // Create は新しい会話を作る。settings が nil なら「新しい会話の既定の設定」をコピーする。
@@ -335,8 +346,14 @@ func (cs *Conversations) Get(id uuid.UUID) (Conversation, []StoredMessage, error
 func (cs *Conversations) Create(settings *ConversationSettings) (Conversation, error) {
 	s := cs.Defaults()
 	if settings != nil {
+		// 新しい会話の画面で変えた設定も、プロファイルの決まりで変えられないものは断る(既定の写しから変えたところを見る)
+		p := cs.DefaultProfile()
+		if err := checkRules(&p, s, settings.normalized(), cs.groupOfTool); err != nil {
+			return Conversation{}, err
+		}
 		s = settings.normalized()
 	}
+	s.profile = nil
 	s = cs.withLimits(s) // 会話の上限・返事の上限も会話の値として持つ(画面が渡さなかったら既定の値)
 	if s.Model == "" {
 		// プロファイルにモデルが無い(初めての起動でまだモデルを選んでいなかった)なら、読み込んでいるモデルにする
@@ -385,6 +402,8 @@ func (cs *Conversations) Rename(id uuid.UUID, title string) error {
 }
 
 // UpdateSettings は会話の設定を変える。次の送信から効く。
+// プロファイルの決まりで変えられないもの(固定した項目・使えないツール)を変えていたら、保存せずに理由のエラーを返す(checkRules)。
+// 固定した項目は、会話に保存してある値のまま残す(使うときだけプロファイルの値。keepStored)。
 func (cs *Conversations) UpdateSettings(id uuid.UUID, s ConversationSettings) error {
 	c, _, err := cs.store.Conversation(id)
 	if err != nil {
@@ -393,7 +412,18 @@ func (cs *Conversations) UpdateSettings(id uuid.UUID, s ConversationSettings) er
 	if err := s.validate(); err != nil {
 		return err
 	}
-	c.Settings = s.normalized()
+	p, err := cs.profileFor(c.ProfileID)
+	if err != nil {
+		return err
+	}
+	stored := c.Settings.normalized()
+	s = s.normalized()
+	if err := checkRules(p, withProfile(stored, p), s, cs.groupOfTool); err != nil {
+		return err
+	}
+	s = keepStored(s, stored, p)
+	s.profile = nil
+	c.Settings = s
 	return cs.store.UpdateConversation(c)
 }
 
@@ -402,9 +432,12 @@ func (cs *Conversations) UpdateSettings(id uuid.UUID, s ConversationSettings) er
 // 使う MCP のサーバーは、プロファイルに書いたもののうち、この PC の settings.json にあるものだけ(無いものは無視する。0014 の 1)。
 // プロファイルのグループは、設定の画面の「ツール」のグループのチェックで変える(SetDefaultGroup)。
 // チェックを外したものも、会話の「この会話のツール」からはいつでも選べる。
+// プロファイルで使えないグループは、選ばない(0014 の 5)。
 func (cs *Conversations) Defaults() ConversationSettings {
-	d := cs.DefaultProfile().Values.settings()
-	d.MCPServers = cs.existingServers(d.MCPServers)
+	p := cs.DefaultProfile()
+	d := p.Values.settings()
+	d.MCPServers = slices.DeleteFunc(cs.existingServers(d.MCPServers), p.Rules.offGroup)
+	d.BuiltinOff = d.BuiltinOff || p.Rules.Off.Builtin
 	return d
 }
 

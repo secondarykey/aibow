@@ -36,7 +36,7 @@ type Profile struct {
 	ID     uuid.UUID     `json:"id"` // UUIDv7
 	Name   string        `json:"name"`
 	Values ProfileValues `json:"values"` // 値:会話を作るときに写すもの
-	Rules  ProfileRules  `json:"rules"`  // 決まり:会話からそのつど見に行くもの
+	Rules  ProfileRules  `json:"rules"`  // 決まり:会話からそのつど見に行くもの(rules.go)
 	// Archived は「しまった」プロファイル。新しい会話では選べないが、決まりは残る(会話から引ける)。
 	// 消すと、使っていた会話の決まりが黙って外れてしまうので、使っている会話があるうちは消さずにしまう(0014 の 11)
 	Archived  bool      `json:"archived"`
@@ -64,10 +64,6 @@ type ProfileValues struct {
 	BuiltinOff bool     `json:"builtin_off,omitempty"`
 	MCPServers []string `json:"mcp_servers"`
 }
-
-// ProfileRules は、プロファイルの決まり(会話からそのつど見に行くもの)。
-// 中身(固定した項目・使えないツール)はステップ 7 の 3 で足す。今は表の列と JSON の置き場だけ。
-type ProfileRules struct{}
 
 // valuesOf は、会話の設定から、プロファイルの値を作る。作業フォルダ・会話だけのツールの扱いは入れない。
 func valuesOf(s ConversationSettings) ProfileValues {

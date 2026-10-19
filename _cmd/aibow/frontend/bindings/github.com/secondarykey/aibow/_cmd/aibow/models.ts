@@ -32,6 +32,12 @@ export interface ConversationDetail {
      * メーター。モデルが読み込まれていなければ null
      */
     "usage": aibow$0.Usage | null;
+
+    /**
+     * Profile は、この会話のプロファイル(名前・値・決まり。0014)。画面は、固定した項目を押せなくして理由を添えるのに使う。
+     * プロファイルを持たない会話なら null
+     */
+    "profile": aibow$0.Profile | null;
 }
 
 /**

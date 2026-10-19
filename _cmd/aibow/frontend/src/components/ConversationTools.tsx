@@ -21,12 +21,13 @@ import { BUILTIN } from "./ToolBar";
 import { ConfirmChip } from "./ConfirmChip";
 
 interface Props {
+  id: string; // 会話の ID(プロファイルの決まりを Go が引くため)
   settings: ConversationSettings;
   servers: ServerInfo[]; // settings.json の MCP のサーバー
   onChange(patch: Partial<ConversationSettings>): void;
 }
 
-export function ConversationTools({ settings, servers, onChange }: Props) {
+export function ConversationTools({ id, settings, servers, onChange }: Props) {
   const [groups, setGroups] = useState<ToolGroupState[]>([]);
   const [error, setError] = useState("");
   const [opened, setOpened] = useState<Record<string, boolean>>({}); // ▶ で開いたグループ(最初は全部畳む)
@@ -34,7 +35,7 @@ export function ConversationTools({ settings, servers, onChange }: Props) {
   // ツールの扱いが変わるのは、会話の上書き(tool_policies)が変わったときだけ(PC の既定は設定の画面で変える)
   const policies = JSON.stringify(settings.tool_policies ?? {});
   useEffect(() => {
-    ChatService.ToolStates(settings).then(
+    ChatService.ToolStates(id, settings).then(
       g => {
         setGroups(g ?? []);
         setError("");
@@ -42,7 +43,7 @@ export function ConversationTools({ settings, servers, onChange }: Props) {
       err => setError(errorMessage(err)),
     );
     // settings の中で扱いに効くのは tool_policies だけなので、それが変わったときに読み直す
-  }, [policies]);
+  }, [id, policies]);
 
   // ツールを使う / 使わない。既定(会話の上書きが無いときの扱い)と同じなら上書きを消し、違えば on / off で上書きする
   const toggleTool = (t: ToolState, on: boolean) => {
@@ -186,6 +187,9 @@ function Group({ name, title, on, onToggle, open, onToggleOpen, tools, workDir, 
 // (確認する / 確認しないの表示は、確認を画面で扱うときに足す)
 function StateTag({ tool, workDir }: { tool: ToolState; workDir: string }) {
   const off = tool.policy === ToolPolicy.ToolOff;
+  if (tool.from === "profile") {
+    return <span className="tool-tag" title="この会話のプロファイルで使えないにしてある(この会話でも使えない)">プロファイルで使えない</span>;
+  }
   if (tool.from === "conversation") {
     if (off) return <span className="tool-tag" title="この会話だけ使わない(既定では使う)">この会話で使わない</span>;
     if (tool.default === ToolPolicy.ToolOff) return <span className="tool-tag" title="この会話だけ使う(既定では使わない)">この会話で使う</span>;

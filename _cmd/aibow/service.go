@@ -370,8 +370,12 @@ func (s *ChatService) BuiltinTools() []aibow.KnownTool {
 }
 
 // ToolDefaults は、会話の上書きが無いときのツールの扱い(PC の既定と決まりの既定。設定の画面の「ツール」に出す)。
+// この PC の既定なので、プロファイルの決まりは当てない。
 func (s *ChatService) ToolDefaults() ([]aibow.ToolGroupState, error) {
-	return s.ToolStates(aibow.ConversationSettings{})
+	if s.startupErr != nil {
+		return nil, s.startupErr
+	}
+	return s.convs.ToolStates(aibow.ConversationSettings{}), nil
 }
 
 // SetGroupPolicy は、グループ(空なら組み込み、そうでなければ MCP のサーバー)の全部のツールの確認の扱いの PC の既定を変える
@@ -384,13 +388,14 @@ func (s *ChatService) SetGroupPolicy(group string, policy aibow.ToolPolicy) erro
 	return nil
 }
 
-// ToolStates は、会話の設定 settings でのツールの扱い(会話の設定の画面に出す)。
-// 画面がまだ保存していない設定でも見られるよう、会話の ID ではなく設定を受け取る。
-func (s *ChatService) ToolStates(settings aibow.ConversationSettings) ([]aibow.ToolGroupState, error) {
+// ToolStates は、会話 id の設定 settings でのツールの扱い(会話の設定の画面に出す)。
+// 画面がまだ保存していない設定でも見られるよう、設定を受け取る。会話の ID は、プロファイルの決まり(使えない)を引くために使う
+// (空なら新しい会話 = 新しい会話で最初に選ばれるプロファイル。0014)。
+func (s *ChatService) ToolStates(id uuid.UUID, settings aibow.ConversationSettings) ([]aibow.ToolGroupState, error) {
 	if s.startupErr != nil {
 		return nil, s.startupErr
 	}
-	return s.convs.ToolStates(settings), nil
+	return s.convs.ConversationToolStates(id, settings)
 }
 
 // ToolPrefs は、ツールの扱いの PC の既定(tools.json)と、サーバーを起動したときに見えたツールの一覧。
@@ -478,6 +483,9 @@ type ConversationDetail struct {
 	Compactions  []aibow.Compaction    `json:"compactions"` // 要約(古い順)。画面の区切りに使う
 	Generating   bool                  `json:"generating"`  // この会話で返事を生成中か
 	Usage        *aibow.Usage          `json:"usage"`       // メーター。モデルが読み込まれていなければ null
+	// Profile は、この会話のプロファイル(名前・値・決まり。0014)。画面は、固定した項目を押せなくして理由を添えるのに使う。
+	// プロファイルを持たない会話なら null
+	Profile *aibow.Profile `json:"profile"`
 }
 
 // Conversation は会話1つと、その発言を古い順に返す。
@@ -498,7 +506,11 @@ func (s *ChatService) Conversation(id uuid.UUID) (ConversationDetail, error) {
 	if err != nil {
 		return ConversationDetail{}, err
 	}
-	return ConversationDetail{Conversation: c, Messages: ms, Compactions: comps, Generating: g != nil && *g == id, Usage: u}, nil
+	p, err := s.convs.ProfileOf(c)
+	if err != nil {
+		return ConversationDetail{}, err
+	}
+	return ConversationDetail{Conversation: c, Messages: ms, Compactions: comps, Generating: g != nil && *g == id, Usage: u, Profile: p}, nil
 }
 
 // Usage は、会話がモデルに渡す文字列で、会話の上限をどれだけ使っているか(メーター)を返す。

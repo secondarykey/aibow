@@ -387,6 +387,98 @@ export interface NotDefault {
 }
 
 /**
+ * Profile は、名前の付いた「新しい会話の既定」1つ。
+ */
+export interface Profile {
+    /**
+     * UUIDv7
+     */
+    "id": uuid$0.UUID;
+    "name": string;
+
+    /**
+     * 値:会話を作るときに写すもの
+     */
+    "values": ProfileValues;
+
+    /**
+     * 決まり:会話からそのつど見に行くもの(rules.go)
+     */
+    "rules": ProfileRules;
+
+    /**
+     * Archived は「しまった」プロファイル。新しい会話では選べないが、決まりは残る(会話から引ける)。
+     * 消すと、使っていた会話の決まりが黙って外れてしまうので、使っている会話があるうちは消さずにしまう(0014 の 11)
+     */
+    "archived": boolean;
+    "created_at": string;
+    "updated_at": string;
+}
+
+/**
+ * ProfileOff は、プロファイルで使えないツール。
+ */
+export interface ProfileOff {
+    /**
+     * 組み込みのツール(aibow の中で動くツール)全部
+     */
+    "builtin"?: boolean;
+
+    /**
+     * MCP のサーバー(settings.json の名前)のツール全部
+     */
+    "servers"?: string[] | null;
+
+    /**
+     * ツール(モデルに見せる名前。会話の上書き tool_policies と同じ)
+     */
+    "tools"?: string[] | null;
+}
+
+/**
+ * ProfileRules は、プロファイルの決まり(会話からそのつど見に行くもの)。
+ */
+export interface ProfileRules {
+    /**
+     * Fixed は固定した項目(Fix… の名前)。そのプロファイルの会話では変えられず、プロファイルの値を使う
+     */
+    "fixed"?: string[] | null;
+
+    /**
+     * Off は使えないもの。PC の既定(tools.json)や会話の上書きより先に見る
+     */
+    "off"?: ProfileOff;
+}
+
+/**
+ * ProfileValues は、プロファイルの値(会話を作るときに写すもの)。
+ * 会話の設定(ConversationSettings)のうち、この PC に依存しないものと、モデル。
+ */
+export interface ProfileValues {
+    /**
+     * Model はモデルの ID(models の目録の ID)。会話を作るときに、会話のモデルとして写す。
+     * プロファイルの値を保存したとき(「この設定を新しい会話の既定にする」など)だけ変わる。入力欄の下でモデルを選んでも変わらない
+     * (選ぶのは「この会話のモデル」。0014 の 3)
+     */
+    "model": string;
+    "system": string;
+    "temperature": number;
+    "think": boolean;
+    "presence_penalty": number;
+    "compact": string;
+    "history_tokens": number;
+    "reply_tokens": number;
+
+    /**
+     * 使うツールのグループ。新しい会話で最初から使う組み込みのツールと MCP のサーバー(settings.json の名前)。
+     * この PC の settings.json に無いサーバーが書かれていても無視する(Conversations.Defaults)。
+     * settings.json に足したばかりのサーバーはどのプロファイルにも書かれていないので、新しい会話では使わない(0009 の 7 と同じ結果)
+     */
+    "builtin_off"?: boolean;
+    "mcp_servers": string[] | null;
+}
+
+/**
  * ReplyStats は返事1件の記録。エンジンの GenerateStats に、会話の仕組みで測った値を足したもの。
  * 再起動した後も、画面の統計行や「思考の過程(N秒)」を作り直せるように保存する。
  */

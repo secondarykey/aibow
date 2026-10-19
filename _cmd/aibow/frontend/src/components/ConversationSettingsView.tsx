@@ -94,7 +94,7 @@ export function ConversationSettingsView({ id, title, onRename, settings, models
         <button className="make-default" onClick={onMakeDefault}>この設定を新しい会話の既定にする</button>
 
         <h2 className="section" title="この会話で使うツール(入力欄の上の「この会話のツール」と同じ)">ツール</h2>
-        <ConversationTools settings={settings} servers={servers} onChange={onChange} />
+        <ConversationTools id={id} settings={settings} servers={servers} onChange={onChange} />
 
         <h2 className="section">モデルに渡した文字列</h2>
         <p className="hint">

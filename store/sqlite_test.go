@@ -346,6 +346,7 @@ func TestProfilesPersist(t *testing.T) {
 		ID: uuid.NewV7(), Name: "既定", CreatedAt: now, UpdatedAt: now,
 		Values: aibow.ProfileValues{Model: "ollama:qwen3.5:4b", System: "sys", Temperature: 0.7, Compact: aibow.CompactSummary,
 			HistoryTokens: 8192, ReplyTokens: 4096, MCPServers: []string{"filesystem"}},
+		Rules: aibow.ProfileRules{Fixed: []string{aibow.FixModel}, Off: aibow.ProfileOff{Servers: []string{"Blender"}, Tools: []string{"run_command"}}},
 	}
 	if err := s.CreateProfile(p); err != nil {
 		t.Fatal(err)
@@ -363,7 +364,7 @@ func TestProfilesPersist(t *testing.T) {
 	}
 	defer s.Close()
 	got, err := s.Profile(p.ID)
-	if err != nil || got.Name != "既定" || !reflect.DeepEqual(got.Values, p.Values) || got.Archived {
+	if err != nil || got.Name != "既定" || !reflect.DeepEqual(got.Values, p.Values) || !reflect.DeepEqual(got.Rules, p.Rules) || got.Archived {
 		t.Fatalf("読めない: %+v %v", got, err)
 	}
 	if c2, _, _ := s.Conversation(c.ID); c2.ProfileID != p.ID {
