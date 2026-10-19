@@ -12,7 +12,7 @@ Wails v3 のデスクトップアプリです。ルートの `aibow` パッケ�
 | `appversion.go` / `build_dev.go` / `build_production.go` | 表示するバージョン(`wails3 dev` では patch +1 と `+dev`)。dev かどうかは `production` のビルドタグで見分ける([_docs/deploy.md](../../_docs/deploy.md)) |
 | `windowstate.go` | ウィンドウの位置・大きさ・最大化を `%APPDATA%\aibow\window.json`(`AIBOW_WINDOW`)に覚え、次の起動で戻す。仕組みは [_docs/ui.md](../../_docs/ui.md) の「次の起動で戻すもの」 |
 | `config.go` | 環境変数の読み込み。`settings.json` を読んで MCP のサーバーの係(`mcp/client` の `Manager`)を作るのは `main.go` の `startMCP`(アプリを閉じるときに止める)、`tools.json` を読むのは `loadToolPrefs` |
-| `service.go` | `ChatService`。画面と `aibow.Conversations` / `Engine` の中継だけをする(モデル・会話・設定(`TryLimits` / `SetGPULayers` など)・メーター(`Usage`)・`Send` / `Compact` / `StopSummary`)。生成の回ごとの統計・compact・ツールの実行のログもここで出す |
+| `service.go` | `ChatService`。画面と `aibow.Conversations` / `Engine` の中継だけをする(モデル・会話・設定(`TryLimits` / `SetGPULayers` / 画面の設定の `SetDisplay` など)・メーター(`Usage`)・`Send` / `Compact` / `StopSummary`)。画面の設定(質問を右上に出す・明るさ)は DB に置き、実際のライト / ダークは画面の `theme.ts` が決める([_docs/ui.md](../../_docs/ui.md) の「明るさ」)。生成の回ごとの統計・compact・ツールの実行のログもここで出す |
 | `frontend/src/` | チャット画面(React + TypeScript)。Vite でビルドした `frontend/dist` を `go:embed` で埋め込む。中身は [_docs/ui.md](../../_docs/ui.md) と [_docs/rendering.md](../../_docs/rendering.md) |
 | `frontend/bindings/` | `wails3 generate bindings` の生成物(コミットする。手で直さない) |
 | `build/` / `Taskfile.yml` | `wails3 init`(react テンプレート)由来のビルド設定。ios / android / docker は削除して `.gitignore` 済み |

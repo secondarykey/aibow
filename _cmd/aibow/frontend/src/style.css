@@ -1,21 +1,24 @@
+/* 明るさは theme.ts が <html data-theme="light|dark"> に書く(設定の「システム」なら OS の設定から決める)。
+   ここでは prefers-color-scheme を直接見ない(設定で選んだ明るさと食い違わないように)。
+   color-scheme は、チェックボックス・選択肢の一覧など、ブラウザが描く部品の明るさ */
 :root {
+  color-scheme: light;
   --bg: #f6f5f2; --panel: #ffffff; --text: #1f2328; --muted: #6b7280;
   --border: #e3e1dc; --user: #e8f0fe; --accent: #2f6fde; --think: #edf1f7;
-  --code: #f1f1ef; --error: #b42318;
+  --code: #f1f1ef; --error: #b42318; --warn: #b54708;
   --scrollbar: rgba(0, 0, 0, .18); --scrollbar-hover: rgba(0, 0, 0, .32);
   /* コードの色付け(highlight.js)。GitHub の配色を元にしている */
   --hl-keyword: #cf222e; --hl-string: #0a3069; --hl-comment: #6e7781; --hl-number: #0550ae;
   --hl-title: #8250df; --hl-type: #953800; --hl-attr: #0550ae; --hl-add: #116329; --hl-del: #82071e;
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #17181a; --panel: #1f2023; --text: #e6e6e6; --muted: #9aa0a6;
-    --border: #2e3034; --user: #1f2b44; --accent: #6ea0ff; --think: #222833;
-    --code: #2a2b2f; --error: #ff8a80;
-    --scrollbar: rgba(255, 255, 255, .16); --scrollbar-hover: rgba(255, 255, 255, .30);
-    --hl-keyword: #ff7b72; --hl-string: #a5d6ff; --hl-comment: #8b949e; --hl-number: #79c0ff;
-    --hl-title: #d2a8ff; --hl-type: #ffa657; --hl-attr: #79c0ff; --hl-add: #7ee787; --hl-del: #ffa198;
-  }
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #17181a; --panel: #1f2023; --text: #e6e6e6; --muted: #9aa0a6;
+  --border: #2e3034; --user: #1f2b44; --accent: #6ea0ff; --think: #222833;
+  --code: #2a2b2f; --error: #ff8a80; --warn: #f5b467;
+  --scrollbar: rgba(255, 255, 255, .16); --scrollbar-hover: rgba(255, 255, 255, .30);
+  --hl-keyword: #ff7b72; --hl-string: #a5d6ff; --hl-comment: #8b949e; --hl-number: #79c0ff;
+  --hl-title: #d2a8ff; --hl-type: #ffa657; --hl-attr: #79c0ff; --hl-add: #7ee787; --hl-del: #ffa198;
 }
 /* --edge-gap: ウィンドウの右端に接してスクロールする場所(.chat / .settings-view)の、スクロールバーの外側に空ける幅。
    Frameless のウィンドウは、画面のランタイム(@wailsio/runtime)が「マウスがウィンドウの端から数 px 以内か」を見てリサイズする。
@@ -105,7 +108,10 @@ button:disabled { opacity: .5; cursor: default; }
 
 main { flex: 1; display: flex; min-height: 0; }
 .center { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-.chat { flex: 1; overflow-y: auto; padding: 16px; border-right: var(--edge-gap) solid transparent; }
+/* .chat-area は会話の表示(.chat)と、右下に重ねるボタン(「質問だけ」)の入れ物。ボタンはスクロールしても動かない */
+.chat-area { flex: 1; min-height: 0; position: relative; display: flex; flex-direction: column; }
+/* 下の余白は、右下のボタンが最後の吹き出し(発言の下の「直す・時刻・コピー」など)に重ならないように広くとる */
+.chat { flex: 1; overflow-y: auto; padding: 16px 16px 56px; border-right: var(--edge-gap) solid transparent; }
 
 /* 新しい会話の画面: 入力欄を真ん中より少し上に置く */
 .center.home { justify-content: center; padding-bottom: 12vh; }
@@ -121,6 +127,32 @@ footer.home .composer textarea { line-height: 1.5; min-height: calc(3 * 1.5em + 
 /* ユーザーの発言は、吹き出しと下の行(時刻・コピー)をまとめて右に寄せる */
 .user-turn { align-self: flex-end; max-width: 85%; display: flex; flex-direction: column; align-items: flex-end; }
 .msg.user { background: var(--user); white-space: pre-wrap; }
+/* スクロールして上に隠れた質問の写し(pinnedQuestion.ts)。.chat の一番上に高さ 0 の箱を sticky で止め、その右端に重ねて出す。
+   幅と右端は会話の列(.chat-inner)にそろえ、長い質問は3行で切る(返事を隠しすぎないように) */
+.pinned-question-anchor { position: sticky; top: 0; height: 0; max-width: 820px; margin: 0 auto; z-index: 5; }
+.pinned-question {
+  position: absolute; right: 0; top: 4px; max-width: min(70%, 520px);
+  padding: 6px 12px; border-radius: 10px; border: 1px solid var(--border);
+  background: var(--user); color: var(--text); box-shadow: 0 2px 8px rgba(0, 0, 0, .15);
+  font-size: 13px; line-height: 1.5; text-align: left; white-space: pre-wrap; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden;
+}
+/* 「質問だけ」の表示(questionsOnly.ts)。返事などは描画したまま隠し、発言の吹き出しだけを並べる。押すとその質問へ飛ぶ */
+.chat-inner.questions-only > :not(.user-turn) { display: none; }
+.chat-inner.questions-only .user-actions { display: none; }
+/* 枠は box-shadow で描く(outline は「モデルに渡さない」の点線の枠に使っている) */
+.chat-inner.questions-only .msg.user { cursor: pointer; }
+.chat-inner.questions-only .msg.user:hover { box-shadow: 0 0 0 1px var(--accent); }
+/* 入る前に読んでいた返事の質問 */
+.chat-inner.questions-only .msg.user.current { box-shadow: 0 0 0 2px var(--accent); }
+/* 右下のボタン。スクロールバー(10px)の左に置く */
+.questions-toggle {
+  position: absolute; right: calc(var(--edge-gap) + 22px); bottom: 12px; z-index: 6;
+  display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 0;
+  border-radius: 50%; font-size: 17px; color: var(--muted); box-shadow: 0 2px 8px rgba(0, 0, 0, .15);
+}
+.questions-toggle:hover { color: var(--text); }
+.questions-toggle.on { background: var(--accent); border-color: var(--accent); color: #fff; }
 .user-actions { display: flex; align-items: center; gap: 2px; margin: 4px -6px 0 0; }
 .msg.assistant { background: var(--panel); border: 1px solid var(--border); }
 /* モデルに渡していない発言(要約に入った・truncate で外れた)。保存はされている */
@@ -278,11 +310,20 @@ footer.home .composer textarea { line-height: 1.5; min-height: calc(3 * 1.5em + 
 .stop-row { display: flex; justify-content: flex-end; margin-top: 6px; }
 /* 要約(compact の summary) */
 .summarizing { font-size: 13px; color: var(--muted); }
+.summarizing summary { cursor: pointer; }
 .summarizing-text {
   white-space: pre-wrap; margin-top: 6px; padding: 6px 10px; border-radius: 6px; background: var(--think);
   max-height: 240px; overflow-y: auto;
 }
-.compact-note { color: var(--error); font-size: 12.5px; margin: 0 0 6px; }
+/* 要約できなかったお知らせ。返事は続けて作るので、エラーの赤ではなく注意の色にする */
+.compact-note {
+  display: flex; gap: 8px; margin: 0 0 8px; padding: 8px 10px; border-radius: 6px;
+  font-size: 12.5px; line-height: 1.6; white-space: pre-wrap;
+  background: color-mix(in srgb, var(--warn) 10%, transparent); border-left: 3px solid var(--warn);
+}
+.compact-note .icon { flex-shrink: 0; margin-top: 3px; color: var(--warn); }
+.compact-note details { margin-top: 4px; color: var(--muted); white-space: normal; }
+.compact-note summary { cursor: pointer; }
 .divider { font-size: 12.5px; color: var(--muted); }
 .divider summary {
   cursor: pointer; text-align: center; list-style: none; display: flex; align-items: center; gap: 10px;
@@ -299,6 +340,11 @@ footer.home .composer textarea { line-height: 1.5; min-height: calc(3 * 1.5em + 
   font-size: 20px; border: none; border-radius: 6px; background: transparent; color: var(--error);
 }
 .stop-row button.stop:hover:not(:disabled) { background: color-mix(in srgb, var(--error) 12%, transparent); }
+/* 会話の ID と、返事の詳細の発言の ID。選んでコピーもでき、横のボタンでもコピーできる */
+.conv-id { display: flex; align-items: center; gap: 4px; }
+.conv-id code { user-select: all; }
+.stats-id { display: flex; align-items: center; gap: 2px; user-select: text; }
+.stats-id .reply-action { padding: 0 4px; }
 .stats { font-size: 11.5px; color: var(--muted); margin-top: 4px; font-family: ui-monospace, Consolas, monospace; }
 /* 返事の最後の行: コピーと詳細の開閉。目立たないよう、枠の無い小さなボタンにする */
 .reply-actions { display: flex; align-items: center; gap: 2px; margin: 6px 0 0 -6px; }
@@ -404,6 +450,14 @@ nav.conversations.collapsed .settings.active { color: var(--accent); }
 .settings-header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
 .settings-header h1 { font-size: 16px; margin: 0; flex: 1; display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .settings-header .back { display: flex; align-items: center; gap: 6px; }
+/* 設定の画面のタブ(基本設定 / 会話)。選んでいるタブに下線を引く */
+.settings-tabs { display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 1px solid var(--border); }
+.settings-tab {
+  border: none; border-bottom: 2px solid transparent; border-radius: 0; background: transparent;
+  padding: 6px 14px; margin-bottom: -1px; font-size: 13.5px; color: var(--muted);
+}
+.settings-tab:hover { color: var(--text); }
+.settings-tab.current { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
 .settings-view .msg.error { margin-bottom: 10px; }
 .settings-view h2 { font-size: 14px; margin: 8px 0 6px; display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .settings-view h2.section { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border); }
@@ -415,7 +469,8 @@ nav.conversations.collapsed .settings.active { color: var(--accent); }
 .settings-view label.check { display: flex; align-items: center; gap: 6px; color: var(--text); }
 .settings-view code { font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; }
 .settings-view textarea, .settings-view input[type=range], .settings-view input[type=number], .settings-view select { width: 100%; }
-.settings-view input[type=number], .settings-view select {
+.settings-view input[type=text] { width: 100%; }
+.settings-view input[type=number], .settings-view input[type=text], .settings-view select {
   font: inherit; font-size: 13px; padding: 5px 6px; border-radius: 6px;
   border: 1px solid var(--border); background: var(--bg); color: var(--text);
 }

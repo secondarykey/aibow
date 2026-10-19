@@ -48,6 +48,7 @@ export interface AssistantView {
   summarizing?: boolean; // 要約を作っている途中か(停止ボタンは要約だけを止める)
   summary?: string;      // 生成中の要約の文
   compactNote?: string;  // 要約できなかった理由など(この回は truncate で収めた)。保存はしない
+  compactDraft?: string; // 要約できなかったときに、途中まで書いた要約の文(なぜ失敗したかを見るため。繰り返し・長すぎなど)。保存はしない
 }
 
 // msgId は保存された発言の ID(UUIDv7。文字列の順 = 作った順)。モデルに渡していない発言を薄く表示するのに使う。

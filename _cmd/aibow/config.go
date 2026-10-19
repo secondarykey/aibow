@@ -100,6 +100,8 @@ func loadConfig() (appConfig, error) {
 			Workspace: aibow.WorkspaceSettings{
 				GPULayers: env.int("AIBOW_GPU_LAYERS", 999), // 999 = 全部 GPU に載せる
 			},
+			// 画面の設定。質問を右上に出すのは初めはオン(長い返事を読んでいても、何を聞いたかが見えるように)。明るさは OS の設定に合わせる
+			Display: aibow.DisplaySettings{PinQuestion: true, Theme: aibow.ThemeSystem},
 			Defaults: aibow.ConversationSettings{
 				System:          defaultSystemPrompt,
 				Temperature:     0.7,

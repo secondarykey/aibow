@@ -375,11 +375,26 @@ func TestLoadAppSettingsPrefersStoredValues(t *testing.T) {
 
 	SaveAppSetting(st, SettingHistoryTokens, 4096)
 	SaveAppSetting(st, SettingLastModel, "ollama:qwen3.5:4b")
+	SaveAppSetting(st, SettingPinQuestion, false)
+	SaveAppSetting(st, SettingTheme, ThemeDark)
+	initial.Display.PinQuestion = true
 	got, _, err = LoadAppSettings(st, initial)
 	if err != nil {
 		t.Fatal(err)
 	}
 	w, d := got.Workspace, got.Defaults
+	if got.Display.PinQuestion || got.Display.Theme != ThemeDark {
+		t.Errorf("保存した画面の設定(質問を右上に出さない・ダーク)が初期値より優先されていません: %+v", got.Display)
+	}
+	// 知らない明るさはシステムに合わせる
+	SaveAppSetting(st, SettingTheme, "sepia")
+	if got, _, _ := LoadAppSettings(st, initial); got.Display.Theme != ThemeSystem {
+		t.Errorf("知らない明るさ: %q", got.Display.Theme)
+	}
+	if (DisplaySettings{Theme: "sepia"}).Validate() == nil {
+		t.Error("知らない明るさを受け付けました")
+	}
+	SaveAppSetting(st, SettingTheme, ThemeDark)
 	if d.HistoryTokens != 4096 || d.ReplyTokens != 8192 || w.Model != "ollama:qwen3.5:4b" || w.GPULayers != 999 {
 		t.Errorf("保存した値が優先されていません(古い置き場の会話の上限は、新しい会話の既定に入る): %+v", got)
 	}

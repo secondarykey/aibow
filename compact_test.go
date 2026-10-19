@@ -225,8 +225,8 @@ func TestNoneStopsBeforeGenerating(t *testing.T) {
 }
 
 // summaryReply は要約のテストの返事の上限。作業領域(会話の上限 + 返事の上限)に、
-// 要約の指示と要約の上限(summaryMaxTokens)が入る大きさにする
-const summaryReply = summaryMaxTokens + 2000
+// 要約の指示と要約の上限(テストの会話の上限は小さいので minSummaryTokens)が入る大きさにする
+const summaryReply = minSummaryTokens + 2000
 
 // overLimit は、今の会話がちょうど入り、新しい発言を足すと超える会話の上限にする。
 func overLimit(t *testing.T, cs *Conversations, c Conversation) Usage {
@@ -259,12 +259,14 @@ func TestSummaryRunsBeforeTheReply(t *testing.T) {
 		t.Fatal("生成が足りません")
 	}
 
-	// 要約の生成: 思考オフ・temperature 低め・上限 1024。前回の要約は無く、古い発言が文章で渡る
+	// 要約の生成: 思考オフ・temperature 低め・上限は会話の上限の 1/4(最低 1024)・presence penalty は会話の値。
+	// 前回の要約は無く、古い発言が文章で渡る
 	sum := g.calls[len(g.calls)-2]
-	if sum.opt != (engine.GenerateOptions{Temperature: summaryTemperature, MaxTokens: summaryMaxTokens}) || sum.think {
+	maxTokens := summaryMaxTokens(before.Tokens)
+	if sum.opt != (engine.GenerateOptions{Temperature: summaryTemperature, MaxTokens: maxTokens, PresencePenalty: float32(c.Settings.PresencePenalty)}) || sum.think {
 		t.Errorf("要約の生成の設定: %+v think=%v", sum.opt, sum.think)
 	}
-	if systemOf(sum.messages) != summaryInstruction || !strings.Contains(sum.messages[1].Content, "## 前回までの要約\n(なし)") ||
+	if systemOf(sum.messages) != summaryInstruction(summaryRunes(maxTokens)) || !strings.Contains(sum.messages[1].Content, "## 前回までの要約\n(なし)") ||
 		!strings.Contains(sum.messages[1].Content, "ユーザー: 質問0\nアシスタント: 返返") {
 		t.Errorf("要約に渡した内容: %+v", sum.messages)
 	}
@@ -394,6 +396,10 @@ func TestSummaryFailureFallsBackToTruncate(t *testing.T) {
 				!strings.Contains(cps[0].Error, "truncate") || cps[1].Method != CompactTruncate {
 				t.Fatalf("compact イベント: %+v", cps)
 			}
+			// 何をすればよいかを添える。止めたのはユーザーなので、そのときは添えない
+			if help := strings.Contains(cps[0].Error, "何度も続くときは"); help == tc.stop {
+				t.Errorf("対処の案内(止めたときは無し): %q", cps[0].Error)
+			}
 			done := evs[len(evs)-1]
 			if done.Reply == nil || done.Reply.Content != "返事" || len(errorsOf(evs)) != 0 {
 				t.Fatalf("返事が生成されていません: %+v %v", done.Reply, errorsOf(evs))
@@ -403,6 +409,25 @@ func TestSummaryFailureFallsBackToTruncate(t *testing.T) {
 				t.Errorf("truncate で収めた内容ではありません: %+v", reply.messages)
 			}
 		})
+	}
+}
+
+// 要約の上限は会話の上限の 1/4(最低 1024)。指示で伝える字数はその半分(100 字単位)
+func TestSummaryLimits(t *testing.T) {
+	for _, tc := range []struct{ history, tokens, runes int }{
+		{2048, 1024, 500},
+		{8192, 2048, 1000},
+		{32768, 8192, 4000},
+	} {
+		if got := summaryMaxTokens(tc.history); got != tc.tokens {
+			t.Errorf("会話の上限 %d の要約の上限: %d(期待 %d)", tc.history, got, tc.tokens)
+		}
+		if got := summaryRunes(tc.tokens); got != tc.runes {
+			t.Errorf("要約の上限 %d の字数: %d(期待 %d)", tc.tokens, got, tc.runes)
+		}
+		if !strings.Contains(summaryInstruction(tc.runes), fmt.Sprintf("%d字以内", tc.runes)) {
+			t.Errorf("指示に字数が入っていません: %d", tc.runes)
+		}
 	}
 }
 
@@ -447,7 +472,7 @@ func TestSummaryInSeveralPartsWhenTooLong(t *testing.T) {
 	c := longTalk(t, cs, g, CompactSummary, 10)
 	u, _ := cs.Usage(c.ID)
 	// 会話の上限をとても小さくし、要約したい部分が作業領域(上限 + 返事の上限 − 要約の上限)に一度に入らないようにする
-	setLimits(t, cs, &c, u.Tokens/3, summaryMaxTokens+u.Tokens/6)
+	setLimits(t, cs, &c, u.Tokens/3, minSummaryTokens+u.Tokens/6)
 
 	g.replies = []fakeReply{{content: "- 1"}, {content: "- 2"}, {content: "- 3"}, {content: "- 4"}, {content: "- 5"}}
 	var evs []ChatEvent

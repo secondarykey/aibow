@@ -12,7 +12,8 @@ import { LuCode, LuDownload } from "react-icons/lu";
 import { CopyButton } from "./CopyButton";
 import { highlight, isHighlighterLoaded, loadHighlighter } from "../highlight";
 import { SplitButton } from "./SplitButton";
-import { renderMermaid, usePrefersDark } from "../mermaid";
+import { renderMermaid } from "../mermaid";
+import { useDarkTheme } from "../theme";
 import { copyPNG, downloadPNG, downloadSVG } from "../diagramExport";
 
 interface Props {
@@ -61,7 +62,7 @@ function panelBackground(): string {
 type Diagram = { state: "drawing" } | { state: "done"; svg: string } | { state: "error"; message: string };
 
 function MermaidBlock({ code }: { code: string }) {
-  const dark = usePrefersDark();
+  const dark = useDarkTheme();
   const [diagram, setDiagram] = useState<Diagram>({ state: "drawing" });
   const [showCode, setShowCode] = useState(false);
   const [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null); // 「PNG をコピーしました」など

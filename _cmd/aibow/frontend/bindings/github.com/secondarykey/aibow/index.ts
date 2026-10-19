@@ -15,6 +15,7 @@ export type {
     Confirmation,
     Conversation,
     ConversationSettings,
+    DisplaySettings,
     KnownTool,
     NotDefault,
     ReplyStats,

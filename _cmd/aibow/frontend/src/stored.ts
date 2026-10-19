@@ -1,4 +1,5 @@
 // stored.ts: 画面の見た目の好み(一覧の幅・一覧を開いているか・最後に開いていた会話)を、次の起動まで覚えておく。
+// 画面の明るさの設定は DB が正で、ここには起動直後のちらつきを防ぐための写しだけを置く(theme.ts)。
 //
 // 覚える先は WebView2 の localStorage。画面の見た目だけの好みなので、Go の設定(DB)には入れない。
 // ウィンドウの位置と大きさは、ウィンドウを作る前に Go が知る必要があるので、こちらではなく Go が覚える(windowstate.go)。
@@ -9,6 +10,7 @@
 export const STORED_LIST_WIDTH = "aibow.listWidth";
 export const STORED_LIST_OPEN = "aibow.listOpen";
 export const STORED_LAST_CONVERSATION = "aibow.lastConversation";
+export const STORED_THEME = "aibow.theme";
 
 export function loadStored(key: string): string | null {
   try {

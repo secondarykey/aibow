@@ -28,11 +28,18 @@ Claude Code のクラウドセッションなど、画面も GPU も無い Linux
   - `--outDir` は `.harness` からの相対パスになるので、**必ず絶対パスで書く**(相対で書いてリポジトリの外に出力してしまったことがある)
 - ダウンロードは `page.waitForEvent("download")`、時刻は `page.clock.install()` で固定・早送りして確かめられる
 - 画面全体(`App.tsx`)も `frontend/dist` を開けば描けるが、Go の呼び出しはエラーになる(モデルの一覧のエラーが出る)
+- ビルドしたものは `file://` で開くと、モジュールの script が読み込まれず何も描かれない。一時フォルダで小さな HTTP サーバー
+  (`python3 -m http.server` か、Playwright のスクリプトの中で `node:http`)を立てて開く(2026-10-19)
+- Go を呼ぶ部品(`ToolSettings`・`ConversationTools` など。設定の画面ごと描くときも)は、Playwright の `page.route("**/wails/**", …)` で Go の返事を作ると描ける。
+  どのメソッドも `[]` を返すと、配列でない値を返すメソッド(`ToolPrefs` など)で落ちて画面ごと消える。そのメソッドだけは、リクエストに入るメソッドの ID
+  (`frontend/bindings/.../chatservice.ts` の `$Call.ByID(…)` の数)で見分けて、形の合う値を返す(2026-10-19)
 
 ## Playwright で操作する
 
 - Chromium はインストール済み(`/opt/pw-browsers/chromium-*/chrome-linux/chrome` を `executablePath` に渡す)。`playwright-core` は一時フォルダに入れる
 - ヘッドレスの Chromium は既定でスクロールバーを隠す。スクロールバーを見るときは `ignoreDefaultArgs: ["--hide-scrollbars"]`
+- `p.click("text=会話")` のような文字での指定は部分一致なので、「会話に戻る」など別のボタンを押してしまう。タブなどはクラスや `role` で指定する
+- ライト / ダークは `newContext({ colorScheme: "dark" })` か `page.emulateMedia({ colorScheme })` で OS の設定を切り替えられる(明るさが「システム」のときに追いかけるかを見る)
 - コピーを確かめるときは `grantPermissions(["clipboard-read", "clipboard-write"])` して `navigator.clipboard.readText()` で読む。
   server モードでは Wails の `Clipboard.SetText` は成功を返しても OS のクリップボードに書かない
 
