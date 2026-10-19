@@ -19,6 +19,7 @@ export type {
     KnownTool,
     NotDefault,
     Profile,
+    ProfileInfo,
     ProfileOff,
     ProfileRules,
     ProfileValues,

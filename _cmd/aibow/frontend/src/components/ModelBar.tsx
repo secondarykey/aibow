@@ -8,6 +8,7 @@ interface Props {
   models: Models;
   disabled: boolean;
   selected?: string;    // 開いている会話(新しい会話の画面では、これから作る会話)のモデルの ID。無ければ読み込んでいるモデル
+  lockReason?: string;  // モデルを選べない理由(プロファイルで固定。0014)。選べるなら undefined
   onSelect(id: string): void;
   size?: number;        // 開いている会話(新しい会話の画面では、これから作る会話)の作業領域の大きさ(会話の上限 + 返事の上限)
   children?: ReactNode; // 右端に出すもの(会話を開いているときのメーター)
@@ -15,7 +16,7 @@ interface Props {
 
 // 選ぶのは「この会話のモデル」(0014 の 3)。読み込めるモデルは1つ(VRAM に1つしか載らない)なので、
 // 会話を開いただけでは読み直さず、読み込んでいるモデルと違う会話は、送信するときに Go が読み直す
-export function ModelBar({ models, disabled, size, selected, onSelect, children }: Props) {
+export function ModelBar({ models, disabled, size, selected, lockReason, onSelect, children }: Props) {
   const { current, gpu, loading } = models;
   const value = selected ?? current?.id ?? "";
   // 会話のモデルが、読み込んでいるモデルと違う(送信するときに読み直す)
@@ -43,6 +44,7 @@ export function ModelBar({ models, disabled, size, selected, onSelect, children 
       ]
       : ["モデル未読み込み"];
   if (reload) info.unshift(`この会話のモデルは送信するときに読み込みます(今読み込んでいるのは ${current.name})`);
+  if (lockReason) info.unshift(lockReason);
   const title = ["使うモデル(models フォルダと Ollama のモデル)", ...info].filter(Boolean).join("\n");
 
   return (
@@ -51,7 +53,7 @@ export function ModelBar({ models, disabled, size, selected, onSelect, children 
         title={title}
         className={reload ? "model-select model-reload" : "model-select"}
         value={value}
-        disabled={disabled}
+        disabled={disabled || !!lockReason}
         onChange={e => onSelect(e.target.value)}
       >
         {value === "" && <option value="" disabled>モデルを選んでください</option>}

@@ -44,6 +44,7 @@ import type { ConversationSettings } from "../bindings/github.com/secondarykey/a
 import { ImeFocusRelay } from "./imeFocus";
 import { errorMessage } from "./errors";
 import { setTheme } from "./theme";
+import { FIX, fixedTitle, lockOf, locked } from "./profileRules";
 import { NARROW_QUERY, useMediaQuery } from "./mediaQuery";
 import { STORED_LAST_CONVERSATION, STORED_LIST_OPEN, loadStored, saveStored } from "./stored";
 
@@ -224,8 +225,11 @@ export default function App() {
 
   // 入力欄とモデルの選択。チャットの画面では下に、新しい会話の画面では真ん中に出す
   const canSend = busy === "idle" && (convs.current !== null || convs.draft !== null);
-  // 開いている会話の設定(新しい会話の画面では、これから作る会話の設定 = 既定の写し)
+  // 開いている会話の設定(新しい会話の画面では、これから作る会話の設定 = 選んだプロファイルの写し)
   const settings = convs.current?.conversation.settings ?? convs.draft;
+  // 開いている会話のプロファイル(新しい会話の画面では、選んだプロファイル)。固定・使えないを画面に出すため(0014)
+  const profile = convs.current ? convs.current.profile : convs.profiles.find(i => i.profile.id === convs.draftProfile)?.profile ?? null;
+  const lock = lockOf(profile);
   const input = (
     <>
       <Composer
@@ -252,6 +256,7 @@ export default function App() {
               servers={mcpServers}
               selected={settings.mcp_servers ?? []}
               workDir={settings.work_dir}
+              profile={profile}
               onBuiltinChange={on => convs.updateSettings({ builtin_off: !on })}
               onServersChange={mcp_servers => convs.updateSettings({ mcp_servers })}
             />
@@ -263,6 +268,7 @@ export default function App() {
         disabled={busy !== "idle"}
         size={settings ? settings.history_tokens + settings.reply_tokens : undefined}
         selected={settings?.model || undefined}
+        lockReason={lock && locked(lock, FIX.model) ? fixedTitle(lock) : undefined}
         onSelect={id => {
           // 選ぶのは「この会話のモデル」(新しい会話の画面では、これから作る会話のモデル)。選んだらすぐ読み込む(0014 の 3)
           // 読み込めなかったときは、会話のモデルを変えない(元のモデルに戻っている)
@@ -348,10 +354,10 @@ export default function App() {
   useEffect(() => {
     if (currentId !== null) toasts.dismissKey(`conversation:${currentId}`);
   }, [currentId]);
-  // 新しい会話の既定を変えたら、新しい会話の画面でこれから作る会話の設定(既定の写し)にも入れる
-  const onDefaultsChange = (patch: Partial<ConversationSettings>) => {
-    app.updateDefaults(patch);
-    if (home) convs.updateSettings(patch);
+  // プロファイルを変えたら、一覧と、開いている会話の設定(固定した項目)・新しい会話の画面の写しを読み直す
+  const onProfilesChanged = () => {
+    convs.reloadProfiles().catch(err => addError(errorMessage(err)));
+    app.reload().catch(() => {});
   };
   // 会話の上限・返事の上限の「適用」: 作業領域をその大きさで作り直してみて、確保できたら save で保存する。
   // VRAM に入らないことを、送信したときではなく変えたときに分かるようにするため(0009)
@@ -382,21 +388,16 @@ export default function App() {
         onClose={() => setSettingsOpen(false)}
         app={app.settings}
         models={models.models}
-        onDefaultsChange={onDefaultsChange}
-        onApplyDefaultLimits={(h, r) => applyLimits(h, r, onDefaultsChange)}
+        servers={mcpServers}
+        onProfilesChanged={onProfilesChanged}
+        onApplyLimits={applyLimits}
+        onError={addError}
         appDisabled={busy !== "idle"}
         onApplyApp={app.apply}
         onDisplayChange={app.setDisplay}
         onToolsChanged={() => {
           reloadMcp();
           convs.refreshUsage().catch(err => addError(errorMessage(err)));
-          // 新しい会話の画面なら、これから作る会話のツールを「ツール」に合わせ直す(「ツール」のチェックが最初から使うもの)
-          if (!convs.current && convs.draft) {
-            ChatService.AppSettings().then(
-              a => convs.updateSettings({ mcp_servers: a.defaults.mcp_servers, builtin_off: a.defaults.builtin_off }),
-              err => addError(errorMessage(err)),
-            );
-          }
         }}
       />
     );
@@ -415,7 +416,29 @@ export default function App() {
           focusInput();
         }}
         onChange={convs.updateSettings}
-        onMakeDefault={() => app.setDefaults(current)}
+        profile={convs.current.profile}
+        onSaveToProfile={() => {
+          const id = convs.current!.conversation.id;
+          const p = convs.current!.profile;
+          if (!p) return;
+          convs.flushSettings()
+            .then(() => ChatService.SaveToProfile(id, p.id))
+            .then(() => {
+              toasts.notify(`この会話の設定を、プロファイル「${p.name}」に保存しました`);
+              onProfilesChanged();
+            })
+            .catch(err => addError(errorMessage(err)));
+        }}
+        onSaveAsProfile={name => {
+          const id = convs.current!.conversation.id;
+          convs.flushSettings()
+            .then(() => ChatService.SaveAsProfile(id, name))
+            .then(p => {
+              toasts.notify(`この会話の設定から、プロファイル「${p.name}」を作りました`);
+              onProfilesChanged();
+            })
+            .catch(err => addError(errorMessage(err)));
+        }}
         lastPrompt={chat.lastPrompt}
         servers={mcpServers}
         limitsDisabled={busy !== "idle"}
@@ -423,7 +446,16 @@ export default function App() {
       />
     );
   } else if (home) {
-    content = <NewChat items={transcript.items}>{input}</NewChat>;
+    content = (
+      <NewChat
+        items={transcript.items}
+        profiles={convs.profiles}
+        profile={convs.draftProfile}
+        onProfile={id => convs.selectProfile(id).catch(err => addError(errorMessage(err)))}
+      >
+        {input}
+      </NewChat>
+    );
   } else {
     content = (
       <section className="center">

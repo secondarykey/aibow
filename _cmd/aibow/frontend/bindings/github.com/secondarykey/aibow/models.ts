@@ -416,6 +416,23 @@ export interface Profile {
 }
 
 /**
+ * ProfileInfo は、設定の画面に出すプロファイル1つ。
+ */
+export interface ProfileInfo {
+    "profile": Profile;
+
+    /**
+     * このプロファイルから作った会話の数(0 なら本当に消せる)
+     */
+    "uses": number;
+
+    /**
+     * 新しい会話で最初に選ばれる(しまえない・消せない)
+     */
+    "default": boolean;
+}
+
+/**
  * ProfileOff は、プロファイルで使えないツール。
  */
 export interface ProfileOff {

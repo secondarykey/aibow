@@ -1,16 +1,18 @@
-// 設定の画面: タブで「基本設定」(アプリの設定: GPU の層数・画面)と「会話」(新しい会話の既定・ツール)に分ける。
+// 設定の画面: タブで「基本設定」(アプリの設定: GPU の層数・画面)と「会話」(プロファイル・ツール)に分ける。
 // 会話に関わらないアプリの設定と、会話の既定として使われる値を、同じ画面に混ぜないため(2026-10-19、ユーザーの指示)。
 // ツールは、使う / 使わない・確認するかが全部の会話の既定になり、グループのチェックが新しい会話で最初から使うものなので「会話」に置く。
 //
 // 会話の一覧の下の「設定」で開き、チャットの代わりに会話の場所に出す(別の画面として扱う)。
 // 「会話に戻る」か、一覧で会話を選ぶ・「+ 新規」を押すと閉じる。
 // 開いている会話だけの設定は、入力欄の下(メーターの右)の歯車で開く会話の設定の画面(ConversationSettingsView)で変える。
-// 新しい会話はここの既定の写しから始まる(_docs/features/0009-conversation-settings.md)。
+// 新しい会話は、選んだプロファイル(名前の付いた新しい会話の既定)の写しから始まる(_docs/features/0009-conversation-settings.md・0014)。
 import { useEffect, useState } from "react";
 import { LuArrowLeft } from "react-icons/lu";
 import type { AppSettings, ConversationSettings, DisplaySettings, WorkspaceSettings } from "../../bindings/github.com/secondarykey/aibow";
+import type { ServerInfo } from "../../bindings/github.com/secondarykey/aibow/mcp/client";
 import { ToolSettings } from "./ToolSettings";
-import { ConversationSettingsForm, LimitsForm, NumberInput } from "./ConversationSettingsForm";
+import { NumberInput } from "./ConversationSettingsForm";
+import { ProfileSettings } from "./ProfileSettings";
 // Go の models パッケージ。"…/aibow/models" と書くと aibow パッケージの models.ts が選ばれるので、index まで書く
 import type { Entry as ModelEntry } from "../../bindings/github.com/secondarykey/aibow/models/index";
 
@@ -18,9 +20,12 @@ interface Props {
   onClose(): void;                        // 会話に戻る
   errors: { id: number; text: string }[]; // 設定の画面を開いてから出たエラー(ふだんは会話の表示に出るもの)
   app: AppSettings | null;
-  models: ModelEntry[]; // 選べるモデル(新しい会話の既定のモデル)
-  onDefaultsChange(patch: Partial<ConversationSettings>): void; // 新しい会話の既定を変える
-  onApplyDefaultLimits(history: number, reply: number): void;   // 新しい会話の既定の会話の上限・返事の上限(作業領域を作り直してみてから保存する)
+  models: ModelEntry[];  // 選べるモデル(プロファイルのモデル)
+  servers: ServerInfo[]; // settings.json の MCP のサーバー(プロファイルの使うツールのグループ)
+  onProfilesChanged(): void; // プロファイルを変えた(新しい会話の画面の写しを合わせ直す)
+  // プロファイルの会話の上限・返事の上限(作業領域を作り直してみてから save で保存する)
+  onApplyLimits(history: number, reply: number, save: (patch: Partial<ConversationSettings>) => void): void;
+  onError(text: string): void;
   appDisabled: boolean; // 生成中・読み込み中は変えられない(エンジンが1つのため)
   onApplyApp(w: WorkspaceSettings): void;
   onDisplayChange(d: DisplaySettings): void; // 画面の設定を変える(生成に関わらないので、生成中でも変えられる)
@@ -31,10 +36,10 @@ type Tab = "basic" | "conversation";
 
 const TABS: { id: Tab; label: string; title: string }[] = [
   { id: "basic", label: "基本設定", title: "会話によらず、この PC で1つだけのもの(GPU の層数・画面)" },
-  { id: "conversation", label: "会話", title: "新しい会話の既定と、ツールを使うかどうか(会話の既定になるもの)" },
+  { id: "conversation", label: "会話", title: "プロファイル(新しい会話の既定)と、ツールを使うかどうか(会話の既定になるもの)" },
 ];
 
-export function SettingsView({ onClose, errors, app, models, onDefaultsChange, onApplyDefaultLimits, appDisabled, onApplyApp, onDisplayChange, onToolsChanged }: Props) {
+export function SettingsView({ onClose, errors, app, models, servers, onProfilesChanged, onApplyLimits, onError, appDisabled, onApplyApp, onDisplayChange, onToolsChanged }: Props) {
   // 開くたびに「基本設定」から(開いている間だけ覚える)
   const [tab, setTab] = useState<Tab>("basic");
   return (
@@ -73,18 +78,15 @@ export function SettingsView({ onClose, errors, app, models, onDefaultsChange, o
 
         {tab === "conversation" && (
           <>
-            <h2 title="新しい会話は、この設定の写しから始まる。今ある会話には効かない">新しい会話の既定</h2>
-            {app && (
-              <>
-                <ConversationSettingsForm settings={app.defaults} models={models} onChange={onDefaultsChange} />
-                <LimitsForm
-                  history={app.defaults.history_tokens}
-                  reply={app.defaults.reply_tokens}
-                  disabled={appDisabled}
-                  onApply={onApplyDefaultLimits}
-                />
-              </>
-            )}
+            <h2 title="名前の付いた新しい会話の既定。新しい会話は、選んだプロファイルの写しから始まる(今ある会話には効かない)。決まり(固定・使えない)は、そのプロファイルから作った会話にすぐ効く">プロファイル</h2>
+            <ProfileSettings
+              models={models}
+              servers={servers}
+              disabled={appDisabled}
+              onApplyLimits={onApplyLimits}
+              onError={onError}
+              onChanged={onProfilesChanged}
+            />
 
             <h2 className="section" title="この PC で、ツールを使うかどうか(全部の会話に効く。tools.json に保存する)">ツール</h2>
             <ToolSettings onChanged={onToolsChanged} />

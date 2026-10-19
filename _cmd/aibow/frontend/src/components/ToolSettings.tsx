@@ -1,8 +1,8 @@
 // 設定の画面の「ツール」: ツールを使う / 使わない(この PC の既定 = tools.json)。
 //
 // ツールはグループに分けて出す: 組み込み(aibow の中で動くツール)と、MCP のサーバーごと。
-// グループのチェックは「新しい会話で最初から使う」の意味(使えなくするのではない。会話の「この会話のツール」からはいつでも選べる)。
-// グループは、チェックしていてもいなくても畳んで出し、▶ で開いてツールごとに選べる(ツールの多いサーバーで画面が長くならないように。0009)。
+// 新しい会話で最初から使うグループは、プロファイルの値(上の「プロファイル」の「ツール」。0014)。ここには置かない(同じ値を2か所で変えないように)。
+// グループは畳んで出し、▶ で開いてツールごとに選べる(ツールの多いサーバーで画面が長くならないように。0009)。
 //
 // ツールの扱いは「会話ごとの上書き → この PC の既定 → 決まりの既定」の順に決まる(Go の Conversations.toolPolicy)。
 // ここで変えるのは、この PC の既定のうち「使わない」(既定では使わない、の意味。会話の設定の画面で、会話ごとに使うにできる)と、
@@ -83,8 +83,6 @@ export function ToolSettings({ onChanged }: Props) {
   };
   const setTools = (changes: { name: string; policy: ToolPolicy }[]) =>
     after(Promise.all(changes.map(c => ChatService.SetToolPolicy(c.name, c.policy))));
-  // グループのチェック: 新しい会話で最初から使うか
-  const setGroup = (group: string, on: boolean) => after(ChatService.SetGroupDefault(group, on));
   // グループごとまとめて確認しない(確認するに戻すときは、決めていない状態に戻す)
   const setGroupConfirm = (group: string, allow: boolean) =>
     after(ChatService.SetGroupPolicy(group, allow ? ToolPolicy.ToolAllow : ToolPolicy.$zero));
@@ -95,11 +93,9 @@ export function ToolSettings({ onChanged }: Props) {
       {(error || prefs.error) && <div className="msg error">{error || prefs.error}</div>}
       <ToolGroup
         name={BUILTIN}
-        title="aibow の中で動くツール。チェックすると、新しい会話で最初から使う"
-        on={!prefs.notDefault.builtin}
+        title="aibow の中で動くツール"
         open={opened[""]}
         onToggleOpen={() => toggleOpen("")}
-        onToggle={on => setGroup("", on)}
         tools={local}
         prefs={prefs}
         groupPolicy={prefs.builtin}
@@ -112,11 +108,9 @@ export function ToolSettings({ onChanged }: Props) {
         <ToolGroup
           key={s.name}
           name={s.name}
-          title={(s.http ? "URL でつなぐ MCP のサーバー" : "aibow が起動する MCP のサーバー") + "。チェックすると、新しい会話で最初から使う"}
-          on={!prefs.notDefault.servers?.includes(s.name)}
+          title={s.http ? "URL でつなぐ MCP のサーバー" : "aibow が起動する MCP のサーバー"}
           open={opened[s.name]}
           onToggleOpen={() => toggleOpen(s.name)}
-          onToggle={on => setGroup(s.name, on)}
           tools={prefs.known?.[s.name] ?? []}
           prefs={prefs}
           groupPolicy={prefs.servers?.[s.name] ?? ToolPolicy.$zero}
@@ -136,15 +130,12 @@ export function ToolSettings({ onChanged }: Props) {
   );
 }
 
-// ToolGroup はツールのグループ1つ(組み込み / MCP のサーバー1つ)。
-// チェック(新しい会話で最初から使う)にかかわらず畳んで出し、▶ で開ける
-function ToolGroup({ name, title, on, open, onToggleOpen, onToggle, tools, prefs, groupPolicy, prefix = "", label, onSetTools, states, onGroupConfirm, loading, listError, onReload }: {
+// ToolGroup はツールのグループ1つ(組み込み / MCP のサーバー1つ)。畳んで出し、▶ で開ける
+function ToolGroup({ name, title, open, onToggleOpen, tools, prefs, groupPolicy, prefix = "", label, onSetTools, states, onGroupConfirm, loading, listError, onReload }: {
   name: string;
   title: string;
-  on: boolean;
   open?: boolean;
   onToggleOpen(): void;
-  onToggle(on: boolean): void;
   tools: KnownTool[];
   prefs: ToolPrefsView;
   groupPolicy: ToolPolicy;
@@ -160,15 +151,12 @@ function ToolGroup({ name, title, on, open, onToggleOpen, onToggle, tools, prefs
   const using = tools.filter(t => prefs.tools?.[t.name] !== ToolPolicy.ToolOff).length;
   const shown = !!open;
   return (
-    <div className={"tool-group" + (on ? " on" : "")}>
+    <div className="tool-group on">
       <div className="tool-group-head">
         <button type="button" className="tool-open" onClick={onToggleOpen} title={open ? "畳む" : "ツールの一覧を開く"}>
           {open ? <LuChevronDown /> : <LuChevronRight />}
         </button>
-        <label className="check" title={title}>
-          <input type="checkbox" checked={on} onChange={e => onToggle(e.target.checked)} />
-          <span className="tool-group-name">{name}</span>
-        </label>
+        <span className="tool-group-name" title={title}>{name}</span>
         <ConfirmChip
           allow={groupPolicy === ToolPolicy.ToolAllow}
           title={groupPolicy === ToolPolicy.ToolAllow

@@ -344,10 +344,19 @@ func (cs *Conversations) Get(id uuid.UUID) (Conversation, []StoredMessage, error
 // どちらにしてもコピーなので、会話の中で設定を変えても既定やほかの会話には効かない。
 // 会話は、新しい会話で最初に選ばれるプロファイルから作ったものとして覚える(0014。プロファイルを選んで作るのはステップ 7 の 4)。
 func (cs *Conversations) Create(settings *ConversationSettings) (Conversation, error) {
-	s := cs.Defaults()
+	return cs.CreateIn(uuid.UUID{}, settings)
+}
+
+// CreateIn は、プロファイル profileID から新しい会話を作る(空なら新しい会話で最初に選ばれるプロファイル)。
+// 新しい会話の画面でプロファイルを選んだとき。しまったプロファイルからは作れない。ほかは Create と同じ。
+func (cs *Conversations) CreateIn(profileID uuid.UUID, settings *ConversationSettings) (Conversation, error) {
+	p, err := cs.usableProfile(profileID)
+	if err != nil {
+		return Conversation{}, err
+	}
+	s := cs.defaultsFor(p)
 	if settings != nil {
 		// 新しい会話の画面で変えた設定も、プロファイルの決まりで変えられないものは断る(既定の写しから変えたところを見る)
-		p := cs.DefaultProfile()
 		if err := checkRules(&p, s, settings.normalized(), cs.groupOfTool); err != nil {
 			return Conversation{}, err
 		}
@@ -368,7 +377,7 @@ func (cs *Conversations) Create(settings *ConversationSettings) (Conversation, e
 	c := Conversation{
 		ID:        uuid.NewV7(),
 		Settings:  s,
-		ProfileID: cs.DefaultProfile().ID,
+		ProfileID: p.ID,
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
@@ -434,7 +443,11 @@ func (cs *Conversations) UpdateSettings(id uuid.UUID, s ConversationSettings) er
 // チェックを外したものも、会話の「この会話のツール」からはいつでも選べる。
 // プロファイルで使えないグループは、選ばない(0014 の 5)。
 func (cs *Conversations) Defaults() ConversationSettings {
-	p := cs.DefaultProfile()
+	return cs.defaultsFor(cs.DefaultProfile())
+}
+
+// defaultsFor は、プロファイル p から新しい会話を作るときの設定(Defaults と同じ決め方)。
+func (cs *Conversations) defaultsFor(p Profile) ConversationSettings {
 	d := p.Values.settings()
 	d.MCPServers = slices.DeleteFunc(cs.existingServers(d.MCPServers), p.Rules.offGroup)
 	d.BuiltinOff = d.BuiltinOff || p.Rules.Off.Builtin

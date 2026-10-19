@@ -4,20 +4,28 @@
 //
 // 「新しい会話の画面」(current が null)では、会話はまだ作らない。最初の送信のときに作る(useChat.ts)。
 // 空の会話が一覧に並ばないようにするため。その画面で変えた設定は draft に持ち、作るときに渡す。
+// 新しい会話は、その画面で選んだプロファイル(draftProfile。最初は「最初に選ぶ」の印のもの)から作る(0014)。
 import { useCallback, useRef, useState } from "react";
 import { ChatService } from "../bindings/github.com/secondarykey/aibow/_cmd/aibow";
 import type { ConversationDetail } from "../bindings/github.com/secondarykey/aibow/_cmd/aibow";
-import type { Conversation, ConversationSettings, Usage } from "../bindings/github.com/secondarykey/aibow";
+import type { Conversation, ConversationSettings, ProfileInfo, Usage } from "../bindings/github.com/secondarykey/aibow";
 import { errorMessage } from "./errors";
 
 // 設定を変えてから Go に保存するまで待つ時間。
 // 1文字打つたびに保存すると、呼び出しの到着順が入れ替わって古い値が残ることがあるので、まとめて送る
 const SAVE_DELAY_MS = 400;
 
+// NIL は「選んでいない」の ID(Go の空の uuid.UUID)。Go は、新しい会話で最初に選ばれるプロファイルとして扱う
+export const NIL = "00000000-0000-0000-0000-000000000000";
+
 export interface Conversations {
   list: Conversation[];
   current: ConversationDetail | null; // 開いている会話。null なら新しい会話の画面
-  draft: ConversationSettings | null; // 新しい会話の画面で、これから作る会話の設定(既定の写し)
+  draft: ConversationSettings | null; // 新しい会話の画面で、これから作る会話の設定(プロファイルの値の写し)
+  draftProfile: string;               // 新しい会話の画面で選んだプロファイルの ID
+  profiles: ProfileInfo[];            // プロファイルの一覧(新しい会話の画面で選ぶ・決まりを見る)
+  selectProfile(id: string): Promise<void>; // 新しい会話の画面でプロファイルを選ぶ(その値の写しで draft を作り直す)
+  reloadProfiles(): Promise<void>;    // プロファイルを変えたあとに読み直す(新しい会話の画面なら draft も作り直す)
   openCount: number;                  // 会話を開く・新しい会話の画面に移るたびに増える。表示を作り直す合図
   init(lastId: string | null): Promise<void>; // 起動時: 最後に開いていた会話を開く。無ければ(消した・新しい会話の画面だった)新しい会話の画面で始める
   open(id: string): Promise<void>;
@@ -38,6 +46,20 @@ export function useConversations(onError: (text: string) => void): Conversations
   const [list, setList] = useState<Conversation[]>([]);
   const [current, setCurrentState] = useState<ConversationDetail | null>(null);
   const [draft, setDraftState] = useState<ConversationSettings | null>(null);
+  const [draftProfile, setDraftProfileState] = useState("");
+  const draftProfileRef = useRef("");
+  const setDraftProfile = useCallback((id: string) => {
+    draftProfileRef.current = id;
+    setDraftProfileState(id);
+  }, []);
+  const [profiles, setProfilesState] = useState<ProfileInfo[]>([]);
+  const profilesRef = useRef<ProfileInfo[]>([]);
+  const loadProfiles = useCallback(async () => {
+    const list = (await ChatService.Profiles()) ?? [];
+    profilesRef.current = list;
+    setProfilesState(list);
+    return list;
+  }, []);
   // 設定の変更をまとめるときに、最新の current / draft を読むための ref
   const currentRef = useRef<ConversationDetail | null>(null);
   const draftRef = useRef<ConversationSettings | null>(null);
@@ -81,17 +103,29 @@ export function useConversations(onError: (text: string) => void): Conversations
   const goHome = useCallback(async () => {
     await flushSettings();
     const seq = ++openSeq.current; // 読み込み中の open があれば、その結果は捨てる
-    // 設定は、そのときの「新しい会話の既定の設定」の写しから始める
-    const app = await ChatService.AppSettings();
+    // 設定は、「最初に選ぶ」の印のプロファイルの写しから始める
+    const list = await loadProfiles();
+    const def = list.find(i => i.default)?.profile.id ?? "";
+    const settings = await ChatService.ProfileDefaults(def || NIL);
     if (seq !== openSeq.current) return;
     setCurrent(null);
-    setDraft({ ...app.defaults });
+    setDraftProfile(def);
+    setDraft({ ...settings });
     setOpenCount(n => n + 1);
-  }, [flushSettings, setCurrent, setDraft]);
+  }, [flushSettings, setCurrent, setDraft, setDraftProfile, loadProfiles]);
+
+  const selectProfile = useCallback(async (id: string) => {
+    const settings = await ChatService.ProfileDefaults(id || NIL);
+    if (currentRef.current) return; // 選んでいる間に会話を開いた
+    setDraftProfile(id);
+    setDraft({ ...settings });
+  }, [setDraft, setDraftProfile]);
 
   const adopt = useCallback((c: Conversation) => {
     ++openSeq.current;
-    setCurrent({ conversation: c, messages: [], compactions: [], generating: false, usage: null, profile: null }); // プロファイルは開き直したときに Go から届く
+    // 会話のプロファイル(決まりを画面に出すため)は、選んでいたもの
+    const profile = profilesRef.current.find(i => i.profile.id === c.profile_id)?.profile ?? null;
+    setCurrent({ conversation: c, messages: [], compactions: [], generating: false, usage: null, profile });
     setDraft(null);
     reloadList().catch(() => {});
   }, [setCurrent, setDraft, reloadList]);
@@ -155,11 +189,26 @@ export function useConversations(onError: (text: string) => void): Conversations
     const cur = currentRef.current;
     // 読み直している間に別の会話を開いた・設定を変え始めたときは、そちらを優先する
     if (cur?.conversation.id !== id || pending.current) return;
-    setCurrent({ ...cur, conversation: { ...cur.conversation, settings: d.conversation.settings } });
+    // プロファイル(決まり)も読み直す。プロファイルを変えると、固定した項目の値も変わるため
+    setCurrent({ ...cur, conversation: { ...cur.conversation, settings: d.conversation.settings }, profile: d.profile });
   }, [setCurrent]);
 
+  const reloadProfiles = useCallback(async () => {
+    const list = await loadProfiles();
+    const cur = currentRef.current;
+    if (cur) {
+      await reloadSettings(cur.conversation.id);
+      return;
+    }
+    // 新しい会話の画面: 選んでいたプロファイルが無くなった・しまった なら、最初に選ぶものに戻す
+    const id = draftProfileRef.current;
+    const ok = list.some(i => i.profile.id === id && !i.profile.archived);
+    await selectProfile(ok ? id : list.find(i => i.default)?.profile.id ?? "");
+  }, [loadProfiles, reloadSettings, selectProfile]);
+
   return {
-    list, current, draft, openCount, init, open, goHome, adopt, remove, rename, reloadList, updateSettings, flushSettings,
+    list, current, draft, draftProfile, profiles, selectProfile, reloadProfiles,
+    openCount, init, open, goHome, adopt, remove, rename, reloadList, updateSettings, flushSettings,
     setUsage, refreshUsage, reloadSettings,
   };
 }

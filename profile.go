@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 	"uuid"
 )
@@ -249,4 +250,190 @@ func (cs *Conversations) SetDefaultGroup(group string, on bool) error {
 			slices.Sort(v.MCPServers)
 		}
 	})
+}
+
+// ---- プロファイルの管理(設定の画面。0014 の 11・12) ----------------------------------------
+
+// ProfileInfo は、設定の画面に出すプロファイル1つ。
+type ProfileInfo struct {
+	Profile Profile `json:"profile"`
+	Uses    int     `json:"uses"`    // このプロファイルから作った会話の数(0 なら本当に消せる)
+	Default bool    `json:"default"` // 新しい会話で最初に選ばれる(しまえない・消せない)
+}
+
+// Profiles は、プロファイルを作った順に返す(しまったものも含む)。
+func (cs *Conversations) Profiles() ([]ProfileInfo, error) {
+	list, err := cs.store.ListProfiles()
+	if err != nil {
+		return nil, err
+	}
+	convs, err := cs.store.ListConversations()
+	if err != nil {
+		return nil, err
+	}
+	uses := map[uuid.UUID]int{}
+	for _, c := range convs {
+		uses[c.ProfileID]++
+	}
+	def := cs.DefaultProfile().ID
+	out := make([]ProfileInfo, 0, len(list))
+	for _, p := range list {
+		out = append(out, ProfileInfo{Profile: p, Uses: uses[p.ID], Default: p.ID == def})
+	}
+	return out, nil
+}
+
+// validate は、保存する前にプロファイルを確かめる。
+func (p Profile) validate() error {
+	if strings.TrimSpace(p.Name) == "" {
+		return errors.New("プロファイルの名前を空にはできません")
+	}
+	if p.Values.HistoryTokens <= 0 || p.Values.ReplyTokens <= 0 {
+		return fmt.Errorf("会話の上限と返事の上限は 1 以上にしてください(%d / %d)", p.Values.HistoryTokens, p.Values.ReplyTokens)
+	}
+	for _, f := range p.Rules.Fixed {
+		if !slices.ContainsFunc(fixItems, func(it fixItem) bool { return it.name == f }) {
+			return fmt.Errorf("固定する項目 %q は知らない名前です", f)
+		}
+	}
+	return nil
+}
+
+// CreateProfile は、名前・値・決まりから新しいプロファイルを作る。
+// 会話の設定の画面の「新しいプロファイルとして保存」は、会話の設定から作った値を渡す(ProfileValuesOf)。
+func (cs *Conversations) CreateProfile(name string, values ProfileValues, rules ProfileRules) (Profile, error) {
+	now := time.Now()
+	p := Profile{ID: uuid.NewV7(), Name: strings.TrimSpace(name), Values: values, Rules: rules, CreatedAt: now, UpdatedAt: now}
+	p.Values = valuesOf(p.Values.settings()) // compact の空などをそろえる
+	if err := p.validate(); err != nil {
+		return Profile{}, err
+	}
+	if err := cs.store.CreateProfile(p); err != nil {
+		return Profile{}, fmt.Errorf("プロファイル「%s」を作れません: %w", p.Name, err)
+	}
+	return p, nil
+}
+
+// ProfileValuesOf は、会話の設定 s をプロファイルの値にする(作業フォルダ・会話だけのツールの扱いは入れない)。
+func ProfileValuesOf(s ConversationSettings) ProfileValues {
+	return valuesOf(s)
+}
+
+// UpdateProfile は、プロファイルの名前・値・決まりを書き換える(しまったかは SetProfileArchived で変える)。
+// 値を変えても、今ある会話の値は変わらない(写しなので)。決まりは今ある会話にもすぐ効く(そのつど見に行くので)。
+func (cs *Conversations) UpdateProfile(p Profile) error {
+	old, err := cs.store.Profile(p.ID)
+	if err != nil {
+		return err
+	}
+	p.Name = strings.TrimSpace(p.Name)
+	p.Values = valuesOf(p.Values.settings())
+	if err := p.validate(); err != nil {
+		return err
+	}
+	p.Archived, p.CreatedAt, p.UpdatedAt = old.Archived, old.CreatedAt, time.Now()
+	return cs.saveProfile(p)
+}
+
+// saveProfile はプロファイルを保存し、新しい会話で最初に選ばれるものなら覚えているものも置き換える。
+func (cs *Conversations) saveProfile(p Profile) error {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+	if err := cs.store.UpdateProfile(p); err != nil {
+		return fmt.Errorf("プロファイル「%s」を保存できません: %w", p.Name, err)
+	}
+	if cs.profile.ID == p.ID {
+		cs.profile = p
+	}
+	return nil
+}
+
+// SetProfileArchived は、プロファイルをしまう / 戻す。しまったプロファイルは新しい会話では選べないが、決まりは残る(0014 の 11)。
+// 新しい会話で最初に選ばれるプロファイルはしまえない(新しい会話を作れなくなるため)。
+func (cs *Conversations) SetProfileArchived(id uuid.UUID, archived bool) error {
+	if archived && id == cs.DefaultProfile().ID {
+		return errors.New("新しい会話で最初に選ばれるプロファイルはしまえません。先にほかのプロファイルを選ばれるものにしてください")
+	}
+	p, err := cs.store.Profile(id)
+	if err != nil {
+		return err
+	}
+	p.Archived, p.UpdatedAt = archived, time.Now()
+	return cs.saveProfile(p)
+}
+
+// DeleteProfile は、プロファイルを本当に消す。使っている会話があれば消せない(しまうことはできる。ErrProfileInUse)。
+// 新しい会話で最初に選ばれるプロファイルも消せない(プロファイルは必ず1つ以上あるように)。
+func (cs *Conversations) DeleteProfile(id uuid.UUID) error {
+	if id == cs.DefaultProfile().ID {
+		return errors.New("新しい会話で最初に選ばれるプロファイルは消せません。先にほかのプロファイルを選ばれるものにしてください")
+	}
+	return cs.store.DeleteProfile(id)
+}
+
+// SetDefaultProfile は、新しい会話で最初に選ばれるプロファイルを変える。しまったプロファイルは選べない。
+func (cs *Conversations) SetDefaultProfile(id uuid.UUID) error {
+	p, err := cs.store.Profile(id)
+	if err != nil {
+		return err
+	}
+	if p.Archived {
+		return fmt.Errorf("プロファイル「%s」はしまってあるので、新しい会話で最初に選ばれるものにはできません", p.Name)
+	}
+	if err := SaveAppSetting(cs.store, SettingDefaultProfile, p.ID.String()); err != nil {
+		return err
+	}
+	cs.mu.Lock()
+	cs.profile = p
+	cs.mu.Unlock()
+	return nil
+}
+
+// usableProfile は、新しい会話を作るときのプロファイル。id が空なら新しい会話で最初に選ばれるもの。しまったものは選べない。
+func (cs *Conversations) usableProfile(id uuid.UUID) (Profile, error) {
+	if id == (uuid.UUID{}) {
+		return cs.DefaultProfile(), nil
+	}
+	p, err := cs.store.Profile(id)
+	if err != nil {
+		return Profile{}, err
+	}
+	if p.Archived {
+		return Profile{}, fmt.Errorf("プロファイル「%s」はしまってあるので、新しい会話では選べません", p.Name)
+	}
+	return p, nil
+}
+
+// DefaultsOf は、プロファイル id から新しい会話を作るときの設定(新しい会話の画面でプロファイルを選んだときの写し)。
+func (cs *Conversations) DefaultsOf(id uuid.UUID) (ConversationSettings, error) {
+	p, err := cs.usableProfile(id)
+	if err != nil {
+		return ConversationSettings{}, err
+	}
+	return cs.defaultsFor(p), nil
+}
+
+// SaveToProfile は、会話 conv の今の設定(使うときの設定)の値で、プロファイル profileID の値を上書きする(決まりは変えない)。
+// 会話の設定の画面の「プロファイルに保存」。使うツールのグループも写す(グループはプロファイルの値なので)。モデルも写す。
+func (cs *Conversations) SaveToProfile(conv, profileID uuid.UUID) error {
+	c, _, err := cs.load(conv)
+	if err != nil {
+		return err
+	}
+	p, err := cs.store.Profile(profileID)
+	if err != nil {
+		return err
+	}
+	p.Values = valuesOf(c.Settings)
+	return cs.UpdateProfile(p)
+}
+
+// SaveAsProfile は、会話 conv の今の設定の値で、新しいプロファイル name を作る(決まりは無し)。
+// 会話は元のプロファイルから作ったもののまま(どのプロファイルから作ったかは変えない)。
+func (cs *Conversations) SaveAsProfile(conv uuid.UUID, name string) (Profile, error) {
+	c, _, err := cs.load(conv)
+	if err != nil {
+		return Profile{}, err
+	}
+	return cs.CreateProfile(name, valuesOf(c.Settings), ProfileRules{})
 }

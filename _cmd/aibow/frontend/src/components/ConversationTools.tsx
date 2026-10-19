@@ -13,21 +13,27 @@ import { useEffect, useState } from "react";
 import { LuChevronDown, LuChevronRight } from "react-icons/lu";
 import { ChatService } from "../../bindings/github.com/secondarykey/aibow/_cmd/aibow";
 import { ToolPolicy } from "../../bindings/github.com/secondarykey/aibow";
-import type { ConversationSettings, ToolGroupState, ToolState } from "../../bindings/github.com/secondarykey/aibow";
+import type { ConversationSettings, Profile, ToolGroupState, ToolState } from "../../bindings/github.com/secondarykey/aibow";
 import type { ServerInfo } from "../../bindings/github.com/secondarykey/aibow/mcp/client";
 import { errorMessage } from "../errors";
 import { TOOL_LABELS } from "../toolLabels";
 import { BUILTIN } from "./ToolBar";
 import { ConfirmChip } from "./ConfirmChip";
+import { FIX, offGroup } from "../profileRules";
 
 interface Props {
   id: string; // 会話の ID(プロファイルの決まりを Go が引くため)
   settings: ConversationSettings;
   servers: ServerInfo[]; // settings.json の MCP のサーバー
+  profile: Profile | null; // この会話のプロファイル(使うグループの固定・使えないグループ。0014)
   onChange(patch: Partial<ConversationSettings>): void;
 }
 
-export function ConversationTools({ id, settings, servers, onChange }: Props) {
+export function ConversationTools({ id, settings, servers, profile, onChange }: Props) {
+  // グループのチェックを押せない理由(プロファイルで固定・使えない)。押せるなら空
+  const groupLock = (group: string) =>
+    offGroup(profile, group) ? `プロファイル「${profile?.name}」で使えない`
+      : profile?.rules.fixed?.includes(FIX.toolGroups) ? `使うツールのグループはプロファイル「${profile.name}」で固定されている` : "";
   const [groups, setGroups] = useState<ToolGroupState[]>([]);
   const [error, setError] = useState("");
   const [opened, setOpened] = useState<Record<string, boolean>>({}); // ▶ で開いたグループ(最初は全部畳む)
@@ -76,7 +82,8 @@ export function ConversationTools({ id, settings, servers, onChange }: Props) {
               key=""
               name={BUILTIN}
               title="aibow の中で動くツール"
-              on={!settings.builtin_off}
+              on={!settings.builtin_off && !offGroup(profile, "")}
+              lockReason={groupLock("")}
               onToggle={on => onChange({ builtin_off: !on })}
               open={opened[""]}
               onToggleOpen={() => setOpened(o => ({ ...o, "": !o[""] }))}
@@ -96,7 +103,8 @@ export function ConversationTools({ id, settings, servers, onChange }: Props) {
             key={g.server}
             name={g.server}
             title={info.http ? "URL でつなぐ MCP のサーバー" : "aibow が起動する MCP のサーバー"}
-            on={selected.includes(g.server)}
+            on={selected.includes(g.server) && !offGroup(profile, g.server)}
+            lockReason={groupLock(g.server)}
             onToggle={on => toggleServer(g.server, on)}
             open={opened[g.server]}
             onToggleOpen={() => setOpened(o => ({ ...o, [g.server]: !o[g.server] }))}
@@ -115,10 +123,11 @@ export function ConversationTools({ id, settings, servers, onChange }: Props) {
   );
 }
 
-function Group({ name, title, on, onToggle, open, onToggleOpen, tools, workDir, needsWorkDir, prefix = "", label, onToggleTool, onToggleConfirm }: {
+function Group({ name, title, on, lockReason, onToggle, open, onToggleOpen, tools, workDir, needsWorkDir, prefix = "", label, onToggleTool, onToggleConfirm }: {
   name: string;
   title: string;
   on: boolean;            // この会話で使う
+  lockReason: string;     // チェックを押せない理由(プロファイルで固定・使えない)。押せるなら空
   onToggle(on: boolean): void;
   open?: boolean;
   onToggleOpen(): void;
@@ -139,10 +148,11 @@ function Group({ name, title, on, onToggle, open, onToggleOpen, tools, workDir, 
         <button type="button" className="tool-open" onClick={onToggleOpen} title={open ? "畳む" : "ツールの一覧を開く"}>
           {open ? <LuChevronDown /> : <LuChevronRight />}
         </button>
-        <label className="check" title={title}>
-          <input type="checkbox" checked={on} onChange={e => onToggle(e.target.checked)} />
+        <label className="check" title={lockReason || title}>
+          <input type="checkbox" checked={on} disabled={lockReason !== ""} onChange={e => onToggle(e.target.checked)} />
           <span className="tool-group-name">{name}</span>
         </label>
+        {lockReason && <span className="tool-tag" title={lockReason}>{lockReason.includes("使えない") ? "プロファイルで使えない" : "プロファイルで固定"}</span>}
         {tools.length > 0 && <span className="tool-count">{using} / {tools.length}</span>}
         {needsWorkDir && !workDir && (
           <span className="tool-tag" title="このサーバーは作業フォルダで起動します">作業フォルダが要る</span>
@@ -160,7 +170,7 @@ function Group({ name, title, on, onToggle, open, onToggleOpen, tools, workDir, 
                   <input
                     type="checkbox"
                     checked={t.policy !== ToolPolicy.ToolOff}
-                    disabled={!on} // この会話で使っていないグループのツールは、選んでも使われないので押せなくする
+                    disabled={!on || t.from === "profile"} // 使っていないグループのツールは選んでも使われない。プロファイルで使えないツールは選べない
                     onChange={e => onToggleTool(t, e.target.checked)}
                   />
                   <code>{short}</code>

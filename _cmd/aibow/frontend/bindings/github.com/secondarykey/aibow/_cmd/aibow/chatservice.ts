@@ -84,10 +84,24 @@ export function Conversations(): $CancellablePromise<aibow$0.Conversation[] | nu
 }
 
 /**
+ * CreateProfile は、新しいプロファイルを作る(設定の画面の「新しいプロファイル」)。
+ */
+export function CreateProfile(name: string, values: aibow$0.ProfileValues, rules: aibow$0.ProfileRules): $CancellablePromise<aibow$0.Profile> {
+    return $Call.ByID(3303129020, name, values, rules);
+}
+
+/**
  * DeleteConversation は会話を消す。返事を生成中の会話は消せない。
  */
 export function DeleteConversation(id: uuid$0.UUID): $CancellablePromise<void> {
     return $Call.ByID(353617351, id);
+}
+
+/**
+ * DeleteProfile は、使っている会話が無いプロファイルを消す。
+ */
+export function DeleteProfile(id: uuid$0.UUID): $CancellablePromise<void> {
+    return $Call.ByID(648749573, id);
 }
 
 /**
@@ -113,11 +127,26 @@ export function Models(): $CancellablePromise<$models.ModelsResult> {
 }
 
 /**
- * NewConversation は新しい会話を作る。settings が null なら「新しい会話の既定の設定」のコピーで始まる。
+ * NewConversation は、プロファイル profile から新しい会話を作る(空なら新しい会話で最初に選ばれるプロファイル)。
+ * settings が null ならプロファイルの値のコピーで始まる。
  * 画面は、新しい会話の画面で最初に送信するときに呼ぶ(空の会話を作らないため)。
  */
-export function NewConversation(settings: aibow$0.ConversationSettings | null): $CancellablePromise<aibow$0.Conversation> {
-    return $Call.ByID(1999326860, settings);
+export function NewConversation(profile: uuid$0.UUID, settings: aibow$0.ConversationSettings | null): $CancellablePromise<aibow$0.Conversation> {
+    return $Call.ByID(1999326860, profile, settings);
+}
+
+/**
+ * ProfileDefaults は、プロファイル id から新しい会話を作るときの設定(新しい会話の画面でプロファイルを選んだとき)。
+ */
+export function ProfileDefaults(id: uuid$0.UUID): $CancellablePromise<aibow$0.ConversationSettings> {
+    return $Call.ByID(20887382, id);
+}
+
+/**
+ * Profiles は、プロファイルの一覧(しまったものも。使っている会話の数・新しい会話で最初に選ばれるか)。
+ */
+export function Profiles(): $CancellablePromise<aibow$0.ProfileInfo[] | null> {
+    return $Call.ByID(2789721357);
 }
 
 /**
@@ -142,6 +171,20 @@ export function Resend(id: uuid$0.UUID, text: string): $CancellablePromise<void>
 }
 
 /**
+ * SaveAsProfile は、会話の今の設定で新しいプロファイルを作る(会話の設定の画面の「新しいプロファイルとして保存」)。
+ */
+export function SaveAsProfile(conv: uuid$0.UUID, name: string): $CancellablePromise<aibow$0.Profile> {
+    return $Call.ByID(205845047, conv, name);
+}
+
+/**
+ * SaveToProfile は、会話の今の設定でプロファイルの値を上書きする(会話の設定の画面の「プロファイルに保存」)。
+ */
+export function SaveToProfile(conv: uuid$0.UUID, profile: uuid$0.UUID): $CancellablePromise<void> {
+    return $Call.ByID(1437456908, conv, profile);
+}
+
+/**
  * Send は会話にユーザーの発言を足し、返事を生成する。
  * 返事の中身は戻り値ではなく、chat イベントで少しずつ送る。
  * 
@@ -157,10 +200,10 @@ export function Send(id: uuid$0.UUID, text: string): $CancellablePromise<void> {
 }
 
 /**
- * SetDefaultSettings は新しい会話の既定の設定を変える。今ある会話には効かない。
+ * SetDefaultProfile は、新しい会話で最初に選ばれるプロファイルを変える。
  */
-export function SetDefaultSettings(settings: aibow$0.ConversationSettings): $CancellablePromise<void> {
-    return $Call.ByID(3793269207, settings);
+export function SetDefaultProfile(id: uuid$0.UUID): $CancellablePromise<void> {
+    return $Call.ByID(3339309231, id);
 }
 
 /**
@@ -189,20 +232,18 @@ export function SetGPULayers(n: number): $CancellablePromise<engine$0.ModelInfo 
 }
 
 /**
- * SetGroupDefault は、ツールのグループを新しい会話で最初から選ぶかを変える
- * (新しい会話で最初に選ばれるプロファイルの「使うツールのグループ」に書く。0014)。
- * group が空なら組み込みのツール、そうでなければ MCP のサーバー。画面ではグループのチェック。
- */
-export function SetGroupDefault(group: string, on: boolean): $CancellablePromise<void> {
-    return $Call.ByID(3125203925, group, on);
-}
-
-/**
  * SetGroupPolicy は、グループ(空なら組み込み、そうでなければ MCP のサーバー)の全部のツールの確認の扱いの PC の既定を変える
  * (確認する ask / 確認しない allow / 決めていない 空。tools.json に書く)。
  */
 export function SetGroupPolicy(group: string, policy: aibow$0.ToolPolicy): $CancellablePromise<void> {
     return $Call.ByID(2609014370, group, policy);
+}
+
+/**
+ * SetProfileArchived は、プロファイルをしまう / 戻す。
+ */
+export function SetProfileArchived(id: uuid$0.UUID, archived: boolean): $CancellablePromise<void> {
+    return $Call.ByID(3292539556, id, archived);
 }
 
 /**
@@ -244,8 +285,7 @@ export function ToolDefaults(): $CancellablePromise<aibow$0.ToolGroupState[] | n
 
 /**
  * ToolPrefs は、ツールの扱いの PC の既定(tools.json)と、サーバーを起動したときに見えたツールの一覧。
- * 「新しい会話で最初から選ばない」グループ(NotDefault。画面のグループのチェック)は、tools.json ではなく
- * 新しい会話で最初に選ばれるプロファイルの値から作る(0014。画面の形はプロファイルの画面を作るまで変えない)。
+ * 新しい会話で最初から使うグループはプロファイルの値なので、設定の画面はプロファイルから出す(ここの notDefault は引き継ぐ前の値)。
  */
 export function ToolPrefs(): $CancellablePromise<aibow$0.ToolPrefsView> {
     return $Call.ByID(2378033441);
@@ -275,6 +315,13 @@ export function TryLimits(history: number, reply: number): $CancellablePromise<b
  */
 export function UpdateConversationSettings(id: uuid$0.UUID, settings: aibow$0.ConversationSettings): $CancellablePromise<void> {
     return $Call.ByID(1660834684, id, settings);
+}
+
+/**
+ * UpdateProfile は、プロファイルの名前・値・決まりを変える。値は今ある会話に効かず、決まりは今ある会話にもすぐ効く。
+ */
+export function UpdateProfile(p: aibow$0.Profile): $CancellablePromise<void> {
+    return $Call.ByID(2462467583, p);
 }
 
 /**

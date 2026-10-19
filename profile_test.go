@@ -141,3 +141,94 @@ func TestDefaultsBeforePrepare(t *testing.T) {
 		t.Errorf("プロファイルを持たずに作る: %+v", c)
 	}
 }
+
+// プロファイルを作る・名前と値と決まりを変える・しまう・消す(使っている会話が無いとき)・最初に選ぶものを変える(0014 の 11・完了の条件)
+func TestManageProfiles(t *testing.T) {
+	cs, _ := newTestConversations(t, &fakeGen{})
+	def := cs.DefaultProfile()
+	p, err := cs.CreateProfile(" コマンドなし ", def.Values, ProfileRules{Off: ProfileOff{Tools: []string{"run_command"}}})
+	if err != nil || p.Name != "コマンドなし" {
+		t.Fatalf("作る: %+v %v", p, err)
+	}
+	if _, err := cs.CreateProfile("", def.Values, ProfileRules{}); err == nil {
+		t.Error("名前が空のプロファイルは作れない")
+	}
+	if _, err := cs.CreateProfile("x", def.Values, ProfileRules{Fixed: []string{"unknown"}}); err == nil {
+		t.Error("知らない項目は固定できない")
+	}
+
+	// 選んだプロファイルから会話を作ると、その値が写り、元のプロファイルを覚える
+	p.Values.System = "コマンドなしの会話"
+	p.Name = "コマンドなし(9B)"
+	if err := cs.UpdateProfile(p); err != nil {
+		t.Fatal(err)
+	}
+	c, err := cs.CreateIn(p.ID, nil)
+	if err != nil || c.ProfileID != p.ID || c.Settings.System != "コマンドなしの会話" {
+		t.Fatalf("選んだプロファイルから作る: %+v %v", c, err)
+	}
+	list, _ := cs.Profiles()
+	if len(list) != 2 || !list[0].Default || list[1].Uses != 1 || list[1].Profile.Name != "コマンドなし(9B)" {
+		t.Errorf("一覧(使っている会話の数・最初に選ぶもの): %+v", list)
+	}
+
+	// 使っている会話があれば消せない。しまうことはできる。しまったプロファイルからは新しい会話を作れない
+	if err := cs.DeleteProfile(p.ID); err == nil {
+		t.Error("使っている会話があれば消せない")
+	}
+	if err := cs.SetProfileArchived(p.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cs.CreateIn(p.ID, nil); err == nil {
+		t.Error("しまったプロファイルからは作れない")
+	}
+	if got, _, _ := cs.Get(c.ID); got.Settings.profile == nil || got.Settings.profile.Rules.Off.Tools[0] != "run_command" {
+		t.Error("しまっても、決まりは会話から引ける")
+	}
+	if err := cs.SetDefaultProfile(p.ID); err == nil {
+		t.Error("しまったプロファイルは最初に選ぶものにできない")
+	}
+
+	// 最初に選ぶものはしまえない・消せない
+	if err := cs.SetProfileArchived(def.ID, true); err == nil {
+		t.Error("最初に選ぶプロファイルはしまえない")
+	}
+	if err := cs.DeleteProfile(def.ID); err == nil {
+		t.Error("最初に選ぶプロファイルは消せない")
+	}
+	cs.SetProfileArchived(p.ID, false)
+	if err := cs.SetDefaultProfile(p.ID); err != nil || cs.Defaults().System != "コマンドなしの会話" {
+		t.Errorf("最初に選ぶものを変えると、新しい会話の既定も変わる: %v", err)
+	}
+
+	// 会話を消せば、本当に消せる
+	cs.SetDefaultProfile(def.ID)
+	cs.Delete(c.ID)
+	if err := cs.DeleteProfile(p.ID); err != nil {
+		t.Errorf("使っている会話が無ければ消せる: %v", err)
+	}
+}
+
+// 会話の設定の画面の「プロファイルに保存」(上書き)と「新しいプロファイルとして保存」
+func TestSaveConversationToProfile(t *testing.T) {
+	cs, _ := newTestConversations(t, &fakeGen{})
+	cs.SetRemoteTools(&fakeRemote{})
+	c := mustCreate(t, cs)
+	c.Settings.System, c.Settings.WorkDir, c.Settings.MCPServers = "会話で直した", t.TempDir(), []string{"fake"}
+	if err := cs.UpdateSettings(c.ID, c.Settings); err != nil {
+		t.Fatal(err)
+	}
+	if err := cs.SaveToProfile(c.ID, cs.DefaultProfile().ID); err != nil {
+		t.Fatal(err)
+	}
+	if d := cs.Defaults(); d.System != "会話で直した" || !slices.Equal(d.MCPServers, []string{"fake"}) || d.WorkDir != "" {
+		t.Errorf("値と使うグループを写し、作業フォルダは写さない: %+v", d)
+	}
+	p, err := cs.SaveAsProfile(c.ID, "直した版")
+	if err != nil || p.Values.System != "会話で直した" || len(p.Rules.Fixed) != 0 {
+		t.Errorf("新しいプロファイルとして保存: %+v %v", p, err)
+	}
+	if got, _, _ := cs.Get(c.ID); got.ProfileID == p.ID {
+		t.Error("会話は元のプロファイルから作ったもののまま")
+	}
+}

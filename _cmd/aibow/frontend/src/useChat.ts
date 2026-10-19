@@ -11,7 +11,7 @@ import type { ToolPolicy } from "../bindings/github.com/secondarykey/aibow";
 import type { ChatEvent, ConfirmRequest, StoredMessage } from "../bindings/github.com/secondarykey/aibow";
 import { messageItems, thinkLabel, toolCount, turnView, withConfirm } from "./transcript";
 import type { AssistantView, Transcript } from "./transcript";
-import type { Conversations } from "./useConversations";
+import { NIL, type Conversations } from "./useConversations";
 import type { Busy } from "./useModels";
 import type { Notifier } from "./toast";
 import { errorMessage } from "./errors";
@@ -54,7 +54,7 @@ export interface Chat {
 // onModelLoaded は、送信の前に Go が会話のモデルを読み直したときに呼ぶ(読み込んでいるモデルの表示を取り直す。0014 の 3)
 export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conversations, n: Notifier, onModelLoaded: () => Promise<unknown>): Chat {
   const { addUser, addError, addAssistant, updateAssistant, setSaved, remove, reset, dropLastTurn } = t;
-  const { current, draft, openCount, open, adopt, flushSettings, reloadList, setUsage, reloadSettings } = convs;
+  const { current, draft, draftProfile, openCount, open, adopt, flushSettings, reloadList, setUsage, reloadSettings } = convs;
   const { notify } = n;
   const [generatingId, setGeneratingId] = useState<string | null>(null);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
@@ -115,14 +115,14 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
       await flushSettings(); // 変えたばかりの設定を、送信より先に Go に届ける
       return current.conversation.id;
     }
-    // 新しい会話の画面: 画面で変えた設定(draft)で会話を作り、開いている会話にする。
+    // 新しい会話の画面: 選んだプロファイルから、画面で変えた設定(draft)で会話を作り、開いている会話にする。
     // 表示は作り直さず(開き直すと、このあと足す吹き出しと順番が入れ替わることがある)、ここで空にする
-    const c = await ChatService.NewConversation(draft);
+    const c = await ChatService.NewConversation(draftProfile || NIL, draft);
     adopt(c);
     viewing.current = c.id;
     reset([]);
     return c.id;
-  }, [current, draft, flushSettings, adopt, reset]);
+  }, [current, draft, draftProfile, flushSettings, adopt, reset]);
 
   // run は送信と「今すぐ要約」の共通部分。生成中の吹き出しを出し、chat イベントで書き換え、done で終わる。
   // manual は「今すぐ要約」(返事は生成しない。終わったら吹き出しを消して、区切りが出るように開き直す)

@@ -604,3 +604,46 @@ footer { border-top: 1px solid var(--border); background: var(--panel); padding:
 .toast.clickable:hover { background: var(--bg); }
 @keyframes toast-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---- プロファイル(0014) ---- */
+/* 入力欄の名前と、その横の固定の印(プロファイルの編集では錠のボタン、会話の設定では「プロファイルで固定」の枠) */
+.settings-view .field-label { display: flex; align-items: center; gap: 6px; margin: 12px 0 4px; }
+.settings-view .field-label label { margin: 0; }
+.settings-view .check-row { display: flex; align-items: center; gap: 8px; margin: 12px 0 4px; }
+.settings-view .check-row label.check { margin: 0; }
+.fix-toggle {
+  display: inline-flex; padding: 1px 4px; font-size: 12px; border-color: transparent; background: transparent; color: var(--muted);
+}
+.fix-toggle:hover { color: var(--text); border-color: var(--border); }
+.fix-toggle.on { color: var(--accent); }
+.fix-tag { display: inline-flex; align-items: center; gap: 3px; }
+.settings-view textarea:disabled, .settings-view select:disabled, .settings-view input:disabled { opacity: .6; }
+/* プロファイルの一覧。選んでいるものに枠、しまってあるものは薄く */
+.profile-list { display: flex; flex-direction: column; gap: 2px; margin-bottom: 8px; }
+.profile-item {
+  display: flex; align-items: center; gap: 8px; text-align: left;
+  border-color: transparent; background: transparent; padding: 5px 8px;
+}
+.profile-item:hover { background: var(--bg); }
+.profile-item.current { border-color: var(--accent); background: var(--bg); }
+.profile-item.archived .profile-name { color: var(--muted); }
+.profile-name { font-weight: 600; }
+.profile-uses { margin-left: auto; color: var(--muted); font-size: 12px; }
+.profile-add { color: var(--muted); }
+.profile-editor { padding: 4px 0 0 2px; }
+.profile-actions { display: flex; gap: 6px; margin-top: 8px; }
+.profile-sub { color: var(--muted); }
+.settings-view .tool-group-head label.check.profile-off { margin-left: auto; color: var(--muted); font-size: 12px; }
+/* 会話の設定の画面: どのプロファイルから作ったか・プロファイルに保存 */
+.conv-profile { font-weight: 600; }
+.save-profile { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 12px; }
+.save-profile-name { display: flex; gap: 6px; flex: 1; min-width: 240px; }
+.settings-view .save-profile-name input[type=text] { flex: 1; width: auto; }
+/* 新しい会話の画面のプロファイルの選択(入力欄の上の左) */
+.home-profile select {
+  font: inherit; font-size: 13px; padding: 4px 6px; border-radius: 6px;
+  border: 1px solid var(--border); background: var(--bg); color: var(--text); max-width: 320px;
+}
+/* この会話のツール: プロファイルで使えない・固定で押せないもの */
+.conv-tools-item:disabled { color: var(--muted); cursor: default; }
+.conv-tools-item:disabled:hover { background: transparent; }

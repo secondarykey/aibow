@@ -19,7 +19,6 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -298,12 +297,109 @@ func (s *ChatService) SetGPULayers(n int) (*engine.ModelInfo, error) {
 	return i, nil
 }
 
-// SetDefaultSettings は新しい会話の既定の設定を変える。今ある会話には効かない。
-func (s *ChatService) SetDefaultSettings(settings aibow.ConversationSettings) error {
+// ---- プロファイル(0014) -------------------------------------------------------------------
+//
+// プロファイルは名前の付いた「新しい会話の既定」。値は会話を作るときに写し、決まり(固定・使えない)は会話からそのつど見に行く。
+// 扱いを決めるのは aibow(Conversations)で、ここは画面との中継とログだけ。
+
+// Profiles は、プロファイルの一覧(しまったものも。使っている会話の数・新しい会話で最初に選ばれるか)。
+func (s *ChatService) Profiles() ([]aibow.ProfileInfo, error) {
+	if s.startupErr != nil {
+		return nil, s.startupErr
+	}
+	return s.convs.Profiles()
+}
+
+// CreateProfile は、新しいプロファイルを作る(設定の画面の「新しいプロファイル」)。
+func (s *ChatService) CreateProfile(name string, values aibow.ProfileValues, rules aibow.ProfileRules) (aibow.Profile, error) {
+	if s.startupErr != nil {
+		return aibow.Profile{}, s.startupErr
+	}
+	p, err := s.convs.CreateProfile(name, values, rules)
+	if err == nil {
+		log.Noticef("プロファイル「%s」を作りました", p.Name)
+	}
+	return p, err
+}
+
+// UpdateProfile は、プロファイルの名前・値・決まりを変える。値は今ある会話に効かず、決まりは今ある会話にもすぐ効く。
+func (s *ChatService) UpdateProfile(p aibow.Profile) error {
 	if s.startupErr != nil {
 		return s.startupErr
 	}
-	return s.convs.SetDefaults(settings)
+	if err := s.convs.UpdateProfile(p); err != nil {
+		return err
+	}
+	log.Noticef("プロファイル「%s」を変えました(固定 %v・使えない %+v)", p.Name, p.Rules.Fixed, p.Rules.Off)
+	return nil
+}
+
+// SetProfileArchived は、プロファイルをしまう / 戻す。
+func (s *ChatService) SetProfileArchived(id uuid.UUID, archived bool) error {
+	if s.startupErr != nil {
+		return s.startupErr
+	}
+	if err := s.convs.SetProfileArchived(id, archived); err != nil {
+		return err
+	}
+	log.Noticef("プロファイル %s をしまう: %v", id, archived)
+	return nil
+}
+
+// DeleteProfile は、使っている会話が無いプロファイルを消す。
+func (s *ChatService) DeleteProfile(id uuid.UUID) error {
+	if s.startupErr != nil {
+		return s.startupErr
+	}
+	if err := s.convs.DeleteProfile(id); err != nil {
+		return err
+	}
+	log.Noticef("プロファイル %s を消しました", id)
+	return nil
+}
+
+// SetDefaultProfile は、新しい会話で最初に選ばれるプロファイルを変える。
+func (s *ChatService) SetDefaultProfile(id uuid.UUID) error {
+	if s.startupErr != nil {
+		return s.startupErr
+	}
+	if err := s.convs.SetDefaultProfile(id); err != nil {
+		return err
+	}
+	log.Noticef("新しい会話で最初に選ばれるプロファイル: %s", s.convs.DefaultProfile().Name)
+	return nil
+}
+
+// ProfileDefaults は、プロファイル id から新しい会話を作るときの設定(新しい会話の画面でプロファイルを選んだとき)。
+func (s *ChatService) ProfileDefaults(id uuid.UUID) (aibow.ConversationSettings, error) {
+	if s.startupErr != nil {
+		return aibow.ConversationSettings{}, s.startupErr
+	}
+	return s.convs.DefaultsOf(id)
+}
+
+// SaveToProfile は、会話の今の設定でプロファイルの値を上書きする(会話の設定の画面の「プロファイルに保存」)。
+func (s *ChatService) SaveToProfile(conv, profile uuid.UUID) error {
+	if s.startupErr != nil {
+		return s.startupErr
+	}
+	if err := s.convs.SaveToProfile(conv, profile); err != nil {
+		return err
+	}
+	log.Noticef("会話 %s の設定を、プロファイル %s に保存しました", conv, profile)
+	return nil
+}
+
+// SaveAsProfile は、会話の今の設定で新しいプロファイルを作る(会話の設定の画面の「新しいプロファイルとして保存」)。
+func (s *ChatService) SaveAsProfile(conv uuid.UUID, name string) (aibow.Profile, error) {
+	if s.startupErr != nil {
+		return aibow.Profile{}, s.startupErr
+	}
+	p, err := s.convs.SaveAsProfile(conv, name)
+	if err == nil {
+		log.Noticef("会話 %s の設定から、プロファイル「%s」を作りました", conv, p.Name)
+	}
+	return p, err
 }
 
 // SetDisplay は画面の設定(質問を右上に出すか・明るさ)を変える。生成には関わらないので、モデルは読み直さない。
@@ -399,21 +495,9 @@ func (s *ChatService) ToolStates(id uuid.UUID, settings aibow.ConversationSettin
 }
 
 // ToolPrefs は、ツールの扱いの PC の既定(tools.json)と、サーバーを起動したときに見えたツールの一覧。
-// 「新しい会話で最初から選ばない」グループ(NotDefault。画面のグループのチェック)は、tools.json ではなく
-// 新しい会話で最初に選ばれるプロファイルの値から作る(0014。画面の形はプロファイルの画面を作るまで変えない)。
+// 新しい会話で最初から使うグループはプロファイルの値なので、設定の画面はプロファイルから出す(ここの notDefault は引き継ぐ前の値)。
 func (s *ChatService) ToolPrefs() aibow.ToolPrefsView {
-	v := s.prefs.View()
-	if s.convs == nil {
-		return v
-	}
-	d := s.convs.Defaults()
-	v.NotDefault = aibow.NotDefault{Builtin: d.BuiltinOff, Servers: []string{}}
-	for _, info := range s.AllMCPServers() {
-		if !slices.Contains(d.MCPServers, info.Name) {
-			v.NotDefault.Servers = append(v.NotDefault.Servers, info.Name)
-		}
-	}
-	return v
+	return s.prefs.View()
 }
 
 // LoadToolList は、MCP のサーバーを一時的に起動してツールの一覧を受け取り、tools.json に覚える(設定の画面で、一覧が無いときと「読み直す」)。
@@ -431,24 +515,6 @@ func (s *ChatService) SetToolPolicy(name string, policy aibow.ToolPolicy) error 
 		return err
 	}
 	log.Noticef("ツール %s の扱いの PC の既定: %s", name, policyLabel(policy))
-	return nil
-}
-
-// SetGroupDefault は、ツールのグループを新しい会話で最初から選ぶかを変える
-// (新しい会話で最初に選ばれるプロファイルの「使うツールのグループ」に書く。0014)。
-// group が空なら組み込みのツール、そうでなければ MCP のサーバー。画面ではグループのチェック。
-func (s *ChatService) SetGroupDefault(group string, on bool) error {
-	if s.startupErr != nil {
-		return s.startupErr
-	}
-	if err := s.convs.SetDefaultGroup(group, on); err != nil {
-		return err
-	}
-	name := group
-	if name == "" {
-		name = "組み込み"
-	}
-	log.Noticef("ツールのグループ %s を新しい会話で最初から選ぶ: %v", name, on)
 	return nil
 }
 
@@ -530,13 +596,14 @@ func (s *ChatService) Usage(id uuid.UUID) (*aibow.Usage, error) {
 	return &u, nil
 }
 
-// NewConversation は新しい会話を作る。settings が null なら「新しい会話の既定の設定」のコピーで始まる。
+// NewConversation は、プロファイル profile から新しい会話を作る(空なら新しい会話で最初に選ばれるプロファイル)。
+// settings が null ならプロファイルの値のコピーで始まる。
 // 画面は、新しい会話の画面で最初に送信するときに呼ぶ(空の会話を作らないため)。
-func (s *ChatService) NewConversation(settings *aibow.ConversationSettings) (aibow.Conversation, error) {
+func (s *ChatService) NewConversation(profile uuid.UUID, settings *aibow.ConversationSettings) (aibow.Conversation, error) {
 	if s.startupErr != nil {
 		return aibow.Conversation{}, s.startupErr
 	}
-	return s.convs.Create(settings)
+	return s.convs.CreateIn(profile, settings)
 }
 
 // DeleteConversation は会話を消す。返事を生成中の会話は消せない。

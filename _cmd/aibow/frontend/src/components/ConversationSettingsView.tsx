@@ -5,11 +5,12 @@
 // 「会話に戻る」・一覧で会話を選ぶ・「+ 新規」・一覧の下の歯車で閉じる。
 import { useEffect, useRef, useState } from "react";
 import { LuArrowLeft } from "react-icons/lu";
-import type { ConversationSettings } from "../../bindings/github.com/secondarykey/aibow";
+import type { ConversationSettings, Profile } from "../../bindings/github.com/secondarykey/aibow";
 import type { ServerInfo } from "../../bindings/github.com/secondarykey/aibow/mcp/client";
 // Go の models パッケージ。"…/aibow/models" と書くと aibow パッケージの models.ts が選ばれるので、index まで書く
 import type { Entry as ModelEntry } from "../../bindings/github.com/secondarykey/aibow/models/index";
 import { ConversationSettingsForm, LimitsForm } from "./ConversationSettingsForm";
+import { lockOf } from "../profileRules";
 import { ConversationTools } from "./ConversationTools";
 import { CopyButton } from "./CopyButton";
 
@@ -22,7 +23,9 @@ interface Props {
   errors: { id: number; text: string }[]; // この画面を開いてから出たエラー(ふだんは会話の表示に出るもの)
   onClose(): void;                        // 会話に戻る
   onChange(patch: Partial<ConversationSettings>): void;
-  onMakeDefault(): void;
+  profile: Profile | null;              // この会話のプロファイル(どのプロファイルから作ったか・決まり。0014)
+  onSaveToProfile(): void;              // この会話の設定で、プロファイルの値を上書きする
+  onSaveAsProfile(name: string): void;  // この会話の設定で、新しいプロファイルを作る
   lastPrompt: string;
   servers: ServerInfo[]; // settings.json の MCP のサーバー
   limitsDisabled: boolean; // 生成中・読み込み中は上限を変えられない(作業領域を作り直すため)
@@ -68,8 +71,9 @@ function TitleField({ title, onRename }: { title: string; onRename(title: string
   );
 }
 
-export function ConversationSettingsView({ id, title, onRename, settings, models, errors, onClose, onChange, onMakeDefault, lastPrompt, servers, limitsDisabled, onApplyLimits,
+export function ConversationSettingsView({ id, title, onRename, settings, models, errors, onClose, onChange, profile, onSaveToProfile, onSaveAsProfile, lastPrompt, servers, limitsDisabled, onApplyLimits,
 }: Props) {
+  const lock = lockOf(profile);
   return (
     <section className="settings-view">
       <div className="settings-inner">
@@ -89,12 +93,15 @@ export function ConversationSettingsView({ id, title, onRename, settings, models
           <CopyButton text={id} />
         </div>
 
-        <ConversationSettingsForm settings={settings} models={models} onChange={onChange} />
-        <LimitsForm history={settings.history_tokens} reply={settings.reply_tokens} disabled={limitsDisabled} onApply={onApplyLimits} />
-        <button className="make-default" onClick={onMakeDefault}>この設定を新しい会話の既定にする</button>
+        <label title="この会話を作ったプロファイル。固定した項目と使えないツールは、このプロファイルの決まりで決まる">プロファイル</label>
+        <div className="conv-profile">{profile ? profile.name : "(プロファイルを持たない会話)"}</div>
+
+        <ConversationSettingsForm settings={settings} models={models} lock={lock} onChange={onChange} />
+        <LimitsForm history={settings.history_tokens} reply={settings.reply_tokens} disabled={limitsDisabled} lock={lock} onApply={onApplyLimits} />
+        <SaveToProfile profile={profile} onSave={onSaveToProfile} onSaveAs={onSaveAsProfile} />
 
         <h2 className="section" title="この会話で使うツール(入力欄の上の「この会話のツール」と同じ)">ツール</h2>
-        <ConversationTools id={id} settings={settings} servers={servers} onChange={onChange} />
+        <ConversationTools id={id} settings={settings} servers={servers} profile={profile} onChange={onChange} />
 
         <h2 className="section">モデルに渡した文字列</h2>
         <p className="hint">
@@ -105,5 +112,49 @@ export function ConversationSettingsView({ id, title, onRename, settings, models
         <pre className="last-prompt">{lastPrompt || "(まだ送信していません)"}</pre>
       </div>
     </section>
+  );
+}
+
+// SaveToProfile は「プロファイルに保存」: この会話の設定で、プロファイルの値を上書きする / 新しいプロファイルとして保存する。
+// 上書きすると、そのプロファイルから新しく作る会話が変わる(今ある会話には効かない)。決まりは変えない
+function SaveToProfile({ profile, onSave, onSaveAs }: { profile: Profile | null; onSave(): void; onSaveAs(name: string): void }) {
+  const [naming, setNaming] = useState(false);
+  const [name, setName] = useState("");
+  const submit = () => {
+    const t = name.trim();
+    if (t === "") return;
+    onSaveAs(t);
+    setNaming(false);
+    setName("");
+  };
+  return (
+    <div className="save-profile">
+      {profile && (
+        <button type="button" onClick={onSave} title={`この会話の設定(モデル・使うツールのグループも)で、プロファイル「${profile.name}」の値を上書きする`}>
+          プロファイル「{profile.name}」に保存
+        </button>
+      )}
+      {naming ? (
+        <span className="save-profile-name">
+          <input
+            type="text"
+            autoFocus
+            value={name}
+            placeholder="新しいプロファイルの名前"
+            onChange={e => setName(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === "Enter") submit();
+              if (e.key === "Escape") setNaming(false);
+            }}
+          />
+          <button type="button" disabled={name.trim() === ""} onClick={submit}>保存</button>
+          <button type="button" onClick={() => setNaming(false)}>やめる</button>
+        </span>
+      ) : (
+        <button type="button" onClick={() => setNaming(true)} title="この会話の設定で、新しいプロファイルを作る(決まりは無し)">
+          新しいプロファイルとして保存
+        </button>
+      )}
+    </div>
   );
 }
