@@ -111,6 +111,23 @@ ALTER TABLE messages ADD COLUMN tool_result TEXT; -- tool: どの呼び出しの
 	`
 ALTER TABLE messages ADD COLUMN excluded INTEGER NOT NULL DEFAULT 0;
 `,
+	// 版 5: 設定のプロファイル(0014)。会話はどのプロファイルから作ったかを覚える。
+	// 会話の profile_id は外部キーにして、使っている会話があるプロファイルを消せないようにする(ON DELETE を付けないと、消す方が失敗する)。
+	// 会話はプロファイルの決まりを引くので、黙って消えると決まりも黙って外れてしまう。消したいときは「しまう」(archived)。
+	// 今ある会話は NULL のまま。起動したときにプロファイル「既定」に紐づける(aibow.Conversations.PrepareProfiles)
+	`
+CREATE TABLE profiles (
+	id         TEXT PRIMARY KEY, -- UUIDv7
+	name       TEXT NOT NULL,
+	settings   TEXT NOT NULL,    -- 値(JSON)。会話を作るときに写す
+	rules      TEXT NOT NULL,    -- 決まり(JSON)。会話からそのつど引く
+	archived   INTEGER NOT NULL DEFAULT 0, -- しまった(新しい会話では選べないが、決まりは残る)
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+);
+ALTER TABLE conversations ADD COLUMN profile_id TEXT REFERENCES profiles(id);
+CREATE INDEX conversations_by_profile ON conversations(profile_id);
+`,
 }
 
 func migrate(db *sql.DB) error {
@@ -173,17 +190,23 @@ type rowScanner interface {
 	Scan(dest ...any) error
 }
 
-const conversationColumns = "id, title, settings, created_at, updated_at"
+const conversationColumns = "id, title, settings, profile_id, created_at, updated_at"
 
 func scanConversation(r rowScanner) (aibow.Conversation, error) {
 	var c aibow.Conversation
 	var id, settings, created, updated string
-	if err := r.Scan(&id, &c.Title, &settings, &created, &updated); err != nil {
+	var profile sql.NullString // プロファイルに紐づける前の会話は NULL
+	if err := r.Scan(&id, &c.Title, &settings, &profile, &created, &updated); err != nil {
 		return c, err
 	}
 	var err error
 	if c.ID, err = parseID(id); err != nil {
 		return c, err
+	}
+	if profile.Valid {
+		if c.ProfileID, err = parseID(profile.String); err != nil {
+			return c, err
+		}
 	}
 	if err := json.Unmarshal([]byte(settings), &c.Settings); err != nil {
 		return c, fmt.Errorf("会話 %s の設定が読めません: %w", id, err)
@@ -231,8 +254,8 @@ func (s *SQLite) CreateConversation(c aibow.Conversation) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Exec("INSERT INTO conversations ("+conversationColumns+") VALUES (?, ?, ?, ?, ?)",
-		c.ID.String(), c.Title, string(settings), formatTime(c.CreatedAt), formatTime(c.UpdatedAt))
+	_, err = s.db.Exec("INSERT INTO conversations ("+conversationColumns+") VALUES (?, ?, ?, ?, ?, ?)",
+		c.ID.String(), c.Title, string(settings), nullID(c.ProfileID), formatTime(c.CreatedAt), formatTime(c.UpdatedAt))
 	return err
 }
 
@@ -241,8 +264,8 @@ func (s *SQLite) UpdateConversation(c aibow.Conversation) error {
 	if err != nil {
 		return err
 	}
-	res, err := s.db.Exec("UPDATE conversations SET title = ?, settings = ?, updated_at = ? WHERE id = ?",
-		c.Title, string(settings), formatTime(c.UpdatedAt), c.ID.String())
+	res, err := s.db.Exec("UPDATE conversations SET title = ?, settings = ?, profile_id = ?, updated_at = ? WHERE id = ?",
+		c.Title, string(settings), nullID(c.ProfileID), formatTime(c.UpdatedAt), c.ID.String())
 	if err != nil {
 		return err
 	}
@@ -271,6 +294,14 @@ func (s *SQLite) DeleteConversation(id uuid.UUID) error {
 	// 発言と要約は ON DELETE CASCADE でいっしょに消える
 	_, err := s.db.Exec("DELETE FROM conversations WHERE id = ?", id.String())
 	return err
+}
+
+// nullID は ID を保存する形にする。空(ゼロ)なら NULL(プロファイルを持たない会話)。
+func nullID(id uuid.UUID) sql.NullString {
+	if id == (uuid.UUID{}) {
+		return sql.NullString{}
+	}
+	return sql.NullString{String: id.String(), Valid: true}
 }
 
 // ---- 発言 -------------------------------------------------------------------------------
@@ -430,6 +461,125 @@ func (s *SQLite) Compactions(conv uuid.UUID) ([]aibow.Compaction, error) {
 		out = append(out, c)
 	}
 	return out, rows.Err()
+}
+
+// ---- プロファイル -------------------------------------------------------------------------
+
+const profileColumns = "id, name, settings, rules, archived, created_at, updated_at"
+
+func scanProfile(r rowScanner) (aibow.Profile, error) {
+	var p aibow.Profile
+	var id, values, rules, created, updated string
+	if err := r.Scan(&id, &p.Name, &values, &rules, &p.Archived, &created, &updated); err != nil {
+		return p, err
+	}
+	var err error
+	if p.ID, err = parseID(id); err != nil {
+		return p, err
+	}
+	if err := json.Unmarshal([]byte(values), &p.Values); err != nil {
+		return p, fmt.Errorf("プロファイル %s の値が読めません: %w", id, err)
+	}
+	if err := json.Unmarshal([]byte(rules), &p.Rules); err != nil {
+		return p, fmt.Errorf("プロファイル %s の決まりが読めません: %w", id, err)
+	}
+	if p.CreatedAt, err = parseTime(created); err != nil {
+		return p, err
+	}
+	if p.UpdatedAt, err = parseTime(updated); err != nil {
+		return p, err
+	}
+	return p, nil
+}
+
+func (s *SQLite) ListProfiles() ([]aibow.Profile, error) {
+	rows, err := s.db.Query("SELECT " + profileColumns + " FROM profiles ORDER BY id")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []aibow.Profile{}
+	for rows.Next() {
+		p, err := scanProfile(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+func (s *SQLite) Profile(id uuid.UUID) (aibow.Profile, error) {
+	p, err := scanProfile(s.db.QueryRow("SELECT "+profileColumns+" FROM profiles WHERE id = ?", id.String()))
+	if errors.Is(err, sql.ErrNoRows) {
+		return p, aibow.ErrProfileNotFound
+	}
+	return p, err
+}
+
+// profileJSON は、プロファイルの値と決まりを保存する形(JSON)にする。
+func profileJSON(p aibow.Profile) (values, rules string, err error) {
+	v, err := json.Marshal(p.Values)
+	if err != nil {
+		return "", "", err
+	}
+	r, err := json.Marshal(p.Rules)
+	if err != nil {
+		return "", "", err
+	}
+	return string(v), string(r), nil
+}
+
+func (s *SQLite) CreateProfile(p aibow.Profile) error {
+	values, rules, err := profileJSON(p)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec("INSERT INTO profiles ("+profileColumns+") VALUES (?, ?, ?, ?, ?, ?, ?)",
+		p.ID.String(), p.Name, values, rules, p.Archived, formatTime(p.CreatedAt), formatTime(p.UpdatedAt))
+	return err
+}
+
+func (s *SQLite) UpdateProfile(p aibow.Profile) error {
+	values, rules, err := profileJSON(p)
+	if err != nil {
+		return err
+	}
+	res, err := s.db.Exec("UPDATE profiles SET name = ?, settings = ?, rules = ?, archived = ?, updated_at = ? WHERE id = ?",
+		p.Name, values, rules, p.Archived, formatTime(p.UpdatedAt), p.ID.String())
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return aibow.ErrProfileNotFound
+	}
+	return nil
+}
+
+// DeleteProfile は、使っている会話が無いときだけプロファイルを消す。
+// 外部キーでも消せないようになっているが、SQLite の制約のエラーは何が理由か読みにくいので、先に数えて ErrProfileInUse を返す。
+// 数えてから消すまでの間に会話が増えないよう、1つのトランザクションで行う。
+func (s *SQLite) DeleteProfile(id uuid.UUID) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var used int
+	if err := tx.QueryRow("SELECT COUNT(*) FROM conversations WHERE profile_id = ?", id.String()).Scan(&used); err != nil {
+		return err
+	}
+	if used > 0 {
+		return aibow.ErrProfileInUse
+	}
+	res, err := tx.Exec("DELETE FROM profiles WHERE id = ?", id.String())
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return aibow.ErrProfileNotFound
+	}
+	return tx.Commit()
 }
 
 // ---- アプリ設定 -------------------------------------------------------------------------

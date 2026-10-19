@@ -1,6 +1,7 @@
 package aibow
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -22,6 +23,7 @@ type fakeGen struct {
 	resized                       int // 作業領域を作り直した回数
 	thinking, content, stopReason string
 	block                         chan struct{} // nil でなければ、閉じられるまで生成を終えない
+	model                         string        // 読み込んでいるモデルの ID(空なら file:fake。fakeLoader が書き換える)
 
 	// replies があれば、thinking / content / stopReason の代わりに、呼ばれた順に1つずつ返す
 	// (要約 → 返事、のように1回の送信で何度も生成するときに使う)
@@ -52,7 +54,7 @@ type fakeCall struct {
 var testFormat = format.For("qwen35")
 
 func (g *fakeGen) Info() *engine.ModelInfo {
-	return &engine.ModelInfo{ID: "file:fake", Name: "fake-model", Arch: "qwen35", Format: testFormat.Name()}
+	return &engine.ModelInfo{ID: cmp.Or(g.model, "file:fake"), Name: "fake-model", Arch: "qwen35", Format: testFormat.Name()}
 }
 
 // EnsureContextSize は、作業領域の大きさを覚えるだけ(大きさが変わったら作り直したことにする)。
@@ -108,8 +110,8 @@ func (g *fakeGen) Generate(ctx context.Context, p format.Prompt, opt engine.Gene
 // sameMessages は、モデルに渡した発言が want と同じかを返す。
 func sameMessages(got, want []format.Message) bool { return reflect.DeepEqual(got, want) }
 
-// testDefaults は新しい会話の既定。会話の上限と返事の上限は、fakeGen が1文字を1トークンと数えるので、文字数で考える
-var testDefaults = ConversationSettings{System: "あなたはテスト用です。", Temperature: 0.7, Think: true, PresencePenalty: 1.5, Compact: CompactSummary,
+// testDefaults は新しい会話の既定(モデルは fakeGen が読み込んでいることにしているもの)。会話の上限と返事の上限は、fakeGen が1文字を1トークンと数えるので、文字数で考える
+var testDefaults = ConversationSettings{Model: "file:fake", System: "あなたはテスト用です。", Temperature: 0.7, Think: true, PresencePenalty: 1.5, Compact: CompactSummary,
 	HistoryTokens: 100000, ReplyTokens: 100}
 
 // setLimits は会話 c の会話の上限と返事の上限を変えて保存する(c も書き換える)。
@@ -125,6 +127,10 @@ func newTestConversations(t *testing.T, g *fakeGen) (*Conversations, *memStore) 
 	t.Helper()
 	st := newMemStore()
 	cs := NewConversations(st, g, AppSettings{Defaults: testDefaults})
+	// アプリと同じく、プロファイル「既定」を作ってから使う(新しい会話の既定はプロファイルの値)
+	if _, err := cs.PrepareProfiles(); err != nil {
+		t.Fatal(err)
+	}
 	// ツールの定義でプロンプトのトークン数が変わらないよう、ツール無しで始める(会話の上限を小さくして確かめるテストのため)。
 	// ツールを使うテストは newToolConversation で足す
 	cs.tools = nil
@@ -362,7 +368,8 @@ func TestLoadAppSettingsPrefersStoredValues(t *testing.T) {
 	initial.Defaults.HistoryTokens, initial.Defaults.ReplyTokens = 8192, 8192
 
 	got, notes, err := LoadAppSettings(st, initial)
-	if err != nil || got.Workspace != initial.Workspace || !sameSettings(got.Defaults, initial.Defaults) || len(notes) != 0 {
+	if err != nil || got.Workspace.GPULayers != 999 || got.Workspace.Model != "" || len(got.Workspace.ModelGPULayers) != 0 ||
+		!sameSettings(got.Defaults, initial.Defaults) || len(notes) != 0 {
 		t.Fatalf("保存が空なら初期値のまま: %+v %v %v", got, notes, err)
 	}
 

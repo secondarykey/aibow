@@ -15,11 +15,64 @@ type memStore struct {
 	convs       map[uuid.UUID]Conversation
 	messages    []StoredMessage
 	compactions []Compaction
+	profiles    []Profile
 	settings    map[string]string
 }
 
 func newMemStore() *memStore {
 	return &memStore{convs: map[uuid.UUID]Conversation{}, settings: map[string]string{}}
+}
+
+func (s *memStore) ListProfiles() ([]Profile, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := slices.Clone(s.profiles)
+	slices.SortFunc(out, func(a, b Profile) int { return a.ID.Compare(b.ID) })
+	return out, nil
+}
+
+func (s *memStore) Profile(id uuid.UUID) (Profile, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if i := slices.IndexFunc(s.profiles, func(p Profile) bool { return p.ID == id }); i >= 0 {
+		return s.profiles[i], nil
+	}
+	return Profile{}, ErrProfileNotFound
+}
+
+func (s *memStore) CreateProfile(p Profile) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.profiles = append(s.profiles, p)
+	return nil
+}
+
+func (s *memStore) UpdateProfile(p Profile) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	i := slices.IndexFunc(s.profiles, func(q Profile) bool { return q.ID == p.ID })
+	if i < 0 {
+		return ErrProfileNotFound
+	}
+	s.profiles[i] = p
+	return nil
+}
+
+// DeleteProfile は SQLite と同じく、使っている会話があれば消さない(外部キー)。
+func (s *memStore) DeleteProfile(id uuid.UUID) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, c := range s.convs {
+		if c.ProfileID == id {
+			return ErrProfileInUse
+		}
+	}
+	n := len(s.profiles)
+	s.profiles = slices.DeleteFunc(s.profiles, func(p Profile) bool { return p.ID == id })
+	if len(s.profiles) == n {
+		return ErrProfileNotFound
+	}
+	return nil
 }
 
 func (s *memStore) ListConversations() ([]Conversation, error) {

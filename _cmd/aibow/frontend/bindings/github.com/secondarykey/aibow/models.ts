@@ -18,7 +18,7 @@ export interface AppSettings {
     "workspace": WorkspaceSettings;
 
     /**
-     * 新しい会話の既定の設定
+     * 新しい会話の既定の設定(新しい会話で最初に選ばれるプロファイルの値)
      */
     "defaults": ConversationSettings;
 }
@@ -41,6 +41,8 @@ export interface AppSettings {
  * 	confirm  : ツールを実行する前に、ユーザーの確認を待っている(Confirm)。答えは Conversations.Confirm で返す
  * 	error    : エラー
  * 	notice   : エラーではないお知らせ(Text。画面はトーストに出す)。例: 今すぐ要約で、要約するものが無かった
+ * 	model_loading : 送信の前に、会話のモデルを読み込み始めた(Text にお知らせの文。0014 の 3)
+ * 	model    : 会話のモデルを読み込んだ(Text にお知らせの文。画面は読み込んでいるモデルの表示を取り直す)
  * 	done     : 終わり。必ず最後に1回だけ送る。保存した最後の返事があれば Reply に入る
  */
 export interface ChatEvent {
@@ -242,6 +244,12 @@ export interface Conversation {
     "id": uuid$0.UUID;
     "title": string;
     "settings": ConversationSettings;
+
+    /**
+     * ProfileID は、どのプロファイルから作ったか(0014)。値は作るときに写したので、ここから引くのは決まりだけ(ステップ 7 の 3)。
+     * 空(ゼロ)はプロファイルを持たない会話(この機能より前に作った会話。起動したときに PrepareProfiles で紐づける)
+     */
+    "profile_id": uuid$0.UUID;
     "created_at": string;
     "updated_at": string;
 }
@@ -249,10 +257,18 @@ export interface Conversation {
 /**
  * ConversationSettings は会話ごとの設定。変えると次の送信から効く。
  * 
- * 会話を作るときは「新しい会話の既定」の写しから始まる。写しなので、既定をあとで変えても今ある会話は変わらない。
+ * 会話を作るときは「新しい会話の既定」(プロファイルの値。profile.go)の写しから始まる。写しなので、既定をあとで変えても今ある会話は変わらない。
  * 古い会話の JSON に max_tokens(返事の上限の昔の名前)が残っていても、読むときに無視される。
  */
 export interface ConversationSettings {
+    /**
+     * Model はこの会話のモデル(models の目録の ID。0014 の 3)。モデルは VRAM に1つしか載らないので、
+     * 送信(今すぐ要約・作り直すも)の前に、読み込んでいるモデルと違えば読み直す(Conversations.ensureWorkspace)。
+     * 会話を開いただけでは読み直さない(一覧を見て回るだけで読み直しが続かないように)。
+     * 空はこの機能より前の会話(起動したときに FillMissingModels で、最後に使ったモデルを写す)
+     */
+    "model": string;
+
     /**
      * システムプロンプト。空なら付けない
      */
@@ -627,8 +643,7 @@ export interface Usage {
 /**
  * WorkspaceSettings はモデルの読み込みに関わる設定の塊。変えるとモデルの読み直しになる。
  * 
- * あとで「プロファイル」(設定に名前を付けて切り替える)を作るときは、この塊をそのままプロファイルの中に移す。
- * 今のアプリの設定は「名前のない既定のプロファイル」という位置づけ。
+ * モデルはプロファイルの値にも入る(0014。会話ごとにモデルを持つのはステップ 7 の 2)。GPU の層数はこの PC のものなので、プロファイルに入れない。
  * 会話の上限・返事の上限(作業領域の大きさ)は、会話ごとの設定に移した(ConversationSettings。0009)。
  */
 export interface WorkspaceSettings {
@@ -638,7 +653,13 @@ export interface WorkspaceSettings {
     "model": string;
 
     /**
-     * GPU に載せる層の数
+     * GPU に載せる層の数。まだ覚えていないモデルに使う
      */
     "gpu_layers": number;
+
+    /**
+     * ModelGPULayers は、モデルごとに覚えた GPU に載せる層の数(モデルの ID → 層の数)。
+     * 載せられる層の数はモデルの大きさと PC の VRAM で決まるので、モデルごとにこの PC に覚える(プロファイルには入れない。0014 の 4)
+     */
+    "model_gpu_layers": { [_ in string]?: number } | null;
 }

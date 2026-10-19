@@ -18,14 +18,14 @@ import (
 	"github.com/secondarykey/aibow/format"
 )
 
-// Store は会話とアプリ設定の保存先。
+// Store は会話・プロファイル・アプリ設定の保存先。
 type Store interface {
 	// ListConversations は会話の一覧を、更新の新しい順に返す(発言は含まない)。
 	ListConversations() ([]Conversation, error)
 	// Conversation は会話1つと、その発言を古い順に返す。無ければ ErrNotFound。
 	Conversation(id uuid.UUID) (Conversation, []StoredMessage, error)
 	CreateConversation(c Conversation) error
-	// UpdateConversation はタイトル・設定・更新日時を書き換える。無ければ ErrNotFound。
+	// UpdateConversation はタイトル・設定・プロファイル・更新日時を書き換える。無ければ ErrNotFound。
 	UpdateConversation(c Conversation) error
 	// TouchConversation は発言が増えたときに呼ぶ。更新日時を at にし、タイトルが空のときだけ autoTitle を入れる。
 	// 会話を丸ごと書き戻さないのは、生成中に画面で変えたタイトルや設定を古い値で上書きしないため。無ければ ErrNotFound。
@@ -43,6 +43,16 @@ type Store interface {
 	// Compactions は会話の要約を古い順に返す。モデルに渡すのは最新の1件だけで、古いものは画面の区切りに使う。
 	Compactions(conv uuid.UUID) ([]Compaction, error)
 
+	// ListProfiles はプロファイルを、しまったものも含めて作った順に返す(0014)。
+	ListProfiles() ([]Profile, error)
+	// Profile はプロファイル1つを返す。無ければ ErrProfileNotFound。
+	Profile(id uuid.UUID) (Profile, error)
+	CreateProfile(p Profile) error
+	// UpdateProfile は名前・値・決まり・しまったか・更新日時を書き換える。無ければ ErrProfileNotFound。
+	UpdateProfile(p Profile) error
+	// DeleteProfile はプロファイルを消す。そのプロファイルから作った会話があれば消さずに ErrProfileInUse。
+	DeleteProfile(id uuid.UUID) error
+
 	// AppSetting はアプリ全体の設定を1つ読む。まだ保存されていなければ ok=false。
 	AppSetting(key string) (value string, ok bool, err error)
 	SetAppSetting(key, value string) error
@@ -53,18 +63,26 @@ var ErrNotFound = errors.New("会話が見つかりません(削除された可�
 
 // Conversation は会話1つ。発言の列は StoredMessage として別に持つ。
 type Conversation struct {
-	ID        uuid.UUID            `json:"id"` // UUIDv7。作った順に並ぶ
-	Title     string               `json:"title"`
-	Settings  ConversationSettings `json:"settings"`
-	CreatedAt time.Time            `json:"created_at"`
-	UpdatedAt time.Time            `json:"updated_at"`
+	ID       uuid.UUID            `json:"id"` // UUIDv7。作った順に並ぶ
+	Title    string               `json:"title"`
+	Settings ConversationSettings `json:"settings"`
+	// ProfileID は、どのプロファイルから作ったか(0014)。値は作るときに写したので、ここから引くのは決まりだけ(ステップ 7 の 3)。
+	// 空(ゼロ)はプロファイルを持たない会話(この機能より前に作った会話。起動したときに PrepareProfiles で紐づける)
+	ProfileID uuid.UUID `json:"profile_id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // ConversationSettings は会話ごとの設定。変えると次の送信から効く。
 //
-// 会話を作るときは「新しい会話の既定」の写しから始まる。写しなので、既定をあとで変えても今ある会話は変わらない。
+// 会話を作るときは「新しい会話の既定」(プロファイルの値。profile.go)の写しから始まる。写しなので、既定をあとで変えても今ある会話は変わらない。
 // 古い会話の JSON に max_tokens(返事の上限の昔の名前)が残っていても、読むときに無視される。
 type ConversationSettings struct {
+	// Model はこの会話のモデル(models の目録の ID。0014 の 3)。モデルは VRAM に1つしか載らないので、
+	// 送信(今すぐ要約・作り直すも)の前に、読み込んでいるモデルと違えば読み直す(Conversations.ensureWorkspace)。
+	// 会話を開いただけでは読み直さない(一覧を見て回るだけで読み直しが続かないように)。
+	// 空はこの機能より前の会話(起動したときに FillMissingModels で、最後に使ったモデルを写す)
+	Model           string  `json:"model"`
 	System          string  `json:"system"`           // システムプロンプト。空なら付けない
 	Temperature     float64 `json:"temperature"`      // 0 なら毎回一番点数の高いトークンを選ぶ
 	Think           bool    `json:"think"`            // 思考させるか

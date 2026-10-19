@@ -23,7 +23,7 @@ export interface Models {
   current: ModelInfo | null; // 今読み込まれているモデル(Go の ModelInfo)
   gpu: boolean;
   loading: boolean;          // モデルを読み込み中か(起動時・切り替え時)
-  switchModel(id: string): Promise<void>;
+  switchModel(id: string): Promise<boolean>; // 読み込めたら true
   reload(): Promise<boolean>; // 一覧を取り直す。起動に失敗していたら false
 }
 
@@ -122,6 +122,7 @@ export function useModels(n: Notifier, t: Pick<Transcript, "addError">, setBusy:
     }
     setLoading(false);
     setBusy("idle");
+    return !failed;
   }, [models, notify, dismissKey, addError, setBusy]);
 
   return { models, current, gpu, loading, switchModel, reload };

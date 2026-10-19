@@ -31,6 +31,7 @@ export function AllMCPServers(): $CancellablePromise<client$0.ServerInfo[] | nul
 
 /**
  * AppSettings はアプリの設定(GPU の層数・最後に使ったモデル)と、新しい会話の既定の設定(会話の上限・返事の上限も入る)を返す。
+ * GPU の層数は、読み込んでいるモデルの値(モデルごとに覚えている。0014 の 4)。設定の画面はこれを出して変える(SetGPULayers)。
  */
 export function AppSettings(): $CancellablePromise<aibow$0.AppSettings> {
     return $Call.ByID(1212015075);
@@ -173,13 +174,15 @@ export function SetExcluded(id: uuid$0.UUID, msgID: uuid$0.UUID, excluded: boole
 /**
  * SetGPULayers は GPU に載せる層の数を変え、今のモデルを読み込み直す。
  * 失敗したときは元の層の数で読み直している。モデルが未読み込みなら nil を返す。
+ * 値は読み込んでいるモデルの値として覚える(モデルごと。0014 の 4)。モデルが未読み込みなら、まだ覚えていないモデルに使う全体の値を変える。
  */
 export function SetGPULayers(n: number): $CancellablePromise<engine$0.ModelInfo | null> {
     return $Call.ByID(128737747, n);
 }
 
 /**
- * SetGroupDefault は、ツールのグループを新しい会話で最初から選ぶかを変える(tools.json に書く)。
+ * SetGroupDefault は、ツールのグループを新しい会話で最初から選ぶかを変える
+ * (新しい会話で最初に選ばれるプロファイルの「使うツールのグループ」に書く。0014)。
  * group が空なら組み込みのツール、そうでなければ MCP のサーバー。画面ではグループのチェック。
  */
 export function SetGroupDefault(group: string, on: boolean): $CancellablePromise<void> {
@@ -216,7 +219,8 @@ export function StopSummary(): $CancellablePromise<void> {
  * 失敗したときは元のモデルに戻っている(画面は Models を呼び直して確認する)。
  * Go で error を返すと、JavaScript 側では Promise が reject される。
  * 
- * モデルはアプリ全体で1つ(VRAM に1つしか載らない)。会話を切り替えてもモデルは変わらない。
+ * 読み込めるモデルは1つ(VRAM に1つしか載らない)。画面は入力欄の下でモデルを選んだとき、会話のモデルを変えてからこれを呼ぶ。
+ * 会話を開いただけでは読み直さず、モデルの違う会話に送信するときに読み直す(Conversations.ensureWorkspace。0014 の 3)。
  */
 export function SwitchModel(id: string): $CancellablePromise<engine$0.ModelInfo | null> {
     return $Call.ByID(1702876432, id);
@@ -231,6 +235,8 @@ export function ToolDefaults(): $CancellablePromise<aibow$0.ToolGroupState[] | n
 
 /**
  * ToolPrefs は、ツールの扱いの PC の既定(tools.json)と、サーバーを起動したときに見えたツールの一覧。
+ * 「新しい会話で最初から選ばない」グループ(NotDefault。画面のグループのチェック)は、tools.json ではなく
+ * 新しい会話で最初に選ばれるプロファイルの値から作る(0014。画面の形はプロファイルの画面を作るまで変えない)。
  */
 export function ToolPrefs(): $CancellablePromise<aibow$0.ToolPrefsView> {
     return $Call.ByID(2378033441);

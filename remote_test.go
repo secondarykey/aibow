@@ -148,33 +148,46 @@ func TestRemoteToolsNotSelected(t *testing.T) {
 	}
 }
 
-// 新しい会話では、設定の画面の「ツール」で使うにしているサーバーを最初から選ぶ。使わないにしたサーバーは選ばない。
-// 保存する「新しい会話の既定」には、使うサーバーを入れない(決める場所は「ツール」だけ)
+// 新しい会話では、プロファイルの「使うツールのグループ」(設定の画面の「ツール」のチェック)のサーバーを最初から選ぶ。
+// プロファイルに書いてあっても、settings.json に無いサーバーは無視する。
+// 「新しい会話の既定」を保存しても、使うグループは変わらない(決める場所は「ツール」だけ)
 func TestDefaultServers(t *testing.T) {
-	cs, _ := newTestConversations(t, &fakeGen{})
+	cs, st := newTestConversations(t, &fakeGen{})
 	cs.SetRemoteTools(&fakeRemote{})
-	prefs := &ToolPrefs{}
-	cs.SetToolPrefs(prefs)
 
-	if got := mustCreate(t, cs).Settings.MCPServers; !slices.Equal(got, []string{"fake"}) {
-		t.Errorf("「ツール」で使うサーバーを最初から選ぶ: %v", got)
+	if got := mustCreate(t, cs).Settings.MCPServers; len(got) != 0 {
+		t.Errorf("プロファイルに書いていないサーバー(足したばかり)は最初から選ばない: %v", got)
 	}
-	prefs.SetGroupDefault("fake", false)
-	prefs.SetGroupDefault("", false)
+	if err := cs.SetDefaultGroup("fake", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := cs.SetDefaultGroup("gone", true); err != nil { // settings.json に無いサーバー
+		t.Fatal(err)
+	}
+	if got := mustCreate(t, cs).Settings.MCPServers; !slices.Equal(got, []string{"fake"}) {
+		t.Errorf("「ツール」でチェックしたサーバーだけを最初から選ぶ: %v", got)
+	}
+	cs.SetDefaultGroup("fake", false)
+	cs.SetDefaultGroup("", false)
 	if d := cs.Defaults(); len(d.MCPServers) != 0 || !d.BuiltinOff {
 		t.Errorf("「ツール」でチェックを外したものは、新しい会話で最初から選ばない: %+v", d)
 	}
-	prefs.SetGroupDefault("", true)
+	cs.SetDefaultGroup("", true)
 	if d := cs.Defaults(); d.BuiltinOff {
 		t.Error("チェックを戻すと選ぶ")
 	}
+	cs.SetDefaultGroup("fake", true)
 	set := cs.Defaults()
-	set.MCPServers = []string{"fake"}
+	set.MCPServers, set.BuiltinOff = []string{}, true
 	if err := cs.SetDefaults(set); err != nil {
 		t.Fatal(err)
 	}
-	if got := cs.defaults.MCPServers; len(got) != 0 {
-		t.Errorf("保存する既定には入れない: %v", got)
+	if d := cs.Defaults(); !slices.Equal(d.MCPServers, []string{"fake"}) || d.BuiltinOff {
+		t.Errorf("既定を保存しても、使うグループは変わらない: %+v", d)
+	}
+	// グループのチェックはプロファイルに保存する
+	if ps, _ := st.ListProfiles(); len(ps) != 1 || !slices.Equal(ps[0].Values.MCPServers, []string{"fake", "gone"}) {
+		t.Errorf("プロファイルに保存する: %+v", ps)
 	}
 }
 
@@ -435,9 +448,7 @@ func TestNotDefaultServerCanBeSelected(t *testing.T) {
 	cs, c, _ := newWorkDirConversation(t, g)
 	r := &fakeRemote{tools: []tool.Tool{&remoteTool{name: "fake__write"}}}
 	cs.SetRemoteTools(r)
-	prefs := &ToolPrefs{}
-	prefs.SetGroupDefault("fake", false)
-	cs.SetToolPrefs(prefs)
+	cs.SetDefaultGroup("fake", false)
 	useFake(t, cs, &c)
 	sendAnswering(cs, context.Background(), c, "やあ", func(*ConfirmRequest) bool { return false })
 	if !r.started || !slices.Contains(promptToolNames(g.calls[0]), "fake__write") {
@@ -600,7 +611,7 @@ func TestNoteServers(t *testing.T) {
 	if err != nil || !slices.Equal(added, []string{"filesystem"}) || p.groupDefault("filesystem") {
 		t.Fatalf("足したばかりのサーバーは最初から使わない: %v %v", added, err)
 	}
-	p.SetGroupDefault("filesystem", true) // 使う人がチェックした
+	p.update(func(f *toolsFile) { f.NotDefault.Servers = nil }, "") // 使う人がチェックした(プロファイルより前の画面)
 
 	again, _ := LoadToolPrefs(path)
 	added, _ = again.NoteServers([]string{"Blender", "filesystem"})

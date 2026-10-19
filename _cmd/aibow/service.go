@@ -18,6 +18,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -85,12 +87,29 @@ func NewChatService(eng *engine.Engine, st aibow.Store, app aibow.AppSettings, c
 			s.convs.SetRemoteTools(mcp)
 		}
 		s.convs.SetToolPrefs(prefs)
+		// 送信の前に会話のモデルを読み込む係(0014 の 3)。モデルごとの GPU の層数で読み込む
+		s.convs.SetModelLoader(modelLoader{s})
+		// 新しい会話の既定はプロファイルの値。プロファイルより前の DB なら、今の既定からプロファイル「既定」を作り、今ある会話を紐づける(0014)。
+		// ツールのグループを引き継ぐので、MCP のサーバーとツールの扱いを渡したあとに呼ぶ
+		if notes, err := s.convs.PrepareProfiles(); err != nil {
+			log.Error(err.Error())
+		} else {
+			for _, n := range notes {
+				log.Notice(n)
+			}
+		}
 		// 会話の上限・返事の上限を会話ごとにする前に作った会話には、今の既定の値を写す(既定を変えても今ある会話は変わらない、の約束。0009)
 		if n, err := s.convs.FillMissingLimits(); err != nil {
 			log.Error(err.Error())
 		} else if n > 0 {
 			d := app.Defaults
 			log.Noticef("会話の上限・返事の上限を持たない %d 個の会話に、今の既定(%d + %d)を入れました", n, d.HistoryTokens, d.ReplyTokens)
+		}
+		// 会話ごとのモデルにする前に作った会話には、最後に使ったモデルを写す(0014 の 10)
+		if n, err := s.convs.FillMissingModels(app.Workspace.Model); err != nil {
+			log.Error(err.Error())
+		} else if n > 0 {
+			log.Noticef("モデルを持たない %d 個の会話に、最後に使ったモデル %s を入れました", n, app.Workspace.Model)
 		}
 	}
 	return s
@@ -157,7 +176,8 @@ func (s *ChatService) Models() ModelsResult {
 // 失敗したときは元のモデルに戻っている(画面は Models を呼び直して確認する)。
 // Go で error を返すと、JavaScript 側では Promise が reject される。
 //
-// モデルはアプリ全体で1つ(VRAM に1つしか載らない)。会話を切り替えてもモデルは変わらない。
+// 読み込めるモデルは1つ(VRAM に1つしか載らない)。画面は入力欄の下でモデルを選んだとき、会話のモデルを変えてからこれを呼ぶ。
+// 会話を開いただけでは読み直さず、モデルの違う会話に送信するときに読み直す(Conversations.ensureWorkspace。0014 の 3)。
 func (s *ChatService) SwitchModel(id string) (*engine.ModelInfo, error) {
 	if s.startupErr != nil {
 		return nil, s.startupErr
@@ -170,9 +190,13 @@ func (s *ChatService) SwitchModel(id string) (*engine.ModelInfo, error) {
 }
 
 // loadModel はモデルを読み込み、成功したら「最後に使ったモデル」として保存する(次の起動で読み込む)。
+// GPU に載せる層の数は、そのモデルに覚えた値(覚えていなければ全体の値。0014 の 4)。
 func (s *ChatService) loadModel(m models.Entry) (*engine.ModelInfo, error) {
-	log.Infof("モデルを読み込み中: %s (%s)", m.Name, m.Path)
-	i, err := s.engine.LoadModel(m)
+	s.appMu.Lock()
+	layers := s.app.Workspace.LayersFor(m.ID)
+	s.appMu.Unlock()
+	log.Infof("モデルを読み込み中: %s (%s。GPU に載せる層: %d)", m.Name, m.Path, layers)
+	i, err := s.engine.LoadModelWithLayers(m, layers)
 	if err != nil {
 		log.Error(err.Error())
 		return nil, err
@@ -185,6 +209,18 @@ func (s *ChatService) loadModel(m models.Entry) (*engine.ModelInfo, error) {
 	return i, nil
 }
 
+// modelLoader は、会話の仕組みが送信の前に会話のモデルを読み込むときに使う係(aibow.ModelLoader)。
+// ChatService のメソッドにすると画面から呼べるメソッドになってしまうので、別の型にしている。
+type modelLoader struct{ s *ChatService }
+
+func (l modelLoader) LoadModel(id string) (*engine.ModelInfo, error) {
+	m, err := l.s.catalog.Find(id)
+	if err != nil {
+		return nil, err
+	}
+	return l.s.loadModel(m)
+}
+
 func logModel(what string, i *engine.ModelInfo) {
 	log.Noticef("%s (%.1f 秒): %s / %.2fB パラメータ / %.2f GB / %d 層 / GPU に載せる層: %d / 作業領域: %d トークン / 書式: %s",
 		what, i.LoadSec, i.Desc, i.ParamsB, i.SizeGB, i.Layers, i.GPULayers, i.NCtx, cmp.Or(i.Format, "未対応("+i.Arch+")"))
@@ -193,6 +229,7 @@ func logModel(what string, i *engine.ModelInfo) {
 // ---- アプリ全体の設定 -------------------------------------------------------------------
 
 // AppSettings はアプリの設定(GPU の層数・最後に使ったモデル)と、新しい会話の既定の設定(会話の上限・返事の上限も入る)を返す。
+// GPU の層数は、読み込んでいるモデルの値(モデルごとに覚えている。0014 の 4)。設定の画面はこれを出して変える(SetGPULayers)。
 func (s *ChatService) AppSettings() (aibow.AppSettings, error) {
 	if s.startupErr != nil {
 		return aibow.AppSettings{}, s.startupErr
@@ -200,6 +237,9 @@ func (s *ChatService) AppSettings() (aibow.AppSettings, error) {
 	s.appMu.Lock()
 	defer s.appMu.Unlock()
 	a := s.app
+	if i := s.engine.Info(); i != nil {
+		a.Workspace.GPULayers = a.Workspace.LayersFor(i.ID)
+	}
 	a.Defaults = s.convs.Defaults()
 	return a, nil
 }
@@ -230,6 +270,7 @@ func (s *ChatService) TryLimits(history, reply int) (bool, error) {
 
 // SetGPULayers は GPU に載せる層の数を変え、今のモデルを読み込み直す。
 // 失敗したときは元の層の数で読み直している。モデルが未読み込みなら nil を返す。
+// 値は読み込んでいるモデルの値として覚える(モデルごと。0014 の 4)。モデルが未読み込みなら、まだ覚えていないモデルに使う全体の値を変える。
 func (s *ChatService) SetGPULayers(n int) (*engine.ModelInfo, error) {
 	if s.startupErr != nil {
 		return nil, s.startupErr
@@ -242,7 +283,18 @@ func (s *ChatService) SetGPULayers(n int) (*engine.ModelInfo, error) {
 	if i != nil {
 		logModel("GPU に載せる層を変えて読み直しました", i)
 	}
-	s.saveAppSetting(aibow.SettingGPULayers, n, func(a *aibow.AppSettings) { a.Workspace.GPULayers = n })
+	if i == nil {
+		s.saveAppSetting(aibow.SettingGPULayers, n, func(a *aibow.AppSettings) { a.Workspace.GPULayers = n })
+		return nil, nil
+	}
+	s.appMu.Lock()
+	layers := maps.Clone(s.app.Workspace.ModelGPULayers)
+	s.appMu.Unlock()
+	if layers == nil {
+		layers = map[string]int{}
+	}
+	layers[i.ID] = n
+	s.saveAppSetting(aibow.SettingModelGPULayers, layers, func(a *aibow.AppSettings) { a.Workspace.ModelGPULayers = layers })
 	return i, nil
 }
 
@@ -319,8 +371,21 @@ func (s *ChatService) ToolStates(settings aibow.ConversationSettings) ([]aibow.T
 }
 
 // ToolPrefs は、ツールの扱いの PC の既定(tools.json)と、サーバーを起動したときに見えたツールの一覧。
+// 「新しい会話で最初から選ばない」グループ(NotDefault。画面のグループのチェック)は、tools.json ではなく
+// 新しい会話で最初に選ばれるプロファイルの値から作る(0014。画面の形はプロファイルの画面を作るまで変えない)。
 func (s *ChatService) ToolPrefs() aibow.ToolPrefsView {
-	return s.prefs.View()
+	v := s.prefs.View()
+	if s.convs == nil {
+		return v
+	}
+	d := s.convs.Defaults()
+	v.NotDefault = aibow.NotDefault{Builtin: d.BuiltinOff, Servers: []string{}}
+	for _, info := range s.AllMCPServers() {
+		if !slices.Contains(d.MCPServers, info.Name) {
+			v.NotDefault.Servers = append(v.NotDefault.Servers, info.Name)
+		}
+	}
+	return v
 }
 
 // LoadToolList は、MCP のサーバーを一時的に起動してツールの一覧を受け取り、tools.json に覚える(設定の画面で、一覧が無いときと「読み直す」)。
@@ -341,10 +406,14 @@ func (s *ChatService) SetToolPolicy(name string, policy aibow.ToolPolicy) error 
 	return nil
 }
 
-// SetGroupDefault は、ツールのグループを新しい会話で最初から選ぶかを変える(tools.json に書く)。
+// SetGroupDefault は、ツールのグループを新しい会話で最初から選ぶかを変える
+// (新しい会話で最初に選ばれるプロファイルの「使うツールのグループ」に書く。0014)。
 // group が空なら組み込みのツール、そうでなければ MCP のサーバー。画面ではグループのチェック。
 func (s *ChatService) SetGroupDefault(group string, on bool) error {
-	if err := s.prefs.SetGroupDefault(group, on); err != nil {
+	if s.startupErr != nil {
+		return s.startupErr
+	}
+	if err := s.convs.SetDefaultGroup(group, on); err != nil {
 		return err
 	}
 	name := group
