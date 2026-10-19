@@ -307,6 +307,7 @@ footer.home .composer textarea { line-height: 1.5; min-height: calc(3 * 1.5em + 
 .stop-row { display: flex; justify-content: flex-end; margin-top: 6px; }
 /* 要約(compact の summary) */
 .summarizing { font-size: 13px; color: var(--muted); }
+.summarizing summary { cursor: pointer; }
 .summarizing-text {
   white-space: pre-wrap; margin-top: 6px; padding: 6px 10px; border-radius: 6px; background: var(--think);
   max-height: 240px; overflow-y: auto;

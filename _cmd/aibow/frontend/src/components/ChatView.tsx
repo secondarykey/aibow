@@ -343,13 +343,16 @@ function StopButton({ label, onStop }: { label: string; onStop(): void }) {
 }
 
 // 要約を作っている途中: 要約の文が流れてくる様子を見せる
+// 要約中の箱。思考と同じく畳んで出し、「古い発言を要約しています…」を押したときだけ要約の文を見せる(ふだんは要約の中身まで読まないため)。
+// 開いているときは、続きが見えるように下まで送る(開いたときは一番下から見せる)
 function Summarizing({ text }: { text: string }) {
-  const box = useStickToBottom<HTMLDivElement>(text);
+  const [open, setOpen] = useState(false);
+  const box = useStickToBottom<HTMLDivElement>(text, open);
   return (
-    <div className="summarizing">
-      <div className="summarizing-label">古い発言を要約しています…</div>
+    <details className="summarizing" onToggle={e => setOpen(e.currentTarget.open)}>
+      <summary title="押すと、作っている要約の文を見る">古い発言を要約しています…</summary>
       {text && <div className="summarizing-text" ref={box}>{text}</div>}
-    </div>
+    </details>
   );
 }
 
