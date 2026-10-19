@@ -16,6 +16,7 @@ import * as uuid$0 from "../../../uuid/models.js";
  */
 export interface AppSettings {
     "workspace": WorkspaceSettings;
+    "display": DisplaySettings;
 
     /**
      * 新しい会話の既定の設定(新しい会話で最初に選ばれるプロファイルの値)
@@ -337,6 +338,17 @@ export interface ConversationSettings {
      * 画面(会話の設定の画面の「ツール」)で変えるのは、使う(on)/ 使わない(off)だけ
      */
     "tool_policies"?: { [_ in string]?: ToolPolicy } | null;
+}
+
+/**
+ * DisplaySettings は画面の見せ方の設定。会話によらずアプリ全体で1つ(会話の設定にもプロファイルにも入れない)。
+ * 生成には関わらないので、変えてもモデルや作業領域は読み直さない。
+ */
+export interface DisplaySettings {
+    /**
+     * PinQuestion は、長い返事をスクロールして質問が画面の外に出たとき、その質問を右上に出しておくか
+     */
+    "pin_question": boolean;
 }
 
 /**

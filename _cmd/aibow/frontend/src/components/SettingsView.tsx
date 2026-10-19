@@ -6,7 +6,7 @@
 // 新しい会話はここの既定の写しから始まる(_docs/features/0009-conversation-settings.md)。
 import { useEffect, useState } from "react";
 import { LuArrowLeft } from "react-icons/lu";
-import type { AppSettings, ConversationSettings, WorkspaceSettings } from "../../bindings/github.com/secondarykey/aibow";
+import type { AppSettings, ConversationSettings, DisplaySettings, WorkspaceSettings } from "../../bindings/github.com/secondarykey/aibow";
 import { ToolSettings } from "./ToolSettings";
 import { ConversationSettingsForm, LimitsForm, NumberInput } from "./ConversationSettingsForm";
 
@@ -18,10 +18,11 @@ interface Props {
   onApplyDefaultLimits(history: number, reply: number): void;   // 新しい会話の既定の会話の上限・返事の上限(作業領域を作り直してみてから保存する)
   appDisabled: boolean; // 生成中・読み込み中は変えられない(エンジンが1つのため)
   onApplyApp(w: WorkspaceSettings): void;
+  onDisplayChange(d: DisplaySettings): void; // 画面の設定を変える(生成に関わらないので、生成中でも変えられる)
   onToolsChanged(): void; // ツールを使う / 使わないを変えた(メーターと、会話で選べる MCP のサーバーを読み直す)
 }
 
-export function SettingsView({ onClose, errors, app, onDefaultsChange, onApplyDefaultLimits, appDisabled, onApplyApp, onToolsChanged }: Props) {
+export function SettingsView({ onClose, errors, app, onDefaultsChange, onApplyDefaultLimits, appDisabled, onApplyApp, onDisplayChange, onToolsChanged }: Props) {
   return (
     <section className="settings-view">
       <div className="settings-inner">
@@ -46,11 +47,29 @@ export function SettingsView({ onClose, errors, app, onDefaultsChange, onApplyDe
 
         <h2 className="section" title="会話によらず、この PC で1つだけのもの">アプリの設定</h2>
         {app && <AppSettingsForm app={app} disabled={appDisabled} onApply={onApplyApp} />}
+        {app && <DisplaySettingsForm display={app.display} onChange={onDisplayChange} />}
 
         <h2 className="section" title="この PC で、ツールを使うかどうか(全部の会話に効く。tools.json に保存する)">ツール</h2>
         <ToolSettings onChanged={onToolsChanged} />
       </div>
     </section>
+  );
+}
+
+// 画面の設定。会話によらずアプリ全体で1つ。押したらすぐ効く(「適用」は要らない)
+function DisplaySettingsForm({ display, onChange }: { display: DisplaySettings; onChange(d: DisplaySettings): void }) {
+  return (
+    <>
+      <label className="check">
+        <input
+          type="checkbox"
+          checked={display.pin_question}
+          onChange={e => onChange({ ...display, pin_question: e.target.checked })}
+        />
+        スクロールしたら、質問を右上に出しておく
+      </label>
+      <p className="hint">長い返事を読んでいて質問が上に隠れたら、その質問を右上に小さく出します。押すと質問まで戻ります。</p>
+    </>
   );
 }
 

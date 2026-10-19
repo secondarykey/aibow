@@ -375,11 +375,16 @@ func TestLoadAppSettingsPrefersStoredValues(t *testing.T) {
 
 	SaveAppSetting(st, SettingHistoryTokens, 4096)
 	SaveAppSetting(st, SettingLastModel, "ollama:qwen3.5:4b")
+	SaveAppSetting(st, SettingPinQuestion, false)
+	initial.Display.PinQuestion = true
 	got, _, err = LoadAppSettings(st, initial)
 	if err != nil {
 		t.Fatal(err)
 	}
 	w, d := got.Workspace, got.Defaults
+	if got.Display.PinQuestion {
+		t.Errorf("保存した「質問を右上に出す」(オフ)が初期値(オン)より優先されていません: %+v", got.Display)
+	}
 	if d.HistoryTokens != 4096 || d.ReplyTokens != 8192 || w.Model != "ollama:qwen3.5:4b" || w.GPULayers != 999 {
 		t.Errorf("保存した値が優先されていません(古い置き場の会話の上限は、新しい会話の既定に入る): %+v", got)
 	}

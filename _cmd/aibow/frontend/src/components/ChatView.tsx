@@ -1,7 +1,7 @@
 // 会話の表示: 吹き出し(ツールのカードを含む)・エラー・要約の区切り
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { ToolPolicy } from "../../bindings/github.com/secondarykey/aibow";
-import type { ReactNode } from "react";
+import type { MouseEvent, ReactNode } from "react";
 import { LuChevronDown, LuChevronRight, LuCircleStop, LuEye, LuEyeOff, LuPencil, LuRefreshCw } from "react-icons/lu";
 import { CopyButton } from "./CopyButton";
 import type { Compaction } from "../../bindings/github.com/secondarykey/aibow";
@@ -10,6 +10,7 @@ import type { AssistantView, Item } from "../transcript";
 import { RenderedText } from "./RenderedText";
 import { ToolCard } from "./ToolCard";
 import { useStickToBottom } from "../stickToBottom";
+import { QUESTION_ATTR, usePinnedQuestion } from "../pinnedQuestion";
 
 const FADED_TITLE = "この発言はモデルに渡していません(要約に入ったか、会話の上限に収めるために外しました)";
 const EXCLUDED_TITLE = "モデルに渡さないにしています";
@@ -31,10 +32,12 @@ export interface Exclude {
 // firstId はモデルに渡す最初の発言(Go の Usage.first_id)。これより前の発言は、要約に入ったか
 // truncate で外れて、モデルに渡していないので薄く表示する(発言そのものは保存されている)
 // conversationId は表示している会話の ID。会話を切り替えたら、一番下(最新の発言)から見せる
-export function ChatView({ items, firstId, conversationId, onStop, onAnswer, exclude, retry }: {
+// pinQuestion は、スクロールして質問が上に隠れたら、その質問を右上に出しておくか(アプリの設定の「画面」)
+export function ChatView({ items, firstId, conversationId, pinQuestion, onStop, onAnswer, exclude, retry }: {
   items: Item[];
   firstId: string | null;
   conversationId: string | null;
+  pinQuestion: boolean;
   onStop(): void;
   exclude: Exclude;
   retry: Retry;
@@ -46,7 +49,14 @@ export function ChatView({ items, firstId, conversationId, onStop, onAnswer, exc
   // 何か増えたり書き換わったりしたら、一番下にいるときだけ一番下まで送る(上にスクロールして読んでいる間は送らない)。
   // 会話を切り替えたときと、自分で送信したとき(ユーザーの発言が増えたとき)は、どこを読んでいても一番下へ
   const userCount = items.filter(it => it.kind === "user").length;
-  const ref = useStickToBottom<HTMLDivElement>(items, `${conversationId}:${userCount}`);
+  const stickRef = useStickToBottom<HTMLDivElement>(items, `${conversationId}:${userCount}`);
+  // 今読んでいる返事の質問が上に隠れていたら、右上に出す
+  const { ref: pinRef, pinned } = usePinnedQuestion<HTMLDivElement>(pinQuestion, items);
+  const ref = useCallback((node: HTMLDivElement | null) => {
+    stickRef(node);
+    pinRef(node);
+  }, [stickRef, pinRef]);
+  const pinnedItem = pinned !== null ? items[pinned] : undefined;
   // やり直せるのは最後のやり取りだけ: 最後の発言(直す)と、その後ろの最後の返事(作り直す)
   const lastUser = lastIndex(items, it => it.kind === "user");
   const lastAssistant = lastIndex(items, it => it.kind === "assistant");
@@ -56,6 +66,7 @@ export function ChatView({ items, firstId, conversationId, onStop, onAnswer, exc
 
   return (
     <div className="chat" ref={ref}>
+      {pinnedItem?.kind === "user" && <PinnedQuestion index={pinned!} text={pinnedItem.text} />}
       <div className="chat-inner">
         {items.map((it, i) => {
           switch (it.kind) {
@@ -76,7 +87,13 @@ export function ChatView({ items, firstId, conversationId, onStop, onAnswer, exc
               }
               return (
                 <div key={it.id} className="user-turn">
-                  <div className={"msg user" + faded(it.msgId) + (it.excluded ? " excluded" : "")} title={fadedTitle(it.msgId, it.excluded)}>{it.text}</div>
+                  <div
+                    className={"msg user" + faded(it.msgId) + (it.excluded ? " excluded" : "")}
+                    title={fadedTitle(it.msgId, it.excluded)}
+                    {...{ [QUESTION_ATTR]: i }}
+                  >
+                    {it.text}
+                  </div>
                   <UserActions text={it.text} createdAt={it.createdAt}>
                     {i === lastUser && it.msgId && (
                       <button className="reply-action" disabled={retry.disabled} title="この発言を直して送り直す(この発言と返事は消える)" onClick={() => setEditing(it.id)}>
@@ -120,6 +137,21 @@ export function ChatView({ items, firstId, conversationId, onStop, onAnswer, exc
           }
         })}
       </div>
+    </div>
+  );
+}
+
+// PinnedQuestion は、上に隠れた質問の写し(右上に止めておく)。長い質問は数行で切る。押すと元の吹き出しまで戻る
+function PinnedQuestion({ index, text }: { index: number; text: string }) {
+  const jump = (e: MouseEvent<HTMLButtonElement>) => {
+    const chat = e.currentTarget.closest(".chat");
+    chat?.querySelector(`[${QUESTION_ATTR}="${index}"]`)?.scrollIntoView({ block: "start", behavior: "smooth" });
+  };
+  return (
+    <div className="pinned-question-anchor">
+      <button className="pinned-question" title="この返事の質問。押すと質問まで戻る" onClick={jump}>
+        {text}
+      </button>
     </div>
   );
 }

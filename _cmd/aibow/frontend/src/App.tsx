@@ -379,6 +379,7 @@ export default function App() {
         onApplyDefaultLimits={(h, r) => applyLimits(h, r, onDefaultsChange)}
         appDisabled={busy !== "idle"}
         onApplyApp={app.apply}
+        onDisplayChange={app.setDisplay}
         onToolsChanged={() => {
           reloadMcp();
           convs.refreshUsage().catch(err => addError(errorMessage(err)));
@@ -420,6 +421,7 @@ export default function App() {
           items={transcript.items}
           firstId={convs.current?.usage?.first_id ?? null}
           conversationId={currentId}
+          pinQuestion={app.settings?.display.pin_question ?? false}
           onStop={chat.stop}
           onAnswer={chat.answer}
           retry={{ disabled: busy !== "idle", onRegenerate: chat.regenerate, onResend: chat.resend }}

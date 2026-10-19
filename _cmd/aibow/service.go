@@ -228,7 +228,7 @@ func logModel(what string, i *engine.ModelInfo) {
 
 // ---- アプリ全体の設定 -------------------------------------------------------------------
 
-// AppSettings はアプリの設定(GPU の層数・最後に使ったモデル)と、新しい会話の既定の設定(会話の上限・返事の上限も入る)を返す。
+// AppSettings はアプリの設定(GPU の層数・最後に使ったモデル・画面の設定)と、新しい会話の既定の設定(会話の上限・返事の上限も入る)を返す。
 // GPU の層数は、読み込んでいるモデルの値(モデルごとに覚えている。0014 の 4)。設定の画面はこれを出して変える(SetGPULayers)。
 func (s *ChatService) AppSettings() (aibow.AppSettings, error) {
 	if s.startupErr != nil {
@@ -304,6 +304,16 @@ func (s *ChatService) SetDefaultSettings(settings aibow.ConversationSettings) er
 		return s.startupErr
 	}
 	return s.convs.SetDefaults(settings)
+}
+
+// SetPinQuestion は、スクロールしたときに質問を右上に出しておくか(画面の設定)を変える。生成には関わらないので、モデルは読み直さない。
+func (s *ChatService) SetPinQuestion(on bool) error {
+	if s.startupErr != nil {
+		return s.startupErr
+	}
+	s.saveAppSetting(aibow.SettingPinQuestion, on, func(a *aibow.AppSettings) { a.Display.PinQuestion = on })
+	log.Noticef("スクロールしたときに質問を右上に出す: %v", on)
+	return nil
 }
 
 // saveAppSetting はアプリ全体の設定を1つ保存する。

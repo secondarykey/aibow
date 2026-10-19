@@ -30,7 +30,7 @@ export function AllMCPServers(): $CancellablePromise<client$0.ServerInfo[] | nul
 }
 
 /**
- * AppSettings はアプリの設定(GPU の層数・最後に使ったモデル)と、新しい会話の既定の設定(会話の上限・返事の上限も入る)を返す。
+ * AppSettings はアプリの設定(GPU の層数・最後に使ったモデル・画面の設定)と、新しい会話の既定の設定(会話の上限・返事の上限も入る)を返す。
  * GPU の層数は、読み込んでいるモデルの値(モデルごとに覚えている。0014 の 4)。設定の画面はこれを出して変える(SetGPULayers)。
  */
 export function AppSettings(): $CancellablePromise<aibow$0.AppSettings> {
@@ -195,6 +195,13 @@ export function SetGroupDefault(group: string, on: boolean): $CancellablePromise
  */
 export function SetGroupPolicy(group: string, policy: aibow$0.ToolPolicy): $CancellablePromise<void> {
     return $Call.ByID(2609014370, group, policy);
+}
+
+/**
+ * SetPinQuestion は、スクロールしたときに質問を右上に出しておくか(画面の設定)を変える。生成には関わらないので、モデルは読み直さない。
+ */
+export function SetPinQuestion(on: boolean): $CancellablePromise<void> {
+    return $Call.ByID(319360012, on);
 }
 
 /**

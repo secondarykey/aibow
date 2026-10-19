@@ -1,12 +1,13 @@
-// useAppSettings.ts: アプリの設定(GPU に載せる層の数)と、新しい会話の既定の設定。
+// useAppSettings.ts: アプリの設定(GPU に載せる層の数・画面の設定)と、新しい会話の既定の設定。
 //
 // GPU の層数は、層を GPU と CPU のどちらに置くかが読み込み時に決まるので、変えるとモデルを読み直す。
+// 画面の設定(質問を右上に出す)は生成に関わらないので、変えたらすぐ保存する。
 //
 // 新しい会話の既定(設定の画面の「新しい会話の既定」)は、会話の設定と同じく変えたらすぐ保存する。今ある会話には効かない。
 // 会話の上限・返事の上限も既定の一部(会話を作るときに写す)。作業領域を作り直してみるのは App(applyLimits)。
 import { useCallback, useRef, useState } from "react";
 import { ChatService } from "../bindings/github.com/secondarykey/aibow/_cmd/aibow";
-import type { AppSettings, ConversationSettings, WorkspaceSettings } from "../bindings/github.com/secondarykey/aibow";
+import type { AppSettings, ConversationSettings, DisplaySettings, WorkspaceSettings } from "../bindings/github.com/secondarykey/aibow";
 import type { Transcript } from "./transcript";
 import type { Notifier } from "./toast";
 import type { Busy } from "./useModels";
@@ -16,6 +17,7 @@ export interface AppSettingsState {
   settings: AppSettings | null;
   reload(): Promise<void>;
   apply(w: WorkspaceSettings): Promise<void>;
+  setDisplay(d: DisplaySettings): void;                         // 画面の設定を変える(すぐ保存する)
   setDefaults(s: ConversationSettings): Promise<void>;           // 会話の設定を丸ごと既定にする(会話の設定の画面のボタン)
   updateDefaults(patch: Partial<ConversationSettings>): void; // 既定の一部を変える(設定の画面の「新しい会話の既定」)
 }
@@ -90,5 +92,15 @@ export function useAppSettings(
     }, SAVE_DELAY_MS);
   }, [setSettings, addError]);
 
-  return { settings, reload, apply, setDefaults, updateDefaults };
+  const setDisplay = useCallback((d: DisplaySettings) => {
+    const cur = settingsRef.current;
+    if (!cur) return;
+    setSettings({ ...cur, display: d }); // 先に画面に効かせる。保存できなければ読み直して戻す
+    ChatService.SetPinQuestion(d.pin_question).catch(err => {
+      addError(`画面の設定を保存できません: ${errorMessage(err)}`);
+      reload().catch(e => addError(errorMessage(e)));
+    });
+  }, [setSettings, reload, addError]);
+
+  return { settings, reload, apply, setDisplay, setDefaults, updateDefaults };
 }

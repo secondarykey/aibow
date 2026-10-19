@@ -19,6 +19,8 @@ const (
 	SettingLastModel      = "last_model" // 最後に使ったモデルの ID。次の起動で読み込む
 	// SettingDefaultProfile は、新しい会話で最初に選ばれるプロファイルの ID(0014)。新しい会話の既定は、このプロファイルの値
 	SettingDefaultProfile = "default_profile"
+	// SettingPinQuestion は、返事を読んでいてスクロールしたときに、その質問を右上に出しておくか(画面の設定。DisplaySettings)
+	SettingPinQuestion = "pin_question"
 
 	// SettingDefaults は、プロファイルより前の「新しい会話の既定の設定」(会話の上限・返事の上限も入る)。
 	// 今はプロファイル「既定」への引き継ぎ(PrepareProfiles)のためだけに読み、書かない(0014)
@@ -57,9 +59,17 @@ func (w WorkspaceSettings) LayersFor(model string) int {
 	return w.GPULayers
 }
 
+// DisplaySettings は画面の見せ方の設定。会話によらずアプリ全体で1つ(会話の設定にもプロファイルにも入れない)。
+// 生成には関わらないので、変えてもモデルや作業領域は読み直さない。
+type DisplaySettings struct {
+	// PinQuestion は、長い返事をスクロールして質問が画面の外に出たとき、その質問を右上に出しておくか
+	PinQuestion bool `json:"pin_question"`
+}
+
 // AppSettings はアプリの設定と、新しい会話の既定の設定。
 type AppSettings struct {
 	Workspace WorkspaceSettings    `json:"workspace"`
+	Display   DisplaySettings      `json:"display"`
 	Defaults  ConversationSettings `json:"defaults"` // 新しい会話の既定の設定(新しい会話で最初に選ばれるプロファイルの値)
 }
 
@@ -86,6 +96,7 @@ func LoadAppSettings(s Store, initial AppSettings) (a AppSettings, notes []strin
 		{SettingGPULayers, &a.Workspace.GPULayers},
 		{SettingLastModel, &a.Workspace.Model},
 		{SettingModelGPULayers, &a.Workspace.ModelGPULayers},
+		{SettingPinQuestion, &a.Display.PinQuestion},
 	} {
 		ok, err := loadAppSetting(s, kv.key, kv.v)
 		if err != nil {
