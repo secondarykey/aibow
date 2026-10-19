@@ -164,6 +164,14 @@ export function SetDefaultSettings(settings: aibow$0.ConversationSettings): $Can
 }
 
 /**
+ * SetDisplay は画面の設定(質問を右上に出すか・明るさ)を変える。生成には関わらないので、モデルは読み直さない。
+ * 変わった項目だけ保存し、ログに残す。
+ */
+export function SetDisplay(d: aibow$0.DisplaySettings): $CancellablePromise<void> {
+    return $Call.ByID(1355121465, d);
+}
+
+/**
  * SetExcluded は、吹き出し1つ分の発言を「モデルに渡さない」にする / 戻す(0011)。msgID は吹き出しの中の発言のどれか。
  * 返事なら、ツールの呼び出しと結果も一緒に変わる。生成中の会話は変えられない。次の送信から効く。
  */
@@ -195,13 +203,6 @@ export function SetGroupDefault(group: string, on: boolean): $CancellablePromise
  */
 export function SetGroupPolicy(group: string, policy: aibow$0.ToolPolicy): $CancellablePromise<void> {
     return $Call.ByID(2609014370, group, policy);
-}
-
-/**
- * SetPinQuestion は、スクロールしたときに質問を右上に出しておくか(画面の設定)を変える。生成には関わらないので、モデルは読み直さない。
- */
-export function SetPinQuestion(on: boolean): $CancellablePromise<void> {
-    return $Call.ByID(319360012, on);
 }
 
 /**

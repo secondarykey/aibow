@@ -306,13 +306,26 @@ func (s *ChatService) SetDefaultSettings(settings aibow.ConversationSettings) er
 	return s.convs.SetDefaults(settings)
 }
 
-// SetPinQuestion は、スクロールしたときに質問を右上に出しておくか(画面の設定)を変える。生成には関わらないので、モデルは読み直さない。
-func (s *ChatService) SetPinQuestion(on bool) error {
+// SetDisplay は画面の設定(質問を右上に出すか・明るさ)を変える。生成には関わらないので、モデルは読み直さない。
+// 変わった項目だけ保存し、ログに残す。
+func (s *ChatService) SetDisplay(d aibow.DisplaySettings) error {
 	if s.startupErr != nil {
 		return s.startupErr
 	}
-	s.saveAppSetting(aibow.SettingPinQuestion, on, func(a *aibow.AppSettings) { a.Display.PinQuestion = on })
-	log.Noticef("スクロールしたときに質問を右上に出す: %v", on)
+	if err := d.Validate(); err != nil {
+		return err
+	}
+	s.appMu.Lock()
+	old := s.app.Display
+	s.appMu.Unlock()
+	if d.PinQuestion != old.PinQuestion {
+		s.saveAppSetting(aibow.SettingPinQuestion, d.PinQuestion, func(a *aibow.AppSettings) { a.Display.PinQuestion = d.PinQuestion })
+		log.Noticef("スクロールしたときに質問を右上に出す: %v", d.PinQuestion)
+	}
+	if d.Theme != old.Theme {
+		s.saveAppSetting(aibow.SettingTheme, d.Theme, func(a *aibow.AppSettings) { a.Display.Theme = d.Theme })
+		log.Noticef("画面の明るさ: %s", d.Theme)
+	}
 	return nil
 }
 

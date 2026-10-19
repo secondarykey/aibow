@@ -92,10 +92,17 @@ export function SettingsView({ onClose, errors, app, onDefaultsChange, onApplyDe
   );
 }
 
-// 画面の設定。会話によらずアプリ全体で1つ。押したらすぐ効く(「適用」は要らない)
+// 画面の設定。会話によらずアプリ全体で1つ。選んだらすぐ効く(「適用」は要らない)
 function DisplaySettingsForm({ display, onChange }: { display: DisplaySettings; onChange(d: DisplaySettings): void }) {
   return (
     <>
+      <label htmlFor="theme" title="システムなら、OS のライト / ダークの設定に合わせる(OS で切り替えるとすぐ変わる)">明るさ</label>
+      <select id="theme" value={display.theme || "system"} onChange={e => onChange({ ...display, theme: e.target.value })}>
+        <option value="system">システム(OS の設定に合わせる)</option>
+        <option value="light">ライト</option>
+        <option value="dark">ダーク</option>
+      </select>
+
       <label className="check">
         <input
           type="checkbox"

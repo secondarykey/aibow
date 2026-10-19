@@ -349,6 +349,11 @@ export interface DisplaySettings {
      * PinQuestion は、長い返事をスクロールして質問が画面の外に出たとき、その質問を右上に出しておくか
      */
     "pin_question": boolean;
+
+    /**
+     * Theme は画面の明るさ。ThemeSystem(OS の設定に合わせる)・ThemeLight・ThemeDark。空は ThemeSystem として扱う
+     */
+    "theme": string;
 }
 
 /**

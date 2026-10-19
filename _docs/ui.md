@@ -14,7 +14,8 @@
 | `transcript.ts` | 会話の表示(吹き出し・ツールのカード・エラー・区切り)の持ち方。保存された発言から表示を作る |
 | `components/` | 表示。`ConversationList` / `Splitter` / `TitleBar` / `ChatView` / `ToolCard` / `Composer` / `WorkDirBar` / `ModelBar` / `Meter` / `NewChat` / `SettingsView` / `ConversationSettingsView` / `ConversationSettingsForm` / `ToolSettings` / `ConversationTools` / `ConfirmChip` / `CopyButton` など。返事の中身は [rendering.md](rendering.md) |
 | `stored.ts` | 画面の見た目の好み(一覧の幅・一覧を開いているか・最後に開いていた会話)を localStorage に覚える |
-| `mediaQuery.ts` | 画面の幅・OS のライト / ダークを見る(`useMediaQuery`。狭いウィンドウの境目 `NARROW_QUERY`) |
+| `mediaQuery.ts` | 画面の幅を見る(`useMediaQuery`。狭いウィンドウの境目 `NARROW_QUERY`) |
+| `theme.ts` | 画面の明るさ(ライト / ダーク)を決めて `<html data-theme>` に書く([下](#明るさライト--ダーク)) |
 | `stickToBottom.ts` | 「一番下にいるときだけ追いかける」スクロール |
 | `pinnedQuestion.ts` | スクロールして上に隠れた質問を右上に出す |
 | `questionsOnly.ts` | 「質問だけ」の表示(返事を隠して質問を並べ、選んだ質問へ飛ぶ) |
@@ -34,7 +35,7 @@
 - 設定の画面(`SettingsView.tsx`): 一覧の下の歯車のアイコンで開閉する。別の画面として扱い、チャットの代わりに会話の場所に出す。
   一覧で会話を選ぶ・「+ 新規」でも閉じる。入力欄の打ちかけの文は App が持つので消えない。
   中身はタブで2つに分ける(2026-10-19、ユーザーの指示。会話に関わらないアプリの設定と、会話の既定として使われる値を混ぜないため)。開くたびに「基本設定」から。開いている会話には関係しない(0009)
-  - 基本設定: モデル(GPU の層数。読み込んでいるモデルの値で、モデルが変わると取り直す)・画面(「スクロールしたら、質問を右上に出しておく」)
+  - 基本設定: モデル(GPU の層数。読み込んでいるモデルの値で、モデルが変わると取り直す)・画面(明るさ・「スクロールしたら、質問を右上に出しておく」)
   - 会話: 新しい会話の既定(会話の上限・返事の上限も)・ツール。ツールは、使う / 使わない・確認するかが全部の会話の既定になり、グループのチェックが新しい会話で最初から使うものなので、こちらに置く
 - 会話の設定の画面(`ConversationSettingsView.tsx`): 入力欄の下、メーターの右の歯車で開く([下](#会話の設定の画面))。設定の画面と同じく会話の場所に出す
 - ウィンドウは初めて起動したとき 720×820、最小 480×480(`main.go`)。次からは閉じたときの位置と大きさで開く([下](#次の起動で戻すもの))
@@ -212,6 +213,15 @@
 - スクロールバーは `::-webkit-scrollbar` でつまみだけのフラットな形にし、色はテーマの `--scrollbar` / `--scrollbar-hover`。
   標準の `scrollbar-color` は使わない(指定すると Chromium は `::-webkit-scrollbar` を無視する)
 
+## 明るさ(ライト / ダーク)
+
+- 設定の画面の「基本設定」の「明るさ」で、システム(初め)・ライト・ダークを選ぶ(2026-10-19、ユーザーの指示)。DB の `theme`(画面の設定 `DisplaySettings`)
+- 実際に使う明るさは `theme.ts` だけが決め、`<html data-theme="light|dark">` に書く。「システム」なら OS の `prefers-color-scheme` で決め、OS で切り替えたらすぐ追いかける
+- CSS は `:root` がライト、`:root[data-theme="dark"]` がダークの色(`prefers-color-scheme` は直接見ない。設定で選んだ明るさと食い違わないように)。
+  `color-scheme` も合わせるので、チェックボックス・選択肢の一覧などブラウザが描く部品も同じ明るさになる。mermaid の図の配色も `useDarkTheme` で合わせる
+- 設定は Go から画面を描いたあとに届くので、そのままだと起動の直後に OS の明るさで描いてから切り替わる(ちらつく)。
+  最後の設定の写しを localStorage に置き、最初の描画の前に `initTheme`(`main.tsx`)で決める。設定そのものは DB が正で、届いたら写しも書き直す
+
 ## 次の起動で戻すもの
 
 閉じたときと同じ様子で開く(2026-10-16、ユーザーの指示)。
@@ -222,6 +232,7 @@
 | 一覧の幅 | localStorage `aibow.listWidth`(`Splitter.tsx`) | 仕切りを放したとき |
 | 一覧を開いているか | localStorage `aibow.listOpen`(`App.tsx`) | 広いときに、ハンバーガーで自分で開け閉めしたとき |
 | 最後に開いていた会話 | localStorage `aibow.lastConversation`(`App.tsx`) | 開いている会話が変わったとき(新しい会話の画面なら消す) |
+| 明るさの設定の写し | localStorage `aibow.theme`(`theme.ts`)。設定そのものは DB | Go から設定が届いたとき・設定の画面で選んだとき |
 
 - ウィンドウの位置と大きさは、ウィンドウを作る前に Go が知る必要があるのでファイルに、ほかは画面だけの好みなので localStorage に置く。どれも会話の DB には入れない(その PC の画面の都合で、会話をサーバーに置く形にしても手元に残るもの)
 - 位置と大きさは DIP(拡大率で割った値)。作るときのオプション(`X`・`Y`・`Width`・`Height` と `InitialPosition: WindowXY`)で渡す(`SetPosition` / `SetSize` は `Run` の前だと無視される。wails3 スキルの window-state.md)

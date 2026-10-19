@@ -21,6 +21,8 @@ const (
 	SettingDefaultProfile = "default_profile"
 	// SettingPinQuestion は、返事を読んでいてスクロールしたときに、その質問を右上に出しておくか(画面の設定。DisplaySettings)
 	SettingPinQuestion = "pin_question"
+	// SettingTheme は、画面の明るさ(ライト / ダーク / システムに合わせる。DisplaySettings)
+	SettingTheme = "theme"
 
 	// SettingDefaults は、プロファイルより前の「新しい会話の既定の設定」(会話の上限・返事の上限も入る)。
 	// 今はプロファイル「既定」への引き継ぎ(PrepareProfiles)のためだけに読み、書かない(0014)
@@ -64,6 +66,24 @@ func (w WorkspaceSettings) LayersFor(model string) int {
 type DisplaySettings struct {
 	// PinQuestion は、長い返事をスクロールして質問が画面の外に出たとき、その質問を右上に出しておくか
 	PinQuestion bool `json:"pin_question"`
+	// Theme は画面の明るさ。ThemeSystem(OS の設定に合わせる)・ThemeLight・ThemeDark。空は ThemeSystem として扱う
+	Theme string `json:"theme"`
+}
+
+// 画面の明るさ(DisplaySettings.Theme)
+const (
+	ThemeSystem = "system"
+	ThemeLight  = "light"
+	ThemeDark   = "dark"
+)
+
+// Validate は、知らない値を保存しないように確かめる。
+func (d DisplaySettings) Validate() error {
+	switch d.Theme {
+	case "", ThemeSystem, ThemeLight, ThemeDark:
+		return nil
+	}
+	return fmt.Errorf("画面の明るさ %q は選べません(system / light / dark のどれか)", d.Theme)
 }
 
 // AppSettings はアプリの設定と、新しい会話の既定の設定。
@@ -97,6 +117,7 @@ func LoadAppSettings(s Store, initial AppSettings) (a AppSettings, notes []strin
 		{SettingLastModel, &a.Workspace.Model},
 		{SettingModelGPULayers, &a.Workspace.ModelGPULayers},
 		{SettingPinQuestion, &a.Display.PinQuestion},
+		{SettingTheme, &a.Display.Theme},
 	} {
 		ok, err := loadAppSetting(s, kv.key, kv.v)
 		if err != nil {
@@ -112,6 +133,9 @@ func LoadAppSettings(s Store, initial AppSettings) (a AppSettings, notes []strin
 			return initial, nil, err
 		}
 		notes = append(notes, fmt.Sprintf("GPU に載せる層の数 %d を、モデル %s の値として覚えました", a.Workspace.GPULayers, a.Workspace.Model))
+	}
+	if a.Display.Validate() != nil || a.Display.Theme == "" {
+		a.Display.Theme = ThemeSystem // 知らない値(手で書き換えた DB など)はシステムに合わせる
 	}
 	if a.Workspace.ModelGPULayers == nil {
 		a.Workspace.ModelGPULayers = map[string]int{}

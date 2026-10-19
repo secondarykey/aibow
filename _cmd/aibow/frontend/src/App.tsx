@@ -43,6 +43,7 @@ import type { ServerInfo } from "../bindings/github.com/secondarykey/aibow/mcp/c
 import type { ConversationSettings } from "../bindings/github.com/secondarykey/aibow";
 import { ImeFocusRelay } from "./imeFocus";
 import { errorMessage } from "./errors";
+import { setTheme } from "./theme";
 import { NARROW_QUERY, useMediaQuery } from "./mediaQuery";
 import { STORED_LAST_CONVERSATION, STORED_LIST_OPEN, loadStored, saveStored } from "./stored";
 
@@ -97,6 +98,11 @@ export default function App() {
   const convs = useConversations(addError);
   const chat = useChat(transcript, setBusy, convs, toasts, models.reload);
   const app = useAppSettings(toasts, transcript, setBusy, models.reload);
+  // 画面の明るさ: Go から届いた設定・設定の画面で選んだ値を効かせる(届くまでは前回の写し。theme.ts)
+  const theme = app.settings?.display.theme;
+  useEffect(() => {
+    if (theme !== undefined) setTheme(theme);
+  }, [theme]);
 
   // 起動時: 最後に開いていた会話(無ければ新しい会話の画面)に移ってから、モデルの一覧を取る。
   // 画面を移ると表示が作り直されるので、「読み込み中…」のメモが消えないよう、この順にする。

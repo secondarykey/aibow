@@ -1,4 +1,8 @@
+/* 明るさは theme.ts が <html data-theme="light|dark"> に書く(設定の「システム」なら OS の設定から決める)。
+   ここでは prefers-color-scheme を直接見ない(設定で選んだ明るさと食い違わないように)。
+   color-scheme は、チェックボックス・選択肢の一覧など、ブラウザが描く部品の明るさ */
 :root {
+  color-scheme: light;
   --bg: #f6f5f2; --panel: #ffffff; --text: #1f2328; --muted: #6b7280;
   --border: #e3e1dc; --user: #e8f0fe; --accent: #2f6fde; --think: #edf1f7;
   --code: #f1f1ef; --error: #b42318; --warn: #b54708;
@@ -7,15 +11,14 @@
   --hl-keyword: #cf222e; --hl-string: #0a3069; --hl-comment: #6e7781; --hl-number: #0550ae;
   --hl-title: #8250df; --hl-type: #953800; --hl-attr: #0550ae; --hl-add: #116329; --hl-del: #82071e;
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #17181a; --panel: #1f2023; --text: #e6e6e6; --muted: #9aa0a6;
-    --border: #2e3034; --user: #1f2b44; --accent: #6ea0ff; --think: #222833;
-    --code: #2a2b2f; --error: #ff8a80; --warn: #f5b467;
-    --scrollbar: rgba(255, 255, 255, .16); --scrollbar-hover: rgba(255, 255, 255, .30);
-    --hl-keyword: #ff7b72; --hl-string: #a5d6ff; --hl-comment: #8b949e; --hl-number: #79c0ff;
-    --hl-title: #d2a8ff; --hl-type: #ffa657; --hl-attr: #79c0ff; --hl-add: #7ee787; --hl-del: #ffa198;
-  }
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #17181a; --panel: #1f2023; --text: #e6e6e6; --muted: #9aa0a6;
+  --border: #2e3034; --user: #1f2b44; --accent: #6ea0ff; --think: #222833;
+  --code: #2a2b2f; --error: #ff8a80; --warn: #f5b467;
+  --scrollbar: rgba(255, 255, 255, .16); --scrollbar-hover: rgba(255, 255, 255, .30);
+  --hl-keyword: #ff7b72; --hl-string: #a5d6ff; --hl-comment: #8b949e; --hl-number: #79c0ff;
+  --hl-title: #d2a8ff; --hl-type: #ffa657; --hl-attr: #79c0ff; --hl-add: #7ee787; --hl-del: #ffa198;
 }
 /* --edge-gap: ウィンドウの右端に接してスクロールする場所(.chat / .settings-view)の、スクロールバーの外側に空ける幅。
    Frameless のウィンドウは、画面のランタイム(@wailsio/runtime)が「マウスがウィンドウの端から数 px 以内か」を見てリサイズする。
