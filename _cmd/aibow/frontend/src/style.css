@@ -337,6 +337,11 @@ footer.home .composer textarea { line-height: 1.5; min-height: calc(3 * 1.5em + 
   font-size: 20px; border: none; border-radius: 6px; background: transparent; color: var(--error);
 }
 .stop-row button.stop:hover:not(:disabled) { background: color-mix(in srgb, var(--error) 12%, transparent); }
+/* 会話の ID と、返事の詳細の発言の ID。選んでコピーもでき、横のボタンでもコピーできる */
+.conv-id { display: flex; align-items: center; gap: 4px; }
+.conv-id code { user-select: all; }
+.stats-id { display: flex; align-items: center; gap: 2px; user-select: text; }
+.stats-id .reply-action { padding: 0 4px; }
 .stats { font-size: 11.5px; color: var(--muted); margin-top: 4px; font-family: ui-monospace, Consolas, monospace; }
 /* 返事の最後の行: コピーと詳細の開閉。目立たないよう、枠の無い小さなボタンにする */
 .reply-actions { display: flex; align-items: center; gap: 2px; margin: 6px 0 0 -6px; }
@@ -453,7 +458,8 @@ nav.conversations.collapsed .settings.active { color: var(--accent); }
 .settings-view label.check { display: flex; align-items: center; gap: 6px; color: var(--text); }
 .settings-view code { font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; }
 .settings-view textarea, .settings-view input[type=range], .settings-view input[type=number], .settings-view select { width: 100%; }
-.settings-view input[type=number], .settings-view select {
+.settings-view input[type=text] { width: 100%; }
+.settings-view input[type=number], .settings-view input[type=text], .settings-view select {
   font: inherit; font-size: 13px; padding: 5px 6px; border-radius: 6px;
   border: 1px solid var(--border); background: var(--bg); color: var(--text);
 }

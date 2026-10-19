@@ -397,7 +397,9 @@ export default function App() {
     const current = convs.current.conversation.settings;
     content = (
       <ConversationSettingsView
+        id={convs.current.conversation.id}
         title={convTitle}
+        onRename={title => convs.rename(convs.current!.conversation.id, title).catch(err => addError(errorMessage(err)))}
         settings={current}
         errors={viewErrors}
         onClose={() => {

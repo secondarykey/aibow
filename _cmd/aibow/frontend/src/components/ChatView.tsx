@@ -122,6 +122,7 @@ export function ChatView({ items, firstId, conversationId, pinQuestion, onStop, 
                   <AssistantMessage
                     key={it.id}
                     view={it}
+                  msgId={it.msgId}
                     faded={!!faded(it.msgId)}
                     onStop={onStop}
                     onAnswer={onAnswer}
@@ -175,8 +176,9 @@ function PinnedQuestion({ index, text }: { index: number; text: string }) {
   );
 }
 
-function AssistantMessage({ view, faded, onStop, onAnswer, excludeButton, excluded }: {
+function AssistantMessage({ view, msgId, faded, onStop, onAnswer, excludeButton, excluded }: {
   view: AssistantView;
+  msgId?: string; // 保存済みの返事の最初の発言の ID(詳細に出す)
   faded: boolean;
   onStop(): void;
   excludeButton?: ReactNode; // 「モデルに渡さない」の切り替え(保存済みの返事だけ)
@@ -217,7 +219,7 @@ function AssistantMessage({ view, faded, onStop, onAnswer, excludeButton, exclud
         )}
       </div>
       {!view.generating && (answer || view.stats) && (
-        <ReplyActions content={answer} stats={view.stats} createdAt={view.createdAt}>{excludeButton}</ReplyActions>
+        <ReplyActions content={answer} stats={view.stats} createdAt={view.createdAt} msgId={msgId}>{excludeButton}</ReplyActions>
       )}
       {view.generating && (
         <div className="stop-row">
@@ -231,7 +233,10 @@ function AssistantMessage({ view, faded, onStop, onAnswer, excludeButton, exclud
 
 // 返事の最後の行: 答えのコピーと、詳細情報(モデル名・速さ・トークン数など)の開閉。
 // 詳細情報はふだんは使わないので畳んでおき、「詳細」を押したときだけ出す。生成中は出さない(停止ボタンだけ)
-function ReplyActions({ content, stats, createdAt, children }: { content: string; stats?: string; createdAt?: string; children?: ReactNode }) {
+// msgId は返事の最初の発言の ID(詳細に出す。ログや DB を調べるときの手がかり。ツールを使った返事は、この ID から後ろの発言がまとまっている)
+function ReplyActions({ content, stats, createdAt, msgId, children }: {
+  content: string; stats?: string; createdAt?: string; msgId?: string; children?: ReactNode;
+}) {
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -245,7 +250,16 @@ function ReplyActions({ content, stats, createdAt, children }: { content: string
           </button>
         )}
       </div>
-      {open && stats && <div className="stats">{stats}</div>}
+      {open && stats && (
+        <div className="stats">
+          {stats}
+          {msgId && (
+            <div className="stats-id" title="発言の ID(UUIDv7)。DB の messages の id と同じ値">
+              ID: {msgId} <CopyButton text={msgId} />
+            </div>
+          )}
+        </div>
+      )}
     </>
   );
 }
