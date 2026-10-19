@@ -105,7 +105,10 @@ button:disabled { opacity: .5; cursor: default; }
 
 main { flex: 1; display: flex; min-height: 0; }
 .center { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-.chat { flex: 1; overflow-y: auto; padding: 16px; border-right: var(--edge-gap) solid transparent; }
+/* .chat-area は会話の表示(.chat)と、右下に重ねるボタン(「質問だけ」)の入れ物。ボタンはスクロールしても動かない */
+.chat-area { flex: 1; min-height: 0; position: relative; display: flex; flex-direction: column; }
+/* 下の余白は、右下のボタンが最後の吹き出し(発言の下の「直す・時刻・コピー」など)に重ならないように広くとる */
+.chat { flex: 1; overflow-y: auto; padding: 16px 16px 56px; border-right: var(--edge-gap) solid transparent; }
 
 /* 新しい会話の画面: 入力欄を真ん中より少し上に置く */
 .center.home { justify-content: center; padding-bottom: 12vh; }
@@ -131,6 +134,22 @@ footer.home .composer textarea { line-height: 1.5; min-height: calc(3 * 1.5em + 
   font-size: 13px; line-height: 1.5; text-align: left; white-space: pre-wrap; overflow-wrap: anywhere;
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden;
 }
+/* 「質問だけ」の表示(questionsOnly.ts)。返事などは描画したまま隠し、発言の吹き出しだけを並べる。押すとその質問へ飛ぶ */
+.chat-inner.questions-only > :not(.user-turn) { display: none; }
+.chat-inner.questions-only .user-actions { display: none; }
+/* 枠は box-shadow で描く(outline は「モデルに渡さない」の点線の枠に使っている) */
+.chat-inner.questions-only .msg.user { cursor: pointer; }
+.chat-inner.questions-only .msg.user:hover { box-shadow: 0 0 0 1px var(--accent); }
+/* 入る前に読んでいた返事の質問 */
+.chat-inner.questions-only .msg.user.current { box-shadow: 0 0 0 2px var(--accent); }
+/* 右下のボタン。スクロールバー(10px)の左に置く */
+.questions-toggle {
+  position: absolute; right: calc(var(--edge-gap) + 22px); bottom: 12px; z-index: 6;
+  display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 0;
+  border-radius: 50%; font-size: 17px; color: var(--muted); box-shadow: 0 2px 8px rgba(0, 0, 0, .15);
+}
+.questions-toggle:hover { color: var(--text); }
+.questions-toggle.on { background: var(--accent); border-color: var(--accent); color: #fff; }
 .user-actions { display: flex; align-items: center; gap: 2px; margin: 4px -6px 0 0; }
 .msg.assistant { background: var(--panel); border: 1px solid var(--border); }
 /* モデルに渡していない発言(要約に入った・truncate で外れた)。保存はされている */

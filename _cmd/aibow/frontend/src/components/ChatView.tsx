@@ -1,8 +1,8 @@
 // 会話の表示: 吹き出し(ツールのカードを含む)・エラー・要約の区切り
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ToolPolicy } from "../../bindings/github.com/secondarykey/aibow";
 import type { MouseEvent, ReactNode } from "react";
-import { LuChevronDown, LuChevronRight, LuCircleStop, LuEye, LuEyeOff, LuPencil, LuRefreshCw } from "react-icons/lu";
+import { LuChevronDown, LuChevronRight, LuCircleStop, LuEye, LuEyeOff, LuListFilter, LuPencil, LuRefreshCw } from "react-icons/lu";
 import { CopyButton } from "./CopyButton";
 import type { Compaction } from "../../bindings/github.com/secondarykey/aibow";
 import { compactionSize, compactionStats, lastIndex } from "../transcript";
@@ -11,6 +11,7 @@ import { RenderedText } from "./RenderedText";
 import { ToolCard } from "./ToolCard";
 import { useStickToBottom } from "../stickToBottom";
 import { QUESTION_ATTR, usePinnedQuestion } from "../pinnedQuestion";
+import { useQuestionsOnly } from "../questionsOnly";
 
 const FADED_TITLE = "この発言はモデルに渡していません(要約に入ったか、会話の上限に収めるために外しました)";
 const EXCLUDED_TITLE = "モデルに渡さないにしています";
@@ -48,11 +49,17 @@ export function ChatView({ items, firstId, conversationId, pinQuestion, onStop, 
 
   // 何か増えたり書き換わったりしたら、一番下にいるときだけ一番下まで送る(上にスクロールして読んでいる間は送らない)。
   // 会話を切り替えたときと、自分で送信したとき(ユーザーの発言が増えたとき)は、どこを読んでいても一番下へ
+  // 「質問だけ」の表示(右下のボタン)も、会話を切り替えたとき・送信したときにやめる
   const userCount = items.filter(it => it.kind === "user").length;
-  const stickRef = useStickToBottom<HTMLDivElement>(items, `${conversationId}:${userCount}`);
-  // 今読んでいる返事の質問が上に隠れていたら、右上に出す
-  const { ref: pinRef, pinned } = usePinnedQuestion<HTMLDivElement>(pinQuestion, items);
+  const sendKey = `${conversationId}:${userCount}`;
+  const el = useRef<HTMLDivElement | null>(null);
+  const questions = useQuestionsOnly(el, sendKey);
+  // 「質問だけ」を切り替えたときは、位置は useQuestionsOnly が決める(stickToBottom は高さを覚え直すだけ)
+  const stickRef = useStickToBottom<HTMLDivElement>(items, sendKey, questions.on);
+  // 今読んでいる返事の質問が上に隠れていたら、右上に出す(「質問だけ」の間は出さない)
+  const { ref: pinRef, pinned } = usePinnedQuestion<HTMLDivElement>(pinQuestion && !questions.on, items);
   const ref = useCallback((node: HTMLDivElement | null) => {
+    el.current = node;
     stickRef(node);
     pinRef(node);
   }, [stickRef, pinRef]);
@@ -65,78 +72,90 @@ export function ChatView({ items, firstId, conversationId, pinQuestion, onStop, 
   useEffect(() => setEditing(null), [conversationId]);
 
   return (
-    <div className="chat" ref={ref}>
-      {pinnedItem?.kind === "user" && <PinnedQuestion index={pinned!} text={pinnedItem.text} />}
-      <div className="chat-inner">
-        {items.map((it, i) => {
-          switch (it.kind) {
-            case "user":
-              if (editing === it.id) {
+    <div className="chat-area">
+      <div className="chat" ref={ref}>
+        {pinnedItem?.kind === "user" && <PinnedQuestion index={pinned!} text={pinnedItem.text} />}
+        <div className={"chat-inner" + (questions.on ? " questions-only" : "")}>
+          {items.map((it, i) => {
+            switch (it.kind) {
+              case "user":
+                if (editing === it.id) {
+                  return (
+                    <EditUser
+                      key={it.id}
+                      initial={it.text}
+                      disabled={retry.disabled}
+                      onCancel={() => setEditing(null)}
+                      onSend={text => {
+                        setEditing(null);
+                        retry.onResend(text);
+                      }}
+                    />
+                  );
+                }
                 return (
-                  <EditUser
-                    key={it.id}
-                    initial={it.text}
-                    disabled={retry.disabled}
-                    onCancel={() => setEditing(null)}
-                    onSend={text => {
-                      setEditing(null);
-                      retry.onResend(text);
-                    }}
-                  />
-                );
-              }
-              return (
-                <div key={it.id} className="user-turn">
-                  <div
-                    className={"msg user" + faded(it.msgId) + (it.excluded ? " excluded" : "")}
-                    title={fadedTitle(it.msgId, it.excluded)}
-                    {...{ [QUESTION_ATTR]: i }}
-                  >
-                    {it.text}
-                  </div>
-                  <UserActions text={it.text} createdAt={it.createdAt}>
-                    {i === lastUser && it.msgId && (
-                      <button className="reply-action" disabled={retry.disabled} title="この発言を直して送り直す(この発言と返事は消える)" onClick={() => setEditing(it.id)}>
-                        <LuPencil />
-                      </button>
-                    )}
-                    {it.msgId && <ExcludeButton msgId={it.msgId} excluded={!!it.excluded} exclude={exclude} />}
-                  </UserActions>
-                </div>
-              );
-            case "error":
-              return <div key={it.id} className="msg error">{it.text}</div>;
-            case "divider":
-              return <Divider key={it.id} compaction={it.compaction} />;
-            case "assistant":
-              return (
-                <AssistantMessage
-                  key={it.id}
-                  view={it}
-                  faded={!!faded(it.msgId)}
-                  onStop={onStop}
-                  onAnswer={onAnswer}
-                  excludeButton={it.msgId && (
-                    <>
-                      <ExcludeButton msgId={it.msgId} excluded={!!it.excluded} exclude={exclude} />
-                      {i === lastAssistant && i > lastUser && (
-                        <button
-                          className="reply-action"
-                          disabled={retry.disabled}
-                          title="この返事を作り直す(今のモデル・設定で。この返事は消える)"
-                          onClick={retry.onRegenerate}
-                        >
-                          <LuRefreshCw />
+                  <div key={it.id} className="user-turn">
+                    <div
+                      className={"msg user" + faded(it.msgId) + (it.excluded ? " excluded" : "") + (questions.current === i ? " current" : "")}
+                      title={questions.on ? "この質問へ飛ぶ" : fadedTitle(it.msgId, it.excluded)}
+                      onClick={questions.on ? () => questions.exit(i) : undefined}
+                      {...{ [QUESTION_ATTR]: i }}
+                    >
+                      {it.text}
+                    </div>
+                    <UserActions text={it.text} createdAt={it.createdAt}>
+                      {i === lastUser && it.msgId && (
+                        <button className="reply-action" disabled={retry.disabled} title="この発言を直して送り直す(この発言と返事は消える)" onClick={() => setEditing(it.id)}>
+                          <LuPencil />
                         </button>
                       )}
-                    </>
-                  )}
-                  excluded={!!it.excluded}
-                />
-              );
-          }
-        })}
+                      {it.msgId && <ExcludeButton msgId={it.msgId} excluded={!!it.excluded} exclude={exclude} />}
+                    </UserActions>
+                  </div>
+                );
+              case "error":
+                return <div key={it.id} className="msg error">{it.text}</div>;
+              case "divider":
+                return <Divider key={it.id} compaction={it.compaction} />;
+              case "assistant":
+                return (
+                  <AssistantMessage
+                    key={it.id}
+                    view={it}
+                    faded={!!faded(it.msgId)}
+                    onStop={onStop}
+                    onAnswer={onAnswer}
+                    excludeButton={it.msgId && (
+                      <>
+                        <ExcludeButton msgId={it.msgId} excluded={!!it.excluded} exclude={exclude} />
+                        {i === lastAssistant && i > lastUser && (
+                          <button
+                            className="reply-action"
+                            disabled={retry.disabled}
+                            title="この返事を作り直す(今のモデル・設定で。この返事は消える)"
+                            onClick={retry.onRegenerate}
+                          >
+                            <LuRefreshCw />
+                          </button>
+                        )}
+                      </>
+                    )}
+                    excluded={!!it.excluded}
+                  />
+                );
+            }
+          })}
+        </div>
       </div>
+      {userCount > 0 && (
+        <button
+          className={"questions-toggle" + (questions.on ? " on" : "")}
+          title={questions.on ? "返事も表示する(元の位置に戻る。Esc)" : "質問だけを表示する(選んだ質問へ飛べる)"}
+          onClick={() => (questions.on ? questions.exit() : questions.enter())}
+        >
+          <LuListFilter />
+        </button>
+      )}
     </div>
   );
 }

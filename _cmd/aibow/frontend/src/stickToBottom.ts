@@ -11,12 +11,14 @@ const BOTTOM_SLACK = 24;
 // useStickToBottom は、スクロールする要素に付ける ref を返す。
 //   content  : 変わったら(中身が増えたら)、一番下にいれば一番下まで送る
 //   forceKey : 変わったら、どこを読んでいても一番下まで送る(会話を開いた・自分で送信した、など)
+//   layoutKey: 変わったら、送らずに今の中身の高さだけ覚え直す(表示を切り替えて、位置は呼ぶ側で決めるとき。質問だけの表示など)。
+//              覚え直さないと、切り替える前の高さと比べて「一番下にいた」と間違え、次の断片で一番下へ送ってしまう
 //
 // 「一番下にいたか」は、描画のたびに「今のスクロール位置」と「前の描画のときの中身の高さ」で決める。
 // scroll イベントで覚えておく方法だと、イベントが届くのは次のフレームなので、断片が数ミリ秒ごとに届く生成中は、
 // 上にスクロールしたことが伝わる前に次の描画で下へ送ってしまい、引き戻されることがある。
 // ref は関数の形(callback ref)にしている。要素があとから出てくる(最初の文字が届いてから表示する)場合でも使えるように。
-export function useStickToBottom<T extends HTMLElement>(content: unknown, forceKey?: unknown) {
+export function useStickToBottom<T extends HTMLElement>(content: unknown, forceKey?: unknown, layoutKey?: unknown) {
   const el = useRef<T | null>(null);
   const lastHeight = useRef(0); // 前の描画のあとの中身の高さ(scrollHeight)
 
@@ -31,17 +33,24 @@ export function useStickToBottom<T extends HTMLElement>(content: unknown, forceK
   }, []);
 
   const lastForce = useRef(forceKey);
+  const lastLayout = useRef(layoutKey);
   // 描画の直後(画面に出る前)に送るので、一瞬上の位置が見えてから下に飛ぶ、ということがない
   useLayoutEffect(() => {
     const e = el.current;
     if (!e) return;
     const forced = lastForce.current !== forceKey;
     lastForce.current = forceKey;
+    const relayout = lastLayout.current !== layoutKey;
+    lastLayout.current = layoutKey;
+    if (relayout && !forced) {
+      lastHeight.current = e.scrollHeight;
+      return;
+    }
     // 中身が増える前の一番下に、今のスクロール位置がいたか
     const wasAtBottom = lastHeight.current - e.scrollTop - e.clientHeight <= BOTTOM_SLACK;
     if (forced || wasAtBottom) toBottom(e);
     else lastHeight.current = e.scrollHeight;
-  }, [content, forceKey]);
+  }, [content, forceKey, layoutKey]);
 
   return ref;
 }
