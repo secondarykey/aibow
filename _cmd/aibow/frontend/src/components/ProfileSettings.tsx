@@ -7,17 +7,16 @@
 //
 // 画面は一旦作ってから使い方を考える(0014 の 12)。ここは最初の形。
 import { useCallback, useEffect, useRef, useState } from "react";
-import { LuChevronDown, LuChevronRight, LuPlus } from "react-icons/lu";
+import { LuPlus } from "react-icons/lu";
 import { ChatService } from "../../bindings/github.com/secondarykey/aibow/_cmd/aibow";
-import type { ConversationSettings, KnownTool, Profile, ProfileInfo } from "../../bindings/github.com/secondarykey/aibow";
+import type { ConversationSettings, Profile, ProfileInfo } from "../../bindings/github.com/secondarykey/aibow";
 import type { ServerInfo } from "../../bindings/github.com/secondarykey/aibow/mcp/client";
 // Go の models パッケージ。"…/aibow/models" と書くと aibow パッケージの models.ts が選ばれるので、index まで書く
 import type { Entry as ModelEntry } from "../../bindings/github.com/secondarykey/aibow/models/index";
 import { errorMessage } from "../errors";
-import { asSettings, FIX, valuesPatch, type Lock } from "../profileRules";
-import { TOOL_LABELS } from "../toolLabels";
-import { ConversationSettingsForm, FixMark, LimitsForm } from "./ConversationSettingsForm";
-import { BUILTIN } from "./ToolBar";
+import { asSettings, valuesPatch, type Lock } from "../profileRules";
+import { ConversationSettingsForm, LimitsForm } from "./ConversationSettingsForm";
+import { ProfileTools } from "./ProfileTools";
 
 // 変えてから Go に保存するまで待つ時間(1文字ごとに送らない。useConversations と同じ)
 const SAVE_DELAY_MS = 400;
@@ -29,9 +28,10 @@ interface Props {
   onApplyLimits(history: number, reply: number, save: (patch: Partial<ConversationSettings>) => void): void;
   onError(text: string): void;
   onChanged(): void; // プロファイルを変えた(新しい会話の画面の写し・新しい会話の既定を読み直す)
+  onToolsChanged(): void; // この PC のツールの扱い(確認しない)を変えた(メーターを読み直す)
 }
 
-export function ProfileSettings({ models, servers, disabled, onApplyLimits, onError, onChanged }: Props) {
+export function ProfileSettings({ models, servers, disabled, onApplyLimits, onError, onChanged, onToolsChanged }: Props) {
   const [infos, setInfos] = useState<ProfileInfo[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [edit, setEditState] = useState<Profile | null>(null); // 選んだプロファイル(画面で変えている途中の値)
@@ -140,6 +140,7 @@ export function ProfileSettings({ models, servers, disabled, onApplyLimits, onEr
           disabled={disabled}
           onChange={change}
           onApplyLimits={onApplyLimits}
+          onToolsChanged={onToolsChanged}
           onSetDefault={() => act(() => ChatService.SetDefaultProfile(edit.id), edit.id)}
           onArchive={archived => act(() => ChatService.SetProfileArchived(edit.id, archived), edit.id)}
           onDelete={() => act(() => ChatService.DeleteProfile(edit.id), infos.find(i => i.default)?.profile.id)}
@@ -149,7 +150,7 @@ export function ProfileSettings({ models, servers, disabled, onApplyLimits, onEr
   );
 }
 
-function ProfileEditor({ profile, info, models, servers, disabled, onChange, onApplyLimits, onSetDefault, onArchive, onDelete }: {
+function ProfileEditor({ profile, info, models, servers, disabled, onChange, onApplyLimits, onToolsChanged, onSetDefault, onArchive, onDelete }: {
   profile: Profile;
   info: ProfileInfo;
   models: ModelEntry[];
@@ -157,6 +158,7 @@ function ProfileEditor({ profile, info, models, servers, disabled, onChange, onA
   disabled: boolean;
   onChange(f: (p: Profile) => Profile): void;
   onApplyLimits(history: number, reply: number, save: (patch: Partial<ConversationSettings>) => void): void;
+  onToolsChanged(): void;
   onSetDefault(): void;
   onArchive(archived: boolean): void;
   onDelete(): void;
@@ -238,113 +240,8 @@ function ProfileEditor({ profile, info, models, servers, disabled, onChange, onA
         onApply={(h, r) => onApplyLimits(h, r, setValues)}
       />
 
-      <h2 className="section" title="新しい会話で最初から使うツールのグループと、このプロファイルの会話で使えないツール">ツール</h2>
-      <ProfileTools profile={profile} servers={servers} lock={lock} onChange={onChange} />
-    </div>
-  );
-}
-
-// ProfileTools は、使うツールのグループ(値)と、使えないツール(決まり)。
-// グループの「使う」は新しい会話で最初から使うもの。「使えない」はこのプロファイルの会話では使えない(会話で選んでも使えない)。
-// ツールの一覧は、組み込みのツールと、MCP のサーバーを最後に起動したときに見えたもの(tools.json の known)。
-function ProfileTools({ profile, servers, lock, onChange }: {
-  profile: Profile;
-  servers: ServerInfo[];
-  lock: Lock;
-  onChange(f: (p: Profile) => Profile): void;
-}) {
-  const [builtin, setBuiltin] = useState<KnownTool[]>([]);
-  const [known, setKnown] = useState<Record<string, KnownTool[]>>({});
-  const [opened, setOpened] = useState<Record<string, boolean>>({});
-  useEffect(() => {
-    ChatService.BuiltinTools().then(t => setBuiltin(t ?? []), () => {});
-    ChatService.ToolPrefs().then(v => setKnown((v.known ?? {}) as Record<string, KnownTool[]>), () => {});
-  }, []);
-
-  const v = profile.values;
-  const off = profile.rules.off ?? {};
-  const offServers = off.servers ?? [];
-  const offTools = off.tools ?? [];
-  const using = v.mcp_servers ?? [];
-
-  const setUse = (group: string, on: boolean) => onChange(p => {
-    if (group === "") return { ...p, values: { ...p.values, builtin_off: !on } };
-    const cur = p.values.mcp_servers ?? [];
-    return { ...p, values: { ...p.values, mcp_servers: on ? [...cur, group].sort() : cur.filter(n => n !== group) } };
-  });
-  const setOffGroup = (group: string, isOff: boolean) => onChange(p => {
-    const o = p.rules.off ?? {};
-    if (group === "") return { ...p, rules: { ...p.rules, off: { ...o, builtin: isOff } } };
-    const cur = o.servers ?? [];
-    return { ...p, rules: { ...p.rules, off: { ...o, servers: isOff ? [...cur, group].sort() : cur.filter(n => n !== group) } } };
-  });
-  const setOffTool = (name: string, isOff: boolean) => onChange(p => {
-    const o = p.rules.off ?? {};
-    const cur = o.tools ?? [];
-    return { ...p, rules: { ...p.rules, off: { ...o, tools: isOff ? [...cur, name].sort() : cur.filter(n => n !== name) } } };
-  });
-
-  const groups = [
-    { group: "", name: BUILTIN, on: !v.builtin_off, isOff: !!off.builtin, tools: builtin, prefix: "" },
-    ...servers.map(s => ({
-      group: s.name,
-      name: s.name,
-      on: using.includes(s.name),
-      isOff: offServers.includes(s.name),
-      tools: known[s.name] ?? [],
-      prefix: s.name.replace(/[^A-Za-z0-9_-]/gu, "_") + "__",
-    })),
-  ];
-
-  return (
-    <div className="tool-settings">
-      <div className="field-label">
-        <span className="profile-sub">使うツールのグループ</span>
-        <FixMark item={FIX.toolGroups} lock={lock} />
-      </div>
-      {groups.map(g => (
-        <div key={g.group} className={"tool-group" + (g.on && !g.isOff ? " on" : "")}>
-          <div className="tool-group-head">
-            <button type="button" className="tool-open" onClick={() => setOpened(o => ({ ...o, [g.group]: !o[g.group] }))} title={opened[g.group] ? "畳む" : "ツールの一覧を開く"}>
-              {opened[g.group] ? <LuChevronDown /> : <LuChevronRight />}
-            </button>
-            <label className="check" title="新しい会話で最初から使う">
-              <input type="checkbox" checked={g.on} disabled={g.isOff} onChange={e => setUse(g.group, e.target.checked)} />
-              <span className="tool-group-name">{g.name}</span>
-            </label>
-            <label className="check profile-off" title="このプロファイルの会話では使えない(会話で選んでも使えない)">
-              <input type="checkbox" checked={g.isOff} onChange={e => setOffGroup(g.group, e.target.checked)} />
-              使えない
-            </label>
-          </div>
-          {opened[g.group] && (
-            <div className="tool-group-body">
-              {g.tools.length === 0 ? (
-                <p className="tool-none">(ツールの一覧はまだありません。設定の画面の「ツール」で読み込めます)</p>
-              ) : (
-                g.tools.map(t => {
-                  const short = t.name.startsWith(g.prefix) ? t.name.slice(g.prefix.length) : t.name;
-                  const isOff = g.isOff || offTools.includes(t.name);
-                  return (
-                    <label key={t.name} className={"check tool-item" + (isOff ? " unused" : "")} title={`${t.name}\n${t.description}`}>
-                      <input
-                        type="checkbox"
-                        checked={isOff}
-                        disabled={g.isOff} // グループごと使えないなら、ツールごとに選んでも同じ
-                        onChange={e => setOffTool(t.name, e.target.checked)}
-                      />
-                      <code>{short}</code>
-                      <span />
-                      <span className="tool-tag">{isOff ? "使えない" : "使える"}</span>
-                      <span className="tool-desc">{TOOL_LABELS[t.name] ?? t.description}</span>
-                    </label>
-                  );
-                })
-              )}
-            </div>
-          )}
-        </div>
-      ))}
+      <h2 className="section" title="このプロファイルでのツールの扱い(最初から使う・選べば使える・使えない)と、確認しない(この PC の設定)">ツール</h2>
+      <ProfileTools profile={profile} servers={servers} lock={lock} onChange={onChange} onPCChanged={onToolsChanged} />
     </div>
   );
 }

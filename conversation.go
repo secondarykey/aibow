@@ -475,7 +475,7 @@ func (cs *Conversations) SetDefaults(s ConversationSettings) error {
 	return cs.updateProfile(func(v *ProfileValues) {
 		next := valuesOf(s.asDefaults())
 		next.Model = cmp.Or(next.Model, v.Model) // モデルを持たない設定(この機能より前の会話)なら、今のモデルのまま
-		next.BuiltinOff, next.MCPServers = v.BuiltinOff, v.MCPServers
+		next.BuiltinOff, next.MCPServers, next.ToolsOff = v.BuiltinOff, v.MCPServers, v.ToolsOff
 		*v = next
 	})
 }

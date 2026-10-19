@@ -493,6 +493,12 @@ export interface ProfileValues {
      */
     "builtin_off"?: boolean;
     "mcp_servers": string[] | null;
+
+    /**
+     * ToolsOff は、新しい会話で最初は使わないツール(モデルに見せる名前)。会話で選べば使える(使えなくするのは決まりの Off.Tools)。
+     * 会話を作るときに、会話の上書き(tool_policies の off)として写す。前は この PC の既定(tools.json の tools の off)だった(0014 の 4 の見直し)
+     */
+    "tools_off"?: string[] | null;
 }
 
 /**

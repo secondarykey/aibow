@@ -240,6 +240,31 @@ func (p *ToolPrefs) policy(group, name string) (ToolPolicy, bool) {
 	return g, gok
 }
 
+// offTools は、ツールごとに「既定で使わない」(off)にしてあるツールの名前(名前の順)。
+// プロファイルの値に移すため(Conversations.moveToolsOff)だけに読む。
+func (p *ToolPrefs) offTools() []string {
+	if p == nil {
+		return nil
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return toolsOff(p.data.Tools)
+}
+
+// clearOff は、names の「既定で使わない」を tools.json から消す(プロファイルに移したあと)。
+func (p *ToolPrefs) clearOff(names []string) error {
+	if p == nil || p.readOnly {
+		return nil
+	}
+	return p.update(func(f *toolsFile) {
+		for _, n := range names {
+			if f.Tools[n] == ToolOff {
+				delete(f.Tools, n)
+			}
+		}
+	}, "")
+}
+
 // confirmPolicy は、会話で「使う」(ToolOn)にしたツールの、PC の既定での確認の扱い。決めていなければ ok が false。
 // 「使わない」は会話の「使う」で打ち消されるので飛ばし、ツールごと → グループごと、の順に見る。
 func (p *ToolPrefs) confirmPolicy(group, name string) (ToolPolicy, bool) {

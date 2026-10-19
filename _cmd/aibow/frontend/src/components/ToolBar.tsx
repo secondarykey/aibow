@@ -1,8 +1,8 @@
 // 入力欄の上(作業フォルダの隣): この会話のツール(会話ごとの設定)。組み込みのツールと、MCP のサーバーごとにオン・オフする。
 //
 // ツールの説明は毎回プロンプトに入るので、全部を載せると会話の上限を食い尽くす(Blender だけで 26 個)。そこで会話ごとに選べるようにする。
-// 新しい会話では、設定の画面の「ツール」でチェックしているもの(組み込み・MCP のサーバー)が最初から選ばれている。
-// 「ツール」でチェックを外したものも、ここではいつでも選べる(「ツール」のチェックは、新しい会話で最初から選ぶかだけ)。
+// 新しい会話では、選んだプロファイルで「最初から使う」グループ(組み込み・MCP のサーバー)が選ばれている。
+// 「選べば使える」グループもここで選べる。プロファイルで「使えない」・グループを固定したものは押せない(0014)。
 // レンチのアイコンの横に、この会話で使うものの名前を出す。押すと一覧が上に開き、オン・オフできる。
 import { useEffect, useRef, useState } from "react";
 import { LuCheck, LuWrench } from "react-icons/lu";
@@ -10,7 +10,7 @@ import type { ServerInfo } from "../../bindings/github.com/secondarykey/aibow/mc
 import type { Profile } from "../../bindings/github.com/secondarykey/aibow";
 import { FIX, offGroup } from "../profileRules";
 
-// BUILTIN は、組み込みのツールのグループの名前(設定の画面の「ツール」と同じ)
+// BUILTIN は、組み込みのツールのグループの名前(プロファイルの「ツール」と同じ)
 export const BUILTIN = "組み込み";
 
 interface Props {

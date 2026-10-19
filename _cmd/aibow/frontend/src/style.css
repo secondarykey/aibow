@@ -633,7 +633,17 @@ footer { border-top: 1px solid var(--border); background: var(--panel); padding:
 .profile-editor { padding: 4px 0 0 2px; }
 .profile-actions { display: flex; gap: 6px; margin-top: 8px; }
 .profile-sub { color: var(--muted); }
-.settings-view .tool-group-head label.check.profile-off { margin-left: auto; color: var(--muted); font-size: 12px; }
+/* プロファイルの「ツール」: グループの3択(最初から使う / 選べば使える / 使えない)と、ツールの錠(使えない) */
+.settings-view select.group-use { width: auto; font-size: 12px; padding: 2px 4px; }
+.settings-view select.group-use.off { color: #b91c1c; }
+.tool-lock {
+  display: inline-flex; align-items: center; gap: 2px; flex-shrink: 0; font-size: 11px; line-height: 1.4; padding: 0 5px; border-radius: 4px;
+  border: 1px dashed var(--border); background: transparent; color: var(--muted); cursor: pointer;
+}
+.tool-lock.on { border: 1px solid #b91c1c; color: #b91c1c; }
+.tool-lock:disabled { cursor: default; }
+.tool-item:not(:hover) .tool-lock:not(.on) { visibility: hidden; }
+.tool-item > .tool-lock { grid-column: 4; justify-self: start; }
 /* 会話の設定の画面: どのプロファイルから作ったか・プロファイルに保存 */
 .conv-profile { font-weight: 600; }
 .save-profile { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 12px; }

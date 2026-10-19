@@ -1,8 +1,11 @@
 package aibow
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 	"uuid"
@@ -231,4 +234,63 @@ func TestSaveConversationToProfile(t *testing.T) {
 	if got, _, _ := cs.Get(c.ID); got.ProfileID == p.ID {
 		t.Error("会話は元のプロファイルから作ったもののまま")
 	}
+}
+
+// ツールごとの「最初は使わない」はプロファイルの値。会話を作るときに上書き(off)として写し、会話で選べば使える。
+// この PC の既定(tools.json)の「既定で使わない」は、全部のプロファイルと今ある会話に移して tools.json から消す(動きは変えない)
+func TestToolsOffMovesToProfiles(t *testing.T) {
+	st := newMemStore()
+	startProfiles(t, st, "", nil, nil)
+	old := Conversation{ID: uuid.NewV7(), Settings: testDefaults, ProfileID: mustDefaultID(t, st), CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	old.Settings.ToolPolicies = map[string]ToolPolicy{"calculate": ToolOn} // この会話では使うにしていた
+	st.CreateConversation(old)
+	other := Conversation{ID: uuid.NewV7(), Settings: testDefaults, ProfileID: old.ProfileID, CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	st.CreateConversation(other)
+
+	path := filepath.Join(t.TempDir(), "tools.json")
+	os.WriteFile(path, []byte(`{"tools": {"calculate": "off", "get_current_time": "allow"}, "seen": []}`), 0o644)
+	prefs, err := LoadToolPrefs(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cs, notes := startProfiles(t, st, "", nil, prefs)
+	if len(notes) != 1 {
+		t.Errorf("移したことを知らせる: %q", notes)
+	}
+	if v := cs.DefaultProfile().Values.ToolsOff; !slices.Equal(v, []string{"calculate"}) {
+		t.Errorf("プロファイルの「最初は使わない」に移す: %v", v)
+	}
+	if got, _, _ := cs.Get(old.ID); got.Settings.ToolPolicies["calculate"] != ToolOn {
+		t.Errorf("会話の上書きはそのまま: %v", got.Settings.ToolPolicies)
+	}
+	if got, _, _ := cs.Get(other.ID); got.Settings.ToolPolicies["calculate"] != ToolOff {
+		t.Errorf("上書きの無い会話は、今までどおり使わない: %v", got.Settings.ToolPolicies)
+	}
+	b, _ := os.ReadFile(path)
+	if strings.Contains(string(b), `"off"`) || !strings.Contains(string(b), `"allow"`) {
+		t.Errorf("tools.json から「使わない」だけ消す: %s", b)
+	}
+
+	// 新しい会話には上書き(off)として写り、会話で使うにもできる
+	c := mustCreate(t, cs)
+	if c.Settings.ToolPolicies["calculate"] != ToolOff {
+		t.Errorf("新しい会話に写す: %v", c.Settings.ToolPolicies)
+	}
+	c.Settings.ToolPolicies = nil
+	if err := cs.UpdateSettings(c.ID, c.Settings); err != nil {
+		t.Errorf("会話で選べば使える: %v", err)
+	}
+	// 2回目の起動では何もしない
+	if _, notes := startProfiles(t, st, "", nil, prefs); len(notes) != 0 {
+		t.Errorf("2回目は何もしない: %q", notes)
+	}
+}
+
+func mustDefaultID(t *testing.T, st Store) uuid.UUID {
+	t.Helper()
+	p, ok, err := storedDefaultProfile(st)
+	if err != nil || !ok {
+		t.Fatal(err)
+	}
+	return p.ID
 }

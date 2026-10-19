@@ -1,6 +1,6 @@
 // 設定の画面: タブで「基本設定」(アプリの設定: GPU の層数・画面)と「会話」(プロファイル・ツール)に分ける。
 // 会話に関わらないアプリの設定と、会話の既定として使われる値を、同じ画面に混ぜないため(2026-10-19、ユーザーの指示)。
-// ツールは、使う / 使わない・確認するかが全部の会話の既定になり、グループのチェックが新しい会話で最初から使うものなので「会話」に置く。
+// ツールは、プロファイルの中の1つの一覧で決める(最初から使う・選べば使える・使えないはプロファイル、確認しないはこの PC。0014)。
 //
 // 会話の一覧の下の「設定」で開き、チャットの代わりに会話の場所に出す(別の画面として扱う)。
 // 「会話に戻る」か、一覧で会話を選ぶ・「+ 新規」を押すと閉じる。
@@ -10,7 +10,6 @@ import { useEffect, useState } from "react";
 import { LuArrowLeft } from "react-icons/lu";
 import type { AppSettings, ConversationSettings, DisplaySettings, WorkspaceSettings } from "../../bindings/github.com/secondarykey/aibow";
 import type { ServerInfo } from "../../bindings/github.com/secondarykey/aibow/mcp/client";
-import { ToolSettings } from "./ToolSettings";
 import { NumberInput } from "./ConversationSettingsForm";
 import { ProfileSettings } from "./ProfileSettings";
 // Go の models パッケージ。"…/aibow/models" と書くと aibow パッケージの models.ts が選ばれるので、index まで書く
@@ -36,7 +35,7 @@ type Tab = "basic" | "conversation";
 
 const TABS: { id: Tab; label: string; title: string }[] = [
   { id: "basic", label: "基本設定", title: "会話によらず、この PC で1つだけのもの(GPU の層数・画面)" },
-  { id: "conversation", label: "会話", title: "プロファイル(新しい会話の既定)と、ツールを使うかどうか(会話の既定になるもの)" },
+  { id: "conversation", label: "会話", title: "プロファイル(新しい会話の既定・ツールの扱い)" },
 ];
 
 export function SettingsView({ onClose, errors, app, models, servers, onProfilesChanged, onApplyLimits, onError, appDisabled, onApplyApp, onDisplayChange, onToolsChanged }: Props) {
@@ -86,10 +85,9 @@ export function SettingsView({ onClose, errors, app, models, servers, onProfiles
               onApplyLimits={onApplyLimits}
               onError={onError}
               onChanged={onProfilesChanged}
+              onToolsChanged={onToolsChanged}
             />
 
-            <h2 className="section" title="この PC で、ツールを使うかどうか(全部の会話に効く。tools.json に保存する)">ツール</h2>
-            <ToolSettings onChanged={onToolsChanged} />
           </>
         )}
       </div>

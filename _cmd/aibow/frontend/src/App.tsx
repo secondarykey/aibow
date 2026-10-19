@@ -126,7 +126,7 @@ export default function App() {
     })();
   }, [convs.init, models.reload, app.reload, addError]);
 
-  // 会話で選べる MCP のサーバー(settings.json に書いたもの全部)。起動したときと、設定の画面の「ツール」を変えたときに読む
+  // 会話で選べる MCP のサーバー(settings.json に書いたもの全部)。起動したときと、ツールの扱い(確認しない)を変えたときに読む
   const [mcpServers, setMcpServers] = useState<ServerInfo[]>([]);
   const reloadMcp = useCallback(() => {
     ChatService.MCPServers().then(

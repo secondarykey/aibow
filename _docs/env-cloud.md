@@ -30,7 +30,7 @@ Claude Code のクラウドセッションなど、画面も GPU も無い Linux
 - 画面全体(`App.tsx`)も `frontend/dist` を開けば描けるが、Go の呼び出しはエラーになる(モデルの一覧のエラーが出る)
 - ビルドしたものは `file://` で開くと、モジュールの script が読み込まれず何も描かれない。一時フォルダで小さな HTTP サーバー
   (`python3 -m http.server` か、Playwright のスクリプトの中で `node:http`)を立てて開く(2026-10-19)
-- Go を呼ぶ部品(`ToolSettings`・`ConversationTools` など。設定の画面ごと描くときも)は、Playwright の `page.route("**/wails/**", …)` で Go の返事を作ると描ける。
+- Go を呼ぶ部品(`ProfileTools`・`ConversationTools` など。設定の画面ごと描くときも)は、Playwright の `page.route("**/wails/**", …)` で Go の返事を作ると描ける。
   どのメソッドも `[]` を返すと、配列でない値を返すメソッド(`ToolPrefs` など)で落ちて画面ごと消える。そのメソッドだけは、リクエストに入るメソッドの ID
   (`frontend/bindings/.../chatservice.ts` の `$Call.ByID(…)` の数)で見分けて、形の合う値を返す(2026-10-19)
 

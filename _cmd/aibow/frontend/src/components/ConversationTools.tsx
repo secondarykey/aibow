@@ -2,13 +2,13 @@
 //
 // グループ(組み込み / MCP のサーバー)のチェックは、この会話で使うか(入力欄の上の「この会話のツール」と同じ設定。builtin_off / mcp_servers)。
 // ツールごとのチェックは、この会話で使うか(会話の上書き tool_policies の on / off)。
-// PC の既定(設定の画面の「ツール」= tools.json)の「使わない」は「既定では使わない」の意味で、禁止ではない。
-// なので、既定で使わないツールも、この会話では使うにできる。既定と同じにしたら上書きを消す(既定を変えたときに付いていくように)。
+// プロファイルで「最初は使わない」ツールは、会話を作るときに上書き(off)として写る。禁止ではないので、この会話では使うにできる。
+// プロファイルで「使えない」ツールは押せない(会話の上書きでも使えない)。既定と同じにしたら上書きを消す。
 // 「確認しない」の枠で、この会話だけ確認せずに実行するにできる(会話の上書きの allow / ask。0010)。既定と同じにしたら上書きを消す。
 // 扱いは Go の toolPolicy と同じ決め方で Go に決めてもらう(ChatService.ToolStates)。画面で同じ判断を書き直さない。
 // 既定と違うツールと、既定で使わないツールには、どこで決まったか(この会話 / 既定)を添える。
 //
-// グループは、使っていてもいなくても畳んで出し、▶ で開ける(設定の画面の「ツール」と同じ)。
+// グループは、使っていてもいなくても畳んで出し、▶ で開ける(プロファイルの「ツール」と同じ)。
 import { useEffect, useState } from "react";
 import { LuChevronDown, LuChevronRight } from "react-icons/lu";
 import { ChatService } from "../../bindings/github.com/secondarykey/aibow/_cmd/aibow";
@@ -201,13 +201,13 @@ function StateTag({ tool, workDir }: { tool: ToolState; workDir: string }) {
     return <span className="tool-tag" title="この会話のプロファイルで使えないにしてある(この会話でも使えない)">プロファイルで使えない</span>;
   }
   if (tool.from === "conversation") {
-    if (off) return <span className="tool-tag" title="この会話だけ使わない(既定では使う)">この会話で使わない</span>;
+    if (off) return <span className="tool-tag" title="この会話では使わない(プロファイルで最初は使わないツールも、会話を作るときにここに入る)">この会話で使わない</span>;
     if (tool.default === ToolPolicy.ToolOff) return <span className="tool-tag" title="この会話だけ使う(既定では使わない)">この会話で使う</span>;
     // 確認の扱いだけを、この会話で変えている
     return <span className="tool-tag" title="確認するかを、この会話だけ変えています">この会話</span>;
   }
   if (off) {
-    return <span className="tool-tag" title="設定の画面の「ツール」(tools.json)で、既定では使わないにしてある">既定で使わない</span>;
+    return <span className="tool-tag" title="この PC の既定(tools.json)で使わないにしてある">既定で使わない</span>;
   }
   if (tool.needs_work_dir && !workDir) {
     return <span className="tool-tag" title="作業フォルダを決めた会話でだけ使えます">作業フォルダが要る</span>;

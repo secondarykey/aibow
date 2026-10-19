@@ -64,6 +64,9 @@ type ProfileValues struct {
 	// settings.json に足したばかりのサーバーはどのプロファイルにも書かれていないので、新しい会話では使わない(0009 の 7 と同じ結果)
 	BuiltinOff bool     `json:"builtin_off,omitempty"`
 	MCPServers []string `json:"mcp_servers"`
+	// ToolsOff は、新しい会話で最初は使わないツール(モデルに見せる名前)。会話で選べば使える(使えなくするのは決まりの Off.Tools)。
+	// 会話を作るときに、会話の上書き(tool_policies の off)として写す。前は この PC の既定(tools.json の tools の off)だった(0014 の 4 の見直し)
+	ToolsOff []string `json:"tools_off,omitempty"`
 }
 
 // valuesOf は、会話の設定から、プロファイルの値を作る。作業フォルダ・会話だけのツールの扱いは入れない。
@@ -74,7 +77,20 @@ func valuesOf(s ConversationSettings) ProfileValues {
 		System: s.System, Temperature: s.Temperature, Think: s.Think, PresencePenalty: s.PresencePenalty, Compact: s.Compact,
 		HistoryTokens: s.HistoryTokens, ReplyTokens: s.ReplyTokens,
 		BuiltinOff: s.BuiltinOff, MCPServers: slices.Clone(s.MCPServers),
+		ToolsOff: toolsOff(s.ToolPolicies),
 	}
+}
+
+// toolsOff は、会話の上書きのうち「使わない」(off)にしたツールの名前(名前の順)。
+func toolsOff(policies map[string]ToolPolicy) []string {
+	var out []string
+	for name, p := range policies {
+		if p == ToolOff {
+			out = append(out, name)
+		}
+	}
+	slices.Sort(out)
+	return out
 }
 
 // settings は、プロファイルの値を会話の設定の形にする(会話を作るときの写しの元)。
@@ -84,7 +100,20 @@ func (v ProfileValues) settings() ConversationSettings {
 		System: v.System, Temperature: v.Temperature, Think: v.Think, PresencePenalty: v.PresencePenalty, Compact: v.Compact,
 		HistoryTokens: v.HistoryTokens, ReplyTokens: v.ReplyTokens,
 		BuiltinOff: v.BuiltinOff, MCPServers: slices.Clone(v.MCPServers),
+		ToolPolicies: offPolicies(v.ToolsOff),
 	}.normalized()
+}
+
+// offPolicies は、最初は使わないツールを、会話の上書き(off)の形にする。無ければ nil。
+func offPolicies(names []string) map[string]ToolPolicy {
+	if len(names) == 0 {
+		return nil
+	}
+	m := make(map[string]ToolPolicy, len(names))
+	for _, n := range names {
+		m[n] = ToolOff
+	}
+	return m
 }
 
 // PrepareProfiles は、プロファイルを使える状態にする。起動したときに1回、SetRemoteTools・SetToolPrefs のあとに呼ぶ。
@@ -128,7 +157,61 @@ func (cs *Conversations) PrepareProfiles() ([]string, error) {
 	if n > 0 {
 		notes = append(notes, fmt.Sprintf("プロファイルを持たない %d 個の会話を、プロファイル「%s」から作ったものにしました", n, p.Name))
 	}
-	return notes, nil
+	moved, err := cs.moveToolsOff()
+	if moved != "" {
+		notes = append(notes, moved)
+	}
+	return notes, err
+}
+
+// moveToolsOff は、この PC の既定(tools.json)の「既定で使わない」ツールを、プロファイルの値(最初は使わないツール)に移す(起動したときに1回)。
+// ツールの一覧をプロファイルの中の1つにまとめたため(2026-10-20、ユーザーと決めた)。動きは変えない:
+//   - PC の既定は全部の会話に効いていたので、全部のプロファイルの「最初は使わない」に足す
+//   - 今ある会話は、上書きが無ければ「使わない」(off)の上書きを足す(PC の既定から外したあとも、今までどおり使わない)
+//   - 移したら tools.json から消す(確認する・確認しないは PC の既定のまま残る)
+func (cs *Conversations) moveToolsOff() (string, error) {
+	names := cs.prefs.offTools()
+	if len(names) == 0 {
+		return "", nil
+	}
+	list, err := cs.store.ListProfiles()
+	if err != nil {
+		return "", err
+	}
+	for _, p := range list {
+		p.Values.ToolsOff = slices.Compact(slices.Sorted(slices.Values(append(slices.Clone(p.Values.ToolsOff), names...))))
+		if err := cs.saveProfile(p); err != nil {
+			return "", err
+		}
+	}
+	convs, err := cs.store.ListConversations()
+	if err != nil {
+		return "", err
+	}
+	for _, c := range convs {
+		changed := false
+		for _, n := range names {
+			if _, ok := c.Settings.ToolPolicies[n]; ok {
+				continue
+			}
+			if c.Settings.ToolPolicies == nil {
+				c.Settings.ToolPolicies = map[string]ToolPolicy{}
+			}
+			c.Settings.ToolPolicies[n] = ToolOff
+			changed = true
+		}
+		if !changed {
+			continue
+		}
+		if err := cs.store.UpdateConversation(c); err != nil {
+			return "", fmt.Errorf("会話 %s に「使わない」のツールを写せません: %w", c.ID, err)
+		}
+	}
+	if err := cs.prefs.clearOff(names); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("この PC の既定で使わないにしていたツール %d 個(%s)を、プロファイルの「最初は使わない」に移しました",
+		len(names), strings.Join(names, ", ")), nil
 }
 
 // migrateDefaults は、今の「新しい会話の既定」からプロファイル「既定」を作って保存し、「新しい会話で最初に選ばれる」の印を付ける。
