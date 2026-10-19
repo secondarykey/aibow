@@ -1,4 +1,6 @@
-// 設定の画面: 新しい会話の既定 / アプリの設定 / ツール
+// 設定の画面: タブで「基本設定」(アプリの設定: GPU の層数・画面)と「会話」(新しい会話の既定・ツール)に分ける。
+// 会話に関わらないアプリの設定と、会話の既定として使われる値を、同じ画面に混ぜないため(2026-10-19、ユーザーの指示)。
+// ツールは、使う / 使わない・確認するかが全部の会話の既定になり、グループのチェックが新しい会話で最初から使うものなので「会話」に置く。
 //
 // 会話の一覧の下の「設定」で開き、チャットの代わりに会話の場所に出す(別の画面として扱う)。
 // 「会話に戻る」か、一覧で会話を選ぶ・「+ 新規」を押すと閉じる。
@@ -22,7 +24,16 @@ interface Props {
   onToolsChanged(): void; // ツールを使う / 使わないを変えた(メーターと、会話で選べる MCP のサーバーを読み直す)
 }
 
+type Tab = "basic" | "conversation";
+
+const TABS: { id: Tab; label: string; title: string }[] = [
+  { id: "basic", label: "基本設定", title: "会話によらず、この PC で1つだけのもの(GPU の層数・画面)" },
+  { id: "conversation", label: "会話", title: "新しい会話の既定と、ツールを使うかどうか(会話の既定になるもの)" },
+];
+
 export function SettingsView({ onClose, errors, app, onDefaultsChange, onApplyDefaultLimits, appDisabled, onApplyApp, onDisplayChange, onToolsChanged }: Props) {
+  // 開くたびに「基本設定」から(開いている間だけ覚える)
+  const [tab, setTab] = useState<Tab>("basic");
   return (
     <section className="settings-view">
       <div className="settings-inner">
@@ -32,25 +43,50 @@ export function SettingsView({ onClose, errors, app, onDefaultsChange, onApplyDe
         </div>
         {errors.map(e => <div key={e.id} className="msg error">{e.text}</div>)}
 
-        <h2 title="新しい会話は、この設定の写しから始まる。今ある会話には効かない">新しい会話の既定</h2>
-        {app && (
+        <div className="settings-tabs" role="tablist">
+          {TABS.map(t => (
+            <button
+              key={t.id}
+              role="tab"
+              aria-selected={tab === t.id}
+              className={"settings-tab" + (tab === t.id ? " current" : "")}
+              title={t.title}
+              onClick={() => setTab(t.id)}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {tab === "basic" && (
           <>
-            <ConversationSettingsForm settings={app.defaults} onChange={onDefaultsChange} />
-            <LimitsForm
-              history={app.defaults.history_tokens}
-              reply={app.defaults.reply_tokens}
-              disabled={appDisabled}
-              onApply={onApplyDefaultLimits}
-            />
+            <h2 title="読み込みに関わる設定。変えるとモデルを読み直す">モデル</h2>
+            {app && <AppSettingsForm app={app} disabled={appDisabled} onApply={onApplyApp} />}
+
+            <h2 className="section" title="画面の見せ方。生成には関わらない">画面</h2>
+            {app && <DisplaySettingsForm display={app.display} onChange={onDisplayChange} />}
           </>
         )}
 
-        <h2 className="section" title="会話によらず、この PC で1つだけのもの">アプリの設定</h2>
-        {app && <AppSettingsForm app={app} disabled={appDisabled} onApply={onApplyApp} />}
-        {app && <DisplaySettingsForm display={app.display} onChange={onDisplayChange} />}
+        {tab === "conversation" && (
+          <>
+            <h2 title="新しい会話は、この設定の写しから始まる。今ある会話には効かない">新しい会話の既定</h2>
+            {app && (
+              <>
+                <ConversationSettingsForm settings={app.defaults} onChange={onDefaultsChange} />
+                <LimitsForm
+                  history={app.defaults.history_tokens}
+                  reply={app.defaults.reply_tokens}
+                  disabled={appDisabled}
+                  onApply={onApplyDefaultLimits}
+                />
+              </>
+            )}
 
-        <h2 className="section" title="この PC で、ツールを使うかどうか(全部の会話に効く。tools.json に保存する)">ツール</h2>
-        <ToolSettings onChanged={onToolsChanged} />
+            <h2 className="section" title="この PC で、ツールを使うかどうか(全部の会話に効く。tools.json に保存する)">ツール</h2>
+            <ToolSettings onChanged={onToolsChanged} />
+          </>
+        )}
       </div>
     </section>
   );

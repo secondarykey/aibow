@@ -447,6 +447,14 @@ nav.conversations.collapsed .settings.active { color: var(--accent); }
 .settings-header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
 .settings-header h1 { font-size: 16px; margin: 0; flex: 1; display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .settings-header .back { display: flex; align-items: center; gap: 6px; }
+/* 設定の画面のタブ(基本設定 / 会話)。選んでいるタブに下線を引く */
+.settings-tabs { display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 1px solid var(--border); }
+.settings-tab {
+  border: none; border-bottom: 2px solid transparent; border-radius: 0; background: transparent;
+  padding: 6px 14px; margin-bottom: -1px; font-size: 13.5px; color: var(--muted);
+}
+.settings-tab:hover { color: var(--text); }
+.settings-tab.current { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
 .settings-view .msg.error { margin-bottom: 10px; }
 .settings-view h2 { font-size: 14px; margin: 8px 0 6px; display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .settings-view h2.section { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border); }
