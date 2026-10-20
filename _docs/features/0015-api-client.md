@@ -122,7 +122,10 @@
 
 ## 未決事項(Code は勝手に決めず、案を示してユーザーに確認する)
 
-- 専用の口・欄の名前と形(Code が案を示す。llama.cpp の server の名前にそろえられるなら、そろえる候補。下の「調べること」)
+- ~~専用の口・欄の名前と形~~ → **決めた(2026-10-21、ユーザーと)**:意味が同じものは llama.cpp の server の名前にそろえ、無いものだけ `/aibow/` と `aibow` 欄に置く。
+  口は `GET /models`(状態・層の数つき)・`POST /models/load`・`POST /apply-template`・`POST /aibow/count-tokens`・`POST /aibow/gpu-layers`。
+  `/v1/chat/completions` には、返事にいつも `timings`(llama.cpp と同じ名前)、頼み `"aibow": {"return_prompt": true}` を書いたときだけ返事に `"aibow": {"prompt", "stop_reason", "broken_tool_calls"}`、
+  履歴の assistant に `"aibow": {"broken_tool_calls"}`。形の細かいところは [_docs/api.md](../api.md) の「aibow 専用の口と欄」
 - サーバーにつながらないときの画面の出し方(13。エラーのカードか、モデルの表示のところか、つなぎ直しのボタンを置くか)
 - 画面に「サーバー越しで動いている」ことをどう出すか(モデルの表示につなぎ先を添える、など)
 - 8-4:**サーバーの設定を aibow の画面から変えて、aibow-server に適用する画面として考える**(2026-10-21、ユーザーと決めた。モデルの画面より広く、置き場所・GPU の層数・作業領域など、サーバーの PC の設定を扱う)。
@@ -134,7 +137,15 @@
 
 - llama.cpp の server に、トークン数を数える口(`/tokenize`)・書式を当てた文字列を返す口(`/apply-template`)・返事の時間の欄(`timings`)・複数のモデルを扱う仕組みがあるか、その名前と形。
   Chat の記憶ではあるが、**未確認**(2026-10-21 に調べようとしたが、ページを読めなかった)。Code が 8-0 で調べ、そろえるかを案に入れる
+  - **調べた(2026-10-21、8-0。llama.cpp の tools/server/README.md)**:`POST /tokenize`(`content` の文字列 → `tokens`)・`POST /apply-template`(`messages` → `prompt`)・
+    返事の `timings`(`cache_n`・`prompt_n`・`prompt_ms`・`prompt_per_second`・`predicted_n`・`predicted_ms`・`predicted_per_second`)があった。
+    複数のモデルは router モードで、`GET /models`(`status.value` が `loaded`・`unloaded`・`loading` など)・`POST /models/load`・`POST /models/unload`(本文 `{"model"}`、返事 `{"success": true}`)、
+    チャットの `model` で振り分け、無ければ読み込む(autoload)。モデルごとの GPU の層数は、起動のときの preset ファイル(`.ini`)で決める形で、口は無い。
+    これを元に名前を決めた(上の「未決事項」の1つめ)
 - 9B を作業領域 32768 で VRAM 8GB に載せられるか(3 で作業領域を固定するため、切り替え先のモデルで入らないと読み直しに失敗する)。**未確認**。8-0 で確かめ、入らなければ層の数か作業領域の決め方を相談する
+  - **確かめた(2026-10-21、8-0。RTX 4060 8GB、ほかのアプリが VRAM を使っている状態)**:4B から 9B への読み直しは 5.8 秒で成功し、32 層全部を GPU に載せられた(VRAM の使用 7.9 / 8.2 GB)。
+    ただ生成は 18 tok/s(4B は 46 tok/s)で、VRAM が足りずに共有メモリ(メインメモリ)へはみ出している疑いがある(Windows のドライバーは、はみ出してもエラーにせず遅くなる)。
+    層の数を減らして速くなるかは、8-3 で比べる(`POST /aibow/gpu-layers` で 9B の層の数を覚えさせられる)
 
 ## 完了の条件
 
