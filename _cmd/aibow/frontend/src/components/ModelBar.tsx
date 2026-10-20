@@ -17,7 +17,7 @@ interface Props {
 // 選ぶのは「この会話のモデル」(0014 の 3)。読み込めるモデルは1つ(VRAM に1つしか載らない)なので、
 // 会話を開いただけでは読み直さず、読み込んでいるモデルと違う会話は、送信するときに Go が読み直す
 export function ModelBar({ models, disabled, size, selected, lockReason, onSelect, children }: Props) {
-  const { current, gpu, loading } = models;
+  const { current, gpu, loading, server, serverError } = models;
   const value = selected ?? current?.id ?? "";
   // 会話のモデルが、読み込んでいるモデルと違う(送信するときに読み直す)
   const reload = !loading && current !== null && value !== "" && value !== current.id;
@@ -27,22 +27,24 @@ export function ModelBar({ models, disabled, size, selected, lockReason, onSelec
   ];
   // AIBOW_MODEL で一覧の外のファイルを指定した場合や、会話のモデルが一覧に無い(消した)場合も、選択肢に出しておく
   const outside = value !== "" && !models.models.some(m => m.id === value);
-  const outsideName = current?.id === value ? current.name : `${value}(見つかりません)`;
+  const outsideName = current?.id === value ? current.name : `${value}(${serverError ? "aibow-server につながりません" : "見つかりません"})`;
 
   // 作業領域は会話ごとに違う(0009)ので、開いている会話の大きさを出す。今の作業領域と違えば、次の送信で作り直す。
   // llama.cpp は大きさを 256 の倍数に切り上げることがあるので、その差は同じとみなす
-  const workspace = size ?? current?.n_ctx ?? 0;
-  const resize = current !== null && size !== undefined && (current.n_ctx < size || current.n_ctx >= size + 256);
+  // aibow-server 越しのときは、作業領域はサーバーが決めた大きさで固定(0015 の 3)。会話の上限はその中で使う
+  const workspace = server ? current?.n_ctx ?? 0 : size ?? current?.n_ctx ?? 0;
+  const resize = !server && current !== null && size !== undefined && (current.n_ctx < size || current.n_ctx >= size + 256);
   // 吹き出しの文。1行目は何を選ぶ欄か、続けて読み込んだモデルの情報
   const info = loading
     ? ["読み込み中…"]
     : current
       ? [
         `${current.name}(${current.params_b.toFixed(1)}B ・ ${gpu ? "GPU" : "CPU"} ・ 読み込み ${current.load_sec.toFixed(1)}s)`,
-        `作業領域: ${workspace.toLocaleString()} トークン${resize ? `(今は ${current.n_ctx.toLocaleString()}。送信時に作り直し)` : ""}`,
+        `作業領域: ${workspace.toLocaleString()} トークン${server ? "(aibow-server で固定)" : resize ? `(今は ${current.n_ctx.toLocaleString()}。送信時に作り直し)` : ""}`,
         current.desc,
       ]
-      : ["モデル未読み込み"];
+      : [serverError || "モデル未読み込み"];
+  if (server) info.unshift(`aibow-server(${server})で動かしています`);
   if (reload) info.unshift(`この会話のモデルは送信するときに読み込みます(今読み込んでいるのは ${current.name})`);
   if (lockReason) info.unshift(lockReason);
   const title = ["使うモデル(models フォルダと Ollama のモデル)", ...info].filter(Boolean).join("\n");
@@ -56,7 +58,7 @@ export function ModelBar({ models, disabled, size, selected, lockReason, onSelec
         disabled={disabled || !!lockReason}
         onChange={e => onSelect(e.target.value)}
       >
-        {value === "" && <option value="" disabled>モデルを選んでください</option>}
+        {value === "" && <option value="" disabled>{serverError ? "aibow-server につながりません" : "モデルを選んでください"}</option>}
         {groups.map(g => {
           const items = models.models.filter(m => m.source === g.source);
           if (!items.length) return null;

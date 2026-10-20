@@ -31,7 +31,8 @@ export function AllMCPServers(): $CancellablePromise<client$0.ServerInfo[] | nul
 
 /**
  * AppSettings はアプリの設定(GPU の層数・最後に使ったモデル・画面の設定)と、新しい会話の既定の設定(会話の上限・返事の上限も入る)を返す。
- * GPU の層数は、読み込んでいるモデルの値(モデルごとに覚えている。0014 の 4)。設定の画面はこれを出して変える(SetGPULayers)。
+ * GPU の層数は、読み込んでいるモデルの値(モデルごとに覚えている。0014 の 4。aibow-server 越しならサーバーの PC の値)。
+ * 設定の画面はこれを出して変える(SetGPULayers)。
  */
 export function AppSettings(): $CancellablePromise<aibow$0.AppSettings> {
     return $Call.ByID(1212015075);
@@ -226,6 +227,7 @@ export function SetExcluded(id: uuid$0.UUID, msgID: uuid$0.UUID, excluded: boole
  * SetGPULayers は GPU に載せる層の数を変え、今のモデルを読み込み直す。
  * 失敗したときは元の層の数で読み直している。モデルが未読み込みなら nil を返す。
  * 値は読み込んでいるモデルの値として覚える(モデルごと。0014 の 4)。モデルが未読み込みなら、まだ覚えていないモデルに使う全体の値を変える。
+ * aibow-server 越しなら、サーバーが読み直し、サーバーの PC に覚える(0015 の 9)。
  */
 export function SetGPULayers(n: number): $CancellablePromise<engine$0.ModelInfo | null> {
     return $Call.ByID(128737747, n);
@@ -305,6 +307,7 @@ export function ToolStates(id: uuid$0.UUID, settings: aibow$0.ConversationSettin
  * 画面は、会話の設定の画面・新しい会話の既定で上限を「適用」するときに呼び、確保できたら設定を保存する
  * (VRAM に入らないことを、送信したときではなく変えたときに分かるようにするため。0009)。
  * 作り直したら true。確保できなければ元の大きさに戻してエラーを返す。モデルが未読み込みなら、次に読み込むときの大きさだけ変わる。
+ * aibow-server 越しなら作り直さず、サーバーの作業領域に入るかを確かめるだけ(0015 の 3。VRAM の確認はサーバーの起動と読み直しのとき)。
  */
 export function TryLimits(history: number, reply: number): $CancellablePromise<boolean> {
     return $Call.ByID(3764457180, history, reply);

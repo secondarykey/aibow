@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 
 	apiclient "github.com/secondarykey/aibow/api/client"
@@ -107,7 +108,30 @@ func TestSendFailsWhenModelCannotLoad(t *testing.T) {
 	if _, ms, _ := cs.Get(c.ID); len(ms) != 0 {
 		t.Errorf("発言も保存しない: %+v", ms)
 	}
+	if !strings.Contains(errs[0], "選び直して") {
+		t.Errorf("手元のモデルの対処が無い: %s", errs[0])
+	}
+
+	// 対処まで書いてあるエラー(aibow-server につながらない、など)には、会話の仕組みの対処を書き足さない(食い違うため。0015)
+	cs.SetModelLoader(&fakeLoader{g: g, err: remedied{}})
+	errs = nil
+	cs.Send(context.Background(), c.ID, "x", func(ev ChatEvent) {
+		if ev.Type == "error" {
+			errs = append(errs, ev.Error)
+		}
+	})
+	if len(errs) != 1 || strings.Contains(errs[0], "選び直して") || !strings.Contains(errs[0], "起動してください") {
+		t.Errorf("対処が食い違う: %v", errs)
+	}
 }
+
+// remedied は対処まで書いてあるエラー(HasRemedy の約束を満たす)。
+type remedied struct{}
+
+func (remedied) Error() string {
+	return "aibow-server につながりません。aibow-server を起動してください"
+}
+func (remedied) HasRemedy() bool { return true }
 
 // モデルを持たない会話(この機能より前)には、起動したときに最後に使ったモデルを写す。
 // プロファイルにモデルが無ければ(初めての起動)、新しい会話は読み込んでいるモデルにする

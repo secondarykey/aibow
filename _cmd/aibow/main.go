@@ -1,7 +1,7 @@
 // aibow: ローカルLLMを自分で動かして、仕組みを学ぶためのチャットアプリ(デスクトップ版)
 //
 //	ウィンドウ(frontend の React) ⇄ Wails ⇄ ChatService ⇄ aibow パッケージ ⇄ llama.cpp(DLL) ⇄ GPU
-//	                                                         ⇅
+//	                                                         ⇅                  └─(つなぎ先を書いたとき)HTTP ⇄ aibow-server
 //	                                                   store パッケージ(SQLite)
 //
 // Wails はデスクトップアプリの枠組み。OS に入っている WebView(Windows なら WebView2)で
@@ -16,6 +16,7 @@
 //	main.go    … 起動(このファイル)
 //	config.go  … 環境変数から設定を読む(settings.json は aibow.LoadSettingsFile、MCP のサーバーは startMCP)
 //	service.go … 画面から呼ばれるメソッド(モデル・会話・設定・送信)
+//	modelhost.go … モデルを扱う係(直接か aibow-server 越し。0015)
 //	frontend/  … 画面(React + TypeScript)。Vite でビルドした frontend/dist が実行ファイルに埋め込まれる
 //	build/     … wails3 build / wails3 dev の設定(アプリ名、アイコン、OS ごとの手順)
 package main
@@ -32,6 +33,7 @@ import (
 	"strings"
 
 	"github.com/secondarykey/aibow"
+	apiclient "github.com/secondarykey/aibow/api/client"
 	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/mcp/client"
@@ -95,19 +97,19 @@ func main() {
 	}
 	var st *store.SQLite
 	var settings aibow.AppSettings
-	var eng *engine.Engine
+	var host modelHost
 	var initial *models.Entry
 	if err == nil {
 		st, settings, err = openStore(cfg)
 	}
 	if err == nil {
 		defer st.Close()
-		eng, initial, err = startEngine(cfg, settings)
+		host, initial, err = startModels(cfg, settings)
 	}
 	if err != nil {
 		log.Errorf("起動できません: %v", err)
-	} else {
-		defer eng.Close()
+	} else if d, ok := host.(*directHost); ok {
+		defer d.eng.Close()
 	}
 
 	assets, _ := fs.Sub(frontendFiles, "frontend/dist")
@@ -119,7 +121,7 @@ func main() {
 		// なお WebView2 の行([WebView2] …)は標準の log で来るが、slog.SetDefault のあとは標準の log も同じ出口に流れる
 		Logger: slog.Default(),
 		Services: []application.Service{
-			application.NewService(NewChatService(eng, st, settings, cfg.catalog, initial, local, mcpm, prefs, appVersion(), cfg.notices, err)),
+			application.NewService(NewChatService(host, st, settings, initial, local, mcpm, prefs, appVersion(), cfg.notices, err)),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
@@ -235,7 +237,7 @@ func startLog() (io.Closer, []string) {
 // サーバーはまだ起動しない(要る最初の送信のときに起動する)。サーバーが書いてなければ nil。
 // 設定ファイルの書き間違いは、アプリを止めずに画面のお知らせで伝え、MCP を使わずに起動する。
 func startMCP(cfg *appConfig) *client.Manager {
-	sf, err := aibow.LoadSettingsFile(cfg.settingsPath)
+	sf, err := cfg.settings, cfg.settingsErr
 	if err != nil {
 		cfg.notices = append(cfg.notices, err.Error()+"(MCP のサーバーは使わずに起動しました)")
 		return nil
@@ -298,6 +300,25 @@ func openStore(cfg appConfig) (*store.SQLite, aibow.AppSettings, error) {
 	d := app.Defaults
 	log.Infof("新しい会話の既定: 会話の上限 %d + 返事の上限 %d = 作業領域 %d トークン", d.HistoryTokens, d.ReplyTokens, d.ContextSize())
 	return st, app, nil
+}
+
+// startModels はモデルを扱う係を作る(0015 の 11)。
+//
+//   - つなぎ先(settings.json の serverUrl か AIBOW_SERVER_URL)が無ければ、今までどおり llama.cpp を読み込む(startEngine)
+//   - あれば aibow-server につなぐ係にする。llama.cpp は読み込まず、GPU も使わない。起動のときにモデルも読ませない
+//     (サーバーが起動のときに読み込んでいる。会話のモデルが違えば、送信の前に読み直す。0015 の 12)。
+//     ここではまだつながない(サーバーがまだ起動していなくても、アプリは起動する。0015 の 13)
+func startModels(cfg appConfig, app aibow.AppSettings) (modelHost, *models.Entry, error) {
+	if cfg.serverURL != "" {
+		c := apiclient.New(cfg.serverURL)
+		log.Noticef("生成は aibow-server に頼みます: %s(llama.cpp はこのアプリでは読み込みません)", c.URL())
+		return &remoteHost{c: c}, nil, nil
+	}
+	eng, initial, err := startEngine(cfg, app)
+	if err != nil {
+		return nil, nil, err
+	}
+	return &directHost{eng: eng, catalog: cfg.catalog}, initial, nil
 }
 
 // startEngine は llama.cpp を読み込み、起動時に読み込むモデルを決める。

@@ -18,7 +18,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"maps"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -35,10 +34,13 @@ import (
 )
 
 type ChatService struct {
-	engine  *engine.Engine       // 起動に失敗したときは nil
-	store   aibow.Store          // 起動に失敗したときは nil
-	convs   *aibow.Conversations // 起動に失敗したときは nil
-	catalog models.Catalog
+	// host はモデルを扱う係(直接か aibow-server 越し。modelhost.go)。起動に失敗したときは nil
+	host  modelHost
+	store aibow.Store          // 起動に失敗したときは nil
+	convs *aibow.Conversations // 起動に失敗したときは nil
+
+	// serverDown は、aibow-server につながらなかったか(つながらない間、一覧を取るたびにログを出さないため)
+	serverDown atomic.Bool
 
 	// startupErr は起動に失敗した理由(lib が無いなど)。画面に表示する
 	startupErr error
@@ -69,17 +71,22 @@ type ChatService struct {
 	cancelQuit context.CancelFunc
 }
 
+// host はモデルを扱う係(直接なら *directHost、aibow-server 越しなら *remoteHost)。
 // mcp は MCP のサーバー(settings.json にサーバーが無ければ nil)、prefs はツールの扱いの PC の既定(tools.json)。
-func NewChatService(eng *engine.Engine, st aibow.Store, app aibow.AppSettings, catalog models.Catalog,
+func NewChatService(host modelHost, st aibow.Store, app aibow.AppSettings,
 	initial *models.Entry, local *client.Local, mcp *client.Manager, prefs *aibow.ToolPrefs, version string, notices []string, startupErr error) *ChatService {
 	quit, cancel := context.WithCancel(context.Background())
 	s := &ChatService{
-		engine: eng, catalog: catalog, app: app, initial: initial, notices: notices, startupErr: startupErr,
+		host: host, app: app, initial: initial, notices: notices, startupErr: startupErr,
 		quit: quit, cancelQuit: cancel, mcp: mcp, prefs: prefs, version: version,
+	}
+	if d, ok := host.(*directHost); ok {
+		d.s = s // 直接の形は、GPU の層数をアプリの DB(ChatService が持つ設定)に覚える
 	}
 	if startupErr == nil {
 		s.store = st
-		s.convs = aibow.NewConversations(st, eng, app)
+		// 会話の仕組みから見ると、生成の口の相手が手元の engine か aibow-server かが変わるだけ(0015)
+		s.convs = aibow.NewConversations(st, host.generator(), app)
 		// 組み込みのツールは aibow の中の自作の MCP サーバー越しに呼ぶ(0007 の 5-4)
 		s.convs.SetLocalTools(local)
 		if mcp != nil { // nil の *Manager を interface に入れると nil に見えなくなるので、確かめてから渡す
@@ -127,8 +134,9 @@ func (s *ChatService) ServiceStartup(ctx context.Context, options application.Se
 }
 
 // loadInitial は起動時のモデルを読み込み、終わったら models イベントで画面に知らせる。
+// aibow-server 越しのときは呼ばない(サーバーが起動のときに読み込んでいる。会話のモデルが違えば送信の前に読み直す。0015 の 12)。
 func (s *ChatService) loadInitial(m models.Entry) {
-	s.loadModel(m)
+	s.loadModel(m.ID)
 	s.loading.Store(nil)
 	application.Get().Event.Emit(modelsEventName)
 }
@@ -152,6 +160,11 @@ type ModelsResult struct {
 	GPU     bool              `json:"gpu"`
 	Error   string            `json:"error,omitempty"` // 起動に失敗した理由。あれば何もできない
 	Notices []string          `json:"notices"`         // 起動時に伝えること(使われなくなった環境変数など)
+
+	// Server は生成を頼んでいる aibow-server のつなぎ先(アプリの中で動かしているときは空。0015)
+	Server string `json:"server,omitempty"`
+	// ServerError は aibow-server につながらない理由(と対処)。起動したら、アプリを起動し直さずに使える(一覧を取り直せば消える)
+	ServerError string `json:"server_error,omitempty"`
 }
 
 // Models は使えるモデルの一覧と、今読み込んでいるモデルを返す。
@@ -159,12 +172,20 @@ func (s *ChatService) Models() ModelsResult {
 	if s.startupErr != nil {
 		return ModelsResult{Models: []models.Entry{}, Error: s.startupErr.Error(), Notices: s.notices}
 	}
-	r := ModelsResult{
-		Models:  s.catalog.List(),
-		Current: s.engine.Info(),
-		GPU:     s.engine.HasGPU,
-		Notices: s.notices,
+	r := ModelsResult{Models: []models.Entry{}, Notices: s.notices, Server: s.host.server()}
+	l, err := s.host.list()
+	if err != nil {
+		// つながらない間は、一覧を取るたびにログを出さない(画面はウィンドウに戻るたびに取り直すため)
+		if !s.serverDown.Swap(true) {
+			log.Warn(err.Error())
+		}
+		r.ServerError = err.Error()
+		return r
 	}
+	if s.serverDown.Swap(false) {
+		log.Noticef("aibow-server につながりました: %s", s.host.server())
+	}
+	r.Models, r.Current, r.GPU = l.models, l.current, l.gpu
 	if name := s.loading.Load(); name != nil {
 		r.Loading = *name
 	}
@@ -181,21 +202,18 @@ func (s *ChatService) SwitchModel(id string) (*engine.ModelInfo, error) {
 	if s.startupErr != nil {
 		return nil, s.startupErr
 	}
-	m, err := s.catalog.Find(id)
-	if err != nil {
-		return nil, err
-	}
-	return s.loadModel(m)
+	return s.loadModel(id)
 }
 
-// loadModel はモデルを読み込み、成功したら「最後に使ったモデル」として保存する(次の起動で読み込む)。
-// GPU に載せる層の数は、そのモデルに覚えた値(覚えていなければ全体の値。0014 の 4)。
-func (s *ChatService) loadModel(m models.Entry) (*engine.ModelInfo, error) {
-	s.appMu.Lock()
-	layers := s.app.Workspace.LayersFor(m.ID)
-	s.appMu.Unlock()
-	log.Infof("モデルを読み込み中: %s (%s。GPU に載せる層: %d)", m.Name, m.Path, layers)
-	i, err := s.engine.LoadModelWithLayers(m, layers)
+// loadModel はモデルを読み込み、成功したら「最後に使ったモデル」として保存する(次の起動で読み込む・新しい会話のモデル)。
+// GPU に載せる層の数は、そのモデルに覚えた値(覚えていなければ全体の値。0014 の 4)。aibow-server 越しなら、サーバーの PC に覚えた値。
+func (s *ChatService) loadModel(id string) (*engine.ModelInfo, error) {
+	if where := s.host.server(); where != "" {
+		log.Infof("モデルを読み込み中: %s(aibow-server: %s)", id, where)
+	} else {
+		log.Infof("モデルを読み込み中: %s", id)
+	}
+	i, err := s.host.load(id)
 	if err != nil {
 		log.Error(err.Error())
 		return nil, err
@@ -204,7 +222,7 @@ func (s *ChatService) loadModel(m models.Entry) (*engine.ModelInfo, error) {
 	if i.Format == "" {
 		log.Warnf("このモデルの書式(種類: %s)には未対応です。送信するとエラーになります", i.Arch)
 	}
-	s.saveAppSetting(aibow.SettingLastModel, m.ID, func(a *aibow.AppSettings) { a.Workspace.Model = m.ID })
+	s.saveAppSetting(aibow.SettingLastModel, i.ID, func(a *aibow.AppSettings) { a.Workspace.Model = i.ID })
 	return i, nil
 }
 
@@ -213,11 +231,7 @@ func (s *ChatService) loadModel(m models.Entry) (*engine.ModelInfo, error) {
 type modelLoader struct{ s *ChatService }
 
 func (l modelLoader) LoadModel(id string) (*engine.ModelInfo, error) {
-	m, err := l.s.catalog.Find(id)
-	if err != nil {
-		return nil, err
-	}
-	return l.s.loadModel(m)
+	return l.s.loadModel(id)
 }
 
 func logModel(what string, i *engine.ModelInfo) {
@@ -228,17 +242,17 @@ func logModel(what string, i *engine.ModelInfo) {
 // ---- アプリ全体の設定 -------------------------------------------------------------------
 
 // AppSettings はアプリの設定(GPU の層数・最後に使ったモデル・画面の設定)と、新しい会話の既定の設定(会話の上限・返事の上限も入る)を返す。
-// GPU の層数は、読み込んでいるモデルの値(モデルごとに覚えている。0014 の 4)。設定の画面はこれを出して変える(SetGPULayers)。
+// GPU の層数は、読み込んでいるモデルの値(モデルごとに覚えている。0014 の 4。aibow-server 越しならサーバーの PC の値)。
+// 設定の画面はこれを出して変える(SetGPULayers)。
 func (s *ChatService) AppSettings() (aibow.AppSettings, error) {
 	if s.startupErr != nil {
 		return aibow.AppSettings{}, s.startupErr
 	}
+	layers := s.host.gpuLayers() // 直接の形は appMu を使うので、持つ前に聞く
 	s.appMu.Lock()
 	defer s.appMu.Unlock()
 	a := s.app
-	if i := s.engine.Info(); i != nil {
-		a.Workspace.GPULayers = a.Workspace.LayersFor(i.ID)
-	}
+	a.Workspace.GPULayers = layers
 	a.Defaults = s.convs.Defaults()
 	return a, nil
 }
@@ -247,6 +261,7 @@ func (s *ChatService) AppSettings() (aibow.AppSettings, error) {
 // 画面は、会話の設定の画面・新しい会話の既定で上限を「適用」するときに呼び、確保できたら設定を保存する
 // (VRAM に入らないことを、送信したときではなく変えたときに分かるようにするため。0009)。
 // 作り直したら true。確保できなければ元の大きさに戻してエラーを返す。モデルが未読み込みなら、次に読み込むときの大きさだけ変わる。
+// aibow-server 越しなら作り直さず、サーバーの作業領域に入るかを確かめるだけ(0015 の 3。VRAM の確認はサーバーの起動と読み直しのとき)。
 func (s *ChatService) TryLimits(history, reply int) (bool, error) {
 	if s.startupErr != nil {
 		return false, s.startupErr
@@ -255,11 +270,10 @@ func (s *ChatService) TryLimits(history, reply int) (bool, error) {
 		return false, errors.New("会話の上限と返事の上限は 1 以上にしてください")
 	}
 	n := history + reply
-	changed, err := s.engine.EnsureContextSize(n)
+	changed, err := s.host.tryContext(n)
 	if err != nil {
 		log.Error(err.Error())
-		return false, fmt.Errorf("作業領域(会話の上限 %d + 返事の上限 %d = %d トークン)を確保できません。"+
-			"上限を下げるか、GPU に載せる層の数を減らしてください: %w", history, reply, n, err)
+		return false, fmt.Errorf("作業領域(会話の上限 %d + 返事の上限 %d = %d トークン)を確保できません。%w", history, reply, n, err)
 	}
 	if changed {
 		log.Noticef("会話の上限 %d + 返事の上限 %d = 作業領域 %d トークンに作り直しました(モデルは読み直していません)", history, reply, n)
@@ -270,11 +284,12 @@ func (s *ChatService) TryLimits(history, reply int) (bool, error) {
 // SetGPULayers は GPU に載せる層の数を変え、今のモデルを読み込み直す。
 // 失敗したときは元の層の数で読み直している。モデルが未読み込みなら nil を返す。
 // 値は読み込んでいるモデルの値として覚える(モデルごと。0014 の 4)。モデルが未読み込みなら、まだ覚えていないモデルに使う全体の値を変える。
+// aibow-server 越しなら、サーバーが読み直し、サーバーの PC に覚える(0015 の 9)。
 func (s *ChatService) SetGPULayers(n int) (*engine.ModelInfo, error) {
 	if s.startupErr != nil {
 		return nil, s.startupErr
 	}
-	i, err := s.engine.SetGPULayers(n)
+	i, err := s.host.setGPULayers(n)
 	if err != nil {
 		log.Error(err.Error())
 		return nil, err
@@ -282,18 +297,6 @@ func (s *ChatService) SetGPULayers(n int) (*engine.ModelInfo, error) {
 	if i != nil {
 		logModel("GPU に載せる層を変えて読み直しました", i)
 	}
-	if i == nil {
-		s.saveAppSetting(aibow.SettingGPULayers, n, func(a *aibow.AppSettings) { a.Workspace.GPULayers = n })
-		return nil, nil
-	}
-	s.appMu.Lock()
-	layers := maps.Clone(s.app.Workspace.ModelGPULayers)
-	s.appMu.Unlock()
-	if layers == nil {
-		layers = map[string]int{}
-	}
-	layers[i.ID] = n
-	s.saveAppSetting(aibow.SettingModelGPULayers, layers, func(a *aibow.AppSettings) { a.Workspace.ModelGPULayers = layers })
 	return i, nil
 }
 

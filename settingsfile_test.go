@@ -42,12 +42,19 @@ func TestLoadSettingsFile(t *testing.T) {
 		t.Errorf("%+v, %v", s, err)
 	}
 
+	// aibow-server のつなぎ先(0015)
+	s, err = LoadSettingsFile(writeSettings(t, `{"serverUrl": "http://127.0.0.1:8089"}`))
+	if err != nil || s.ServerURL != "http://127.0.0.1:8089" {
+		t.Errorf("%+v, %v", s, err)
+	}
+
 	for name, c := range map[string]struct{ body, want string }{
 		"JSON の間違い":    {"{\n  \"mcpServers\": {\n    \"a\": {\"command\": \"x\",}\n  }\n}", "3 行目"},
 		"型の間違い":        {"{\n  \"mcpServers\": {\n    \"a\": {\"command\": [\"x\"]}\n  }\n}", "3 行目"},
 		"command が無い":  {`{"mcpServers": {"a": {"args": ["x"]}}}`, "mcpServers の a: command"},
 		"ツールの名前で重なる":   {`{"mcpServers": {"my server": {"command": "a"}, "my_server": {"command": "b"}}}`, "区別できません"},
 		"古い SSE のサーバー": {`{"mcpServers": {"a": {"type": "sse", "url": "http://localhost/sse"}}}`, "SSE"},
+		"つなぎ先の形":       {`{"serverUrl": "127.0.0.1:8089"}`, "serverUrl"},
 	} {
 		_, err := LoadSettingsFile(writeSettings(t, c.body))
 		if err == nil || !strings.Contains(err.Error(), c.want) {

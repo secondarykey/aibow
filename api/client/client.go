@@ -62,9 +62,24 @@ func (c *Client) URL() string { return c.base }
 
 // ---- エラー ----------------------------------------------------------------------------
 
-// ErrUnreachable は、aibow-server につながらないとき(起動していない・止めた・つなぎ先が違う)のエラー。
+// ErrUnreachable は、aibow-server につながらないとき(起動していない・止めた・つなぎ先が違う)のエラー(errors.Is で見分ける)。
 // アプリは起動したまま、サーバーが起動したら起動し直さずに使えるようにする(0015 の 13)。
 var ErrUnreachable = errors.New("aibow-server につながりません")
+
+// unreachableError は、つながらなかった理由と対処(つなぎ先・「起動してください」)を持つエラー。
+type unreachableError struct {
+	url string
+	err error
+}
+
+func (e *unreachableError) Error() string {
+	return fmt.Sprintf("%v(つなぎ先: %s)。aibow-server を起動してください: %v", ErrUnreachable, e.url, e.err)
+}
+
+func (e *unreachableError) Is(target error) bool { return target == ErrUnreachable }
+
+// HasRemedy は、対処まで書いてあること(会話の仕組みが「モデルを選び直して」などを書き足さないための約束)。
+func (e *unreachableError) HasRemedy() bool { return true }
 
 // APIError は、サーバーが返したエラー(OpenAI と同じ形の {"error": {...}})。
 type APIError struct {
@@ -87,7 +102,7 @@ type errorBody struct {
 
 // unreachable は、つながらなかったことを、理由と対処が分かるエラーにする。
 func (c *Client) unreachable(err error) error {
-	return fmt.Errorf("%w(つなぎ先: %s)。aibow-server を起動してください: %v", ErrUnreachable, c.base, err)
+	return &unreachableError{url: c.base, err: err}
 }
 
 // ---- やり取りの下回り -------------------------------------------------------------------

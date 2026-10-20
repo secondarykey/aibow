@@ -69,6 +69,13 @@ type appConfig struct {
 	windowPath   string // ウィンドウの位置と大きさ(window.json。閉じるときに aibow が書く。windowstate.go)
 	initialModel string // AIBOW_MODEL。空なら最後に使ったモデル → 一覧の先頭
 
+	// settings は settings.json の中身。settingsErr は読めなかった理由(MCP は使わずに起動し、お知らせで伝える。startMCP)
+	settings    aibow.SettingsFile
+	settingsErr error
+	// serverURL は生成を頼む aibow-server のつなぎ先(settings.json の serverUrl > 環境変数 AIBOW_SERVER_URL)。
+	// 空なら今までどおりアプリの中で llama.cpp を動かす。書けば llama.cpp を読み込まず、aibow-server につなぎに行く(0015 の 1・20)
+	serverURL string
+
 	// app は、画面で変えられるアプリ全体の設定の初期値。
 	// DB にまだ値が無いときだけ使う(画面で一度変えると DB の値が優先される)。
 	app aibow.AppSettings
@@ -114,6 +121,16 @@ func loadConfig() (appConfig, error) {
 			},
 		},
 	}
+	// settings.json は MCP のサーバーとつなぎ先を書く場所。読めなくても起動は止めない(MCP は使わない。つなぎ先は環境変数を使う)
+	c.settings, c.settingsErr = aibow.LoadSettingsFile(c.settingsPath)
+	c.serverURL = os.Getenv("AIBOW_SERVER_URL")
+	if err := aibow.CheckServerURL(c.serverURL); err != nil {
+		env.errs = append(env.errs, fmt.Errorf("AIBOW_SERVER_URL: %w", err))
+	}
+	if c.settings.ServerURL != "" {
+		c.serverURL = c.settings.ServerURL // settings.json が環境変数より強い(0015 の 20)
+	}
+
 	// AIBOW_CTX(コンテキスト長)は、会話の上限 + 返事の上限から aibow が計算するようになったので使わない
 	if v := os.Getenv("AIBOW_CTX"); v != "" {
 		c.notices = append(c.notices, fmt.Sprintf("環境変数 AIBOW_CTX(%s)は使われなくなりました。"+
@@ -128,7 +145,8 @@ func loadConfig() (appConfig, error) {
 			env.errs = append(env.errs, fmt.Errorf("%s は 1 以上で指定してください: %d", n.key, n.v))
 		}
 	}
-	if _, err := os.Stat(c.engine.LibPath); err != nil {
+	// aibow-server につなぐときは llama.cpp を読み込まないので、lib が無くてもよい
+	if _, err := os.Stat(c.engine.LibPath); err != nil && c.serverURL == "" {
 		// 相対パスのままだと「どこを探したのか」が分からないので、絶対パスで出す
 		env.errs = append(env.errs, fmt.Errorf("llama.cpp のフォルダが見つかりません: %s\n"+
 			"(相対パスはカレントフォルダが基準です。_cmd/aibow で起動するか、AIBOW_LIB で場所を指定してください。"+

@@ -2,6 +2,8 @@
 //
 // 一覧は models フォルダの GGUF と、Ollama が保存したモデル。
 // 選ぶと Go が今のモデルを解放して、新しいモデルを読み込む(数秒〜十数秒)。
+// aibow-server につないでいるとき(0015)は、一覧も読み込みもサーバーのもの。つながらなければエラーのカードを出し、
+// 一覧を取り直したとき(ウィンドウに戻ってきたとき・返事が終わったとき)につながれば、そのまま使える。
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Events } from "@wailsio/runtime";
 import { ChatService } from "../bindings/github.com/secondarykey/aibow/_cmd/aibow";
@@ -23,6 +25,8 @@ export interface Models {
   current: ModelInfo | null; // 今読み込まれているモデル(Go の ModelInfo)
   gpu: boolean;
   loading: boolean;          // モデルを読み込み中か(起動時・切り替え時)
+  server: string;            // 生成を頼んでいる aibow-server のつなぎ先(アプリの中で動かしているときは空)
+  serverError: string;       // aibow-server につながらない理由(つながっていれば空)
   switchModel(id: string): Promise<boolean>; // 読み込めたら true
   reload(): Promise<boolean>; // 一覧を取り直す。起動に失敗していたら false
 }
@@ -40,6 +44,9 @@ export function useModels(n: Notifier, t: Pick<Transcript, "addError">, setBusy:
   const [current, setCurrent] = useState<ModelInfo | null>(null);
   const [gpu, setGpu] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [server, setServer] = useState("");
+  const [serverError, setServerError] = useState("");
+  const serverDown = useRef(false); // つながらないことをカードで伝えたか(取り直すたびに出さないため)
 
   // 起動直後は Go がモデルを裏で読み込んでいる最中のことがある。終わると models イベントが来る。
   // Models の戻り値とイベントは別の経路で届くので、イベントが先に着いても大丈夫なように覚えておく。
@@ -63,10 +70,24 @@ export function useModels(n: Notifier, t: Pick<Transcript, "addError">, setBusy:
     setModels(d.models ?? []);
     setCurrent(d.current);
     setGpu(d.gpu);
+    setServer(d.server ?? "");
     // 起動時のお知らせ(使われなくなった環境変数など)。一覧は何度も取り直すので、最初の1回だけ出す
     if (!noticesShown.current) {
       noticesShown.current = true;
       for (const text of d.notices ?? []) notify(text, { ms: NOTICE_MS });
+    }
+    // aibow-server につながらない。カードは止まったときに1回だけ出し、つながったらお知らせで伝える
+    setServerError(d.server_error ?? "");
+    if (d.server_error) {
+      if (!serverDown.current) {
+        serverDown.current = true;
+        addError(d.server_error);
+      }
+      return true;
+    }
+    if (serverDown.current) {
+      serverDown.current = false;
+      notify(`aibow-server につながりました(${d.server})`);
     }
     if (d.loading && !startupLoading.current && !startupDone.current) {
       startupLoading.current = true;
@@ -125,5 +146,5 @@ export function useModels(n: Notifier, t: Pick<Transcript, "addError">, setBusy:
     return !failed;
   }, [models, notify, dismissKey, addError, setBusy]);
 
-  return { models, current, gpu, loading, switchModel, reload };
+  return { models, current, gpu, loading, server, serverError, switchModel, reload };
 }

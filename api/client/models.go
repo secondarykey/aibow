@@ -116,6 +116,9 @@ type ContextError struct {
 	Need, Have int
 }
 
+// HasRemedy は、対処まで書いてあること(会話の仕組みが「GPU の層を減らして」を書き足さないための約束)。
+func (e *ContextError) HasRemedy() bool { return true }
+
 func (e *ContextError) Error() string {
 	return fmt.Sprintf("会話の上限 + 返事の上限(%d トークン)が、aibow-server の作業領域(%d トークン)に入りません。"+
 		"会話の上限か返事の上限を下げるか、aibow-server を -ctx(設定ファイルの ctx)で大きくして起動し直してください", e.Need, e.Have)

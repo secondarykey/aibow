@@ -66,4 +66,14 @@ export interface ModelsResult {
      * 起動時に伝えること(使われなくなった環境変数など)
      */
     "notices": string[] | null;
+
+    /**
+     * Server は生成を頼んでいる aibow-server のつなぎ先(アプリの中で動かしているときは空。0015)
+     */
+    "server"?: string;
+
+    /**
+     * ServerError は aibow-server につながらない理由(と対処)。起動したら、アプリを起動し直さずに使える(一覧を取り直せば消える)
+     */
+    "server_error"?: string;
 }

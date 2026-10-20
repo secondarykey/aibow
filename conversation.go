@@ -138,6 +138,15 @@ type limits struct {
 	reply   int // 返事の上限: 1回の返事で生成するトークン数の上限
 }
 
+// hasRemedy は、err が理由と対処をもう書いてあるエラーか(aibow-server につながらない・サーバーの作業領域に入らない、など。0015)。
+// そのときは、会話の仕組みは自分の対処(「モデルを選び直して」「GPU の層を減らして」)を書き足さない
+// (手元のエンジンのための対処で、サーバー越しのときは当てはまらず、食い違うため)。
+// エラーの側が HasRemedy() bool を持てば当てはまる。生成の相手(engine・api/client)を import せずに見分けるための約束。
+func hasRemedy(err error) bool {
+	var r interface{ HasRemedy() bool }
+	return errors.As(err, &r) && r.HasRemedy()
+}
+
 // ModelLoader は、会話のモデルを読み込む係(0014 の 3)。アプリが渡す(SetModelLoader)。
 // モデルの目録(どの ID がどのファイルか)と、モデルごとの GPU の層数(この PC のもの)はアプリが持つので、会話の仕組みは ID だけを渡す。
 type ModelLoader interface {
@@ -231,6 +240,9 @@ func (cs *Conversations) ensureWorkspace(conv Conversation, emit func(ChatEvent)
 	lim := cs.limitsOf(conv.Settings)
 	n := lim.history + lim.reply
 	changed, err := cs.gen.EnsureContextSize(n)
+	if err != nil && hasRemedy(err) {
+		return fmt.Errorf("この会話の作業領域(会話の上限 %d + 返事の上限 %d = %d トークン)を確保できません: %w", lim.history, lim.reply, n, err)
+	}
 	if err != nil {
 		return fmt.Errorf("この会話の作業領域(会話の上限 %d + 返事の上限 %d = %d トークン)を確保できません。"+
 			"会話の設定で上限を下げるか、GPU に載せる層の数を減らしてください: %w", lim.history, lim.reply, n, err)
@@ -257,6 +269,9 @@ func (cs *Conversations) ensureModel(conv Conversation, emit func(ChatEvent)) er
 	emit(ChatEvent{ConversationID: conv.ID, Type: "model_loading", Text: fmt.Sprintf("この会話のモデル %s を読み込み中…", want)})
 	info, err := cs.models.LoadModel(want)
 	if err != nil {
+		if hasRemedy(err) {
+			return fmt.Errorf("この会話のモデル(%s)を読み込めません: %w", want, err)
+		}
 		return fmt.Errorf("この会話のモデル(%s)を読み込めません。入力欄の下でモデルを選び直してください: %w", want, err)
 	}
 	log.Infof("会話 %s のモデル %s を読み込みました(%.1f 秒)", conv.ID, info.Name, info.LoadSec)

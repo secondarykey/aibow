@@ -5,7 +5,7 @@ package aibow
 // 設定の置き場所は2つに分けている:
 //
 //	画面で変える設定 … DB(appsettings.go の app_settings と、会話ごとの conversations.settings)
-//	手で書く設定     … このファイル。最初の欄は MCP のサーバー(mcpServers)だけ
+//	手で書く設定     … このファイル。MCP のサーバー(mcpServers)と、生成を頼む aibow-server のつなぎ先(serverUrl。0015)
 //
 // MCP のサーバーの起動のしかた(npx のパスなど)は「その PC の設定」で、会話のデータとは性格が違う。
 // 会話を別のサーバーに置く形(TODO.md のクライアント/サーバー構成の B)にしても、これは手元に残るもの。
@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"net/url"
 	"os"
 	"slices"
 
@@ -27,6 +28,10 @@ import (
 type SettingsFile struct {
 	// MCPServers は MCP のサーバー(名前 → 起動のしかた・つなぐ先)。形は多くのツールで使われている mcpServers に合わせている
 	MCPServers map[string]client.ServerConfig `json:"mcpServers"`
+
+	// ServerURL は、生成を頼む aibow-server のつなぎ先(例: http://127.0.0.1:8089)。空なら、アプリの中で llama.cpp を動かす(0015 の 1・20)。
+	// 「その PC でどう起動するか」なので手で書くこのファイルに置く。環境変数 AIBOW_SERVER_URL より強い
+	ServerURL string `json:"serverUrl"`
 }
 
 // LoadSettingsFile は設定ファイルを読む。ファイルが無ければ空の設定を返す(MCP を使わないだけで、エラーにしない)。
@@ -42,6 +47,9 @@ func LoadSettingsFile(path string) (SettingsFile, error) {
 	}
 	if err := json.Unmarshal(data, &s); err != nil {
 		return SettingsFile{}, fmt.Errorf("設定ファイル %s を読めません(%s): %w", path, jsonErrorLine(data, err), err)
+	}
+	if err := CheckServerURL(s.ServerURL); err != nil {
+		return SettingsFile{}, fmt.Errorf("設定ファイル %s の serverUrl: %w", path, err)
 	}
 	prefixes := map[string]string{} // ツールの名前の前に付ける形 → サーバーの名前
 	for _, name := range slices.Sorted(maps.Keys(s.MCPServers)) {
@@ -76,4 +84,17 @@ func jsonErrorLine(data []byte, err error) string {
 		return "JSON の形が違います"
 	}
 	return fmt.Sprintf("%d 行目のあたり", bytes.Count(data[:min(int(off), len(data))], []byte("\n"))+1)
+}
+
+// CheckServerURL は、aibow-server のつなぎ先が http(s)://ホスト[:ポート] の形かを確かめる(空はよい。使わないということ)。
+// アプリが環境変数 AIBOW_SERVER_URL の値を確かめるのにも使う。
+func CheckServerURL(raw string) error {
+	if raw == "" {
+		return nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return fmt.Errorf("aibow-server のつなぎ先は http://127.0.0.1:8089 のように書いてください: %q", raw)
+	}
+	return nil
 }
