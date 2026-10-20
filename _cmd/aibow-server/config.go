@@ -47,6 +47,7 @@ type configFile struct {
 	Model     string `json:"model"`     // 起動のときに読み込むモデル(ID・名前・GGUF のパス)
 	Lib       string `json:"lib"`       // llama.cpp の DLL のフォルダ
 	ModelsDir string `json:"modelsDir"` // GGUF を置くフォルダ(Ollama の保存先は別に探す)
+	LogLevel  string `json:"logLevel"`  // ログのレベル(debug / info / notice / warn / error)。-debug より強い(log.go の logLevel)
 }
 
 // config は、強さの順で決めた設定。
@@ -56,6 +57,7 @@ type config struct {
 	Model     string
 	Lib       string
 	ModelsDir string
+	LogLevel  string // 設定ファイルの logLevel(空なら -debug か既定)
 
 	// File は読んだ設定ファイル(無ければ空)。StatePath は aibow-server が書くファイル(server-models.json)
 	File      string
@@ -66,7 +68,7 @@ type config struct {
 type flags struct {
 	config, model, lib, modelsDir *string
 	ctx, port                     *int
-	version                       *bool
+	version, debug                *bool
 	set                           map[string]bool
 }
 
@@ -80,6 +82,7 @@ func defineFlags(fs *flag.FlagSet) *flags {
 		lib:       fs.String("lib", "", "llama.cpp の DLL のフォルダ(既定 lib)。設定ファイルの lib・環境変数 AIBOW_LIB"),
 		modelsDir: fs.String("models", "", "GGUF を置くフォルダ(既定 models)。設定ファイルの modelsDir・環境変数 AIBOW_MODELS_DIR"),
 		version:   fs.Bool("version", false, "バージョンを表示して終わる"),
+		debug:     fs.Bool("debug", false, "ログを Debug レベルまで出す(既定は go run なら Info、exe なら Notice)。設定ファイルの logLevel があればそちらが優先"),
 	}
 }
 
@@ -114,6 +117,7 @@ func resolve(fs *flag.FlagSet, f *flags, env *envReader) (config, []string, erro
 	c.Model = pick(f.set["model"], *f.model, file.Model, os.Getenv("AIBOW_MODEL"), "")
 	c.Lib = pick(f.set["lib"], *f.lib, file.Lib, os.Getenv("AIBOW_LIB"), "lib")
 	c.ModelsDir = pick(f.set["models"], *f.modelsDir, file.ModelsDir, os.Getenv("AIBOW_MODELS_DIR"), "models")
+	c.LogLevel = file.LogLevel
 
 	// aibow-api から名前を変えたとき(0015 の 18)に、環境変数の名前も変えた。古い名前は読まずに注意だけ出す
 	// (黙って無視すると、書いたつもりの値が効かない理由が分からないため。アプリが AIBOW_CTX をやめたときと同じやり方)
@@ -154,6 +158,9 @@ func loadConfigFile(path string) (file configFile, found bool, err error) {
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&file); err != nil {
 		return configFile{}, false, fmt.Errorf("設定ファイル %s を読めません(%s): %w", path, jsonErrorLine(data, err), err)
+	}
+	if _, ok := logLevels[file.LogLevel]; file.LogLevel != "" && !ok {
+		return configFile{}, false, fmt.Errorf("設定ファイル %s の logLevel は debug・info・notice・warn・error のどれかにしてください: %q", path, file.LogLevel)
 	}
 	if file.Port < 0 || file.Ctx < 0 {
 		return configFile{}, false, fmt.Errorf("設定ファイル %s の port と ctx は 1 以上にしてください: %d / %d", path, file.Port, file.Ctx)

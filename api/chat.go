@@ -15,6 +15,7 @@ package api
 // トークン数を数えるのを順番待ちの後にしているのは、読み直すとモデル(語彙と書式)が変わり、数も変わるため。
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -45,6 +46,8 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request_error", "", err.Error())
 		return
 	}
+
+	logAccepted(req, p, len(s.turn) > 0, opt)
 
 	// 順番を待つ。待っている間につながりが切れたら、何も返さずに抜ける(列から外れる)
 	waitStart := time.Now()
@@ -326,6 +329,28 @@ func joinContent(content, extra string) string {
 		return extra
 	}
 	return content + "\n\n" + extra
+}
+
+// logAccepted は、リクエストを受け付けたときのログ(2026-10-21、ユーザーの指示)。
+// 終わったときの行(logResult)だけだと、順番待ちの間や長い生成・読み直しの途中に、何を処理しているかが見えないため。
+// busy は、受け付けたときに前のリクエストを処理中だったか(この行のあと順番を待つ)。
+// どのクライアントからかは aibow 欄で見分ける(画面のアプリは付ける。Cline などは付けない)。
+func logAccepted(req chatRequest, p format.Prompt, busy bool, opt engine.GenerateOptions) {
+	mode := "まとめて"
+	if req.Stream {
+		mode = "ストリーミング"
+	}
+	from := "aibow 以外(Cline など)"
+	if req.Aibow != nil {
+		from = "aibow"
+	}
+	wait := ""
+	if busy {
+		wait = "。前のリクエストを処理中なので順番を待ちます"
+	}
+	log.Infof("受け付けました: %s・%s・モデル %s・発言 %d 件・ツール %d 個%s", mode, from, cmp.Or(req.Model, "(書いていない)"), len(p.Messages), len(p.Tools), wait)
+	log.Debugf("生成の設定: temperature %.2f・返事の上限 %d・presence penalty %.2f・思考 %v・tool_choice %s",
+		opt.Temperature, opt.MaxTokens, opt.PresencePenalty, p.Think, cmp.Or(string(req.ToolChoice), "(書いていない)"))
 }
 
 // logResult は学習用のログ。リクエストごとに1行。

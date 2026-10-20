@@ -35,9 +35,9 @@ import (
 func main() {
 	f := defineFlags(flag.CommandLine)
 	flag.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(), "使い方: %s [-model モデル] [-ctx 作業領域] [-port ポート] [-config 設定ファイル]\n\n", filepath.Base(os.Args[0]))
+		fmt.Fprintf(flag.CommandLine.Output(), "使い方: %s [-model モデル] [-ctx 作業領域] [-port ポート] [-config 設定ファイル] [-debug]\n\n", filepath.Base(os.Args[0]))
 		fmt.Fprintln(flag.CommandLine.Output(), "aibow のモデルを OpenAI 互換の API(/v1/models・/v1/chat/completions)として出します。")
-		fmt.Fprintln(flag.CommandLine.Output(), "強さの順は 引数 > 設定ファイル > 環境変数 > 既定 です。")
+		fmt.Fprintln(flag.CommandLine.Output(), "強さの順は 引数 > 設定ファイル > 環境変数 > 既定 です(ログのレベルだけは 設定ファイルの logLevel > -debug > 既定)。")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
@@ -46,25 +46,27 @@ func main() {
 		return
 	}
 
-	closer := startLog()
+	// ログのレベルは設定ファイルでも決められるので、設定を読んでからログの出口を組む(log.Init のあとでレベルは変えられない)。
+	// 設定が読めなかったときも、既定のレベルで組んでから理由を書く
+	var env envReader
+	c, notices, cfgErr := resolve(flag.CommandLine, f, &env)
+	closer := startLog(logLevel(c, *f.debug))
 	defer closer.Close()
 
-	if err := run(f); err != nil {
+	if err := run(c, notices, cfgErr, &env); err != nil {
 		log.Error(err.Error())
 		closer.Close()
 		os.Exit(1)
 	}
 }
 
-func run(f *flags) error {
+func run(c config, notices []string, cfgErr error, env *envReader) error {
 	if flag.NArg() > 0 {
 		flag.Usage()
 		return fmt.Errorf("知らない引数があります: %v", flag.Args())
 	}
-	var env envReader
-	c, notices, err := resolve(flag.CommandLine, f, &env)
-	if err != nil {
-		return err
+	if cfgErr != nil {
+		return cfgErr
 	}
 	for _, n := range notices {
 		log.Warn(n)

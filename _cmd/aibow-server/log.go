@@ -2,6 +2,7 @@ package main
 
 import (
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -21,11 +22,17 @@ const logKeepDays = 10
 //   - ファイル:アプリと同じフォルダ(%APPDATA%\aibow\logs。AIBOW_LOG_DIR で変えられる)の aibow-server_<日付>.log。
 //     ターミナルは流れて消えるので、あとから比べられるようにファイルにも残す
 //
-// レベルは Info(リクエストごとの生成の記録も残す。KV キャッシュを使い回せたかを観察するのが目的の一部なので)。
+// レベルは logLevel で決める(2026-10-21、ユーザーの指定):
+//
+//	設定ファイルの logLevel > -debug(Debug)> 既定(go run は Info、exe は Notice)
+//
+// go run は試しながら動かすときなので、リクエストごとの記録(受け付けた・生成の記録。Info)も出す。
+// exe でふだん動かすときは、起動・モデルの読み込み・注意とエラー(Notice 以上)だけにする(アプリの exe と同じ)。
+// 設定ファイルが -debug より強いのはユーザーの指定(ほかの設定の「引数 > 設定ファイル」とは逆)。
 //
 // 異常終了(Go の panic など)は同じフォルダの aibow-server_crash.log に残す(log.CatchCrash)。前回の記録が見つかったら Warn で書く。
 // ログが書けなくても API は止めない(ログに Warn で書いて続ける)。
-func startLog() io.Closer {
+func startLog(level slog.Level) io.Closer {
 	dir := os.Getenv("AIBOW_LOG_DIR")
 	if dir == "" {
 		if d, err := os.UserConfigDir(); err == nil {
@@ -35,7 +42,7 @@ func startLog() io.Closer {
 	c, err := log.Init(log.Options{
 		Dir:      dir,
 		KeepDays: logKeepDays,
-		Root:     log.LevelInfo,
+		Root:     level,
 		Console:  true,
 		Prefix:   logPrefix,
 	})
@@ -57,4 +64,27 @@ func startLog() io.Closer {
 		log.Warnf("異常終了の記録を残す準備ができません(起動は続けます): %v", err)
 	}
 	return c
+}
+
+// logLevel は出すレベル。設定ファイルの logLevel > -debug > 既定(go run は Info、exe は Notice)。
+func logLevel(c config, debug bool) slog.Level {
+	if l, ok := logLevels[c.LogLevel]; ok && c.LogLevel != "" {
+		return l
+	}
+	if debug {
+		return log.LevelDebug
+	}
+	if isGoRun() {
+		return log.LevelInfo
+	}
+	return log.LevelNotice
+}
+
+// logLevels は設定ファイルの logLevel に書ける値。
+var logLevels = map[string]slog.Level{
+	"debug":  log.LevelDebug,
+	"info":   log.LevelInfo,
+	"notice": log.LevelNotice,
+	"warn":   log.LevelWarn,
+	"error":  log.LevelError,
 }

@@ -202,7 +202,7 @@ go build -o aibow-server.exe ./_cmd/aibow-server
 ```
 
 ```
-aibow-server [-model モデル] [-ctx 作業領域の大きさ] [-port ポート] [-lib llama.cpp のフォルダ] [-models GGUF のフォルダ] [-config 設定ファイル]
+aibow-server [-model モデル] [-ctx 作業領域の大きさ] [-port ポート] [-lib llama.cpp のフォルダ] [-models GGUF のフォルダ] [-config 設定ファイル] [-debug]
 ```
 
 以前の名前は `aibow-api` でした(ステップ8で、モデルの一覧や切り替えも持つ「aibow のサーバー」になるので名前を変えた)。
@@ -222,7 +222,13 @@ aibow-server [-model モデル] [-ctx 作業領域の大きさ] [-port ポート
 - ツール呼び出し(`tools`・`tool_calls`)に対応しています。モデルが呼び出しを書くと `finish_reason: tool_calls` で返すので、クライアントがツールを実行して結果(`tool` の役)を足して送り直します。
   書式が崩れて読み取れなかった呼び出しは、答えの文字列として返します
 - `aibow-server -version` でバージョンを表示します。ログは `%APPDATA%\aibow\logs\aibow-server_<日付>.log` と標準エラー出力に出ます。
-  リクエストごとに、プロンプトのトークン数・KV キャッシュを使い回せた数・生成の速さ・終了の理由が1行出ます
+  起動のときに、待ち受けるアドレスと、画面のアプリのつなぎ先(`serverUrl`)・Cline などの Base URL が出ます
+- ログのレベルは、`go run` で動かすと Info、exe(`go build`・`go install` で作ったもの)だと Notice です。`-debug` で Debug まで出ます。
+  設定ファイルの `logLevel`(`debug`・`info`・`notice`・`warn`・`error`)を書くと、そちらが `-debug` より優先です
+  - Info:リクエストを受け付けたとき(どこから・モデル・発言とツールの数。前のリクエストを処理中なら「順番を待ちます」)と、
+    終わったとき(プロンプトのトークン数・KV キャッシュを使い回せた数・生成の速さ・終了の理由)に1行ずつ
+  - Debug:受け付けたリクエストの生成の設定(temperature・返事の上限・presence penalty・思考・tool_choice)
+  - Notice:起動・モデルの読み込み・GPU の層数の変更。exe でもこれは残ります
 - 仕組みは [api.md](api.md)
 
 ### aibow-server の設定ファイル
@@ -236,11 +242,12 @@ aibow-server [-model モデル] [-ctx 作業領域の大きさ] [-port ポート
   "ctx": 32768,
   "model": "qwen3.5:4b",
   "lib": "D:/Go/Projects/aibow/_cmd/aibow/lib",
-  "modelsDir": "D:/Go/Projects/aibow/_cmd/aibow/models"
+  "modelsDir": "D:/Go/Projects/aibow/_cmd/aibow/models",
+  "logLevel": "info"
 }
 ```
 
-- 欄は `port`・`ctx`・`model`・`lib`・`modelsDir` の5つ。知らない欄があると、書き間違いとして起動を止めます
+- 欄は `port`・`ctx`・`model`・`lib`・`modelsDir`・`logLevel` の6つ。知らない欄があると、書き間違いとして起動を止めます
 - 読んだときは、起動のログに「設定ファイル: …」と出ます
 - 同じフォルダの `server-models.json` は aibow-server が書くファイルです(モデルごとの GPU の層数など)。手で書かなくて構いません
 - アプリの `settings.json` とは別のファイルです(aibow-server を動かす PC と、アプリを動かす PC が別になりうるため)
