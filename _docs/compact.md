@@ -14,7 +14,10 @@
 
 - 上限は「会話の上限(`history_tokens`)+ 返事の上限(`reply_tokens`)= 作業領域」。作業領域(`n_ctx`)は aibow が計算して確保する
 - 上限は会話ごとの設定(会話を作るときに新しい会話の既定から写す。0009)。compact・メーター・生成の長さは、その会話の値を使う(`Conversations.limitsOf`)
-- 作業領域はエンジンに1つだけ。送信と今すぐ要約の前に、その会話の大きさと違えば作り直す(`Conversations.ensureWorkspace` → `Engine.EnsureContextSize`)
+- 作業領域はエンジンに1つだけ。送信と今すぐ要約の前に、その会話の大きさと違えば作り直す(`Conversations.ensureWorkspace` → `Engine.EnsureContextSize`)。
+  画面のアプリを aibow-server につないでいるときは、作業領域はサーバーが起動のときに決めた大きさで固定で、作り直さない(0015 の 3)。
+  `api/client` の `EnsureContextSize` は「会話の上限 + 返事の上限 ≤ サーバーの作業領域」を確かめるだけで、入らなければ理由と対処を返す。
+  compact・メーターの基準は、どちらの形でも会話の上限(トークン数はサーバーが同じ書式で数える)
 - 会話の上限に収まっているかは、実際にモデルに渡す文字列(テンプレート込み・要約込み)を `Engine.CountTokens` で数えて判断する。トークン数は保存しない(モデルで変わるため)
 - 環境変数は `AIBOW_HISTORY_TOKENS`(新しい会話の既定の会話の上限)と `AIBOW_MAX_TOKENS`(同じく返事の上限)。`AIBOW_CTX` は 0002 で廃止(設定されていたらログとトーストで伝える)
 
