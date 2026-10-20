@@ -192,33 +192,57 @@ aibow-mcp [作業フォルダ]
 - ログは `%APPDATA%\aibow\logs\aibow-mcp_<日付>.log`(アプリと同じフォルダ。`AIBOW_LOG_DIR` で変えられます)と標準エラー出力に出ます。ツールの実行も残り、各行の終わりの `pid=…` で、どのサーバー(作業フォルダごとに1つ)の行か分かります
 - 仕組みは [mcp.md](mcp.md) の「自作の MCP サーバー」
 
-## aibow のモデルをほかのアプリから使う(aibow-api)
+## aibow のモデルをほかのアプリから使う(aibow-server)
 
 aibow が動かすモデルを、OpenAI 互換の API(`/v1/models`・`/v1/chat/completions`)として、ほかのアプリ(Cline など)から使えます。
-画面のアプリとは別の exe です。リポジトリのフォルダで次のようにビルドします(`go install ./_cmd/aibow-api` なら Go の bin フォルダに入ります)。
+画面のアプリとは別の exe です。リポジトリのフォルダで次のようにビルドします(`go install ./_cmd/aibow-server` なら Go の bin フォルダに入ります)。
 
 ```bash
-go build -o aibow-api.exe ./_cmd/aibow-api
+go build -o aibow-server.exe ./_cmd/aibow-server
 ```
 
 ```
-aibow-api [-model モデル] [-ctx 作業領域の大きさ] [-port ポート]
+aibow-server [-model モデル] [-ctx 作業領域の大きさ] [-port ポート] [-lib llama.cpp のフォルダ] [-models GGUF のフォルダ] [-config 設定ファイル]
 ```
+
+以前の名前は `aibow-api` でした(ステップ8で、モデルの一覧や切り替えも持つ「aibow のサーバー」になるので名前を変えた)。
+環境変数も `AIBOW_API_PORT` → `AIBOW_SERVER_PORT`、`AIBOW_API_CTX` → `AIBOW_SERVER_CTX` に変わりました。古い名前は読まず、起動のときに注意を出します。
 
 - **画面のアプリと同時には使わないでください**(VRAM にモデルを2つ載せられないため。使うときはアプリを閉じます)
 - `-model` は `ollama:qwen3.5:4b` のような ID・`qwen3.5:4b` のような一覧の名前・GGUF ファイルのパス。書かなければ `AIBOW_MODEL`、それも無ければ一覧の先頭です。
   リクエストの `model` ではモデルを切り替えません(いつも起動したときのモデルで答えます)
-- `-ctx` は作業領域の大きさ(プロンプト + 返事のトークン数。既定 32768。`AIBOW_API_CTX`)。履歴がこれに入らないリクエストは、400 のエラー(`code: context_length_exceeded`)で断ります(compact はしません)
-- `-port` は待ち受けのポート(既定 8089。`AIBOW_API_PORT`)。待ち受けは `127.0.0.1` だけで、PC の外からはつなげません
-- llama.cpp とモデルの場所・GPU の層数・返事の上限の既定・presence penalty は、アプリと同じ環境変数(下の表)で決めます。画面の設定(DB)は読みません。
-  `AIBOW_LIB` の既定はカレントフォルダの `lib` なので、リポジトリのフォルダで起動するときは `AIBOW_LIB=_cmd/aibow/lib AIBOW_MODELS_DIR=_cmd/aibow/models aibow-api` のように指定します
+- `-ctx` は作業領域の大きさ(プロンプト + 返事のトークン数。既定 32768。`AIBOW_SERVER_CTX`)。履歴がこれに入らないリクエストは、400 のエラー(`code: context_length_exceeded`)で断ります(compact はしません)
+- `-port` は待ち受けのポート(既定 8089。`AIBOW_SERVER_PORT`)。待ち受けは `127.0.0.1` だけで、PC の外からはつなげません
+- `-lib`・`-models` は llama.cpp の DLL のフォルダと GGUF を置くフォルダ(既定はカレントフォルダの `lib`・`models`。`AIBOW_LIB`・`AIBOW_MODELS_DIR`)。
+  リポジトリのフォルダで起動するときは `aibow-server -lib _cmd/aibow/lib -models _cmd/aibow/models` のように指定します
+- GPU の層数・返事の上限の既定・presence penalty は、アプリと同じ環境変数(下の表)で決めます。画面の設定(DB)は読みません
 - 思考は返事の `reasoning_content` に分けて返します。リクエストに `"chat_template_kwargs": {"enable_thinking": false}` を書くと思考しません(書かなければ思考します)
 - 同時に来たリクエストは、順番に1つずつ答えます。つながりを切ると(クライアントの停止ボタンなど)、生成を止めます
 - ツール呼び出し(`tools`・`tool_calls`)に対応しています。モデルが呼び出しを書くと `finish_reason: tool_calls` で返すので、クライアントがツールを実行して結果(`tool` の役)を足して送り直します。
   書式が崩れて読み取れなかった呼び出しは、答えの文字列として返します
-- `aibow-api -version` でバージョンを表示します。ログは `%APPDATA%ibow\logsibow-api_<日付>.log` と標準エラー出力に出ます。
+- `aibow-server -version` でバージョンを表示します。ログは `%APPDATA%\aibow\logs\aibow-server_<日付>.log` と標準エラー出力に出ます。
   リクエストごとに、プロンプトのトークン数・KV キャッシュを使い回せた数・生成の速さ・終了の理由が1行出ます
 - 仕組みは [api.md](api.md)
+
+### aibow-server の設定ファイル
+
+毎回の引数を書かなくてよいように、設定ファイル `%APPDATA%\aibow\server.json` に書けます(無くても動きます)。
+`-config` で別のファイルを指せます。強さの順は **引数 > 設定ファイル > 環境変数 > 既定** です(書いていない欄は、次に強いものを使います)。
+
+```json
+{
+  "port": 8089,
+  "ctx": 32768,
+  "model": "qwen3.5:4b",
+  "lib": "D:/Go/Projects/aibow/_cmd/aibow/lib",
+  "modelsDir": "D:/Go/Projects/aibow/_cmd/aibow/models"
+}
+```
+
+- 欄は `port`・`ctx`・`model`・`lib`・`modelsDir` の5つ。知らない欄があると、書き間違いとして起動を止めます
+- 読んだときは、起動のログに「設定ファイル: …」と出ます
+- 同じフォルダの `server-models.json` は aibow-server が書くファイルです(モデルごとの GPU の層数など)。手で書かなくて構いません
+- アプリの `settings.json` とは別のファイルです(aibow-server を動かす PC と、アプリを動かす PC が別になりうるため)
 
 ### Cline からつなぐ
 
@@ -228,13 +252,13 @@ VS Code の Cline(4.1.23 で確かめた)の設定(歯車)で、次のように�
 |---|---|
 | API Provider | OpenAI Compatible |
 | Base URL | `http://127.0.0.1:8089/v1` |
-| API Key | 何でもよい(aibow-api は見ない。空だと先に進めないことがある) |
+| API Key | 何でもよい(aibow-server は見ない。空だと先に進めないことがある) |
 | Model ID | 起動したモデルの ID(例: `ollama:qwen3.5:4b`。`/v1/models` が返すもの) |
 | Supports Images(MODEL CONFIGURATION) | オフ |
-| Context Window Size(MODEL CONFIGURATION) | aibow-api の `-ctx` と同じ(既定 32768) |
+| Context Window Size(MODEL CONFIGURATION) | aibow-server の `-ctx` と同じ(既定 32768) |
 
 - Cline はネイティブのツール呼び出し(`tools`)で送ってきます。最初のプロンプトは 3,000 トークンほどです
-- モデルを変えるときは、aibow-api を `-model` で起動し直し、Cline の Model ID も合わせます
+- モデルを変えるときは、aibow-server を `-model` で起動し直し、Cline の Model ID も合わせます
 - 比べた結果は [tuning.md](tuning.md) の「Cline からつないで比べる」
 
 curl で試すときは次のようにします(Windows の Git Bash でも動きます)。
@@ -289,15 +313,15 @@ curl http://127.0.0.1:8089/v1/chat/completions -H "Content-Type: application/jso
 | `AIBOW_LIB` | `lib` | llama.cpp の DLL があるフォルダ(相対パスはカレントフォルダが基準) |
 | `AIBOW_DB` | `%APPDATA%\aibow\aibow.db` | 会話を保存する SQLite のファイル。フォルダが無ければ作る |
 | `AIBOW_SETTINGS` | `%APPDATA%\aibow\settings.json` | 設定ファイル(手で書く設定。今は MCP のサーバーの `mcpServers` だけ)。無ければ MCP を使わない |
-| `AIBOW_LOG_DIR` | `%APPDATA%\aibow\logs` | ログファイル(`aibow_<日付>.log`。日ごと)を書くフォルダ。exe は Notice 以上(起動した版・使ったモデル・変えた設定・注意・エラーなど)だけを書き、起動時に古いファイルを消して今日を含めて 10 日分を残す。異常終了したときは同じフォルダの `aibow_crash_<日時>.log` に内容が残る(次の起動で画面に知らせる)。MCP のサーバー `aibow-mcp` も同じフォルダの `aibow-mcp_<日付>.log` に、OpenAI 互換 API の `aibow-api` は `aibow-api_<日付>.log` に書く(どちらも Info 以上・10 日分)。フォルダが無ければ作る。`wails3 build` で作った exe は既定でここに書く。`wails3 dev` はターミナルに出し、ここの `aibow-dev_<日付>.log` にも書く(Info 以上・10 日分。exe のログと混ざらないよう名前を分けている) |
+| `AIBOW_LOG_DIR` | `%APPDATA%\aibow\logs` | ログファイル(`aibow_<日付>.log`。日ごと)を書くフォルダ。exe は Notice 以上(起動した版・使ったモデル・変えた設定・注意・エラーなど)だけを書き、起動時に古いファイルを消して今日を含めて 10 日分を残す。異常終了したときは同じフォルダの `aibow_crash_<日時>.log` に内容が残る(次の起動で画面に知らせる)。MCP のサーバー `aibow-mcp` も同じフォルダの `aibow-mcp_<日付>.log` に、OpenAI 互換 API の `aibow-server` は `aibow-server_<日付>.log` に書く(どちらも Info 以上・10 日分)。フォルダが無ければ作る。`wails3 build` で作った exe は既定でここに書く。`wails3 dev` はターミナルに出し、ここの `aibow-dev_<日付>.log` にも書く(Info 以上・10 日分。exe のログと混ざらないよう名前を分けている) |
 | `AIBOW_TOOLS` | `%APPDATA%\aibow\tools.json` | ツールの扱いの、この PC の既定(設定の画面で変えたものを aibow が書く) |
 | `AIBOW_WINDOW` | `%APPDATA%\aibow\window.json` | ウィンドウの位置・大きさ・最大化(閉じるときに aibow が書き、次の起動でそこに開く)。消すと初めの大きさ(720×820)で真ん中に開く |
 | `AIBOW_HISTORY_TOKENS` | `8192` | 新しい会話の既定の会話の上限(モデルに渡す、これまでの会話のトークン数の上限)。超えたら会話ごとの compact の方式で収める |
 | `AIBOW_MAX_TOKENS` | `8192` | 新しい会話の既定の返事の上限(1回の返事で生成するトークン数の上限。思考 + 答えの合計) |
 | `AIBOW_GPU_LAYERS` | `999` | GPU に載せる層の数。VRAM に入りきらないモデルは減らす(残りは CPU で計算)。画面ではモデルごとに変えられます(まだ変えていないモデルはこの値) |
 | `AIBOW_PRESENCE_PENALTY` | `1.5` | すでに生成した言葉を選ばれにくくする強さ。思考の堂々巡りを抑える。`0` で無効 |
-| `AIBOW_API_CTX` | `32768` | `aibow-api` の作業領域の大きさ(プロンプト + 返事のトークン数)。引数の `-ctx` が優先 |
-| `AIBOW_API_PORT` | `8089` | `aibow-api` の待ち受けのポート(`127.0.0.1` だけ)。引数の `-port` が優先 |
+| `AIBOW_SERVER_CTX` | `32768` | `aibow-server` の作業領域の大きさ(プロンプト + 返事のトークン数)。引数の `-ctx`・設定ファイルの `ctx` が優先。以前の `AIBOW_API_CTX` は使わなくなった |
+| `AIBOW_SERVER_PORT` | `8089` | `aibow-server` の待ち受けのポート(`127.0.0.1` だけ)。引数の `-port`・設定ファイルの `port` が優先。以前の `AIBOW_API_PORT` は使わなくなった |
 | `AIBOW_LLAMA_LOG` | なし | `1` にすると llama.cpp 自身の詳しいログ(どの層をどこに置いたか、読めない理由など)を出す。起動時に数千行出る |
 
 作業領域(コンテキスト長)は「会話の上限 + 返事の上限」から計算します(会話ごと。起動したときは新しい会話の既定の大きさで確保します)。増やすと長い会話ができますが、VRAM を使います(Qwen3.5 4B で 1 トークンあたり約 32KB)。

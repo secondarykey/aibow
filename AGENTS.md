@@ -25,13 +25,13 @@ aibow は、ローカルLLMを使ったアプリを**自分で作りながら仕
 MCP のクライアント(Claude Code・aibow など)⇄ 標準入出力 ⇄ aibow-mcp(_cmd/aibow-mcp)= aibow/mcp/server ⇄ aibow/tool
 aibow の組み込みのツール: 会話の仕組み ⇄ aibow/mcp/client の Local ⇄ MCP(メモリ内)⇄ aibow/mcp/server ⇄ aibow/tool
 
-OpenAI 互換のクライアント(Cline など)⇄ HTTP(127.0.0.1)⇄ aibow-api(_cmd/aibow-api)= aibow/api ⇄ aibow/engine(画面のアプリとは同時に使わない)
+OpenAI 互換のクライアント(Cline など)⇄ HTTP(127.0.0.1)⇄ aibow-server(_cmd/aibow-server)= aibow/api ⇄ aibow/engine(画面のアプリとは同時に使わない)
 ```
 
 - **Ollama などの外部 LLM サーバーは使わない**。aibow のプロセスの中で llama.cpp を直接動かす。
   これはユーザーの明確な方針なので、LLM サーバーを別プロセスで立てる構成を提案・導入しないこと
 - ただし **Ollama を「モデルの管理係」として使うのは OK**(ユーザーの方針)。Ollama が保存したファイルを aibow が直接読む。Ollama のサーバーや API は使わない
-- 画面は Wails v3 のデスクトップアプリ。画面のアプリは HTTP サーバーを立てない(以前のブラウザ版から移行した。OpenAI 互換の API は別の exe `aibow-api` が立てる)。
+- 画面は Wails v3 のデスクトップアプリ。画面のアプリは HTTP サーバーを立てない(以前のブラウザ版から移行した。OpenAI 互換の API は別の exe `aibow-server` が立てる)。
   GUI の無い環境で確かめるための Wails の server モードは、確認用の一時ビルドだけで使う([_docs/env-cloud.md](_docs/env-cloud.md))
 
 | 場所 | 中身 |
@@ -49,7 +49,7 @@ OpenAI 互換のクライアント(Cline など)⇄ HTTP(127.0.0.1)⇄ aibow-api
 | `internal/proc/` | 子プロセスまでまとめて止める仕組み(`tool` の `run_command` と `mcp/client` で使う) |
 | `log/` | aibow のログ(`log` パッケージ)。aibow のコードはログをここから出す。土台は wenteasy/log だが、使う人には `slog.Level` と `*slog.Logger` しか見せない。出口はアプリが `Init` で組み、ライブラリとして使う人は `SetLogger(*slog.Logger)` で aibow のログだけ別にできる(決めなければ `slog.Default()`)。詳しくは [log/AGENTS.md](log/AGENTS.md) |
 | `_cmd/aibow/` | デスクトップアプリ(Wails v3 + React)。別モジュール |
-| `_cmd/aibow-api/` | OpenAI 互換の API の exe(`127.0.0.1` で待ち受ける)。引数と環境変数を読み、モデルを読み込んで `api` を動かすだけ。ルートのモジュールに入れている |
+| `_cmd/aibow-server/` | aibow のサーバーの exe(OpenAI 互換の API。`127.0.0.1` で待ち受ける。ステップ8で `aibow-api` から名前を変えた)。引数・設定ファイル(`server.json`)・環境変数を読み、モデルを読み込んで `api` を動かすだけ。ルートのモジュールに入れている |
 | `_cmd/aibow-mcp/` | MCP のサーバーの exe(標準入出力)。引数を読んで `mcp/server` を起動するだけ。ルートのモジュールに入れている(Wails を使わないため) |
 | `_docs/` | 仕組みごとの説明(下の表)と、機能の仕様(`_docs/features/`)。利用者向けの手順は `setup.md`(準備と起動)・`usage.md`(使い方と設定)・`structure.md`(構成とファイル) |
 | `TODO.md` | 全体の進み具合とロードマップ |
@@ -61,7 +61,7 @@ OpenAI 互換のクライアント(Cline など)⇄ HTTP(127.0.0.1)⇄ aibow-api
 | 生成・モデルの読み込みと切り替え・トークン化・プロンプトの書式・思考の振り分け・モデルの一覧・`engine` / `format` / `models` のパッケージの分け方 | [_docs/engine.md](_docs/engine.md) |
 | ツール呼び出し・エージェントループ・書式の interface(`Format`)・ツールの追加・作業フォルダ・ファイルとコマンドのツール・実行前の確認 | [_docs/tools.md](_docs/tools.md) |
 | MCP のクライアント・設定ファイル(`settings.json`)・MCP のサーバーの起動と終了・ツールの扱い(使わない / 確認する / 確認しない)と信頼・自作の MCP サーバー(`mcp/server`・`aibow-mcp`) | [_docs/mcp.md](_docs/mcp.md) |
-| OpenAI 互換の API(`api`・`aibow-api`)・リクエストの変換・ツール呼び出しの変換(`tools` ⇄ `tool_calls`)・ストリーミング・思考の返し方・順番待ち | [_docs/api.md](_docs/api.md) |
+| OpenAI 互換の API(`api`・`aibow-server`)・リクエストの変換・ツール呼び出しの変換(`tools` ⇄ `tool_calls`)・ストリーミング・思考の返し方・順番待ち | [_docs/api.md](_docs/api.md) |
 | 会話の履歴・会話ごとの設定(会話の上限・返事の上限も)・アプリの設定・保存の約束(`Store`)・モデルに渡さない発言・作り直す / 送り直す | [_docs/conversations.md](_docs/conversations.md) |
 | 会話の上限・compact(truncate / summary)・メーター | [_docs/compact.md](_docs/compact.md) |
 | SQLite の実装・マイグレーション | [store/AGENTS.md](store/AGENTS.md) |
@@ -126,7 +126,7 @@ OpenAI 互換のクライアント(Cline など)⇄ HTTP(127.0.0.1)⇄ aibow-api
 gofmt -l .                       # 整形が必要なファイルを表示(何も出なければ OK。_cmd も含む)
 go test ./...                    # 書式(公式テンプレートとの一致)、思考とツール呼び出しの振り分け、ツール、エージェントループ、Ollama の目録、会話の仕組み、compact、設定の引き継ぎ、SQLite(マイグレーション)のテスト(モデル不要)
 (cd _cmd/aibow && wails3 build)  # バインディング生成 → 画面の型チェックとビルド(tsc + vite)→ Go のビルド
-go vet ./... ./_cmd/aibow ./_cmd/aibow-mcp ./_cmd/aibow-api  # よくある間違いを静的チェック(./... は _cmd を含まないので並べる)
+go vet ./... ./_cmd/aibow ./_cmd/aibow-mcp ./_cmd/aibow-server  # よくある間違いを静的チェック(./... は _cmd を含まないので並べる)
 ```
 
 `_cmd/aibow` は `frontend/dist` を埋め込むので、画面を一度もビルドしていないと `go vet` / `go build` が「パターンに一致するファイルが無い」で失敗します。先に `wails3 build` を実行します。

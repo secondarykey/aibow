@@ -17,7 +17,7 @@ LLM を動かす部分(`engine/`・`format/`・`models/` の3つのパッケー�
 ## パッケージの分け方と依存の向き
 
 会話の仕組み(ルートの `aibow`)なしで「生成だけ」を使えるよう、LLM を動かす部分を3つに分けている(0012 の 6-0)。
-ステップ6の OpenAI 互換 API(`aibow-api`)は、`engine` と `format` だけを使う。
+ステップ6の OpenAI 互換 API(`aibow-server`)は、`engine` と `format` だけを使う。
 
 ```
 ルートの aibow(会話の仕組み)──→ engine ──→ format ──→ tool

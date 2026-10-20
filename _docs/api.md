@@ -1,10 +1,10 @@
-# OpenAI 互換 API(aibow-api)
+# OpenAI 互換 API(aibow-server)
 
 aibow の「頭」(llama.cpp で動かすモデルと書式)を、OpenAI 互換の HTTP の API として出す仕組みです(ステップ6。仕様は [features/0012-openai-api.md](features/0012-openai-api.md))。
-使い方(起動・環境変数・curl の例)は [usage.md](usage.md) の「aibow のモデルをほかのアプリから使う(aibow-api)」にあります。
+使い方(起動・設定ファイル・環境変数・curl の例)は [usage.md](usage.md) の「aibow のモデルをほかのアプリから使う(aibow-server)」にあります。
 
 ```
-Cline など [ 会話の仕組み + 手 ] ⇄ HTTP(OpenAI 互換。127.0.0.1 だけ)⇄ aibow-api [ 頭(モデル + 書式)]
+Cline など [ 会話の仕組み + 手 ] ⇄ HTTP(OpenAI 互換。127.0.0.1 だけ)⇄ aibow-server [ 頭(モデル + 書式)]
 ```
 
 ## ファイル
@@ -16,9 +16,9 @@ Cline など [ 会話の仕組み + 手 ] ⇄ HTTP(OpenAI 互換。127.0.0.1 だ
 | `api/tools.go` | ツール呼び出しの変換(`tools` → `tool.Def`、履歴の `tool_calls` → 書式の呼び出し、モデルの呼び出し → `tool_calls`) |
 | `api/chat.go` | `POST /v1/chat/completions`。トークン数の確かめ・順番待ち・生成(まとめて / ストリーミング)・学習用のログ |
 | `api/api_test.go` | 偽物の生成でのテスト(モデル不要) |
-| `_cmd/aibow-api/` | exe。`main.go` は引数と環境変数を読み、エンジンとモデルを用意して `api` を `127.0.0.1` で待ち受けるだけ。`log.go` はログの出口(`aibow-api_<日付>.log`)、`version` / `appversion.go` はアプリと同じバージョン(`_cmd/aibow/version` の写し) |
+| `_cmd/aibow-server/` | exe(ステップ8で `aibow-api` から名前を変えた。0015)。`config.go` は設定(強さの順は 引数 > 設定ファイル `server.json` > 環境変数 > 既定)、`main.go` はエンジンとモデルを用意して `api` を `127.0.0.1` で待ち受けるだけ。`log.go` はログの出口(`aibow-server_<日付>.log`)、`version` / `appversion.go` はアプリと同じバージョン(`_cmd/aibow/version` の写し) |
 
-依存の向きは `_cmd/aibow-api` → `api` → `engine` → `format` → `tool`。`api` はルートの `aibow`(会話の仕組み)を import しない。
+依存の向きは `_cmd/aibow-server` → `api` → `engine` → `format` → `tool`。`api` はルートの `aibow`(会話の仕組み)を import しない。
 会話の保存・compact・エージェントループ・ツールの実行はクライアントの仕事なので、API の側には持たない。
 
 ## 1回のリクエストの流れ(`api/chat.go`)

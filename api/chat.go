@@ -69,7 +69,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		log.Warnf("リクエストを断りました: プロンプト %d トークンが作業領域 %d に入りません(発言 %d 件)", n, nCtx, len(p.Messages))
 		writeError(w, http.StatusBadRequest, "invalid_request_error", "context_length_exceeded",
 			fmt.Sprintf("履歴が長すぎます。プロンプトが %d トークンあり、作業領域(%d トークン)に入りません。"+
-				"履歴を短くするか、aibow-api を -ctx で大きくして起動し直してください", n, nCtx))
+				"履歴を短くするか、aibow-server を -ctx(設定ファイルの ctx)で大きくして起動し直してください", n, nCtx))
 		return
 	}
 

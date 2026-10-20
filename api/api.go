@@ -1,13 +1,13 @@
 // Package api は、aibow の「頭」(llama.cpp で動かすモデルと書式)を、OpenAI 互換の HTTP の API として出す(ステップ6。0012)。
 //
-//	Cline など [ 会話の仕組み + 手 ] ⇄ HTTP(OpenAI 互換)⇄ aibow-api [ 頭(モデル + 書式)]
+//	Cline など [ 会話の仕組み + 手 ] ⇄ HTTP(OpenAI 互換)⇄ aibow-server [ 頭(モデル + 書式)]
 //
 // 会話の仕組み(履歴の保存・compact・エージェントループ・ツールの実行)は持たない。それはクライアントの仕事。
 // クライアントは毎回、履歴の全部を送ってくる(API はステートレス)。サーバーは何も覚えないので、
 // 前回と同じ先頭部分の KV キャッシュを使い回せるか(engine の reuseCache)が速さを決める。どれだけ使い回せたかはログに出す。
 //
 // 使うのは engine(生成)と format(書式の型)だけで、ルートの aibow(会話の仕組み)は import しない。
-// HTTP は標準ライブラリの net/http で書く。起動するだけの exe は _cmd/aibow-api。
+// HTTP は標準ライブラリの net/http で書く。起動するだけの exe は _cmd/aibow-server。
 package api
 
 import (
@@ -29,7 +29,7 @@ type Generator interface {
 	Info() *engine.ModelInfo
 }
 
-// Defaults は、リクエストに書かれていないときに使う値。アプリの「新しい会話の既定」と同じ値を _cmd/aibow-api が渡す。
+// Defaults は、リクエストに書かれていないときに使う値。アプリの「新しい会話の既定」と同じ値を _cmd/aibow-server が渡す。
 type Defaults struct {
 	Temperature     float32
 	MaxTokens       int // 返事の上限(思考 + 答え)
@@ -50,7 +50,7 @@ type Server struct {
 	now func() time.Time // テストで時刻を固定するため
 }
 
-// New は API を作る。モデルは gen にもう読み込んである前提(読み込みは _cmd/aibow-api が起動時に行う)。
+// New は API を作る。モデルは gen にもう読み込んである前提(読み込みは _cmd/aibow-server が起動時に行う)。
 func New(gen Generator, d Defaults) *Server {
 	return &Server{gen: gen, defaults: d, turn: make(chan struct{}, 1), now: time.Now}
 }

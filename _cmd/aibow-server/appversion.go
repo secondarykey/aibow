@@ -7,7 +7,7 @@ package main
 // patch を1つ上げて +dev を付ける(version が 0.3.1 なら 0.3.2+dev)。exe(go build・go install で作ったもの)は version のまま。
 // + の後ろは SemVer のビルドの情報で、版の大小の比べ方には関係しない。
 //
-// アプリはビルドタグ(production)で見分けるが、aibow-api は Taskfile を通さず go build・go install で作るので、起動のしかたで見分ける。
+// アプリはビルドタグ(production)で見分けるが、aibow-server は Taskfile を通さず go build・go install で作るので、起動のしかたで見分ける。
 
 import (
 	_ "embed"
@@ -33,7 +33,7 @@ func appVersion() string {
 
 // isGoRun は go run で起動したか。
 // go run は一時フォルダ(GOTMPDIR か OS の一時フォルダ)の go-build… の下に exe を作って実行するので、自分の exe の場所で見分ける
-// (go-build123/b001/exe/aibow-api.exe)。
+// (go-build123/b001/exe/aibow-server.exe)。
 func isGoRun() bool {
 	exe, err := os.Executable()
 	if err != nil {

@@ -2,8 +2,8 @@
 //
 // _cmd/aibow/version(テキスト1行)が唯一の正。ここから build/config.yml と frontend/package.json に書き写す。
 // config.yml の値は wails3 update build-assets で exe のバージョン情報(build/windows/info.json など)になる。
-// MCP のサーバー(_cmd/aibow-mcp)と OpenAI 互換の API(_cmd/aibow-api)も同じバージョンを名乗るので、
-// _cmd/aibow-mcp/version と _cmd/aibow-api/version にも書き写す
+// MCP のサーバー(_cmd/aibow-mcp)と aibow のサーバー(_cmd/aibow-server)も同じバージョンを名乗るので、
+// _cmd/aibow-mcp/version と _cmd/aibow-server/version にも書き写す
 // (//go:embed は自分のフォルダの下のファイルしか埋め込めず、_cmd/aibow/version を直接は使えないため)。
 //
 //	go run _cmd/version.go          version の値で config.yml / package.json をそろえる
@@ -33,10 +33,10 @@ const (
 	packJsn     = "./_cmd/aibow/frontend/package.json"
 )
 
-// subVersionFiles は、ほかの exe(aibow-mcp・aibow-api)が埋め込むバージョン。version の写しで、手で書き換えない
+// subVersionFiles は、ほかの exe(aibow-mcp・aibow-server)が埋め込むバージョン。version の写しで、手で書き換えない
 var subVersionFiles = []string{
 	"./_cmd/aibow-mcp/version",
-	"./_cmd/aibow-api/version",
+	"./_cmd/aibow-server/version",
 }
 
 // 値の部分だけを置き換え、インデントや行末コメントは残す。
