@@ -6,7 +6,15 @@ import (
 	"slices"
 	"testing"
 
+	apiclient "github.com/secondarykey/aibow/api/client"
 	"github.com/secondarykey/aibow/engine"
+)
+
+// HTTP 越しの生成(api/client。0015)は、手元の engine と同じ口で会話の仕組みに渡せる。
+// 会話の仕組みのコードを変えずに、相手がネットワークの先に変わるだけ、を型で確かめる
+var (
+	_ Generator   = (*apiclient.Client)(nil)
+	_ ModelLoader = (*apiclient.Client)(nil)
 )
 
 // fakeLoader は、会話のモデルを読み込む係の偽物。読み込んだモデルの ID を覚え、fakeGen が読み込んでいることにする。

@@ -44,7 +44,8 @@ OpenAI 互換のクライアント(Cline など)⇄ HTTP(127.0.0.1)⇄ aibow-ser
 | `store/` | 会話の保存先(SQLite) |
 | `mcp/client/` | MCP のクライアント(`client` パッケージ。SDK のパッケージ名 `mcp` と重ならないよう `mcp/` の下に置く。サーバーは `mcp/server/` に並べる)。`settings.json` の MCP のサーバーを起動し、そのツールを `tool.Tool` として見せる。aibow の中で `mcp/server` を動かし、組み込みのツールを MCP 越しに渡す(`Local`)。`tool` と `mcp/server` を import し、ルートの `aibow` は import しない |
 | `mcp/server/` | MCP のサーバー(`server` パッケージ。ステップ5)。`tool` のツールを MCP のツールとして出す。書き換えるツールはサーバーからユーザーに確かめる(MRTR)。`tool` と SDK だけを使い、ルートの `aibow` は import しない |
-| `api/` | OpenAI 互換の API(`api` パッケージ。ステップ6)。`engine` で生成だけを使い、ルートの `aibow`(会話の仕組み)は import しない。HTTP は標準の `net/http` |
+| `api/` | OpenAI 互換の API(`api` パッケージ。ステップ6)。`engine` で生成だけを使い、ルートの `aibow`(会話の仕組み)は import しない。HTTP は標準の `net/http`。ステップ8で aibow 専用の口と欄(モデルの一覧・読み込み・トークン数など)を足した |
+| `api/client/` | aibow-server につなぐクライアント(`client` パッケージ。ステップ8)。会話の仕組みの `Generator` と `ModelLoader` の HTTP 版。ルートの `aibow` は import しない |
 | `mcp/internal/` | MCP のクライアントとサーバーの両方で使う部分(`meta`: `_meta` の名前) |
 | `internal/proc/` | 子プロセスまでまとめて止める仕組み(`tool` の `run_command` と `mcp/client` で使う) |
 | `log/` | aibow のログ(`log` パッケージ)。aibow のコードはログをここから出す。土台は wenteasy/log だが、使う人には `slog.Level` と `*slog.Logger` しか見せない。出口はアプリが `Init` で組み、ライブラリとして使う人は `SetLogger(*slog.Logger)` で aibow のログだけ別にできる(決めなければ `slog.Default()`)。詳しくは [log/AGENTS.md](log/AGENTS.md) |

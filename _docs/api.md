@@ -17,6 +17,7 @@ Cline など [ 会話の仕組み + 手 ] ⇄ HTTP(OpenAI 互換。127.0.0.1 だ
 | `api/chat.go` | `POST /v1/chat/completions`。順番待ち・モデルの読み直し・トークン数の確かめ・生成(まとめて / ストリーミング)・学習用のログ。`POST /apply-template`・`POST /aibow/count-tokens` も |
 | `api/models.go` | モデルの一覧と読み込み(ステップ8)。使う係の interface `Models`(本物は `_cmd/aibow-server` の `modelManager`)・`GET /models`・`POST /models/load`・`POST /aibow/gpu-layers` |
 | `api/api_test.go`・`api/aibow_test.go` | 偽物の生成とモデルの係でのテスト(モデル不要) |
+| `api/client/` | aibow-server につなぐクライアント(`client` パッケージ。ステップ8)。下の「クライアント(`api/client`)」 |
 | `_cmd/aibow-server/` | exe(ステップ8で `aibow-api` から名前を変えた。0015)。`config.go` は設定(強さの順は 引数 > 設定ファイル `server.json` > 環境変数 > 既定)、`models.go` はモデルの係(GPU の層数を `server-models.json` に覚える)、`main.go` はエンジンとモデルを用意して `api` を `127.0.0.1` で待ち受けるだけ。`log.go` はログの出口(`aibow-server_<日付>.log`)、`version` / `appversion.go` はアプリと同じバージョン(`_cmd/aibow/version` の写し) |
 
 依存の向きは `_cmd/aibow-server` → `api` → `engine` → `format` → `tool`。`api` はルートの `aibow`(会話の仕組み)を import しない。
@@ -123,6 +124,33 @@ data: [DONE]
   履歴で送り返すと、`index` の位置に混ぜ戻し、書式はモデルが書いたまま(`raw`)をプロンプトに入れる
 - aibow のクライアントには、引数の値を**往復で1文字も変わらない形でだけ** JSON の型の値にする(Cline などには、前後の空白を除いたり `True` を `true` に直したりしても型の値にする)。
   aibow のクライアントは返ってきた値を書式に戻すので、1文字でも変わると KV キャッシュを使い回せなくなるため(0015 の 8)
+
+## クライアント(`api/client`)
+
+画面のアプリが aibow-server に生成を頼むための、HTTP 版の `Generator`(ステップ8の 8-1)。`mcp/client` と並べる形で `api/` の下に置いた。
+
+```
+画面のアプリ [ 会話の仕組み → client.Client ] ──HTTP──→ aibow-server [ api.Server → engine ]
+```
+
+- `*engine.Engine` と同じメソッド(`Generate`・`CountTokens`・`EnsureContextSize`・`Info`)と、会話のモデルを読み込む `LoadModel` を持つ。
+  会話の仕組みの `Generator`・`ModelLoader` をそのまま満たす(ルートの `model_test.go` で型を確かめている)ので、**会話の仕組みのコードは変えずに**相手がネットワークの先に変わる
+- ルートの `aibow` は import しない(`api` と同じ)。JSON の形はクライアントの側で自分で持つ(サーバーの型は外に見せていない)
+
+| メソッド | 口 | 中身 |
+|---|---|---|
+| `Generate` | `POST /v1/chat/completions` | いつもストリーミング・`"aibow": {"return_prompt": true}`。届いた塊を `onThinking` / `onContent` / `onPrompt` に渡し、最後の塊の `timings` と `aibow` から `GenerateStats` と崩れた呼び出しを戻す |
+| `CountTokens` | `POST /aibow/count-tokens` | 生成と同じ形の本文で数える(形が違うとトークン数がずれるため) |
+| `EnsureContextSize` | (`GET /models` の `n_ctx`) | 作業領域は作り直さず、入るかを確かめるだけ。入らなければ `ContextError`(会話の上限を下げるか、aibow-server の `-ctx` を上げる) |
+| `Info` | なし | 最後に知った読み込み中のモデル。呼ばれる回数が多いので聞きに行かず、`LoadModel`・`Models`・生成の返事のモデルが変わったときに取り直す |
+| `LoadModel` | `POST /models/load` | 会話のモデルを読み込ませ、これからの生成でその `model` を頼む |
+| `Models`・`SetGPULayers` | `GET /models`・`POST /aibow/gpu-layers` | 画面のモデルの一覧と GPU の層数(8-2 でつなぐ) |
+
+- **会話 → JSON → 会話 で1文字も変えない**:引数の値はいつも JSON の文字列で送る(サーバーは文字列を中身のまま書式に戻すので、数や `True`・前後の空白も変わらない)。
+  崩れた呼び出しは `aibow.broken_tool_calls` で順番つきで送り、サーバーがモデルの書いたまま(`raw`)を書式に戻す。
+  `client_test.go` で、本物の `api.Server` を `httptest` で立て(生成だけ偽物)、サーバーが受け取った会話と、書式を当てた文字列が直接のときと同じになることを確かめている
+- 停止ボタン(ctx を止める)はつながりを切る。サーバーはそれを見て生成を止める。クライアントは届いた分を `StopReason: cancel` で返す(エラーにしない。engine と同じ)
+- つながらないとき(起動していない・止めた)は `ErrUnreachable`(つなぎ先と「aibow-server を起動してください」を添える)。サーバーのエラーは `APIError`(`code` で見分けられる)
 
 ## KV キャッシュの再利用(実際に動かして分かったこと。2026-10-19)
 

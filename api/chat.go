@@ -36,6 +36,10 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if len(p.Messages) == 0 {
+		writeError(w, http.StatusBadRequest, "invalid_request_error", "", "messages が空です")
+		return
+	}
 	opt, err := s.options(req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request_error", "", err.Error())

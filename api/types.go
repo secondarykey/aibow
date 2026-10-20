@@ -145,6 +145,7 @@ func (m chatMessage) text() (string, error) {
 }
 
 // toPrompt はリクエストを書式の形(format.Prompt)にする。読めない発言があればエラー(400 で返す)。
+// messages が空でもよい(会話の仕組みは、ツールの説明だけのトークン数を数えることがある。生成するときは handleChat が断る)。
 //
 //   - system(と、OpenAI の新しい名前 developer)は先頭に置く。先頭に続けて複数あれば1つにつなぐ。
 //     Qwen3.5 の公式テンプレートは途中の system をエラーにするので、途中にあればエラーにする
@@ -152,9 +153,6 @@ func (m chatMessage) text() (string, error) {
 //   - tool の役の発言(ツールの結果)は、そのまま書式の tool の発言にする(書式が <tool_response> で包む)
 //   - tools は tool.Def にして、モデルに知らせる(tool_choice が "none" なら知らせない)
 func toPrompt(req chatRequest, think bool) (format.Prompt, error) {
-	if len(req.Messages) == 0 {
-		return format.Prompt{}, fmt.Errorf("messages が空です")
-	}
 	defs, err := toDefs(req.Tools)
 	if err != nil {
 		return format.Prompt{}, err
