@@ -208,7 +208,8 @@ aibow-server [-model モデル] [-ctx 作業領域の大きさ] [-port ポート
 以前の名前は `aibow-api` でした(ステップ8で、モデルの一覧や切り替えも持つ「aibow のサーバー」になるので名前を変えた)。
 環境変数も `AIBOW_API_PORT` → `AIBOW_SERVER_PORT`、`AIBOW_API_CTX` → `AIBOW_SERVER_CTX` に変わりました。古い名前は読まず、起動のときに注意を出します。
 
-- **画面のアプリと同時には使わないでください**(VRAM にモデルを2つ載せられないため。使うときはアプリを閉じます)
+- 画面のアプリが**アプリの中でモデルを動かしているとき(既定)は、同時には使わないでください**(VRAM にモデルを2つ載せられないため。使うときはアプリを閉じます)。
+  画面のアプリを aibow-server につないでいるとき(下の「画面のアプリを aibow-server につなぐ」)は、アプリは GPU を使わないので同時に動かせます
 - `-model` は `ollama:qwen3.5:4b` のような ID・`qwen3.5:4b` のような一覧の名前・GGUF ファイルのパス。書かなければ `AIBOW_MODEL`、それも無ければ一覧の先頭です。
   `-model` は起動したときに読み込むモデルで、リクエストの `model` が違えば読み直してから答えます(数秒〜十数秒。知らない名前なら読み込み中のモデルで答えます)。`/v1/models` は使えるモデルを全部返します
 - `-ctx` は作業領域の大きさ(プロンプト + 返事のトークン数。既定 32768。`AIBOW_SERVER_CTX`)。履歴がこれに入らないリクエストは、400 のエラー(`code: context_length_exceeded`)で断ります(compact はしません)
@@ -271,6 +272,31 @@ curl http://127.0.0.1:8089/v1/models
 curl http://127.0.0.1:8089/v1/chat/completions -H "Content-Type: application/json" -d '{"messages":[{"role":"user","content":"hello"}],"stream":true}'
 ```
 
+### 画面のアプリを aibow-server につなぐ
+
+画面のアプリの生成を、アプリの中ではなく aibow-server に頼めます(ステップ8)。アプリは llama.cpp を読み込まず、GPU も使いません。
+会話の保存・ツール・MCP・実行前の確認・compact は、今までどおりアプリの中で動きます。
+
+1. aibow-server を起動しておく(上の手順)
+2. アプリの `settings.json`(`%APPDATA%\aibow\settings.json`)につなぎ先を書く。環境変数 `AIBOW_SERVER_URL` でもよい(両方あれば settings.json が優先)
+
+```json
+{
+  "serverUrl": "http://127.0.0.1:8089"
+}
+```
+
+3. アプリを起動し直す(つなぎ先は起動したときに読みます)
+
+- 書かなければ(既定)、今までどおりアプリの中でモデルを動かします。HTTP は使わず、ポートも開きません。どちらの形でも、アプリは HTTP のサーバーを立てません(つなぎに行くだけ)
+- モデルの一覧と切り替えは aibow-server のもの。会話のモデルが違えば、送信の前に aibow-server が読み直します
+- 設定の画面の「GPU に載せる層の数」は aibow-server の値を変え、aibow-server の PC に覚えます(`server-models.json`)。アプリの中で動かすときの値とは別です
+- 作業領域の大きさは aibow-server が起動のときに決めた大きさ(`-ctx`。既定 32768)で固定です。会話の上限 + 返事の上限がこれに入らないと、「適用」したときに理由と対処を出します
+- aibow-server につながらないとき(起動していない・止めた)は、エラーのカードで伝え、入力欄の下のモデルの選択に「aibow-server につながりません」と出ます。
+  aibow-server を起動したら、ウィンドウに戻ったときにつなぎ直します(アプリを起動し直さなくてよい)。黙ってアプリの中で動かす形には切り替えません
+- サーバー越しで動いていることは、モデルの選択にマウスを乗せたときの吹き出しに、つなぎ先とともに出ます
+- `llama.cpp` の `lib` フォルダが無くても起動できます(アプリでは読み込まないため)
+
 ## 設定の変更
 
 設定は2つの画面に分かれています。どちらも、チャットの代わりに会話の場所に開きます。
@@ -312,7 +338,8 @@ curl http://127.0.0.1:8089/v1/chat/completions -H "Content-Type: application/jso
 | `OLLAMA_MODELS` | `%USERPROFILE%\.ollama\models` | Ollama の保存フォルダ(Ollama 自身と同じ変数) |
 | `AIBOW_LIB` | `lib` | llama.cpp の DLL があるフォルダ(相対パスはカレントフォルダが基準) |
 | `AIBOW_DB` | `%APPDATA%\aibow\aibow.db` | 会話を保存する SQLite のファイル。フォルダが無ければ作る |
-| `AIBOW_SETTINGS` | `%APPDATA%\aibow\settings.json` | 設定ファイル(手で書く設定。今は MCP のサーバーの `mcpServers` だけ)。無ければ MCP を使わない |
+| `AIBOW_SETTINGS` | `%APPDATA%\aibow\settings.json` | 設定ファイル(手で書く設定。MCP のサーバーの `mcpServers` と、aibow-server のつなぎ先 `serverUrl`)。無ければ MCP を使わない |
+| `AIBOW_SERVER_URL` | なし | 生成を頼む aibow-server のつなぎ先(例: `http://127.0.0.1:8089`)。書けばアプリは llama.cpp を読み込まない。settings.json の `serverUrl` が優先(「画面のアプリを aibow-server につなぐ」) |
 | `AIBOW_LOG_DIR` | `%APPDATA%\aibow\logs` | ログファイル(`aibow_<日付>.log`。日ごと)を書くフォルダ。exe は Notice 以上(起動した版・使ったモデル・変えた設定・注意・エラーなど)だけを書き、起動時に古いファイルを消して今日を含めて 10 日分を残す。異常終了したときは同じフォルダの `aibow_crash_<日時>.log` に内容が残る(次の起動で画面に知らせる)。MCP のサーバー `aibow-mcp` も同じフォルダの `aibow-mcp_<日付>.log` に、OpenAI 互換 API の `aibow-server` は `aibow-server_<日付>.log` に書く(どちらも Info 以上・10 日分)。フォルダが無ければ作る。`wails3 build` で作った exe は既定でここに書く。`wails3 dev` はターミナルに出し、ここの `aibow-dev_<日付>.log` にも書く(Info 以上・10 日分。exe のログと混ざらないよう名前を分けている) |
 | `AIBOW_TOOLS` | `%APPDATA%\aibow\tools.json` | ツールの扱いの、この PC の既定(設定の画面で変えたものを aibow が書く) |
 | `AIBOW_WINDOW` | `%APPDATA%\aibow\window.json` | ウィンドウの位置・大きさ・最大化(閉じるときに aibow が書き、次の起動でそこに開く)。消すと初めの大きさ(720×820)で真ん中に開く |

@@ -8,12 +8,13 @@
 //
 // 会話の上限・返事の上限(LimitsForm)だけは、入力しただけでは反映せず「適用」で反映する。
 // 作業領域(会話の上限 + 返事の上限)を作り直して VRAM に入るかを確かめてから保存するため。
-import { useEffect, useState, type ReactNode } from "react";
+import { useContext, useEffect, useState, type ReactNode } from "react";
 import { LuLock, LuLockOpen } from "react-icons/lu";
 import type { ConversationSettings } from "../../bindings/github.com/secondarykey/aibow";
 // Go の models パッケージ。"…/aibow/models" と書くと aibow パッケージの models.ts が選ばれるので、index まで書く
 import type { Entry as ModelEntry } from "../../bindings/github.com/secondarykey/aibow/models/index";
 import { FIX, fixedTitle, locked, type Lock } from "../profileRules";
+import { ServerContext } from "../serverContext";
 
 export function ConversationSettingsForm({ settings, models, lock, onChange }: {
   settings: ConversationSettings;
@@ -155,6 +156,7 @@ export function LimitsForm({ history, reply, disabled, lock, onApply }: {
 }) {
   const [h, setH] = useState(history);
   const [r, setR] = useState(reply);
+  const server = useContext(ServerContext);
   useEffect(() => {
     setH(history);
     setR(reply);
@@ -173,10 +175,18 @@ export function LimitsForm({ history, reply, disabled, lock, onApply }: {
       </FieldLabel>
       <NumberInput id="reply-tokens" value={r} min={256} step={1024} disabled={locked(lock, FIX.replyTokens)} onChange={setR} />
 
-      <p className="hint">
-        作業領域: <strong>{(h + r).toLocaleString()}</strong> トークン(会話の上限 + 返事の上限)。
-        会話を上限まで詰めても、返事を上限まで書ける大きさを確保します。変えても、モデルは読み直しません。
-      </p>
+      {server ? (
+        // aibow-server につないでいるときは、作業領域はサーバーが決めた大きさで固定(0015 の 3)
+        <p className="hint">
+          会話の上限 + 返事の上限: <strong>{(h + r).toLocaleString()}</strong> トークン。
+          aibow-server の作業領域{server.nCtx ? <>(<strong>{server.nCtx.toLocaleString()}</strong> トークン)</> : ""}の中で使います。
+        </p>
+      ) : (
+        <p className="hint">
+          作業領域: <strong>{(h + r).toLocaleString()}</strong> トークン(会話の上限 + 返事の上限)。
+          会話を上限まで詰めても、返事を上限まで書ける大きさを確保します。変えても、モデルは読み直しません。
+        </p>
+      )}
       <button className="apply" disabled={disabled || !changed} onClick={() => onApply(h, r)}>適用</button>
     </>
   );

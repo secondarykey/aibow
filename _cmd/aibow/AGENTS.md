@@ -11,8 +11,9 @@ Wails v3 のデスクトップアプリです。ルートの `aibow` パッケ�
 | `main.go` | Wails のアプリとウィンドウを作る(Frameless。タイトルバーは画面の `TitleBar.tsx`)。ウィンドウは初めて起動したとき 720×820(次からは閉じたときの位置と大きさ。`windowstate.go`)、最小 480×480。最初に `startLog`(aibow/log の `Init`)でログの出口を組む。`wails3 dev`(`isDev`)はターミナルと `%APPDATA%\aibow\logs\aibow-dev_<日付>.log` の両方に Info 以上、exe は `%APPDATA%\aibow\logs\aibow_<日付>.log` に Notice 以上(`AIBOW_LOG_DIR`。どちらも 10 日分を残して古いものは起動時に消す。`logKeepDays`)。異常終了(Go の panic など)は同じフォルダの `aibow_crash.log` に残し、次の起動で「前回は異常終了しました」を画面のお知らせとログで伝える(`log.CatchCrash`)。書けなくても起動は止めず、画面のお知らせで伝える |
 | `appversion.go` / `build_dev.go` / `build_production.go` | 表示するバージョン(`wails3 dev` では patch +1 と `+dev`)。dev かどうかは `production` のビルドタグで見分ける([_docs/deploy.md](../../_docs/deploy.md)) |
 | `windowstate.go` | ウィンドウの位置・大きさ・最大化を `%APPDATA%\aibow\window.json`(`AIBOW_WINDOW`)に覚え、次の起動で戻す。仕組みは [_docs/ui.md](../../_docs/ui.md) の「次の起動で戻すもの」 |
-| `config.go` | 環境変数の読み込み。`settings.json` を読んで MCP のサーバーの係(`mcp/client` の `Manager`)を作るのは `main.go` の `startMCP`(アプリを閉じるときに止める)、`tools.json` を読むのは `loadToolPrefs` |
-| `service.go` | `ChatService`。画面と `aibow.Conversations` / `Engine` の中継だけをする(モデル・会話・設定(`TryLimits` / `SetGPULayers` / 画面の設定の `SetDisplay` など)・メーター(`Usage`)・`Send` / `Compact` / `StopSummary`)。画面の設定(質問を右上に出す・明るさ)は DB に置き、実際のライト / ダークは画面の `theme.ts` が決める([_docs/ui.md](../../_docs/ui.md) の「明るさ」)。生成の回ごとの統計・compact・ツールの実行のログもここで出す |
+| `modelhost.go` | モデルを扱う係(`modelHost`。0015 の 11)。直接(`directHost`。engine を動かし、GPU の層数をアプリの DB に覚える)と aibow-server 越し(`remoteHost`。`api/client`。層の数はサーバーの PC に覚え、作業領域はサーバーで固定)の2つの実装。`ChatService` はどちらかを呼ぶだけ |
+| `config.go` | 環境変数の読み込み。`settings.json` も読み、つなぎ先(`serverUrl` > `AIBOW_SERVER_URL`)を決める(つなぐときは `lib` が無くてもよい)。`settings.json` を読んで MCP のサーバーの係(`mcp/client` の `Manager`)を作るのは `main.go` の `startMCP`(アプリを閉じるときに止める)、`tools.json` を読むのは `loadToolPrefs` |
+| `service.go` | `ChatService`。画面と `aibow.Conversations` / モデルを扱う係(`modelHost`)の中継だけをする(モデル・会話・設定(`TryLimits` / `SetGPULayers` / 画面の設定の `SetDisplay` など)・メーター(`Usage`)・`Send` / `Compact` / `StopSummary`)。画面の設定(質問を右上に出す・明るさ)は DB に置き、実際のライト / ダークは画面の `theme.ts` が決める([_docs/ui.md](../../_docs/ui.md) の「明るさ」)。生成の回ごとの統計・compact・ツールの実行のログもここで出す |
 | `frontend/src/` | チャット画面(React + TypeScript)。Vite でビルドした `frontend/dist` を `go:embed` で埋め込む。中身は [_docs/ui.md](../../_docs/ui.md) と [_docs/rendering.md](../../_docs/rendering.md) |
 | `frontend/bindings/` | `wails3 generate bindings` の生成物(コミットする。手で直さない) |
 | `build/` / `Taskfile.yml` | `wails3 init`(react テンプレート)由来のビルド設定。ios / android / docker は削除して `.gitignore` 済み |
@@ -27,7 +28,7 @@ Wails v3 のデスクトップアプリです。ルートの `aibow` パッケ�
 
 ## 環境変数
 
-`AIBOW_MODEL` / `AIBOW_MODELS_DIR` / `AIBOW_LIB` / `AIBOW_DB` / `AIBOW_SETTINGS` / `AIBOW_TOOLS` / `AIBOW_WINDOW` / `AIBOW_LOG_DIR` / `AIBOW_HISTORY_TOKENS` / `AIBOW_MAX_TOKENS` / `AIBOW_GPU_LAYERS` / `AIBOW_PRESENCE_PENALTY` / `AIBOW_LLAMA_LOG`、
+`AIBOW_MODEL` / `AIBOW_MODELS_DIR` / `AIBOW_LIB` / `AIBOW_DB` / `AIBOW_SETTINGS` / `AIBOW_SERVER_URL` / `AIBOW_TOOLS` / `AIBOW_WINDOW` / `AIBOW_LOG_DIR` / `AIBOW_HISTORY_TOKENS` / `AIBOW_MAX_TOKENS` / `AIBOW_GPU_LAYERS` / `AIBOW_PRESENCE_PENALTY` / `AIBOW_LLAMA_LOG`、
 Ollama の保存先は Ollama と同じ `OLLAMA_MODELS`。意味と既定値は [_docs/usage.md](../../_docs/usage.md) の表にある。
 
 - `AIBOW_CTX` は 0002 で廃止(設定されていたらログとトーストで伝える)
@@ -45,7 +46,10 @@ Ollama の保存先は Ollama と同じ `OLLAMA_MODELS`。意味と既定値は 
 
 ## 起動と終了
 
-- 起動時のモデルはウィンドウを出してから裏で読み込み、終わったら `models` イベントで画面に知らせる
+- 起動時のモデルはウィンドウを出してから裏で読み込み、終わったら `models` イベントで画面に知らせる。
+  aibow-server につなぐとき(`startModels`)は llama.cpp を読み込まず、起動時のモデルも読ませない(サーバーが読み込んでいる。0015 の 12)。
+  まだつながなくてよい(サーバーが起動していなくても、アプリは起動する)。つながらないときは `Models()` の `server_error` で理由を返し、画面はカードを1回出す。
+  一覧を取り直したとき(ウィンドウに戻ったとき・返事が終わったとき)につながれば、そのまま使える(0015 の 13)
 - モデルは会話ごと(0014 の 3)。送信の前に会話の仕組みが会話のモデルを読み込むときは、`modelLoader`(`aibow.ModelLoader`。`ChatService` のメソッドにすると画面から呼べてしまうので別の型)が `loadModel` を呼ぶ。
   `loadModel` はモデルごとに覚えた GPU の層数で読み込む(`WorkspaceSettings.LayersFor`)。`SetGPULayers` は読み込んでいるモデルの値として覚え(`model_gpu_layers`)、`AppSettings` はその値を返す。
   画面は入力欄の下でモデルを選んだとき、`SwitchModel` で読み込めたら会話のモデルを変える

@@ -14,7 +14,7 @@ aibow は、ローカルLLMを使ったアプリを**自分で作りながら仕
 
 完成品を早く作ることより、**各段階で何が起きているかが読んで分かること**を優先してください。
 
-## 全体の構成(ステップ6: OpenAI 互換 API)
+## 全体の構成(ステップ8: 画面のアプリを aibow-server につなぐ)
 
 ```
 ウィンドウ(_cmd/aibow/frontend の React) ⇄ Wails v3 ⇄ aibow ⇄ aibow/engine ⇄ yzma ⇄ llama.cpp(_cmd/aibow/lib\ の DLL)⇄ GPU
@@ -25,11 +25,14 @@ aibow は、ローカルLLMを使ったアプリを**自分で作りながら仕
 MCP のクライアント(Claude Code・aibow など)⇄ 標準入出力 ⇄ aibow-mcp(_cmd/aibow-mcp)= aibow/mcp/server ⇄ aibow/tool
 aibow の組み込みのツール: 会話の仕組み ⇄ aibow/mcp/client の Local ⇄ MCP(メモリ内)⇄ aibow/mcp/server ⇄ aibow/tool
 
-OpenAI 互換のクライアント(Cline など)⇄ HTTP(127.0.0.1)⇄ aibow-server(_cmd/aibow-server)= aibow/api ⇄ aibow/engine(画面のアプリとは同時に使わない)
+OpenAI 互換のクライアント(Cline など)⇄ HTTP(127.0.0.1)⇄ aibow-server(_cmd/aibow-server)= aibow/api ⇄ aibow/engine
+画面のアプリを aibow-server につなぐとき(settings.json の serverUrl。ステップ8):aibow ⇄ aibow/api/client ⇄ HTTP ⇄ aibow-server(アプリは llama.cpp を読み込まない。
+  つながないとき(既定)は上の図のとおりアプリの中で動かし、そのときは aibow-server と同時に使わない)
 ```
 
 - **Ollama などの外部 LLM サーバーは使わない**。aibow のプロセスの中で llama.cpp を直接動かす。
   これはユーザーの明確な方針なので、LLM サーバーを別プロセスで立てる構成を提案・導入しないこと
+  (aibow 自身の `aibow-server` は別。中で動くのは aibow の engine と llama.cpp で、ユーザーが決めて作ったもの。ステップ6・8)
 - ただし **Ollama を「モデルの管理係」として使うのは OK**(ユーザーの方針)。Ollama が保存したファイルを aibow が直接読む。Ollama のサーバーや API は使わない
 - 画面は Wails v3 のデスクトップアプリ。画面のアプリは HTTP サーバーを立てない(以前のブラウザ版から移行した。OpenAI 互換の API は別の exe `aibow-server` が立てる)。
   GUI の無い環境で確かめるための Wails の server モードは、確認用の一時ビルドだけで使う([_docs/env-cloud.md](_docs/env-cloud.md))

@@ -21,6 +21,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranscript } from "./transcript";
 import { Toasts, useToasts } from "./toast";
 import { useModels } from "./useModels";
+import { ServerContext } from "./serverContext";
 import type { Busy } from "./useModels";
 import { useConversations } from "./useConversations";
 import { useChat } from "./useChat";
@@ -369,7 +370,9 @@ export default function App() {
       const size = (history + reply).toLocaleString();
       toasts.notify(changed
         ? `会話の上限 ${history.toLocaleString()} + 返事の上限 ${reply.toLocaleString()} = 作業領域 ${size} トークンに作り直しました(モデルは読み直していません)`
-        : `会話の上限 ${history.toLocaleString()} + 返事の上限 ${reply.toLocaleString()} にしました(作業領域 ${size} トークン)`);
+        : models.server
+          ? `会話の上限 ${history.toLocaleString()} + 返事の上限 ${reply.toLocaleString()} にしました(aibow-server の作業領域の中で使います)`
+          : `会話の上限 ${history.toLocaleString()} + 返事の上限 ${reply.toLocaleString()} にしました(作業領域 ${size} トークン)`);
     } catch (err) {
       addError(errorMessage(err)); // Go 側で元の大きさに戻している。設定は保存しない
     }
@@ -512,8 +515,11 @@ export default function App() {
     width: listWidth.width,
   };
 
+  // aibow-server につないでいるか(上限の欄の説明を変える。0015)
+  const server = models.server ? { url: models.server, nCtx: models.current?.n_ctx ?? 0 } : null;
+
   return (
-    <>
+    <ServerContext.Provider value={server}>
       {/* 狭いときは、ここ(会話の横)はいつも畳んだ細い列で、開いた一覧は下の overlay に重ねて出す */}
       <ConversationList {...listProps} open={listOpen && !narrow} />
       {listOpen && !narrow && (
@@ -531,6 +537,6 @@ export default function App() {
       )}
       <Toasts toasts={toasts.toasts} onDismiss={toasts.dismiss} />
       <ImeFocusRelay />
-    </>
+    </ServerContext.Provider>
   );
 }
