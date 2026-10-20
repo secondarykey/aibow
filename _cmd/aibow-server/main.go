@@ -107,11 +107,17 @@ func run(f *flags) error {
 		log.Warn("GPU が見つかりません。CPU で動かすので、生成はかなり遅くなります")
 	}
 
-	m, err := findModel(catalog, c.Model)
+	state, err := loadState(c.StatePath)
 	if err != nil {
 		return err
 	}
-	info, err := eng.LoadModel(m)
+	mm := &modelManager{eng: eng, catalog: catalog, state: state, defaultLayers: cfg.GPULayers}
+	m, err := firstModel(mm, c.Model)
+	if err != nil {
+		return err
+	}
+	// 起動のときのモデルも、そのモデルに覚えた GPU の層数で読み込む
+	info, err := mm.Load(m)
 	if err != nil {
 		return err
 	}
@@ -132,7 +138,7 @@ func run(f *flags) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	hs := &http.Server{
-		Handler:           api.New(eng, defaults).Handler(),
+		Handler:           api.New(eng, mm, nCtx, defaults).Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 		// 書き込みの時間の上限(WriteTimeout)は付けない。返事の生成は数十秒〜数分かかることがあるため
 		BaseContext: func(net.Listener) context.Context { return ctx },
@@ -153,25 +159,14 @@ func run(f *flags) error {
 	return hs.Shutdown(sctx)
 }
 
-// findModel は、引数のモデルを一覧から探す。ID(ollama:qwen3.5:4b)・GGUF のパスのほか、
-// 一覧の名前(qwen3.5:4b。ollama list と同じ表示)でもよい。空なら一覧の先頭。
-func findModel(c models.Catalog, arg string) (models.Entry, error) {
-	list := c.List()
-	if arg == "" {
-		if len(list) == 0 {
-			return models.Entry{}, fmt.Errorf("モデルが1つも見つかりません。AIBOW_MODELS_DIR のフォルダに GGUF を置くか、ollama pull してください")
-		}
-		return list[0], nil
+// firstModel は、起動のときに読み込むモデルを探す。ID・GGUF のパス・一覧の名前で探し、空なら一覧の先頭。
+func firstModel(mm *modelManager, arg string) (models.Entry, error) {
+	if arg != "" {
+		return mm.Find(arg)
 	}
-	if m, err := c.Find(arg); err == nil {
-		return m, nil
+	list := mm.List()
+	if len(list) == 0 {
+		return models.Entry{}, fmt.Errorf("モデルが1つも見つかりません。-models(AIBOW_MODELS_DIR)のフォルダに GGUF を置くか、ollama pull してください")
 	}
-	names := make([]string, 0, len(list))
-	for _, m := range list {
-		if m.Name == arg {
-			return m, nil
-		}
-		names = append(names, m.Name)
-	}
-	return models.Entry{}, fmt.Errorf("モデル %q が見つかりません。使えるモデル: %s", arg, strings.Join(names, "・"))
+	return list[0], nil
 }

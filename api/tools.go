@@ -144,18 +144,50 @@ func argsFromJSON(arguments string) ([]tool.Arg, error) {
 	return args, nil
 }
 
+// mergeBroken は、履歴の assistant の読み取れた呼び出し(tool_calls)に、書式が崩れた呼び出し(aibow 欄)を元の並びで混ぜる(0015)。
+// 崩れた呼び出しは Raw(モデルが書いたまま)で書式に戻るので、プロンプトが前回モデルの書いた文字と同じになる。
+func mergeBroken(calls []format.ToolCall, broken []brokenCall) ([]format.ToolCall, error) {
+	if len(broken) == 0 {
+		return calls, nil
+	}
+	n := len(calls) + len(broken)
+	out := make([]format.ToolCall, n)
+	placed := make([]bool, n)
+	for _, b := range broken {
+		if b.Index < 0 || b.Index >= n || placed[b.Index] {
+			return nil, fmt.Errorf("aibow.broken_tool_calls の index %d が呼び出しの並び(全部で %d 個)に合いません", b.Index, n)
+		}
+		if b.Raw == "" {
+			return nil, fmt.Errorf("aibow.broken_tool_calls の index %d に raw がありません", b.Index)
+		}
+		out[b.Index] = format.ToolCall{Call: tool.Call{Name: b.Name}, Raw: b.Raw, Error: b.Error}
+		placed[b.Index] = true
+	}
+	j := 0
+	for i := range out {
+		if !placed[i] {
+			out[i] = calls[j]
+			j++
+		}
+	}
+	return out, nil
+}
+
 // toResponseCalls は、モデルが書いた呼び出しを返事の形にする(0012 の 6-2 でユーザーと決めた。2026-10-19)。
 //
 //   - 読み取れた呼び出しは tool_calls にする。tools の定義に合わない(知らない名前・引数の間違い・型が合わない)ものも、そのまま返す。
 //     クライアントのツールの検証でエラーになり、それがツールの結果としてモデルに返るので、aibow 自身のループと同じくモデルが直せる。合わない理由は Warn のログに出す
-//   - 書式が崩れて読み取れなかった呼び出しは、モデルが書いたままを答えの文字列(extra)として返す。
-//     クライアントには崩れた形が見え、Cline などは「ツールを使っていない」とモデルに言い返して立て直させる
-func toResponseCalls(calls []format.ToolCall, defs []tool.Def) (out []toolCall, extra string) {
-	var broken []string
-	for _, c := range calls {
+//   - 書式が崩れて読み取れなかった呼び出しは broken に入れる(全体の中の順番つき)。
+//     Cline などには、呼ぶ側がモデルの書いたままを答えの文字列に足して返す(joinBroken。0012 の形)。
+//     クライアントには崩れた形が見え、Cline などは「ツールを使っていない」とモデルに言い返して立て直させる。
+//     aibow のクライアントには aibow 欄で分けて返す(自分のループでエラーとしてモデルに返して直させるため。0015)
+//
+// exact は aibow のクライアントのとき。引数の値を、往復で1文字も変わらない形でだけ JSON の型の値にする(argumentsJSON)。
+func toResponseCalls(calls []format.ToolCall, defs []tool.Def, exact bool) (out []toolCall, broken []brokenCall) {
+	for i, c := range calls {
 		if c.Error != "" {
-			log.Warnf("書式が崩れた呼び出しを、答えの文字列として返します: %s", firstLine(c.Error))
-			broken = append(broken, c.Raw)
+			log.Warnf("書式が崩れた呼び出しを返します: %s", firstLine(c.Error))
+			broken = append(broken, brokenCall{Index: i, Name: c.Name, Raw: c.Raw, Error: c.Error})
 			continue
 		}
 		def := findDef(defs, c.Name)
@@ -169,17 +201,29 @@ func toResponseCalls(calls []format.ToolCall, defs []tool.Def) (out []toolCall, 
 		}
 		tc := toolCall{ID: "call_" + strings.ReplaceAll(uuid.NewV7().String(), "-", ""), Type: "function"}
 		tc.Function.Name = c.Name
-		tc.Function.Arguments = argumentsJSON(c.Args, def)
+		tc.Function.Arguments = argumentsJSON(c.Args, def, exact)
 		out = append(out, tc)
 	}
-	return out, strings.Join(broken, "\n")
+	return out, broken
+}
+
+// joinBroken は、崩れた呼び出しのモデルが書いたままを、答えに足す文字列にする(0012 の形。aibow のクライアントでないとき)。
+func joinBroken(broken []brokenCall) string {
+	raws := make([]string, len(broken))
+	for i, b := range broken {
+		raws[i] = b.Raw
+	}
+	return strings.Join(raws, "\n")
 }
 
 // argumentsJSON は引数を arguments(JSON のオブジェクトの文字列)にする。書いた順のまま並べる。
 //
 // 値の型は tools の JSON Schema を見て決める(tool.CheckArgs と同じ考え方)。文字列でない型で、モデルが書いた文字が
 // その型の JSON として読めるなら、書いた文字をそのまま値にする(往復で変わらないように)。読めなければ文字列のまま。
-func argumentsJSON(args []tool.Arg, def *tool.Def) string {
+//
+// exact なら、前後の空白を除いたり True を true に直したりしないと読めない値は、文字列のままにする。
+// aibow のクライアントは返ってきた値を書式に戻すので、1文字でも変わると KV キャッシュを使い回せなくなるため(0015 の 8)。
+func argumentsJSON(args []tool.Arg, def *tool.Def, exact bool) string {
 	types := map[string]string{}
 	if def != nil {
 		types = propertyTypes(def.Parameters)
@@ -192,7 +236,7 @@ func argumentsJSON(args []tool.Arg, def *tool.Def) string {
 		}
 		b.Write(jsonString(a.Name))
 		b.WriteString(":")
-		if raw, ok := typedValue(types[a.Name], a.Value); ok {
+		if raw, ok := typedValue(types[a.Name], a.Value); ok && (!exact || raw == a.Value) {
 			b.WriteString(raw)
 		} else {
 			b.Write(jsonString(a.Value))

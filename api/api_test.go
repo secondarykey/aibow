@@ -2,8 +2,10 @@ package api
 
 import (
 	"bufio"
+	"cmp"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -25,6 +27,7 @@ type fakeGen struct {
 	content []string
 	stop    string
 	calls   []format.ToolCall // モデルが書いたことにする呼び出し
+	id      string            // 読み込み中のモデル(空なら ollama:qwen3.5:4b)。fakeModels が書き換える
 
 	mu      sync.Mutex
 	prompts []format.Prompt
@@ -34,10 +37,16 @@ type fakeGen struct {
 }
 
 func (f *fakeGen) Info() *engine.ModelInfo {
-	return &engine.ModelInfo{ID: "ollama:qwen3.5:4b", NCtx: f.nCtx}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return &engine.ModelInfo{ID: cmp.Or(f.id, "ollama:qwen3.5:4b"), NCtx: f.nCtx}
 }
 
 func (f *fakeGen) CountTokens(p format.Prompt) (int, error) { return f.tokens, nil }
+
+func (f *fakeGen) ApplyTemplate(p format.Prompt) (string, error) {
+	return fmt.Sprintf("<%d 件の発言>", len(p.Messages)), nil
+}
 
 func (f *fakeGen) Generate(ctx context.Context, p format.Prompt, opt engine.GenerateOptions,
 	onPrompt func(string), onThinking, onContent func(string)) (format.Output, engine.GenerateStats, error) {
@@ -55,6 +64,7 @@ func (f *fakeGen) Generate(ctx context.Context, p format.Prompt, opt engine.Gene
 			return format.Output{}, engine.GenerateStats{StopReason: "cancel"}, nil
 		}
 	}
+	onPrompt("fake prompt")
 	var out format.Output
 	for _, t := range f.think {
 		onThinking(t)
@@ -69,7 +79,7 @@ func (f *fakeGen) Generate(ctx context.Context, p format.Prompt, opt engine.Gene
 }
 
 func newTestServer(g *fakeGen) *httptest.Server {
-	s := New(g, Defaults{Temperature: 0.7, MaxTokens: 100, PresencePenalty: 1.5, Think: true})
+	s := New(g, nil, 100, Defaults{Temperature: 0.7, MaxTokens: 100, PresencePenalty: 1.5, Think: true})
 	s.now = func() time.Time { return time.Unix(1700000000, 0) }
 	return httptest.NewServer(s.Handler())
 }

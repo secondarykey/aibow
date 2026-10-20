@@ -378,6 +378,20 @@ func (e *Engine) CountTokens(p format.Prompt) (int, error) {
 	return len(e.tokenize(e.format.BuildPrompt(p))), nil
 }
 
+// ApplyTemplate は、p に書式を当てた文字列(= 実際にモデルに渡す文字列)を返す。モデルが読み込まれていないと当てられない
+// (書式はモデルの種類で決まるため)。aibow-server の POST /apply-template が使う(0015)。
+func (e *Engine) ApplyTemplate(p format.Prompt) (string, error) {
+	e.vocabMu.RLock()
+	defer e.vocabMu.RUnlock()
+	if e.vocab == 0 {
+		return "", ErrNoModel
+	}
+	if e.format == nil {
+		return "", format.Unsupported(e.arch)
+	}
+	return e.format.BuildPrompt(p), nil
+}
+
 // tokenize は文字列をトークン列にする。特別なトークン(<|im_start|> など)は1トークンとして扱う(parseSpecial=true)。
 //
 // UTF-8 として正しくないバイト列を渡すと、llama.cpp の中で C++ の例外が投げられてプロセスごと落ちることがある

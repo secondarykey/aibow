@@ -14,9 +14,10 @@ Cline など [ 会話の仕組み + 手 ] ⇄ HTTP(OpenAI 互換。127.0.0.1 だ
 | `api/api.go` | `api` パッケージ。`Server`(道筋・`GET /v1/models`・エラーの形)と、使う生成の interface `Generator`(本物は `*engine.Engine`) |
 | `api/types.go` | やり取りする JSON の形と、リクエストを書式の形(`format.Prompt`)にする `toPrompt` |
 | `api/tools.go` | ツール呼び出しの変換(`tools` → `tool.Def`、履歴の `tool_calls` → 書式の呼び出し、モデルの呼び出し → `tool_calls`) |
-| `api/chat.go` | `POST /v1/chat/completions`。トークン数の確かめ・順番待ち・生成(まとめて / ストリーミング)・学習用のログ |
-| `api/api_test.go` | 偽物の生成でのテスト(モデル不要) |
-| `_cmd/aibow-server/` | exe(ステップ8で `aibow-api` から名前を変えた。0015)。`config.go` は設定(強さの順は 引数 > 設定ファイル `server.json` > 環境変数 > 既定)、`main.go` はエンジンとモデルを用意して `api` を `127.0.0.1` で待ち受けるだけ。`log.go` はログの出口(`aibow-server_<日付>.log`)、`version` / `appversion.go` はアプリと同じバージョン(`_cmd/aibow/version` の写し) |
+| `api/chat.go` | `POST /v1/chat/completions`。順番待ち・モデルの読み直し・トークン数の確かめ・生成(まとめて / ストリーミング)・学習用のログ。`POST /apply-template`・`POST /aibow/count-tokens` も |
+| `api/models.go` | モデルの一覧と読み込み(ステップ8)。使う係の interface `Models`(本物は `_cmd/aibow-server` の `modelManager`)・`GET /models`・`POST /models/load`・`POST /aibow/gpu-layers` |
+| `api/api_test.go`・`api/aibow_test.go` | 偽物の生成とモデルの係でのテスト(モデル不要) |
+| `_cmd/aibow-server/` | exe(ステップ8で `aibow-api` から名前を変えた。0015)。`config.go` は設定(強さの順は 引数 > 設定ファイル `server.json` > 環境変数 > 既定)、`models.go` はモデルの係(GPU の層数を `server-models.json` に覚える)、`main.go` はエンジンとモデルを用意して `api` を `127.0.0.1` で待ち受けるだけ。`log.go` はログの出口(`aibow-server_<日付>.log`)、`version` / `appversion.go` はアプリと同じバージョン(`_cmd/aibow/version` の写し) |
 
 依存の向きは `_cmd/aibow-server` → `api` → `engine` → `format` → `tool`。`api` はルートの `aibow`(会話の仕組み)を import しない。
 会話の保存・compact・エージェントループ・ツールの実行はクライアントの仕事なので、API の側には持たない。
@@ -28,12 +29,13 @@ Cline など [ 会話の仕組み + 手 ] ⇄ HTTP(OpenAI 互換。127.0.0.1 だ
    - `system` と `developer`(OpenAI の新しい名前)は先頭にだけ置ける。先頭に続けて複数あれば `\n\n` でつなぐ。途中にあれば 400(Qwen3.5 の公式テンプレートが途中の system をエラーにするため)
    - `assistant` の `reasoning_content` は思考(`Thinking`)に戻す。プロンプトに入れるかは書式が決める(ツールのループの途中の返事だけ)
    - `assistant` の `tool_calls` は書式の呼び出しに、`tool` の役の発言はツールの結果に戻す(下の「ツール呼び出し」)。`tools` は `tool.Def` にしてモデルに知らせる
-2. 書式を当てたトークン数を数え(`CountTokens`)、作業領域に入らなければ **400・`code: context_length_exceeded`**(OpenAI と同じ形)。compact はしない(履歴を持つのはクライアント)。
-   数えるのは生成中でもできる(`engine` の `vocabMu`)ので、順番を待つ前に断れる。返事の分の空きまでは求めない(足りなくなったら止めて `finish_reason: length`)
-3. **順番を待つ**。作業領域が1つなので生成は1つずつ。席が1つのチャンネル(`Server.turn`)で待たせ、断らない。待っている間につながりが切れたら列から外れる
-4. 生成する。リクエストの context を `Engine.Generate` に渡すので、クライアントがつながりを切ると次のトークンで止まる(`終了理由: cancel`)
-5. モデルが書いた呼び出しを `tool_calls` にする(`api/tools.go`)
-6. ログ(Info)に1行:まとめて / ストリーミング・発言の数・ツールの数・順番待ちの秒数・プロンプトのトークン数・**KV キャッシュの再利用**・生成のトークン数と速さ・終了の理由・返した呼び出しの数
+2. **順番を待つ**。作業領域が1つなので生成は1つずつ。席が1つのチャンネル(`Server.turn`)で待たせ、断らない。待っている間につながりが切れたら列から外れる
+3. リクエストの `model` が読み込み中のモデルと違えば**読み直す**(ステップ8。下の「aibow 専用の口と欄」)。順番待ちの席の中で行うので、生成と取り合わない
+4. 書式を当てたトークン数を数え(`CountTokens`)、作業領域に入らなければ **400・`code: context_length_exceeded`**(OpenAI と同じ形)。compact はしない(履歴を持つのはクライアント)。
+   読み直すとモデル(語彙と書式)が変わって数も変わるので、順番待ちと読み直しの後に数える(0012 では順番を待つ前に数えていた)。返事の分の空きまでは求めない(足りなくなったら止めて `finish_reason: length`)
+5. 生成する。リクエストの context を `Engine.Generate` に渡すので、クライアントがつながりを切ると次のトークンで止まる(`終了理由: cancel`)
+6. モデルが書いた呼び出しを `tool_calls` にする(`api/tools.go`)
+7. ログ(Info)に1行:まとめて / ストリーミング(aibow のクライアントなら「・aibow」)・モデル・発言の数・ツールの数・順番待ちの秒数・プロンプトのトークン数・**KV キャッシュの再利用**・生成のトークン数と速さ・終了の理由・返した呼び出しの数
 
 ## 返すもの
 
@@ -41,7 +43,10 @@ Cline など [ 会話の仕組み + 手 ] ⇄ HTTP(OpenAI 互換。127.0.0.1 だ
 - 思考のオン・オフはリクエストの **`chat_template_kwargs.enable_thinking`**(llama.cpp の server・vLLM と同じ)。書かなければ思考あり(アプリの既定と同じ)
 - `finish_reason`:ツール呼び出しを返すときは `tool_calls`。それ以外は、エンジンの `eos`(発言の終わり)・`stop`(書式が決めた位置で止めた)は `stop`、`length`(返事の上限)・`context`(作業領域がいっぱい)は `length`
 - `usage`:`prompt_tokens`・`completion_tokens`(思考 + 答え)・`total_tokens` と、`prompt_tokens_details.cached_tokens`(KV キャッシュを使い回せた数。OpenAI の「キャッシュされた入力」と同じ欄)
-- `model` はリクエストの値を見ず、読み込み中のモデルの ID(`ollama:qwen3.5:4b` など)を返す。違う名前が来たら Info のログを出す。`/v1/models` も読み込み中の1つだけ
+- `model` は、リクエストの値が使えるモデル(ID・`qwen3.5:4b` のような一覧の名前・GGUF のパス)なら、それを読み込んでから答える(ステップ8。0012 では見なかった)。
+  知らない名前なら読み込み中のモデルで答え、Info のログを出す(Cline などがおかしな名前を送ってきても動くように)。返事の `model` は読み込み中のモデルの ID(`ollama:qwen3.5:4b` など)。
+  `/v1/models` は使えるモデルを全部返す
+- `timings`:生成の時間とトークン数(llama.cpp の server と同じ欄。下の「aibow 専用の口と欄」)。小さいので、いつも返す
 - サンプリング:`temperature`・`max_tokens`(`max_completion_tokens` があればそちら)・`presence_penalty`。書かれていなければアプリの既定(0.7・`AIBOW_MAX_TOKENS`・`AIBOW_PRESENCE_PENALTY`)。
   「書かれていない」と「0」を見分けるため、JSON の数の欄はポインタで読む(`temperature: 0` は greedy)
 - エラーは OpenAI と同じ `{"error": {"message", "type", "code"}}`。知らないパスは 404、メソッドが違えば 405(Go の `ServeMux` が返す)
@@ -61,7 +66,7 @@ API では `tools` を JSON Schema で渡し、`tool_calls` が JSON で返る�
 - **引数の型**:Qwen3.5 の書式は値をいつも文字列で書く。返すときは、型が文字列でない引数で、モデルが書いた文字がその型の JSON として読めれば、その文字をそのまま JSON の値にする(`5`・`["x", "y"]`)。
   戻ってきたときは、文字列の値は中身に、それ以外は JSON の文字のまま書式に戻す。キーの順番も保つ。**往復で1文字も変わらないので、ツールのループで KV キャッシュを前回の生成の分まで使い回せる**
 - 定義に合わない呼び出し(知らない名前・引数の間違い・型の合わない値)も、そのまま返す。クライアントのツールの検証でエラーになり、ツールの結果としてモデルに返るので、モデルが直せる。理由は Warn のログ
-- 書式が崩れて読み取れなかった呼び出しは、モデルが書いたままを答えの後ろに足して返す(Warn のログ)
+- 書式が崩れて読み取れなかった呼び出しは、モデルが書いたままを答えの後ろに足して返す(Warn のログ)。aibow のクライアントには答えに足さず、`aibow.broken_tool_calls` で分けて返す(下)
 - `tool_call_id` は読まない(書式は呼び出しと結果の順番で対応させる)。`tool_choice` は `"none"` だけを見る(ほかは強制できないので `"auto"` と同じ)
 - ストリーミングでは、生成が終わってから呼び出し1つにつき1つの塊で、`index` 付きで引数まで全部を送る(書式は呼び出しの部分を生成の後で読み取るため)
 
@@ -74,12 +79,50 @@ data: {"object":"chat.completion.chunk", …, "choices":[{"index":0,"delta":{"ro
 data: { … "delta":{"reasoning_content":"考え"} …}       ← 思考
 data: { … "delta":{"content":"富士"} …}                 ← 答え(トークンの切れ目で少しずつ)
 data: { … "delta":{"tool_calls":[{"index":0,"id":"call_…","type":"function","function":{…}}]} …}  ← 呼び出し(あれば。1つずつ)
-data: { … "delta":{},"finish_reason":"stop"}]}          ← 終了の理由
+data: { … "delta":{},"finish_reason":"stop"}],"timings":{…}}  ← 終了の理由(timings と、aibow のクライアントなら aibow 欄も)
 data: { … "choices":[],"usage":{…}}                     ← stream_options.include_usage のときだけ
 data: [DONE]
 ```
 
 ステータスは最初に 200 で送ってしまうので、生成の途中のエラーは `data: {"error": …}` の塊で送る(OpenAI も同じ)。
+
+## aibow 専用の口と欄(ステップ8。0015)
+
+画面のアプリ(aibow のクライアント)が使っているのに、OpenAI の標準に無いもの(トークン数・モデルに渡した文字列・生成の時間・崩れたツール呼び出し・モデルの切り替え)を、
+**標準の形を壊さずに**足した。Cline などから見た `/v1/models`・`/v1/chat/completions` の形は変わらない。
+意味が同じものは **llama.cpp の server の名前にそろえ**、無いものだけ `/aibow/` と `aibow` 欄に置いた(2026-10-21、ユーザーと決めた)。
+
+### 口(`/v1/` の外)
+
+| 口 | 本文 → 返事 | 順番待ち | 元にしたもの |
+|---|---|---|---|
+| `GET /models` | → `{"object":"list","data":[{"id","name","source","size_gb","status":{"value":"loaded"\|"unloaded"},"n_gpu_layers"}],"current":<読み込み中のモデルの情報>,"n_ctx","gpu"}` | 待たない | llama.cpp の router の `GET /models`(`status.value`) |
+| `POST /models/load` | `{"model"}` → `{"success":true,"model":<読み込んだモデルの情報>}` | 待つ | llama.cpp の router の `POST /models/load` |
+| `POST /apply-template` | チャットと同じ本文 → `{"prompt"}`(書式を当てた文字列) | 待たない | llama.cpp の `POST /apply-template` |
+| `POST /aibow/count-tokens` | チャットと同じ本文 → `{"n_tokens"}`(書式を当てた文字列のトークン数) | 待たない | aibow だけ(llama.cpp の `/tokenize` は文字列を受け取るので、書式を当てる分まで1回で済むよう別にした) |
+| `POST /aibow/gpu-layers` | `{"model","n_gpu_layers"}` → `{"success":true,"model":<読み直したモデルの情報 か null>}` | 待つ | aibow だけ(llama.cpp は起動のときの preset ファイルで決める) |
+
+- `n_ctx` はサーバーの作業領域の大きさ。**起動のときに決めた大きさで固定**で、クライアントからは変えられない(共有するサーバーで1人の都合で作り直すと、ほかの人の KV キャッシュが消えるため。0015 の 3)
+- `/aibow/gpu-layers` の `model` を書かなければ読み込み中のモデル。読み込み中のモデルなら読み直し、読み直せたら覚える。読み込んでいないモデルは覚えるだけ(次に読み込むときから効く)。
+  覚える場所はサーバーの PC の `server-models.json`(GPU の層数は「その PC の人が決めること」なので。アプリの DB の `model_gpu_layers` とは別)
+- 読み込み・読み直しは順番待ちの席の中で行う(生成と取り合わない)。数えるのと書式を当てるのは、生成中でもできる(`engine` の `vocabMu`)
+
+### `/v1/chat/completions` に足した欄
+
+```
+頼み   "aibow": {"return_prompt": true}                        ← 書けば aibow のクライアント。return_prompt でモデルに渡した文字列も返す
+返事   "timings": {"cache_n","prompt_n","prompt_ms","prompt_per_second","predicted_n","predicted_ms","predicted_per_second"}  ← いつも
+       "aibow": {"prompt","stop_reason","broken_tool_calls":[{"index","name","raw","error"}]}  ← aibow のクライアントだけ
+履歴   assistant の "aibow": {"broken_tool_calls":[…]}         ← 返ってきたものをそのまま送り返す
+```
+
+- `timings` は llama.cpp と同じ意味にした:`prompt_n` は今回読み込んだ(KV キャッシュを使い回せなかった)数、`cache_n` は使い回せた数。プロンプトのトークン数は足したもの
+- `stop_reason` はエンジンの細かい終了の理由(`eos`・`stop`・`length`・`context`・`cancel`)。`finish_reason` では `length` と `context` を見分けられないため
+- `prompt` は長いので頼んだときだけ。ストリーミングなら生成の前に、`choices` が空で `aibow.prompt` だけの塊を1つ送る
+- `broken_tool_calls` の `index` は、読み取れた呼び出し(`tool_calls`)と合わせた全体の中の順番。aibow のクライアントは自分のループで「エラーとしてモデルに返して直させる」ので、答えに足さずに分けて返す。
+  履歴で送り返すと、`index` の位置に混ぜ戻し、書式はモデルが書いたまま(`raw`)をプロンプトに入れる
+- aibow のクライアントには、引数の値を**往復で1文字も変わらない形でだけ** JSON の型の値にする(Cline などには、前後の空白を除いたり `True` を `true` に直したりしても型の値にする)。
+  aibow のクライアントは返ってきた値を書式に戻すので、1文字でも変わると KV キャッシュを使い回せなくなるため(0015 の 8)
 
 ## KV キャッシュの再利用(実際に動かして分かったこと。2026-10-19)
 

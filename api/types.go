@@ -44,6 +44,54 @@ type chatRequest struct {
 	Tools []requestTool `json:"tools"`
 	// ToolChoice は "auto"・"none"・"required"・特定のツールの指定。"none" ならツールを知らせない(useTools)
 	ToolChoice json.RawMessage `json:"tool_choice"`
+
+	// Aibow は aibow のクライアント(画面のアプリ)が頼むもの(0015)。書いてあれば、返事に aibow の欄を足す。
+	// OpenAI の標準には無い欄なので、Cline などは書かない(書かなければ 0012 の形のまま返す)
+	Aibow *aibowRequest `json:"aibow"`
+}
+
+// aibowRequest は、aibow のクライアントが頼むもの。
+type aibowRequest struct {
+	// ReturnPrompt を立てると、モデルに渡した文字列を返す(学習用に画面に出すため。長いので頼んだときだけ)
+	ReturnPrompt bool `json:"return_prompt"`
+}
+
+// aibowResult は、aibow のクライアントに返す欄(返事の "aibow")。標準の形では表せない、画面が使うもの。
+type aibowResult struct {
+	// Prompt はモデルに渡した文字列(return_prompt のときだけ。ストリーミングなら生成の前の塊で送る)
+	Prompt string `json:"prompt,omitempty"`
+	// StopReason は細かい終了の理由(eos / stop / length / context / cancel)。finish_reason では length と context が見分けられないため
+	StopReason string `json:"stop_reason,omitempty"`
+	// BrokenToolCalls は書式が崩れて読み取れなかった呼び出し。0012 の形では答えの文字列に足していたが、
+	// aibow のクライアントは自分のループで「エラーとしてモデルに返して直させる」ので、分けて返す
+	BrokenToolCalls []brokenCall `json:"broken_tool_calls,omitempty"`
+}
+
+// brokenCall は書式が崩れた呼び出し1つ。Index は、読み取れた呼び出し(tool_calls)と合わせた全体の中での順番。
+// 書式は呼び出しを書いた順にプロンプトに戻すので、履歴で送り返すときに元の並びに戻せるようにする。
+type brokenCall struct {
+	Index int    `json:"index"`
+	Name  string `json:"name,omitempty"` // 読み取れた関数名(読めなければ空)
+	Raw   string `json:"raw"`            // モデルが書いたまま(次のプロンプトにはこれをそのまま入れる)
+	Error string `json:"error"`
+}
+
+// messageExtra は、履歴の assistant の発言に aibow のクライアントが足すもの。
+type messageExtra struct {
+	BrokenToolCalls []brokenCall `json:"broken_tool_calls"`
+}
+
+// timings は生成の時間とトークン数。llama.cpp の server と同じ名前・同じ意味にした(0015)。
+// prompt_n は今回読み込んだ(KV キャッシュを使い回せなかった)トークン数、cache_n は使い回せた数。足すとプロンプトのトークン数。
+// 小さいので、頼まれなくてもいつも返す(Cline などは知らない欄を読まない)。
+type timings struct {
+	CacheN             int     `json:"cache_n"`
+	PromptN            int     `json:"prompt_n"`
+	PromptMS           float64 `json:"prompt_ms"`
+	PromptPerSecond    float64 `json:"prompt_per_second"`
+	PredictedN         int     `json:"predicted_n"`
+	PredictedMS        float64 `json:"predicted_ms"`
+	PredictedPerSecond float64 `json:"predicted_per_second"`
 }
 
 // chatMessage はリクエストの発言1件。
@@ -58,6 +106,9 @@ type chatMessage struct {
 	ToolCalls []toolCall `json:"tool_calls"`
 	// ToolCallID は tool の役の発言が、どの呼び出しの結果か。Qwen3.5 の書式は id を使わず、呼び出しと結果の順番で対応させるので読まない
 	ToolCallID string `json:"tool_call_id"`
+
+	// Aibow は aibow のクライアントが足す欄(書式が崩れた呼び出し。次のプロンプトには、モデルが書いたままを入れるため)
+	Aibow *messageExtra `json:"aibow"`
 }
 
 // contentPart は Content を配列で送ってきたときの部品1つ。
@@ -128,6 +179,9 @@ func toPrompt(req chatRequest, think bool) (format.Prompt, error) {
 			msgs = append(msgs, format.Message{Role: "user", Content: text})
 		case "assistant":
 			calls, err := fromRequestCalls(m.ToolCalls)
+			if err == nil && m.Aibow != nil {
+				calls, err = mergeBroken(calls, m.Aibow.BrokenToolCalls)
+			}
 			if err != nil {
 				return format.Prompt{}, fmt.Errorf("messages[%d]: %w", i, err)
 			}
@@ -155,6 +209,11 @@ type completion struct {
 	Model   string   `json:"model"`
 	Choices []choice `json:"choices"` // 使ったトークン数だけの最後の塊は空の配列([])
 	Usage   *usage   `json:"usage,omitempty"`
+
+	// Timings は生成の時間(llama.cpp の server と同じ欄)。ストリーミングなら終了の理由の塊に入れる
+	Timings *timings `json:"timings,omitempty"`
+	// Aibow は aibow のクライアントが頼んだときだけ入れる欄
+	Aibow *aibowResult `json:"aibow,omitempty"`
 }
 
 type choice struct {

@@ -210,7 +210,7 @@ aibow-server [-model モデル] [-ctx 作業領域の大きさ] [-port ポート
 
 - **画面のアプリと同時には使わないでください**(VRAM にモデルを2つ載せられないため。使うときはアプリを閉じます)
 - `-model` は `ollama:qwen3.5:4b` のような ID・`qwen3.5:4b` のような一覧の名前・GGUF ファイルのパス。書かなければ `AIBOW_MODEL`、それも無ければ一覧の先頭です。
-  リクエストの `model` ではモデルを切り替えません(いつも起動したときのモデルで答えます)
+  `-model` は起動したときに読み込むモデルで、リクエストの `model` が違えば読み直してから答えます(数秒〜十数秒。知らない名前なら読み込み中のモデルで答えます)。`/v1/models` は使えるモデルを全部返します
 - `-ctx` は作業領域の大きさ(プロンプト + 返事のトークン数。既定 32768。`AIBOW_SERVER_CTX`)。履歴がこれに入らないリクエストは、400 のエラー(`code: context_length_exceeded`)で断ります(compact はしません)
 - `-port` は待ち受けのポート(既定 8089。`AIBOW_SERVER_PORT`)。待ち受けは `127.0.0.1` だけで、PC の外からはつなげません
 - `-lib`・`-models` は llama.cpp の DLL のフォルダと GGUF を置くフォルダ(既定はカレントフォルダの `lib`・`models`。`AIBOW_LIB`・`AIBOW_MODELS_DIR`)。
@@ -258,7 +258,7 @@ VS Code の Cline(4.1.23 で確かめた)の設定(歯車)で、次のように�
 | Context Window Size(MODEL CONFIGURATION) | aibow-server の `-ctx` と同じ(既定 32768) |
 
 - Cline はネイティブのツール呼び出し(`tools`)で送ってきます。最初のプロンプトは 3,000 トークンほどです
-- モデルを変えるときは、aibow-server を `-model` で起動し直し、Cline の Model ID も合わせます
+- モデルを変えるときは、Cline の Model ID を変えます(次のリクエストで aibow-server が読み直します)
 - 比べた結果は [tuning.md](tuning.md) の「Cline からつないで比べる」
 
 curl で試すときは次のようにします(Windows の Git Bash でも動きます)。
