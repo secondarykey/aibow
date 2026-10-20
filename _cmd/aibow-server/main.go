@@ -72,6 +72,8 @@ func run(f *flags) error {
 	if c.File != "" {
 		log.Noticef("設定ファイル: %s", absPath(c.File))
 	}
+	// 待ち受けるアドレスは、モデルを読み込む前に出しておく(読み込みに失敗しても、どこで待ち受けるつもりだったかが分かるように)
+	log.Noticef("待ち受けるアドレス: http://127.0.0.1:%d(llama.cpp とモデルを読み込んでから待ち受けます)", c.Port)
 	// llama.cpp・モデルの場所は設定(引数・設定ファイル・環境変数)、GPU の層数・返事の既定はアプリと同じ環境変数で決める
 	// (画面の DB は読まない。DB はアプリのもの)
 	nCtx, port := c.Ctx, c.Port
@@ -146,8 +148,11 @@ func run(f *flags) error {
 	}
 	errc := make(chan error, 1)
 	go func() { errc <- hs.Serve(ln) }()
-	log.Noticef("%s %s を起動しました。待ち受け: http://%s/v1(返事の上限の既定 %d・presence penalty %.1f)",
-		logPrefix, appVersion(), addr, defaults.MaxTokens, defaults.PresencePenalty)
+	log.Noticef("%s %s を起動しました(返事の上限の既定 %d・presence penalty %.1f)",
+		logPrefix, appVersion(), defaults.MaxTokens, defaults.PresencePenalty)
+	// つなぐ側が書く値をそのまま出す(画面のアプリは /v1 なし、Cline などの OpenAI 互換のクライアントは /v1 付き)
+	log.Noticef("画面のアプリのつなぎ先(settings.json の serverUrl / AIBOW_SERVER_URL): http://%s", addr)
+	log.Noticef("OpenAI 互換のクライアント(Cline など)の Base URL: http://%s/v1", addr)
 
 	select {
 	case err := <-errc:
