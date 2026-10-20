@@ -1,13 +1,10 @@
 // プロファイルの「ツール」: このプロファイルでのツールの扱いを、1つの一覧で決める(0014。2026-10-20、ユーザーと決めた形)。
 //
-// グループ(組み込み / MCP のサーバー)は3択:
-//   最初から使う   … 新しい会話で最初から選ぶ(値)
-//   選べば使える   … 新しい会話では選ばないが、会話の「この会話のツール」で選べば使える(値)
-//   使えない       … このプロファイルの会話では使えない(決まり。会話で選んでも使えない)
-// ツールの行:
-//   チェック       … 新しい会話で最初から使う(値。外すと「選べば使える」。会話の上書き off として写す)
+// グループ(組み込み / MCP のサーバー)の見出しと、ツールの行は同じ形(2026-10-20、ユーザーの指示でそろえた。前はグループだけ3択の選択):
+//   チェック       … 新しい会話で最初から使う(値。外すと「選べば使える」= 会話で選べば使う)。
+//                    グループは新しい会話で最初から選ぶか、ツールは会話の上書き off として写すか
 //   確認しない     … この PC の既定(tools.json)。どのプロファイルでも同じ(枠の吹き出しにそう書く)
-//   錠             … 使えない(決まり。会話で変えさせない)。錠をかけたツールはチェックも外れる
+//   錠             … 使えない(決まり。会話で変えさせない)。錠をかけるとチェックも外れる。グループに錠をかけると、中のツールも押せない
 // チェックの向きは、グループもツールも「使う」にそろえる(チェック = 使う)。
 //
 // MCP のサーバーのツールの一覧は、サーバーを最後に起動したときに Go が tools.json に覚えたもの。
@@ -24,14 +21,6 @@ import { TOOL_LABELS } from "../toolLabels";
 import { ConfirmChip } from "./ConfirmChip";
 import { FixMark } from "./ConversationSettingsForm";
 import { BUILTIN } from "./ToolBar";
-
-type GroupUse = "use" | "select" | "off";
-
-const USE_LABELS: Record<GroupUse, string> = {
-  use: "最初から使う",
-  select: "選べば使える",
-  off: "使えない",
-};
 
 // 「確認しない」はこの PC の値なので、どのプロファイルでも同じことを吹き出しに添える
 const PC_NOTE = "(この PC の設定。どのプロファイルでも同じ)";
@@ -95,25 +84,28 @@ export function ProfileTools({ profile, servers, lock, onChange, onPCChanged }: 
   const toolsOff = v.tools_off ?? [];
   const offTools = off.tools ?? [];
 
-  const useOf = (group: string): GroupUse => {
-    if (group === "" ? off.builtin : (off.servers ?? []).includes(group)) return "off";
-    if (group === "" ? !v.builtin_off : (v.mcp_servers ?? []).includes(group)) return "use";
-    return "select";
-  };
-  const setUse = (group: string, use: GroupUse) => onChange(p => {
+  const groupLocked = (group: string) => !!(group === "" ? off.builtin : (off.servers ?? []).includes(group));
+  const groupUsed = (group: string) => group === "" ? !v.builtin_off : (v.mcp_servers ?? []).includes(group);
+  // グループのチェック: 新しい会話で最初から使うか(外すと「選べば使える」)
+  const setGroupUse = (group: string, on: boolean) => onChange(p => {
+    if (group === "") return { ...p, values: { ...p.values, builtin_off: !on } };
+    const cur = (p.values.mcp_servers ?? []).filter(n => n !== group);
+    return { ...p, values: { ...p.values, mcp_servers: on ? [...cur, group].sort() : cur } };
+  });
+  // グループの錠: 使えない。かけるとチェックも外す。外しても「選べば使える」のまま(ツールの錠と同じ)
+  const setGroupLocked = (group: string, locked: boolean) => onChange(p => {
     const o = p.rules.off ?? {};
     const vals = { ...p.values };
-    const rules = { ...p.rules, off: { ...o } };
+    const nextOff = { ...o };
     if (group === "") {
-      vals.builtin_off = use !== "use";
-      rules.off.builtin = use === "off";
+      vals.builtin_off = true;
+      nextOff.builtin = locked;
     } else {
-      const servers = (vals.mcp_servers ?? []).filter(n => n !== group);
-      vals.mcp_servers = use === "use" ? [...servers, group].sort() : servers;
+      vals.mcp_servers = (vals.mcp_servers ?? []).filter(n => n !== group);
       const offs = (o.servers ?? []).filter(n => n !== group);
-      rules.off.servers = use === "off" ? [...offs, group].sort() : offs;
+      nextOff.servers = locked ? [...offs, group].sort() : offs;
     }
-    return { ...p, values: vals, rules };
+    return { ...p, values: vals, rules: { ...p.rules, off: nextOff } };
   });
   // ツールのチェック: 新しい会話で最初から使うか(外すと「選べば使える」)
   const setDefaultUse = (name: string, on: boolean) => onChange(p => {
@@ -153,27 +145,22 @@ export function ProfileTools({ profile, servers, lock, onChange, onPCChanged }: 
         <FixMark item={FIX.toolGroups} lock={lock} />
       </div>
       {groups.map(g => {
-        const use = useOf(g.group);
-        const groupOff = use === "off";
+        const groupOff = groupLocked(g.group);
+        const used = !groupOff && groupUsed(g.group);
         const shown = !!opened[g.group];
         const isServer = g.group !== "";
         const usable = g.tools.filter(t => !groupOff && !offTools.includes(t.name)).length;
         const groupAllow = g.pcPolicy === ToolPolicy.ToolAllow;
         return (
-          <div key={g.group} className={"tool-group" + (use === "use" ? " on" : "")}>
+          <div key={g.group} className={"tool-group" + (used ? " on" : "")}>
             <div className="tool-group-head">
               <button type="button" className="tool-open" onClick={() => setOpened(o => ({ ...o, [g.group]: !o[g.group] }))} title={shown ? "畳む" : "ツールの一覧を開く"}>
                 {shown ? <LuChevronDown /> : <LuChevronRight />}
               </button>
-              <span className="tool-group-name" title={g.title}>{g.name}</span>
-              <select
-                className={"group-use " + use}
-                value={use}
-                title="最初から使う: 新しい会話で最初から選ぶ / 選べば使える: 会話で選べば使う / 使えない: このプロファイルの会話では使えない"
-                onChange={e => setUse(g.group, e.target.value as GroupUse)}
-              >
-                {(Object.keys(USE_LABELS) as GroupUse[]).map(k => <option key={k} value={k}>{USE_LABELS[k]}</option>)}
-              </select>
+              <label className="check" title={groupOff ? "使えない(錠を外すと選べる)" : `${g.title}。チェックすると、新しい会話で最初から使う(外すと、会話で選べば使える)`}>
+                <input type="checkbox" checked={used} disabled={groupOff} onChange={e => setGroupUse(g.group, e.target.checked)} />
+                <span className="tool-group-name">{g.name}</span>
+              </label>
               {!groupOff && (
                 <ConfirmChip
                   allow={groupAllow}
@@ -183,6 +170,12 @@ export function ProfileTools({ profile, servers, lock, onChange, onPCChanged }: 
                   onToggle={a => pc(ChatService.SetGroupPolicy(g.group, a ? ToolPolicy.ToolAllow : ToolPolicy.$zero))}
                 />
               )}
+              <LockChip
+                on={groupOff}
+                disabled={false}
+                title={groupOff ? "使えない(このプロファイルの会話では、このグループのツールを使えない)。押すと外す" : "使えないにする(このプロファイルの会話では、このグループのツールを使えなくする)"}
+                onToggle={l => setGroupLocked(g.group, l)}
+              />
               {g.tools.length > 0 && <span className="tool-count">{usable} / {g.tools.length}</span>}
               {isServer && shown && (
                 <button type="button" className="tool-reload" disabled={loading[g.group]} onClick={() => loadList(g.group)} title="ツールの一覧を読み直す(サーバーを一時的に起動します)">
