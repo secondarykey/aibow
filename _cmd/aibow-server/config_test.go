@@ -65,7 +65,7 @@ func TestResolveConfigErrors(t *testing.T) {
 	}
 }
 
-// ログのレベル:設定ファイルの logLevel > -debug > 既定(go run は Info。go test も go-build の下で動くので Info)。書き間違いはエラー
+// ログのレベル:-debug > 設定ファイルの logLevel > 既定(go run は Info。go test も go-build の下で動くので Info)。書き間違いはエラー
 func TestLogLevel(t *testing.T) {
 	for _, tc := range []struct {
 		file  string
@@ -74,7 +74,8 @@ func TestLogLevel(t *testing.T) {
 	}{
 		{"", false, log.LevelInfo},
 		{"", true, log.LevelDebug},
-		{"warn", true, log.LevelWarn},
+		{"warn", true, log.LevelDebug},
+		{"warn", false, log.LevelWarn},
 		{"notice", false, log.LevelNotice},
 	} {
 		if got := logLevel(config{LogLevel: tc.file}, tc.debug); got != tc.want {

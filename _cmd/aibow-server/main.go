@@ -37,7 +37,7 @@ func main() {
 	flag.Usage = func() {
 		fmt.Fprintf(flag.CommandLine.Output(), "使い方: %s [-model モデル] [-ctx 作業領域] [-port ポート] [-config 設定ファイル] [-debug]\n\n", filepath.Base(os.Args[0]))
 		fmt.Fprintln(flag.CommandLine.Output(), "aibow のモデルを OpenAI 互換の API(/v1/models・/v1/chat/completions)として出します。")
-		fmt.Fprintln(flag.CommandLine.Output(), "強さの順は 引数 > 設定ファイル > 環境変数 > 既定 です(ログのレベルだけは 設定ファイルの logLevel > -debug > 既定)。")
+		fmt.Fprintln(flag.CommandLine.Output(), "強さの順は 引数 > 設定ファイル > 環境変数 > 既定 です。")
 		flag.PrintDefaults()
 	}
 	flag.Parse()

@@ -224,7 +224,7 @@ aibow-server [-model モデル] [-ctx 作業領域の大きさ] [-port ポート
 - `aibow-server -version` でバージョンを表示します。ログは `%APPDATA%\aibow\logs\aibow-server_<日付>.log` と標準エラー出力に出ます。
   起動のときに、待ち受けるアドレスと、画面のアプリのつなぎ先(`serverUrl`)・Cline などの Base URL が出ます
 - ログのレベルは、`go run` で動かすと Info、exe(`go build`・`go install` で作ったもの)だと Notice です。`-debug` で Debug まで出ます。
-  設定ファイルの `logLevel`(`debug`・`info`・`notice`・`warn`・`error`)を書くと、そちらが `-debug` より優先です
+  設定ファイルの `logLevel`(`debug`・`info`・`notice`・`warn`・`error`)でも決められます。`-debug` を付けたときは `-debug` が優先です
   - Info:リクエストを受け付けたとき(どこから・モデル・発言とツールの数。前のリクエストを処理中なら「順番を待ちます」)と、
     終わったとき(プロンプトのトークン数・KV キャッシュを使い回せた数・生成の速さ・終了の理由)に1行ずつ
   - Debug:受け付けたリクエストの生成の設定(temperature・返事の上限・presence penalty・思考・tool_choice)

@@ -47,7 +47,7 @@ type configFile struct {
 	Model     string `json:"model"`     // 起動のときに読み込むモデル(ID・名前・GGUF のパス)
 	Lib       string `json:"lib"`       // llama.cpp の DLL のフォルダ
 	ModelsDir string `json:"modelsDir"` // GGUF を置くフォルダ(Ollama の保存先は別に探す)
-	LogLevel  string `json:"logLevel"`  // ログのレベル(debug / info / notice / warn / error)。-debug より強い(log.go の logLevel)
+	LogLevel  string `json:"logLevel"`  // ログのレベル(debug / info / notice / warn / error)。-debug があればそちら(log.go の logLevel)
 }
 
 // config は、強さの順で決めた設定。
@@ -82,7 +82,7 @@ func defineFlags(fs *flag.FlagSet) *flags {
 		lib:       fs.String("lib", "", "llama.cpp の DLL のフォルダ(既定 lib)。設定ファイルの lib・環境変数 AIBOW_LIB"),
 		modelsDir: fs.String("models", "", "GGUF を置くフォルダ(既定 models)。設定ファイルの modelsDir・環境変数 AIBOW_MODELS_DIR"),
 		version:   fs.Bool("version", false, "バージョンを表示して終わる"),
-		debug:     fs.Bool("debug", false, "ログを Debug レベルまで出す(既定は go run なら Info、exe なら Notice)。設定ファイルの logLevel があればそちらが優先"),
+		debug:     fs.Bool("debug", false, "ログを Debug レベルまで出す(設定ファイルの logLevel より強い。どちらも無ければ go run は Info、exe は Notice)"),
 	}
 }
 

@@ -24,11 +24,11 @@ const logKeepDays = 10
 //
 // レベルは logLevel で決める(2026-10-21、ユーザーの指定):
 //
-//	設定ファイルの logLevel > -debug(Debug)> 既定(go run は Info、exe は Notice)
+//	-debug(Debug)> 設定ファイルの logLevel > 既定(go run は Info、exe は Notice)
 //
 // go run は試しながら動かすときなので、リクエストごとの記録(受け付けた・生成の記録。Info)も出す。
 // exe でふだん動かすときは、起動・モデルの読み込み・注意とエラー(Notice 以上)だけにする(アプリの exe と同じ)。
-// 設定ファイルが -debug より強いのはユーザーの指定(ほかの設定の「引数 > 設定ファイル」とは逆)。
+// ほかの設定と同じく、引数(-debug)が設定ファイルより強い(そのときだけ詳しく見たいときに、ファイルを書き換えずに済むように)。
 //
 // 異常終了(Go の panic など)は同じフォルダの aibow-server_crash.log に残す(log.CatchCrash)。前回の記録が見つかったら Warn で書く。
 // ログが書けなくても API は止めない(ログに Warn で書いて続ける)。
@@ -66,13 +66,13 @@ func startLog(level slog.Level) io.Closer {
 	return c
 }
 
-// logLevel は出すレベル。設定ファイルの logLevel > -debug > 既定(go run は Info、exe は Notice)。
+// logLevel は出すレベル。-debug > 設定ファイルの logLevel > 既定(go run は Info、exe は Notice)。
 func logLevel(c config, debug bool) slog.Level {
-	if l, ok := logLevels[c.LogLevel]; ok && c.LogLevel != "" {
-		return l
-	}
 	if debug {
 		return log.LevelDebug
+	}
+	if l, ok := logLevels[c.LogLevel]; ok && c.LogLevel != "" {
+		return l
 	}
 	if isGoRun() {
 		return log.LevelInfo
