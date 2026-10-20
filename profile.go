@@ -382,6 +382,19 @@ func (p Profile) validate() error {
 	return nil
 }
 
+// checkName は、プロファイルの名前がほかのプロファイル(しまったものも)と重ならないかを確かめる。
+// 新しい会話の画面の選択や一覧で見分けがつかなくなるので、重なる名前は保存のときに断る(0014 の未決事項。2026-10-20、ユーザーと決めた)。
+func (cs *Conversations) checkName(p Profile) error {
+	list, err := cs.store.ListProfiles()
+	if err != nil {
+		return err
+	}
+	if slices.ContainsFunc(list, func(q Profile) bool { return q.ID != p.ID && q.Name == p.Name }) {
+		return fmt.Errorf("プロファイル「%s」はもうあります。ほかの名前にしてください", p.Name)
+	}
+	return nil
+}
+
 // CreateProfile は、名前・値・決まりから新しいプロファイルを作る。
 // 会話の設定の画面の「新しいプロファイルとして保存」は、会話の設定から作った値を渡す(ProfileValuesOf)。
 func (cs *Conversations) CreateProfile(name string, values ProfileValues, rules ProfileRules) (Profile, error) {
@@ -389,6 +402,9 @@ func (cs *Conversations) CreateProfile(name string, values ProfileValues, rules 
 	p := Profile{ID: uuid.NewV7(), Name: strings.TrimSpace(name), Values: values, Rules: rules, CreatedAt: now, UpdatedAt: now}
 	p.Values = valuesOf(p.Values.settings()) // compact の空などをそろえる
 	if err := p.validate(); err != nil {
+		return Profile{}, err
+	}
+	if err := cs.checkName(p); err != nil {
 		return Profile{}, err
 	}
 	if err := cs.store.CreateProfile(p); err != nil {
@@ -412,6 +428,9 @@ func (cs *Conversations) UpdateProfile(p Profile) error {
 	p.Name = strings.TrimSpace(p.Name)
 	p.Values = valuesOf(p.Values.settings())
 	if err := p.validate(); err != nil {
+		return err
+	}
+	if err := cs.checkName(p); err != nil {
 		return err
 	}
 	p.Archived, p.CreatedAt, p.UpdatedAt = old.Archived, old.CreatedAt, time.Now()

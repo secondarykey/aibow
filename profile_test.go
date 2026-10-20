@@ -159,6 +159,17 @@ func TestManageProfiles(t *testing.T) {
 	if _, err := cs.CreateProfile("x", def.Values, ProfileRules{Fixed: []string{"unknown"}}); err == nil {
 		t.Error("知らない項目は固定できない")
 	}
+	if _, err := cs.CreateProfile(DefaultProfileName, def.Values, ProfileRules{}); err == nil {
+		t.Error("ほかのプロファイルと同じ名前では作れない")
+	}
+	same := p
+	same.Name = DefaultProfileName
+	if err := cs.UpdateProfile(same); err == nil {
+		t.Error("ほかのプロファイルと同じ名前には変えられない")
+	}
+	if err := cs.UpdateProfile(p); err != nil {
+		t.Errorf("自分と同じ名前のまま保存できる: %v", err)
+	}
 
 	// 選んだプロファイルから会話を作ると、その値が写り、元のプロファイルを覚える
 	p.Values.System = "コマンドなしの会話"

@@ -99,7 +99,7 @@ export function ProfileSettings({ models, servers, disabled, onApplyLimits, onEr
     const base = editRef.current ?? infos.find(i => i.default)?.profile;
     if (!base) return;
     flush()
-      .then(() => ChatService.CreateProfile("新しいプロファイル", base.values, {}))
+      .then(() => ChatService.CreateProfile(freeName(infos), base.values, {}))
       .then(p => {
         onChanged();
         return reload(p.id);
@@ -244,4 +244,14 @@ function ProfileEditor({ profile, info, models, servers, disabled, onChange, onA
       <ProfileTools profile={profile} servers={servers} lock={lock} onChange={onChange} onPCChanged={onToolsChanged} />
     </div>
   );
+}
+
+// freeName は、新しいプロファイルの名前。ほかのプロファイルと重ならないよう、重なれば番号を付ける(Go は重なる名前を断る)
+function freeName(infos: ProfileInfo[]): string {
+  const base = "新しいプロファイル";
+  const used = new Set(infos.map(i => i.profile.name));
+  if (!used.has(base)) return base;
+  for (let n = 2; ; n++) {
+    if (!used.has(`${base} ${n}`)) return `${base} ${n}`;
+  }
 }
