@@ -104,7 +104,7 @@ func main() {
 	}
 	if err == nil {
 		defer st.Close()
-		host, initial, err = startModels(cfg, settings)
+		host, initial, err = startModels(&cfg, settings)
 	}
 	if err != nil {
 		log.Errorf("起動できません: %v", err)
@@ -308,22 +308,33 @@ func openStore(cfg appConfig) (*store.SQLite, aibow.AppSettings, error) {
 //   - あれば aibow-server につなぐ係にする。llama.cpp は読み込まず、GPU も使わない。起動のときにモデルも読ませない
 //     (サーバーが起動のときに読み込んでいる。会話のモデルが違えば、送信の前に読み直す。0015 の 12)。
 //     ここではまだつながない(サーバーがまだ起動していなくても、アプリは起動する。0015 の 13)
-func startModels(cfg appConfig, app aibow.AppSettings) (modelHost, *models.Entry, error) {
+//
+// 直接の形のときは、画面で足したモデルの置き場所(model-places.json)も読み、手で決めた置き場所に足す(0015 の 24)。
+// 読めなければ画面のお知らせで伝え、足した置き場所なしで起動する。
+func startModels(cfg *appConfig, app aibow.AppSettings) (modelHost, *models.Entry, error) {
 	if cfg.serverURL != "" {
 		c := apiclient.New(cfg.serverURL)
 		log.Noticef("生成は aibow-server に頼みます: %s(llama.cpp はこのアプリでは読み込みません)", c.URL())
 		return &remoteHost{c: c}, nil, nil
 	}
-	eng, initial, err := startEngine(cfg, app)
+	added, err := loadPlacesFile(cfg.placesPath)
+	if err != nil {
+		log.Warn(err.Error())
+		cfg.notices = append(cfg.notices, err.Error())
+	}
+	h := &directHost{catalog: cfg.catalog, added: added, lib: cfg.engine.LibPath, initialModel: cfg.initialModel}
+	eng, initial, err := startEngine(*cfg, h.catalogNow(), app)
 	if err != nil {
 		return nil, nil, err
 	}
-	return &directHost{eng: eng, catalog: cfg.catalog}, initial, nil
+	h.eng = eng
+	return h, initial, nil
 }
 
 // startEngine は llama.cpp を読み込み、起動時に読み込むモデルを決める。
 // モデルの読み込み自体は、ウィンドウを出してから ChatService が裏で行う。
-func startEngine(cfg appConfig, app aibow.AppSettings) (*engine.Engine, *models.Entry, error) {
+// catalog は、手で決めた置き場所に画面で足した置き場所を合わせたもの。
+func startEngine(cfg appConfig, catalog models.Catalog, app aibow.AppSettings) (*engine.Engine, *models.Entry, error) {
 	ec := cfg.engine
 	// 画面で変えた値(DB)か、環境変数の値。
 	// 作業領域は会話ごとに違う(会話の上限 + 返事の上限)。起動時は新しい会話の画面から始まるので、新しい会話の既定の大きさで作り、
@@ -341,13 +352,19 @@ func startEngine(cfg appConfig, app aibow.AppSettings) (*engine.Engine, *models.
 	}
 
 	// 使えるモデルの一覧
-	list := cfg.catalog.List()
-	log.Infof("モデルの置き場所: %s / Ollama: %s", absPath(cfg.catalog.ModelsDir), absPath(cfg.catalog.OllamaDir))
+	list := catalog.List()
+	log.Infof("モデルの置き場所: %s / Ollama: %s", absPath(catalog.ModelsDir), absPath(catalog.OllamaDir))
+	for _, p := range catalog.Places() {
+		if p.Origin == models.OriginAdded {
+			log.Infof("  足した置き場所: %s(%d 個)%s", p.Path, p.Models, p.Missing)
+		}
+	}
 	for _, m := range list {
 		log.Infof("  %-8s %-40s %.1f GB", m.Source, m.Name, m.SizeGB)
 	}
 
 	// 起動時のモデル。見つからなくても起動はして、画面で選べるようにする。
+	cfg.catalog = catalog
 	m, err := pickInitialModel(cfg, app, list)
 	if err != nil {
 		log.Warn(err.Error())

@@ -217,6 +217,22 @@
   レベルは「`-debug`(Debug)> 設定ファイルの `logLevel` > 既定(`go run` は Info、exe は Notice)」(ほかの設定と同じく引数が強い。ユーザーと決めた)
 - **Cline から確かめた**(2026-10-21、ユーザー):ステップ8の aibow-server に Cline からつないで動いた
 - **8-4 の中身を決めた**(2026-10-22、Chat でユーザーと):上の決定事項 21〜32。見た目は Code が案を示す(「未決事項」)
+- **8-4 の 1 済み**(2026-10-22):モデルを扱う係(`modelHost`)と aibow-server に、降ろす・置き場所を足す / 外す・どこから来たかの付いた一覧・モデルごとの層の数・表示だけの設定を足した。
+  テストのほか、本物の aibow-server(4B)に `curl` で確かめた:降ろすと VRAM が 7.3 → 3.2 GB に空き、次のチャットで読み込み直した(3.6 秒)。
+  置き場所を足すと `server-models.json` だけに書かれ(`server.json` は変わらない)、起動し直しても残った。フォルダの名前を変えると一覧から外れて Warn が1回出て、戻すと Notice が出た。
+  models フォルダ・同じ置き場所・無いパス・GGUF でないファイルは理由つきで断った。直接の形はテストとビルドまで(画面が無いので、アプリでは 8-4 の 3 で確かめる)。
+  **Code が決めた**:
+  - モデルの「どこから来たか」は `models.Entry` の `origin`(`models` / `ollama` / `added`)と `place`(足した置き場所)。今までの `source`(`file` / `ollama`)は ID の形なので残した
+  - 置き場所の一覧の形は `models.Place`(`path`・`origin`・`kind`(`dir` / `file`)・`models`(見つかった数)・`missing`(見つからない理由))。一覧は models フォルダ → Ollama → 足した置き場所の順で、同じファイルは先のほうだけ出す
+  - GGUF のファイルは拡張子(`.gguf`)に加えて先頭の4バイトが `GGUF` かも確かめる(名前を変えただけのファイルを、読み込むときまで気づかずに足せてしまうため)。足すときは絶対パスにして覚える
+  - aibow-server の口:`POST /models/unload`(本文 `{"model"}`。空か読み込み中のモデルなら降ろし、ほかのモデルなら何もしない。順番待ちの席の中)、
+    `GET /aibow/places`・`POST /aibow/places/add`・`POST /aibow/places/remove`(本文 `{"path"}`。返事はそのあとの一覧。足せなければ 400 と理由。順番は待たない)、
+    表示だけの設定は `GET /aibow/settings`(ポート・作業領域・最初のモデル・llama.cpp の場所・models フォルダ・Ollama・設定ファイルの場所とあるか・server-models.json の場所)。形は [_docs/api.md](../api.md)
+  - 直接の形のファイルは `%APPDATA%\aibow\model-places.json`(`{"places": [...]}`)。場所は環境変数 `AIBOW_MODEL_PLACES` で変えられる(worktree で試すときにユーザーのファイルを書き換えないため。ほかのファイルと同じ)。
+    壊れていたら書き換えず、お知らせで伝えて足した置き場所なしで動く(`tools.json` と同じ)
+  - 見つからない置き場所のログは、見つからなくなったときと、また見つかったときに1回だけ(一覧はウィンドウに戻るたびに取り直すため。`models.MissingWatch`)
+  - `ChatService` に画面から呼ぶメソッドを足した:`UnloadModel`・`SetModelGPULayers(id, n)`(読み込み中でないモデルは覚えるだけ)・`ModelPlaces`・`AddModelPlace`・`RemoveModelPlace`・`ModelSettings`。
+    `Models` の返事にモデルごとの層の数(`gpu_layers`)を足した。読み込むのは今の `SwitchModel`
 
 ## 作業の順番
 

@@ -13,6 +13,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"flag"
@@ -142,8 +143,15 @@ func run(c config, notices []string, cfgErr error, env *envReader) error {
 	// Ctrl+C で止める。リクエストの context をこれにつなぐので、生成中なら次のトークンで止まる
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
+	srv := api.New(eng, mm, nCtx, defaults)
+	// 表示だけのサーバーの設定(画面のモデルを扱う画面に出す。変えるのは server.json と起動し直し。0015 の 21)
+	srv.SetSettings(api.Settings{
+		Port: port, Model: c.Model, Lib: absPath(c.Lib), ModelsDir: absPath(c.ModelsDir), OllamaDir: catalog.OllamaDir,
+		ConfigFile: absPath(cmp.Or(c.File, filepath.Join(filepath.Dir(c.StatePath), configFileName))), ConfigFound: c.File != "",
+		StateFile: absPath(c.StatePath),
+	})
 	hs := &http.Server{
-		Handler:           api.New(eng, mm, nCtx, defaults).Handler(),
+		Handler:           srv.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 		// 書き込みの時間の上限(WriteTimeout)は付けない。返事の生成は数十秒〜数分かかることがあるため
 		BaseContext: func(net.Listener) context.Context { return ctx },

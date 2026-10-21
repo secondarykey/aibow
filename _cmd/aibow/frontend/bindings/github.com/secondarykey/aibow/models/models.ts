@@ -16,7 +16,7 @@ export interface Entry {
     "name": string;
 
     /**
-     * "ollama" か "file"
+     * "ollama" か "file"(ID の形。どこから来たかは Origin)
      */
     "source": string;
 
@@ -24,4 +24,44 @@ export interface Entry {
      * ファイルサイズ
      */
     "size_gb": number;
+
+    /**
+     * Origin はどこから来たか(OriginModels / OriginOllama / OriginAdded)。画面の一覧に出す(0015 の 27)
+     */
+    "origin": string;
+
+    /**
+     * Place は、足した置き場所のどれから来たか(Origin が added のときだけ。足したときのパス)
+     */
+    "place"?: string;
+}
+
+/**
+ * Place は置き場所1つ(画面の一覧に出す)。
+ */
+export interface Place {
+    /**
+     * 置き場所のパス(足した置き場所は絶対パス)
+     */
+    "path": string;
+
+    /**
+     * OriginModels / OriginOllama / OriginAdded。外せるのは added だけ
+     */
+    "origin": string;
+
+    /**
+     * "dir"(フォルダ)か "file"(GGUF のファイル1つ)
+     */
+    "kind": string;
+
+    /**
+     * 見つかったモデルの数
+     */
+    "models": number;
+
+    /**
+     * Missing は、見つからない理由(見つかれば空)。足した置き場所が見つからないときは、そのモデルは一覧に出ない
+     */
+    "missing"?: string;
 }

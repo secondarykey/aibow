@@ -349,6 +349,7 @@ curl http://127.0.0.1:8089/v1/chat/completions -H "Content-Type: application/jso
 | `AIBOW_SERVER_URL` | なし | 生成を頼む aibow-server のつなぎ先(例: `http://127.0.0.1:8089`)。書けばアプリは llama.cpp を読み込まない。settings.json の `serverUrl` が優先(「画面のアプリを aibow-server につなぐ」) |
 | `AIBOW_LOG_DIR` | `%APPDATA%\aibow\logs` | ログファイル(`aibow_<日付>.log`。日ごと)を書くフォルダ。exe は Notice 以上(起動した版・使ったモデル・変えた設定・注意・エラーなど)だけを書き、起動時に古いファイルを消して今日を含めて 10 日分を残す。異常終了したときは同じフォルダの `aibow_crash_<日時>.log` に内容が残る(次の起動で画面に知らせる)。MCP のサーバー `aibow-mcp` も同じフォルダの `aibow-mcp_<日付>.log` に、OpenAI 互換 API の `aibow-server` は `aibow-server_<日付>.log` に書く(どちらも Info 以上・10 日分)。フォルダが無ければ作る。`wails3 build` で作った exe は既定でここに書く。`wails3 dev` はターミナルに出し、ここの `aibow-dev_<日付>.log` にも書く(Info 以上・10 日分。exe のログと混ざらないよう名前を分けている) |
 | `AIBOW_TOOLS` | `%APPDATA%\aibow\tools.json` | ツールの扱いの、この PC の既定(設定の画面で変えたものを aibow が書く) |
+| `AIBOW_MODEL_PLACES` | `%APPDATA%\aibow\model-places.json` | 画面で足したモデルの置き場所(aibow が書く。`AIBOW_MODELS_DIR`・`OLLAMA_MODELS` に足して一覧に出す)。aibow-server につないでいるときは使わない(置き場所はサーバーの `server-models.json`) |
 | `AIBOW_WINDOW` | `%APPDATA%\aibow\window.json` | ウィンドウの位置・大きさ・最大化(閉じるときに aibow が書き、次の起動でそこに開く)。消すと初めの大きさ(720×820)で真ん中に開く |
 | `AIBOW_HISTORY_TOKENS` | `8192` | 新しい会話の既定の会話の上限(モデルに渡す、これまでの会話のトークン数の上限)。超えたら会話ごとの compact の方式で収める |
 | `AIBOW_MAX_TOKENS` | `8192` | 新しい会話の既定の返事の上限(1回の返事で生成するトークン数の上限。思考 + 答えの合計) |

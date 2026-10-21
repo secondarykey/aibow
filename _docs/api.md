@@ -16,9 +16,10 @@ Cline など [ 会話の仕組み + 手 ] ⇄ HTTP(OpenAI 互換。127.0.0.1 だ
 | `api/tools.go` | ツール呼び出しの変換(`tools` → `tool.Def`、履歴の `tool_calls` → 書式の呼び出し、モデルの呼び出し → `tool_calls`) |
 | `api/chat.go` | `POST /v1/chat/completions`。順番待ち・モデルの読み直し・トークン数の確かめ・生成(まとめて / ストリーミング)・学習用のログ。`POST /apply-template`・`POST /aibow/count-tokens` も |
 | `api/models.go` | モデルの一覧と読み込み(ステップ8)。使う係の interface `Models`(本物は `_cmd/aibow-server` の `modelManager`)・`GET /models`・`POST /models/load`・`POST /aibow/gpu-layers` |
+| `api/places.go` | モデルの置き場所(`GET /aibow/places`・`POST /aibow/places/add`・`POST /aibow/places/remove`)と、表示だけのサーバーの設定(`GET /aibow/settings`。`Settings`)。8-4 |
 | `api/api_test.go`・`api/aibow_test.go` | 偽物の生成とモデルの係でのテスト(モデル不要) |
 | `api/client/` | aibow-server につなぐクライアント(`client` パッケージ。ステップ8)。下の「クライアント(`api/client`)」 |
-| `_cmd/aibow-server/` | exe(ステップ8で `aibow-api` から名前を変えた。0015)。`config.go` は設定(強さの順は 引数 > 設定ファイル `server.json` > 環境変数 > 既定)、`models.go` はモデルの係(GPU の層数を `server-models.json` に覚える)、`main.go` はエンジンとモデルを用意して `api` を `127.0.0.1` で待ち受けるだけ。`log.go` はログの出口(`aibow-server_<日付>.log`)、`version` / `appversion.go` はアプリと同じバージョン(`_cmd/aibow/version` の写し) |
+| `_cmd/aibow-server/` | exe(ステップ8で `aibow-api` から名前を変えた。0015)。`config.go` は設定(強さの順は 引数 > 設定ファイル `server.json` > 環境変数 > 既定)、`models.go` はモデルの係(GPU の層数と画面で足した置き場所を `server-models.json` に覚える)、`main.go` はエンジンとモデルを用意して `api` を `127.0.0.1` で待ち受けるだけ。`log.go` はログの出口(`aibow-server_<日付>.log`)、`version` / `appversion.go` はアプリと同じバージョン(`_cmd/aibow/version` の写し) |
 
 依存の向きは `_cmd/aibow-server` → `api` → `engine` → `format` → `tool`。`api` はルートの `aibow`(会話の仕組み)を import しない。
 会話の保存・compact・エージェントループ・ツールの実行はクライアントの仕事なので、API の側には持たない。
@@ -97,16 +98,29 @@ data: [DONE]
 
 | 口 | 本文 → 返事 | 順番待ち | 元にしたもの |
 |---|---|---|---|
-| `GET /models` | → `{"object":"list","data":[{"id","name","source","size_gb","status":{"value":"loaded"\|"unloaded"},"n_gpu_layers"}],"current":<読み込み中のモデルの情報>,"n_ctx","gpu"}` | 待たない | llama.cpp の router の `GET /models`(`status.value`) |
+| `GET /models` | → `{"object":"list","data":[{"id","name","source","size_gb","origin","place","status":{"value":"loaded"\|"unloaded"},"n_gpu_layers"}],"current":<読み込み中のモデルの情報 か null>,"n_ctx","gpu"}` | 待たない | llama.cpp の router の `GET /models`(`status.value`) |
 | `POST /models/load` | `{"model"}` → `{"success":true,"model":<読み込んだモデルの情報>}` | 待つ | llama.cpp の router の `POST /models/load` |
+| `POST /models/unload` | `{"model"}` → `{"success":true,"model":null}`(VRAM を空ける。8-4) | 待つ | llama.cpp の router の `POST /models/unload` |
 | `POST /apply-template` | チャットと同じ本文 → `{"prompt"}`(書式を当てた文字列) | 待たない | llama.cpp の `POST /apply-template` |
 | `POST /aibow/count-tokens` | チャットと同じ本文 → `{"n_tokens"}`(書式を当てた文字列のトークン数) | 待たない | aibow だけ(llama.cpp の `/tokenize` は文字列を受け取るので、書式を当てる分まで1回で済むよう別にした) |
 | `POST /aibow/gpu-layers` | `{"model","n_gpu_layers"}` → `{"success":true,"model":<読み直したモデルの情報 か null>}` | 待つ | aibow だけ(llama.cpp は起動のときの preset ファイルで決める) |
+| `GET /aibow/places` | → `{"places":[{"path","origin","kind":"dir"\|"file","models","missing"}]}` | 待たない | aibow だけ(8-4) |
+| `POST /aibow/places/add` | `{"path"}` → 足したあとの `{"places"}`。足せなければ 400 と理由 | 待たない | aibow だけ(8-4) |
+| `POST /aibow/places/remove` | `{"path"}` → 外したあとの `{"places"}`。足した置き場所でなければ 400 | 待たない | aibow だけ(8-4) |
+| `GET /aibow/settings` | → `{"port","n_ctx","model","lib","models_dir","ollama_dir","config_file","config_found","state_file"}`(表示だけ) | 待たない | aibow だけ(8-4) |
 
 - `n_ctx` はサーバーの作業領域の大きさ。**起動のときに決めた大きさで固定**で、クライアントからは変えられない(共有するサーバーで1人の都合で作り直すと、ほかの人の KV キャッシュが消えるため。0015 の 3)
 - `/aibow/gpu-layers` の `model` を書かなければ読み込み中のモデル。読み込み中のモデルなら読み直し、読み直せたら覚える。読み込んでいないモデルは覚えるだけ(次に読み込むときから効く)。
   覚える場所はサーバーの PC の `server-models.json`(GPU の層数は「その PC の人が決めること」なので。アプリの DB の `model_gpu_layers` とは別)
 - 読み込み・読み直しは順番待ちの席の中で行う(生成と取り合わない)。数えるのと書式を当てるのは、生成中でもできる(`engine` の `vocabMu`)
+- `origin` はモデルがどこから来たか(`models`(models フォルダ)・`ollama`・`added`(画面で足した置き場所。`place` にその置き場所))。同じファイルが2か所から見つかったら、先のほうだけを出す
+- `/models/unload` は、`model` が空か読み込み中のモデルなら降ろす。読み込んでいない別のモデルなら何もしない(aibow は1つしか読み込まないため)。
+  降ろしたあとのチャットは、`model` のモデルを読み込んでから生成する(`model` を書いていなければ「モデルが読み込まれていません」)
+- 置き場所(8-4)は、フォルダか GGUF のファイル1つ。パスは**サーバーの PC のもの**で、足すときにサーバーが「あるか・フォルダか GGUF(先頭が `GGUF`)か・まだ入っていないか」を確かめる(0015 の 25・31)。
+  足した置き場所は `server-models.json` の `places` に覚え、手で書く `server.json` は書き換えない(0015 の 22)。models フォルダと Ollama の保存先は外せない(表示だけ)。
+  足した置き場所が見つからなくなったら一覧から外し、見つからなくなったときに1回だけ Warn のログを出す。覚えたものからは消さない(つなぎ直せば戻る。0015 の 28)。
+  置き場所を足す・外すのは作業領域を使わないので、順番を待たない
+- `/aibow/settings` は表示だけのサーバーの設定(作業領域・ポート・llama.cpp の場所・最初のモデル・設定ファイルの場所)。変えるのは `server.json` と起動し直し(0015 の 21)
 
 ### `/v1/chat/completions` に足した欄
 

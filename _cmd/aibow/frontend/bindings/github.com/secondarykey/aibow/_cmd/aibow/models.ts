@@ -6,6 +6,9 @@
 import * as aibow$0 from "../../models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as client$0 from "../../api/client/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as engine$0 from "../../engine/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -41,13 +44,28 @@ export interface ConversationDetail {
 }
 
 /**
+ * ModelSettingsResult は ModelSettings の戻り値。
+ */
+export interface ModelSettingsResult {
+    /**
+     * Server はつなぎ先(直接なら空)
+     */
+    "server"?: string;
+
+    /**
+     * Settings は表示だけの設定。直接なら作業領域は 0(会話ごと)・ポートは 0(待ち受けない)・設定ファイルは空(環境変数で変える)
+     */
+    "settings": client$0.ServerSettings;
+}
+
+/**
  * ModelsResult は Models の戻り値。
  */
 export interface ModelsResult {
     "models": models$0.Entry[] | null;
 
     /**
-     * 未読み込みなら null
+     * 未読み込み(降ろした)なら null
      */
     "current": engine$0.ModelInfo | null;
 
@@ -66,6 +84,11 @@ export interface ModelsResult {
      * 起動時に伝えること(使われなくなった環境変数など)
      */
     "notices": string[] | null;
+
+    /**
+     * GPULayers はモデルの ID → 読み込むときの GPU の層数(直接ならアプリの DB、aibow-server 越しならサーバーの PC に覚えた値。8-4)
+     */
+    "gpu_layers": { [_ in string]?: number } | null;
 
     /**
      * Server は生成を頼んでいる aibow-server のつなぎ先(アプリの中で動かしているときは空。0015)

@@ -83,6 +83,70 @@ func (c *Client) SetGPULayers(id string, n int) (*engine.ModelInfo, error) {
 	return r.Model, nil
 }
 
+// UnloadModel は、サーバーが読み込んでいるモデルを降ろさせる(サーバーの PC の VRAM を空ける。8-4)。
+// 次の生成の前に、会話の仕組みが会話のモデルを読み込ませる(LoadModel)。
+func (c *Client) UnloadModel() error {
+	if err := c.call(http.MethodPost, "/models/unload", map[string]string{"model": ""}, nil, loadTimeout); err != nil {
+		return err
+	}
+	c.mu.Lock()
+	c.info = nil
+	c.mu.Unlock()
+	return nil
+}
+
+// Places は、サーバーのモデルの置き場所(パスはサーバーの PC のもの)。
+func (c *Client) Places() ([]models.Place, error) {
+	var r placeList
+	if err := c.call(http.MethodGet, "/aibow/places", nil, &r, shortTimeout); err != nil {
+		return nil, err
+	}
+	return r.Places, nil
+}
+
+// AddPlace は、サーバーの PC の path を置き場所に足させる。サーバーが、そのパスがあるかを確かめる(0015 の 31)。返事は足したあとの一覧。
+func (c *Client) AddPlace(path string) ([]models.Place, error) {
+	var r placeList
+	if err := c.call(http.MethodPost, "/aibow/places/add", map[string]string{"path": path}, &r, shortTimeout); err != nil {
+		return nil, err
+	}
+	return r.Places, nil
+}
+
+// RemovePlace は、足した置き場所を外させる。返事は外したあとの一覧。
+func (c *Client) RemovePlace(path string) ([]models.Place, error) {
+	var r placeList
+	if err := c.call(http.MethodPost, "/aibow/places/remove", map[string]string{"path": path}, &r, shortTimeout); err != nil {
+		return nil, err
+	}
+	return r.Places, nil
+}
+
+// placeList は /aibow/places の返事。
+type placeList struct {
+	Places []models.Place `json:"places"`
+}
+
+// ServerSettings は、表示だけのサーバーの設定(api.Settings と同じ形。画面からは変えない。0015 の 21)。
+type ServerSettings struct {
+	Port        int    `json:"port"`
+	NCtx        int    `json:"n_ctx"`
+	Model       string `json:"model"`
+	Lib         string `json:"lib"`
+	ModelsDir   string `json:"models_dir"`
+	OllamaDir   string `json:"ollama_dir"`
+	ConfigFile  string `json:"config_file"`
+	ConfigFound bool   `json:"config_found"`
+	StateFile   string `json:"state_file"`
+}
+
+// Settings は、表示だけのサーバーの設定を聞く。
+func (c *Client) Settings() (ServerSettings, error) {
+	var r ServerSettings
+	err := c.call(http.MethodGet, "/aibow/settings", nil, &r, shortTimeout)
+	return r, err
+}
+
 // Info は、最後に知った読み込み中のモデル(知らなければ nil)。聞きに行かない(呼ばれる回数が多いため)。
 func (c *Client) Info() *engine.ModelInfo {
 	c.mu.Lock()

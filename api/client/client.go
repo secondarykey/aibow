@@ -12,7 +12,10 @@
 //	トークン数      POST /aibow/count-tokens
 //	モデルの一覧    GET  /models
 //	読み込む        POST /models/load
+//	降ろす          POST /models/unload
 //	GPU の層数      POST /aibow/gpu-layers
+//	置き場所        GET /aibow/places・POST /aibow/places/add・POST /aibow/places/remove
+//	サーバーの設定  GET /aibow/settings(表示だけ)
 //
 // 書式(チャットテンプレート)はサーバーが当てる。ここは会話を JSON にして送るだけで、書式を知らない(0015 の 5)。
 // 会話 → JSON → 会話 の往復で1文字も変えない(KV キャッシュを今と同じだけ使い回すため。0015 の 8)ことを、テストで確かめている。

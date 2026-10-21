@@ -54,6 +54,7 @@ aibow ── tools/call ──────→ 結果(content)が返る → ツ�
 | DB(`app_settings` / `conversations.settings`) | aibow | 会話と、画面で変える設定。会話ごとに使う MCP のサーバー・会話だけのツールの扱いの上書きもここ | サーバーへ |
 | `settings.json`(`%APPDATA%\aibow\settings.json`、`AIBOW_SETTINGS`) | 人が手で | その PC でどう起動するか。`mcpServers` と、生成を頼む aibow-server のつなぎ先 `serverUrl`(0015。[usage.md](usage.md) の「画面のアプリを aibow-server につなぐ」) | 手元に残る |
 | `tools.json`(`%APPDATA%\aibow\tools.json`、`AIBOW_TOOLS`) | aibow(画面で変えたもの) | ツールの扱いの PC の既定と、サーバーを起動したときに見えたツールの一覧 | 手元に残る |
+| `model-places.json`(`%APPDATA%\aibow\model-places.json`、`AIBOW_MODEL_PLACES`) | aibow(画面で変えたもの) | 画面で足したモデルの置き場所(アプリの中で動かすとき。0015 の 24) | 手元に残る |
 | `window.json`(`%APPDATA%\aibow\window.json`、`AIBOW_WINDOW`) | aibow(閉じるとき) | ウィンドウの位置・大きさ・最大化([ui.md](ui.md) の「次の起動で戻すもの」) | 手元に残る |
 
 MCP のサーバーの起動のしかた(`npx` のパスなど)は「その PC の設定」で、会話のデータとは性格が違うので、DB ではなくファイルにしています。

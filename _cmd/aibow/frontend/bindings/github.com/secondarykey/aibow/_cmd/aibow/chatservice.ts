@@ -16,11 +16,22 @@ import * as engine$0 from "../../engine/models.js";
 import * as client$0 from "../../mcp/client/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as models$0 from "../../models/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as uuid$0 from "../../../../../uuid/models.js";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as $models from "./models.js";
+
+/**
+ * AddModelPlace は置き場所(フォルダか GGUF のファイル)を足し、足したあとの一覧を返す。
+ * aibow-server 越しなら、path はサーバーの PC のパスで、サーバーがあるかを確かめる(0015 の 31)。
+ */
+export function AddModelPlace(path: string): $CancellablePromise<models$0.Place[] | null> {
+    return $Call.ByID(3290185898, path);
+}
 
 /**
  * AllMCPServers は settings.json に書いた MCP のサーバー全部(設定の画面の「ツール」に出す)。
@@ -121,6 +132,21 @@ export function MCPServers(): $CancellablePromise<client$0.ServerInfo[] | null> 
 }
 
 /**
+ * ModelPlaces はモデルの置き場所の一覧(models フォルダ・Ollama・足した置き場所。aibow-server 越しならサーバーの PC のもの)。
+ */
+export function ModelPlaces(): $CancellablePromise<models$0.Place[] | null> {
+    return $Call.ByID(3984378592);
+}
+
+/**
+ * ModelSettings は、表示だけの設定(作業領域・ポート・llama.cpp の場所・最初のモデル・モデルの置き場所)を返す。
+ * 画面からは変えない(aibow-server 越しなら server.json で変えて起動し直す。直接なら環境変数。0015 の 21)。
+ */
+export function ModelSettings(): $CancellablePromise<$models.ModelSettingsResult> {
+    return $Call.ByID(3615230285);
+}
+
+/**
  * Models は使えるモデルの一覧と、今読み込んでいるモデルを返す。
  */
 export function Models(): $CancellablePromise<$models.ModelsResult> {
@@ -155,6 +181,13 @@ export function Profiles(): $CancellablePromise<aibow$0.ProfileInfo[] | null> {
  */
 export function Regenerate(id: uuid$0.UUID): $CancellablePromise<void> {
     return $Call.ByID(637434261, id);
+}
+
+/**
+ * RemoveModelPlace は足した置き場所を外し、外したあとの一覧を返す。手で決めた置き場所は外せない(0015 の 26)。
+ */
+export function RemoveModelPlace(path: string): $CancellablePromise<models$0.Place[] | null> {
+    return $Call.ByID(3343870343, path);
 }
 
 /**
@@ -242,6 +275,14 @@ export function SetGroupPolicy(group: string, policy: aibow$0.ToolPolicy): $Canc
 }
 
 /**
+ * SetModelGPULayers は、モデルごとの GPU の層数を変えて覚える。読み込み中のモデルなら読み直し、その情報を返す(ほかのモデルなら nil。
+ * 次に読み込むときから効く)。直接ならアプリの DB、aibow-server 越しならサーバーの PC に覚える(0015 の 9)。
+ */
+export function SetModelGPULayers(id: string, n: number): $CancellablePromise<engine$0.ModelInfo | null> {
+    return $Call.ByID(3535036022, id, n);
+}
+
+/**
  * SetProfileArchived は、プロファイルをしまう / 戻す。
  */
 export function SetProfileArchived(id: uuid$0.UUID, archived: boolean): $CancellablePromise<void> {
@@ -311,6 +352,14 @@ export function ToolStates(id: uuid$0.UUID, settings: aibow$0.ConversationSettin
  */
 export function TryLimits(history: number, reply: number): $CancellablePromise<boolean> {
     return $Call.ByID(3764457180, history, reply);
+}
+
+/**
+ * UnloadModel は読み込み中のモデルを降ろす(VRAM を空ける。ほかのアプリと並べて使うため。0015 の 23)。
+ * 降ろしたあとに送信すると、送信の前に会話のモデルを読み込む(0014 の 3)。
+ */
+export function UnloadModel(): $CancellablePromise<void> {
+    return $Call.ByID(53666325);
 }
 
 /**

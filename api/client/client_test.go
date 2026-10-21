@@ -38,6 +38,9 @@ type fakeGen struct {
 func (f *fakeGen) Info() *engine.ModelInfo {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.id == "" { // 降ろした
+		return nil
+	}
 	return &engine.ModelInfo{ID: f.id, Name: f.id, NCtx: 32768}
 }
 
@@ -71,8 +74,9 @@ func (f *fakeGen) Generate(ctx context.Context, p format.Prompt, opt engine.Gene
 
 // fakeModels は偽物のモデルの係。
 type fakeModels struct {
-	gen   *fakeGen
-	loads []string
+	gen    *fakeGen
+	loads  []string
+	places []string
 }
 
 func (m *fakeModels) List() []models.Entry {
@@ -99,6 +103,34 @@ func (m *fakeModels) Load(e models.Entry) (*engine.ModelInfo, error) {
 func (m *fakeModels) GPULayers(string) int                                { return 999 }
 func (m *fakeModels) SetGPULayers(string, int) (*engine.ModelInfo, error) { return nil, nil }
 func (m *fakeModels) HasGPU() bool                                        { return true }
+
+func (m *fakeModels) Unload() (bool, error) {
+	m.gen.mu.Lock()
+	defer m.gen.mu.Unlock()
+	m.gen.id = ""
+	return true, nil
+}
+
+func (m *fakeModels) Places() []models.Place {
+	list := []models.Place{{Path: "models", Origin: models.OriginModels, Kind: "dir"}}
+	for _, p := range m.places {
+		list = append(list, models.Place{Path: p, Origin: models.OriginAdded, Kind: "dir"})
+	}
+	return list
+}
+
+func (m *fakeModels) AddPlace(path string) error {
+	if path == "" {
+		return errors.New("置き場所のパスを書いてください")
+	}
+	m.places = append(m.places, path)
+	return nil
+}
+
+func (m *fakeModels) RemovePlace(path string) error {
+	m.places = slices.DeleteFunc(m.places, func(p string) bool { return p == path })
+	return nil
+}
 
 func newServer(t *testing.T, g *fakeGen) (*Client, *fakeModels) {
 	t.Helper()
@@ -280,4 +312,33 @@ func TestAPIError(t *testing.T) {
 func jsonOf(v any) string {
 	b, _ := json.Marshal(v)
 	return string(b)
+}
+
+// 降ろすと Info が nil になる。置き場所を足す・外すと、返事はそのあとの一覧。足せないときはサーバーの理由がエラーになる
+func TestUnloadAndPlaces(t *testing.T) {
+	c, _ := newServer(t, &fakeGen{})
+	if _, err := c.Models(); err != nil || c.Info() == nil {
+		t.Fatalf("読み込み中のはず: %v", err)
+	}
+	if err := c.UnloadModel(); err != nil || c.Info() != nil {
+		t.Fatalf("降ろしたはず: %v %+v", err, c.Info())
+	}
+	if l, err := c.Models(); err != nil || l.Current != nil {
+		t.Errorf("降ろしたあとの一覧: %+v %v", l, err)
+	}
+
+	pl, err := c.AddPlace("/data/models2")
+	if err != nil || len(pl) != 2 || pl[1].Origin != models.OriginAdded {
+		t.Errorf("足したあとの一覧: %+v %v", pl, err)
+	}
+	var ae *APIError
+	if _, err := c.AddPlace(""); !errors.As(err, &ae) || ae.Message != "置き場所のパスを書いてください" {
+		t.Errorf("足せない理由: %v", err)
+	}
+	if pl, err := c.RemovePlace("/data/models2"); err != nil || len(pl) != 1 {
+		t.Errorf("外したあとの一覧: %+v %v", pl, err)
+	}
+	if st, err := c.Settings(); err != nil || st.NCtx != 32768 {
+		t.Errorf("表示だけの設定: %+v %v", st, err)
+	}
 }

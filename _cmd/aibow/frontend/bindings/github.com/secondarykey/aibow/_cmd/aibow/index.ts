@@ -8,5 +8,6 @@ export {
 
 export type {
     ConversationDetail,
+    ModelSettingsResult,
     ModelsResult
 } from "./models.js";

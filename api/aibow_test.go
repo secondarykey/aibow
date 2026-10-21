@@ -25,6 +25,7 @@ type fakeModels struct {
 	list   []models.Entry
 	layers map[string]int
 	loads  []string // 読み込んだモデルの ID(順番)
+	places []string // 足した置き場所
 }
 
 func newFakeModels(g *fakeGen) *fakeModels {
@@ -48,9 +49,42 @@ func (m *fakeModels) Find(name string) (models.Entry, error) {
 func (m *fakeModels) Load(e models.Entry) (*engine.ModelInfo, error) {
 	m.loads = append(m.loads, e.ID)
 	m.gen.mu.Lock()
-	m.gen.id = e.ID
+	m.gen.id, m.gen.none = e.ID, false
 	m.gen.mu.Unlock()
 	return m.gen.Info(), nil
+}
+
+func (m *fakeModels) Unload() (bool, error) {
+	m.gen.mu.Lock()
+	defer m.gen.mu.Unlock()
+	was := !m.gen.none
+	m.gen.none = true
+	return was, nil
+}
+
+func (m *fakeModels) Places() []models.Place {
+	list := []models.Place{{Path: "models", Origin: models.OriginModels, Kind: "dir"}}
+	for _, p := range m.places {
+		list = append(list, models.Place{Path: p, Origin: models.OriginAdded, Kind: "dir"})
+	}
+	return list
+}
+
+func (m *fakeModels) AddPlace(path string) error {
+	if path == "" || slices.Contains(m.places, path) {
+		return errors.New("足せません: " + path)
+	}
+	m.places = append(m.places, path)
+	return nil
+}
+
+func (m *fakeModels) RemovePlace(path string) error {
+	i := slices.Index(m.places, path)
+	if i < 0 {
+		return errors.New("足した置き場所ではありません: " + path)
+	}
+	m.places = slices.Delete(m.places, i, i+1)
+	return nil
 }
 
 func (m *fakeModels) GPULayers(id string) int {
@@ -278,5 +312,62 @@ func TestAibowBrokenHistory(t *testing.T) {
 	res.Body.Close()
 	if res.StatusCode != 400 {
 		t.Errorf("合わない index: %d", res.StatusCode)
+	}
+}
+
+// POST /models/unload は読み込み中のモデルを降ろす。別のモデルを名指ししたら何もしない。降ろしたあとのチャットは model のモデルを読み込む
+func TestUnload(t *testing.T) {
+	g := &fakeGen{nCtx: 100, tokens: 1, content: []string{"x"}, stop: "eos"}
+	m := newFakeModels(g)
+	ts := newModelsServer(g, m)
+	defer ts.Close()
+
+	res := postPath(t, ts.URL, "/models/unload", `{"model":"qwen3.5:9b"}`)
+	if got := decode[loadResult](t, res); !got.Success || g.Info() == nil {
+		t.Fatalf("読み込んでいないモデルは降ろさないはず: %+v", got)
+	}
+	res = postPath(t, ts.URL, "/models/unload", `{"model":""}`)
+	if got := decode[loadResult](t, res); !got.Success || g.Info() != nil {
+		t.Fatalf("降ろしたはず: %+v", got)
+	}
+	res, _ = http.Get(ts.URL + "/models")
+	if got := decode[serverModels](t, res); got.Current != nil || got.Data[0].Status.Value != "unloaded" {
+		t.Errorf("降ろしたあとの /models: %+v", got)
+	}
+	res = post(t, ts.URL, `{"model":"ollama:qwen3.5:4b","messages":[{"role":"user","content":"hi"}]}`)
+	if got := decode[completion](t, res); got.Model != "ollama:qwen3.5:4b" || g.Info() == nil {
+		t.Errorf("降ろしたあとのチャットは読み込むはず: %+v", got)
+	}
+}
+
+// 置き場所を足す・外す。返事はそのあとの一覧。足せないときは理由を 400 で返す。表示だけの設定は作業領域の大きさつき
+func TestPlaces(t *testing.T) {
+	g := &fakeGen{nCtx: 100}
+	m := newFakeModels(g)
+	s := New(g, m, 32768, Defaults{MaxTokens: 100})
+	s.SetSettings(Settings{Port: 8089, Lib: "lib", ConfigFile: "server.json"})
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+
+	res := postPath(t, ts.URL, "/aibow/places/add", `{"path":"/data/models2"}`)
+	if got := decode[placeList](t, res); len(got.Places) != 2 || got.Places[1].Path != `/data/models2` || got.Places[1].Origin != models.OriginAdded {
+		t.Errorf("足したあとの一覧: %+v", got)
+	}
+	res = postPath(t, ts.URL, "/aibow/places/add", `{"path":"/data/models2"}`)
+	if res.StatusCode != http.StatusBadRequest {
+		t.Errorf("同じ置き場所は足せないはず: %d", res.StatusCode)
+	}
+	res.Body.Close()
+	res = postPath(t, ts.URL, "/aibow/places/remove", `{"path":"/data/models2"}`)
+	if got := decode[placeList](t, res); len(got.Places) != 1 {
+		t.Errorf("外したあとの一覧: %+v", got)
+	}
+	res, _ = http.Get(ts.URL + "/aibow/places")
+	if got := decode[placeList](t, res); len(got.Places) != 1 {
+		t.Errorf("一覧: %+v", got)
+	}
+	res, _ = http.Get(ts.URL + "/aibow/settings")
+	if got := decode[Settings](t, res); got.NCtx != 32768 || got.Port != 8089 || got.ConfigFile != "server.json" {
+		t.Errorf("表示だけの設定: %+v", got)
 	}
 }

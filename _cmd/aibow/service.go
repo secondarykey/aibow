@@ -25,6 +25,7 @@ import (
 	"uuid"
 
 	"github.com/secondarykey/aibow"
+	apiclient "github.com/secondarykey/aibow/api/client"
 	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/mcp/client"
@@ -155,11 +156,14 @@ const modelsEventName = "models"
 // ModelsResult は Models の戻り値。
 type ModelsResult struct {
 	Models  []models.Entry    `json:"models"`
-	Current *engine.ModelInfo `json:"current"`           // 未読み込みなら null
+	Current *engine.ModelInfo `json:"current"`           // 未読み込み(降ろした)なら null
 	Loading string            `json:"loading,omitempty"` // 起動時に読み込み中のモデルの名前
 	GPU     bool              `json:"gpu"`
 	Error   string            `json:"error,omitempty"` // 起動に失敗した理由。あれば何もできない
 	Notices []string          `json:"notices"`         // 起動時に伝えること(使われなくなった環境変数など)
+
+	// GPULayers はモデルの ID → 読み込むときの GPU の層数(直接ならアプリの DB、aibow-server 越しならサーバーの PC に覚えた値。8-4)
+	GPULayers map[string]int `json:"gpu_layers"`
 
 	// Server は生成を頼んでいる aibow-server のつなぎ先(アプリの中で動かしているときは空。0015)
 	Server string `json:"server,omitempty"`
@@ -185,7 +189,7 @@ func (s *ChatService) Models() ModelsResult {
 	if s.serverDown.Swap(false) {
 		log.Noticef("aibow-server につながりました: %s", s.host.server())
 	}
-	r.Models, r.Current, r.GPU = l.models, l.current, l.gpu
+	r.Models, r.Current, r.GPU, r.GPULayers = l.models, l.current, l.gpu, l.layers
 	if name := s.loading.Load(); name != nil {
 		r.Loading = *name
 	}
@@ -298,6 +302,102 @@ func (s *ChatService) SetGPULayers(n int) (*engine.ModelInfo, error) {
 		logModel("GPU に載せる層を変えて読み直しました", i)
 	}
 	return i, nil
+}
+
+// ---- モデルを扱う画面(0015 の 8-4) -------------------------------------------------------
+//
+// すぐ効く操作だけを画面から変える(読み込む / 降ろす・モデルごとの GPU の層数・置き場所を足す / 外す)。
+// 作業領域・ポート・llama.cpp の場所・最初のモデルは表示だけ(0015 の 21)。どちらの形でも同じに見せる(modelHost)。
+// 読み込むのは SwitchModel(会話のモデルは変えない。会話のモデルが違えば、送信の前に読み直す)。
+
+// UnloadModel は読み込み中のモデルを降ろす(VRAM を空ける。ほかのアプリと並べて使うため。0015 の 23)。
+// 降ろしたあとに送信すると、送信の前に会話のモデルを読み込む(0014 の 3)。
+func (s *ChatService) UnloadModel() error {
+	if s.startupErr != nil {
+		return s.startupErr
+	}
+	i := s.host.info()
+	if err := s.host.unload(); err != nil {
+		log.Error(err.Error())
+		return err
+	}
+	if i != nil {
+		log.Noticef("モデルを降ろしました: %s", i.ID)
+	}
+	return nil
+}
+
+// SetModelGPULayers は、モデルごとの GPU の層数を変えて覚える。読み込み中のモデルなら読み直し、その情報を返す(ほかのモデルなら nil。
+// 次に読み込むときから効く)。直接ならアプリの DB、aibow-server 越しならサーバーの PC に覚える(0015 の 9)。
+func (s *ChatService) SetModelGPULayers(id string, n int) (*engine.ModelInfo, error) {
+	if s.startupErr != nil {
+		return nil, s.startupErr
+	}
+	if n < 0 {
+		return nil, errors.New("GPU に載せる層の数は 0 以上にしてください")
+	}
+	i, err := s.host.setModelGPULayers(id, n)
+	if err != nil {
+		log.Error(err.Error())
+		return nil, err
+	}
+	if i != nil {
+		logModel("GPU に載せる層を変えて読み直しました", i)
+	} else {
+		log.Noticef("モデル %s の GPU に載せる層を %d として覚えました(次に読み込むときから効きます)", id, n)
+	}
+	return i, nil
+}
+
+// ModelPlaces はモデルの置き場所の一覧(models フォルダ・Ollama・足した置き場所。aibow-server 越しならサーバーの PC のもの)。
+func (s *ChatService) ModelPlaces() ([]models.Place, error) {
+	if s.startupErr != nil {
+		return nil, s.startupErr
+	}
+	return s.host.places()
+}
+
+// AddModelPlace は置き場所(フォルダか GGUF のファイル)を足し、足したあとの一覧を返す。
+// aibow-server 越しなら、path はサーバーの PC のパスで、サーバーがあるかを確かめる(0015 の 31)。
+func (s *ChatService) AddModelPlace(path string) ([]models.Place, error) {
+	if s.startupErr != nil {
+		return nil, s.startupErr
+	}
+	l, err := s.host.addPlace(path)
+	if err != nil {
+		log.Warn(err.Error())
+	}
+	return l, err
+}
+
+// RemoveModelPlace は足した置き場所を外し、外したあとの一覧を返す。手で決めた置き場所は外せない(0015 の 26)。
+func (s *ChatService) RemoveModelPlace(path string) ([]models.Place, error) {
+	if s.startupErr != nil {
+		return nil, s.startupErr
+	}
+	l, err := s.host.removePlace(path)
+	if err != nil {
+		log.Warn(err.Error())
+	}
+	return l, err
+}
+
+// ModelSettingsResult は ModelSettings の戻り値。
+type ModelSettingsResult struct {
+	// Server はつなぎ先(直接なら空)
+	Server string `json:"server,omitempty"`
+	// Settings は表示だけの設定。直接なら作業領域は 0(会話ごと)・ポートは 0(待ち受けない)・設定ファイルは空(環境変数で変える)
+	Settings apiclient.ServerSettings `json:"settings"`
+}
+
+// ModelSettings は、表示だけの設定(作業領域・ポート・llama.cpp の場所・最初のモデル・モデルの置き場所)を返す。
+// 画面からは変えない(aibow-server 越しなら server.json で変えて起動し直す。直接なら環境変数。0015 の 21)。
+func (s *ChatService) ModelSettings() (ModelSettingsResult, error) {
+	if s.startupErr != nil {
+		return ModelSettingsResult{}, s.startupErr
+	}
+	v, err := s.host.settings()
+	return ModelSettingsResult{Server: s.host.server(), Settings: v}, err
 }
 
 // ---- プロファイル(0014) -------------------------------------------------------------------

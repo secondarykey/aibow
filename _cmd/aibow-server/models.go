@@ -5,6 +5,9 @@ package main
 // GPU の層数は「その PC の人が決めること」なので、サーバーの PC の server-models.json に覚える(0015 の 9)。
 // aibow-server は DB を読まない(DB はアプリのもの。0012)。まだ覚えていないモデルは AIBOW_GPU_LAYERS(既定 999 = 全部)。
 // 画面のアプリの DB の model_gpu_layers とは別の値(アプリが直接動かす形に戻したときは、アプリの値を使う)。
+//
+// 画面で足したモデルの置き場所も server-models.json に覚え、server.json の modelsDir(と Ollama の保存先)に足す形で一覧に出す
+// (手で書く server.json は書き換えない。0015 の 22)。
 
 import (
 	"encoding/json"
@@ -13,6 +16,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 
@@ -24,19 +28,44 @@ import (
 // modelManager は api.Models の本物。
 type modelManager struct {
 	eng           *engine.Engine
-	catalog       models.Catalog
+	catalog       models.Catalog // 手で決めた置き場所(足した置き場所は state にあり、catalogNow で合わせる)
 	state         *serverState
 	defaultLayers int // まだ覚えていないモデルの GPU の層数
+
+	missing models.MissingWatch
 }
 
-func (m *modelManager) List() []models.Entry { return m.catalog.List() }
+// catalogNow は、手で決めた置き場所に、画面で足した置き場所を合わせた一覧の係。
+func (m *modelManager) catalogNow() models.Catalog {
+	c := m.catalog
+	c.Added = m.state.places()
+	return c
+}
+
+// List は使えるモデルの一覧。見つからない足した置き場所は一覧に出さず、見つからなくなったときに1回だけ Warn のログを出す(0015 の 28)。
+func (m *modelManager) List() []models.Entry {
+	c := m.catalogNow()
+	lost, found := m.missing.Check(c)
+	logPlaces(lost, found)
+	return c.List()
+}
+
+// logPlaces は、見つからなくなった置き場所と、また見つかった置き場所をログに出す。
+func logPlaces(lost, found []string) {
+	for _, p := range lost {
+		log.Warnf("モデルの置き場所が見つからないので、そのモデルを一覧に出しません: %s(覚えたまま残します。つなぎ直せば一覧に戻ります)", p)
+	}
+	for _, p := range found {
+		log.Noticef("モデルの置き場所がまた見つかりました: %s", p)
+	}
+}
 
 // Find は、ID(ollama:qwen3.5:4b)・GGUF のパスのほか、一覧の名前(qwen3.5:4b。ollama list と同じ表示)でも探す。
 func (m *modelManager) Find(name string) (models.Entry, error) {
-	if e, err := m.catalog.Find(name); err == nil {
+	if e, err := m.catalogNow().Find(name); err == nil {
 		return e, nil
 	}
-	list := m.catalog.List()
+	list := m.List()
 	names := make([]string, 0, len(list))
 	for _, e := range list {
 		if e.Name == name {
@@ -84,6 +113,37 @@ func (m *modelManager) SetGPULayers(id string, n int) (*engine.ModelInfo, error)
 
 func (m *modelManager) HasGPU() bool { return m.eng.HasGPU }
 
+func (m *modelManager) Unload() (bool, error) { return m.eng.UnloadModel() }
+
+func (m *modelManager) Places() []models.Place { return m.catalogNow().Places() }
+
+// AddPlace は置き場所を確かめて(サーバーの PC にあるか・フォルダか GGUF か・まだ入っていないか)覚える。
+func (m *modelManager) AddPlace(path string) error {
+	abs, err := m.catalogNow().CheckPlace(path)
+	if err != nil {
+		return err
+	}
+	if err := m.state.setPlaces(append(m.state.places(), abs)); err != nil {
+		return err
+	}
+	log.Noticef("モデルの置き場所を足しました: %s", abs)
+	return nil
+}
+
+// RemovePlace は足した置き場所を外す。手で決めた置き場所(modelsDir・Ollama)は外せない(server.json か環境変数で変える)。
+func (m *modelManager) RemovePlace(path string) error {
+	c := m.catalogNow()
+	p, ok := c.IsAdded(path)
+	if !ok {
+		return fmt.Errorf("%s は画面で足した置き場所ではないので外せません(models フォルダと Ollama の保存先は server.json か環境変数で変えます)", path)
+	}
+	if err := m.state.setPlaces(slices.DeleteFunc(slices.Clone(c.Added), func(s string) bool { return s == p })); err != nil {
+		return err
+	}
+	log.Noticef("モデルの置き場所を外しました: %s", p)
+	return nil
+}
+
 // ---- server-models.json ----------------------------------------------------------------
 
 // serverState は aibow-server が書くファイル(server-models.json)。手で書く server.json とは分ける(0015 の 19)。
@@ -93,10 +153,12 @@ type serverState struct {
 	data stateData
 }
 
-// stateData はファイルの中身。8-4 でモデルの置き場所などが増える見込み
+// stateData はファイルの中身。
 type stateData struct {
 	// GPULayers はモデルの ID → GPU に載せる層の数
 	GPULayers map[string]int `json:"gpuLayers"`
+	// Places は画面で足したモデルの置き場所(フォルダか GGUF のファイル。サーバーの PC の絶対パス。8-4)
+	Places []string `json:"places,omitempty"`
 }
 
 // loadState はファイルを読む。無ければ空(まだ何も覚えていない)。
@@ -134,6 +196,24 @@ func (s *serverState) setGPULayers(id string, n int) error {
 	next.GPULayers = layers
 	if err := writeJSONFile(s.path, next); err != nil {
 		return fmt.Errorf("GPU の層数を %s に書けません(次の起動では覚えていません): %w", s.path, err)
+	}
+	s.data = next
+	return nil
+}
+
+func (s *serverState) places() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.data.Places)
+}
+
+func (s *serverState) setPlaces(places []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	next := s.data
+	next.Places = places
+	if err := writeJSONFile(s.path, next); err != nil {
+		return fmt.Errorf("モデルの置き場所を %s に書けません: %w", s.path, err)
 	}
 	s.data = next
 	return nil

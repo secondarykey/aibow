@@ -48,6 +48,8 @@ type Server struct {
 	// nCtx はサーバーの作業領域の大きさ。起動のときに決めた大きさで固定し、クライアントからは変えさせない
 	// (共有するサーバーで1人の都合で作り直すと、ほかの人の KV キャッシュが消えるため。0015 の 3)
 	nCtx int
+	// settings は、表示だけのサーバーの設定(GET /aibow/settings。8-4)。SetSettings で渡す
+	settings Settings
 
 	// turn は生成の順番。生成は作業領域が1つなので1つずつしかできない。
 	// 席が1つのチャンネルにして、空くまで待たせる(順番待ち。断らない)。
@@ -74,13 +76,19 @@ func (s *Server) Handler() http.Handler {
 	// aibow 専用の口(0015)。/v1/ と分け、意味が同じものは llama.cpp の server の名前にそろえる
 	mux.HandleFunc("GET /models", s.handleServerModels)
 	mux.HandleFunc("POST /models/load", s.handleLoad)
+	mux.HandleFunc("POST /models/unload", s.handleUnload)
 	mux.HandleFunc("POST /apply-template", s.handleApplyTemplate)
 	mux.HandleFunc("POST /aibow/count-tokens", s.handleCountTokens)
 	mux.HandleFunc("POST /aibow/gpu-layers", s.handleGPULayers)
+	mux.HandleFunc("GET /aibow/places", s.handlePlaces)
+	mux.HandleFunc("POST /aibow/places/add", s.handleAddPlace)
+	mux.HandleFunc("POST /aibow/places/remove", s.handleRemovePlace)
+	mux.HandleFunc("GET /aibow/settings", s.handleSettings)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "invalid_request_error", "",
 			"このパスはありません: "+r.Method+" "+r.URL.Path+"(あるのは GET /v1/models・POST /v1/chat/completions と、aibow 専用の "+
-				"GET /models・POST /models/load・POST /apply-template・POST /aibow/count-tokens・POST /aibow/gpu-layers です)")
+				"GET /models・POST /models/load・POST /models/unload・POST /apply-template・POST /aibow/count-tokens・POST /aibow/gpu-layers・"+
+				"GET /aibow/places・POST /aibow/places/add・POST /aibow/places/remove・GET /aibow/settings です)")
 	})
 	return mux
 }

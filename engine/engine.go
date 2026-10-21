@@ -82,7 +82,7 @@ type GenerateStats struct {
 }
 
 // Engine は llama.cpp と、今読み込んでいるモデル1つ、その作業領域(コンテキスト)を持つ。
-// モデルは LoadModel で入れ替えられる。
+// モデルは LoadModel で入れ替えられ、UnloadModel で降ろせる。
 type Engine struct {
 	cfg     Config
 	Devices []string // llama.cpp が見つけた計算装置
@@ -197,6 +197,20 @@ func (e *Engine) SetGPULayers(n int) (*ModelInfo, error) {
 		return nil, nil
 	}
 	return e.replace(prev.entry(), func() { e.cfg.GPULayers = old })
+}
+
+// UnloadModel はモデルと作業領域を解放して、VRAM を空ける(ほかのアプリと並べて使うため。0015 の 23)。
+// 未読み込みなら何もしない。解放したら true。次に生成するには、また読み込む(会話の仕組みは送信の前に会話のモデルを読み込む)。
+func (e *Engine) UnloadModel() (bool, error) {
+	if !e.mu.TryLock() {
+		return false, ErrBusy
+	}
+	defer e.mu.Unlock()
+	if e.model == 0 {
+		return false, nil
+	}
+	e.unload()
+	return true, nil
 }
 
 // replace は今のモデルを解放してから m を読み込む。e.mu を持った状態で呼ぶ。

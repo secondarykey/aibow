@@ -10,7 +10,10 @@ package api
 //
 //	GET  /models              使えるモデルの一覧(読み込み中か・GPU の層数つき)。llama.cpp と同じく status.value で状態を返す
 //	POST /models/load         {"model"} を明示的に読み込む(送信の前に読み込んで、読み込み中のお知らせとログを出すため)
+//	POST /models/unload       {"model"} 読み込み中のモデルを降ろす(VRAM を空ける。8-4)
 //	POST /aibow/gpu-layers    {"model", "n_gpu_layers"} モデルごとの GPU の層数を変えて覚える(読み込み中のモデルなら読み直す)
+//
+// モデルの置き場所と、表示だけのサーバーの設定の口は places.go(8-4)。
 //
 // 読み込み・読み直しは生成と同じ順番待ちの席の中で行う(作業領域が1つなので、生成と取り合わない)。
 
@@ -39,6 +42,15 @@ type Models interface {
 	SetGPULayers(id string, n int) (*engine.ModelInfo, error)
 	// HasGPU は GPU が見つかったか
 	HasGPU() bool
+
+	// Unload は読み込み中のモデルを降ろす(VRAM を空ける)。降ろしたら true(読み込んでいなければ false)
+	Unload() (bool, error)
+	// Places はモデルの置き場所の一覧(手で決めた場所と、画面で足した場所。8-4)
+	Places() []models.Place
+	// AddPlace は置き場所(フォルダか GGUF のファイル)を足して覚える。path はサーバーの PC のパス。無ければ理由を書いたエラー
+	AddPlace(path string) error
+	// RemovePlace は足した置き場所を外す(覚えたものから消す)。手で決めた場所は外せない
+	RemovePlace(path string) error
 }
 
 // ---- JSON の形 ------------------------------------------------------------------------
@@ -119,6 +131,38 @@ func (s *Server) handleLoad(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, loadResult{Success: true, Model: info})
+}
+
+// handleUnload は POST /models/unload。model が空か読み込み中のモデルなら降ろす。読み込んでいない別のモデルなら何もしない
+// (llama.cpp の router は、モデルごとのプロセスを止める口。aibow は1つしか読み込まないので、降ろすのは読み込み中のモデルだけ)。
+func (s *Server) handleUnload(w http.ResponseWriter, r *http.Request) {
+	req, ok := s.readLoadRequest(w, r)
+	if !ok {
+		return
+	}
+	if !s.takeTurn(r) {
+		return
+	}
+	defer s.releaseTurn()
+	info := s.gen.Info()
+	if info == nil {
+		writeJSON(w, http.StatusOK, loadResult{Success: true})
+		return
+	}
+	if req.Model != "" && req.Model != info.ID {
+		if m, err := s.models.Find(req.Model); err != nil || m.ID != info.ID {
+			log.Infof("モデル %s は読み込んでいないので、降ろしません(読み込み中: %s)", req.Model, info.ID)
+			writeJSON(w, http.StatusOK, loadResult{Success: true})
+			return
+		}
+	}
+	if _, err := s.models.Unload(); err != nil {
+		log.Error(err.Error())
+		writeError(w, http.StatusInternalServerError, "server_error", "", err.Error())
+		return
+	}
+	log.Noticef("モデルを降ろしました: %s(VRAM を空けました。次のリクエストで読み込みます)", info.ID)
+	writeJSON(w, http.StatusOK, loadResult{Success: true})
 }
 
 // handleGPULayers は POST /aibow/gpu-layers。model が空なら読み込み中のモデル。
