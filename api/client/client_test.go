@@ -33,6 +33,7 @@ type fakeGen struct {
 	st      engine.GenerateStats
 	block   chan struct{} // nil でなければ、生成の途中でこれが閉じられるか ctx が終わるまで待つ
 	started chan struct{}
+	err     error // nil でなければ、数えるときにこのエラーを返す
 }
 
 func (f *fakeGen) Info() *engine.ModelInfo {
@@ -45,6 +46,9 @@ func (f *fakeGen) Info() *engine.ModelInfo {
 }
 
 func (f *fakeGen) CountTokens(p format.Prompt) (int, error) {
+	if f.err != nil {
+		return 0, f.err
+	}
 	return len(p.Messages)*10 + len(p.Tools), nil
 }
 
@@ -340,5 +344,19 @@ func TestUnloadAndPlaces(t *testing.T) {
 	}
 	if st, err := c.Settings(); err != nil || st.NCtx != 32768 {
 		t.Errorf("表示だけの設定: %+v %v", st, err)
+	}
+}
+
+// モデルが無い・書式に未対応のときは、HTTP 越しでも手元と同じエラーとして見分けられる(画面はメーターを出さないだけにする)
+func TestModelErrors(t *testing.T) {
+	for _, tc := range []struct{ err, is error }{
+		{engine.ErrNoModel, engine.ErrNoModel},
+		{format.Unsupported("gemma4"), format.ErrUnsupported},
+	} {
+		c, _ := newServer(t, &fakeGen{err: tc.err})
+		_, err := c.CountTokens(format.Prompt{Messages: []format.Message{{Role: "user", Content: "hi"}}})
+		if !errors.Is(err, tc.is) || err.Error() != tc.err.Error() {
+			t.Errorf("%v: 返ってきたエラー %v", tc.err, err)
+		}
 	}
 }

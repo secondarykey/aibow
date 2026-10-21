@@ -29,6 +29,7 @@ import (
 	"github.com/secondarykey/aibow"
 	apiclient "github.com/secondarykey/aibow/api/client"
 	"github.com/secondarykey/aibow/engine"
+	"github.com/secondarykey/aibow/format"
 	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/mcp/client"
 	"github.com/secondarykey/aibow/models"
@@ -732,7 +733,9 @@ func (s *ChatService) Usage(id uuid.UUID) (*aibow.Usage, error) {
 		return nil, s.startupErr
 	}
 	u, err := s.convs.Usage(id)
-	if errors.Is(err, engine.ErrNoModel) {
+	// モデルが無い(降ろした)・書式に未対応のモデルなら、数えられないのでメーターを出さない。
+	// エラーにすると会話を開くこと(Conversation)まで失敗し、開くたびにエラーのカードが積み重なるため(未対応なことは読み込んだときと送信したときに伝える)
+	if errors.Is(err, engine.ErrNoModel) || errors.Is(err, format.ErrUnsupported) {
 		return nil, nil
 	}
 	if err != nil {

@@ -120,6 +120,8 @@ data: [DONE]
   足した置き場所は `server-models.json` の `places` に覚え、手で書く `server.json` は書き換えない(0015 の 22)。models フォルダと Ollama の保存先は外せない(表示だけ)。
   足した置き場所が見つからなくなったら一覧から外し、見つからなくなったときに1回だけ Warn のログを出す。覚えたものからは消さない(つなぎ直せば戻る。0015 の 28)。
   置き場所を足す・外すのは作業領域を使わないので、順番を待たない
+- `/aibow/count-tokens`・`/apply-template` がモデルの状態で失敗したときは、`error.code` に `model_not_loaded`(降ろした・まだ読み込んでいない)か `unsupported_format`(書式に未対応の種類のモデル)を入れる。
+  `api/client` はこれを `engine.ErrNoModel`・`format.ErrUnsupported` に戻すので、画面のアプリは直接でも HTTP 越しでも同じに「メーターを出さない」にできる(会話を開くのは止めない)
 - `/aibow/settings` は表示だけのサーバーの設定(作業領域・ポート・llama.cpp の場所・最初のモデル・設定ファイルの場所)。変えるのは `server.json` と起動し直し(0015 の 21)
 
 ### `/v1/chat/completions` に足した欄

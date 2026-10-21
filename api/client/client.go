@@ -36,6 +36,7 @@ import (
 	"time"
 
 	"github.com/secondarykey/aibow/engine"
+	"github.com/secondarykey/aibow/format"
 )
 
 // Client は aibow-server につなぐクライアント。
@@ -93,6 +94,18 @@ type APIError struct {
 }
 
 func (e *APIError) Error() string { return e.Message }
+
+// Unwrap は、サーバーが code で知らせたモデルの状態を、手元と同じエラーにする
+// (errors.Is(err, engine.ErrNoModel) / errors.Is(err, format.ErrUnsupported) が、直接でも HTTP 越しでも同じに効くように)。
+func (e *APIError) Unwrap() error {
+	switch e.Code {
+	case "model_not_loaded":
+		return engine.ErrNoModel
+	case "unsupported_format":
+		return format.ErrUnsupported
+	}
+	return nil
+}
 
 // errorBody は返事のエラーの形。ストリーミングの途中のエラーも同じ形の塊で来る。
 type errorBody struct {

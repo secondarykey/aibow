@@ -2,7 +2,10 @@ package format
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/secondarykey/aibow/tool"
@@ -43,4 +46,12 @@ func toolCall(name string, kv ...string) ToolCall {
 
 func calc(expr string) ToolCall {
 	return toolCall("calculate", "expression", expr)
+}
+
+// 書式に未対応のエラーは errors.Is で見分けられる(メーターを出さないだけにするため)
+func TestUnsupportedIs(t *testing.T) {
+	err := fmt.Errorf("数えられません: %w", Unsupported("gemma4"))
+	if !errors.Is(err, ErrUnsupported) || !strings.Contains(err.Error(), "gemma4") {
+		t.Errorf("見分けられない: %v", err)
+	}
 }

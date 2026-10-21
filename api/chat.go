@@ -17,6 +17,7 @@ package api
 import (
 	"cmp"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -396,7 +397,7 @@ func (s *Server) handleApplyTemplate(w http.ResponseWriter, r *http.Request) {
 	}
 	prompt, err := s.gen.ApplyTemplate(p)
 	if err != nil {
-		writeError(w, http.StatusServiceUnavailable, "server_error", "", err.Error())
+		writeError(w, http.StatusServiceUnavailable, "server_error", modelErrorCode(err), err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, templateResult{Prompt: prompt})
@@ -413,8 +414,25 @@ func (s *Server) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 	}
 	n, err := s.gen.CountTokens(p)
 	if err != nil {
-		writeError(w, http.StatusServiceUnavailable, "server_error", "", err.Error())
+		writeError(w, http.StatusServiceUnavailable, "server_error", modelErrorCode(err), err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, countResult{NTokens: n})
+}
+
+// モデルの状態で数えられない・書式を当てられないときのエラーの code(aibow のクライアントが見分けるため。OpenAI の決まりには無い値)。
+// 画面のアプリは、これらのときはメーターを出さないだけにする(会話を開くのは止めない)。
+const (
+	codeModelNotLoaded    = "model_not_loaded"   // engine.ErrNoModel(降ろした・まだ読み込んでいない)
+	codeUnsupportedFormat = "unsupported_format" // format.ErrUnsupported(書式に未対応の種類のモデル)
+)
+
+func modelErrorCode(err error) string {
+	switch {
+	case errors.Is(err, engine.ErrNoModel):
+		return codeModelNotLoaded
+	case errors.Is(err, format.ErrUnsupported):
+		return codeUnsupportedFormat
+	}
+	return ""
 }

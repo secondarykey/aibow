@@ -19,6 +19,7 @@ package format
 // 今ある実装は Qwen3.5 用(qwen35.go)だけ。
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -108,11 +109,23 @@ func For(arch string) Format {
 	return nil
 }
 
-// Unsupported は、書式に対応していない種類のモデルで生成しようとしたときのエラー。
+// ErrUnsupported は、書式に対応していない種類のモデルのエラー(errors.Is で見分ける)。
+// メーター(トークン数)は数えられないだけで、会話を開くのは止めない(画面は「メーターなし」にする)ために見分ける。
+var ErrUnsupported = errors.New("未対応の書式")
+
+// Unsupported は、書式に対応していない種類のモデルで生成しようとしたときのエラー。errors.Is(err, ErrUnsupported) になる。
 func Unsupported(arch string) error {
-	return fmt.Errorf("このモデルの書式(種類: %s)には未対応です。対応しているのは Qwen3.5(qwen35)だけです。"+
-		"書式が合わないまま会話すると、モデルが会話の区切りを理解できずにおかしな返事になるため、生成しません", arch)
+	return unsupportedError{arch}
 }
+
+type unsupportedError struct{ arch string }
+
+func (e unsupportedError) Error() string {
+	return fmt.Sprintf("このモデルの書式(種類: %s)には未対応です。対応しているのは Qwen3.5(qwen35)だけです。"+
+		"書式が合わないまま会話すると、モデルが会話の区切りを理解できずにおかしな返事になるため、生成しません", e.arch)
+}
+
+func (e unsupportedError) Is(target error) bool { return target == ErrUnsupported }
 
 // partialSuffix は、s の末尾が tag の先頭の何文字分と一致しているかを返す。
 // 例: partialSuffix("考えた</th", "</think>") == 4
