@@ -28,7 +28,7 @@ Ollama が保存したファイルを aibow が直接読むので、Ollama は�
 |---|---|
 | `aibow.go` | パッケージの説明。リポジトリのルートは会話の仕組み(`aibow` パッケージ)で、画面のことは知らない |
 | `engine/` | llama.cpp を呼んで文章を生成する部分(モデルの読み込み・入れ替え、トークン化とトークン数を数えること、計算、選択の繰り返し、生成された文字の切れ目や文字にならないバイトの扱い)。会話の仕組みを知らないので、生成だけを使うこともできる |
-| `models/` | 使えるモデルの一覧を作る(`models\` フォルダと Ollama の保存フォルダ) |
+| `models/` | 使えるモデルの一覧を作る(`models\` フォルダと Ollama の保存フォルダと、画面で足した置き場所)。GGUF の先頭からモデルの種類(`general.architecture`)だけを読む部分(`gguf.go`。起動のときに書式に未対応のモデルを飛ばすため) |
 | `format/` | 書式(チャットテンプレート)。会話を、モデルが理解する書式の1本の文字列にし、生成された文字を「思考」「答え」「ツール呼び出し」に振り分ける。今は Qwen3.5 の書式だけ。テストのデータは `format/testdata/qwen35/` |
 | `conversation.go` | 会話の仕組み。発言を保存し、送信のたびに履歴を並べ直してモデルに渡す(モデル自身は何も覚えていない) |
 | `agent.go` | エージェントループ。モデルがツールを呼んだら実行し、結果を渡して続きを書かせる、をツールを呼ばなくなるまで繰り返す |
@@ -53,6 +53,7 @@ Ollama が保存したファイルを aibow が直接読むので、Ollama は�
 | `_cmd/aibow/main.go` | デスクトップアプリの起動(Wails のアプリとウィンドウを作る) |
 | `_cmd/aibow/config.go` | 環境変数から設定を読む(`settings.json` も読み、aibow-server のつなぎ先を決める。MCP の係を作るのは `main.go`) |
 | `_cmd/aibow/modelhost.go` | モデルを扱う係。アプリの中で動かす形と、aibow-server につなぐ形の2つ |
+| `_cmd/aibow/modelplaces.go` | アプリの中で動かすときに、設定の画面の「モデル」のタブで足した置き場所を `%APPDATA%ibow\model-places.json` に覚える |
 | `_cmd/aibow/service.go` | 画面から呼ばれる Go のメソッド(モデル・会話・設定・メーター・送信・今すぐ要約)。会話の仕組みとの中継だけをする |
 | `_cmd/aibow/frontend/src/` | チャット画面(React + TypeScript)。`App.tsx` が全体、`use*.ts` が Go とのやり取り、`components/` が表示 |
 | `_cmd/aibow/frontend/bindings/` | `wails3 generate bindings` が作る、Go のメソッドを呼ぶ関数と型(自動生成。手で直さない) |
