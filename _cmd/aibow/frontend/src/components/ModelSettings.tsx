@@ -4,6 +4,8 @@
 // 作業領域・ポート・llama.cpp の場所・最初のモデルは表示だけ(起動し直しが要り、aibow-server ならつないでいる全員に響くため)。
 // 直接(アプリの中で動かす)でも aibow-server 越しでも同じに見せる。aibow-server 越しなら、一覧・置き場所・層の数はサーバーの PC のもの。
 // 同時に読み込むのは1つ(VRAM に1つしか載らない)ので、「読み込む」は今のモデルと入れ替える。
+// aibow-server 越しのときは「読み込む」「降ろす」を出さない(2026-10-22、ユーザーと決めた)。会話に結びつかない読み込み・降ろすは、
+// サーバーを使っているほかの利用者(Cline など)と取り合いになるだけなので。モデルが変わるのは会話を送信するときだけにする。
 import { useCallback, useEffect, useState } from "react";
 import { LuCircleCheck, LuFile, LuFileX, LuFolder, LuFolderX, LuInfo, LuLock, LuX } from "react-icons/lu";
 import { ChatService } from "../../bindings/github.com/secondarykey/aibow/_cmd/aibow";
@@ -58,7 +60,7 @@ export function ModelSettings({ models, disabled, onError }: Props) {
   return (
     <>
       <h2 title={remote ? `aibow-server(${models.server})のモデル。読み込めるのは1つ` : "読み込めるのは1つ(VRAM に1つしか載らない)"}>モデル</h2>
-      <ModelTable models={models} disabled={disabled} />
+      <ModelTable models={models} disabled={disabled} remote={remote} />
 
       <h2 className="section" title={remote ? "置き場所のパスは aibow-server の PC のもの" : "モデルを探す場所"}>置き場所</h2>
       <PlaceList places={places} remote={remote} onRemove={p => changePlaces(() => ChatService.RemoveModelPlace(p))} />
@@ -71,7 +73,7 @@ export function ModelSettings({ models, disabled, onError }: Props) {
 
 // ---- モデルの一覧 ----------------------------------------------------------------------
 
-function ModelTable({ models, disabled }: { models: Models; disabled: boolean }) {
+function ModelTable({ models, disabled, remote }: { models: Models; disabled: boolean; remote: boolean }) {
   const { current, loading } = models;
   if (!models.models.length) return <p className="hint">モデルが見つかりません</p>;
   return (
@@ -89,6 +91,7 @@ function ModelTable({ models, disabled }: { models: Models; disabled: boolean })
           layers={models.gpuLayers[m.id] ?? 999}
           totalLayers={current?.id === m.id ? current.layers : undefined}
           disabled={disabled || loading}
+          remote={remote}
           onLoad={() => models.switchModel(m.id)}
           onUnload={() => models.unload()}
           onLayers={n => models.setLayers(m.id, n)}
@@ -98,12 +101,13 @@ function ModelTable({ models, disabled }: { models: Models; disabled: boolean })
   );
 }
 
-function ModelRow({ m, loaded, layers, totalLayers, disabled, onLoad, onUnload, onLayers }: {
+function ModelRow({ m, loaded, layers, totalLayers, disabled, remote, onLoad, onUnload, onLayers }: {
   m: ModelEntry;
   loaded: boolean;
   layers: number;
   totalLayers?: number; // 読み込み中のモデルの層の数(読み込んでいなければ分からない)
   disabled: boolean;
+  remote: boolean; // aibow-server 越し(読み込む・降ろすは出さない)
   onLoad(): void;
   onUnload(): void;
   onLayers(n: number): void;
@@ -124,7 +128,7 @@ function ModelRow({ m, loaded, layers, totalLayers, disabled, onLoad, onUnload, 
         {n !== layers && <button disabled={disabled} onClick={() => onLayers(n)} title={loaded ? "変えて読み直す" : "次に読み込むときから効く"}>適用</button>}
       </span>
       <span className="model-action">
-        {loaded
+        {remote ? null : loaded
           ? <button disabled={disabled} onClick={onUnload} title="VRAM を空ける。次に送信するときに会話のモデルを読み込む">降ろす</button>
           : <button disabled={disabled} onClick={onLoad} title="今のモデルと入れ替える">読み込む</button>}
       </span>

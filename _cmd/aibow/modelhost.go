@@ -270,7 +270,12 @@ func (h *remoteHost) tryContext(n int) (bool, error) {
 	return h.c.EnsureContextSize(n)
 }
 
-func (h *remoteHost) unload() error { return h.c.UnloadModel() }
+// unload は、aibow-server 越しではしない(2026-10-22、ユーザーと決めた)。会話に結びつかない降ろすは、サーバーを使っている
+// ほかの利用者と取り合いになるだけなので。サーバーの PC で VRAM を空けたいときは、aibow-server の POST /models/unload を手で呼ぶ
+func (h *remoteHost) unload() error {
+	return errors.New("aibow-server につないでいるときは、画面からモデルを降ろせません(ほかの利用者が使っているモデルも降ろしてしまうため)。" +
+		"サーバーの PC で aibow-server の POST /models/unload を呼んでください")
+}
 
 // places・addPlace・removePlace のパスはサーバーの PC のもの(0015 の 31)。足すときはサーバーがあるかを確かめる。
 func (h *remoteHost) places() ([]models.Place, error)                 { return h.c.Places() }
