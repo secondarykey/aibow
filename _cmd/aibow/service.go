@@ -18,8 +18,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
-	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -392,11 +390,9 @@ func (s *ChatService) RemoveModelPlace(path string) ([]models.Place, error) {
 type ModelSettingsResult struct {
 	// Server はつなぎ先(直接なら空)
 	Server string `json:"server,omitempty"`
-	// Settings は表示だけの設定。直接なら作業領域は 0(会話ごと)・ポートは 0(待ち受けない)・設定ファイルは空(環境変数で変える)
+	// Settings は表示だけの設定。直接なら作業領域は 0(会話ごと)・ポートは 0(待ち受けない)・設定ファイルは空(環境変数で変える)。
+	// aibow-server 越しなら作業領域だけ(サーバーの PC のパスなどは渡さない。0015 の 21)
 	Settings apiclient.ServerSettings `json:"settings"`
-	// LocalPaths は、この PC のパスが置き場所としてそのまま使えるか(直接か、同じ PC の aibow-server につないでいる)。
-	// 置き場所のパスはモデルを読み込む PC のものなので、ほかの PC の aibow-server なら、この PC のフォルダを選ぶダイアログは出さない(0015 の 31)
-	LocalPaths bool `json:"local_paths"`
 }
 
 // ModelSettings は、表示だけの設定(作業領域・ポート・llama.cpp の場所・最初のモデル・モデルの置き場所)を返す。
@@ -406,24 +402,10 @@ func (s *ChatService) ModelSettings() (ModelSettingsResult, error) {
 		return ModelSettingsResult{}, s.startupErr
 	}
 	v, err := s.host.settings()
-	where := s.host.server()
-	return ModelSettingsResult{Server: where, Settings: v, LocalPaths: where == "" || isLoopback(where)}, err
+	return ModelSettingsResult{Server: s.host.server(), Settings: v}, err
 }
 
-// isLoopback は、つなぎ先がこの PC(127.0.0.1・::1・localhost)か。
-func isLoopback(rawURL string) bool {
-	u, err := url.Parse(rawURL)
-	if err != nil {
-		return false
-	}
-	if u.Hostname() == "localhost" {
-		return true
-	}
-	ip := net.ParseIP(u.Hostname())
-	return ip != nil && ip.IsLoopback()
-}
-
-// ChooseModelPlace は、置き場所を選ぶダイアログを出し、選んだフォルダ(kind が "dir")か GGUF のファイル(kind が "file")の
+// ChooseModelPlace は、置き場所を選ぶダイアログを出し(アプリの中で動かすときだけ使う。置き場所はモデルを読み込む PC のパスなので)、選んだフォルダ(kind が "dir")か GGUF のファイル(kind が "file")の
 // 絶対パスを返す。取り消したら空。足すのは AddModelPlace(選んだだけでは足さない)。
 func (s *ChatService) ChooseModelPlace(kind string) (string, error) {
 	app := application.Get()

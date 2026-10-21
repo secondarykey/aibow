@@ -57,7 +57,7 @@ export function BuiltinTools(): $CancellablePromise<aibow$0.KnownTool[] | null> 
 }
 
 /**
- * ChooseModelPlace は、置き場所を選ぶダイアログを出し、選んだフォルダ(kind が "dir")か GGUF のファイル(kind が "file")の
+ * ChooseModelPlace は、置き場所を選ぶダイアログを出し(アプリの中で動かすときだけ使う。置き場所はモデルを読み込む PC のパスなので)、選んだフォルダ(kind が "dir")か GGUF のファイル(kind が "file")の
  * 絶対パスを返す。取り消したら空。足すのは AddModelPlace(選んだだけでは足さない)。
  */
 export function ChooseModelPlace(kind: string): $CancellablePromise<string> {

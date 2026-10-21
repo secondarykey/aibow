@@ -8,12 +8,14 @@ package main
 //
 //	直接       … 今までどおり。GPU の層数はアプリの DB(model_gpu_layers)に覚え、作業領域は会話ごとに作り直す(0009)。
 //	             画面で足したモデルの置き場所は手元の model-places.json(modelplaces.go)
-//	HTTP 越し  … llama.cpp を読み込まない。GPU の層数と置き場所はサーバーの PC に覚え、作業領域はサーバーが決めた大きさで固定(0015 の 3・9)
+//	HTTP 越し  … llama.cpp を読み込まない。作業領域はサーバーが決めた大きさで固定(0015 の 3)
 //
 // 8-4(モデルを扱う画面)で、降ろす・モデルごとの層の数・置き場所を足す / 外す・表示だけの設定を足した。
+// HTTP 越しのときは、そのどれもしない(2026-10-22、ユーザーと決めた)。降ろす・層の数・置き場所はサーバーの PC の事情で、
+// サーバーの側で決めること(中央の制御)。つないでくる側から変えるのは別の問題なので、画面のアプリは見せも変えもしない。
+// サーバーの PC の人は、aibow-server の server.json か口(POST /models/unload・/aibow/gpu-layers・/aibow/places/*)で変える。
 
 import (
-	"errors"
 	"fmt"
 	"maps"
 	"slices"
@@ -236,7 +238,11 @@ func (h *remoteHost) list() (hostModels, error) {
 	if err != nil {
 		return hostModels{}, err
 	}
-	return hostModels{models: l.Models, current: l.Current, gpu: l.GPU, layers: l.GPULayers}, nil
+	// どこから来たか(models フォルダ / Ollama / 足した場所)と層の数は、サーバーの PC の置き方なので画面に渡さない
+	for i := range l.Models {
+		l.Models[i].Origin, l.Models[i].Place = "", ""
+	}
+	return hostModels{models: l.Models, current: l.Current, gpu: l.GPU}, nil
 }
 
 // load はサーバーに読み込ませる。GPU の層数はサーバーの PC に覚えた値(0015 の 9)。
@@ -252,17 +258,19 @@ func (h *remoteHost) gpuLayers() int {
 	return 0
 }
 
-// setGPULayers はサーバーに読み直させ、サーバーの PC に覚えさせる。アプリの DB の model_gpu_layers は使わない(消さない。0015 の 9)。
-func (h *remoteHost) setGPULayers(n int) (*engine.ModelInfo, error) {
-	if h.c.Info() == nil {
-		return nil, errors.New("aibow-server が読み込んでいるモデルが分かりません。先にモデルを選んでください")
-	}
-	return h.c.SetGPULayers("", n)
+// errServerSide は、サーバーの PC の事情を、つないでいる画面から変えようとしたときのエラー(0015 の 21。2026-10-22 に変えた)。
+func errServerSide(what string) error {
+	return fmt.Errorf("aibow-server につないでいるときは、画面から%sを変えられません(サーバーの PC で決めることなので)。"+
+		"サーバーの PC で aibow-server の設定(server.json)か口(curl など)で変えてください", what)
 }
 
-// setModelGPULayers はサーバーに覚えさせる(読み込み中のモデルならサーバーが読み直す)。
-func (h *remoteHost) setModelGPULayers(id string, n int) (*engine.ModelInfo, error) {
-	return h.c.SetGPULayers(id, n)
+// setGPULayers・setModelGPULayers は、HTTP 越しではしない(層の数はサーバーの PC の VRAM に合わせる調整なので)。
+func (h *remoteHost) setGPULayers(int) (*engine.ModelInfo, error) {
+	return nil, errServerSide("GPU に載せる層の数")
+}
+
+func (h *remoteHost) setModelGPULayers(string, int) (*engine.ModelInfo, error) {
+	return nil, errServerSide("GPU に載せる層の数")
 }
 
 // tryContext は、サーバーの作業領域に入るかを確かめるだけ(作り直しは頼めない。0015 の 3)。
@@ -270,16 +278,23 @@ func (h *remoteHost) tryContext(n int) (bool, error) {
 	return h.c.EnsureContextSize(n)
 }
 
-// unload は、aibow-server 越しではしない(2026-10-22、ユーザーと決めた)。会話に結びつかない降ろすは、サーバーを使っている
-// ほかの利用者と取り合いになるだけなので。サーバーの PC で VRAM を空けたいときは、aibow-server の POST /models/unload を手で呼ぶ
-func (h *remoteHost) unload() error {
-	return errors.New("aibow-server につないでいるときは、画面からモデルを降ろせません(ほかの利用者が使っているモデルも降ろしてしまうため)。" +
-		"サーバーの PC で aibow-server の POST /models/unload を呼んでください")
+// unload は、aibow-server 越しではしない。会話に結びつかない降ろすは、サーバーを使っているほかの利用者と取り合いになるだけなので
+func (h *remoteHost) unload() error { return errServerSide("モデルを降ろすこと") }
+
+// places・addPlace・removePlace は、HTTP 越しではしない(置き場所のパスはサーバーの PC のファイル構成で、つないでくる側に見せない)。
+func (h *remoteHost) places() ([]models.Place, error) {
+	return nil, errServerSide("モデルの置き場所")
+}
+func (h *remoteHost) addPlace(string) ([]models.Place, error) {
+	return nil, errServerSide("モデルの置き場所")
+}
+func (h *remoteHost) removePlace(string) ([]models.Place, error) {
+	return nil, errServerSide("モデルの置き場所")
 }
 
-// places・addPlace・removePlace のパスはサーバーの PC のもの(0015 の 31)。足すときはサーバーがあるかを確かめる。
-func (h *remoteHost) places() ([]models.Place, error)                 { return h.c.Places() }
-func (h *remoteHost) addPlace(path string) ([]models.Place, error)    { return h.c.AddPlace(path) }
-func (h *remoteHost) removePlace(path string) ([]models.Place, error) { return h.c.RemovePlace(path) }
-
-func (h *remoteHost) settings() (apiclient.ServerSettings, error) { return h.c.Settings() }
+// settings は、作業領域の大きさだけを返す(会話の上限 + 返事の上限がこれに入る必要があるので、画面に要る)。
+// ポート・llama.cpp や設定ファイルのパスなどは、サーバーの PC の事情なので渡さない
+func (h *remoteHost) settings() (apiclient.ServerSettings, error) {
+	v, err := h.c.Settings()
+	return apiclient.ServerSettings{NCtx: v.NCtx}, err
+}

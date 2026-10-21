@@ -53,15 +53,10 @@ export interface ModelSettingsResult {
     "server"?: string;
 
     /**
-     * Settings は表示だけの設定。直接なら作業領域は 0(会話ごと)・ポートは 0(待ち受けない)・設定ファイルは空(環境変数で変える)
+     * Settings は表示だけの設定。直接なら作業領域は 0(会話ごと)・ポートは 0(待ち受けない)・設定ファイルは空(環境変数で変える)。
+     * aibow-server 越しなら作業領域だけ(サーバーの PC のパスなどは渡さない。0015 の 21)
      */
     "settings": client$0.ServerSettings;
-
-    /**
-     * LocalPaths は、この PC のパスが置き場所としてそのまま使えるか(直接か、同じ PC の aibow-server につないでいる)。
-     * 置き場所のパスはモデルを読み込む PC のものなので、ほかの PC の aibow-server なら、この PC のフォルダを選ぶダイアログは出さない(0015 の 31)
-     */
-    "local_paths": boolean;
 }
 
 /**

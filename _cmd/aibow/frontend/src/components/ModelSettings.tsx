@@ -1,11 +1,12 @@
 // 設定の画面の「モデル」のタブ(0015 の 8-4)。
 //
-// すぐ効く操作だけを画面から変える:一覧から読み込む / 降ろす・モデルごとの GPU の層数・置き場所を足す / 外す(0015 の 21)。
-// 作業領域・ポート・llama.cpp の場所・最初のモデルは表示だけ(起動し直しが要り、aibow-server ならつないでいる全員に響くため)。
-// 直接(アプリの中で動かす)でも aibow-server 越しでも同じに見せる。aibow-server 越しなら、一覧・置き場所・層の数はサーバーの PC のもの。
+// アプリの中で動かすとき:すぐ効く操作だけを画面から変える(一覧から読み込む / 降ろす・モデルごとの GPU の層数・置き場所を足す / 外す。0015 の 21)。
+// 作業領域・llama.cpp の場所・最初のモデルは表示だけ(起動し直しが要るため)。
 // 同時に読み込むのは1つ(VRAM に1つしか載らない)ので、「読み込む」は今のモデルと入れ替える。
-// aibow-server 越しのときは「読み込む」「降ろす」を出さない(2026-10-22、ユーザーと決めた)。会話に結びつかない読み込み・降ろすは、
-// サーバーを使っているほかの利用者(Cline など)と取り合いになるだけなので。モデルが変わるのは会話を送信するときだけにする。
+//
+// aibow-server 越しのとき:モデルの一覧(名前・大きさ・読み込み中か)と作業領域だけを出し、何も変えない(2026-10-22、ユーザーと決めた)。
+// 読み込む / 降ろす・層の数・置き場所・出どころ・サーバーの PC のパスは、サーバーの PC の事情でサーバーの側で決めること(中央の制御)。
+// つないでくる側から見せたり変えたりするのは別の問題なので出さない。モデルが変わるのは会話を送信するときだけ。
 import { useCallback, useEffect, useState } from "react";
 import { LuCircleCheck, LuFile, LuFileX, LuFolder, LuFolderX, LuInfo, LuLock, LuX } from "react-icons/lu";
 import { ChatService } from "../../bindings/github.com/secondarykey/aibow/_cmd/aibow";
@@ -29,17 +30,18 @@ export function ModelSettings({ models, disabled, onError }: Props) {
   const [places, setPlaces] = useState<Place[]>([]);
   const [settings, setSettings] = useState<ModelSettingsResult | null>(null);
   const { reload } = models;
+  const remote = !!models.server;
 
-  // タブを開いたときに取り直す(一覧の層の数・置き場所は、ほかで変わっていることがあるため)
+  // タブを開いたときに取り直す(一覧の層の数・置き場所は、ほかで変わっていることがあるため)。aibow-server 越しなら置き場所は聞かない
   const refresh = useCallback(async () => {
     try {
-      const [p, s] = await Promise.all([ChatService.ModelPlaces(), ChatService.ModelSettings(), reload()]);
+      const [p, s] = await Promise.all([remote ? [] : ChatService.ModelPlaces(), ChatService.ModelSettings(), reload()]);
       setPlaces(p ?? []);
       setSettings(s);
     } catch (err) {
       onError(errorMessage(err));
     }
-  }, [reload, onError]);
+  }, [remote, reload, onError]);
   const [opened] = useState(() => refresh); // 開いたときの1回だけ(refresh を毎回作り直しても、取り直しを繰り返さないように)
   useEffect(() => { opened(); }, [opened]);
 
@@ -56,15 +58,23 @@ export function ModelSettings({ models, disabled, onError }: Props) {
   };
 
   if (models.serverError) return <p className="hint">{models.serverError}</p>;
-  const remote = !!models.server;
+  if (remote) {
+    return (
+      <>
+        <h2 title="会話を送信するときに、その会話のモデルに切り替わる">モデル</h2>
+        <RemoteModelTable models={models} />
+        {settings && <RemoteSettings server={models.server} nCtx={settings.settings.n_ctx} />}
+      </>
+    );
+  }
   return (
     <>
-      <h2 title={remote ? `aibow-server(${models.server})のモデル。読み込めるのは1つ` : "読み込めるのは1つ(VRAM に1つしか載らない)"}>モデル</h2>
-      <ModelTable models={models} disabled={disabled} remote={remote} />
+      <h2 title="読み込めるのは1つ(VRAM に1つしか載らない)">モデル</h2>
+      <ModelTable models={models} disabled={disabled} />
 
-      <h2 className="section" title={remote ? "置き場所のパスは aibow-server の PC のもの" : "モデルを探す場所"}>置き場所</h2>
-      <PlaceList places={places} remote={remote} onRemove={p => changePlaces(() => ChatService.RemoveModelPlace(p))} />
-      <AddPlace localPaths={settings?.local_paths ?? false} remote={remote} onAdd={p => changePlaces(() => ChatService.AddModelPlace(p))} onError={onError} />
+      <h2 className="section" title="モデルを探す場所">置き場所</h2>
+      <PlaceList places={places} onRemove={p => changePlaces(() => ChatService.RemoveModelPlace(p))} />
+      <AddPlace onAdd={p => changePlaces(() => ChatService.AddModelPlace(p))} onError={onError} />
 
       {settings && <HostSettings s={settings} />}
     </>
@@ -73,7 +83,7 @@ export function ModelSettings({ models, disabled, onError }: Props) {
 
 // ---- モデルの一覧 ----------------------------------------------------------------------
 
-function ModelTable({ models, disabled, remote }: { models: Models; disabled: boolean; remote: boolean }) {
+function ModelTable({ models, disabled }: { models: Models; disabled: boolean }) {
   const { current, loading } = models;
   if (!models.models.length) return <p className="hint">モデルが見つかりません</p>;
   return (
@@ -91,7 +101,6 @@ function ModelTable({ models, disabled, remote }: { models: Models; disabled: bo
           layers={models.gpuLayers[m.id] ?? 999}
           totalLayers={current?.id === m.id ? current.layers : undefined}
           disabled={disabled || loading}
-          remote={remote}
           onLoad={() => models.switchModel(m.id)}
           onUnload={() => models.unload()}
           onLayers={n => models.setLayers(m.id, n)}
@@ -101,13 +110,12 @@ function ModelTable({ models, disabled, remote }: { models: Models; disabled: bo
   );
 }
 
-function ModelRow({ m, loaded, layers, totalLayers, disabled, remote, onLoad, onUnload, onLayers }: {
+function ModelRow({ m, loaded, layers, totalLayers, disabled, onLoad, onUnload, onLayers }: {
   m: ModelEntry;
   loaded: boolean;
   layers: number;
   totalLayers?: number; // 読み込み中のモデルの層の数(読み込んでいなければ分からない)
   disabled: boolean;
-  remote: boolean; // aibow-server 越し(読み込む・降ろすは出さない)
   onLoad(): void;
   onUnload(): void;
   onLayers(n: number): void;
@@ -128,7 +136,7 @@ function ModelRow({ m, loaded, layers, totalLayers, disabled, remote, onLoad, on
         {n !== layers && <button disabled={disabled} onClick={() => onLayers(n)} title={loaded ? "変えて読み直す" : "次に読み込むときから効く"}>適用</button>}
       </span>
       <span className="model-action">
-        {remote ? null : loaded
+        {loaded
           ? <button disabled={disabled} onClick={onUnload} title="VRAM を空ける。次に送信するときに会話のモデルを読み込む">降ろす</button>
           : <button disabled={disabled} onClick={onLoad} title="今のモデルと入れ替える">読み込む</button>}
       </span>
@@ -136,13 +144,32 @@ function ModelRow({ m, loaded, layers, totalLayers, disabled, remote, onLoad, on
   );
 }
 
-// ---- 置き場所 ---------------------------------------------------------------------------
+// RemoteModelTable は aibow-server 越しの一覧(名前・大きさ・読み込み中か)。変える操作は無い
+function RemoteModelTable({ models }: { models: Models }) {
+  const { current } = models;
+  if (!models.models.length) return <p className="hint">モデルが見つかりません</p>;
+  return (
+    <div className="model-table remote">
+      <span className="model-table-head">名前</span>
+      <span className="model-table-head num">大きさ</span>
+      {models.models.map(m => (
+        <div key={m.id} className={"model-row" + (current?.id === m.id ? " loaded" : "")}>
+          <span className="model-name" title={m.name}>
+            {current?.id === m.id && <LuCircleCheck className="model-loaded" aria-label="読み込み中" />}
+            {m.name}
+          </span>
+          <span className="num">{m.size_gb.toFixed(1)} GB</span>
+        </div>
+      ))}
+    </div>
+  );
+}
 
-function PlaceList({ places, remote, onRemove }: { places: Place[]; remote: boolean; onRemove(path: string): void }) {
+// ---- 置き場所(アプリの中で動かすときだけ) ---------------------------------------------
+
+function PlaceList({ places, onRemove }: { places: Place[]; onRemove(path: string): void }) {
   // 手で決めた置き場所(models フォルダ・Ollama)は表示だけ。どこで変えるかを錠の吹き出しに出す
-  const lockTitle = (p: Place) => remote
-    ? "aibow-server の server.json(modelsDir)か環境変数で変える。起動し直しが要る"
-    : p.origin === "ollama" ? "環境変数 OLLAMA_MODELS で変える" : "環境変数 AIBOW_MODELS_DIR で変える";
+  const lockTitle = (p: Place) => p.origin === "ollama" ? "環境変数 OLLAMA_MODELS で変える" : "環境変数 AIBOW_MODELS_DIR で変える";
   return (
     <div className="place-list">
       {places.map(p => {
@@ -163,10 +190,8 @@ function PlaceList({ places, remote, onRemove }: { places: Place[]; remote: bool
   );
 }
 
-// 置き場所を足す。この PC のパスが使えるときだけ、フォルダ / ファイルを選ぶダイアログのボタンを出す(0015 の 31)
-function AddPlace({ localPaths, remote, onAdd, onError }: {
-  localPaths: boolean;
-  remote: boolean;
+// 置き場所を足す。パスを書くか、フォルダ / ファイルを選ぶダイアログで選ぶ
+function AddPlace({ onAdd, onError }: {
   onAdd(path: string): Promise<boolean>;
   onError(text: string): void;
 }) {
@@ -188,12 +213,12 @@ function AddPlace({ localPaths, remote, onAdd, onError }: {
         type="text"
         value={path}
         placeholder="D:\models\gguf"
-        title={remote ? "aibow-server の PC のフォルダか GGUF のファイル" : "フォルダか GGUF のファイル"}
+        title="フォルダか GGUF のファイル"
         onChange={e => setPath(e.target.value)}
         onKeyDown={e => { if (e.key === "Enter" && path.trim()) add(); }}
       />
-      {localPaths && <button onClick={() => choose("dir")} title="フォルダを選ぶ"><LuFolder /> フォルダ</button>}
-      {localPaths && <button onClick={() => choose("file")} title="GGUF のファイルを選ぶ"><LuFile /> ファイル</button>}
+      <button onClick={() => choose("dir")} title="フォルダを選ぶ"><LuFolder /> フォルダ</button>
+      <button onClick={() => choose("file")} title="GGUF のファイルを選ぶ"><LuFile /> ファイル</button>
       <button disabled={!path.trim()} onClick={add}>足す</button>
     </div>
   );
@@ -201,29 +226,42 @@ function AddPlace({ localPaths, remote, onAdd, onError }: {
 
 // ---- 表示だけの設定 --------------------------------------------------------------------
 
+// HostSettings は、アプリの中で動かすときの起動の設定(環境変数で決まる)。
 function HostSettings({ s }: { s: ModelSettingsResult }) {
   const v = s.settings;
-  const remote = !!s.server;
-  const how = remote
-    ? `server.json で変え、aibow-server の起動し直しが要ります(${v.config_file}${v.config_found ? "" : "。まだ無いファイル"})`
-    : "環境変数で変え、aibow の起動し直しが要ります";
-  const rows: [string, string][] = remote
-    ? [
-      ["作業領域", `${v.n_ctx.toLocaleString()} トークン`],
-      ["ポート", String(v.port)],
-      ["最初のモデル", v.model || "一覧の先頭(書式に対応しているもの)"],
-      ["llama.cpp", v.lib],
-      ["設定ファイル", v.config_found ? v.config_file : `${v.config_file}(無い)`],
-    ]
-    : [
-      ["作業領域", "会話ごと(会話の上限 + 返事の上限)"],
-      ["最初のモデル", v.model || "最後に使ったモデル"],
-      ["llama.cpp", v.lib],
-    ];
+  const how = "環境変数で変え、aibow の起動し直しが要ります";
+  return (
+    <SettingRows
+      title="起動の設定"
+      how={how}
+      rows={[
+        ["作業領域", "会話ごと(会話の上限 + 返事の上限)"],
+        ["最初のモデル", v.model || "最後に使ったモデル"],
+        ["llama.cpp", v.lib],
+      ]}
+    />
+  );
+}
+
+// RemoteSettings は aibow-server 越しのときの設定。会話の上限 + 返事の上限がこの作業領域に入る必要があるので、作業領域だけを出す
+function RemoteSettings({ server, nCtx }: { server: string; nCtx: number }) {
+  return (
+    <SettingRows
+      title="aibow-server"
+      how="作業領域は aibow-server が起動のときに決めた大きさ。会話の上限 + 返事の上限はこの中で使う"
+      rows={[
+        ["つなぎ先", server],
+        ["作業領域", `${nCtx.toLocaleString()} トークン`],
+      ]}
+    />
+  );
+}
+
+function SettingRows({ title, how, rows }: { title: string; how: string; rows: [string, string][] }) {
   return (
     <>
       <h2 className="section">
-        {remote ? "aibow-server の設定" : "起動の設定"}
+        {title}
         <LuInfo className="settings-info" title={how} aria-label={how} />
       </h2>
       <div className="host-settings">

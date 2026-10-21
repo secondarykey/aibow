@@ -22,8 +22,9 @@ export function ModelBar({ models, disabled, size, selected, lockReason, onSelec
   const value = selected ?? current?.id ?? models.lastModel ?? "";
   // 会話のモデルが、読み込んでいるモデルと違う(送信するときに読み直す)
   const reload = !loading && current !== null && value !== "" && value !== current.id;
-  // どこから来たか(origin)でまとめる。足した場所は、設定の画面の「モデル」のタブで足した置き場所(0015 の 8-4)
-  const groups = [
+  // どこから来たか(origin)でまとめる。足した場所は、設定の画面の「モデル」のタブで足した置き場所(0015 の 8-4)。
+  // aibow-server 越しのときはまとめない(どこから来たかはサーバーの PC の置き方なので、Go が渡してこない)
+  const groups = server ? [{ origin: "", label: "" }] : [
     { origin: "models", label: "models フォルダ" },
     { origin: "ollama", label: "Ollama" },
     { origin: "added", label: "足した場所" },
@@ -65,15 +66,12 @@ export function ModelBar({ models, disabled, size, selected, lockReason, onSelec
       >
         {value === "" && <option value="" disabled>{serverError ? "aibow-server につながりません" : "モデルを選んでください"}</option>}
         {groups.map(g => {
-          const items = models.models.filter(m => m.origin === g.origin);
+          const items = models.models.filter(m => server || m.origin === g.origin);
           if (!items.length) return null;
-          return (
-            <optgroup key={g.origin} label={g.label}>
-              {items.map(m => (
-                <option key={m.id} value={m.id}>{`${m.name}(${unloaded && m.id === value ? "降ろしています" : `${m.size_gb.toFixed(1)} GB`})`}</option>
-              ))}
-            </optgroup>
-          );
+          const options = items.map(m => (
+            <option key={m.id} value={m.id}>{`${m.name}(${unloaded && m.id === value ? "降ろしています" : `${m.size_gb.toFixed(1)} GB`})`}</option>
+          ));
+          return server ? options : <optgroup key={g.origin} label={g.label}>{options}</optgroup>;
         })}
         {outside && <option value={value}>{outsideName}</option>}
       </select>

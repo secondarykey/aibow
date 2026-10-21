@@ -537,6 +537,8 @@ nav.conversations.collapsed .settings.active { color: var(--accent); }
 .model-table {
   display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto auto; column-gap: 12px; align-items: center;
 }
+/* aibow-server 越しは名前と大きさだけ(出どころ・層の数・読み込む / 降ろすは出さない) */
+.model-table.remote { grid-template-columns: minmax(0, 1fr) auto; }
 .model-table-head { color: var(--muted); font-size: 12px; padding: 2px 0 4px; }
 .model-row {
   display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; align-items: center;
