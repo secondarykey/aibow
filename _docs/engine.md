@@ -63,6 +63,7 @@ LLM を動かす部分(`engine/`・`format/`・`models/` の3つのパッケー�
   aibow-server で動かすときはサーバーの PC の `server-models.json`(`POST /aibow/gpu-layers`。0015 の 9。[api.md](api.md))。
   画面では設定の「モデル」のタブで、モデルごとに変える(読み込んでいないモデルは覚えるだけ。0015 の 8-4)。
 - モデルを降ろす(`UnloadModel`)は、モデルと作業領域を解放して VRAM を空けるだけ(0015 の 8-4)。次に生成するときは、会話の仕組みが送信の前に会話のモデルを読み込む。
+  起動のときのモデルを指定していなければ、一覧の先頭から書式に対応している最初のモデルを選ぶ。種類は `models.Arch` が GGUF の先頭(メタデータの `general.architecture`)だけを読んで調べる(重みは読み込まない)。
   モデルの置き場所(`models.Catalog` の `Added`。画面で足したフォルダか GGUF のファイル)は `models/places.go`。覚える場所はアプリの `model-places.json` か aibow-server の `server-models.json`
   どのモデルを読み込むかは会話ごと(会話の仕組みが送信の前に `aibow.ModelLoader` で読み込む。[conversations.md](conversations.md))。
   作業領域の大きさの変更(`Engine.EnsureContextSize`。同じ大きさなら何もしない)はコンテキストだけを作り直し、モデルは読み直さない。

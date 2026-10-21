@@ -76,7 +76,7 @@ type flags struct {
 func defineFlags(fs *flag.FlagSet) *flags {
 	return &flags{
 		config:    fs.String("config", "", "手で書く設定ファイル(既定 %APPDATA%\\aibow\\"+configFileName+")。aibow-server が書く "+stateFileName+" はその隣に置く"),
-		model:     fs.String("model", "", "読み込むモデル(ID・名前・GGUF のパス。例: qwen3.5:4b)。空なら一覧の先頭。設定ファイルの model・環境変数 AIBOW_MODEL"),
+		model:     fs.String("model", "", "読み込むモデル(ID・名前・GGUF のパス。例: qwen3.5:4b)。空なら一覧の先頭から、書式に対応している最初のモデル。設定ファイルの model・環境変数 AIBOW_MODEL"),
 		ctx:       fs.Int("ctx", 0, fmt.Sprintf("作業領域の大きさ(プロンプト + 返事のトークン数。既定 %d)。設定ファイルの ctx・環境変数 AIBOW_SERVER_CTX", defaultCtx)),
 		port:      fs.Int("port", 0, fmt.Sprintf("待ち受けのポート(127.0.0.1 だけで待ち受ける。既定 %d)。設定ファイルの port・環境変数 AIBOW_SERVER_PORT", defaultPort)),
 		lib:       fs.String("lib", "", "llama.cpp の DLL のフォルダ(既定 lib)。設定ファイルの lib・環境変数 AIBOW_LIB"),

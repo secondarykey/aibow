@@ -210,7 +210,7 @@ aibow-server [-model モデル] [-ctx 作業領域の大きさ] [-port ポート
 
 - 画面のアプリが**アプリの中でモデルを動かしているとき(既定)は、同時には使わないでください**(VRAM にモデルを2つ載せられないため。使うときはアプリを閉じます)。
   画面のアプリを aibow-server につないでいるとき(下の「画面のアプリを aibow-server につなぐ」)は、アプリは GPU を使わないので同時に動かせます
-- `-model` は `ollama:qwen3.5:4b` のような ID・`qwen3.5:4b` のような一覧の名前・GGUF ファイルのパス。書かなければ `AIBOW_MODEL`、それも無ければ一覧の先頭です。
+- `-model` は `ollama:qwen3.5:4b` のような ID・`qwen3.5:4b` のような一覧の名前・GGUF ファイルのパス。書かなければ `AIBOW_MODEL`、それも無ければ一覧の先頭から、書式に対応している最初のモデルです(models フォルダに未対応のモデル(gemma4 など)を置いても起動できるように、GGUF の先頭から種類だけを読んで飛ばします)。書式に未対応のモデルを指定すると、読み込む前に理由を出して止まります。
   `-model` は起動したときに読み込むモデルで、リクエストの `model` が違えば読み直してから答えます(数秒〜十数秒。知らない名前なら読み込み中のモデルで答えます)。`/v1/models` は使えるモデルを全部返します
 - `-ctx` は作業領域の大きさ(プロンプト + 返事のトークン数。既定 32768。`AIBOW_SERVER_CTX`)。履歴がこれに入らないリクエストは、400 のエラー(`code: context_length_exceeded`)で断ります(compact はしません)
 - `-port` は待ち受けのポート(既定 8089。`AIBOW_SERVER_PORT`)。待ち受けは `127.0.0.1` だけで、PC の外からはつなげません
@@ -348,7 +348,7 @@ curl http://127.0.0.1:8089/v1/chat/completions -H "Content-Type: application/jso
 
 | 環境変数 | 既定値 | 内容 |
 |---|---|---|
-| `AIBOW_MODEL` | 最後に使ったモデル → 一覧の先頭 | 起動時に読み込むモデル。`ollama:qwen3.5:4b` のような Ollama の名前か、GGUF ファイルのパス |
+| `AIBOW_MODEL` | 最後に使ったモデル → 一覧の先頭(書式に対応している最初のモデル) | 起動時に読み込むモデル。`ollama:qwen3.5:4b` のような Ollama の名前か、GGUF ファイルのパス |
 | `AIBOW_MODELS_DIR` | `models` | GGUF ファイルを探すフォルダ(相対パスはカレントフォルダが基準) |
 | `OLLAMA_MODELS` | `%USERPROFILE%\.ollama\models` | Ollama の保存フォルダ(Ollama 自身と同じ変数) |
 | `AIBOW_LIB` | `lib` | llama.cpp の DLL があるフォルダ(相対パスはカレントフォルダが基準) |

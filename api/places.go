@@ -29,7 +29,7 @@ import (
 type Settings struct {
 	Port      int    `json:"port"`       // 待ち受けのポート
 	NCtx      int    `json:"n_ctx"`      // 作業領域の大きさ
-	Model     string `json:"model"`      // 起動のときに読み込むモデル(空なら一覧の先頭)
+	Model     string `json:"model"`      // 起動のときに読み込むモデル(空なら一覧の先頭から、書式に対応している最初のモデル)
 	Lib       string `json:"lib"`        // llama.cpp の DLL のフォルダ
 	ModelsDir string `json:"models_dir"` // models フォルダ(手で決める置き場所)
 	OllamaDir string `json:"ollama_dir"` // Ollama の保存フォルダ

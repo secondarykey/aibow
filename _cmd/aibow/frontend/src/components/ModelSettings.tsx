@@ -207,7 +207,7 @@ function HostSettings({ s }: { s: ModelSettingsResult }) {
     ? [
       ["作業領域", `${v.n_ctx.toLocaleString()} トークン`],
       ["ポート", String(v.port)],
-      ["最初のモデル", v.model || "一覧の先頭"],
+      ["最初のモデル", v.model || "一覧の先頭(書式に対応しているもの)"],
       ["llama.cpp", v.lib],
       ["設定ファイル", v.config_found ? v.config_file : `${v.config_file}(無い)`],
     ]

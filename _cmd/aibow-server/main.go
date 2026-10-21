@@ -29,6 +29,7 @@ import (
 
 	"github.com/secondarykey/aibow/api"
 	"github.com/secondarykey/aibow/engine"
+	"github.com/secondarykey/aibow/format"
 	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/models"
 )
@@ -175,14 +176,44 @@ func run(c config, notices []string, cfgErr error, env *envReader) error {
 	return hs.Shutdown(sctx)
 }
 
-// firstModel は、起動のときに読み込むモデルを探す。ID・GGUF のパス・一覧の名前で探し、空なら一覧の先頭。
+// firstModel は、起動のときに読み込むモデルを探す。
+//
+//   - 指定(-model・設定ファイルの model・AIBOW_MODEL)があれば、ID・GGUF のパス・一覧の名前で探す。
+//     書式に未対応の種類なら、読み込む前に断る(指定したのは利用者なので、黙って別のモデルにしない)
+//   - 無ければ、一覧の先頭から、書式に対応している最初のモデル。models フォルダに未対応のモデル(gemma4 など)を置いただけで
+//     起動できなくならないように、種類を GGUF の先頭だけ読んで確かめる(重みは読み込まない。models.Arch)
 func firstModel(mm *modelManager, arg string) (models.Entry, error) {
 	if arg != "" {
-		return mm.Find(arg)
+		m, err := mm.Find(arg)
+		if err != nil {
+			return models.Entry{}, err
+		}
+		if arch, ok := supported(m); !ok && arch != "" {
+			return models.Entry{}, fmt.Errorf("指定したモデル %s の書式(種類: %s)には未対応です。対応しているのは Qwen3.5 だけです。"+
+				"-model・設定ファイルの model・AIBOW_MODEL で、ほかのモデルを指定してください", m.Name, arch)
+		}
+		return m, nil
 	}
 	list := mm.List()
 	if len(list) == 0 {
 		return models.Entry{}, fmt.Errorf("モデルが1つも見つかりません。-models(AIBOW_MODELS_DIR)のフォルダに GGUF を置くか、ollama pull してください")
 	}
-	return list[0], nil
+	for _, m := range list {
+		arch, ok := supported(m)
+		if ok {
+			return m, nil
+		}
+		log.Infof("モデル %s の書式(種類: %s)には未対応なので、起動のときのモデルにしません", m.Name, cmp.Or(arch, "読めない"))
+	}
+	return models.Entry{}, fmt.Errorf("書式に対応しているモデル(Qwen3.5)が見つかりません。-models(AIBOW_MODELS_DIR)のフォルダに Qwen3.5 の GGUF を置くか、ollama pull してください")
+}
+
+// supported は、モデルの書式に aibow が対応しているか(GGUF の先頭から種類だけを読む)。arch は読めた種類(読めなければ空)。
+func supported(m models.Entry) (arch string, ok bool) {
+	arch, err := models.Arch(m.Path)
+	if err != nil {
+		log.Warn(err.Error())
+		return "", false
+	}
+	return arch, format.For(arch) != nil
 }

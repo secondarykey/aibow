@@ -3,6 +3,7 @@ package main
 // config.go: 起動時の設定を環境変数から読む部分。
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"os"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/secondarykey/aibow"
 	"github.com/secondarykey/aibow/engine"
+	"github.com/secondarykey/aibow/format"
 	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/models"
 )
@@ -68,7 +70,7 @@ type appConfig struct {
 	toolsPath    string // ツールの扱いの PC の既定(tools.json。画面で変えたものを aibow が書く)
 	windowPath   string // ウィンドウの位置と大きさ(window.json。閉じるときに aibow が書く。windowstate.go)
 	placesPath   string // 画面で足したモデルの置き場所(model-places.json。直接の形のときだけ使う。modelplaces.go)
-	initialModel string // AIBOW_MODEL。空なら最後に使ったモデル → 一覧の先頭
+	initialModel string // AIBOW_MODEL。空なら最後に使ったモデル → 一覧の先頭(書式に対応している最初のモデル)
 
 	// settings は settings.json の中身。settingsErr は読めなかった理由(MCP は使わずに起動し、お知らせで伝える。startMCP)
 	settings    aibow.SettingsFile
@@ -184,7 +186,8 @@ func absPath(p string) string {
 }
 
 // pickInitialModel は起動時に読み込むモデルを決める。
-// AIBOW_MODEL → 最後に使ったモデル → 一覧の先頭、の順。
+// AIBOW_MODEL → 最後に使ったモデル → 一覧の先頭(書式に対応している最初のモデル)、の順。
+// 指定したモデルと最後に使ったモデルは、書式に未対応でもそのまま読み込む(画面のお知らせで未対応と伝わる。選んだのは利用者なので)。
 func pickInitialModel(cfg appConfig, app aibow.AppSettings, list []models.Entry) (models.Entry, error) {
 	if cfg.initialModel != "" {
 		return cfg.catalog.Find(cfg.initialModel)
@@ -200,5 +203,13 @@ func pickInitialModel(cfg appConfig, app aibow.AppSettings, list []models.Entry)
 	if len(list) == 0 {
 		return models.Entry{}, fmt.Errorf("モデルが1つも見つかりません。models フォルダに GGUF を置くか、ollama pull してください")
 	}
-	return list[0], nil
+	// models フォルダに未対応のモデル(gemma4 など)を置いただけで、それを読み込んで始まらないように、種類を GGUF の先頭だけ読んで確かめる
+	for _, m := range list {
+		arch, err := models.Arch(m.Path)
+		if err == nil && format.For(arch) != nil {
+			return m, nil
+		}
+		log.Infof("モデル %s の書式(種類: %s)には未対応なので、起動のときのモデルにしません", m.Name, cmp.Or(arch, "読めない"))
+	}
+	return list[0], nil // 対応しているモデルが無ければ先頭(画面のお知らせで未対応と伝わる)
 }
