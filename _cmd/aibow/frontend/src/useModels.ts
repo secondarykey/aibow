@@ -1,7 +1,8 @@
 // useModels.ts: モデルの一覧と切り替え。
 //
-// 一覧は models フォルダの GGUF と、Ollama が保存したモデル。
+// 一覧は models フォルダの GGUF と、Ollama が保存したモデルと、画面で足した置き場所のモデル(0015 の 8-4)。
 // 選ぶと Go が今のモデルを解放して、新しいモデルを読み込む(数秒〜十数秒)。
+// 設定の画面の「モデル」のタブ(ModelSettings.tsx)からは、降ろす・モデルごとの GPU の層数も変える。
 // aibow-server につないでいるとき(0015)は、一覧も読み込みもサーバーのもの。つながらなければエラーのカードを出し、
 // 一覧を取り直したとき(ウィンドウに戻ってきたとき・返事が終わったとき)につながれば、そのまま使える。
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -27,7 +28,11 @@ export interface Models {
   loading: boolean;          // モデルを読み込み中か(起動時・切り替え時)
   server: string;            // 生成を頼んでいる aibow-server のつなぎ先(アプリの中で動かしているときは空)
   serverError: string;       // aibow-server につながらない理由(つながっていれば空)
+  gpuLayers: { [id: string]: number | undefined }; // モデルの ID → 読み込むときの GPU の層数
+  lastModel: string;         // 最後に読み込んだモデル(降ろしたあとも、どれを降ろしたかを出すため)
   switchModel(id: string): Promise<boolean>; // 読み込めたら true
+  unload(): Promise<void>;                   // 読み込み中のモデルを降ろす(VRAM を空ける)
+  setLayers(id: string, n: number): Promise<void>; // モデルの GPU の層数を変える(読み込み中のモデルなら読み直す)
   reload(): Promise<boolean>; // 一覧を取り直す。起動に失敗していたら false
 }
 
@@ -46,6 +51,8 @@ export function useModels(n: Notifier, t: Pick<Transcript, "addError">, setBusy:
   const [loading, setLoading] = useState(false);
   const [server, setServer] = useState("");
   const [serverError, setServerError] = useState("");
+  const [gpuLayers, setGpuLayers] = useState<{ [id: string]: number | undefined }>({});
+  const [lastModel, setLastModel] = useState("");
   const serverDown = useRef(false); // つながらないことをカードで伝えたか(取り直すたびに出さないため)
 
   // 起動直後は Go がモデルを裏で読み込んでいる最中のことがある。終わると models イベントが来る。
@@ -71,6 +78,8 @@ export function useModels(n: Notifier, t: Pick<Transcript, "addError">, setBusy:
     setCurrent(d.current);
     setGpu(d.gpu);
     setServer(d.server ?? "");
+    setGpuLayers(d.gpu_layers ?? {});
+    setLastModel(d.last_model ?? "");
     // 起動時のお知らせ(使われなくなった環境変数など)。一覧は何度も取り直すので、最初の1回だけ出す
     if (!noticesShown.current) {
       noticesShown.current = true;
@@ -137,6 +146,8 @@ export function useModels(n: Notifier, t: Pick<Transcript, "addError">, setBusy:
     const d = await ChatService.Models(); // 失敗したときは元のモデルの表示に戻る
     setModels(d.models ?? []);
     setCurrent(d.current);
+    setGpuLayers(d.gpu_layers ?? {});
+    setLastModel(d.last_model ?? "");
     if (failed) {
       if (d.current) notify(`元のモデル ${d.current.name} に戻しました`, { key: "model" });
       else dismissKey("model");
@@ -146,5 +157,38 @@ export function useModels(n: Notifier, t: Pick<Transcript, "addError">, setBusy:
     return !failed;
   }, [models, notify, dismissKey, addError, setBusy]);
 
-  return { models, current, gpu, loading, server, serverError, switchModel, reload };
+  // 降ろす。次に送信すると、送信の前に会話のモデルを読み込む(0014 の 3)
+  const unload = useCallback(async () => {
+    const name = current?.name ?? "";
+    setBusy("loading");
+    try {
+      await ChatService.UnloadModel();
+      notify(`${name} を降ろしました(次に送信するときに読み込みます)`, { key: "model" });
+    } catch (err) {
+      addError(errorMessage(err));
+    }
+    await reload().catch(err => addError(errorMessage(err)));
+    setBusy("idle");
+  }, [current, reload, notify, addError, setBusy]);
+
+  // モデルごとの GPU の層数。読み込み中のモデルなら読み直す(失敗したら Go が元の層の数で読み直している)
+  const setLayers = useCallback(async (id: string, n: number) => {
+    const loaded = current?.id === id;
+    const name = models.find(m => m.id === id)?.name ?? id;
+    setBusy("loading");
+    if (loaded) notify(`GPU に載せる層を ${n} にして、${name} を読み込み直しています…`, { key: "model", sticky: true });
+    try {
+      const info = await ChatService.SetModelGPULayers(id, n);
+      notify(info
+        ? `GPU に載せる層を ${n} にして読み込み直しました(${info.load_sec.toFixed(1)} 秒)`
+        : `${name} の GPU に載せる層を ${n} にしました(次に読み込むときから効きます)`, { key: "model" });
+    } catch (err) {
+      dismissKey("model");
+      addError(errorMessage(err));
+    }
+    await reload().catch(err => addError(errorMessage(err)));
+    setBusy("idle");
+  }, [current, models, reload, notify, dismissKey, addError, setBusy]);
+
+  return { models, current, gpu, loading, server, serverError, gpuLayers, lastModel, switchModel, unload, setLayers, reload };
 }

@@ -532,6 +532,45 @@ nav.conversations.collapsed .settings.active { color: var(--accent); }
 }
 .hint { color: var(--muted); font-size: 12px; line-height: 1.5; }
 
+/* 設定の画面の「モデル」のタブ(ModelSettings.tsx。0015 の 8-4)。
+   モデルの一覧は表の形にして列をそろえる(名前 / 出どころ / 大きさ / GPU の層 / 読み込む・降ろす)。行は subgrid でこの列を共有する */
+.model-table {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto auto; column-gap: 12px; align-items: center;
+}
+.model-table-head { color: var(--muted); font-size: 12px; padding: 2px 0 4px; }
+.model-row {
+  display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; align-items: center;
+  padding: 5px 0; border-top: 1px solid var(--border);
+}
+.model-row .num, .model-table-head.num { text-align: right; }
+.model-name { display: flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.model-row.loaded .model-name { font-weight: 600; }
+.model-loaded { color: var(--accent); flex-shrink: 0; }
+.origin-chip { font-size: 11px; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border); color: var(--muted); white-space: nowrap; }
+.origin-chip.origin-added { border-color: var(--accent); color: var(--accent); }
+.model-layers { display: flex; align-items: center; gap: 4px; }
+.settings-view .model-layers input[type=number] { width: 64px; padding: 2px 4px; }
+.model-layers button, .model-action button { font-size: 12px; padding: 2px 8px; white-space: nowrap; }
+/* 置き場所。手で決めた場所は錠(表示だけ)、足した場所は × で外せる。見つからない場所は薄く出す */
+.place-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; border-top: 1px solid var(--border); min-width: 0; }
+.place-row:first-child { border-top: none; }
+.place-icon { flex-shrink: 0; color: var(--muted); }
+.place-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+.place-note { flex-shrink: 0; color: var(--muted); font-size: 12px; }
+.place-row.missing .place-path, .place-row.missing .place-icon { color: var(--muted); }
+.place-lock { flex-shrink: 0; color: var(--muted); margin: 0 5px; }
+.place-remove { display: inline-flex; padding: 2px 4px; border-color: transparent; background: transparent; color: var(--muted); }
+.place-remove:hover { color: var(--text); }
+.place-add { display: flex; gap: 6px; margin-top: 8px; }
+.settings-view .place-add input[type=text] { flex: 1; width: auto; min-width: 0; }
+.place-add button { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+/* 表示だけの設定。変え方は見出しの横の i の吹き出しに出す */
+.settings-info { color: var(--muted); align-self: center; cursor: help; }
+.host-settings { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 16px; row-gap: 4px; }
+.host-setting { display: contents; }
+.host-key { color: var(--muted); }
+.host-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 footer { border-top: 1px solid var(--border); background: var(--panel); padding: 12px 16px 8px; }
 /* 入力欄: 枠(.composer)の中に、文字を打つところと右下の送信ボタン(Enter のマーク)を並べる */
 .composer {

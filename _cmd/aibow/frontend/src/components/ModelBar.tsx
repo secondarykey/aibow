@@ -18,13 +18,18 @@ interface Props {
 // 会話を開いただけでは読み直さず、読み込んでいるモデルと違う会話は、送信するときに Go が読み直す
 export function ModelBar({ models, disabled, size, selected, lockReason, onSelect, children }: Props) {
   const { current, gpu, loading, server, serverError } = models;
-  const value = selected ?? current?.id ?? "";
+  // 会話のモデルが無ければ読み込んでいるモデル。降ろしていれば最後に読み込んだモデル(新しい会話はそれで作る)
+  const value = selected ?? current?.id ?? models.lastModel ?? "";
   // 会話のモデルが、読み込んでいるモデルと違う(送信するときに読み直す)
   const reload = !loading && current !== null && value !== "" && value !== current.id;
+  // どこから来たか(origin)でまとめる。足した場所は、設定の画面の「モデル」のタブで足した置き場所(0015 の 8-4)
   const groups = [
-    { source: "file", label: "models フォルダ" },
-    { source: "ollama", label: "Ollama" },
+    { origin: "models", label: "models フォルダ" },
+    { origin: "ollama", label: "Ollama" },
+    { origin: "added", label: "足した場所" },
   ];
+  // 降ろしている(読み込み中のモデルが無い)。次に送信するときに会話のモデルを読み込む(0015 の 29)
+  const unloaded = !loading && current === null && !serverError && value !== "";
   // AIBOW_MODEL で一覧の外のファイルを指定した場合や、会話のモデルが一覧に無い(消した)場合も、選択肢に出しておく
   const outside = value !== "" && !models.models.some(m => m.id === value);
   const outsideName = current?.id === value ? current.name : `${value}(${serverError ? "aibow-server につながりません" : "見つかりません"})`;
@@ -43,28 +48,30 @@ export function ModelBar({ models, disabled, size, selected, lockReason, onSelec
         `作業領域: ${workspace.toLocaleString()} トークン${server ? "(aibow-server で固定)" : resize ? `(今は ${current.n_ctx.toLocaleString()}。送信時に作り直し)` : ""}`,
         current.desc,
       ]
-      : [serverError || "モデル未読み込み"];
+      : [serverError || (unloaded ? "降ろしています。送信するときに読み込みます" : "モデル未読み込み")];
   if (server) info.unshift(`aibow-server(${server})で動かしています`);
   if (reload) info.unshift(`この会話のモデルは送信するときに読み込みます(今読み込んでいるのは ${current.name})`);
   if (lockReason) info.unshift(lockReason);
-  const title = ["使うモデル(models フォルダと Ollama のモデル)", ...info].filter(Boolean).join("\n");
+  const title = ["使うモデル", ...info].filter(Boolean).join("\n");
 
   return (
     <div className="model-bar">
       <select
         title={title}
-        className={reload ? "model-select model-reload" : "model-select"}
+        className={reload || unloaded ? "model-select model-reload" : "model-select"}
         value={value}
         disabled={disabled || !!lockReason}
         onChange={e => onSelect(e.target.value)}
       >
         {value === "" && <option value="" disabled>{serverError ? "aibow-server につながりません" : "モデルを選んでください"}</option>}
         {groups.map(g => {
-          const items = models.models.filter(m => m.source === g.source);
+          const items = models.models.filter(m => m.origin === g.origin);
           if (!items.length) return null;
           return (
-            <optgroup key={g.source} label={g.label}>
-              {items.map(m => <option key={m.id} value={m.id}>{`${m.name}(${m.size_gb.toFixed(1)} GB)`}</option>)}
+            <optgroup key={g.origin} label={g.label}>
+              {items.map(m => (
+                <option key={m.id} value={m.id}>{`${m.name}(${unloaded && m.id === value ? "降ろしています" : `${m.size_gb.toFixed(1)} GB`})`}</option>
+              ))}
             </optgroup>
           );
         })}

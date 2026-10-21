@@ -56,6 +56,12 @@ export interface ModelSettingsResult {
      * Settings は表示だけの設定。直接なら作業領域は 0(会話ごと)・ポートは 0(待ち受けない)・設定ファイルは空(環境変数で変える)
      */
     "settings": client$0.ServerSettings;
+
+    /**
+     * LocalPaths は、この PC のパスが置き場所としてそのまま使えるか(直接か、同じ PC の aibow-server につないでいる)。
+     * 置き場所のパスはモデルを読み込む PC のものなので、ほかの PC の aibow-server なら、この PC のフォルダを選ぶダイアログは出さない(0015 の 31)
+     */
+    "local_paths": boolean;
 }
 
 /**
@@ -89,6 +95,11 @@ export interface ModelsResult {
      * GPULayers はモデルの ID → 読み込むときの GPU の層数(直接ならアプリの DB、aibow-server 越しならサーバーの PC に覚えた値。8-4)
      */
     "gpu_layers": { [_ in string]?: number } | null;
+
+    /**
+     * LastModel は最後に読み込んだモデル。降ろしたあと(Current が null)も、モデルの選択にどれを降ろしたかを出すため(0015 の 29)
+     */
+    "last_model"?: string;
 
     /**
      * Server は生成を頼んでいる aibow-server のつなぎ先(アプリの中で動かしているときは空。0015)

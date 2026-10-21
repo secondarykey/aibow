@@ -63,6 +63,9 @@ func (c Catalog) Places() []Place {
 }
 
 func dirPlace(path, origin string, n int) Place {
+	if a, err := filepath.Abs(path); err == nil && path != "" {
+		path = a // 相対パス(既定の "models")や "/" 区切りのままだと、どこを探しているのか分かりにくいため
+	}
 	pl := Place{Path: path, Origin: origin, Kind: "dir", Models: n}
 	if _, err := os.Stat(path); err != nil {
 		pl.Missing = "フォルダが見つかりません"

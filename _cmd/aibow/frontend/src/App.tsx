@@ -99,7 +99,7 @@ export default function App() {
   const models = useModels(toasts, transcript, setBusy);
   const convs = useConversations(addError);
   const chat = useChat(transcript, setBusy, convs, toasts, models.reload);
-  const app = useAppSettings(toasts, transcript, setBusy, models.reload);
+  const app = useAppSettings(transcript);
   // 画面の明るさ: Go から届いた設定・設定の画面で選んだ値を効かせる(届くまでは前回の写し。theme.ts)
   const theme = app.settings?.display.theme;
   useEffect(() => {
@@ -391,12 +391,12 @@ export default function App() {
         onClose={() => setSettingsOpen(false)}
         app={app.settings}
         models={models.models}
+        modelState={models}
         servers={mcpServers}
         onProfilesChanged={onProfilesChanged}
         onApplyLimits={applyLimits}
         onError={addError}
         appDisabled={busy !== "idle"}
-        onApplyApp={app.apply}
         onDisplayChange={app.setDisplay}
         onToolsChanged={() => {
           reloadMcp();

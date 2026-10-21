@@ -57,6 +57,14 @@ export function BuiltinTools(): $CancellablePromise<aibow$0.KnownTool[] | null> 
 }
 
 /**
+ * ChooseModelPlace は、置き場所を選ぶダイアログを出し、選んだフォルダ(kind が "dir")か GGUF のファイル(kind が "file")の
+ * 絶対パスを返す。取り消したら空。足すのは AddModelPlace(選んだだけでは足さない)。
+ */
+export function ChooseModelPlace(kind: string): $CancellablePromise<string> {
+    return $Call.ByID(661754858, kind);
+}
+
+/**
  * ChooseWorkDir は作業フォルダを選ぶダイアログを出し、選んだフォルダの絶対パスを返す。取り消したら空。
  * current が空でなければ、そのフォルダから開く。選んだフォルダを会話に入れるのは画面の側(会話の設定として保存する)。
  */

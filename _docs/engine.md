@@ -61,6 +61,9 @@ LLM を動かす部分(`engine/`・`format/`・`models/` の3つのパッケー�
 - GPU の層数の変更(`SetGPULayers`)も同じ仕組みで読み直す。画面のアプリはモデルごとに層の数を覚えていて、その値で読み込む(`LoadModelWithLayers`。読めなければ層の数も戻す。0014 の 4)。
   層の数を覚える場所は、モデルを動かす PC(「その PC の人が決めること」なので):アプリの中で動かすときはアプリの DB(`model_gpu_layers`)、
   aibow-server で動かすときはサーバーの PC の `server-models.json`(`POST /aibow/gpu-layers`。0015 の 9。[api.md](api.md))。
+  画面では設定の「モデル」のタブで、モデルごとに変える(読み込んでいないモデルは覚えるだけ。0015 の 8-4)。
+- モデルを降ろす(`UnloadModel`)は、モデルと作業領域を解放して VRAM を空けるだけ(0015 の 8-4)。次に生成するときは、会話の仕組みが送信の前に会話のモデルを読み込む。
+  モデルの置き場所(`models.Catalog` の `Added`。画面で足したフォルダか GGUF のファイル)は `models/places.go`。覚える場所はアプリの `model-places.json` か aibow-server の `server-models.json`
   どのモデルを読み込むかは会話ごと(会話の仕組みが送信の前に `aibow.ModelLoader` で読み込む。[conversations.md](conversations.md))。
   作業領域の大きさの変更(`Engine.EnsureContextSize`。同じ大きさなら何もしない)はコンテキストだけを作り直し、モデルは読み直さない。
   会話ごとに大きさが違うので、会話の仕組みが送信の前に呼ぶ。画面で上限を「適用」したときも `ChatService.TryLimits` から呼び、VRAM に入るかを確かめる(0009)。

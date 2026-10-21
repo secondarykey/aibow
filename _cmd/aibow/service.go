@@ -18,6 +18,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
+	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -164,6 +166,8 @@ type ModelsResult struct {
 
 	// GPULayers はモデルの ID → 読み込むときの GPU の層数(直接ならアプリの DB、aibow-server 越しならサーバーの PC に覚えた値。8-4)
 	GPULayers map[string]int `json:"gpu_layers"`
+	// LastModel は最後に読み込んだモデル。降ろしたあと(Current が null)も、モデルの選択にどれを降ろしたかを出すため(0015 の 29)
+	LastModel string `json:"last_model,omitempty"`
 
 	// Server は生成を頼んでいる aibow-server のつなぎ先(アプリの中で動かしているときは空。0015)
 	Server string `json:"server,omitempty"`
@@ -190,6 +194,7 @@ func (s *ChatService) Models() ModelsResult {
 		log.Noticef("aibow-server につながりました: %s", s.host.server())
 	}
 	r.Models, r.Current, r.GPU, r.GPULayers = l.models, l.current, l.gpu, l.layers
+	r.LastModel = s.lastModel()
 	if name := s.loading.Load(); name != nil {
 		r.Loading = *name
 	}
@@ -388,6 +393,9 @@ type ModelSettingsResult struct {
 	Server string `json:"server,omitempty"`
 	// Settings は表示だけの設定。直接なら作業領域は 0(会話ごと)・ポートは 0(待ち受けない)・設定ファイルは空(環境変数で変える)
 	Settings apiclient.ServerSettings `json:"settings"`
+	// LocalPaths は、この PC のパスが置き場所としてそのまま使えるか(直接か、同じ PC の aibow-server につないでいる)。
+	// 置き場所のパスはモデルを読み込む PC のものなので、ほかの PC の aibow-server なら、この PC のフォルダを選ぶダイアログは出さない(0015 の 31)
+	LocalPaths bool `json:"local_paths"`
 }
 
 // ModelSettings は、表示だけの設定(作業領域・ポート・llama.cpp の場所・最初のモデル・モデルの置き場所)を返す。
@@ -397,7 +405,41 @@ func (s *ChatService) ModelSettings() (ModelSettingsResult, error) {
 		return ModelSettingsResult{}, s.startupErr
 	}
 	v, err := s.host.settings()
-	return ModelSettingsResult{Server: s.host.server(), Settings: v}, err
+	where := s.host.server()
+	return ModelSettingsResult{Server: where, Settings: v, LocalPaths: where == "" || isLoopback(where)}, err
+}
+
+// isLoopback は、つなぎ先がこの PC(127.0.0.1・::1・localhost)か。
+func isLoopback(rawURL string) bool {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	if u.Hostname() == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(u.Hostname())
+	return ip != nil && ip.IsLoopback()
+}
+
+// ChooseModelPlace は、置き場所を選ぶダイアログを出し、選んだフォルダ(kind が "dir")か GGUF のファイル(kind が "file")の
+// 絶対パスを返す。取り消したら空。足すのは AddModelPlace(選んだだけでは足さない)。
+func (s *ChatService) ChooseModelPlace(kind string) (string, error) {
+	app := application.Get()
+	d := app.Dialog.OpenFile()
+	if kind == "file" {
+		d.SetTitle("モデルのファイル(GGUF)を選ぶ").CanChooseFiles(true).CanChooseDirectories(false).AddFilter("GGUF", "*.gguf")
+	} else {
+		d.SetTitle("モデルを置いたフォルダを選ぶ").CanChooseFiles(false).CanChooseDirectories(true)
+	}
+	if w := app.Window.Current(); w != nil {
+		d.AttachToWindow(w) // ウィンドウの前に出す(ChooseWorkDir と同じ)
+	}
+	p, err := d.PromptForSingleSelection()
+	if err != nil {
+		return "", fmt.Errorf("置き場所を選ぶダイアログを出せません: %w", err)
+	}
+	return p, nil
 }
 
 // ---- プロファイル(0014) -------------------------------------------------------------------
@@ -706,7 +748,23 @@ func (s *ChatService) NewConversation(profile uuid.UUID, settings *aibow.Convers
 	if s.startupErr != nil {
 		return aibow.Conversation{}, s.startupErr
 	}
+	// プロファイルにモデルが無く(初めての起動)、モデルを降ろしている(0015 の 8-4)と、会話の仕組みは「読み込んでいるモデル」を
+	// 会話のモデルにできない。そのときは最後に使ったモデルにし、送信の前に読み込む(0015 の 29)
+	if settings != nil && settings.Model == "" && s.host.info() == nil {
+		if last := s.lastModel(); last != "" {
+			cp := *settings
+			cp.Model = last
+			settings = &cp
+		}
+	}
 	return s.convs.CreateIn(profile, settings)
+}
+
+// lastModel は最後に読み込んだモデル(次の起動で読み込むモデル)。
+func (s *ChatService) lastModel() string {
+	s.appMu.Lock()
+	defer s.appMu.Unlock()
+	return s.app.Workspace.Model
 }
 
 // DeleteConversation は会話を消す。返事を生成中の会話は消せない。
