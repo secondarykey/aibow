@@ -492,3 +492,37 @@ func TestSummaryInSeveralPartsWhenTooLong(t *testing.T) {
 		}
 	}
 }
+
+// 書式に未対応のモデルで送ると、発言を保存せず、生成もせずに止める(返事の無い質問を残さない)
+func TestSendUnsupportedFormat(t *testing.T) {
+	g := &fakeGen{content: "x"}
+	cs, _ := newTestConversations(t, g)
+	c := mustCreate(t, cs)
+	cs.gen = unsupportedGen{g}
+	var evs []ChatEvent
+	cs.Send(context.Background(), c.ID, "こんにちは", func(ev ChatEvent) { evs = append(evs, ev) })
+	var errs []string
+	for _, ev := range evs {
+		if ev.Type == "user" {
+			t.Error("発言を保存したはずがない")
+		}
+		if ev.Type == "error" {
+			errs = append(errs, ev.Error)
+		}
+	}
+	if len(errs) != 1 || !strings.Contains(errs[0], "gemma4") {
+		t.Errorf("エラー: %v", errs)
+	}
+	if _, ms, _ := cs.Get(c.ID); len(ms) != 0 || len(g.calls) != 0 {
+		t.Errorf("保存した発言 %d 件・生成 %d 回(どちらも 0 のはず)", len(ms), len(g.calls))
+	}
+}
+
+// unsupportedGen は、書式に未対応の種類のモデル(gemma4)を読み込んでいる Generator。
+type unsupportedGen struct{ *fakeGen }
+
+func (g unsupportedGen) Info() *engine.ModelInfo {
+	i := g.fakeGen.Info()
+	i.Arch, i.Format = "gemma4", ""
+	return i
+}

@@ -590,6 +590,12 @@ func (cs *Conversations) turn(ctx context.Context, id uuid.UUID, text string, dr
 		fail(err)
 		return
 	}
+	// 書式に未対応の種類のモデル(gemma4 など)では生成できないので、発言を保存する前に止める(返事の無い質問を残さないため)。
+	// 数える(checkFits)ときにも同じエラーになるが、MCP のサーバーを起動する前に、理由がはっきり分かる形で止める
+	if info := cs.gen.Info(); info != nil && info.Format == "" {
+		fail(format.Unsupported(info.Arch))
+		return
+	}
 	cs.startRemote(ctx, conv, emit)
 
 	// 1. 会話の上限に収められるかを確かめてから、(やり直しなら前の部分を消して)ユーザーの発言を保存する。

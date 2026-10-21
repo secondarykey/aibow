@@ -31,6 +31,8 @@ export interface Conversations {
   open(id: string): Promise<void>;
   goHome(): Promise<void>;            // 新しい会話の画面に移る
   adopt(c: Conversation): void;       // 新しい会話の画面で作った会話を、開いている会話にする(表示は作り直さない)
+  // 新しい会話の画面から送れなかった(発言が保存されなかった)ときに、作った会話を消して、同じ下書きの新しい会話の画面に戻す(表示は作り直さない)
+  unadopt(id: string, profile: string, settings: ConversationSettings): Promise<void>;
   remove(id: string): Promise<void>;
   rename(id: string, title: string): Promise<void>;
   reloadList(): Promise<void>;
@@ -130,6 +132,18 @@ export function useConversations(onError: (text: string) => void): Conversations
     reloadList().catch(() => {});
   }, [setCurrent, setDraft, reloadList]);
 
+  // 表示を作り直す合図(openCount)は進めない。送れなかった理由のエラーのカードを、新しい会話の画面に出したままにするため
+  const unadopt = useCallback(async (id: string, profile: string, settings: ConversationSettings) => {
+    await ChatService.DeleteConversation(id);
+    if (currentRef.current?.conversation.id === id) {
+      ++openSeq.current;
+      setCurrent(null);
+      setDraftProfile(profile);
+      setDraft({ ...settings });
+    }
+    await reloadList();
+  }, [setCurrent, setDraft, setDraftProfile, reloadList]);
+
   const init = useCallback(async (lastId: string | null) => {
     const l = (await ChatService.Conversations()) ?? [];
     setList(l);
@@ -208,7 +222,7 @@ export function useConversations(onError: (text: string) => void): Conversations
 
   return {
     list, current, draft, draftProfile, profiles, selectProfile, reloadProfiles,
-    openCount, init, open, goHome, adopt, remove, rename, reloadList, updateSettings, flushSettings,
+    openCount, init, open, goHome, adopt, unadopt, remove, rename, reloadList, updateSettings, flushSettings,
     setUsage, refreshUsage, reloadSettings,
   };
 }

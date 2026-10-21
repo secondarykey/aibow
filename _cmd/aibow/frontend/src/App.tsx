@@ -240,7 +240,10 @@ export default function App() {
         blockedReason={blockedReason}
         home={home}
         focusKey={focusKey}
-        onSend={chat.send}
+        onSend={async t => {
+          // 送れなかった(発言が保存されなかった)ら、打った文を入力欄に戻す。その間に打ち始めていたら、そちらを残す
+          if (!(await chat.send(t))) setText(cur => cur || t);
+        }}
         top={settings && (
           // 入力欄の上: 作業フォルダと、この会話のツール(どちらも会話ごとの設定)
           <div className="composer-top">

@@ -38,13 +38,19 @@ interface Live {
 // Ended は、ほかの会話を見ている間に送信が終わった会話の終わり方(会話の一覧の印。開くと消える)
 export type Ended = "done" | "error";
 
+// RunResult は run の戻り値。
+interface RunResult {
+  errors: string[];   // この送信で届いたエラー
+  userSaved: boolean; // 送った発言を Go が保存したか(user イベントが来たか)
+}
+
 export interface Chat {
   generatingId: string | null; // 返事(か要約)を生成中の会話の ID
   ended: Record<string, Ended>; // ほかの会話を見ている間に送信が終わった会話(会話の ID → 終わり方)。起動をまたいでは覚えない
   confirmingId: string | null; // ツールの実行前の確認を待っている会話の ID(会話の一覧に「確認待ち」と出す)
   answer(reqId: string, approved: boolean, reason: string, remember: ToolPolicy): Promise<void>; // 確認に答える(「実行する」「拒否」と、これから先の扱い)
   lastPrompt: string;          // 開いている会話で、モデルに実際に渡した文字列
-  send(text: string): Promise<void>;
+  send(text: string): Promise<boolean>; // 発言が保存されたら true(false なら送れていないので、入力欄に文を戻す)
   regenerate(): Promise<void>; // 最後の返事を作り直す(開いている会話。0011)
   resend(text: string): Promise<void>; // 最後の発言を直して送り直す(開いている会話。0011)
   compact(): Promise<void>;    // 今すぐ要約(開いている会話)
@@ -54,7 +60,7 @@ export interface Chat {
 // onModelLoaded は、送信の前に Go が会話のモデルを読み直したときに呼ぶ(読み込んでいるモデルの表示を取り直す。0014 の 3)
 export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conversations, n: Notifier, onModelLoaded: () => Promise<unknown>): Chat {
   const { addUser, addError, addAssistant, updateAssistant, setSaved, remove, reset, dropLastTurn } = t;
-  const { current, draft, draftProfile, openCount, open, adopt, flushSettings, reloadList, setUsage, reloadSettings } = convs;
+  const { current, draft, draftProfile, openCount, open, adopt, unadopt, flushSettings, reloadList, setUsage, reloadSettings } = convs;
   const { notify } = n;
   const [generatingId, setGeneratingId] = useState<string | null>(null);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
@@ -126,9 +132,10 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
 
   // run は送信と「今すぐ要約」の共通部分。生成中の吹き出しを出し、chat イベントで書き換え、done で終わる。
   // manual は「今すぐ要約」(返事は生成しない。終わったら吹き出しを消して、区切りが出るように開き直す)
-  // 戻り値は、この送信で届いたエラー(作り直す・送り直すで、開き直したあとに出し直すため)
-  const run = useCallback(async (id: string, start: () => CancellablePromise<void>, manual: boolean, userItemId: number | null): Promise<string[]> => {
+  // 戻り値は、この送信で届いたエラー(作り直す・送り直すで、開き直したあとに出し直すため)と、送った発言を Go が保存したか
+  const run = useCallback(async (id: string, start: () => CancellablePromise<void>, manual: boolean, userItemId: number | null): Promise<RunResult> => {
     const errors: string[] = [];
+    let userSaved = false;
     const l: Live = {
       convId: id, itemId: null, userItemId, thinkStart: 0, processStart: 0, saved: [], confirm: null,
       view: { generating: true, waiting: true, thinking: "", thinkLabel: "", content: "", summarizing: manual, summary: "" },
@@ -198,6 +205,7 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
           // 送信した発言が保存された。ID を付けておくと、あとで truncate や要約で外れたときに薄く表示できる。
           // 発言の下の時刻も、保存した時刻(Go の時計)で出す
           if (l.userItemId !== null && ev.message) setSaved(l.userItemId, ev.message);
+          userSaved = true;
           return;
         case "prompt":
           // prompt が届いた時点で、Go はユーザーの発言とタイトルを保存し終えている。一覧のタイトルを先に更新する
@@ -321,24 +329,38 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
     setGeneratingId(null);
     setBusy("idle");
     reloadList().catch(() => {}); // タイトルと並び順(更新の新しい順)が変わる
-    return errors;
+    return { errors, userSaved };
   }, [open, reloadList, setUsage, addError, addAssistant, updateAssistant, setSaved, remove, setBusy, notify, onModelLoaded]);
 
   const send = useCallback(async (text: string) => {
-    if (controller.current || starting.current) return;
+    if (controller.current || starting.current) return false;
     starting.current = true;
+    // 新しい会話の画面なら、送る直前に会話を作る(target)。送れなかったときに同じ下書きに戻せるよう、今の下書きを持っておく
+    const fromHome = current ? null : { profile: draftProfile, settings: draft };
     let id: string;
     try {
       id = await target();
     } catch (err) {
       addError(`送信できません: ${errorMessage(err)}`);
-      return;
+      return false;
     } finally {
       starting.current = false;
     }
     const userItemId = addUser(text);
-    await run(id, () => ChatService.Send(id, text), false, userItemId);
-  }, [target, run, addUser, addError]);
+    const { userSaved } = await run(id, () => ChatService.Send(id, text), false, userItemId);
+    // 送る前に止まった(書式に未対応のモデル・会話の上限を超える、など)ときは、Go は発言を保存していない。
+    // 吹き出しを消して、呼んだ側(App)が入力欄に文を戻す(保存されたように見えて、開き直すと消える、にしないため)
+    // 新しい会話の画面から送ったなら、作った会話(発言の無い空の会話)も消して、新しい会話の画面に戻す
+    if (!userSaved) {
+      remove(userItemId);
+      if (fromHome?.settings) {
+        viewing.current = null;
+        await unadopt(id, fromHome.profile, fromHome.settings).catch(err => addError(errorMessage(err)));
+      }
+      return false;
+    }
+    return true;
+  }, [current, draft, draftProfile, target, run, addUser, addError, remove, unadopt]);
 
   const compact = useCallback(async () => {
     if (controller.current || starting.current || !current) return;
@@ -381,7 +403,7 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
     }
     dropLastTurn(withUser);
     const userItemId = withUser ? addUser(text) : null;
-    const errors = await run(id, () => start(id), false, userItemId);
+    const { errors } = await run(id, () => start(id), false, userItemId);
     if (errors.length && viewing.current === id) {
       await open(id).catch(err => addError(errorMessage(err)));
       errors.forEach(addError);
