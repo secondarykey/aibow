@@ -77,7 +77,7 @@ func (t *remoteTool) Run(_ context.Context, args tool.Args) (string, error) {
 func useFake(t *testing.T, cs *Conversations, c *Conversation) {
 	t.Helper()
 	c.Settings.MCPServers = []string{"fake"}
-	if err := cs.UpdateSettings(c.ID, c.Settings); err != nil {
+	if err := cs.UpdateSettings(ctx, c.ID, c.Settings); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -106,7 +106,7 @@ func TestRemoteTools(t *testing.T) {
 	var req *ConfirmRequest
 	evs := sendAnswering(cs, context.Background(), c, "並べて", func(q *ConfirmRequest) bool {
 		req = q
-		return cs.Confirm(c.ID, q.ID, true, "") == nil
+		return cs.Confirm(ctx, c.ID, q.ID, true, "") == nil
 	})
 	if errs := errorsOf(evs); len(errs) != 0 {
 		t.Fatalf("エラー: %v", errs)
@@ -158,35 +158,35 @@ func TestDefaultServers(t *testing.T) {
 	if got := mustCreate(t, cs).Settings.MCPServers; len(got) != 0 {
 		t.Errorf("プロファイルに書いていないサーバー(足したばかり)は最初から選ばない: %v", got)
 	}
-	if err := cs.SetDefaultGroup("fake", true); err != nil {
+	if err := cs.SetDefaultGroup(ctx, "fake", true); err != nil {
 		t.Fatal(err)
 	}
-	if err := cs.SetDefaultGroup("gone", true); err != nil { // settings.json に無いサーバー
+	if err := cs.SetDefaultGroup(ctx, "gone", true); err != nil { // settings.json に無いサーバー
 		t.Fatal(err)
 	}
 	if got := mustCreate(t, cs).Settings.MCPServers; !slices.Equal(got, []string{"fake"}) {
 		t.Errorf("「ツール」でチェックしたサーバーだけを最初から選ぶ: %v", got)
 	}
-	cs.SetDefaultGroup("fake", false)
-	cs.SetDefaultGroup("", false)
-	if d := cs.Defaults(); len(d.MCPServers) != 0 || !d.BuiltinOff {
+	cs.SetDefaultGroup(ctx, "fake", false)
+	cs.SetDefaultGroup(ctx, "", false)
+	if d := mustDefaults(t, cs); len(d.MCPServers) != 0 || !d.BuiltinOff {
 		t.Errorf("「ツール」でチェックを外したものは、新しい会話で最初から選ばない: %+v", d)
 	}
-	cs.SetDefaultGroup("", true)
-	if d := cs.Defaults(); d.BuiltinOff {
+	cs.SetDefaultGroup(ctx, "", true)
+	if d := mustDefaults(t, cs); d.BuiltinOff {
 		t.Error("チェックを戻すと選ぶ")
 	}
-	cs.SetDefaultGroup("fake", true)
-	set := cs.Defaults()
+	cs.SetDefaultGroup(ctx, "fake", true)
+	set := mustDefaults(t, cs)
 	set.MCPServers, set.BuiltinOff = []string{}, true
-	if err := cs.SetDefaults(set); err != nil {
+	if err := cs.SetDefaults(ctx, set); err != nil {
 		t.Fatal(err)
 	}
-	if d := cs.Defaults(); !slices.Equal(d.MCPServers, []string{"fake"}) || d.BuiltinOff {
+	if d := mustDefaults(t, cs); !slices.Equal(d.MCPServers, []string{"fake"}) || d.BuiltinOff {
 		t.Errorf("既定を保存しても、使うグループは変わらない: %+v", d)
 	}
 	// グループのチェックはプロファイルに保存する
-	if ps, _ := st.ListProfiles(); len(ps) != 1 || !slices.Equal(ps[0].Values.MCPServers, []string{"fake", "gone"}) {
+	if ps, _ := st.ListProfiles(ctx); len(ps) != 1 || !slices.Equal(ps[0].Values.MCPServers, []string{"fake", "gone"}) {
 		t.Errorf("プロファイルに保存する: %+v", ps)
 	}
 }
@@ -281,7 +281,7 @@ func TestToolPolicyInConversations(t *testing.T) {
 	asked := 0
 	sendAnswering(cs, context.Background(), a, "書いて", func(q *ConfirmRequest) bool {
 		asked++
-		return cs.Confirm(a.ID, q.ID, true, "") == nil
+		return cs.Confirm(ctx, a.ID, q.ID, true, "") == nil
 	})
 	if asked != 0 || !write.ran {
 		t.Errorf("会話A は聞かずに実行する: 聞いた回数 %d, 実行 %v", asked, write.ran)
@@ -296,7 +296,7 @@ func TestToolPolicyInConversations(t *testing.T) {
 	write.ran = false
 	sendAnswering(cs, context.Background(), b, "書いて", func(q *ConfirmRequest) bool {
 		asked++
-		return cs.Confirm(b.ID, q.ID, false, "書かないで") == nil
+		return cs.Confirm(ctx, b.ID, q.ID, false, "書かないで") == nil
 	})
 	if asked != 1 || write.ran {
 		t.Errorf("会話B は聞く(拒否したので実行しない): 聞いた回数 %d, 実行 %v", asked, write.ran)
@@ -378,7 +378,7 @@ func TestLocalToolPolicyInConversation(t *testing.T) {
 	var req *ConfirmRequest
 	sendAnswering(cs, context.Background(), c, "読んで", func(q *ConfirmRequest) bool {
 		req = q
-		return cs.Confirm(c.ID, q.ID, true, "") == nil
+		return cs.Confirm(ctx, c.ID, q.ID, true, "") == nil
 	})
 	names := promptToolNames(g.calls[0])
 	if slices.Contains(names, "run_command") || !slices.Contains(names, "read_file") || slices.Contains(names, "fake__write") {
@@ -402,7 +402,7 @@ func TestBuiltinOffInConversation(t *testing.T) {
 	useFake(t, cs, &c)
 	cs.SetRemoteTools(&fakeRemote{tools: []tool.Tool{&remoteTool{name: "fake__write"}}})
 	c.Settings.BuiltinOff = true
-	if err := cs.UpdateSettings(c.ID, c.Settings); err != nil {
+	if err := cs.UpdateSettings(ctx, c.ID, c.Settings); err != nil {
 		t.Fatal(err)
 	}
 	sendAnswering(cs, context.Background(), c, "やあ", func(*ConfirmRequest) bool { return false })
@@ -412,7 +412,7 @@ func TestBuiltinOffInConversation(t *testing.T) {
 	if strings.Contains(g.calls[0].prompt, "Shell for run_command") {
 		t.Error("run_command を使わないので、シェルの行は書かない")
 	}
-	if d := cs.Defaults(); d.BuiltinOff {
+	if d := mustDefaults(t, cs); d.BuiltinOff {
 		t.Error("新しい会話では組み込みのツールを使う")
 	}
 }
@@ -448,7 +448,7 @@ func TestNotDefaultServerCanBeSelected(t *testing.T) {
 	cs, c, _ := newWorkDirConversation(t, g)
 	r := &fakeRemote{tools: []tool.Tool{&remoteTool{name: "fake__write"}}}
 	cs.SetRemoteTools(r)
-	cs.SetDefaultGroup("fake", false)
+	cs.SetDefaultGroup(ctx, "fake", false)
 	useFake(t, cs, &c)
 	sendAnswering(cs, context.Background(), c, "やあ", func(*ConfirmRequest) bool { return false })
 	if !r.started || !slices.Contains(promptToolNames(g.calls[0]), "fake__write") {
@@ -667,12 +667,12 @@ func TestConfirmRemember(t *testing.T) {
 			evs := sendAnswering(cs, context.Background(), c, "書いて", func(q *ConfirmRequest) bool {
 				asked++
 				approved := tc.remember != ToolOff
-				return cs.Answer(c.ID, q.ID, Confirmation{Approved: approved, Remember: tc.remember}) == nil
+				return cs.Answer(ctx, c.ID, q.ID, Confirmation{Approved: approved, Remember: tc.remember}) == nil
 			})
 			if asked != tc.asked {
 				t.Errorf("聞いた回数: %d", asked)
 			}
-			_, ms, _ := cs.Get(c.ID)
+			_, ms, _ := cs.Get(ctx, c.ID)
 			second := ms[4] // user, assistant, tool, assistant, tool
 			if second.Role != "tool" || (second.Content == "xx") != tc.ran {
 				t.Errorf("2回目の結果: %q(実行したはず: %v)%v", second.Content, tc.ran, errorsOf(evs))
@@ -683,7 +683,7 @@ func TestConfirmRemember(t *testing.T) {
 			if !tc.ran && !strings.Contains(ms[2].Content, "今後使えません") {
 				t.Errorf("今後許可しないなら、拒否の結果で伝える: %q", ms[2].Content)
 			}
-			if got, _, _ := cs.Get(c.ID); got.Settings.ToolPolicies["fake__write"] != tc.remember {
+			if got, _, _ := cs.Get(ctx, c.ID); got.Settings.ToolPolicies["fake__write"] != tc.remember {
 				t.Errorf("会話の上書きに書く: %v", got.Settings.ToolPolicies)
 			}
 			if first := ms[2].ToolResult.Confirm; first == nil || first.Remember != tc.remember {
@@ -697,17 +697,17 @@ func TestConfirmRemember(t *testing.T) {
 func TestSetToolPolicy(t *testing.T) {
 	cs, _ := newTestConversations(t, &fakeGen{})
 	c := mustCreate(t, cs)
-	if err := cs.SetToolPolicy(c.ID, "write_file", ToolAllow); err != nil {
+	if err := cs.SetToolPolicy(ctx, c.ID, "write_file", ToolAllow); err != nil {
 		t.Fatal(err)
 	}
-	if err := cs.SetToolPolicy(c.ID, "write_file", "yes"); err == nil {
+	if err := cs.SetToolPolicy(ctx, c.ID, "write_file", "yes"); err == nil {
 		t.Error("知らない値は書かない")
 	}
-	if got, _, _ := cs.Get(c.ID); got.Settings.ToolPolicies["write_file"] != ToolAllow {
+	if got, _, _ := cs.Get(ctx, c.ID); got.Settings.ToolPolicies["write_file"] != ToolAllow {
 		t.Errorf("書いた値: %v", got.Settings.ToolPolicies)
 	}
-	cs.SetToolPolicy(c.ID, "write_file", "")
-	if got, _, _ := cs.Get(c.ID); len(got.Settings.ToolPolicies) != 0 {
+	cs.SetToolPolicy(ctx, c.ID, "write_file", "")
+	if got, _, _ := cs.Get(ctx, c.ID); len(got.Settings.ToolPolicies) != 0 {
 		t.Errorf("空なら消す: %v", got.Settings.ToolPolicies)
 	}
 	p := &ToolPrefs{}
@@ -756,7 +756,7 @@ func TestServerAsks(t *testing.T) {
 	evs := sendAnswering(cs, context.Background(), c, "書いて", func(q *ConfirmRequest) bool {
 		reqs = append(reqs, q)
 		time.Sleep(300 * time.Millisecond) // ユーザーがカードを読んでいる時間
-		return cs.Confirm(c.ID, q.ID, true, "") == nil
+		return cs.Confirm(ctx, c.ID, q.ID, true, "") == nil
 	})
 	if errs := errorsOf(evs); len(errs) != 0 {
 		t.Fatalf("エラー: %v", errs)
@@ -813,15 +813,15 @@ func TestServerAsksRememberOff(t *testing.T) {
 	sendAnswering(cs, context.Background(), c, "書いて", func(q *ConfirmRequest) bool {
 		n++
 		if n == 1 {
-			return cs.Confirm(c.ID, q.ID, true, "") == nil // 呼ぶ前の確認は通す
+			return cs.Confirm(ctx, c.ID, q.ID, true, "") == nil // 呼ぶ前の確認は通す
 		}
-		return cs.Answer(c.ID, q.ID, Confirmation{Reason: "違う", Remember: ToolOff}) == nil
+		return cs.Answer(ctx, c.ID, q.ID, Confirmation{Reason: "違う", Remember: ToolOff}) == nil
 	})
 	rs := toolResults(t, cs, c)
 	if len(rs) != 1 || write.ran || !strings.Contains(rs[0].Content, "理由: 違う") || !strings.Contains(rs[0].Content, "今後使えません") {
 		t.Fatalf("拒否の結果: %+v", rs)
 	}
-	if got, _, _ := cs.Get(c.ID); got.Settings.ToolPolicies["fake__write"] != ToolOff {
+	if got, _, _ := cs.Get(ctx, c.ID); got.Settings.ToolPolicies["fake__write"] != ToolOff {
 		t.Errorf("会話の上書きに書く: %v", got.Settings.ToolPolicies)
 	}
 }

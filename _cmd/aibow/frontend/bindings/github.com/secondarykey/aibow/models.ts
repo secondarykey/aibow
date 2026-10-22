@@ -13,6 +13,7 @@ import * as uuid$0 from "../../../uuid/models.js";
 
 /**
  * AppSettings はアプリの設定と、新しい会話の既定の設定。
+ * 表示の設定と新しい会話の既定は人ごと(読んだ人のもの)、作業領域はアプリ全体のもの。
  */
 export interface AppSettings {
     "workspace": WorkspaceSettings;
@@ -341,7 +342,7 @@ export interface ConversationSettings {
 }
 
 /**
- * DisplaySettings は画面の見せ方の設定。会話によらずアプリ全体で1つ(会話の設定にもプロファイルにも入れない)。
+ * DisplaySettings は画面の見せ方の設定。会話によらず人ごとに1つ(会話の設定にもプロファイルにも入れない。0017 の 6)。
  * 生成には関わらないので、変えてもモデルや作業領域は読み直さない。
  */
 export interface DisplaySettings {

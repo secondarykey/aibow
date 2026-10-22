@@ -1,28 +1,27 @@
 package aibow
 
-// appsettings.go: アプリの設定(会話をまたいで1つだけのもの)と、新しい会話の既定の設定。
+// appsettings.go: アプリの設定(会話をまたいで1つだけのもの)と、人ごとの設定と、新しい会話の既定の設定。
 //
-// 保存先の app_settings は「キー → 値」の表。値は JSON の文字列で入れる
+// 保存先の app_settings(アプリ全体)と user_settings(人ごと)は「キー → 値」の表。値は JSON の文字列で入れる
 // (数値も文字列も構造体も同じ形で入り、DB を直接のぞいても読める)。
+//
+// アプリ全体か人ごとかは、誰が決めることかで分ける(0017 の 6):
+//   - アプリ全体: モデルと GPU の層数(モデルは VRAM に1つしか載らず、全員で分け合う)
+//   - 人ごと: 表示の設定と、新しい会話で最初に選ばれるプロファイル(プロファイルが人ごとなので。0017 の 5)
 
 import (
 	"cmp"
+	"context"
 	"encoding/json"
 	"fmt"
 )
 
-// app_settings のキー
+// app_settings のキー(アプリ全体)
 const (
 	SettingGPULayers = "gpu_layers" // GPU に載せる層の数(まだ覚えていないモデルに使う値)
 	// SettingModelGPULayers は、モデルごとの GPU に載せる層の数(モデルの ID → 層の数。0014 の 4)
 	SettingModelGPULayers = "model_gpu_layers"
 	SettingLastModel      = "last_model" // 最後に使ったモデルの ID。次の起動で読み込む
-	// SettingDefaultProfile は、新しい会話で最初に選ばれるプロファイルの ID(0014)。新しい会話の既定は、このプロファイルの値
-	SettingDefaultProfile = "default_profile"
-	// SettingPinQuestion は、返事を読んでいてスクロールしたときに、その質問を右上に出しておくか(画面の設定。DisplaySettings)
-	SettingPinQuestion = "pin_question"
-	// SettingTheme は、画面の明るさ(ライト / ダーク / システムに合わせる。DisplaySettings)
-	SettingTheme = "theme"
 
 	// SettingDefaults は、プロファイルより前の「新しい会話の既定の設定」(会話の上限・返事の上限も入る)。
 	// 今はプロファイル「既定」への引き継ぎ(PrepareProfiles)のためだけに読み、書かない(0014)
@@ -35,6 +34,16 @@ const (
 
 	// SettingNCtx は古い版の「コンテキスト長」。今は使わず、会話の上限への引き継ぎのためだけに読む
 	SettingNCtx = "n_ctx"
+)
+
+// user_settings のキー(人ごと。0017 の 6)。DB の版 6 より前は app_settings にあった
+const (
+	// SettingDefaultProfile は、新しい会話で最初に選ばれるプロファイルの ID(0014)。新しい会話の既定は、このプロファイルの値
+	SettingDefaultProfile = "default_profile"
+	// SettingPinQuestion は、返事を読んでいてスクロールしたときに、その質問を右上に出しておくか(画面の設定。DisplaySettings)
+	SettingPinQuestion = "pin_question"
+	// SettingTheme は、画面の明るさ(ライト / ダーク / システムに合わせる。DisplaySettings)
+	SettingTheme = "theme"
 )
 
 // minHistoryTokens は、古い版のコンテキスト長から引き継ぐときの会話の上限の最低値。
@@ -61,7 +70,7 @@ func (w WorkspaceSettings) LayersFor(model string) int {
 	return w.GPULayers
 }
 
-// DisplaySettings は画面の見せ方の設定。会話によらずアプリ全体で1つ(会話の設定にもプロファイルにも入れない)。
+// DisplaySettings は画面の見せ方の設定。会話によらず人ごとに1つ(会話の設定にもプロファイルにも入れない。0017 の 6)。
 // 生成には関わらないので、変えてもモデルや作業領域は読み直さない。
 type DisplaySettings struct {
 	// PinQuestion は、長い返事をスクロールして質問が画面の外に出たとき、その質問を右上に出しておくか
@@ -87,13 +96,14 @@ func (d DisplaySettings) Validate() error {
 }
 
 // AppSettings はアプリの設定と、新しい会話の既定の設定。
+// 表示の設定と新しい会話の既定は人ごと(読んだ人のもの)、作業領域はアプリ全体のもの。
 type AppSettings struct {
 	Workspace WorkspaceSettings    `json:"workspace"`
 	Display   DisplaySettings      `json:"display"`
 	Defaults  ConversationSettings `json:"defaults"` // 新しい会話の既定の設定(新しい会話で最初に選ばれるプロファイルの値)
 }
 
-// LoadAppSettings は保存先からアプリ全体の設定を読む。
+// LoadAppSettings は保存先から設定を読む。人ごとの設定(表示の設定・新しい会話の既定)は ctx の利用者のもの。
 // 保存されていない項目は initial の値のまま(環境変数から作った初期値)。
 // 画面で一度変えると保存先に入るので、以降は環境変数より保存した値が優先される。
 //
@@ -103,7 +113,7 @@ type AppSettings struct {
 // 既定の設定(conversation_defaults)→ 新しい会話で最初に選ばれるプロファイルの順に読み、後から読んだものが勝つ。
 // プロファイルが無ければ(この機能より前の DB か、初めての起動)、プロファイルの手前までの値になる。
 // その値から、起動したときに PrepareProfiles がプロファイル「既定」を作る。
-func LoadAppSettings(s Store, initial AppSettings) (a AppSettings, notes []string, err error) {
+func LoadAppSettings(ctx context.Context, s Store, initial AppSettings) (a AppSettings, notes []string, err error) {
 	a = initial
 	found := map[string]bool{}
 	// 順番が要るので、マップではなく並びで読む(既定の設定は最後。古い置き場の値を上書きする)
@@ -116,10 +126,8 @@ func LoadAppSettings(s Store, initial AppSettings) (a AppSettings, notes []strin
 		{SettingGPULayers, &a.Workspace.GPULayers},
 		{SettingLastModel, &a.Workspace.Model},
 		{SettingModelGPULayers, &a.Workspace.ModelGPULayers},
-		{SettingPinQuestion, &a.Display.PinQuestion},
-		{SettingTheme, &a.Display.Theme},
 	} {
-		ok, err := loadAppSetting(s, kv.key, kv.v)
+		ok, err := loadAppSetting(ctx, s, kv.key, kv.v)
 		if err != nil {
 			return initial, nil, err
 		}
@@ -129,20 +137,20 @@ func LoadAppSettings(s Store, initial AppSettings) (a AppSettings, notes []strin
 	// モデルごとの層の数より前の DB:今の層の数を、最後に使ったモデルの値として覚える(0014 の 10)
 	if !found[SettingModelGPULayers] && found[SettingGPULayers] && a.Workspace.Model != "" {
 		a.Workspace.ModelGPULayers = map[string]int{a.Workspace.Model: a.Workspace.GPULayers}
-		if err := SaveAppSetting(s, SettingModelGPULayers, a.Workspace.ModelGPULayers); err != nil {
+		if err := SaveAppSetting(ctx, s, SettingModelGPULayers, a.Workspace.ModelGPULayers); err != nil {
 			return initial, nil, err
 		}
 		notes = append(notes, fmt.Sprintf("GPU に載せる層の数 %d を、モデル %s の値として覚えました", a.Workspace.GPULayers, a.Workspace.Model))
 	}
-	if a.Display.Validate() != nil || a.Display.Theme == "" {
-		a.Display.Theme = ThemeSystem // 知らない値(手で書き換えた DB など)はシステムに合わせる
+	if a.Display, err = LoadDisplay(ctx, s, initial.Display); err != nil {
+		return initial, nil, err
 	}
 	if a.Workspace.ModelGPULayers == nil {
 		a.Workspace.ModelGPULayers = map[string]int{}
 	}
 
 	if !found[SettingHistoryTokens] && !found[SettingReplyTokens] {
-		note, err := migrateNCtx(s, &a.Defaults)
+		note, err := migrateNCtx(ctx, s, &a.Defaults)
 		if err != nil {
 			return initial, nil, err
 		}
@@ -151,7 +159,7 @@ func LoadAppSettings(s Store, initial AppSettings) (a AppSettings, notes []strin
 		}
 	}
 	legacy := a.Defaults
-	if _, err := loadAppSetting(s, SettingDefaults, &a.Defaults); err != nil {
+	if _, err := loadAppSetting(ctx, s, SettingDefaults, &a.Defaults); err != nil {
 		return initial, nil, err
 	}
 	// 既定に会話の上限・返事の上限が入っていなければ(0 なら)、古い置き場か初期値のまま
@@ -159,7 +167,7 @@ func LoadAppSettings(s Store, initial AppSettings) (a AppSettings, notes []strin
 	a.Defaults.ReplyTokens = cmp.Or(a.Defaults.ReplyTokens, legacy.ReplyTokens)
 
 	// プロファイルがあれば、新しい会話の既定はその値(作業領域の最初の大きさにも使うので、ここで読む)
-	if p, ok, err := storedDefaultProfile(s); err != nil {
+	if p, ok, err := storedDefaultProfile(ctx, s); err != nil {
 		return initial, nil, err
 	} else if ok {
 		a.Defaults = p.Values.settings()
@@ -168,13 +176,28 @@ func LoadAppSettings(s Store, initial AppSettings) (a AppSettings, notes []strin
 	return a, notes, nil
 }
 
+// LoadDisplay は、ctx の利用者の表示の設定を読む。保存されていない項目は initial の値のまま。
+func LoadDisplay(ctx context.Context, s Store, initial DisplaySettings) (DisplaySettings, error) {
+	d := initial
+	if _, err := loadUserSetting(ctx, s, SettingPinQuestion, &d.PinQuestion); err != nil {
+		return initial, err
+	}
+	if _, err := loadUserSetting(ctx, s, SettingTheme, &d.Theme); err != nil {
+		return initial, err
+	}
+	if d.Validate() != nil || d.Theme == "" {
+		d.Theme = ThemeSystem // 知らない値(手で書き換えた DB など)はシステムに合わせる
+	}
+	return d, nil
+}
+
 // storedDefaultProfile は、新しい会話で最初に選ばれるプロファイルを読む。まだ無ければ ok=false。
-func storedDefaultProfile(s Store) (Profile, bool, error) {
-	list, err := s.ListProfiles()
+func storedDefaultProfile(ctx context.Context, s Store) (Profile, bool, error) {
+	list, err := s.ListProfiles(ctx)
 	if err != nil || len(list) == 0 {
 		return Profile{}, false, err
 	}
-	i, err := markIndex(s, list)
+	i, err := markIndex(ctx, s, list)
 	if err != nil || i < 0 {
 		return Profile{}, false, err // 印が無ければ、PrepareProfiles が付け直す
 	}
@@ -186,9 +209,9 @@ func storedDefaultProfile(s Store) (Profile, bool, error) {
 //
 // 引き継いだ値はその場で保存する。保存しないと、あとで返事の上限だけ変えたときに、
 // 次の起動で n_ctx から計算し直されて会話の上限がずれてしまう。
-func migrateNCtx(s Store, w *ConversationSettings) (string, error) {
+func migrateNCtx(ctx context.Context, s Store, w *ConversationSettings) (string, error) {
 	var nCtx int
-	ok, err := loadAppSetting(s, SettingNCtx, &nCtx)
+	ok, err := loadAppSetting(ctx, s, SettingNCtx, &nCtx)
 	if err != nil || !ok {
 		return "", err
 	}
@@ -196,7 +219,7 @@ func migrateNCtx(s Store, w *ConversationSettings) (string, error) {
 	var old struct {
 		MaxTokens int `json:"max_tokens"`
 	}
-	if _, err := loadAppSetting(s, SettingDefaults, &old); err != nil {
+	if _, err := loadAppSetting(ctx, s, SettingDefaults, &old); err != nil {
 		return "", err
 	}
 	if old.MaxTokens > 0 {
@@ -204,35 +227,58 @@ func migrateNCtx(s Store, w *ConversationSettings) (string, error) {
 	}
 	w.HistoryTokens = max(nCtx-w.ReplyTokens, minHistoryTokens)
 
-	if err := SaveAppSetting(s, SettingHistoryTokens, w.HistoryTokens); err != nil {
+	if err := SaveAppSetting(ctx, s, SettingHistoryTokens, w.HistoryTokens); err != nil {
 		return "", err
 	}
-	if err := SaveAppSetting(s, SettingReplyTokens, w.ReplyTokens); err != nil {
+	if err := SaveAppSetting(ctx, s, SettingReplyTokens, w.ReplyTokens); err != nil {
 		return "", err
 	}
 	return fmt.Sprintf("保存済みのコンテキスト長 %d を、会話の上限 %d + 返事の上限 %d に引き継ぎました",
 		nCtx, w.HistoryTokens, w.ReplyTokens), nil
 }
 
-// loadAppSetting は設定を1つ読んで v に入れる。保存されていなければ ok=false で、v はそのまま。
-func loadAppSetting(s Store, key string, v any) (ok bool, err error) {
-	raw, ok, err := s.AppSetting(key)
-	if err != nil || !ok {
-		return false, err
+// loadAppSetting はアプリ全体の設定を1つ読んで v に入れる。保存されていなければ ok=false で、v はそのまま。
+func loadAppSetting(ctx context.Context, s Store, key string, v any) (ok bool, err error) {
+	return decodeSetting(key, v)(s.AppSetting(ctx, key))
+}
+
+// loadUserSetting は ctx の利用者の設定を1つ読んで v に入れる。保存されていなければ ok=false で、v はそのまま。
+func loadUserSetting(ctx context.Context, s Store, key string, v any) (ok bool, err error) {
+	return decodeSetting(key, v)(s.UserSetting(ctx, key))
+}
+
+// decodeSetting は、保存先から読んだ値(JSON)を v に入れる関数を返す(読む先がアプリ全体か人ごとかによらない部分)。
+func decodeSetting(key string, v any) func(raw string, ok bool, err error) (bool, error) {
+	return func(raw string, ok bool, err error) (bool, error) {
+		if err != nil || !ok {
+			return false, err
+		}
+		if err := json.Unmarshal([]byte(raw), v); err != nil {
+			return false, fmt.Errorf("保存されている設定 %s が読めません(%q): %w", key, raw, err)
+		}
+		return true, nil
 	}
-	if err := json.Unmarshal([]byte(raw), v); err != nil {
-		return false, fmt.Errorf("保存されている設定 %s が読めません(%q): %w", key, raw, err)
-	}
-	return true, nil
 }
 
 // SaveAppSetting はアプリ全体の設定を1つ保存する。
-func SaveAppSetting(s Store, key string, v any) error {
+func SaveAppSetting(ctx context.Context, s Store, key string, v any) error {
 	b, err := json.Marshal(v)
 	if err != nil {
 		return err
 	}
-	if err := s.SetAppSetting(key, string(b)); err != nil {
+	if err := s.SetAppSetting(ctx, key, string(b)); err != nil {
+		return fmt.Errorf("設定 %s を保存できません: %w", key, err)
+	}
+	return nil
+}
+
+// SaveUserSetting は ctx の利用者の設定を1つ保存する。
+func SaveUserSetting(ctx context.Context, s Store, key string, v any) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	if err := s.SetUserSetting(ctx, key, string(b)); err != nil {
 		return fmt.Errorf("設定 %s を保存できません: %w", key, err)
 	}
 	return nil

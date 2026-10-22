@@ -22,7 +22,7 @@ func newWorkDirConversation(t *testing.T, g *fakeGen) (*Conversations, Conversat
 	}
 	cs, _, c := newToolConversation(t, g)
 	c.Settings.WorkDir = dir
-	if err := cs.UpdateSettings(c.ID, c.Settings); err != nil {
+	if err := cs.UpdateSettings(ctx, c.ID, c.Settings); err != nil {
 		t.Fatal(err)
 	}
 	return cs, c, dir
@@ -42,7 +42,7 @@ func sendAnswering(cs *Conversations, ctx context.Context, c Conversation, text 
 
 func toolResults(t *testing.T, cs *Conversations, c Conversation) []StoredMessage {
 	t.Helper()
-	_, ms, _ := cs.Get(c.ID)
+	_, ms, _ := cs.Get(ctx, c.ID)
 	var out []StoredMessage
 	for _, m := range ms {
 		if m.Role == "tool" {
@@ -74,7 +74,7 @@ func TestConfirmApprove(t *testing.T) {
 		if fileText(t, dir, "main.go") != "package main\n" {
 			t.Error("答える前に書き換わっています")
 		}
-		return cs.Confirm(c.ID, r.ID, true, "") == nil
+		return cs.Confirm(ctx, c.ID, r.ID, true, "") == nil
 	})
 	if errs := errorsOf(evs); len(errs) != 0 {
 		t.Fatalf("エラー: %v", errs)
@@ -90,7 +90,7 @@ func TestConfirmApprove(t *testing.T) {
 		t.Errorf("結果: %+v", rs)
 	}
 	// 2回目の答えは届かない(もう待っていない)
-	if err := cs.Confirm(c.ID, req.ID, true, ""); err == nil {
+	if err := cs.Confirm(ctx, c.ID, req.ID, true, ""); err == nil {
 		t.Error("待っていない確認への答えはエラーのはず")
 	}
 }
@@ -106,7 +106,7 @@ func TestConfirmReject(t *testing.T) {
 		if r.Preview.Note != "上書き" {
 			t.Errorf("上書きの確認のはず: %+v", r.Preview)
 		}
-		return cs.Confirm(c.ID, r.ID, false, "  全部消さないで  ") == nil
+		return cs.Confirm(ctx, c.ID, r.ID, false, "  全部消さないで  ") == nil
 	})
 	if errs := errorsOf(evs); len(errs) != 0 {
 		t.Fatalf("エラー: %v", errs)
@@ -124,7 +124,7 @@ func TestConfirmReject(t *testing.T) {
 	}
 	// 理由が空なら、その旨を書く
 	g.replies = []fakeReply{{toolCalls: []format.ToolCall{toolCall("write_file", "path", "a.txt", "content", "x")}}, {content: "はい"}}
-	sendAnswering(cs, context.Background(), c, "もう一度", func(r *ConfirmRequest) bool { return cs.Confirm(c.ID, r.ID, false, "") == nil })
+	sendAnswering(cs, context.Background(), c, "もう一度", func(r *ConfirmRequest) bool { return cs.Confirm(ctx, c.ID, r.ID, false, "") == nil })
 	if rs := toolResults(t, cs, c); rs[len(rs)-1].Content != "ユーザーが実行を拒否しました。理由: (書かれていません)" {
 		t.Errorf("理由が空のとき: %q", rs[len(rs)-1].Content)
 	}
@@ -186,7 +186,7 @@ func TestRunCommandThroughAgent(t *testing.T) {
 	var req *ConfirmRequest
 	sendAnswering(cs, context.Background(), c, "echo して", func(r *ConfirmRequest) bool {
 		req = r
-		return cs.Confirm(c.ID, r.ID, true, "") == nil
+		return cs.Confirm(ctx, c.ID, r.ID, true, "") == nil
 	})
 	if req == nil || req.Preview.Command != "echo hi" || req.Preview.Note != "コマンド" {
 		t.Errorf("確認: %+v", req)

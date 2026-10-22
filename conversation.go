@@ -110,10 +110,12 @@ type Conversations struct {
 	// エンジン(作業領域)が1つしかないので、生成は同時に1つだけ。
 	generating atomic.Pointer[uuid.UUID]
 
+	// initial は、NewConversations に渡した既定から作った仮のプロファイル(保存していないので ID が空。作ったあとは変えない)。
+	// プロファイルがまだ無いとき(PrepareProfiles の前)の新しい会話の既定と、プロファイル「既定」を作るときの値に使う。
+	// 新しい会話で最初に選ばれるプロファイルは人ごとなので、ここには覚えず、そのつど保存先から読む(DefaultProfile。0017)
+	initial Profile
+	// mu は、プロファイルを読んでから書くまで(updateProfile・saveProfile)を順番にする
 	mu sync.Mutex
-	// profile は、新しい会話で最初に選ばれるプロファイル(0014)。新しい会話の既定は、このプロファイルの値。
-	// PrepareProfiles の前は、NewConversations に渡した既定から作った仮のもの(保存していないので ID が空)
-	profile Profile
 
 	// stopSummary は生成中の要約だけを止める関数(StopSummary)。要約していなければ nil
 	summaryMu   sync.Mutex
@@ -164,23 +166,33 @@ func NewConversations(store Store, gen Generator, app AppSettings) *Conversation
 	d := app.Defaults.asDefaults()
 	d.Model = cmp.Or(d.Model, app.Workspace.Model) // プロファイルより前の既定にはモデルが無い
 	initial := Profile{Name: DefaultProfileName, Values: valuesOf(d)}
-	return &Conversations{store: store, gen: gen, tools: tool.Builtin(), profile: initial}
+	return &Conversations{store: store, gen: gen, tools: tool.Builtin(), initial: initial}
 }
 
 // limitsOf は会話の上限と返事の上限。会話の設定の値を使う。
-// 持っていない(0 の)ものは、新しい会話の既定の値を使う(この機能より前の会話は起動時に埋めるので、ふつうは来ない。FillMissingLimits)。
+// 会話は作るときに上限を持ち(CreateIn)、この機能より前の会話は起動時に埋める(FillMissingLimits)ので、ふつうは持っている。
+// 持っていない(0 の)ものは、起動したときの新しい会話の既定の値を使う。
 func (cs *Conversations) limitsOf(set ConversationSettings) limits {
-	cs.mu.Lock()
-	d := cs.profile.Values
-	cs.mu.Unlock()
+	return limitsWith(set, cs.initial.Values)
+}
+
+// limitsWith は、会話の上限・返事の上限。持っていない(0 の)ものは d の値。
+func limitsWith(set ConversationSettings, d ProfileValues) limits {
 	return limits{history: cmp.Or(set.HistoryTokens, d.HistoryTokens), reply: cmp.Or(set.ReplyTokens, d.ReplyTokens)}
 }
 
-// withLimits は、会話の上限・返事の上限を持っていない設定に、新しい会話の既定の値を入れる。
-func (cs *Conversations) withLimits(set ConversationSettings) ConversationSettings {
-	lim := cs.limitsOf(set)
+// withLimits は、会話の上限・返事の上限を持っていない設定に、新しい会話の既定(ctx の利用者の、最初に選ばれるプロファイル)の値を入れる。
+func (cs *Conversations) withLimits(ctx context.Context, set ConversationSettings) (ConversationSettings, error) {
+	if set.HistoryTokens > 0 && set.ReplyTokens > 0 {
+		return set, nil
+	}
+	d, err := cs.DefaultProfile(ctx)
+	if err != nil {
+		return set, err
+	}
+	lim := limitsWith(set, d.Values)
 	set.HistoryTokens, set.ReplyTokens = lim.history, lim.reply
-	return set
+	return set, nil
 }
 
 // ids は発言の ID の並び。
@@ -206,11 +218,11 @@ func forModel(history []StoredMessage) []StoredMessage {
 // SetExcluded は、吹き出し1つ分の発言を「モデルに渡さない」にする / 戻す(0011)。msg は吹き出しの中の発言のどれか。
 // ユーザーの発言ならその1件、返事(assistant・tool)なら、前後のユーザーの発言の間にある発言を全部(ツールの呼び出しと結果を一緒に)。
 // 生成中の会話は変えられない(途中で履歴が変わらないように)。
-func (cs *Conversations) SetExcluded(id, msg uuid.UUID, excluded bool) error {
+func (cs *Conversations) SetExcluded(ctx context.Context, id, msg uuid.UUID, excluded bool) error {
 	if g := cs.generating.Load(); g != nil && *g == id {
 		return errors.New("返事を生成中の会話では、モデルに渡すかを変えられません。終わってから変えてください")
 	}
-	_, history, err := cs.store.Conversation(id)
+	_, history, err := cs.store.Conversation(ctx, id)
 	if err != nil {
 		return err
 	}
@@ -227,7 +239,7 @@ func (cs *Conversations) SetExcluded(id, msg uuid.UUID, excluded bool) error {
 			to++
 		}
 	}
-	return cs.store.SetMessagesExcluded(ids(history[from:to]), excluded)
+	return cs.store.SetMessagesExcluded(ctx, ids(history[from:to]), excluded)
 }
 
 // ensureWorkspace は、エンジンのモデルと作業領域をこの会話のものにする(モデルは会話のモデル、作業領域は会話の上限 + 返事の上限)。
@@ -283,11 +295,13 @@ func (cs *Conversations) ensureModel(conv Conversation, emit func(ChatEvent)) er
 // FillMissingModels は、モデルを持っていない会話(会話ごとのモデルにする前に作った会話)に model(最後に使ったモデル)を写して保存する。
 // 起動したときに1回呼ぶ。写した会話の数を返す。model が空(まだモデルを使ったことが無い)なら何もしない。
 // 写しておかないと、その会話は「読み込んでいるモデル」で生成し続け、ほかの会話でモデルを変えると一緒に変わってしまう。
-func (cs *Conversations) FillMissingModels(model string) (int, error) {
+//
+// 埋めるのは ctx の利用者の会話(今は利用者の表が無いので、ログインなしの形の利用者 LocalUser だけ。0017)。
+func (cs *Conversations) FillMissingModels(ctx context.Context, model string) (int, error) {
 	if model == "" {
 		return 0, nil
 	}
-	list, err := cs.store.ListConversations()
+	list, err := cs.store.ListConversations(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -297,7 +311,7 @@ func (cs *Conversations) FillMissingModels(model string) (int, error) {
 			continue
 		}
 		c.Settings.Model = model
-		if err := cs.store.UpdateConversation(c); err != nil {
+		if err := cs.store.UpdateConversation(ctx, c); err != nil {
 			return n, fmt.Errorf("会話 %s にモデルを入れられません: %w", c.ID, err)
 		}
 		n++
@@ -308,8 +322,9 @@ func (cs *Conversations) FillMissingModels(model string) (int, error) {
 // FillMissingLimits は、会話の上限・返事の上限を持っていない会話(会話ごとの設定にする前に作った会話)に、
 // 今の新しい会話の既定の値を写して保存する。起動したときに1回呼ぶ。写した会話の数を返す。
 // 写しておかないと、既定を変えたときに、その会話の上限まで変わってしまう(既定は今ある会話に効かない、の約束)。
-func (cs *Conversations) FillMissingLimits() (int, error) {
-	list, err := cs.store.ListConversations()
+// 埋めるのは ctx の利用者の会話(FillMissingModels と同じ)。
+func (cs *Conversations) FillMissingLimits(ctx context.Context) (int, error) {
+	list, err := cs.store.ListConversations(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -318,8 +333,10 @@ func (cs *Conversations) FillMissingLimits() (int, error) {
 		if c.Settings.HistoryTokens > 0 && c.Settings.ReplyTokens > 0 {
 			continue
 		}
-		c.Settings = cs.withLimits(c.Settings.normalized())
-		if err := cs.store.UpdateConversation(c); err != nil {
+		if c.Settings, err = cs.withLimits(ctx, c.Settings.normalized()); err != nil {
+			return n, err
+		}
+		if err := cs.store.UpdateConversation(ctx, c); err != nil {
 			return n, fmt.Errorf("会話 %s に会話の上限・返事の上限を入れられません: %w", c.ID, err)
 		}
 		n++
@@ -328,8 +345,8 @@ func (cs *Conversations) FillMissingLimits() (int, error) {
 }
 
 // List は会話の一覧を、更新の新しい順に返す。設定はプロファイルの決まりを当てたもの(固定した項目はプロファイルの値)。
-func (cs *Conversations) List() ([]Conversation, error) {
-	list, err := cs.store.ListConversations()
+func (cs *Conversations) List(ctx context.Context) ([]Conversation, error) {
+	list, err := cs.store.ListConversations(ctx)
 	if err != nil {
 		return list, err
 	}
@@ -338,7 +355,7 @@ func (cs *Conversations) List() ([]Conversation, error) {
 		id := list[i].ProfileID
 		p, ok := profiles[id]
 		if !ok {
-			if p, err = cs.profileFor(id); err != nil {
+			if p, err = cs.profileFor(ctx, id); err != nil {
 				return nil, err
 			}
 			profiles[id] = p
@@ -350,22 +367,22 @@ func (cs *Conversations) List() ([]Conversation, error) {
 
 // Get は会話1つと、その発言を古い順に返す。
 // 設定は、使うときの設定(プロファイルの決まりを当てたもの。固定した項目はプロファイルの値)。送信も画面もこれを使う。
-func (cs *Conversations) Get(id uuid.UUID) (Conversation, []StoredMessage, error) {
-	return cs.load(id)
+func (cs *Conversations) Get(ctx context.Context, id uuid.UUID) (Conversation, []StoredMessage, error) {
+	return cs.load(ctx, id)
 }
 
 // Create は新しい会話を作る。settings が nil なら「新しい会話の既定の設定」をコピーする。
 // 画面は、新しい会話の画面で既定の写しを変えてから、最初の送信のときに settings を渡して作る。
 // どちらにしてもコピーなので、会話の中で設定を変えても既定やほかの会話には効かない。
 // 会話は、新しい会話で最初に選ばれるプロファイルから作ったものとして覚える(0014。プロファイルを選んで作るのはステップ 7 の 4)。
-func (cs *Conversations) Create(settings *ConversationSettings) (Conversation, error) {
-	return cs.CreateIn(uuid.UUID{}, settings)
+func (cs *Conversations) Create(ctx context.Context, settings *ConversationSettings) (Conversation, error) {
+	return cs.CreateIn(ctx, uuid.UUID{}, settings)
 }
 
 // CreateIn は、プロファイル profileID から新しい会話を作る(空なら新しい会話で最初に選ばれるプロファイル)。
 // 新しい会話の画面でプロファイルを選んだとき。しまったプロファイルからは作れない。ほかは Create と同じ。
-func (cs *Conversations) CreateIn(profileID uuid.UUID, settings *ConversationSettings) (Conversation, error) {
-	p, err := cs.usableProfile(profileID)
+func (cs *Conversations) CreateIn(ctx context.Context, profileID uuid.UUID, settings *ConversationSettings) (Conversation, error) {
+	p, err := cs.usableProfile(ctx, profileID)
 	if err != nil {
 		return Conversation{}, err
 	}
@@ -378,7 +395,10 @@ func (cs *Conversations) CreateIn(profileID uuid.UUID, settings *ConversationSet
 		s = settings.normalized()
 	}
 	s.profile = nil
-	s = cs.withLimits(s) // 会話の上限・返事の上限も会話の値として持つ(画面が渡さなかったら既定の値)
+	// 会話の上限・返事の上限も会話の値として持つ(画面が渡さなかったら既定の値)
+	if s, err = cs.withLimits(ctx, s); err != nil {
+		return Conversation{}, err
+	}
 	if s.Model == "" {
 		// プロファイルにモデルが無い(初めての起動でまだモデルを選んでいなかった)なら、読み込んでいるモデルにする
 		if info := cs.gen.Info(); info != nil {
@@ -396,47 +416,47 @@ func (cs *Conversations) CreateIn(profileID uuid.UUID, settings *ConversationSet
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
-	if err := cs.store.CreateConversation(c); err != nil {
+	if err := cs.store.CreateConversation(ctx, c); err != nil {
 		return Conversation{}, fmt.Errorf("会話を作れません: %w", err)
 	}
 	return c, nil
 }
 
 // Delete は会話を消す。生成中の会話は消せない(書き込み先が消えてしまうため)。
-func (cs *Conversations) Delete(id uuid.UUID) error {
+func (cs *Conversations) Delete(ctx context.Context, id uuid.UUID) error {
 	if g := cs.generating.Load(); g != nil && *g == id {
 		return errors.New("返事を生成中の会話は削除できません。停止してから削除してください")
 	}
-	return cs.store.DeleteConversation(id)
+	return cs.store.DeleteConversation(ctx, id)
 }
 
 // Rename は会話のタイトルを変える。自動で付いたタイトルも、あとから変えられる。
 // 最初の送信の前に付けた名前は、自動のタイトルで上書きしない(TouchConversation がタイトルが空のときだけ入れる)。
-func (cs *Conversations) Rename(id uuid.UUID, title string) error {
+func (cs *Conversations) Rename(ctx context.Context, id uuid.UUID, title string) error {
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return errors.New("タイトルを空にはできません")
 	}
-	c, _, err := cs.store.Conversation(id)
+	c, _, err := cs.store.Conversation(ctx, id)
 	if err != nil {
 		return err
 	}
 	c.Title = title
-	return cs.store.UpdateConversation(c) // 更新日時は変えない(名前を変えただけで一覧の並びが変わらないように)
+	return cs.store.UpdateConversation(ctx, c) // 更新日時は変えない(名前を変えただけで一覧の並びが変わらないように)
 }
 
 // UpdateSettings は会話の設定を変える。次の送信から効く。
 // プロファイルの決まりで変えられないもの(固定した項目・使えないツール)を変えていたら、保存せずに理由のエラーを返す(checkRules)。
 // 固定した項目は、会話に保存してある値のまま残す(使うときだけプロファイルの値。keepStored)。
-func (cs *Conversations) UpdateSettings(id uuid.UUID, s ConversationSettings) error {
-	c, _, err := cs.store.Conversation(id)
+func (cs *Conversations) UpdateSettings(ctx context.Context, id uuid.UUID, s ConversationSettings) error {
+	c, _, err := cs.store.Conversation(ctx, id)
 	if err != nil {
 		return err
 	}
 	if err := s.validate(); err != nil {
 		return err
 	}
-	p, err := cs.profileFor(c.ProfileID)
+	p, err := cs.profileFor(ctx, c.ProfileID)
 	if err != nil {
 		return err
 	}
@@ -448,17 +468,21 @@ func (cs *Conversations) UpdateSettings(id uuid.UUID, s ConversationSettings) er
 	s = keepStored(s, stored, p)
 	s.profile = nil
 	c.Settings = s
-	return cs.store.UpdateConversation(c)
+	return cs.store.UpdateConversation(ctx, c)
 }
 
-// Defaults は新しい会話の既定の設定(新しい会話で最初に選ばれるプロファイルの値)を返す。
+// Defaults は新しい会話の既定の設定(ctx の利用者の、新しい会話で最初に選ばれるプロファイルの値)を返す。
 //
 // 使う MCP のサーバーは、プロファイルに書いたもののうち、この PC の settings.json にあるものだけ(無いものは無視する。0014 の 1)。
 // プロファイルのグループは、設定の画面の「ツール」のグループのチェックで変える(SetDefaultGroup)。
 // チェックを外したものも、会話の「この会話のツール」からはいつでも選べる。
 // プロファイルで使えないグループは、選ばない(0014 の 5)。
-func (cs *Conversations) Defaults() ConversationSettings {
-	return cs.defaultsFor(cs.DefaultProfile())
+func (cs *Conversations) Defaults(ctx context.Context) (ConversationSettings, error) {
+	p, err := cs.DefaultProfile(ctx)
+	if err != nil {
+		return ConversationSettings{}, err
+	}
+	return cs.defaultsFor(p), nil
 }
 
 // defaultsFor は、プロファイル p から新しい会話を作るときの設定(Defaults と同じ決め方)。
@@ -486,8 +510,8 @@ func (cs *Conversations) existingServers(names []string) []string {
 // SetDefaults は新しい会話の既定の設定(新しい会話で最初に選ばれるプロファイルの値)を変えて保存する。今ある会話には効かない。
 // 作業フォルダは既定に入れない(asDefaults)。
 // 使うツールのグループ(組み込み・MCP のサーバー)とモデルは変えない(グループは設定の画面の「ツール」で決める。SetDefaultGroup)。
-func (cs *Conversations) SetDefaults(s ConversationSettings) error {
-	return cs.updateProfile(func(v *ProfileValues) {
+func (cs *Conversations) SetDefaults(ctx context.Context, s ConversationSettings) error {
+	return cs.updateProfile(ctx, func(v *ProfileValues) {
 		next := valuesOf(s.asDefaults())
 		next.Model = cmp.Or(next.Model, v.Model) // モデルを持たない設定(この機能より前の会話)なら、今のモデルのまま
 		next.BuiltinOff, next.MCPServers, next.ToolsOff = v.BuiltinOff, v.MCPServers, v.ToolsOff
@@ -572,7 +596,7 @@ func (cs *Conversations) turn(ctx context.Context, id uuid.UUID, text string, dr
 	}
 	defer cs.generating.Store(nil)
 
-	conv, saved, err := cs.Get(id)
+	conv, saved, err := cs.Get(ctx, id)
 	if err != nil {
 		fail(err)
 		return
@@ -610,14 +634,14 @@ func (cs *Conversations) turn(ctx context.Context, id uuid.UUID, text string, dr
 		return
 	}
 	if len(dropped) > 0 {
-		if err := cs.store.DeleteMessages(ids(dropped)); err != nil {
+		if err := cs.store.DeleteMessages(ctx, ids(dropped)); err != nil {
 			fail(fmt.Errorf("前のやり取りを消せません: %w", err))
 			return
 		}
 		log.Infof("会話 %s のやり直し: 発言 %d 件を消しました", id, len(dropped))
 	}
 	if user != nil {
-		if err := cs.save(*user, titleFrom(text)); err != nil {
+		if err := cs.save(ctx, *user, titleFrom(text)); err != nil {
 			fail(err)
 			return
 		}
@@ -638,11 +662,14 @@ func (cs *Conversations) emitUsage(emit func(ChatEvent), id uuid.UUID, u Usage) 
 
 // save は発言を1件保存し、会話の更新日時(一覧の並び順に使う)を進める。
 // タイトルが空なら autoTitle を入れる。
-func (cs *Conversations) save(m StoredMessage, autoTitle string) error {
-	if err := cs.store.AddMessage(m); err != nil {
+func (cs *Conversations) save(ctx context.Context, m StoredMessage, autoTitle string) error {
+	// 停止ボタンで ctx が止まっていても、そこまでの返事は保存する(止めたのは生成で、保存ではない)。
+	// 利用者などの値は残したまま、止める合図だけを外す
+	ctx = context.WithoutCancel(ctx)
+	if err := cs.store.AddMessage(ctx, m); err != nil {
 		return fmt.Errorf("発言を保存できません: %w", err)
 	}
-	if err := cs.store.TouchConversation(m.ConversationID, m.CreatedAt, autoTitle); err != nil {
+	if err := cs.store.TouchConversation(ctx, m.ConversationID, m.CreatedAt, autoTitle); err != nil {
 		return fmt.Errorf("会話を更新できません: %w", err)
 	}
 	return nil

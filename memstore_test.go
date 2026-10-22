@@ -2,10 +2,13 @@ package aibow
 
 // memstore_test.go: テスト用の、メモリ上の保存先(Store の実装)。
 // 会話の仕組みのテストを、DB ファイルなしで動かすために使う。
+// 利用者は1人として扱い、ctx は見ない(持ち主で分けることは、store パッケージの SQLite のテストで確かめる)。
 
 import (
+	"context"
 	"slices"
 	"sync"
+	"testing"
 	"time"
 	"uuid"
 )
@@ -16,14 +19,15 @@ type memStore struct {
 	messages    []StoredMessage
 	compactions []Compaction
 	profiles    []Profile
-	settings    map[string]string
+	settings    map[string]string // アプリ全体の設定
+	user        map[string]string // 人ごとの設定
 }
 
 func newMemStore() *memStore {
-	return &memStore{convs: map[uuid.UUID]Conversation{}, settings: map[string]string{}}
+	return &memStore{convs: map[uuid.UUID]Conversation{}, settings: map[string]string{}, user: map[string]string{}}
 }
 
-func (s *memStore) ListProfiles() ([]Profile, error) {
+func (s *memStore) ListProfiles(_ context.Context) ([]Profile, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	out := slices.Clone(s.profiles)
@@ -31,7 +35,7 @@ func (s *memStore) ListProfiles() ([]Profile, error) {
 	return out, nil
 }
 
-func (s *memStore) Profile(id uuid.UUID) (Profile, error) {
+func (s *memStore) Profile(_ context.Context, id uuid.UUID) (Profile, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if i := slices.IndexFunc(s.profiles, func(p Profile) bool { return p.ID == id }); i >= 0 {
@@ -40,14 +44,14 @@ func (s *memStore) Profile(id uuid.UUID) (Profile, error) {
 	return Profile{}, ErrProfileNotFound
 }
 
-func (s *memStore) CreateProfile(p Profile) error {
+func (s *memStore) CreateProfile(_ context.Context, p Profile) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.profiles = append(s.profiles, p)
 	return nil
 }
 
-func (s *memStore) UpdateProfile(p Profile) error {
+func (s *memStore) UpdateProfile(_ context.Context, p Profile) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	i := slices.IndexFunc(s.profiles, func(q Profile) bool { return q.ID == p.ID })
@@ -59,7 +63,7 @@ func (s *memStore) UpdateProfile(p Profile) error {
 }
 
 // DeleteProfile は SQLite と同じく、使っている会話があれば消さない(外部キー)。
-func (s *memStore) DeleteProfile(id uuid.UUID) error {
+func (s *memStore) DeleteProfile(_ context.Context, id uuid.UUID) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, c := range s.convs {
@@ -75,7 +79,7 @@ func (s *memStore) DeleteProfile(id uuid.UUID) error {
 	return nil
 }
 
-func (s *memStore) ListConversations() ([]Conversation, error) {
+func (s *memStore) ListConversations(_ context.Context) ([]Conversation, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var out []Conversation
@@ -86,7 +90,7 @@ func (s *memStore) ListConversations() ([]Conversation, error) {
 	return out, nil
 }
 
-func (s *memStore) Conversation(id uuid.UUID) (Conversation, []StoredMessage, error) {
+func (s *memStore) Conversation(_ context.Context, id uuid.UUID) (Conversation, []StoredMessage, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	c, ok := s.convs[id]
@@ -103,14 +107,14 @@ func (s *memStore) Conversation(id uuid.UUID) (Conversation, []StoredMessage, er
 	return c, ms, nil
 }
 
-func (s *memStore) CreateConversation(c Conversation) error {
+func (s *memStore) CreateConversation(_ context.Context, c Conversation) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.convs[c.ID] = c
 	return nil
 }
 
-func (s *memStore) UpdateConversation(c Conversation) error {
+func (s *memStore) UpdateConversation(_ context.Context, c Conversation) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.convs[c.ID]; !ok {
@@ -120,7 +124,7 @@ func (s *memStore) UpdateConversation(c Conversation) error {
 	return nil
 }
 
-func (s *memStore) TouchConversation(id uuid.UUID, at time.Time, autoTitle string) error {
+func (s *memStore) TouchConversation(_ context.Context, id uuid.UUID, at time.Time, autoTitle string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	c, ok := s.convs[id]
@@ -135,7 +139,7 @@ func (s *memStore) TouchConversation(id uuid.UUID, at time.Time, autoTitle strin
 	return nil
 }
 
-func (s *memStore) DeleteConversation(id uuid.UUID) error {
+func (s *memStore) DeleteConversation(_ context.Context, id uuid.UUID) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.convs, id)
@@ -144,14 +148,14 @@ func (s *memStore) DeleteConversation(id uuid.UUID) error {
 	return nil
 }
 
-func (s *memStore) AddCompaction(c Compaction) error {
+func (s *memStore) AddCompaction(_ context.Context, c Compaction) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.compactions = append(s.compactions, c)
 	return nil
 }
 
-func (s *memStore) Compactions(conv uuid.UUID) ([]Compaction, error) {
+func (s *memStore) Compactions(_ context.Context, conv uuid.UUID) ([]Compaction, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	out := []Compaction{}
@@ -164,21 +168,21 @@ func (s *memStore) Compactions(conv uuid.UUID) ([]Compaction, error) {
 	return out, nil
 }
 
-func (s *memStore) AddMessage(m StoredMessage) error {
+func (s *memStore) AddMessage(_ context.Context, m StoredMessage) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.messages = append(s.messages, m)
 	return nil
 }
 
-func (s *memStore) DeleteMessages(ids []uuid.UUID) error {
+func (s *memStore) DeleteMessages(_ context.Context, ids []uuid.UUID) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.messages = slices.DeleteFunc(s.messages, func(m StoredMessage) bool { return slices.Contains(ids, m.ID) })
 	return nil
 }
 
-func (s *memStore) SetMessagesExcluded(ids []uuid.UUID, excluded bool) error {
+func (s *memStore) SetMessagesExcluded(_ context.Context, ids []uuid.UUID, excluded bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for i := range s.messages {
@@ -189,16 +193,54 @@ func (s *memStore) SetMessagesExcluded(ids []uuid.UUID, excluded bool) error {
 	return nil
 }
 
-func (s *memStore) AppSetting(key string) (string, bool, error) {
+func (s *memStore) AppSetting(_ context.Context, key string) (string, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	v, ok := s.settings[key]
 	return v, ok, nil
 }
 
-func (s *memStore) SetAppSetting(key, value string) error {
+func (s *memStore) SetAppSetting(_ context.Context, key, value string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.settings[key] = value
 	return nil
+}
+
+func (s *memStore) UserSetting(_ context.Context, key string) (string, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	v, ok := s.user[key]
+	return v, ok, nil
+}
+
+func (s *memStore) SetUserSetting(_ context.Context, key, value string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.user[key] = value
+	return nil
+}
+
+// ctx は、テストで会話の仕組みと保存先に渡す ctx(利用者はログインなしの形の利用者)。
+// 止めることを確かめるテストは、自分で作った ctx を使う(その中では、この名前はそちらを指す)。
+var ctx = WithUser(context.Background(), LocalUser)
+
+// mustDefaults は、新しい会話の既定(cs.Defaults)。読めなければテストを止める。
+func mustDefaults(t *testing.T, cs *Conversations) ConversationSettings {
+	t.Helper()
+	d, err := cs.Defaults(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return d
+}
+
+// mustDefaultProfile は、新しい会話で最初に選ばれるプロファイル(cs.DefaultProfile)。読めなければテストを止める。
+func mustDefaultProfile(t *testing.T, cs *Conversations) Profile {
+	t.Helper()
+	p, err := cs.DefaultProfile(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p
 }

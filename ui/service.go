@@ -14,6 +14,11 @@
 // Wails に頼るところは、画面へ知らせる係(Notifier)としてアプリから受け取る。ダイアログ(フォルダを選ぶなど)はアプリの ChatService に残す。
 //
 // 会話の履歴や設定を持つのは aibow パッケージの Conversations で、Service は画面との中継をするだけ。
+//
+// 会話・プロファイル・表示の設定は人ごと(0017)。誰のものかは、メソッドの最初の引数の ctx で運ぶ(aibow.WithUser)。
+// ctx に利用者を入れるのは呼ぶ側の一番外(aibow-server の HTTP の層)で、Service は受け取った ctx をそのまま会話の仕組みに渡す。
+// デスクトップのアプリは利用者が1人なので入れない(手元の DB が、利用者の無い ctx をその1人のものとして扱う。store.SQLite.OneUser)。
+// Wails も、最初の引数が context.Context のメソッドには呼び出しの ctx を渡し、画面の関数の引数には出さない。
 package ui
 
 import (
@@ -114,7 +119,8 @@ type Service struct {
 	// version はアプリのバージョン(_cmd/aibow/version。画面の左下に出す)
 	version string
 
-	// app はアプリ全体の設定(作業領域に関わる設定)。画面で変えると DB にも保存する
+	// app はアプリ全体の設定(作業領域に関わる設定)。画面で変えると DB にも保存する。
+	// 表示の設定と新しい会話の既定は人ごとなので、ここの値は使わず、そのつど ctx の利用者のものを読む(AppSettings)
 	appMu sync.Mutex
 	app   aibow.AppSettings
 
@@ -165,9 +171,11 @@ func New(o Options) (*Service, Lifecycle) {
 		s.convs.SetToolPrefs(o.Prefs)
 		// 送信の前に会話のモデルを読み込む係(0014 の 3)。モデルごとの GPU の層数で読み込む
 		s.convs.SetModelLoader(modelLoader{s})
+		// ここから下の引き継ぎは、利用者を分ける前に作った会話・プロファイルのためのもの。それはログインなしの形の利用者のもの(DB の版 6)なので、その人として行う(0017)
+		ctx := aibow.WithUser(context.Background(), aibow.LocalUser)
 		// 新しい会話の既定はプロファイルの値。プロファイルより前の DB なら、今の既定からプロファイル「既定」を作り、今ある会話を紐づける(0014)。
 		// ツールのグループを引き継ぐので、MCP のサーバーとツールの扱いを渡したあとに呼ぶ
-		if notes, err := s.convs.PrepareProfiles(); err != nil {
+		if notes, err := s.convs.PrepareProfiles(ctx); err != nil {
 			log.Error(err.Error())
 		} else {
 			for _, n := range notes {
@@ -175,14 +183,14 @@ func New(o Options) (*Service, Lifecycle) {
 			}
 		}
 		// 会話の上限・返事の上限を会話ごとにする前に作った会話には、今の既定の値を写す(既定を変えても今ある会話は変わらない、の約束。0009)
-		if n, err := s.convs.FillMissingLimits(); err != nil {
+		if n, err := s.convs.FillMissingLimits(ctx); err != nil {
 			log.Error(err.Error())
 		} else if n > 0 {
 			d := app.Defaults
 			log.Noticef("会話の上限・返事の上限を持たない %d 個の会話に、今の既定(%d + %d)を入れました", n, d.HistoryTokens, d.ReplyTokens)
 		}
 		// 会話ごとのモデルにする前に作った会話には、最後に使ったモデルを写す(0014 の 10)
-		if n, err := s.convs.FillMissingModels(app.Workspace.Model); err != nil {
+		if n, err := s.convs.FillMissingModels(ctx, app.Workspace.Model); err != nil {
 			log.Error(err.Error())
 		} else if n > 0 {
 			log.Noticef("モデルを持たない %d 個の会話に、最後に使ったモデル %s を入れました", n, app.Workspace.Model)
@@ -325,19 +333,26 @@ func logModel(what string, i *engine.ModelInfo) {
 
 // ---- アプリ全体の設定 -------------------------------------------------------------------
 
-// AppSettings はアプリの設定(GPU の層数・最後に使ったモデル・画面の設定)と、新しい会話の既定の設定(会話の上限・返事の上限も入る)を返す。
+// AppSettings はアプリの設定(GPU の層数・最後に使ったモデル)と、画面の設定・新しい会話の既定の設定(会話の上限・返事の上限も入る)を返す。
 // GPU の層数は、読み込んでいるモデルの値(モデルごとに覚えている。0014 の 4。aibow-server 越しならサーバーの PC の値)。
+// 画面の設定と新しい会話の既定は、ctx の利用者のもの(0017 の 6)。
 // 設定の画面はこれを出して変える(SetGPULayers)。
-func (s *Service) AppSettings() (aibow.AppSettings, error) {
+func (s *Service) AppSettings(ctx context.Context) (aibow.AppSettings, error) {
 	if s.startupErr != nil {
 		return aibow.AppSettings{}, s.startupErr
 	}
 	layers := s.host.gpuLayers() // 直接の形は appMu を使うので、持つ前に聞く
 	s.appMu.Lock()
-	defer s.appMu.Unlock()
 	a := s.app
+	s.appMu.Unlock()
 	a.Workspace.GPULayers = layers
-	a.Defaults = s.convs.Defaults()
+	var err error
+	if a.Display, err = aibow.LoadDisplay(ctx, s.store, InitialDisplay()); err != nil {
+		return aibow.AppSettings{}, err
+	}
+	if a.Defaults, err = s.convs.Defaults(ctx); err != nil {
+		return aibow.AppSettings{}, err
+	}
 	return a, nil
 }
 
@@ -487,19 +502,19 @@ func (s *Service) ModelSettings() (ModelSettingsResult, error) {
 // 扱いを決めるのは aibow(Conversations)で、ここは画面との中継とログだけ。
 
 // Profiles は、プロファイルの一覧(しまったものも。使っている会話の数・新しい会話で最初に選ばれるか)。
-func (s *Service) Profiles() ([]aibow.ProfileInfo, error) {
+func (s *Service) Profiles(ctx context.Context) ([]aibow.ProfileInfo, error) {
 	if s.startupErr != nil {
 		return nil, s.startupErr
 	}
-	return s.convs.Profiles()
+	return s.convs.Profiles(ctx)
 }
 
 // CreateProfile は、新しいプロファイルを作る(設定の画面の「新しいプロファイル」)。
-func (s *Service) CreateProfile(name string, values aibow.ProfileValues, rules aibow.ProfileRules) (aibow.Profile, error) {
+func (s *Service) CreateProfile(ctx context.Context, name string, values aibow.ProfileValues, rules aibow.ProfileRules) (aibow.Profile, error) {
 	if s.startupErr != nil {
 		return aibow.Profile{}, s.startupErr
 	}
-	p, err := s.convs.CreateProfile(name, values, rules)
+	p, err := s.convs.CreateProfile(ctx, name, values, rules)
 	if err == nil {
 		log.Noticef("プロファイル「%s」を作りました", p.Name)
 	}
@@ -507,11 +522,11 @@ func (s *Service) CreateProfile(name string, values aibow.ProfileValues, rules a
 }
 
 // UpdateProfile は、プロファイルの名前・値・決まりを変える。値は今ある会話に効かず、決まりは今ある会話にもすぐ効く。
-func (s *Service) UpdateProfile(p aibow.Profile) error {
+func (s *Service) UpdateProfile(ctx context.Context, p aibow.Profile) error {
 	if s.startupErr != nil {
 		return s.startupErr
 	}
-	if err := s.convs.UpdateProfile(p); err != nil {
+	if err := s.convs.UpdateProfile(ctx, p); err != nil {
 		return err
 	}
 	log.Noticef("プロファイル「%s」を変えました(固定 %v・使えない %+v)", p.Name, p.Rules.Fixed, p.Rules.Off)
@@ -519,11 +534,11 @@ func (s *Service) UpdateProfile(p aibow.Profile) error {
 }
 
 // SetProfileArchived は、プロファイルをしまう / 戻す。
-func (s *Service) SetProfileArchived(id uuid.UUID, archived bool) error {
+func (s *Service) SetProfileArchived(ctx context.Context, id uuid.UUID, archived bool) error {
 	if s.startupErr != nil {
 		return s.startupErr
 	}
-	if err := s.convs.SetProfileArchived(id, archived); err != nil {
+	if err := s.convs.SetProfileArchived(ctx, id, archived); err != nil {
 		return err
 	}
 	log.Noticef("プロファイル %s をしまう: %v", id, archived)
@@ -531,11 +546,11 @@ func (s *Service) SetProfileArchived(id uuid.UUID, archived bool) error {
 }
 
 // DeleteProfile は、使っている会話が無いプロファイルを消す。
-func (s *Service) DeleteProfile(id uuid.UUID) error {
+func (s *Service) DeleteProfile(ctx context.Context, id uuid.UUID) error {
 	if s.startupErr != nil {
 		return s.startupErr
 	}
-	if err := s.convs.DeleteProfile(id); err != nil {
+	if err := s.convs.DeleteProfile(ctx, id); err != nil {
 		return err
 	}
 	log.Noticef("プロファイル %s を消しました", id)
@@ -543,31 +558,33 @@ func (s *Service) DeleteProfile(id uuid.UUID) error {
 }
 
 // SetDefaultProfile は、新しい会話で最初に選ばれるプロファイルを変える。
-func (s *Service) SetDefaultProfile(id uuid.UUID) error {
+func (s *Service) SetDefaultProfile(ctx context.Context, id uuid.UUID) error {
 	if s.startupErr != nil {
 		return s.startupErr
 	}
-	if err := s.convs.SetDefaultProfile(id); err != nil {
+	if err := s.convs.SetDefaultProfile(ctx, id); err != nil {
 		return err
 	}
-	log.Noticef("新しい会話で最初に選ばれるプロファイル: %s", s.convs.DefaultProfile().Name)
+	if p, err := s.convs.DefaultProfile(ctx); err == nil {
+		log.Noticef("新しい会話で最初に選ばれるプロファイル: %s", p.Name)
+	}
 	return nil
 }
 
 // ProfileDefaults は、プロファイル id から新しい会話を作るときの設定(新しい会話の画面でプロファイルを選んだとき)。
-func (s *Service) ProfileDefaults(id uuid.UUID) (aibow.ConversationSettings, error) {
+func (s *Service) ProfileDefaults(ctx context.Context, id uuid.UUID) (aibow.ConversationSettings, error) {
 	if s.startupErr != nil {
 		return aibow.ConversationSettings{}, s.startupErr
 	}
-	return s.convs.DefaultsOf(id)
+	return s.convs.DefaultsOf(ctx, id)
 }
 
 // SaveToProfile は、会話の今の設定でプロファイルの値を上書きする(会話の設定の画面の「プロファイルに保存」)。
-func (s *Service) SaveToProfile(conv, profile uuid.UUID) error {
+func (s *Service) SaveToProfile(ctx context.Context, conv, profile uuid.UUID) error {
 	if s.startupErr != nil {
 		return s.startupErr
 	}
-	if err := s.convs.SaveToProfile(conv, profile); err != nil {
+	if err := s.convs.SaveToProfile(ctx, conv, profile); err != nil {
 		return err
 	}
 	log.Noticef("会話 %s の設定を、プロファイル %s に保存しました", conv, profile)
@@ -575,11 +592,11 @@ func (s *Service) SaveToProfile(conv, profile uuid.UUID) error {
 }
 
 // SaveAsProfile は、会話の今の設定で新しいプロファイルを作る(会話の設定の画面の「新しいプロファイルとして保存」)。
-func (s *Service) SaveAsProfile(conv uuid.UUID, name string) (aibow.Profile, error) {
+func (s *Service) SaveAsProfile(ctx context.Context, conv uuid.UUID, name string) (aibow.Profile, error) {
 	if s.startupErr != nil {
 		return aibow.Profile{}, s.startupErr
 	}
-	p, err := s.convs.SaveAsProfile(conv, name)
+	p, err := s.convs.SaveAsProfile(ctx, conv, name)
 	if err == nil {
 		log.Noticef("会話 %s の設定から、プロファイル「%s」を作りました", conv, p.Name)
 	}
@@ -587,23 +604,28 @@ func (s *Service) SaveAsProfile(conv uuid.UUID, name string) (aibow.Profile, err
 }
 
 // SetDisplay は画面の設定(質問を右上に出すか・明るさ)を変える。生成には関わらないので、モデルは読み直さない。
-// 変わった項目だけ保存し、ログに残す。
-func (s *Service) SetDisplay(d aibow.DisplaySettings) error {
+// 設定は ctx の利用者のもの(0017 の 6)。変わった項目だけ保存し、ログに残す。
+func (s *Service) SetDisplay(ctx context.Context, d aibow.DisplaySettings) error {
 	if s.startupErr != nil {
 		return s.startupErr
 	}
 	if err := d.Validate(); err != nil {
 		return err
 	}
-	s.appMu.Lock()
-	old := s.app.Display
-	s.appMu.Unlock()
+	old, err := aibow.LoadDisplay(ctx, s.store, InitialDisplay())
+	if err != nil {
+		return err
+	}
 	if d.PinQuestion != old.PinQuestion {
-		s.saveAppSetting(aibow.SettingPinQuestion, d.PinQuestion, func(a *aibow.AppSettings) { a.Display.PinQuestion = d.PinQuestion })
+		if err := aibow.SaveUserSetting(ctx, s.store, aibow.SettingPinQuestion, d.PinQuestion); err != nil {
+			return err
+		}
 		log.Noticef("スクロールしたときに質問を右上に出す: %v", d.PinQuestion)
 	}
 	if d.Theme != old.Theme {
-		s.saveAppSetting(aibow.SettingTheme, d.Theme, func(a *aibow.AppSettings) { a.Display.Theme = d.Theme })
+		if err := aibow.SaveUserSetting(ctx, s.store, aibow.SettingTheme, d.Theme); err != nil {
+			return err
+		}
 		log.Noticef("画面の明るさ: %s", d.Theme)
 	}
 	return nil
@@ -611,11 +633,12 @@ func (s *Service) SetDisplay(d aibow.DisplaySettings) error {
 
 // saveAppSetting はアプリ全体の設定を1つ保存する。
 // 保存に失敗しても、変えた設定は今の起動中は効いているので、ログに出すだけにする。
+// アプリ全体の設定は利用者によらないので、呼び出しの ctx は渡さない(モデルの読み込みは、会話の仕組みからも ctx なしで頼まれる)。
 func (s *Service) saveAppSetting(key string, v any, apply func(*aibow.AppSettings)) {
 	s.appMu.Lock()
 	defer s.appMu.Unlock()
 	apply(&s.app)
-	if err := aibow.SaveAppSetting(s.store, key, v); err != nil {
+	if err := aibow.SaveAppSetting(context.Background(), s.store, key, v); err != nil {
 		log.Error(err.Error())
 	}
 }
@@ -671,11 +694,11 @@ func (s *Service) SetGroupPolicy(group string, policy aibow.ToolPolicy) error {
 // ToolStates は、会話 id の設定 settings でのツールの扱い(会話の設定の画面に出す)。
 // 画面がまだ保存していない設定でも見られるよう、設定を受け取る。会話の ID は、プロファイルの決まり(使えない)を引くために使う
 // (空なら新しい会話 = 新しい会話で最初に選ばれるプロファイル。0014)。
-func (s *Service) ToolStates(id uuid.UUID, settings aibow.ConversationSettings) ([]aibow.ToolGroupState, error) {
+func (s *Service) ToolStates(ctx context.Context, id uuid.UUID, settings aibow.ConversationSettings) ([]aibow.ToolGroupState, error) {
 	if s.startupErr != nil {
 		return nil, s.startupErr
 	}
-	return s.convs.ConversationToolStates(id, settings)
+	return s.convs.ConversationToolStates(ctx, id, settings)
 }
 
 // ToolPrefs は、ツールの扱いの PC の既定(tools.json)と、サーバーを起動したときに見えたツールの一覧。
@@ -719,11 +742,11 @@ func policyLabel(p aibow.ToolPolicy) string {
 // ---- 会話 -------------------------------------------------------------------------------
 
 // Conversations は会話の一覧を、更新の新しい順に返す。
-func (s *Service) Conversations() ([]aibow.Conversation, error) {
+func (s *Service) Conversations(ctx context.Context) ([]aibow.Conversation, error) {
 	if s.startupErr != nil {
 		return nil, s.startupErr
 	}
-	return s.convs.List()
+	return s.convs.List(ctx)
 }
 
 // ConversationDetail は会話1つと、その発言。
@@ -739,24 +762,24 @@ type ConversationDetail struct {
 }
 
 // Conversation は会話1つと、その発言を古い順に返す。
-func (s *Service) Conversation(id uuid.UUID) (ConversationDetail, error) {
+func (s *Service) Conversation(ctx context.Context, id uuid.UUID) (ConversationDetail, error) {
 	if s.startupErr != nil {
 		return ConversationDetail{}, s.startupErr
 	}
-	c, ms, err := s.convs.Get(id)
+	c, ms, err := s.convs.Get(ctx, id)
 	if err != nil {
 		return ConversationDetail{}, err
 	}
-	comps, err := s.convs.Compactions(id)
+	comps, err := s.convs.Compactions(ctx, id)
 	if err != nil {
 		return ConversationDetail{}, err
 	}
 	g := s.convs.Generating()
-	u, err := s.Usage(id)
+	u, err := s.Usage(ctx, id)
 	if err != nil {
 		return ConversationDetail{}, err
 	}
-	p, err := s.convs.ProfileOf(c)
+	p, err := s.convs.ProfileOf(ctx, c)
 	if err != nil {
 		return ConversationDetail{}, err
 	}
@@ -766,11 +789,11 @@ func (s *Service) Conversation(id uuid.UUID) (ConversationDetail, error) {
 // Usage は、会話がモデルに渡す文字列で、会話の上限をどれだけ使っているか(メーター)を返す。
 // トークン数は今のモデルで数えるので、モデルが読み込まれていなければ null を返す。
 // 画面は、モデル・上限・会話の設定を変えたあとに呼び直す。
-func (s *Service) Usage(id uuid.UUID) (*aibow.Usage, error) {
+func (s *Service) Usage(ctx context.Context, id uuid.UUID) (*aibow.Usage, error) {
 	if s.startupErr != nil {
 		return nil, s.startupErr
 	}
-	u, err := s.convs.Usage(id)
+	u, err := s.convs.Usage(ctx, id)
 	// モデルが無い(降ろした)・書式に未対応のモデルなら、数えられないのでメーターを出さない。
 	// エラーにすると会話を開くこと(Conversation)まで失敗し、開くたびにエラーのカードが積み重なるため(未対応なことは読み込んだときと送信したときに伝える)
 	if errors.Is(err, engine.ErrNoModel) || errors.Is(err, format.ErrUnsupported) {
@@ -785,7 +808,7 @@ func (s *Service) Usage(id uuid.UUID) (*aibow.Usage, error) {
 // NewConversation は、プロファイル profile から新しい会話を作る(空なら新しい会話で最初に選ばれるプロファイル)。
 // settings が null ならプロファイルの値のコピーで始まる。
 // 画面は、新しい会話の画面で最初に送信するときに呼ぶ(空の会話を作らないため)。
-func (s *Service) NewConversation(profile uuid.UUID, settings *aibow.ConversationSettings) (aibow.Conversation, error) {
+func (s *Service) NewConversation(ctx context.Context, profile uuid.UUID, settings *aibow.ConversationSettings) (aibow.Conversation, error) {
 	if s.startupErr != nil {
 		return aibow.Conversation{}, s.startupErr
 	}
@@ -804,7 +827,7 @@ func (s *Service) NewConversation(profile uuid.UUID, settings *aibow.Conversatio
 			settings = &cp
 		}
 	}
-	return s.convs.CreateIn(profile, settings)
+	return s.convs.CreateIn(ctx, profile, settings)
 }
 
 // lastModel は最後に読み込んだモデル(次の起動で読み込むモデル)。
@@ -815,28 +838,28 @@ func (s *Service) lastModel() string {
 }
 
 // DeleteConversation は会話を消す。返事を生成中の会話は消せない。
-func (s *Service) DeleteConversation(id uuid.UUID) error {
+func (s *Service) DeleteConversation(ctx context.Context, id uuid.UUID) error {
 	if s.startupErr != nil {
 		return s.startupErr
 	}
-	return s.convs.Delete(id)
+	return s.convs.Delete(ctx, id)
 }
 
 // RenameConversation は会話のタイトルを変える。空にはできない。
-func (s *Service) RenameConversation(id uuid.UUID, title string) error {
+func (s *Service) RenameConversation(ctx context.Context, id uuid.UUID, title string) error {
 	if s.startupErr != nil {
 		return s.startupErr
 	}
-	return s.convs.Rename(id, title)
+	return s.convs.Rename(ctx, id, title)
 }
 
 // SetExcluded は、吹き出し1つ分の発言を「モデルに渡さない」にする / 戻す(0011)。msgID は吹き出しの中の発言のどれか。
 // 返事なら、ツールの呼び出しと結果も一緒に変わる。生成中の会話は変えられない。次の送信から効く。
-func (s *Service) SetExcluded(id, msgID uuid.UUID, excluded bool) error {
+func (s *Service) SetExcluded(ctx context.Context, id, msgID uuid.UUID, excluded bool) error {
 	if s.startupErr != nil {
 		return s.startupErr
 	}
-	if err := s.convs.SetExcluded(id, msgID, excluded); err != nil {
+	if err := s.convs.SetExcluded(ctx, id, msgID, excluded); err != nil {
 		return err
 	}
 	log.Infof("会話 %s の発言 %s を、モデルに%s", id, msgID, map[bool]string{true: "渡さないにしました", false: "渡すに戻しました"}[excluded])
@@ -844,11 +867,11 @@ func (s *Service) SetExcluded(id, msgID uuid.UUID, excluded bool) error {
 }
 
 // UpdateConversationSettings は会話の設定を変える。次の送信から効く。
-func (s *Service) UpdateConversationSettings(id uuid.UUID, settings aibow.ConversationSettings) error {
+func (s *Service) UpdateConversationSettings(ctx context.Context, id uuid.UUID, settings aibow.ConversationSettings) error {
 	if s.startupErr != nil {
 		return s.startupErr
 	}
-	return s.convs.UpdateSettings(id, settings)
+	return s.convs.UpdateSettings(ctx, id, settings)
 }
 
 // ---- 送信 -------------------------------------------------------------------------------
@@ -893,11 +916,11 @@ func (s *Service) Compact(ctx context.Context, id uuid.UUID) {
 // ConfirmTool は、実行前の確認を待っているツールに答える(カードの「実行する」「拒否」)。
 // reqID は confirm イベントの ID。拒否するときの reason は空でもよい(モデルには「理由: (書かれていません)」と渡る)。
 // remember は、このツールのこの会話でのこれから先の扱い(空ならこの1回だけ。allow = この会話では今後聞かない、off = 今後許可しない。0010)。
-func (s *Service) ConfirmTool(id uuid.UUID, reqID string, approved bool, reason string, remember aibow.ToolPolicy) error {
+func (s *Service) ConfirmTool(ctx context.Context, id uuid.UUID, reqID string, approved bool, reason string, remember aibow.ToolPolicy) error {
 	if s.startupErr != nil {
 		return s.startupErr
 	}
-	return s.convs.Answer(id, reqID, aibow.Confirmation{Approved: approved, Reason: reason, Remember: remember})
+	return s.convs.Answer(ctx, id, reqID, aibow.Confirmation{Approved: approved, Reason: reason, Remember: remember})
 }
 
 // StopSummary は生成中の要約だけを止める(要約中に出る停止ボタン)。

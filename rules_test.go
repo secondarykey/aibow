@@ -13,12 +13,12 @@ import (
 // 管理者があとから決まりを変えた、の代わり。決まりは会話からそのつど見に行くので、今ある会話にもすぐ効く。
 func setRules(t *testing.T, cs *Conversations, st *memStore, change func(*Profile)) {
 	t.Helper()
-	p := cs.DefaultProfile()
+	p := mustDefaultProfile(t, cs)
 	change(&p)
-	if err := st.UpdateProfile(p); err != nil {
+	if err := st.UpdateProfile(ctx, p); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := cs.PrepareProfiles(); err != nil { // 覚えている既定のプロファイルも読み直す
+	if _, err := cs.PrepareProfiles(ctx); err != nil { // 覚えている既定のプロファイルも読み直す
 		t.Fatal(err)
 	}
 }
@@ -29,7 +29,7 @@ func TestFixedItemsUseProfileValues(t *testing.T) {
 	cs, st := newTestConversations(t, g)
 	c := mustCreate(t, cs)
 	c.Settings.System, c.Settings.Temperature = "会話のシステムプロンプト", 0.2
-	if err := cs.UpdateSettings(c.ID, c.Settings); err != nil {
+	if err := cs.UpdateSettings(ctx, c.ID, c.Settings); err != nil {
 		t.Fatal(err)
 	}
 
@@ -37,7 +37,7 @@ func TestFixedItemsUseProfileValues(t *testing.T) {
 		p.Values.System = "プロファイルのシステムプロンプト"
 		p.Rules.Fixed = []string{FixSystem}
 	})
-	got, _, _ := cs.Get(c.ID)
+	got, _, _ := cs.Get(ctx, c.ID)
 	if got.Settings.System != "プロファイルのシステムプロンプト" || got.Settings.Temperature != 0.2 {
 		t.Errorf("固定した項目だけプロファイルの値: %+v", got.Settings)
 	}
@@ -51,7 +51,7 @@ func TestFixedItemsUseProfileValues(t *testing.T) {
 
 	// 固定していない項目は変えられる。固定した項目は保存してある値のまま残る
 	got.Settings.Temperature = 0.9
-	if err := cs.UpdateSettings(c.ID, got.Settings); err != nil {
+	if err := cs.UpdateSettings(ctx, c.ID, got.Settings); err != nil {
 		t.Fatalf("固定していない項目は変えられる: %v", err)
 	}
 	if s := st.convs[c.ID].Settings; s.Temperature != 0.9 || s.System != "会話のシステムプロンプト" {
@@ -59,7 +59,7 @@ func TestFixedItemsUseProfileValues(t *testing.T) {
 	}
 	// 固定した項目を変えようとしたら、保存せずに断る
 	got.Settings.System = "書き換えたい"
-	if err := cs.UpdateSettings(c.ID, got.Settings); err == nil || !strings.Contains(err.Error(), "固定") {
+	if err := cs.UpdateSettings(ctx, c.ID, got.Settings); err == nil || !strings.Contains(err.Error(), "固定") {
 		t.Errorf("固定した項目は変えられない: %v", err)
 	}
 	if st.convs[c.ID].Settings.Temperature != 0.9 {
@@ -68,7 +68,7 @@ func TestFixedItemsUseProfileValues(t *testing.T) {
 
 	// 固定を外すと、会話の元の値に戻る
 	setRules(t, cs, st, func(p *Profile) { p.Rules.Fixed = nil })
-	if got, _, _ := cs.Get(c.ID); got.Settings.System != "会話のシステムプロンプト" {
+	if got, _, _ := cs.Get(ctx, c.ID); got.Settings.System != "会話のシステムプロンプト" {
 		t.Errorf("固定を外すと会話の値に戻る: %q", got.Settings.System)
 	}
 }
@@ -94,13 +94,13 @@ func TestFixedModelAndLimits(t *testing.T) {
 func TestCreateRefusesFixedChange(t *testing.T) {
 	cs, st := newTestConversations(t, &fakeGen{})
 	setRules(t, cs, st, func(p *Profile) { p.Rules.Fixed = []string{FixThink} })
-	s := cs.Defaults()
+	s := mustDefaults(t, cs)
 	s.System = "変えてよい"
-	if _, err := cs.Create(&s); err != nil {
+	if _, err := cs.Create(ctx, &s); err != nil {
 		t.Fatalf("固定していない項目は変えて作れる: %v", err)
 	}
 	s.Think = !s.Think
-	if _, err := cs.Create(&s); err == nil {
+	if _, err := cs.Create(ctx, &s); err == nil {
 		t.Error("固定した項目を変えた設定では作れない")
 	}
 }
@@ -110,7 +110,7 @@ func TestOffToolsAreHidden(t *testing.T) {
 	g := &fakeGen{content: "ok"}
 	cs, st, c := newToolConversation(t, g)
 	c.Settings.ToolPolicies = map[string]ToolPolicy{"calculate": ToolOn}
-	if err := cs.UpdateSettings(c.ID, c.Settings); err != nil {
+	if err := cs.UpdateSettings(ctx, c.ID, c.Settings); err != nil {
 		t.Fatal(err)
 	}
 	setRules(t, cs, st, func(p *Profile) { p.Rules.Off.Tools = []string{"calculate"} })
@@ -119,8 +119,8 @@ func TestOffToolsAreHidden(t *testing.T) {
 	if names := promptToolNames(g.calls[0]); slices.Contains(names, "calculate") || !slices.Contains(names, "get_current_time") {
 		t.Errorf("使えないツールは会話で使うにしていてもモデルに見せない: %v", names)
 	}
-	got, _, _ := cs.Get(c.ID)
-	states, _ := cs.ConversationToolStates(c.ID, got.Settings)
+	got, _, _ := cs.Get(ctx, c.ID)
+	states, _ := cs.ConversationToolStates(ctx, c.ID, got.Settings)
 	if i := slices.IndexFunc(states[0].Tools, func(s ToolState) bool { return s.Name == "calculate" }); i < 0 ||
 		states[0].Tools[i].Policy != ToolOff || states[0].Tools[i].From != PolicyFromProfile {
 		t.Errorf("画面には「プロファイルで使えない」と返す: %+v", states[0].Tools)
@@ -128,25 +128,25 @@ func TestOffToolsAreHidden(t *testing.T) {
 
 	// 使えないツールの上書きは、新しく書けない(消すのはよい)。確認のカードからも書けない
 	got.Settings.ToolPolicies = map[string]ToolPolicy{"calculate": ToolAllow}
-	if err := cs.UpdateSettings(c.ID, got.Settings); err == nil {
+	if err := cs.UpdateSettings(ctx, c.ID, got.Settings); err == nil {
 		t.Error("使えないツールの上書きは変えられない")
 	}
-	if err := cs.SetToolPolicy(c.ID, "calculate", ToolAllow); err == nil {
+	if err := cs.SetToolPolicy(ctx, c.ID, "calculate", ToolAllow); err == nil {
 		t.Error("確認のカードからも書けない")
 	}
 	got.Settings.ToolPolicies = nil
-	if err := cs.UpdateSettings(c.ID, got.Settings); err != nil {
+	if err := cs.UpdateSettings(ctx, c.ID, got.Settings); err != nil {
 		t.Errorf("上書きを消すのはよい: %v", err)
 	}
 	// ほかの項目を変えるだけなら、残っている上書きがあっても保存できる
 	setRules(t, cs, st, func(p *Profile) { p.Rules.Off.Tools = []string{"get_current_time"} })
-	got, _, _ = cs.Get(c.ID)
+	got, _, _ = cs.Get(ctx, c.ID)
 	got.Settings.ToolPolicies = map[string]ToolPolicy{"calculate": ToolOff}
-	cs.UpdateSettings(c.ID, got.Settings)
+	cs.UpdateSettings(ctx, c.ID, got.Settings)
 	setRules(t, cs, st, func(p *Profile) { p.Rules.Off.Tools = []string{"calculate"} })
-	got, _, _ = cs.Get(c.ID)
+	got, _, _ = cs.Get(ctx, c.ID)
 	got.Settings.System = "別の文"
-	if err := cs.UpdateSettings(c.ID, got.Settings); err != nil {
+	if err := cs.UpdateSettings(ctx, c.ID, got.Settings); err != nil {
 		t.Errorf("上書きを変えていなければ保存できる: %v", err)
 	}
 }
@@ -166,18 +166,18 @@ func TestOffGroups(t *testing.T) {
 	if names := promptToolNames(g.calls[0]); len(names) != 0 || r.started {
 		t.Errorf("使えないグループは見せず、起動もしない: %v %v", names, r.started)
 	}
-	if d := cs.Defaults(); !d.BuiltinOff || len(d.MCPServers) != 0 {
+	if d := mustDefaults(t, cs); !d.BuiltinOff || len(d.MCPServers) != 0 {
 		t.Errorf("新しい会話では使えないグループを選ばない: %+v", d)
 	}
 
 	// 新しく選ぶことはできない
 	b := mustCreate(t, cs)
 	b.Settings.MCPServers = []string{"fake"}
-	if err := cs.UpdateSettings(b.ID, b.Settings); err == nil {
+	if err := cs.UpdateSettings(ctx, b.ID, b.Settings); err == nil {
 		t.Error("使えないサーバーは新しく選べない")
 	}
 	b.Settings.MCPServers, b.Settings.BuiltinOff = nil, false
-	if err := cs.UpdateSettings(b.ID, b.Settings); err == nil {
+	if err := cs.UpdateSettings(ctx, b.ID, b.Settings); err == nil {
 		t.Error("使えない組み込みのツールは新しく使うにできない")
 	}
 }

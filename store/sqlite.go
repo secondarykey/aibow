@@ -9,6 +9,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -24,8 +25,13 @@ import (
 )
 
 // SQLite は aibow.Store を SQLite で実装したもの。
+//
+// 会話・プロファイル・人ごとの設定には持ち主(owner。利用者の ID)の列があり、ctx の利用者(aibow.UserOf)の行だけを読み書きする(0017)。
+// 発言と要約は会話を通して持ち主が決まるので、列を持たず、会話の持ち主で確かめる。
 type SQLite struct {
 	db *sql.DB
+	// oneUser は、ctx に利用者が無い呼び出しを、ログインなしの形の利用者(aibow.LocalUser)のものとして扱うか(OneUser)
+	oneUser bool
 }
 
 var _ aibow.Store = (*SQLite)(nil) // aibow.Store のメソッドを全部持っているか、コンパイル時に確かめる
@@ -55,6 +61,25 @@ func Open(path string) (*SQLite, error) {
 
 func (s *SQLite) Close() error {
 	return s.db.Close()
+}
+
+// OneUser は、ctx に利用者が無い呼び出しを、ログインなしの形の利用者(aibow.LocalUser)のものとして扱うようにする。
+// デスクトップのアプリの手元の DB(aibow.db)のため。使うのはその PC の1人だけで、利用者の印を付ける HTTP の層が無い。
+// 呼ばなければ、利用者が無い呼び出しは aibow.ErrNoUser で断る(aibow-server の server.db。印を付け忘れたときに、ほかの人の会話を見せないため)。
+// Open の直後、使い始める前に呼ぶ。
+func (s *SQLite) OneUser() {
+	s.oneUser = true
+}
+
+// owner は、ctx の利用者(読み書きする行の持ち主)を、保存する形(UUID の文字列)で返す。
+func (s *SQLite) owner(ctx context.Context) (string, error) {
+	if id, ok := aibow.UserOf(ctx); ok {
+		return id.String(), nil
+	}
+	if s.oneUser {
+		return aibow.LocalUser.String(), nil
+	}
+	return "", aibow.ErrNoUser
 }
 
 // ---- マイグレーション(テーブルの作り変え)-------------------------------------------------
@@ -127,6 +152,27 @@ CREATE TABLE profiles (
 );
 ALTER TABLE conversations ADD COLUMN profile_id TEXT REFERENCES profiles(id);
 CREATE INDEX conversations_by_profile ON conversations(profile_id);
+`,
+	// 版 6: 会話の持ち主(0017 の 10-0)。会話とプロファイルに owner(利用者の ID)を足し、表示の設定と「新しい会話で最初に選ばれるプロファイル」を
+	// 人ごとの設定(user_settings)に移す。今ある会話・プロファイル・設定は、ログインなしの形の利用者(aibow.LocalUser)のものにする。
+	// 利用者の表はまだ作らない(10-1)ので、owner は外部キーにしない。
+	// DEFAULT は今ある行を埋めるためのもの(SQLite は NOT NULL の列を足すときに既定の値が要る)。足すときはいつも owner を書く。
+	// 発言と要約は会話を通して持ち主が決まるので、列を足さない
+	`
+ALTER TABLE conversations ADD COLUMN owner TEXT NOT NULL DEFAULT '00000000-0000-7000-8000-000000000001';
+ALTER TABLE profiles ADD COLUMN owner TEXT NOT NULL DEFAULT '00000000-0000-7000-8000-000000000001';
+CREATE INDEX conversations_by_owner ON conversations(owner, updated_at);
+CREATE INDEX profiles_by_owner ON profiles(owner, id);
+CREATE TABLE user_settings (
+	owner TEXT NOT NULL,              -- 利用者の ID
+	key   TEXT NOT NULL,
+	value TEXT NOT NULL,              -- JSON
+	PRIMARY KEY (owner, key)
+);
+INSERT INTO user_settings (owner, key, value)
+	SELECT '00000000-0000-7000-8000-000000000001', key, value FROM app_settings
+	WHERE key IN ('default_profile', 'pin_question', 'theme');
+DELETE FROM app_settings WHERE key IN ('default_profile', 'pin_question', 'theme');
 `,
 }
 
@@ -220,8 +266,12 @@ func scanConversation(r rowScanner) (aibow.Conversation, error) {
 	return c, nil
 }
 
-func (s *SQLite) ListConversations() ([]aibow.Conversation, error) {
-	rows, err := s.db.Query("SELECT " + conversationColumns + " FROM conversations ORDER BY updated_at DESC, id DESC")
+func (s *SQLite) ListConversations(ctx context.Context) ([]aibow.Conversation, error) {
+	owner, err := s.owner(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.db.QueryContext(ctx, "SELECT "+conversationColumns+" FROM conversations WHERE owner = ? ORDER BY updated_at DESC, id DESC", owner)
 	if err != nil {
 		return nil, err
 	}
@@ -237,64 +287,92 @@ func (s *SQLite) ListConversations() ([]aibow.Conversation, error) {
 	return out, rows.Err()
 }
 
-func (s *SQLite) Conversation(id uuid.UUID) (aibow.Conversation, []aibow.StoredMessage, error) {
-	c, err := scanConversation(s.db.QueryRow("SELECT "+conversationColumns+" FROM conversations WHERE id = ?", id.String()))
+func (s *SQLite) Conversation(ctx context.Context, id uuid.UUID) (aibow.Conversation, []aibow.StoredMessage, error) {
+	owner, err := s.owner(ctx)
+	if err != nil {
+		return aibow.Conversation{}, nil, err
+	}
+	// ほかの人の会話は、無い会話と同じに扱う(あることも見せない)
+	c, err := scanConversation(s.db.QueryRowContext(ctx, "SELECT "+conversationColumns+" FROM conversations WHERE id = ? AND owner = ?", id.String(), owner))
 	if errors.Is(err, sql.ErrNoRows) {
 		return c, nil, aibow.ErrNotFound
 	}
 	if err != nil {
 		return c, nil, err
 	}
-	ms, err := s.messages(id)
+	ms, err := s.messages(ctx, id)
 	return c, ms, err
 }
 
-func (s *SQLite) CreateConversation(c aibow.Conversation) error {
+func (s *SQLite) CreateConversation(ctx context.Context, c aibow.Conversation) error {
+	owner, err := s.owner(ctx)
+	if err != nil {
+		return err
+	}
 	settings, err := json.Marshal(c.Settings)
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Exec("INSERT INTO conversations ("+conversationColumns+") VALUES (?, ?, ?, ?, ?, ?)",
-		c.ID.String(), c.Title, string(settings), nullID(c.ProfileID), formatTime(c.CreatedAt), formatTime(c.UpdatedAt))
+	_, err = s.db.ExecContext(ctx, "INSERT INTO conversations ("+conversationColumns+", owner) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		c.ID.String(), c.Title, string(settings), nullID(c.ProfileID), formatTime(c.CreatedAt), formatTime(c.UpdatedAt), owner)
 	return err
 }
 
-func (s *SQLite) UpdateConversation(c aibow.Conversation) error {
+func (s *SQLite) UpdateConversation(ctx context.Context, c aibow.Conversation) error {
+	owner, err := s.owner(ctx)
+	if err != nil {
+		return err
+	}
 	settings, err := json.Marshal(c.Settings)
 	if err != nil {
 		return err
 	}
-	res, err := s.db.Exec("UPDATE conversations SET title = ?, settings = ?, profile_id = ?, updated_at = ? WHERE id = ?",
-		c.Title, string(settings), nullID(c.ProfileID), formatTime(c.UpdatedAt), c.ID.String())
+	res, err := s.db.ExecContext(ctx, "UPDATE conversations SET title = ?, settings = ?, profile_id = ?, updated_at = ? WHERE id = ? AND owner = ?",
+		c.Title, string(settings), nullID(c.ProfileID), formatTime(c.UpdatedAt), c.ID.String(), owner)
+	return notFoundIfNone(res, err, aibow.ErrNotFound)
+}
+
+func (s *SQLite) TouchConversation(ctx context.Context, id uuid.UUID, at time.Time, autoTitle string) error {
+	owner, err := s.owner(ctx)
 	if err != nil {
 		return err
 	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return aibow.ErrNotFound
-	}
-	return nil
-}
-
-func (s *SQLite) TouchConversation(id uuid.UUID, at time.Time, autoTitle string) error {
 	// タイトルは空のときだけ書く。読んでから書くのではなく1つの UPDATE で行うので、
 	// 同じときに画面から名前を変えられても、どちらかが半端に消えることがない
-	res, err := s.db.Exec(`UPDATE conversations
+	res, err := s.db.ExecContext(ctx, `UPDATE conversations
 		SET updated_at = ?, title = CASE WHEN title = '' THEN ? ELSE title END
-		WHERE id = ?`, formatTime(at), autoTitle, id.String())
+		WHERE id = ? AND owner = ?`, formatTime(at), autoTitle, id.String(), owner)
+	return notFoundIfNone(res, err, aibow.ErrNotFound)
+}
+
+func (s *SQLite) DeleteConversation(ctx context.Context, id uuid.UUID) error {
+	owner, err := s.owner(ctx)
+	if err != nil {
+		return err
+	}
+	// 発言と要約は ON DELETE CASCADE でいっしょに消える
+	_, err = s.db.ExecContext(ctx, "DELETE FROM conversations WHERE id = ? AND owner = ?", id.String(), owner)
+	return err
+}
+
+// notFoundIfNone は、書き換えた行が無ければ notFound を返す(無いか、その人のものでない)。
+func notFoundIfNone(res sql.Result, err error, notFound error) error {
 	if err != nil {
 		return err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		return aibow.ErrNotFound
+		return notFound
 	}
 	return nil
 }
 
-func (s *SQLite) DeleteConversation(id uuid.UUID) error {
-	// 発言と要約は ON DELETE CASCADE でいっしょに消える
-	_, err := s.db.Exec("DELETE FROM conversations WHERE id = ?", id.String())
-	return err
-}
+// 発言と要約は持ち主の列を持たないので、会話の持ち主で確かめる(SQL の条件の部分)。
+const (
+	// ownConversation は「会話 ? が持ち主 ? のものか」(足すとき・要約を読むとき)
+	ownConversation = "EXISTS (SELECT 1 FROM conversations WHERE id = ? AND owner = ?)"
+	// ownMessage は「この発言の会話が持ち主 ? のものか」(発言の ID だけで書き換えるとき)
+	ownMessage = "conversation_id IN (SELECT id FROM conversations WHERE owner = ?)"
+)
 
 // nullID は ID を保存する形にする。空(ゼロ)なら NULL(プロファイルを持たない会話)。
 func nullID(id uuid.UUID) sql.NullString {
@@ -306,9 +384,10 @@ func nullID(id uuid.UUID) sql.NullString {
 
 // ---- 発言 -------------------------------------------------------------------------------
 
-func (s *SQLite) messages(conv uuid.UUID) ([]aibow.StoredMessage, error) {
+// messages は会話 conv の発言。持ち主は呼ぶ側(Conversation)が確かめてある。
+func (s *SQLite) messages(ctx context.Context, conv uuid.UUID) ([]aibow.StoredMessage, error) {
 	// UUIDv7 は先頭が作成時刻なので、ID の文字列順 = 作った順になる。順番用の列はいらない
-	rows, err := s.db.Query(`SELECT id, role, content, thinking, model, stats, tool_calls, tool_result, excluded, created_at
+	rows, err := s.db.QueryContext(ctx, `SELECT id, role, content, thinking, model, stats, tool_calls, tool_result, excluded, created_at
 		FROM messages WHERE conversation_id = ? ORDER BY id`, conv.String())
 	if err != nil {
 		return nil, err
@@ -350,7 +429,11 @@ func (s *SQLite) messages(conv uuid.UUID) ([]aibow.StoredMessage, error) {
 	return out, rows.Err()
 }
 
-func (s *SQLite) AddMessage(m aibow.StoredMessage) error {
+func (s *SQLite) AddMessage(ctx context.Context, m aibow.StoredMessage) error {
+	owner, err := s.owner(ctx)
+	if err != nil {
+		return err
+	}
 	stats, err := nullJSON(m.Stats, m.Stats == nil)
 	if err != nil {
 		return err
@@ -363,21 +446,27 @@ func (s *SQLite) AddMessage(m aibow.StoredMessage) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Exec(`INSERT INTO messages (id, conversation_id, role, content, thinking, model, stats, tool_calls, tool_result, excluded, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		m.ID.String(), m.ConversationID.String(), m.Role, m.Content, m.Thinking, m.Model, stats, calls, result, m.Excluded, formatTime(m.CreatedAt))
-	return err
+	// 会話がその人のものなときだけ足す(INSERT … SELECT … WHERE で、確かめるのと足すのを1つの文にする)
+	res, err := s.db.ExecContext(ctx, `INSERT INTO messages (id, conversation_id, role, content, thinking, model, stats, tool_calls, tool_result, excluded, created_at)
+		SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE `+ownConversation,
+		m.ID.String(), m.ConversationID.String(), m.Role, m.Content, m.Thinking, m.Model, stats, calls, result, m.Excluded, formatTime(m.CreatedAt),
+		m.ConversationID.String(), owner)
+	return notFoundIfNone(res, err, aibow.ErrNotFound)
 }
 
 // DeleteMessages は発言を消す。返事1つ(ツールの結果を含む)は何件かになるので、まとめて1つのトランザクションで消す。
-func (s *SQLite) DeleteMessages(ids []uuid.UUID) error {
-	tx, err := s.db.Begin()
+func (s *SQLite) DeleteMessages(ctx context.Context, ids []uuid.UUID) error {
+	owner, err := s.owner(ctx)
+	if err != nil {
+		return err
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
 	for _, id := range ids {
-		if _, err := tx.Exec(`DELETE FROM messages WHERE id = ?`, id.String()); err != nil {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM messages WHERE id = ? AND `+ownMessage, id.String(), owner); err != nil {
 			return fmt.Errorf("発言 %s を消せません: %w", id, err)
 		}
 	}
@@ -385,14 +474,18 @@ func (s *SQLite) DeleteMessages(ids []uuid.UUID) error {
 }
 
 // SetMessagesExcluded は発言の「モデルに渡さない」の印を変える。返事1つ(ツールの結果を含む)は何件かになるので、まとめて1つのトランザクションで書く。
-func (s *SQLite) SetMessagesExcluded(ids []uuid.UUID, excluded bool) error {
-	tx, err := s.db.Begin()
+func (s *SQLite) SetMessagesExcluded(ctx context.Context, ids []uuid.UUID, excluded bool) error {
+	owner, err := s.owner(ctx)
+	if err != nil {
+		return err
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
 	for _, id := range ids {
-		if _, err := tx.Exec(`UPDATE messages SET excluded = ? WHERE id = ?`, excluded, id.String()); err != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE messages SET excluded = ? WHERE id = ? AND `+ownMessage, excluded, id.String(), owner); err != nil {
 			return fmt.Errorf("発言 %s の印を変えられません: %w", id, err)
 		}
 	}
@@ -413,7 +506,11 @@ func nullJSON(v any, empty bool) (sql.NullString, error) {
 
 // ---- 要約 -------------------------------------------------------------------------------
 
-func (s *SQLite) AddCompaction(c aibow.Compaction) error {
+func (s *SQLite) AddCompaction(ctx context.Context, c aibow.Compaction) error {
+	owner, err := s.owner(ctx)
+	if err != nil {
+		return err
+	}
 	var stats sql.NullString
 	if c.Stats != nil {
 		b, err := json.Marshal(c.Stats)
@@ -422,15 +519,20 @@ func (s *SQLite) AddCompaction(c aibow.Compaction) error {
 		}
 		stats = sql.NullString{String: string(b), Valid: true}
 	}
-	_, err := s.db.Exec(`INSERT INTO compactions (id, conversation_id, upto_message_id, summary, model, stats, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		c.ID.String(), c.ConversationID.String(), c.UptoMessageID.String(), c.Summary, c.Model, stats, formatTime(c.CreatedAt))
-	return err
+	res, err := s.db.ExecContext(ctx, `INSERT INTO compactions (id, conversation_id, upto_message_id, summary, model, stats, created_at)
+		SELECT ?, ?, ?, ?, ?, ?, ? WHERE `+ownConversation,
+		c.ID.String(), c.ConversationID.String(), c.UptoMessageID.String(), c.Summary, c.Model, stats, formatTime(c.CreatedAt),
+		c.ConversationID.String(), owner)
+	return notFoundIfNone(res, err, aibow.ErrNotFound)
 }
 
-func (s *SQLite) Compactions(conv uuid.UUID) ([]aibow.Compaction, error) {
-	rows, err := s.db.Query(`SELECT id, upto_message_id, summary, model, stats, created_at
-		FROM compactions WHERE conversation_id = ? ORDER BY id`, conv.String())
+func (s *SQLite) Compactions(ctx context.Context, conv uuid.UUID) ([]aibow.Compaction, error) {
+	owner, err := s.owner(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT id, upto_message_id, summary, model, stats, created_at
+		FROM compactions WHERE conversation_id = ? AND `+ownConversation+` ORDER BY id`, conv.String(), conv.String(), owner)
 	if err != nil {
 		return nil, err
 	}
@@ -492,8 +594,12 @@ func scanProfile(r rowScanner) (aibow.Profile, error) {
 	return p, nil
 }
 
-func (s *SQLite) ListProfiles() ([]aibow.Profile, error) {
-	rows, err := s.db.Query("SELECT " + profileColumns + " FROM profiles ORDER BY id")
+func (s *SQLite) ListProfiles(ctx context.Context) ([]aibow.Profile, error) {
+	owner, err := s.owner(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.db.QueryContext(ctx, "SELECT "+profileColumns+" FROM profiles WHERE owner = ? ORDER BY id", owner)
 	if err != nil {
 		return nil, err
 	}
@@ -509,8 +615,12 @@ func (s *SQLite) ListProfiles() ([]aibow.Profile, error) {
 	return out, rows.Err()
 }
 
-func (s *SQLite) Profile(id uuid.UUID) (aibow.Profile, error) {
-	p, err := scanProfile(s.db.QueryRow("SELECT "+profileColumns+" FROM profiles WHERE id = ?", id.String()))
+func (s *SQLite) Profile(ctx context.Context, id uuid.UUID) (aibow.Profile, error) {
+	owner, err := s.owner(ctx)
+	if err != nil {
+		return aibow.Profile{}, err
+	}
+	p, err := scanProfile(s.db.QueryRowContext(ctx, "SELECT "+profileColumns+" FROM profiles WHERE id = ? AND owner = ?", id.String(), owner))
 	if errors.Is(err, sql.ErrNoRows) {
 		return p, aibow.ErrProfileNotFound
 	}
@@ -530,49 +640,55 @@ func profileJSON(p aibow.Profile) (values, rules string, err error) {
 	return string(v), string(r), nil
 }
 
-func (s *SQLite) CreateProfile(p aibow.Profile) error {
+func (s *SQLite) CreateProfile(ctx context.Context, p aibow.Profile) error {
+	owner, err := s.owner(ctx)
+	if err != nil {
+		return err
+	}
 	values, rules, err := profileJSON(p)
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Exec("INSERT INTO profiles ("+profileColumns+") VALUES (?, ?, ?, ?, ?, ?, ?)",
-		p.ID.String(), p.Name, values, rules, p.Archived, formatTime(p.CreatedAt), formatTime(p.UpdatedAt))
+	_, err = s.db.ExecContext(ctx, "INSERT INTO profiles ("+profileColumns+", owner) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+		p.ID.String(), p.Name, values, rules, p.Archived, formatTime(p.CreatedAt), formatTime(p.UpdatedAt), owner)
 	return err
 }
 
-func (s *SQLite) UpdateProfile(p aibow.Profile) error {
+func (s *SQLite) UpdateProfile(ctx context.Context, p aibow.Profile) error {
+	owner, err := s.owner(ctx)
+	if err != nil {
+		return err
+	}
 	values, rules, err := profileJSON(p)
 	if err != nil {
 		return err
 	}
-	res, err := s.db.Exec("UPDATE profiles SET name = ?, settings = ?, rules = ?, archived = ?, updated_at = ? WHERE id = ?",
-		p.Name, values, rules, p.Archived, formatTime(p.UpdatedAt), p.ID.String())
-	if err != nil {
-		return err
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return aibow.ErrProfileNotFound
-	}
-	return nil
+	res, err := s.db.ExecContext(ctx, "UPDATE profiles SET name = ?, settings = ?, rules = ?, archived = ?, updated_at = ? WHERE id = ? AND owner = ?",
+		p.Name, values, rules, p.Archived, formatTime(p.UpdatedAt), p.ID.String(), owner)
+	return notFoundIfNone(res, err, aibow.ErrProfileNotFound)
 }
 
 // DeleteProfile は、使っている会話が無いときだけプロファイルを消す。
 // 外部キーでも消せないようになっているが、SQLite の制約のエラーは何が理由か読みにくいので、先に数えて ErrProfileInUse を返す。
 // 数えてから消すまでの間に会話が増えないよう、1つのトランザクションで行う。
-func (s *SQLite) DeleteProfile(id uuid.UUID) error {
-	tx, err := s.db.Begin()
+func (s *SQLite) DeleteProfile(ctx context.Context, id uuid.UUID) error {
+	owner, err := s.owner(ctx)
+	if err != nil {
+		return err
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
 	var used int
-	if err := tx.QueryRow("SELECT COUNT(*) FROM conversations WHERE profile_id = ?", id.String()).Scan(&used); err != nil {
+	if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM conversations WHERE profile_id = ?", id.String()).Scan(&used); err != nil {
 		return err
 	}
 	if used > 0 {
 		return aibow.ErrProfileInUse
 	}
-	res, err := tx.Exec("DELETE FROM profiles WHERE id = ?", id.String())
+	res, err := tx.ExecContext(ctx, "DELETE FROM profiles WHERE id = ? AND owner = ?", id.String(), owner)
 	if err != nil {
 		return err
 	}
@@ -582,20 +698,45 @@ func (s *SQLite) DeleteProfile(id uuid.UUID) error {
 	return tx.Commit()
 }
 
-// ---- アプリ設定 -------------------------------------------------------------------------
+// ---- 設定 -------------------------------------------------------------------------------
+//
+// アプリ全体の設定(app_settings)は利用者によらない。人ごとの設定(user_settings)は持ち主で分ける(0017 の 6)。
 
-func (s *SQLite) AppSetting(key string) (string, bool, error) {
+func (s *SQLite) AppSetting(ctx context.Context, key string) (string, bool, error) {
+	return s.setting(ctx, "SELECT value FROM app_settings WHERE key = ?", key)
+}
+
+func (s *SQLite) SetAppSetting(ctx context.Context, key, value string) error {
+	// UPSERT: 無ければ追加、あれば値を書き換える
+	_, err := s.db.ExecContext(ctx, `INSERT INTO app_settings (key, value) VALUES (?, ?)
+		ON CONFLICT(key) DO UPDATE SET value = excluded.value`, key, value)
+	return err
+}
+
+func (s *SQLite) UserSetting(ctx context.Context, key string) (string, bool, error) {
+	owner, err := s.owner(ctx)
+	if err != nil {
+		return "", false, err
+	}
+	return s.setting(ctx, "SELECT value FROM user_settings WHERE owner = ? AND key = ?", owner, key)
+}
+
+func (s *SQLite) SetUserSetting(ctx context.Context, key, value string) error {
+	owner, err := s.owner(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, `INSERT INTO user_settings (owner, key, value) VALUES (?, ?, ?)
+		ON CONFLICT(owner, key) DO UPDATE SET value = excluded.value`, owner, key, value)
+	return err
+}
+
+// setting は設定を1つ読む。無ければ ok=false。
+func (s *SQLite) setting(ctx context.Context, query string, args ...any) (string, bool, error) {
 	var v string
-	err := s.db.QueryRow("SELECT value FROM app_settings WHERE key = ?", key).Scan(&v)
+	err := s.db.QueryRowContext(ctx, query, args...).Scan(&v)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", false, nil
 	}
 	return v, err == nil, err
-}
-
-func (s *SQLite) SetAppSetting(key, value string) error {
-	// UPSERT: 無ければ追加、あれば値を書き換える
-	_, err := s.db.Exec(`INSERT INTO app_settings (key, value) VALUES (?, ?)
-		ON CONFLICT(key) DO UPDATE SET value = excluded.value`, key, value)
-	return err
 }

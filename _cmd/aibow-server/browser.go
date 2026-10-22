@@ -11,10 +11,12 @@ package main
 // ブラウザの会話ではツールを使わない(0016 の 7)。会話は server.db に保存し、画面のアプリの aibow.db とは別にする(0016 の 13)。
 
 import (
+	"context"
 	"io"
 	"io/fs"
 	"net/http"
 	"strings"
+	"uuid"
 
 	"github.com/secondarykey/aibow"
 	"github.com/secondarykey/aibow/api"
@@ -34,7 +36,8 @@ func startBrowser(c config, initial aibow.AppSettings, eng *engine.Engine, mm *m
 		return nil, nil, err
 	}
 	log.Noticef("ブラウザの会話の保存先: %s", absPath(c.DBPath))
-	app, notes, err := aibow.LoadAppSettings(st, initial)
+	// 起動のときに読む人ごとの設定(新しい会話の既定)は、ログインなしの形の利用者のもの(ログインは 0017 の 10-1)
+	app, notes, err := aibow.LoadAppSettings(aibow.WithUser(context.Background(), aibow.LocalUser), st, initial)
 	if err != nil {
 		st.Close()
 		return nil, nil, err
@@ -55,7 +58,13 @@ func startBrowser(c config, initial aibow.AppSettings, eng *engine.Engine, mm *m
 		Notify: events, Seat: seat, WithoutTools: true,
 	})
 	life.Start() // 起動のときのモデルは main が読み込んだので、ここでは読み込まない(Initial を渡していない)
-	return ui.Handler(svc, events), func() { life.Stop(); st.Close() }, nil
+	return ui.Handler(svc, events, who), func() { life.Stop(); st.Close() }, nil
+}
+
+// who は、画面用の口を呼んだ利用者を決める(ui.Who)。利用者の印を付けるのはここだけ(0017 の 12)。
+// まだログインが無いので、いつもログインなしの形の利用者(aibow.LocalUser)。10-1 で、ログインした人(cookie のセッション)に替える。
+func who(*http.Request) (uuid.UUID, error) {
+	return aibow.LocalUser, nil
 }
 
 // browserMarker は、aibow-server が配る index.html に足す印。画面はこれを見て、ブラウザ用の「Go を呼ぶ係」を使う(0016 の 16)。

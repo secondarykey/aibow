@@ -14,6 +14,9 @@ package ui
 // 呼べるメソッドは、ブラウザで使うものだけ(browserMethods)。ツールと、サーバーの PC の事情を変えるものは出さない(0016 の 6・7)。
 // 呼び出しは reflect で Service のメソッドを名前から探す(Wails のバインディングも、実行のときは同じことをしている)。
 //
+// 誰の呼び出しかは、aibow-server が渡す係(Who)で決め、メソッドに渡す ctx に入れる(aibow.WithUser。0017 の 12)。
+// 画面から送られてきた値では決めない(ほかの人のふりができてしまうため)。
+//
 // SSE(Server-Sent Events)は、HTTP のつながりを開いたままにして、サーバーから「event: 名前\ndata: 中身\n\n」を送り続ける仕組み。
 // ブラウザは EventSource で受け取り、切れたら自分でつなぎ直す。ステップ9では、つないでいるブラウザ全部に送る(利用者は1人。0016 の 14)。
 
@@ -26,6 +29,7 @@ import (
 	"reflect"
 	"sync"
 	"time"
+	"uuid"
 
 	"github.com/secondarykey/aibow"
 	"github.com/secondarykey/aibow/log"
@@ -48,8 +52,12 @@ var browserMethods = []string{
 	"Send", "Regenerate", "Resend", "Compact", "StopSummary",
 }
 
-// Handler は、画面用の口(/aibow/ui/ の下)を返す。ev は New に Notify として渡したもの(SSE で送る)。
-func Handler(s *Service, ev *Events) http.Handler {
+// Who は、リクエストを送ってきた利用者を決める係(aibow-server が渡す)。決められなければエラー(401 で断る)。
+// 今はログインが無いので、aibow-server はいつもログインなしの形の利用者(aibow.LocalUser)を返す。ログインは 0017 の 10-1。
+type Who func(r *http.Request) (uuid.UUID, error)
+
+// Handler は、画面用の口(/aibow/ui/ の下)を返す。ev は New に Notify として渡したもの(SSE で送る)。who は利用者を決める係。
+func Handler(s *Service, ev *Events, who Who) http.Handler {
 	methods := map[string]reflect.Value{}
 	v := reflect.ValueOf(s)
 	for _, name := range browserMethods {
@@ -67,7 +75,12 @@ func Handler(s *Service, ev *Events) http.Handler {
 			writeError(w, http.StatusNotFound, "ブラウザからは呼べないメソッドです: "+name)
 			return
 		}
-		call(w, r, name, m)
+		user, err := who(r)
+		if err != nil {
+			writeError(w, http.StatusUnauthorized, err.Error())
+			return
+		}
+		call(w, r.WithContext(aibow.WithUser(r.Context(), user)), name, m)
 	})
 	mux.HandleFunc("GET /aibow/ui/events", ev.serve)
 	mux.HandleFunc("/aibow/ui/", func(w http.ResponseWriter, r *http.Request) {
@@ -83,7 +96,7 @@ var (
 )
 
 // call は、本文の JSON の配列を引数にしてメソッドを呼び、戻り値を JSON で返す。
-// 最初の引数が context.Context なら、リクエストの context を渡す(つながりが切れたら止まる。Wails の停止と同じ意味)。
+// 最初の引数が context.Context なら、リクエストの context を渡す(つながりが切れたら止まる。Wails の停止と同じ意味。利用者も入っている)。
 func call(w http.ResponseWriter, r *http.Request, name string, m reflect.Value) {
 	var raw []json.RawMessage
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<20)).Decode(&raw); err != nil {

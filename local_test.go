@@ -24,7 +24,7 @@ func TestLocalToolsThroughMCP(t *testing.T) {
 	var reqs []*ConfirmRequest
 	evs := sendAnswering(cs, context.Background(), c, "書いて", func(q *ConfirmRequest) bool {
 		reqs = append(reqs, q)
-		return cs.Confirm(c.ID, q.ID, true, "") == nil
+		return cs.Confirm(ctx, c.ID, q.ID, true, "") == nil
 	})
 	if errs := errorsOf(evs); len(errs) != 0 {
 		t.Fatalf("エラー: %v", errs)

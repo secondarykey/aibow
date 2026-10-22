@@ -43,14 +43,14 @@ func TestUsageCountsThePromptWithTemplate(t *testing.T) {
 		t.Errorf("生成の前: %+v(期待: %d)", us[0], want)
 	}
 	// 返事のあと: 返事も足した、次の送信で渡す分。会話を開いたときの Usage と同じ値
-	got, err := cs.Usage(c.ID)
+	got, err := cs.Usage(ctx, c.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if us[1].Tokens <= us[0].Tokens || us[1].Tokens != got.Tokens {
 		t.Errorf("返事のあと: %+v / Usage: %+v", us[1], got)
 	}
-	_, ms, _ := cs.Get(c.ID)
+	_, ms, _ := cs.Get(ctx, c.ID)
 	if got.FirstID == nil || *got.FirstID != ms[0].ID {
 		t.Errorf("全部渡しているので、最初の発言から: %+v", got)
 	}
@@ -61,8 +61,8 @@ func TestUsageCountsThePromptWithTemplate(t *testing.T) {
 	// 思考の ON/OFF でプロンプトの末尾が変わるので、トークン数も変わる
 	set := c.Settings
 	set.Think = false
-	cs.UpdateSettings(c.ID, set)
-	off, _ := cs.Usage(c.ID)
+	cs.UpdateSettings(ctx, c.ID, set)
+	off, _ := cs.Usage(ctx, c.ID)
 	if off.Tokens == got.Tokens {
 		t.Errorf("思考オフでもトークン数が同じです: %d", off.Tokens)
 	}
@@ -72,7 +72,7 @@ func TestUsageWithoutModel(t *testing.T) {
 	cs, _ := newTestConversations(t, &fakeGen{})
 	c := mustCreate(t, cs)
 	cs.gen = noModelGen{}
-	if _, err := cs.Usage(c.ID); err != engine.ErrNoModel {
+	if _, err := cs.Usage(ctx, c.ID); err != engine.ErrNoModel {
 		t.Errorf("モデルが無ければ数えられない: %v", err)
 	}
 }
@@ -93,7 +93,7 @@ func longTalk(t *testing.T, cs *Conversations, g *fakeGen, compact string, n int
 	c := mustCreate(t, cs)
 	set := c.Settings
 	set.Compact = compact
-	if err := cs.UpdateSettings(c.ID, set); err != nil {
+	if err := cs.UpdateSettings(ctx, c.ID, set); err != nil {
 		t.Fatal(err)
 	}
 	c.Settings = set
@@ -138,7 +138,7 @@ func TestTruncateDropsOldTurnsAsPairs(t *testing.T) {
 	g := &fakeGen{}
 	cs, _ := newTestConversations(t, g)
 	c := longTalk(t, cs, g, CompactTruncate, 4) // 発言 8 件
-	_, ms, _ := cs.Get(c.ID)
+	_, ms, _ := cs.Get(ctx, c.ID)
 
 	// 会話の上限を「最近の2組 + 新しい発言」がちょうど入る大きさにする。
 	// 組の途中(返事だけ)を残すと1組より少なく収まるが、組ごとに外すので、外れるのは古い2組まるごと
@@ -165,7 +165,7 @@ func TestTruncateDropsOldTurnsAsPairs(t *testing.T) {
 		t.Errorf("メーター: %+v", us[0])
 	}
 	// DB の発言は消えていない
-	if _, after, _ := cs.Get(c.ID); len(after) != 10 {
+	if _, after, _ := cs.Get(ctx, c.ID); len(after) != 10 {
 		t.Errorf("DB の発言が減りました: %d 件", len(after))
 	}
 }
@@ -194,7 +194,7 @@ func TestTruncateKeepsTheLatestMessage(t *testing.T) {
 	if len(g.calls) != calls {
 		t.Errorf("生成してしまいました")
 	}
-	if _, ms, _ := cs.Get(c.ID); len(ms) != 6 {
+	if _, ms, _ := cs.Get(ctx, c.ID); len(ms) != 6 {
 		t.Errorf("収まらない発言が保存されました: %d 件", len(ms))
 	}
 }
@@ -203,7 +203,7 @@ func TestNoneStopsBeforeGenerating(t *testing.T) {
 	g := &fakeGen{}
 	cs, _ := newTestConversations(t, g)
 	c := longTalk(t, cs, g, CompactNone, 2)
-	u, _ := cs.Usage(c.ID)
+	u, _ := cs.Usage(ctx, c.ID)
 	setLimits(t, cs, &c, u.Tokens, 100) // 今の会話がちょうど入る。新しい発言の分は入らない
 
 	calls := len(g.calls)
@@ -214,12 +214,12 @@ func TestNoneStopsBeforeGenerating(t *testing.T) {
 	if len(g.calls) != calls || len(compacts(evs)) != 0 {
 		t.Errorf("生成か compact をしてしまいました")
 	}
-	if _, ms, _ := cs.Get(c.ID); len(ms) != 4 {
+	if _, ms, _ := cs.Get(ctx, c.ID); len(ms) != 4 {
 		t.Errorf("発言が保存されました: %d 件", len(ms))
 	}
 	// メーターは上限を超えた値をそのまま出す(none は何も外さない)
 	setLimits(t, cs, &c, u.Tokens-1, 100)
-	if over, _ := cs.Usage(c.ID); over.Tokens != u.Tokens || *over.FirstID != *u.FirstID {
+	if over, _ := cs.Usage(ctx, c.ID); over.Tokens != u.Tokens || *over.FirstID != *u.FirstID {
 		t.Errorf("none のメーター: %+v", over)
 	}
 }
@@ -231,7 +231,7 @@ const summaryReply = minSummaryTokens + 2000
 // overLimit は、今の会話がちょうど入り、新しい発言を足すと超える会話の上限にする。
 func overLimit(t *testing.T, cs *Conversations, c Conversation) Usage {
 	t.Helper()
-	u, err := cs.Usage(c.ID)
+	u, err := cs.Usage(ctx, c.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -275,11 +275,11 @@ func TestSummaryRunsBeforeTheReply(t *testing.T) {
 	}
 
 	// 保存された要約と、返事の生成に渡した内容
-	list, _ := cs.Compactions(c.ID)
+	list, _ := cs.Compactions(ctx, c.ID)
 	if len(list) != 1 || list[0].Summary != "- 要約1" || list[0].Model != "fake-model" || list[0].Stats == nil {
 		t.Fatalf("保存された要約: %+v", list)
 	}
-	_, ms, _ := cs.Get(c.ID)
+	_, ms, _ := cs.Get(ctx, c.ID)
 	keep := 0
 	for i, m := range ms {
 		if m.ID == list[0].UptoMessageID {
@@ -317,7 +317,7 @@ func TestSummaryRunsBeforeTheReply(t *testing.T) {
 		t.Errorf("要約のあとのメーター: %+v", us[0])
 	}
 	// 開き直したときも、最新の要約 + 要約に入っていない発言で数える
-	u, _ := cs.Usage(c.ID)
+	u, _ := cs.Usage(ctx, c.ID)
 	if *u.FirstID != ms[keep].ID {
 		t.Errorf("Usage の最初の発言: %v", u.FirstID)
 	}
@@ -356,7 +356,7 @@ func TestSummaryStacks(t *testing.T) {
 	if s := systemOf(reply.messages); !strings.HasSuffix(s, "\n- 要約2") || strings.Contains(s, "要約1") {
 		t.Errorf("返事に渡すのは最新の要約だけ: %q", s)
 	}
-	if list, _ := cs.Compactions(c.ID); len(list) != 2 || list[0].UptoMessageID.Compare(list[1].UptoMessageID) >= 0 {
+	if list, _ := cs.Compactions(ctx, c.ID); len(list) != 2 || list[0].UptoMessageID.Compare(list[1].UptoMessageID) >= 0 {
 		t.Errorf("要約は古いものも残り、新しいほど後ろまで要約している: %+v", list)
 	}
 }
@@ -388,7 +388,7 @@ func TestSummaryFailureFallsBackToTruncate(t *testing.T) {
 				}
 			})
 
-			if list, _ := cs.Compactions(c.ID); len(list) != 0 {
+			if list, _ := cs.Compactions(ctx, c.ID); len(list) != 0 {
 				t.Errorf("失敗した要約が保存されました: %+v", list)
 			}
 			cps := compacts(evs)
@@ -444,7 +444,7 @@ func TestCompactNow(t *testing.T) {
 	if errs := errorsOf(evs); len(errs) != 0 || evs[len(evs)-1].Type != "done" {
 		t.Fatalf("エラー: %v", errs)
 	}
-	list, _ := cs.Compactions(c.ID)
+	list, _ := cs.Compactions(ctx, c.ID)
 	if len(list) != 1 || list[0].Summary != "- 今すぐの要約" {
 		t.Fatalf("要約: %+v", list)
 	}
@@ -452,7 +452,7 @@ func TestCompactNow(t *testing.T) {
 	if len(after) != 1 || after[0].Tokens >= u.Tokens {
 		t.Errorf("要約のあとのメーターが下がっていません: %+v → %+v", u, after)
 	}
-	if _, ms, _ := cs.Get(c.ID); len(ms) != 12 {
+	if _, ms, _ := cs.Get(ctx, c.ID); len(ms) != 12 {
 		t.Errorf("今すぐ要約で発言が増減しました: %d", len(ms))
 	}
 
@@ -470,7 +470,7 @@ func TestSummaryInSeveralPartsWhenTooLong(t *testing.T) {
 	g := &fakeGen{}
 	cs, _ := newTestConversations(t, g)
 	c := longTalk(t, cs, g, CompactSummary, 10)
-	u, _ := cs.Usage(c.ID)
+	u, _ := cs.Usage(ctx, c.ID)
 	// 会話の上限をとても小さくし、要約したい部分が作業領域(上限 + 返事の上限 − 要約の上限)に一度に入らないようにする
 	setLimits(t, cs, &c, u.Tokens/3, minSummaryTokens+u.Tokens/6)
 
@@ -480,7 +480,7 @@ func TestSummaryInSeveralPartsWhenTooLong(t *testing.T) {
 	if errs := errorsOf(evs); len(errs) != 0 {
 		t.Fatalf("エラー: %v", errs)
 	}
-	list, _ := cs.Compactions(c.ID)
+	list, _ := cs.Compactions(ctx, c.ID)
 	if len(list) < 2 {
 		t.Fatalf("何回かに分けて要約するはずです: %d 回", len(list))
 	}
@@ -513,7 +513,7 @@ func TestSendUnsupportedFormat(t *testing.T) {
 	if len(errs) != 1 || !strings.Contains(errs[0], "gemma4") {
 		t.Errorf("エラー: %v", errs)
 	}
-	if _, ms, _ := cs.Get(c.ID); len(ms) != 0 || len(g.calls) != 0 {
+	if _, ms, _ := cs.Get(ctx, c.ID); len(ms) != 0 || len(g.calls) != 0 {
 		t.Errorf("保存した発言 %d 件・生成 %d 回(どちらも 0 のはず)", len(ms), len(g.calls))
 	}
 }

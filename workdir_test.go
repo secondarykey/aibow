@@ -48,7 +48,7 @@ func TestWorkDirAddsFileToolsAndEnvironment(t *testing.T) {
 	for i, s := range steps {
 		set.WorkDir = s.workDir
 		s.prefs()
-		if err := cs.UpdateSettings(c.ID, set); err != nil {
+		if err := cs.UpdateSettings(ctx, c.ID, set); err != nil {
 			t.Fatal(err)
 		}
 		send(t, cs, c, "質問")
@@ -104,10 +104,10 @@ func TestAgentReadsFileInWorkDir(t *testing.T) {
 	cs, _, c := newToolConversation(t, g)
 	set := c.Settings
 	set.WorkDir = dir
-	cs.UpdateSettings(c.ID, set)
+	cs.UpdateSettings(ctx, c.ID, set)
 	send(t, cs, c, "このフォルダに何がある?")
 
-	_, ms, _ := cs.Get(c.ID)
+	_, ms, _ := cs.Get(ctx, c.ID)
 	var results []string
 	for _, m := range ms {
 		if m.Role == "tool" {
@@ -124,28 +124,28 @@ func TestWorkDirIsNotADefault(t *testing.T) {
 	cs, _ := newTestConversations(t, &fakeGen{})
 	set := testDefaults
 	set.WorkDir = t.TempDir()
-	if err := cs.SetDefaults(set); err != nil {
+	if err := cs.SetDefaults(ctx, set); err != nil {
 		t.Fatal(err)
 	}
-	if cs.Defaults().WorkDir != "" {
-		t.Errorf("既定に作業フォルダが入っています: %q", cs.Defaults().WorkDir)
+	if mustDefaults(t, cs).WorkDir != "" {
+		t.Errorf("既定に作業フォルダが入っています: %q", mustDefaults(t, cs).WorkDir)
 	}
-	saved, _, err := LoadAppSettings(cs.store, AppSettings{})
+	saved, _, err := LoadAppSettings(ctx, cs.store, AppSettings{})
 	if err != nil || saved.Defaults.WorkDir != "" {
 		t.Errorf("保存した既定: %+v, %v", saved.Defaults, err)
 	}
-	c, _ := cs.Create(nil)
+	c, _ := cs.Create(ctx, nil)
 	if c.Settings.WorkDir != "" {
 		t.Errorf("既定から作った会話: %q", c.Settings.WorkDir)
 	}
 	// 新しい会話の画面で選んだフォルダは、その会話には入る
-	c, err = cs.Create(&set)
+	c, err = cs.Create(ctx, &set)
 	if err != nil || c.Settings.WorkDir != set.WorkDir {
 		t.Errorf("選んで作った会話: %q, %v", c.Settings.WorkDir, err)
 	}
 	// 相対パスは受け付けない
 	set.WorkDir = "work"
-	if err := cs.UpdateSettings(c.ID, set); err == nil {
+	if err := cs.UpdateSettings(ctx, c.ID, set); err == nil {
 		t.Error("相対パスの作業フォルダはエラーのはず")
 	}
 }

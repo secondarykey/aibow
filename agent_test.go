@@ -34,7 +34,7 @@ func newToolConversation(t *testing.T, g *fakeGen, extra ...tool.Tool) (*Convers
 	cs, st := newTestConversations(t, g)
 	cs.tools = append(tool.Builtin(), extra...)
 	set := testDefaults
-	c, err := cs.Create(&set)
+	c, err := cs.Create(ctx, &set)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +83,7 @@ func TestAgentCallsToolAndAnswers(t *testing.T) {
 	if got := eventTypes(evs); got != "user,usage,prompt,thinking,reply,tool_start,tool_result,usage,prompt,thinking,content,reply,usage,done" {
 		t.Errorf("イベントの順番: %s", got)
 	}
-	_, ms, _ := cs.Get(c.ID)
+	_, ms, _ := cs.Get(ctx, c.ID)
 	if roles(ms) != "user,assistant,tool,assistant" {
 		t.Fatalf("保存した発言: %s", roles(ms))
 	}
@@ -125,7 +125,7 @@ func TestAgentRunsSeveralRounds(t *testing.T) {
 	}}
 	cs, _, c := newToolConversation(t, g)
 	send(t, cs, c, "今年はあと何日?")
-	_, ms, _ := cs.Get(c.ID)
+	_, ms, _ := cs.Get(ctx, c.ID)
 	if roles(ms) != "user,assistant,tool,assistant,tool,tool,assistant" || len(g.calls) != 3 {
 		t.Fatalf("発言: %s / 生成 %d 回", roles(ms), len(g.calls))
 	}
@@ -152,7 +152,7 @@ func TestAgentReturnsErrorsToTheModel(t *testing.T) {
 	cs, _, c := newToolConversation(t, g, failing)
 	evs := send(t, cs, c, "やって")
 
-	_, ms, _ := cs.Get(c.ID)
+	_, ms, _ := cs.Get(ctx, c.ID)
 	if roles(ms) != "user,assistant,tool,tool,tool,tool,tool,assistant" {
 		t.Fatalf("発言: %s", roles(ms))
 	}
@@ -182,7 +182,7 @@ func TestAgentStopsAtTheLimit(t *testing.T) {
 	if len(errs) != 1 || !strings.Contains(errs[0], fmt.Sprintf("(%d 回)を超えた", maxToolCalls)) {
 		t.Errorf("エラー: %v", errs)
 	}
-	_, ms, _ := cs.Get(c.ID)
+	_, ms, _ := cs.Get(ctx, c.ID)
 	var ok, skipped int
 	for _, m := range ms {
 		if m.Role == "tool" {
@@ -235,7 +235,7 @@ func TestAgentStopDuringTool(t *testing.T) {
 	var evs []ChatEvent
 	cs.Send(ctx, c.ID, "待って", func(ev ChatEvent) { evs = append(evs, ev) })
 
-	_, ms, _ := cs.Get(c.ID)
+	_, ms, _ := cs.Get(ctx, c.ID)
 	if roles(ms) != "user,assistant,tool,tool" || len(g.calls) != 1 || len(errorsOf(evs)) != 0 {
 		t.Fatalf("発言: %s / 生成 %d 回 / エラー %v", roles(ms), len(g.calls), errorsOf(evs))
 	}
@@ -256,7 +256,7 @@ func TestAgentStopDuringGeneration(t *testing.T) {
 		cancel()
 	}()
 	cs.Send(ctx, c.ID, "計算して", func(ChatEvent) {})
-	_, ms, _ := cs.Get(c.ID)
+	_, ms, _ := cs.Get(ctx, c.ID)
 	if roles(ms) != "user,assistant,tool" || !strings.Contains(ms[2].Content, "停止されたため実行していません") {
 		t.Errorf("発言: %s / %+v", roles(ms), ms)
 	}
@@ -274,7 +274,7 @@ func TestAgentToolTimeout(t *testing.T) {
 	cs, _, c := newToolConversation(t, g, slow)
 	start := time.Now()
 	send(t, cs, c, "遅いのを")
-	_, ms, _ := cs.Get(c.ID)
+	_, ms, _ := cs.Get(ctx, c.ID)
 	if !strings.Contains(ms[2].Content, "時間の上限") || time.Since(start) > 500*time.Millisecond {
 		t.Errorf("結果: %q(%v)", ms[2].Content, time.Since(start))
 	}
@@ -285,7 +285,7 @@ func TestToolsOffLeavesToolsOutOfThePrompt(t *testing.T) {
 	g := &fakeGen{content: "こんにちは"}
 	cs, _, c := newToolConversation(t, g)
 	send(t, cs, c, "やあ")
-	on, _ := cs.Usage(c.ID)
+	on, _ := cs.Usage(ctx, c.ID)
 	if len(g.calls[0].tools) != 2 || !strings.Contains(g.calls[0].prompt, "# Tools") {
 		t.Errorf("ON: ツールの定義が入っていません")
 	}
@@ -294,7 +294,7 @@ func TestToolsOffLeavesToolsOutOfThePrompt(t *testing.T) {
 	prefs.SetBuiltinPolicy(ToolOff) // 設定の画面の「ツール」で、組み込みのグループを使わないにした
 	cs.SetToolPrefs(prefs)
 	send(t, cs, c, "もう一度")
-	off, _ := cs.Usage(c.ID)
+	off, _ := cs.Usage(ctx, c.ID)
 	if len(g.calls[1].tools) != 0 || strings.Contains(g.calls[1].prompt, "# Tools") {
 		t.Errorf("OFF: ツールの定義が入っています")
 	}
@@ -304,7 +304,7 @@ func TestToolsOffLeavesToolsOutOfThePrompt(t *testing.T) {
 	// OFF の会話でモデルがツールを呼んでも、実行しない(知らないツールのエラーとして返す)
 	g.replies = []fakeReply{{toolCalls: []format.ToolCall{calc("1+1")}}, {content: "失礼しました"}}
 	send(t, cs, c, "計算して")
-	_, ms, _ := cs.Get(c.ID)
+	_, ms, _ := cs.Get(ctx, c.ID)
 	if m := ms[len(ms)-2]; m.Role != "tool" || !strings.Contains(m.Content, "ツール calculate はありません(使えるツール: なし)") {
 		t.Errorf("OFF の会話での呼び出し: %+v", m)
 	}
@@ -316,13 +316,13 @@ func TestTruncateKeepsToolTurnsTogether(t *testing.T) {
 	cs, _, c := newToolConversation(t, g)
 	set := c.Settings
 	set.Compact = CompactTruncate
-	cs.UpdateSettings(c.ID, set)
+	cs.UpdateSettings(ctx, c.ID, set)
 	c.Settings = set
 	for i := range 3 {
 		g.replies = []fakeReply{{toolCalls: []format.ToolCall{calc(fmt.Sprint(i))}}, {content: strings.Repeat("答", 50)}}
 		send(t, cs, c, fmt.Sprintf("質問%d", i))
 	}
-	_, ms, _ := cs.Get(c.ID)
+	_, ms, _ := cs.Get(ctx, c.ID)
 	if starts := turnStarts(ms, 0); len(starts) != 3 || starts[1] != 4 || starts[2] != 8 {
 		t.Fatalf("組の始まり: %v(%s)", starts, roles(ms))
 	}
@@ -368,7 +368,7 @@ func TestAgentRejectsResultThatDoesNotFit(t *testing.T) {
 	if errs := errorsOf(evs); len(errs) != 0 {
 		t.Errorf("エラー: %v", errs)
 	}
-	_, ms, _ := cs.Get(c.ID)
+	_, ms, _ := cs.Get(ctx, c.ID)
 	res := ms[2]
 	if res.Role != "tool" || !res.ToolResult.Error || !strings.Contains(res.Content, "会話の上限に入らないため、渡せません") || strings.Contains(res.Content, "大大") {
 		t.Errorf("結果: %+v", res)
@@ -376,7 +376,7 @@ func TestAgentRejectsResultThatDoesNotFit(t *testing.T) {
 	if len(g.calls) != 2 || ms[len(ms)-1].Content != "範囲を絞ります" {
 		t.Errorf("ループは続くはず: 生成 %d 回 / 最後 %q", len(g.calls), ms[len(ms)-1].Content)
 	}
-	if u, _ := cs.Usage(c.ID); u.Tokens > u.Limit {
+	if u, _ := cs.Usage(ctx, c.ID); u.Tokens > u.Limit {
 		t.Errorf("上限を超えています: %d / %d", u.Tokens, u.Limit)
 	}
 }
@@ -393,7 +393,7 @@ func TestCompactNowWhenLatestTurnIsTooLong(t *testing.T) {
 	setLimits(t, cs, &c, 4000, 100)
 	send(t, cs, c, "大きいのを")
 	setLimits(t, cs, &c, 2000, 100) // 最新の組だけで上限を超えた状態にする
-	if u, _ := cs.Usage(c.ID); u.Tokens <= u.Limit {
+	if u, _ := cs.Usage(ctx, c.ID); u.Tokens <= u.Limit {
 		t.Fatalf("メーター: %d / %d(超えているはず)", u.Tokens, u.Limit)
 	}
 
@@ -410,13 +410,13 @@ func TestCompactNowWhenLatestTurnIsTooLong(t *testing.T) {
 	if errs := errorsOf(evs); len(errs) != 0 {
 		t.Fatalf("次の送信のエラー: %v", errs)
 	}
-	if list, _ := cs.Compactions(c.ID); len(list) != 1 || list[0].Summary != "- 大きい結果を受け取った" {
+	if list, _ := cs.Compactions(ctx, c.ID); len(list) != 1 || list[0].Summary != "- 大きい結果を受け取った" {
 		t.Errorf("要約: %+v", list)
 	}
-	if _, ms, _ := cs.Get(c.ID); ms[len(ms)-1].Content != "続きです" {
+	if _, ms, _ := cs.Get(ctx, c.ID); ms[len(ms)-1].Content != "続きです" {
 		t.Errorf("最後の返事: %q", ms[len(ms)-1].Content)
 	}
-	if u, _ := cs.Usage(c.ID); u.Tokens > u.Limit {
+	if u, _ := cs.Usage(ctx, c.ID); u.Tokens > u.Limit {
 		t.Errorf("要約のあとも超えています: %d / %d", u.Tokens, u.Limit)
 	}
 }

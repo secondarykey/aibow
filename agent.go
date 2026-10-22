@@ -92,7 +92,7 @@ func (cs *Conversations) runTurn(ctx context.Context, conv Conversation, history
 		if err != nil || r == nil {
 			return last, err // r == nil: 何も生成されなかった(すぐに停止した、など)
 		}
-		if err := cs.save(*r, ""); err != nil {
+		if err := cs.save(ctx, *r, ""); err != nil {
 			return last, err
 		}
 		last = r
@@ -126,7 +126,7 @@ func (cs *Conversations) runTurn(ctx context.Context, conv Conversation, history
 					return last, err
 				}
 			}
-			if err := cs.save(res, ""); err != nil {
+			if err := cs.save(ctx, res, ""); err != nil {
 				return last, err
 			}
 			history = append(history, res)
@@ -152,8 +152,8 @@ func (cs *Conversations) runTurn(ctx context.Context, conv Conversation, history
 		}
 	}
 
-	// 返事が増えたあとのメーター。次の送信では、この返事もモデルに渡る
-	if u, err := cs.usage(conv, history); err == nil {
+	// 返事が増えたあとのメーター。次の送信では、この返事もモデルに渡る(止められたあとも出すので、止める合図は外して読む)
+	if u, err := cs.usage(context.WithoutCancel(ctx), conv, history); err == nil {
 		cs.emitUsage(emit, conv.ID, u)
 	}
 	return last, nil
@@ -168,7 +168,7 @@ func (cs *Conversations) runTurn(ctx context.Context, conv Conversation, history
 // ツールの扱いは、呼ぶたびに会話の設定を読み直して決める。送信の途中(ループの中)で会話の上書きが変わっても
 // (確認のカードの「この会話では今後聞かない」など。0010)、次の呼び出しから効くように。
 func (cs *Conversations) runTool(ctx context.Context, conv Conversation, c format.ToolCall, emit func(ChatEvent)) StoredMessage {
-	if fresh, _, err := cs.load(conv.ID); err == nil {
+	if fresh, _, err := cs.load(ctx, conv.ID); err == nil {
 		conv.Settings = fresh.Settings
 	}
 	t, args, err := cs.lookupTool(conv.Settings, c)
@@ -214,7 +214,7 @@ func (cs *Conversations) runFound(ctx context.Context, conv Conversation, c form
 		// MCP のサーバーのツールは、実行の途中でサーバーが確認を求めてくることがある(0007 の 5-3)。
 		// 時間の上限はツールが自分で数える(確認を待つ時間を数えないため)ので、execute は通さない
 		var asked *Confirmation
-		text, err = it.RunInteractive(ctx, args, cs.askFor(conv, c, t, args, emit, &asked, &waited))
+		text, err = it.RunInteractive(ctx, args, cs.askFor(ctx, conv, c, t, args, emit, &asked, &waited))
 		if asked != nil {
 			conf = asked // カードに残すのは、サーバーからの確認の答え(差分を見て決めたほう)
 		}
@@ -238,10 +238,12 @@ func (cs *Conversations) runFound(ctx context.Context, conv Conversation, c form
 // 聞くかどうかは、呼ぶ前の確認と同じく、ツールの扱いで決める(会話の設定を読み直す。カードで「この会話では今後聞かない」にしたら、すぐ効く)。
 // 「確認しない」なら聞かずに受け入れる。聞いたときは、今の確認のカード(サーバーが送ってきた差分など)を出し、答えを asked に、
 // 待った時間を waited に入れる(結果に答えを残すためと、実行の秒数から待った時間を外すため)。
-func (cs *Conversations) askFor(conv Conversation, c format.ToolCall, t tool.Tool, args tool.Args, emit func(ChatEvent), asked **Confirmation, waited *time.Duration) tool.Ask {
+//
+// 会話を読み直すときは、送信の ctx(sendCtx。利用者が入っている)を使う。確認を求める呼び出しの ctx は MCP のつながりのもので、利用者を持たないため。
+func (cs *Conversations) askFor(sendCtx context.Context, conv Conversation, c format.ToolCall, t tool.Tool, args tool.Args, emit func(ChatEvent), asked **Confirmation, waited *time.Duration) tool.Ask {
 	return func(ctx context.Context, pv tool.Preview) (tool.Answer, error) {
 		set := conv.Settings
-		if fresh, _, err := cs.load(conv.ID); err == nil {
+		if fresh, _, err := cs.load(sendCtx, conv.ID); err == nil {
 			set = fresh.Settings
 		}
 		if cs.toolPolicy(set, t) == ToolAllow {
@@ -365,13 +367,13 @@ func (cs *Conversations) confirm(ctx context.Context, conv uuid.UUID, c format.T
 
 // Confirm は、確認を待っているツールに答える(画面の「実行する」「拒否」)。この1回だけの答え。
 // 待っている確認が無い・ID が違う(停止した後に押した、など)ときはエラー。
-func (cs *Conversations) Confirm(conv uuid.UUID, id string, approved bool, reason string) error {
-	return cs.Answer(conv, id, Confirmation{Approved: approved, Reason: reason})
+func (cs *Conversations) Confirm(ctx context.Context, conv uuid.UUID, id string, approved bool, reason string) error {
+	return cs.Answer(ctx, conv, id, Confirmation{Approved: approved, Reason: reason})
 }
 
 // Answer は、確認を待っているツールに答える。a.Remember があれば、そのツールのこの会話でのこれから先の扱いにする(0010)。
 // 扱いは答えを渡す前に保存する(返ったときには保存済みなので、画面はすぐ会話の設定を読み直せる)。保存できなければ答えずにエラーを返す。
-func (cs *Conversations) Answer(conv uuid.UUID, id string, a Confirmation) error {
+func (cs *Conversations) Answer(ctx context.Context, conv uuid.UUID, id string, a Confirmation) error {
 	if a.Remember != "" && !a.Remember.validInConversation() {
 		return fmt.Errorf("これから先の扱い %q は知らない値です", a.Remember)
 	}
@@ -382,7 +384,7 @@ func (cs *Conversations) Answer(conv uuid.UUID, id string, a Confirmation) error
 		return errors.New("この確認はもう待っていません(停止したか、すでに答えています)")
 	}
 	if a.Remember != "" {
-		if err := cs.SetToolPolicy(conv, p.tool, a.Remember); err != nil {
+		if err := cs.SetToolPolicy(ctx, conv, p.tool, a.Remember); err != nil {
 			return fmt.Errorf("ツール %s のこれから先の扱いを保存できません: %w", p.tool, err)
 		}
 		log.Noticef("ツール %s のこの会話での扱いを %s にしました(確認のカードから)", p.tool, a.Remember)
@@ -395,16 +397,16 @@ func (cs *Conversations) Answer(conv uuid.UUID, id string, a Confirmation) error
 
 // SetToolPolicy は、会話のツールの扱いの上書きを1つだけ変えて保存する(policy が空なら上書きを消す)。
 // 会話の設定を丸ごと書き戻さないので、画面が持っている設定と関係なく、すぐ効く(確認のカードから使う。0010)。
-func (cs *Conversations) SetToolPolicy(id uuid.UUID, name string, policy ToolPolicy) error {
+func (cs *Conversations) SetToolPolicy(ctx context.Context, id uuid.UUID, name string, policy ToolPolicy) error {
 	if policy != "" && !policy.validInConversation() {
 		return fmt.Errorf("ツール %s の扱い %q は知らない値です", name, policy)
 	}
-	c, _, err := cs.store.Conversation(id)
+	c, _, err := cs.store.Conversation(ctx, id)
 	if err != nil {
 		return err
 	}
 	// プロファイルで使えないツールは、会話の上書きを書けない(確認のカードの「この会話では今後聞かない」なども)
-	p, err := cs.profileFor(c.ProfileID)
+	p, err := cs.profileFor(ctx, c.ProfileID)
 	if err != nil {
 		return err
 	}
@@ -422,7 +424,7 @@ func (cs *Conversations) SetToolPolicy(id uuid.UUID, name string, policy ToolPol
 		set.ToolPolicies[name] = policy
 	}
 	c.Settings = set
-	return cs.store.UpdateConversation(c)
+	return cs.store.UpdateConversation(ctx, c)
 }
 
 // execute はツールを実行する。時間の上限を付け、ツールが ctx を見ずに止まらなくても、待つのは上限まで。
@@ -638,18 +640,22 @@ func (cs *Conversations) ToolStates(set ConversationSettings) []ToolGroupState {
 
 // ConversationToolStates は、会話 id のプロファイルの決まりを当てて、設定 set でのツールの扱いを返す(ToolStates)。
 // id が空なら、新しい会話(新しい会話で最初に選ばれるプロファイル)。画面から来た set は決まりを持たないので、ここで足す。
-func (cs *Conversations) ConversationToolStates(id uuid.UUID, set ConversationSettings) ([]ToolGroupState, error) {
+func (cs *Conversations) ConversationToolStates(ctx context.Context, id uuid.UUID, set ConversationSettings) ([]ToolGroupState, error) {
 	var p *Profile
 	if id == (uuid.UUID{}) {
-		if d := cs.DefaultProfile(); d.ID != (uuid.UUID{}) {
-			p = &d
-		}
-	} else {
-		c, _, err := cs.store.Conversation(id)
+		d, err := cs.DefaultProfile(ctx)
 		if err != nil {
 			return nil, err
 		}
-		if p, err = cs.profileFor(c.ProfileID); err != nil {
+		if d.ID != (uuid.UUID{}) {
+			p = &d
+		}
+	} else {
+		c, _, err := cs.store.Conversation(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		if p, err = cs.profileFor(ctx, c.ProfileID); err != nil {
 			return nil, err
 		}
 	}

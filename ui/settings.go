@@ -18,12 +18,17 @@ type InitialValues struct {
 	ReplyTokens     int
 }
 
+// InitialDisplay は、まだ変えていない人の画面の設定(表示の設定は人ごと。0017 の 6)。
+// 質問を右上に出すのは初めはオン(長い返事を読んでいても、何を聞いたかが見えるように)。明るさは OS の設定に合わせる
+func InitialDisplay() aibow.DisplaySettings {
+	return aibow.DisplaySettings{PinQuestion: true, Theme: aibow.ThemeSystem}
+}
+
 // InitialAppSettings は、DB にまだ値が無いときのアプリの設定(aibow.LoadAppSettings に渡す)。
 func InitialAppSettings(v InitialValues) aibow.AppSettings {
 	return aibow.AppSettings{
 		Workspace: aibow.WorkspaceSettings{GPULayers: v.GPULayers},
-		// 画面の設定。質問を右上に出すのは初めはオン(長い返事を読んでいても、何を聞いたかが見えるように)。明るさは OS の設定に合わせる
-		Display: aibow.DisplaySettings{PinQuestion: true, Theme: aibow.ThemeSystem},
+		Display:   InitialDisplay(),
 		Defaults: aibow.ConversationSettings{
 			System:          DefaultSystemPrompt,
 			Temperature:     0.7,

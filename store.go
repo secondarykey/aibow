@@ -6,8 +6,11 @@ package aibow
 // ここに書いたメソッドを持っていれば何でもよい。本物は store パッケージの SQLite、
 // テストではメモリ上の保存先(memstore_test.go)を使う。
 // こうしておくと、会話の仕組みのテストに DB ファイルがいらない。
+//
+// 保存先は利用者ごとに分かれている(0017)。誰のものを読み書きするかは ctx で渡す(user.go)。
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -18,44 +21,52 @@ import (
 	"github.com/secondarykey/aibow/format"
 )
 
-// Store は会話・プロファイル・アプリ設定の保存先。
+// Store は会話・プロファイル・設定の保存先。
+//
+// どのメソッドも最初に ctx を受け取る。会話・発言・要約・プロファイル・人ごとの設定は、ctx に入っている利用者(UserOf。user.go)のものだけを
+// 読み書きする(ほかの人の会話の ID を渡されても、無いものとして ErrNotFound などを返す)。アプリ全体の設定は利用者によらない(0017 の 6)。
+// ctx はもう1つ、止めるためにも使う(保存先が HTTP の向こうにあるとき。0017 の 11)。
 type Store interface {
 	// ListConversations は会話の一覧を、更新の新しい順に返す(発言は含まない)。
-	ListConversations() ([]Conversation, error)
+	ListConversations(ctx context.Context) ([]Conversation, error)
 	// Conversation は会話1つと、その発言を古い順に返す。無ければ ErrNotFound。
-	Conversation(id uuid.UUID) (Conversation, []StoredMessage, error)
-	CreateConversation(c Conversation) error
+	Conversation(ctx context.Context, id uuid.UUID) (Conversation, []StoredMessage, error)
+	CreateConversation(ctx context.Context, c Conversation) error
 	// UpdateConversation はタイトル・設定・プロファイル・更新日時を書き換える。無ければ ErrNotFound。
-	UpdateConversation(c Conversation) error
+	UpdateConversation(ctx context.Context, c Conversation) error
 	// TouchConversation は発言が増えたときに呼ぶ。更新日時を at にし、タイトルが空のときだけ autoTitle を入れる。
 	// 会話を丸ごと書き戻さないのは、生成中に画面で変えたタイトルや設定を古い値で上書きしないため。無ければ ErrNotFound。
-	TouchConversation(id uuid.UUID, at time.Time, autoTitle string) error
+	TouchConversation(ctx context.Context, id uuid.UUID, at time.Time, autoTitle string) error
 	// DeleteConversation は会話を消す。発言もいっしょに消える。
-	DeleteConversation(id uuid.UUID) error
-	AddMessage(m StoredMessage) error
+	DeleteConversation(ctx context.Context, id uuid.UUID) error
+	// AddMessage は発言を1件足す。会話が無ければ ErrNotFound。
+	AddMessage(ctx context.Context, m StoredMessage) error
 	// SetMessagesExcluded は発言の「モデルに渡さない」の印を変える(0011)。会話の中の発言の ID を渡す
-	SetMessagesExcluded(ids []uuid.UUID, excluded bool) error
+	SetMessagesExcluded(ctx context.Context, ids []uuid.UUID, excluded bool) error
 	// DeleteMessages は発言を消す(最後の返事を作り直す・最後の発言を直して送り直す。0011)
-	DeleteMessages(ids []uuid.UUID) error
+	DeleteMessages(ctx context.Context, ids []uuid.UUID) error
 
-	// AddCompaction は要約を1件保存する(compact の summary)。
-	AddCompaction(c Compaction) error
+	// AddCompaction は要約を1件保存する(compact の summary)。会話が無ければ ErrNotFound。
+	AddCompaction(ctx context.Context, c Compaction) error
 	// Compactions は会話の要約を古い順に返す。モデルに渡すのは最新の1件だけで、古いものは画面の区切りに使う。
-	Compactions(conv uuid.UUID) ([]Compaction, error)
+	Compactions(ctx context.Context, conv uuid.UUID) ([]Compaction, error)
 
 	// ListProfiles はプロファイルを、しまったものも含めて作った順に返す(0014)。
-	ListProfiles() ([]Profile, error)
+	ListProfiles(ctx context.Context) ([]Profile, error)
 	// Profile はプロファイル1つを返す。無ければ ErrProfileNotFound。
-	Profile(id uuid.UUID) (Profile, error)
-	CreateProfile(p Profile) error
+	Profile(ctx context.Context, id uuid.UUID) (Profile, error)
+	CreateProfile(ctx context.Context, p Profile) error
 	// UpdateProfile は名前・値・決まり・しまったか・更新日時を書き換える。無ければ ErrProfileNotFound。
-	UpdateProfile(p Profile) error
+	UpdateProfile(ctx context.Context, p Profile) error
 	// DeleteProfile はプロファイルを消す。そのプロファイルから作った会話があれば消さずに ErrProfileInUse。
-	DeleteProfile(id uuid.UUID) error
+	DeleteProfile(ctx context.Context, id uuid.UUID) error
 
-	// AppSetting はアプリ全体の設定を1つ読む。まだ保存されていなければ ok=false。
-	AppSetting(key string) (value string, ok bool, err error)
-	SetAppSetting(key, value string) error
+	// AppSetting はアプリ全体の設定(利用者によらないもの)を1つ読む。まだ保存されていなければ ok=false。
+	AppSetting(ctx context.Context, key string) (value string, ok bool, err error)
+	SetAppSetting(ctx context.Context, key, value string) error
+	// UserSetting は利用者ごとの設定(表示の設定・新しい会話で最初に選ばれるプロファイル)を1つ読む。まだ保存されていなければ ok=false(0017 の 6)。
+	UserSetting(ctx context.Context, key string) (value string, ok bool, err error)
+	SetUserSetting(ctx context.Context, key, value string) error
 }
 
 // ErrNotFound は、指定した会話が保存先に無いときのエラー。

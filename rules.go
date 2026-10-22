@@ -14,6 +14,7 @@ package aibow
 // 保存のときにも Go が断る(画面で押せなくするだけでは、ほかの入口から変えられてしまうため。checkRules)。
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"slices"
@@ -193,11 +194,11 @@ func keepStored(after, stored ConversationSettings, p *Profile) ConversationSett
 // profileFor は、会話のプロファイルを保存先から読む(決まりはそのつど見に行く)。
 // プロファイルを持たない会話(ライブラリとして使うとき)・見つからないプロファイルは nil(決まり無し)。
 // プロファイルは消せない(使っている会話があるうちは)ので、見つからないのは DB を手で直したときくらい。
-func (cs *Conversations) profileFor(id uuid.UUID) (*Profile, error) {
+func (cs *Conversations) profileFor(ctx context.Context, id uuid.UUID) (*Profile, error) {
 	if id == (uuid.UUID{}) {
 		return nil, nil
 	}
-	p, err := cs.store.Profile(id)
+	p, err := cs.store.Profile(ctx, id)
 	if errors.Is(err, ErrProfileNotFound) {
 		return nil, nil
 	}
@@ -208,17 +209,17 @@ func (cs *Conversations) profileFor(id uuid.UUID) (*Profile, error) {
 }
 
 // ProfileOf は、会話 c のプロファイル(保存先から読み直したもの)。プロファイルを持たない会話なら nil。
-func (cs *Conversations) ProfileOf(c Conversation) (*Profile, error) {
-	return cs.profileFor(c.ProfileID)
+func (cs *Conversations) ProfileOf(ctx context.Context, c Conversation) (*Profile, error) {
+	return cs.profileFor(ctx, c.ProfileID)
 }
 
 // load は、会話1つと発言を保存先から読み、決まりを当てる(使うときの設定)。
-func (cs *Conversations) load(id uuid.UUID) (Conversation, []StoredMessage, error) {
-	c, ms, err := cs.store.Conversation(id)
+func (cs *Conversations) load(ctx context.Context, id uuid.UUID) (Conversation, []StoredMessage, error) {
+	c, ms, err := cs.store.Conversation(ctx, id)
 	if err != nil {
 		return c, ms, err
 	}
-	p, err := cs.profileFor(c.ProfileID)
+	p, err := cs.profileFor(ctx, c.ProfileID)
 	if err != nil {
 		return c, ms, err
 	}

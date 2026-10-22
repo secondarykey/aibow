@@ -118,7 +118,7 @@ var testDefaults = ConversationSettings{Model: "file:fake", System: "あなた�
 func setLimits(t *testing.T, cs *Conversations, c *Conversation, history, reply int) {
 	t.Helper()
 	c.Settings.HistoryTokens, c.Settings.ReplyTokens = history, reply
-	if err := cs.UpdateSettings(c.ID, c.Settings); err != nil {
+	if err := cs.UpdateSettings(ctx, c.ID, c.Settings); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -128,7 +128,7 @@ func newTestConversations(t *testing.T, g *fakeGen) (*Conversations, *memStore) 
 	st := newMemStore()
 	cs := NewConversations(st, g, AppSettings{Defaults: testDefaults})
 	// アプリと同じく、プロファイル「既定」を作ってから使う(新しい会話の既定はプロファイルの値)
-	if _, err := cs.PrepareProfiles(); err != nil {
+	if _, err := cs.PrepareProfiles(ctx); err != nil {
 		t.Fatal(err)
 	}
 	// ツールの定義でプロンプトのトークン数が変わらないよう、ツール無しで始める(会話の上限を小さくして確かめるテストのため)。
@@ -158,7 +158,7 @@ func send(t *testing.T, cs *Conversations, c Conversation, text string) []ChatEv
 
 func mustCreate(t *testing.T, cs *Conversations) Conversation {
 	t.Helper()
-	c, err := cs.Create(nil)
+	c, err := cs.Create(ctx, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,7 +177,7 @@ func TestSendSavesThinkingButDoesNotPassIt(t *testing.T) {
 	}
 
 	// 保存されている: ユーザー発言と、思考つきの返事
-	_, ms, err := cs.Get(c.ID)
+	_, ms, err := cs.Get(ctx, c.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -229,7 +229,7 @@ func TestNothingGeneratedSavesNoReply(t *testing.T) {
 	if evs[len(evs)-1].Reply != nil {
 		t.Errorf("何も生成していないのに返事が保存されました")
 	}
-	_, ms, _ := cs.Get(c.ID)
+	_, ms, _ := cs.Get(ctx, c.ID)
 	if len(ms) != 1 {
 		t.Errorf("ユーザー発言だけが残るはずです: %+v", ms)
 	}
@@ -244,7 +244,7 @@ func TestSettingsArePerConversation(t *testing.T) {
 	// a の設定だけを変える
 	changed := testDefaults
 	changed.System, changed.Temperature, changed.Think, changed.PresencePenalty, changed.Compact = "", 0, false, 0, CompactNone
-	if err := cs.UpdateSettings(a.ID, changed); err != nil {
+	if err := cs.UpdateSettings(ctx, a.ID, changed); err != nil {
 		t.Fatal(err)
 	}
 
@@ -263,7 +263,7 @@ func TestSettingsArePerConversation(t *testing.T) {
 	}
 
 	// 既定を変えると、それ以降に作った会話だけに効き、保存もされる
-	if err := cs.SetDefaults(changed); err != nil {
+	if err := cs.SetDefaults(ctx, changed); err != nil {
 		t.Fatal(err)
 	}
 	if c := mustCreate(t, cs); !sameSettings(c.Settings, changed) {
@@ -272,20 +272,20 @@ func TestSettingsArePerConversation(t *testing.T) {
 	// 設定を渡して作ると、既定ではなくその設定で始まる(新しい会話の画面で変えた設定)
 	given := testDefaults
 	given.System = "画面で変えたシステムプロンプト"
-	c, err := cs.Create(&given)
+	c, err := cs.Create(ctx, &given)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, _, _ := cs.Get(c.ID); !sameSettings(got.Settings, given) {
+	if got, _, _ := cs.Get(ctx, c.ID); !sameSettings(got.Settings, given) {
 		t.Errorf("渡した設定で作られていません: %+v", got.Settings)
 	}
-	if _, ms, _ := cs.Get(b.ID); len(ms) == 0 {
+	if _, ms, _ := cs.Get(ctx, b.ID); len(ms) == 0 {
 		t.Fatal("b の発言がありません")
 	}
-	if b2, _, _ := cs.Get(b.ID); !sameSettings(b2.Settings, testDefaults) {
+	if b2, _, _ := cs.Get(ctx, b.ID); !sameSettings(b2.Settings, testDefaults) {
 		t.Errorf("既定を変えたら今ある会話まで変わりました: %+v", b2.Settings)
 	}
-	app, _, err := LoadAppSettings(st, AppSettings{Defaults: testDefaults})
+	app, _, err := LoadAppSettings(ctx, st, AppSettings{Defaults: testDefaults})
 	if err != nil || !sameSettings(app.Defaults, changed) {
 		t.Errorf("既定が保存されていません: %+v %v", app.Defaults, err)
 	}
@@ -300,7 +300,7 @@ func TestTitleFromFirstMessage(t *testing.T) {
 	send(t, cs, c, long)
 	send(t, cs, c, "2つ目の発言はタイトルにしない")
 
-	got, _, _ := cs.Get(c.ID)
+	got, _, _ := cs.Get(ctx, c.ID)
 	want := string([]rune("Go で HTTP サーバーを書きたいのですが、標準ライブラリだけでどこまでできますか?")[:titleMaxRunes]) + "…"
 	if got.Title != want {
 		t.Errorf("タイトル: %q(期待: %q)", got.Title, want)
@@ -332,7 +332,7 @@ func TestOnlyOneGenerationAtATime(t *testing.T) {
 		t.Errorf("生成中の会話が a になっていません: %v", g)
 	}
 	// 生成中でも別の会話は読める
-	if _, _, err := cs.Get(b.ID); err != nil {
+	if _, _, err := cs.Get(ctx, b.ID); err != nil {
 		t.Errorf("生成中に別の会話を読めません: %v", err)
 	}
 	// 送信と、生成中の会話の削除はできない
@@ -345,7 +345,7 @@ func TestOnlyOneGenerationAtATime(t *testing.T) {
 	if gotErr != ErrGenerating.Error() {
 		t.Errorf("生成中の送信が断られていません: %q", gotErr)
 	}
-	if err := cs.Delete(a.ID); err == nil {
+	if err := cs.Delete(ctx, a.ID); err == nil {
 		t.Errorf("生成中の会話を削除できてしまいました")
 	}
 
@@ -354,10 +354,10 @@ func TestOnlyOneGenerationAtATime(t *testing.T) {
 	if cs.Generating() != nil {
 		t.Errorf("生成が終わったのに生成中のままです")
 	}
-	if err := cs.Delete(a.ID); err != nil {
+	if err := cs.Delete(ctx, a.ID); err != nil {
 		t.Errorf("生成が終わった会話を削除できません: %v", err)
 	}
-	if _, _, err := cs.Get(a.ID); !errors.Is(err, ErrNotFound) {
+	if _, _, err := cs.Get(ctx, a.ID); !errors.Is(err, ErrNotFound) {
 		t.Errorf("削除した会話が残っています: %v", err)
 	}
 }
@@ -367,18 +367,19 @@ func TestLoadAppSettingsPrefersStoredValues(t *testing.T) {
 	initial := AppSettings{Workspace: WorkspaceSettings{GPULayers: 999}, Defaults: testDefaults}
 	initial.Defaults.HistoryTokens, initial.Defaults.ReplyTokens = 8192, 8192
 
-	got, notes, err := LoadAppSettings(st, initial)
+	got, notes, err := LoadAppSettings(ctx, st, initial)
 	if err != nil || got.Workspace.GPULayers != 999 || got.Workspace.Model != "" || len(got.Workspace.ModelGPULayers) != 0 ||
 		!sameSettings(got.Defaults, initial.Defaults) || len(notes) != 0 {
 		t.Fatalf("保存が空なら初期値のまま: %+v %v %v", got, notes, err)
 	}
 
-	SaveAppSetting(st, SettingHistoryTokens, 4096)
-	SaveAppSetting(st, SettingLastModel, "ollama:qwen3.5:4b")
-	SaveAppSetting(st, SettingPinQuestion, false)
-	SaveAppSetting(st, SettingTheme, ThemeDark)
+	SaveAppSetting(ctx, st, SettingHistoryTokens, 4096)
+	SaveAppSetting(ctx, st, SettingLastModel, "ollama:qwen3.5:4b")
+	// 表示の設定は人ごと(0017 の 6)
+	SaveUserSetting(ctx, st, SettingPinQuestion, false)
+	SaveUserSetting(ctx, st, SettingTheme, ThemeDark)
 	initial.Display.PinQuestion = true
-	got, _, err = LoadAppSettings(st, initial)
+	got, _, err = LoadAppSettings(ctx, st, initial)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -387,14 +388,14 @@ func TestLoadAppSettingsPrefersStoredValues(t *testing.T) {
 		t.Errorf("保存した画面の設定(質問を右上に出さない・ダーク)が初期値より優先されていません: %+v", got.Display)
 	}
 	// 知らない明るさはシステムに合わせる
-	SaveAppSetting(st, SettingTheme, "sepia")
-	if got, _, _ := LoadAppSettings(st, initial); got.Display.Theme != ThemeSystem {
+	SaveUserSetting(ctx, st, SettingTheme, "sepia")
+	if got, _, _ := LoadAppSettings(ctx, st, initial); got.Display.Theme != ThemeSystem {
 		t.Errorf("知らない明るさ: %q", got.Display.Theme)
 	}
 	if (DisplaySettings{Theme: "sepia"}).Validate() == nil {
 		t.Error("知らない明るさを受け付けました")
 	}
-	SaveAppSetting(st, SettingTheme, ThemeDark)
+	SaveUserSetting(ctx, st, SettingTheme, ThemeDark)
 	if d.HistoryTokens != 4096 || d.ReplyTokens != 8192 || w.Model != "ollama:qwen3.5:4b" || w.GPULayers != 999 {
 		t.Errorf("保存した値が優先されていません(古い置き場の会話の上限は、新しい会話の既定に入る): %+v", got)
 	}
@@ -404,8 +405,8 @@ func TestLoadAppSettingsPrefersStoredValues(t *testing.T) {
 
 	// 新しい会話の既定に会話の上限が入っていれば、古い置き場より優先する
 	d.HistoryTokens = 6000
-	SaveAppSetting(st, SettingDefaults, d)
-	got, _, _ = LoadAppSettings(st, initial)
+	SaveAppSetting(ctx, st, SettingDefaults, d)
+	got, _, _ = LoadAppSettings(ctx, st, initial)
 	if got.Defaults.HistoryTokens != 6000 || got.Defaults.ReplyTokens != 8192 {
 		t.Errorf("既定に入っている値を使う: %+v", got.Defaults)
 	}
@@ -426,11 +427,11 @@ func TestLoadAppSettingsMigratesNCtx(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			st := newMemStore()
-			SaveAppSetting(st, SettingNCtx, tc.nCtx)
+			SaveAppSetting(ctx, st, SettingNCtx, tc.nCtx)
 			if tc.maxTokens > 0 {
-				st.SetAppSetting(SettingDefaults, fmt.Sprintf(`{"system":"古い","max_tokens":%d,"temperature":0.5,"think":true}`, tc.maxTokens))
+				st.SetAppSetting(ctx, SettingDefaults, fmt.Sprintf(`{"system":"古い","max_tokens":%d,"temperature":0.5,"think":true}`, tc.maxTokens))
 			}
-			got, notes, err := LoadAppSettings(st, initial)
+			got, notes, err := LoadAppSettings(ctx, st, initial)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -442,8 +443,8 @@ func TestLoadAppSettingsMigratesNCtx(t *testing.T) {
 				t.Errorf("古い既定の設定: %+v", got.Defaults)
 			}
 			// 引き継いだ値は保存されていて、次の起動では引き継ぎ直さない(返事の上限だけ変えても会話の上限がずれない)
-			SaveAppSetting(st, SettingReplyTokens, 1000)
-			again, notes, _ := LoadAppSettings(st, initial)
+			SaveAppSetting(ctx, st, SettingReplyTokens, 1000)
+			again, notes, _ := LoadAppSettings(ctx, st, initial)
 			if again.Defaults.HistoryTokens != tc.wantHistory || again.Defaults.ReplyTokens != 1000 || len(notes) != 0 {
 				t.Errorf("2回目の起動: %+v %v", again.Defaults, notes)
 			}
@@ -457,27 +458,27 @@ func TestRename(t *testing.T) {
 
 	// 最初の送信の前に付けた名前は、自動のタイトルで上書きされない
 	a := mustCreate(t, cs)
-	if err := cs.Rename(a.ID, "  買い物メモ  "); err != nil {
+	if err := cs.Rename(ctx, a.ID, "  買い物メモ  "); err != nil {
 		t.Fatal(err)
 	}
 	send(t, cs, a, "牛乳を買う")
-	if got, _, _ := cs.Get(a.ID); got.Title != "買い物メモ" {
+	if got, _, _ := cs.Get(ctx, a.ID); got.Title != "買い物メモ" {
 		t.Errorf("付けた名前が上書きされました: %q", got.Title)
 	}
 
 	// 自動で付いたタイトルも、あとから変えられる。名前を変えても更新日時(一覧の並び)は変わらない
 	b := mustCreate(t, cs)
 	send(t, cs, b, "自動のタイトル")
-	before, _, _ := cs.Get(b.ID)
-	if err := cs.Rename(b.ID, "変えた名前"); err != nil {
+	before, _, _ := cs.Get(ctx, b.ID)
+	if err := cs.Rename(ctx, b.ID, "変えた名前"); err != nil {
 		t.Fatal(err)
 	}
-	after, _, _ := cs.Get(b.ID)
+	after, _, _ := cs.Get(ctx, b.ID)
 	if after.Title != "変えた名前" || !after.UpdatedAt.Equal(before.UpdatedAt) {
 		t.Errorf("名前の変更: %q / 更新日時 %v → %v", after.Title, before.UpdatedAt, after.UpdatedAt)
 	}
 
-	if err := cs.Rename(b.ID, "   "); err == nil {
+	if err := cs.Rename(ctx, b.ID, "   "); err == nil {
 		t.Errorf("空のタイトルにできてしまいました")
 	}
 }
@@ -502,17 +503,17 @@ func TestChangesDuringGenerationAreKept(t *testing.T) {
 	// 生成中に画面で名前と設定を変える
 	changed := testDefaults
 	changed.Temperature = 0.1
-	if err := cs.Rename(c.ID, "生成中に変えた名前"); err != nil {
+	if err := cs.Rename(ctx, c.ID, "生成中に変えた名前"); err != nil {
 		t.Fatal(err)
 	}
-	if err := cs.UpdateSettings(c.ID, changed); err != nil {
+	if err := cs.UpdateSettings(ctx, c.ID, changed); err != nil {
 		t.Fatal(err)
 	}
 	close(g.block)
 	<-finished
 
 	// 返事を保存したときに、生成を始めたときの古い値で書き戻されていないこと
-	got, ms, _ := cs.Get(c.ID)
+	got, ms, _ := cs.Get(ctx, c.ID)
 	if got.Title != "生成中に変えた名前" || !sameSettings(got.Settings, changed) {
 		t.Errorf("生成中の変更が消えました: %q %+v", got.Title, got.Settings)
 	}
@@ -556,7 +557,7 @@ func TestWorkspaceFollowsConversation(t *testing.T) {
 	if evs := send(t, cs, b, "もう1つ"); len(noticesOf(evs)) != 0 || g.resized != 1 {
 		t.Errorf("同じ大きさなら作り直さない: %v(%d 回)", noticesOf(evs), g.resized)
 	}
-	if u, _ := cs.Usage(b.ID); u.Limit != 50000 {
+	if u, _ := cs.Usage(ctx, b.ID); u.Limit != 50000 {
 		t.Errorf("メーターの上限は会話の値: %d", u.Limit)
 	}
 }
@@ -569,16 +570,16 @@ func TestDefaultLimitsAreCopied(t *testing.T) {
 	if a.Settings.HistoryTokens != testDefaults.HistoryTokens || a.Settings.ReplyTokens != testDefaults.ReplyTokens {
 		t.Fatalf("作るときに写す: %+v", a.Settings)
 	}
-	d := cs.Defaults()
+	d := mustDefaults(t, cs)
 	d.HistoryTokens, d.ReplyTokens = 3000, 200
-	if err := cs.SetDefaults(d); err != nil {
+	if err := cs.SetDefaults(ctx, d); err != nil {
 		t.Fatal(err)
 	}
-	if got, _, _ := cs.Get(a.ID); got.Settings.HistoryTokens != testDefaults.HistoryTokens {
+	if got, _, _ := cs.Get(ctx, a.ID); got.Settings.HistoryTokens != testDefaults.HistoryTokens {
 		t.Errorf("既定を変えても今ある会話は変わらない: %+v", got.Settings)
 	}
 	// 画面が上限を渡さなかったとき(0)も、既定の値を写す
-	b, err := cs.Create(&ConversationSettings{System: "x"})
+	b, err := cs.Create(ctx, &ConversationSettings{System: "x"})
 	if err != nil || b.Settings.HistoryTokens != 3000 || b.Settings.ReplyTokens != 200 {
 		t.Errorf("新しい会話は今の既定: %+v %v", b.Settings, err)
 	}
@@ -590,23 +591,23 @@ func TestFillMissingLimits(t *testing.T) {
 	cs, st := newTestConversations(t, g)
 	old := mustCreate(t, cs)
 	old.Settings.HistoryTokens, old.Settings.ReplyTokens = 0, 0
-	if err := st.UpdateConversation(old); err != nil {
+	if err := st.UpdateConversation(ctx, old); err != nil {
 		t.Fatal(err)
 	}
 	set := mustCreate(t, cs)
 	setLimits(t, cs, &set, 5000, 500)
 
-	n, err := cs.FillMissingLimits()
+	n, err := cs.FillMissingLimits(ctx)
 	if err != nil || n != 1 {
 		t.Fatalf("写した会話の数: %d %v", n, err)
 	}
-	if got, _, _ := cs.Get(old.ID); got.Settings.HistoryTokens != testDefaults.HistoryTokens || got.Settings.ReplyTokens != testDefaults.ReplyTokens {
+	if got, _, _ := cs.Get(ctx, old.ID); got.Settings.HistoryTokens != testDefaults.HistoryTokens || got.Settings.ReplyTokens != testDefaults.ReplyTokens {
 		t.Errorf("古い会話に既定を写す: %+v", got.Settings)
 	}
-	if got, _, _ := cs.Get(set.ID); got.Settings.HistoryTokens != 5000 {
+	if got, _, _ := cs.Get(ctx, set.ID); got.Settings.HistoryTokens != 5000 {
 		t.Errorf("上限を持っている会話は変えない: %+v", got.Settings)
 	}
-	if n, _ := cs.FillMissingLimits(); n != 0 {
+	if n, _ := cs.FillMissingLimits(ctx); n != 0 {
 		t.Errorf("2回目は何もしない: %d", n)
 	}
 }
@@ -619,12 +620,12 @@ func TestExcludeMessages(t *testing.T) {
 	c := mustCreate(t, cs)
 	send(t, cs, c, "図を描いて")
 	send(t, cs, c, "直して")
-	_, ms, _ := cs.Get(c.ID)
+	_, ms, _ := cs.Get(ctx, c.ID)
 	broken, fix := ms[1], ms[2]
-	if err := cs.SetExcluded(c.ID, broken.ID, true); err != nil {
+	if err := cs.SetExcluded(ctx, c.ID, broken.ID, true); err != nil {
 		t.Fatal(err)
 	}
-	if err := cs.SetExcluded(c.ID, fix.ID, true); err != nil {
+	if err := cs.SetExcluded(ctx, c.ID, fix.ID, true); err != nil {
 		t.Fatal(err)
 	}
 
@@ -636,20 +637,20 @@ func TestExcludeMessages(t *testing.T) {
 	if want := []string{"図を描いて", "直った図", "次の質問"}; !slices.Equal(got, want) {
 		t.Errorf("モデルに渡した発言: %v(期待: %v)", got, want)
 	}
-	if _, after, _ := cs.Get(c.ID); len(after) != 6 || !after[1].Excluded || !after[2].Excluded || after[3].Excluded {
+	if _, after, _ := cs.Get(ctx, c.ID); len(after) != 6 || !after[1].Excluded || !after[2].Excluded || after[3].Excluded {
 		t.Errorf("画面には全部残し、外した発言に印を付ける: %+v", after)
 	}
 
 	// 戻せば、また渡す
-	cs.SetExcluded(c.ID, fix.ID, false)
-	cs.SetExcluded(c.ID, broken.ID, false)
-	if u, _ := cs.Usage(c.ID); u.FirstID == nil || *u.FirstID != ms[0].ID {
+	cs.SetExcluded(ctx, c.ID, fix.ID, false)
+	cs.SetExcluded(ctx, c.ID, broken.ID, false)
+	if u, _ := cs.Usage(ctx, c.ID); u.FirstID == nil || *u.FirstID != ms[0].ID {
 		t.Errorf("戻したら最初から渡す: %+v", u)
 	}
 
 	// 生成中の会話は変えられない
 	cs.generating.Store(&c.ID)
-	if err := cs.SetExcluded(c.ID, broken.ID, true); err == nil {
+	if err := cs.SetExcluded(ctx, c.ID, broken.ID, true); err == nil {
 		t.Error("生成中は変えられない")
 	}
 	cs.generating.Store(nil)
@@ -663,14 +664,14 @@ func TestExcludeReplyWithTools(t *testing.T) {
 	}}
 	cs, _, c := newToolConversation(t, g)
 	send(t, cs, c, "1+1 は?")
-	_, ms, _ := cs.Get(c.ID)
+	_, ms, _ := cs.Get(ctx, c.ID)
 	if len(ms) != 4 || ms[2].Role != "tool" {
 		t.Fatalf("発言の並び: %+v", ms)
 	}
-	if err := cs.SetExcluded(c.ID, ms[2].ID, true); err != nil { // 結果の発言を指しても、返事全体を外す
+	if err := cs.SetExcluded(ctx, c.ID, ms[2].ID, true); err != nil { // 結果の発言を指しても、返事全体を外す
 		t.Fatal(err)
 	}
-	_, ms, _ = cs.Get(c.ID)
+	_, ms, _ = cs.Get(ctx, c.ID)
 	if ms[0].Excluded || !ms[1].Excluded || !ms[2].Excluded || !ms[3].Excluded {
 		t.Errorf("返事の発言を全部外す: %v %v %v %v", ms[0].Excluded, ms[1].Excluded, ms[2].Excluded, ms[3].Excluded)
 	}
@@ -705,7 +706,7 @@ func TestRegenerate(t *testing.T) {
 	cs, _, c := newToolConversation(t, g)
 	send(t, cs, c, "Q1")
 	send(t, cs, c, "Q2")
-	if _, ms, _ := cs.Get(c.ID); len(ms) != 6 {
+	if _, ms, _ := cs.Get(ctx, c.ID); len(ms) != 6 {
 		t.Fatalf("発言の数: %d", len(ms))
 	}
 
@@ -713,7 +714,7 @@ func TestRegenerate(t *testing.T) {
 	if errs := errorsOf(evs); len(errs) != 0 {
 		t.Fatalf("エラー: %v", errs)
 	}
-	_, ms, _ := cs.Get(c.ID)
+	_, ms, _ := cs.Get(ctx, c.ID)
 	if got, want := contents(ms), []string{"Q1", "A1", "Q2", "A2 作り直し"}; !slices.Equal(got, want) {
 		t.Errorf("保存された発言: %v(期待: %v)", got, want)
 	}
@@ -743,7 +744,7 @@ func TestResend(t *testing.T) {
 	if errs := errorsOf(evs); len(errs) != 0 {
 		t.Fatalf("エラー: %v", errs)
 	}
-	_, ms, _ := cs.Get(c.ID)
+	_, ms, _ := cs.Get(ctx, c.ID)
 	if got, want := contents(ms), []string{"Q1", "A1", "Q2 直した", "A2 直した"}; !slices.Equal(got, want) {
 		t.Errorf("保存された発言: %v(期待: %v)", got, want)
 	}
@@ -754,7 +755,7 @@ func TestResend(t *testing.T) {
 	if errs := errorsOf(evs); len(errs) != 1 {
 		t.Fatalf("収まらなければエラー: %v", errs)
 	}
-	if _, after, _ := cs.Get(c.ID); !slices.Equal(contents(after), contents(ms)) {
+	if _, after, _ := cs.Get(ctx, c.ID); !slices.Equal(contents(after), contents(ms)) {
 		t.Errorf("送れなかったときは消さない: %v", contents(after))
 	}
 }
@@ -768,12 +769,12 @@ func TestRegenerateErrors(t *testing.T) {
 		t.Errorf("発言が無ければ作り直せない: %v", errs)
 	}
 	send(t, cs, c, "Q")
-	_, ms, _ := cs.Get(c.ID)
-	cs.SetExcluded(c.ID, ms[0].ID, true)
+	_, ms, _ := cs.Get(ctx, c.ID)
+	cs.SetExcluded(ctx, c.ID, ms[0].ID, true)
 	if errs := errorsOf(collect(func(emit func(ChatEvent)) { cs.Regenerate(context.Background(), c.ID, emit) })); len(errs) != 1 {
 		t.Errorf("最後の発言を渡さないにしていたら作り直せない: %v", errs)
 	}
-	if _, after, _ := cs.Get(c.ID); len(after) != 2 {
+	if _, after, _ := cs.Get(ctx, c.ID); len(after) != 2 {
 		t.Errorf("作り直せなかったときは消さない: %d", len(after))
 	}
 }

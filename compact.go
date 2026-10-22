@@ -87,14 +87,14 @@ func (cs *Conversations) passFrom(set ConversationSettings, summary *Compaction,
 
 // plan は、今の履歴で次にモデルに渡す内容を決める(メーターと送信で同じものを使う)。
 // truncate は上限に収めた内容、summary は「最新の要約 + まだ要約に入っていない発言」(上限を超えていることもある)。
-func (cs *Conversations) plan(conv Conversation, history []StoredMessage) (passing, error) {
+func (cs *Conversations) plan(ctx context.Context, conv Conversation, history []StoredMessage) (passing, error) {
 	set := conv.Settings
 	switch set.Compact {
 	case CompactTruncate:
 		p, _, err := cs.truncate(set, nil, history, 0, cs.limitsOf(set).history)
 		return p, err
 	case CompactSummary:
-		latest, from, err := cs.latestSummary(conv.ID, history)
+		latest, from, err := cs.latestSummary(ctx, conv.ID, history)
 		if err != nil {
 			return passing{}, err
 		}
@@ -106,16 +106,16 @@ func (cs *Conversations) plan(conv Conversation, history []StoredMessage) (passi
 
 // Usage は、会話がモデルに渡す文字列で、会話の上限をどれだけ使っているかを返す。
 // モデルが読み込まれていないと数えられない(ErrNoModel)。
-func (cs *Conversations) Usage(id uuid.UUID) (Usage, error) {
-	conv, history, err := cs.Get(id)
+func (cs *Conversations) Usage(ctx context.Context, id uuid.UUID) (Usage, error) {
+	conv, history, err := cs.Get(ctx, id)
 	if err != nil {
 		return Usage{}, err
 	}
-	return cs.usage(conv, forModel(history))
+	return cs.usage(ctx, conv, forModel(history))
 }
 
-func (cs *Conversations) usage(conv Conversation, history []StoredMessage) (Usage, error) {
-	p, err := cs.plan(conv, history)
+func (cs *Conversations) usage(ctx context.Context, conv Conversation, history []StoredMessage) (Usage, error) {
+	p, err := cs.plan(ctx, conv, history)
 	if err != nil {
 		return Usage{}, err
 	}
@@ -123,8 +123,8 @@ func (cs *Conversations) usage(conv Conversation, history []StoredMessage) (Usag
 }
 
 // Compactions は会話の要約を古い順に返す(画面の区切りに使う)。
-func (cs *Conversations) Compactions(id uuid.UUID) ([]Compaction, error) {
-	return cs.store.Compactions(id)
+func (cs *Conversations) Compactions(ctx context.Context, id uuid.UUID) ([]Compaction, error) {
+	return cs.store.Compactions(ctx, id)
 }
 
 // ---- 生成する前の確認 -------------------------------------------------------------------
@@ -169,7 +169,7 @@ func (cs *Conversations) prepare(ctx context.Context, conv Conversation, history
 	limit := cs.limitsOf(conv.Settings).history
 	p, err := cs.passFrom(conv.Settings, nil, history, 0)
 	if conv.Settings.Compact == CompactSummary {
-		p, err = cs.plan(conv, history)
+		p, err = cs.plan(ctx, conv, history)
 	}
 	if err != nil || p.tokens <= limit {
 		return p, err
@@ -195,7 +195,7 @@ func (cs *Conversations) prepare(ctx context.Context, conv Conversation, history
 		}
 		// 成功しても失敗しても、今ある最新の要約(何回かに分けた途中までの分も含む)で数え直す。
 		// それでも超えていれば(要約が長かった、失敗した)、要約に入っていない発言を truncate で外す
-		p, err = cs.plan(conv, history)
+		p, err = cs.plan(ctx, conv, history)
 		if err != nil || p.tokens <= limit {
 			return p, err
 		}
@@ -374,8 +374,8 @@ var errOnlyLatestTurn = errors.New("要約できる古い発言がありませ�
 	"次に送信すると、この部分が要約の対象になります")
 
 // latestSummary は会話の最新の要約と、まだ要約に入っていない最初の発言の位置を返す。要約が無ければ nil, 0。
-func (cs *Conversations) latestSummary(id uuid.UUID, history []StoredMessage) (*Compaction, int, error) {
-	list, err := cs.store.Compactions(id)
+func (cs *Conversations) latestSummary(ctx context.Context, id uuid.UUID, history []StoredMessage) (*Compaction, int, error) {
+	list, err := cs.store.Compactions(ctx, id)
 	if err != nil || len(list) == 0 {
 		return nil, 0, err
 	}
@@ -457,7 +457,7 @@ func headRunes(s string, n int) string {
 func (cs *Conversations) summarize(ctx context.Context, conv Conversation, history []StoredMessage, emit func(ChatEvent)) (*Compaction, error) {
 	set := conv.Settings
 	lim := cs.limitsOf(set)
-	latest, from, err := cs.latestSummary(conv.ID, history)
+	latest, from, err := cs.latestSummary(ctx, conv.ID, history)
 	if err != nil {
 		return nil, err
 	}
@@ -581,7 +581,8 @@ func (cs *Conversations) summarizePart(ctx context.Context, conv Conversation, h
 		GenerateStats: st, BeforeTokens: before.tokens, AfterTokens: after.tokens,
 		Messages: end - from, Sec: time.Since(start).Seconds(),
 	}
-	if err := cs.store.AddCompaction(c); err != nil {
+	// 作り終えた要約は、直後に止められても保存する(save と同じ)
+	if err := cs.store.AddCompaction(context.WithoutCancel(ctx), c); err != nil {
 		return nil, fmt.Errorf("要約を保存できません: %w", err)
 	}
 	emit(ChatEvent{ConversationID: conv.ID, Type: "compact", Compact: &CompactInfo{
@@ -654,7 +655,7 @@ func (cs *Conversations) Compact(ctx context.Context, id uuid.UUID, emit func(Ch
 	}
 	defer cs.generating.Store(nil)
 
-	conv, history, err := cs.Get(id)
+	conv, history, err := cs.Get(ctx, id)
 	if err != nil {
 		fail(err)
 		return
@@ -672,7 +673,8 @@ func (cs *Conversations) Compact(ctx context.Context, id uuid.UUID, emit func(Ch
 			fail(fmt.Errorf("要約を作れませんでした: %w%s", err, summaryFailHelp(err)))
 		}
 	}
-	if u, err := cs.usage(conv, history); err == nil {
+	// 止められたあとも、メーターは今の状態に合わせる(保存と同じく、止める合図は外して読む)
+	if u, err := cs.usage(context.WithoutCancel(ctx), conv, history); err == nil {
 		cs.emitUsage(emit, id, u)
 	}
 }

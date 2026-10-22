@@ -63,7 +63,7 @@ func TestSendLoadsConversationModel(t *testing.T) {
 
 	// 入力欄の下で 9B を選んだ会話(会話のモデルを変える)
 	a.Settings.Model = "ollama:qwen3.5:9b"
-	if err := cs.UpdateSettings(a.ID, a.Settings); err != nil {
+	if err := cs.UpdateSettings(ctx, a.ID, a.Settings); err != nil {
 		t.Fatal(err)
 	}
 	evs := send(t, cs, a, "y")
@@ -95,7 +95,7 @@ func TestSendFailsWhenModelCannotLoad(t *testing.T) {
 	cs.SetModelLoader(&fakeLoader{g: g, err: errors.New("見つかりません")})
 	c := mustCreate(t, cs)
 	c.Settings.Model = "ollama:gone"
-	cs.UpdateSettings(c.ID, c.Settings)
+	cs.UpdateSettings(ctx, c.ID, c.Settings)
 	var errs []string
 	cs.Send(context.Background(), c.ID, "x", func(ev ChatEvent) {
 		if ev.Type == "error" {
@@ -105,7 +105,7 @@ func TestSendFailsWhenModelCannotLoad(t *testing.T) {
 	if len(errs) != 1 || len(g.calls) != 0 {
 		t.Errorf("生成せずにエラー: %v %d", errs, len(g.calls))
 	}
-	if _, ms, _ := cs.Get(c.ID); len(ms) != 0 {
+	if _, ms, _ := cs.Get(ctx, c.ID); len(ms) != 0 {
 		t.Errorf("発言も保存しない: %+v", ms)
 	}
 	if !strings.Contains(errs[0], "選び直して") {
@@ -140,23 +140,23 @@ func TestFillMissingModels(t *testing.T) {
 	cs, st := newTestConversations(t, g)
 	c := mustCreate(t, cs)
 	c.Settings.Model = ""
-	st.UpdateConversation(c)
-	if n, err := cs.FillMissingModels(""); n != 0 || err != nil {
+	st.UpdateConversation(ctx, c)
+	if n, err := cs.FillMissingModels(ctx, ""); n != 0 || err != nil {
 		t.Errorf("最後に使ったモデルが無ければ何もしない: %d %v", n, err)
 	}
-	if n, err := cs.FillMissingModels("ollama:qwen3.5:4b"); n != 1 || err != nil {
+	if n, err := cs.FillMissingModels(ctx, "ollama:qwen3.5:4b"); n != 1 || err != nil {
 		t.Fatalf("写した数: %d %v", n, err)
 	}
-	if got, _, _ := cs.Get(c.ID); got.Settings.Model != "ollama:qwen3.5:4b" {
+	if got, _, _ := cs.Get(ctx, c.ID); got.Settings.Model != "ollama:qwen3.5:4b" {
 		t.Errorf("写したモデル: %q", got.Settings.Model)
 	}
-	if n, _ := cs.FillMissingModels("ollama:qwen3.5:9b"); n != 0 {
+	if n, _ := cs.FillMissingModels(ctx, "ollama:qwen3.5:9b"); n != 0 {
 		t.Error("持っている会話は変えない")
 	}
 
 	empty := testDefaults
 	empty.Model = ""
-	if c, _ := cs.Create(&empty); c.Settings.Model != "file:fake" {
+	if c, _ := cs.Create(ctx, &empty); c.Settings.Model != "file:fake" {
 		t.Errorf("モデルの無い設定で作ると、読み込んでいるモデル: %q", c.Settings.Model)
 	}
 }
@@ -164,17 +164,17 @@ func TestFillMissingModels(t *testing.T) {
 // プロファイルのモデルは、既定を保存したとき(「この設定を新しい会話の既定にする」)だけ変わる。モデルを持たない設定では変えない
 func TestDefaultsKeepModel(t *testing.T) {
 	cs, _ := newTestConversations(t, &fakeGen{})
-	d := cs.Defaults()
+	d := mustDefaults(t, cs)
 	d.Model = "ollama:qwen3.5:9b"
-	if err := cs.SetDefaults(d); err != nil {
+	if err := cs.SetDefaults(ctx, d); err != nil {
 		t.Fatal(err)
 	}
-	if got := cs.DefaultProfile().Values.Model; got != "ollama:qwen3.5:9b" {
+	if got := mustDefaultProfile(t, cs).Values.Model; got != "ollama:qwen3.5:9b" {
 		t.Errorf("既定にするとモデルも写す: %q", got)
 	}
 	d.Model = ""
-	cs.SetDefaults(d)
-	if got := cs.Defaults().Model; got != "ollama:qwen3.5:9b" {
+	cs.SetDefaults(ctx, d)
+	if got := mustDefaults(t, cs).Model; got != "ollama:qwen3.5:9b" {
 		t.Errorf("モデルを持たない設定では変えない: %q", got)
 	}
 }
@@ -182,24 +182,24 @@ func TestDefaultsKeepModel(t *testing.T) {
 // GPU の層数はモデルごとに覚える。前の版の DB は、今の層の数を最後に使ったモデルの値にする。覚えていないモデルは全体の値(0014 の 4)
 func TestModelGPULayers(t *testing.T) {
 	st := newMemStore()
-	SaveAppSetting(st, SettingGPULayers, 20)
-	SaveAppSetting(st, SettingLastModel, "ollama:qwen3.5:9b")
+	SaveAppSetting(ctx, st, SettingGPULayers, 20)
+	SaveAppSetting(ctx, st, SettingLastModel, "ollama:qwen3.5:9b")
 	initial := AppSettings{Workspace: WorkspaceSettings{GPULayers: 999}, Defaults: testDefaults}
-	a, notes, err := LoadAppSettings(st, initial)
+	a, notes, err := LoadAppSettings(ctx, st, initial)
 	if err != nil || len(notes) != 1 {
 		t.Fatalf("引き継ぎを知らせる: %q %v", notes, err)
 	}
 	if a.Workspace.LayersFor("ollama:qwen3.5:9b") != 20 || a.Workspace.LayersFor("ollama:qwen3.5:4b") != 20 {
 		t.Errorf("今の値を最後に使ったモデルの値にし、覚えていないモデルは全体の値: %+v", a.Workspace)
 	}
-	SaveAppSetting(st, SettingModelGPULayers, map[string]int{"ollama:qwen3.5:9b": 20, "ollama:qwen3.5:4b": 999})
-	SaveAppSetting(st, SettingGPULayers, 30)
-	a, notes, _ = LoadAppSettings(st, initial)
+	SaveAppSetting(ctx, st, SettingModelGPULayers, map[string]int{"ollama:qwen3.5:9b": 20, "ollama:qwen3.5:4b": 999})
+	SaveAppSetting(ctx, st, SettingGPULayers, 30)
+	a, notes, _ = LoadAppSettings(ctx, st, initial)
 	if len(notes) != 0 || a.Workspace.LayersFor("ollama:qwen3.5:4b") != 999 || a.Workspace.LayersFor("file:other") != 30 {
 		t.Errorf("2回目は引き継がず、覚えた値を使う: %q %+v", notes, a.Workspace)
 	}
 	// まだ層の数を変えたことが無い(環境変数の値のまま)なら、覚えない
-	b, notes, _ := LoadAppSettings(newMemStore(), initial)
+	b, notes, _ := LoadAppSettings(ctx, newMemStore(), initial)
 	if len(notes) != 0 || len(b.Workspace.ModelGPULayers) != 0 {
 		t.Errorf("層の数が保存されていなければ何もしない: %q %+v", notes, b.Workspace)
 	}

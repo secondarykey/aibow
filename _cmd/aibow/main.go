@@ -21,6 +21,7 @@
 package main
 
 import (
+	"context"
 	_ "embed" // version を埋め込む
 	"fmt"
 	"io"
@@ -290,8 +291,10 @@ func openStore(cfg appConfig) (*store.SQLite, aibow.AppSettings, error) {
 	if err != nil {
 		return nil, cfg.app, err
 	}
+	// 手元の DB を使うのはこの PC の1人だけ。利用者の印の無い呼び出しを、ログインなしの形の利用者のものとして扱う(0017)
+	st.OneUser()
 	log.Noticef("会話の保存先: %s", absPath(cfg.dbPath))
-	app, notes, err := aibow.LoadAppSettings(st, cfg.app)
+	app, notes, err := aibow.LoadAppSettings(context.Background(), st, cfg.app)
 	if err != nil {
 		st.Close()
 		return nil, cfg.app, err

@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -117,6 +118,8 @@ type testWeb struct {
 	eng  *fakeEngine
 	mm   *fakeModels
 	seat *api.Seat
+	// user は、画面用の口を呼んだ利用者(aibow-server の who の代わり)。nil ならログインなしの形の利用者。テストの途中で替える
+	user atomic.Pointer[uuid.UUID]
 }
 
 // newTestWeb は、aibow-server の browser.go と同じ組み立てで、画面用の口を httptest で立てる。
@@ -127,7 +130,7 @@ func newTestWeb(t *testing.T) *testWeb {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { st.Close() })
-	app, _, err := aibow.LoadAppSettings(st, InitialAppSettings(InitialValues{GPULayers: 999, PresencePenalty: 1.5, HistoryTokens: 8192, ReplyTokens: 8192}))
+	app, _, err := aibow.LoadAppSettings(aibow.WithUser(context.Background(), aibow.LocalUser), st, InitialAppSettings(InitialValues{GPULayers: 999, PresencePenalty: 1.5, HistoryTokens: 8192, ReplyTokens: 8192}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,8 +147,18 @@ func newTestWeb(t *testing.T) *testWeb {
 		Notify: events, Seat: seat, WithoutTools: true,
 	})
 	t.Cleanup(life.Stop)
-	srv.Config.Handler = Handler(svc, events)
-	return &testWeb{url: srv.URL, eng: eng, mm: mm, seat: seat}
+	w := &testWeb{url: srv.URL, eng: eng, mm: mm, seat: seat}
+	srv.Config.Handler = Handler(svc, events, func(*http.Request) (uuid.UUID, error) {
+		u := w.user.Load()
+		switch {
+		case u == nil:
+			return aibow.LocalUser, nil
+		case *u == (uuid.UUID{}):
+			return uuid.UUID{}, errors.New("ログインしてください")
+		}
+		return *u, nil
+	})
+	return w
 }
 
 // call はメソッドを呼び、状態と本文を返す。
@@ -458,5 +471,44 @@ func TestWebModelsWhileLoading(t *testing.T) {
 	w.mustCall(t, &m, "Models")
 	if m.Current != nil {
 		t.Errorf("降ろしたら「なし」のはず: %+v", m.Current)
+	}
+}
+
+// 誰の呼び出しかは aibow-server の who で決まり、会話・プロファイル・表示の設定はその人のものだけが見える(0017 の 10-0)。
+// 決められなければ 401
+func TestWebUsers(t *testing.T) {
+	w := newTestWeb(t)
+	mine := w.newConversation(t)
+	w.mustCall(t, nil, "SetDisplay", aibow.DisplaySettings{PinQuestion: false, Theme: aibow.ThemeDark})
+
+	other := uuid.NewV7()
+	w.user.Store(&other)
+	var list []aibow.Conversation
+	w.mustCall(t, &list, "Conversations")
+	if len(list) != 0 {
+		t.Errorf("ほかの人の会話が一覧に出ている: %+v", list)
+	}
+	if status, body := w.call(t, context.Background(), "Conversation", mine.ID); status != http.StatusInternalServerError || !strings.Contains(string(body), "見つかりません") {
+		t.Errorf("ほかの人の会話を開けてしまう: %d %s", status, body)
+	}
+	var a aibow.AppSettings
+	w.mustCall(t, &a, "AppSettings")
+	if a.Display != InitialDisplay() {
+		t.Errorf("ほかの人には、変えていない表示の設定: %+v", a.Display)
+	}
+
+	w.user.Store(nil)
+	w.mustCall(t, &list, "Conversations")
+	if len(list) != 1 || list[0].ID != mine.ID {
+		t.Errorf("自分の会話: %+v", list)
+	}
+	w.mustCall(t, &a, "AppSettings")
+	if a.Display.PinQuestion || a.Display.Theme != aibow.ThemeDark {
+		t.Errorf("自分の表示の設定: %+v", a.Display)
+	}
+
+	w.user.Store(&uuid.UUID{})
+	if status, body := w.call(t, context.Background(), "Conversations"); status != http.StatusUnauthorized || !strings.Contains(string(body), "ログインしてください") {
+		t.Errorf("利用者を決められなければ 401: %d %s", status, body)
 	}
 }
