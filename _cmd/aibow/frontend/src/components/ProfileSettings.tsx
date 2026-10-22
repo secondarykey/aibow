@@ -6,9 +6,14 @@
 // 扱いを決めるのは Go。保存できなかったら(名前が空など)理由を出して、Go の値に戻す。
 //
 // 画面は一旦作ってから使い方を考える(0014 の 12)。ここは最初の形。
+//
+// 配る(0018 の 11-1・決定事項 22):
+//   - 管理者(ブラウザ)は、編集の「配る」で、配らない / 全員 / 指定した人(名前のチェック)を選ぶ。一覧に「全員に配っている」「N 人に配っている」の印
+//   - 受け取った人には「配られたプロファイル」の欄を分けて出す。値は読むだけ(fieldset ごと無効にする)で、「写す」で自分のプロファイルにする
+//   - 配られたものも「最初に選ぶ」にできる(配られなくなったら、Go が自分のプロファイルに戻す)
 import { useCallback, useEffect, useRef, useState } from "react";
-import { LuPlus } from "react-icons/lu";
-import { ChatService, isBrowser } from "../backend";
+import { LuCopy, LuPlus } from "react-icons/lu";
+import { admin, ChatService, isBrowser, me } from "../backend";
 import type { ConversationSettings, Profile, ProfileInfo } from "../../bindings/github.com/secondarykey/aibow";
 import type { ServerInfo } from "../../bindings/github.com/secondarykey/aibow/mcp/client";
 // Go の models パッケージ。"…/aibow/models" と書くと aibow パッケージの models.ts が選ばれるので、index まで書く
@@ -107,50 +112,79 @@ export function ProfileSettings({ models, servers, disabled, onApplyLimits, onEr
       .catch(err => onError(errorMessage(err)));
   };
 
+  // 自分が変えられるもの(自分のもの・管理者なら配ったもの)と、配られたもの(読むだけ)に分ける
+  const mine = infos.filter(i => !i.profile.read_only);
+  const received = infos.filter(i => i.profile.read_only);
+  const item = (i: ProfileInfo) => (
+    <button
+      key={i.profile.id}
+      type="button"
+      role="option"
+      aria-selected={i.profile.id === selected}
+      className={"profile-item" + (i.profile.id === selected ? " current" : "") + (i.profile.archived ? " archived" : "")}
+      onClick={() => flush().catch(() => {}).then(() => reload(i.profile.id))}
+    >
+      <span className="profile-name">{i.profile.name}</span>
+      {i.default && <span className="tool-tag" title="新しい会話の画面で最初に選ばれる">最初に選ぶ</span>}
+      {i.profile.archived && <span className="tool-tag" title="新しい会話では選べない。決まりは、このプロファイルから作った会話に効く">しまってある</span>}
+      {!i.profile.read_only && i.profile.share && <ShareTag profile={i.profile} />}
+      {i.profile.owner_name && i.profile.owner_name !== me.name && (
+        <span className="profile-owner" title="配った人">{i.profile.owner_name}</span>
+      )}
+      <span className="profile-uses" title="このプロファイルから作った会話の数">会話 {i.uses}</span>
+    </button>
+  );
+
+  // 編集は、選んでいるプロファイルのある一覧(自分のもの / 配られたもの)のすぐ下に出す
+  const editor = edit && info && (
+    <ProfileEditor
+      key={edit.id}
+      profile={edit}
+      info={info}
+      models={models}
+      servers={servers}
+      disabled={disabled}
+      onChange={change}
+      onApplyLimits={onApplyLimits}
+      onToolsChanged={onToolsChanged}
+      onSetDefault={() => act(() => ChatService.SetDefaultProfile(edit.id), edit.id)}
+      onArchive={archived => act(() => ChatService.SetProfileArchived(edit.id, archived), edit.id)}
+      onDelete={() => act(() => ChatService.DeleteProfile(edit.id), infos.find(i => i.default)?.profile.id)}
+      onCopy={() => {
+        ChatService.CopyProfile(edit.id)
+          .then(p => {
+            onChanged();
+            return reload(p.id);
+          })
+          .catch(err => onError(errorMessage(err)));
+      }}
+      onShare={(share, users) => act(() => ChatService.SetProfileShare(edit.id, share, users), edit.id)}
+      onError={onError}
+    />
+  );
+
   return (
     <>
       <div className="profile-list" role="listbox">
-        {infos.map(i => (
-          <button
-            key={i.profile.id}
-            type="button"
-            role="option"
-            aria-selected={i.profile.id === selected}
-            className={"profile-item" + (i.profile.id === selected ? " current" : "") + (i.profile.archived ? " archived" : "")}
-            onClick={() => flush().catch(() => {}).then(() => reload(i.profile.id))}
-          >
-            <span className="profile-name">{i.profile.name}</span>
-            {i.default && <span className="tool-tag" title="新しい会話の画面で最初に選ばれる">最初に選ぶ</span>}
-            {i.profile.archived && <span className="tool-tag" title="新しい会話では選べない。決まりは、このプロファイルから作った会話に効く">しまってある</span>}
-            <span className="profile-uses" title="このプロファイルから作った会話の数">会話 {i.uses}</span>
-          </button>
-        ))}
+        {mine.map(item)}
         <button type="button" className="profile-item profile-add" onClick={create} title="選んでいるプロファイルの値を写して、新しいプロファイルを作る">
           <LuPlus /> 新しいプロファイル
         </button>
       </div>
-
-      {edit && info && (
-        <ProfileEditor
-          key={edit.id}
-          profile={edit}
-          info={info}
-          models={models}
-          servers={servers}
-          disabled={disabled}
-          onChange={change}
-          onApplyLimits={onApplyLimits}
-          onToolsChanged={onToolsChanged}
-          onSetDefault={() => act(() => ChatService.SetDefaultProfile(edit.id), edit.id)}
-          onArchive={archived => act(() => ChatService.SetProfileArchived(edit.id, archived), edit.id)}
-          onDelete={() => act(() => ChatService.DeleteProfile(edit.id), infos.find(i => i.default)?.profile.id)}
-        />
+      {!edit?.read_only && editor}
+      {received.length > 0 && (
+        <>
+          <h2 className="section" title="管理者が配ったプロファイル。新しい会話で選べるが、値と決まりは変えられない(変えたいときは写す)">配られたプロファイル</h2>
+          <div className="profile-list" role="listbox">{received.map(item)}</div>
+        </>
       )}
+      {edit?.read_only && editor}
+
     </>
   );
 }
 
-function ProfileEditor({ profile, info, models, servers, disabled, onChange, onApplyLimits, onToolsChanged, onSetDefault, onArchive, onDelete }: {
+function ProfileEditor({ profile, info, models, servers, disabled, onChange, onApplyLimits, onToolsChanged, onSetDefault, onArchive, onDelete, onCopy, onShare, onError }: {
   profile: Profile;
   info: ProfileInfo;
   models: ModelEntry[];
@@ -162,7 +196,11 @@ function ProfileEditor({ profile, info, models, servers, disabled, onChange, onA
   onSetDefault(): void;
   onArchive(archived: boolean): void;
   onDelete(): void;
+  onCopy(): void;                                  // 写して自分のプロファイルにする(配られたもの)
+  onShare(share: string, users: string[]): void;   // 配る範囲と相手を変える(管理者)
+  onError(text: string): void;
 }) {
+  if (profile.read_only) return <ReceivedProfile profile={profile} info={info} models={models} onSetDefault={onSetDefault} onCopy={onCopy} />;
   const [name, setName] = useState(profile.name);
   useEffect(() => setName(profile.name), [profile.name]);
   const fixed = profile.rules.fixed ?? [];
@@ -230,6 +268,7 @@ function ProfileEditor({ profile, info, models, servers, disabled, onChange, onA
           消す
         </button>
       </div>
+      {isBrowser && me.admin && <ShareForm profile={profile} onShare={onShare} onError={onError} />}
 
       <ConversationSettingsForm settings={settings} models={models} lock={lock} onChange={setValues} />
       <LimitsForm
@@ -251,10 +290,99 @@ function ProfileEditor({ profile, info, models, servers, disabled, onChange, onA
   );
 }
 
+// ShareTag は、配っているプロファイルの印(一覧)。
+function ShareTag({ profile }: { profile: Profile }) {
+  const text = profile.share === "all" ? "全員に配っている" : `${profile.share_with?.length ?? 0} 人に配っている`;
+  const title = profile.share === "all" ? "全員の新しい会話で選べる" : `配っている相手: ${(profile.share_with ?? []).join("・")}`;
+  return <span className="tool-tag share-tag" title={title}>{text}</span>;
+}
+
+// ShareForm は、管理者がプロファイルを配る範囲と相手を選ぶ欄(0018 の決定事項 22)。選んだらすぐ変える。
+function ShareForm({ profile, onShare, onError }: { profile: Profile; onShare(share: string, users: string[]): void; onError(text: string): void }) {
+  const [names, setNames] = useState<string[]>([]);
+  useEffect(() => {
+    admin.users()
+      .then(list => setNames(list.filter(u => u.name !== me.name && !u.local).map(u => u.name)))
+      .catch(err => onError(errorMessage(err)));
+  }, [onError]);
+  const share = profile.share ?? "";
+  const chosen = profile.share_with ?? [];
+  const toggle = (name: string) => {
+    const next = chosen.includes(name) ? chosen.filter(n => n !== name) : [...chosen, name];
+    if (next.length === 0) onShare("", []);
+    else onShare("users", next);
+  };
+  return (
+    <div className="profile-share">
+      <label htmlFor="profile-share" title="配ったプロファイルは、受け取った人の新しい会話で選べる。値と決まりは受け取った人には変えられず、ほかの管理者は変えられる">配る</label>
+      <select
+        id="profile-share"
+        value={share}
+        onChange={e => {
+          const v = e.target.value;
+          if (v === "users") onShare("users", chosen.length ? chosen : names.slice(0, 1));
+          else onShare(v, []);
+        }}
+      >
+        <option value="">配らない</option>
+        <option value="all">全員</option>
+        <option value="users" disabled={names.length === 0}>指定した人</option>
+      </select>
+      {share === "users" && (
+        <div className="share-users">
+          {names.map(n => (
+            <label key={n} className="check">
+              <input type="checkbox" checked={chosen.includes(n)} onChange={() => toggle(n)} />
+              {n}
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ReceivedProfile は、配られたプロファイル(読むだけ)。値と決まりは見せるが変えられない(fieldset ごと無効)。写せば自分のものになる
+function ReceivedProfile({ profile, info, models, onSetDefault, onCopy }: {
+  profile: Profile;
+  info: ProfileInfo;
+  models: ModelEntry[];
+  onSetDefault(): void;
+  onCopy(): void;
+}) {
+  const settings = asSettings(profile.values);
+  const lock: Lock = { fixed: profile.rules.fixed ?? [], profile: profile.name, onToggle: () => {} };
+  return (
+    <div className="profile-editor">
+      <div className="profile-received">
+        <span className="profile-received-name">{profile.name}</span>
+        {profile.owner_name && <span className="profile-owner" title="配った人">{profile.owner_name}</span>}
+      </div>
+      <div className="profile-actions">
+        <button
+          type="button"
+          disabled={info.default}
+          title={info.default ? "新しい会話の画面で最初に選ばれている" : "新しい会話の画面で最初に選ばれるものにする(配られなくなったら、自分のプロファイルに戻る)"}
+          onClick={onSetDefault}
+        >
+          最初に選ぶ
+        </button>
+        <button type="button" onClick={onCopy} title="値と決まりを写して、自分のプロファイルを作る(写したものは変えられる)">
+          <LuCopy /> 写す
+        </button>
+      </div>
+      <fieldset disabled className="profile-readonly">
+        <ConversationSettingsForm settings={settings} models={models} lock={lock} onChange={() => {}} />
+        <LimitsForm history={settings.history_tokens} reply={settings.reply_tokens} disabled lock={lock} onApply={() => {}} />
+      </fieldset>
+    </div>
+  );
+}
+
 // freeName は、新しいプロファイルの名前。ほかのプロファイルと重ならないよう、重なれば番号を付ける(Go は重なる名前を断る)
 function freeName(infos: ProfileInfo[]): string {
   const base = "新しいプロファイル";
-  const used = new Set(infos.map(i => i.profile.name));
+  const used = new Set(infos.filter(i => !i.profile.share).map(i => i.profile.name)); // 名前は自分のもの同士で重ならなければよい
   if (!used.has(base)) return base;
   for (let n = 2; ; n++) {
     if (!used.has(`${base} ${n}`)) return `${base} ${n}`;

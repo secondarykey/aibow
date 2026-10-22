@@ -30,6 +30,11 @@
   - 版 8: API キー `api_keys`(1人1本なので利用者の ID が主キー。キーの SHA-256 は UNIQUE。利用者を消すと一緒に消える)。0017 の 10-2
   - 版 9: `conversations` に「生成中」の印 `busy_by`・`busy_until`(`aibow.ConversationLocks`。ブラウザとアプリが同じ会話に同時に送らないように。期限を過ぎた印は無いものとして扱う)。0017 の 10-3
   - 版 10: `users` に管理者の印 `admin`(0 / 1。`aibow-server user admin` で付ける)。0018 の 11-0
+  - 版 11: プロファイルを配る(0018 の 11-1)。`profiles` に配る範囲 `share`(`''` / `all` / `users`)と、配ったときの作った人の名前 `owner_name`、
+    指定した人の表 `profile_shares`(プロファイル + 利用者。どちらかを消すと一緒に消える)
+- プロファイルの読み書き:見える・変えられるの判定は `sqlite.go` の `profileVisible`・`profileUsed`・`profileEditable`(名前付きの引数 `:me`・`:admin`)の1か所だけ。
+  `Profile` / `ListProfiles` は読むときに `Owner`・`OwnerName`・`ReadOnly`・`Withdrawn` を入れ、`ShareWith` は変えられる人にだけ入れる。
+  利用者を消しても、配ったプロファイルと、ほかの人の会話が使っているプロファイルは残す(`DeleteUser`)。接続は1本(`SetMaxOpenConns(1)`)なので、トランザクションの途中でほかの読み出しをしない(閉じてから読む)
 - モデルの ID:会話の設定とプロファイルの値の `model` は、読むときに `models.IDOf` で今の形(`file:<ファイル名>`)に読み替える(以前の `file:<パス>` を書き換えずに使うため。0018 の決定事項 15)
 - 持ち主:会話・発言・要約・プロファイル・人ごとの設定は、`ctx` の利用者(`aibow.UserOf`)の行だけを読み書きする。ほかの人の行は無いものとして扱う(`ErrNotFound` など)。
   利用者の無い `ctx` は `aibow.ErrNoUser` で断る。`OneUser` を呼んだ DB(デスクトップのアプリの aibow.db)だけは、`aibow.LocalUser` のものとして扱う。

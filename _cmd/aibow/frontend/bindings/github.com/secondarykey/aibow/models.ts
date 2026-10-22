@@ -408,6 +408,25 @@ export interface Profile {
     "values": ProfileValues;
 
     /**
+     * 配る(0018 の 11-1)。Share は配る範囲(ShareNone / ShareAll / ShareUsers)、ShareWith は配る相手の名前(ShareUsers のとき)。
+     * 配ったプロファイルは「組織のもの」で、管理者なら誰でも変えられる(決定事項 20)。変えるのは SetProfileShare(UpdateProfile では変わらない)。
+     * ShareWith は変えられる人(管理者)にだけ入る(受け取った人には、ほかに誰が受け取ったかを見せない)
+     */
+    "share"?: string;
+    "share_with"?: string[] | null;
+
+    /**
+     * 次の3つは、保存先が読むときに入れる(保存しない)。
+     * Owner は作った人(持ち主)、OwnerName はその名前(配ったときに覚えた名前。作った人を消しても残る)。
+     * ReadOnly は ctx の利用者が変えられない(配られたもの。管理者でない人と、管理者から外れた人)。
+     * Withdrawn は、もう配られていない(その人がこのプロファイルから作った会話の決まりのためだけに読める。新しい会話では選べない。決定事項 21)
+     */
+    "owner": uuid$0.UUID;
+    "owner_name"?: string;
+    "read_only"?: boolean;
+    "withdrawn"?: boolean;
+
+    /**
      * 決まり:会話からそのつど見に行くもの(rules.go)
      */
     "rules": ProfileRules;

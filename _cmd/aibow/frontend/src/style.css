@@ -701,6 +701,18 @@ footer { border-top: 1px solid var(--border); background: var(--panel); padding:
 .profile-add { color: var(--muted); }
 .profile-editor { padding: 4px 0 0 2px; }
 .profile-actions { display: flex; gap: 6px; margin-top: 8px; }
+.profile-actions button { display: inline-flex; align-items: center; gap: 4px; }
+/* 配る(0018 の 11-1)。配っている印は色付きの枠、配った人の名前は薄く */
+.share-tag { border-color: var(--accent); color: var(--accent); }
+.profile-owner { flex-shrink: 0; font-size: 11px; color: var(--muted); }
+.profile-share { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.profile-share label[for] { margin: 0; }
+.profile-share select { width: auto; }
+.share-users { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.share-users .check { margin: 0; }
+.profile-received { display: flex; align-items: baseline; gap: 8px; }
+.profile-received-name { font-weight: 600; }
+.profile-readonly { border: none; padding: 0; margin: 0; min-width: 0; }
 .profile-sub { color: var(--muted); }
 /* プロファイルの「ツール」: グループとツールの錠(使えない)。かけていなければ、マウスを乗せた行(見出し)にだけ出す */
 .tool-lock {

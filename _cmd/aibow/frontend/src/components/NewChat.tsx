@@ -12,7 +12,11 @@ export function NewChat({ items, profiles, profile, onProfile, children }: {
   onProfile(id: string): void;
   children: ReactNode;
 }) {
-  const usable = profiles.filter(i => !i.profile.archived);
+  const usable = profiles.filter(i => !i.profile.archived && !i.profile.withdrawn);
+  // 自分のものと、配られたもの(0018 の 11-1)を分けて出す。管理者が配っているものも「配っている」のまとまり
+  const own = usable.filter(i => !i.profile.share);
+  const shared = usable.filter(i => i.profile.share);
+  const option = (i: ProfileInfo) => <option key={i.profile.id} value={i.profile.id}>{i.profile.name}</option>;
   return (
     <section className="center home">
       <div className="home-inner">
@@ -29,7 +33,14 @@ export function NewChat({ items, profiles, profile, onProfile, children }: {
               title="新しい会話のプロファイル。選ぶと、その値(モデルも)で会話を作る"
               onChange={e => onProfile(e.target.value)}
             >
-              {usable.map(i => <option key={i.profile.id} value={i.profile.id}>{i.profile.name}</option>)}
+              {shared.length === 0
+                ? own.map(option)
+                : (
+                  <>
+                    <optgroup label="自分のプロファイル">{own.map(option)}</optgroup>
+                    <optgroup label="配られたプロファイル">{shared.map(option)}</optgroup>
+                  </>
+                )}
             </select>
           </div>
         )}

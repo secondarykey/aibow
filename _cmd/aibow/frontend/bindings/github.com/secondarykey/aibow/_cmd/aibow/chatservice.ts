@@ -113,6 +113,13 @@ export function Conversations(): $CancellablePromise<aibow$0.Conversation[] | nu
 }
 
 /**
+ * CopyProfile は、プロファイル(配られたものなど)を写して自分のプロファイルを作る(値と決まりも。0018 の決定事項 19)。
+ */
+export function CopyProfile(id: uuid$0.UUID): $CancellablePromise<aibow$0.Profile> {
+    return $Call.ByID(1792808487, id);
+}
+
+/**
  * CreateProfile は、新しいプロファイルを作る(設定の画面の「新しいプロファイル」)。
  */
 export function CreateProfile(name: string, values: aibow$0.ProfileValues, rules: aibow$0.ProfileRules): $CancellablePromise<aibow$0.Profile> {
@@ -315,6 +322,13 @@ export function SetProfileArchived(id: uuid$0.UUID, archived: boolean): $Cancell
 }
 
 /**
+ * SetProfileShare は、プロファイルを配る範囲(""・all・users)と相手(利用者の名前)を変える(0018 の 11-1)。管理者だけ。
+ */
+export function SetProfileShare(id: uuid$0.UUID, share: string, $with: string[] | null): $CancellablePromise<void> {
+    return $Call.ByID(2853156393, id, share, $with);
+}
+
+/**
  * SetToolPolicy は、ツールの扱いの PC の既定を変える(tools.json に書く)。policy が空なら決めていない状態に戻す。
  * 次の送信から効く(プロンプトに入るツールが変わるので、画面はメーターを数え直す)。
  */
@@ -398,6 +412,7 @@ export function UpdateConversationSettings(id: uuid$0.UUID, settings: aibow$0.Co
 
 /**
  * UpdateProfile は、プロファイルの名前・値・決まりを変える。値は今ある会話に効かず、決まりは今ある会話にもすぐ効く。
+ * 配っているプロファイルなら、モデルは使えるモデルの中から(0018 の決定事項 13)。
  */
 export function UpdateProfile(p: aibow$0.Profile): $CancellablePromise<void> {
     return $Call.ByID(2462467583, p);
