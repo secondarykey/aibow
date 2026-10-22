@@ -22,6 +22,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -54,6 +55,11 @@ type configFile struct {
 	// Login は、ブラウザの画面にログインを要るようにするか(0017 の 10-1)。書いていなければ環境変数か既定(要らない)。
 	// false と書いて環境変数より強くできるよう、ポインタにする(ほかの欄は 0 を「書いていない」にしているが、真偽値では false も値なので)
 	Login *bool `json:"login"`
+	// Host は待ち受けるアドレス(0017 の 10-2)。既定は 127.0.0.1(この PC からだけ)。0.0.0.0 なら全部のネットワーク
+	Host string `json:"host"`
+	// TLSCert・TLSKey は HTTPS の証明書と秘密鍵のファイル(aibow-server cert で作れる)。両方書けば HTTPS で待ち受ける
+	TLSCert string `json:"tlsCert"`
+	TLSKey  string `json:"tlsKey"`
 }
 
 // config は、強さの順で決めた設定。
@@ -65,8 +71,11 @@ type config struct {
 	ModelsDir string
 	LogLevel  string // 設定ファイルの logLevel(空なら -debug か既定)
 	// Login は、ブラウザの画面にログインが要るか(0017 の 10-1)。要らなければ、ブラウザはログインなしの形の利用者(aibow.LocalUser)になる。
-	// 127.0.0.1 だけで待ち受けるので既定は要らない(0017 の決定事項 8)。OpenAI 互換の口と aibow 専用の口は、まだ守らない(API キーは 10-2)
+	// 127.0.0.1 だけで待ち受けるなら既定は要らない(0017 の決定事項 8)。127.0.0.1 の外で待ち受けるなら、書いた値によらず要る(決定事項 2。resolve で決める)
 	Login bool
+	// Host は待ち受けるアドレス(既定 127.0.0.1)。TLSCert・TLSKey は HTTPS の証明書と秘密鍵(どちらも空なら HTTP)
+	Host            string
+	TLSCert, TLSKey string
 
 	// File は読んだ設定ファイル(無ければ空)。StatePath は aibow-server が書くファイル(server-models.json)、
 	// DBPath はブラウザの会話の DB(server.db)。どちらも設定ファイルの隣
@@ -78,6 +87,7 @@ type config struct {
 // flags は起動の引数。書かれたかどうかは set で見る(書かれていない引数は、設定ファイル・環境変数より弱いため)。
 type flags struct {
 	config, model, lib, modelsDir *string
+	host, tlsCert, tlsKey         *string
 	ctx, port                     *int
 	version, debug, login         *bool
 	set                           map[string]bool
@@ -95,6 +105,9 @@ func defineFlags(fs *flag.FlagSet) *flags {
 		version:   fs.Bool("version", false, "バージョンを表示して終わる"),
 		debug:     fs.Bool("debug", false, "ログを Debug レベルまで出す(設定ファイルの logLevel より強い。どちらも無ければ go run は Info、exe は Notice)"),
 		login:     fs.Bool("login", false, "ブラウザの画面にログインを要るようにする(利用者は aibow-server user add で作る)。設定ファイルの login・環境変数 AIBOW_SERVER_LOGIN"),
+		host:      fs.String("host", "", "待ち受けるアドレス(既定 127.0.0.1。0.0.0.0 なら全部のネットワーク。127.0.0.1 の外ではログインと API キーが要る)。設定ファイルの host・環境変数 AIBOW_SERVER_HOST"),
+		tlsCert:   fs.String("tls-cert", "", "HTTPS の証明書のファイル(aibow-server cert で作れる)。設定ファイルの tlsCert・環境変数 AIBOW_SERVER_TLS_CERT"),
+		tlsKey:    fs.String("tls-key", "", "HTTPS の秘密鍵のファイル。設定ファイルの tlsKey・環境変数 AIBOW_SERVER_TLS_KEY"),
 	}
 }
 
@@ -138,16 +151,48 @@ func resolve(fs *flag.FlagSet, f *flags, env *envReader) (config, []string, erro
 	default:
 		c.Login = env.bool("AIBOW_SERVER_LOGIN", false)
 	}
+	c.Host = pick(f.set["host"], *f.host, file.Host, os.Getenv("AIBOW_SERVER_HOST"), "127.0.0.1")
+	c.TLSCert = pick(f.set["tls-cert"], *f.tlsCert, file.TLSCert, os.Getenv("AIBOW_SERVER_TLS_CERT"), "")
+	c.TLSKey = pick(f.set["tls-key"], *f.tlsKey, file.TLSKey, os.Getenv("AIBOW_SERVER_TLS_KEY"), "")
+	if (c.TLSCert == "") != (c.TLSKey == "") {
+		return config{}, nil, errors.New("HTTPS には、証明書(tlsCert)と秘密鍵(tlsKey)の両方が要ります。片方だけ書かれています")
+	}
 
 	// aibow-api から名前を変えたとき(0015 の 18)に、環境変数の名前も変えた。古い名前は読まずに注意だけ出す
 	// (黙って無視すると、書いたつもりの値が効かない理由が分からないため。アプリが AIBOW_CTX をやめたときと同じやり方)
 	var notices []string
+	// 127.0.0.1 の外で待ち受けるなら、ログインを要るようにする(認証が無いまま LAN に出さない。0017 の決定事項 2)
+	if !c.Local() && !c.Login {
+		c.Login = true
+		notices = append(notices, fmt.Sprintf("127.0.0.1 の外(%s)で待ち受けるので、ログインを要るようにします(login の設定より強い)", c.Host))
+	}
 	for old, now := range map[string]string{"AIBOW_API_PORT": "AIBOW_SERVER_PORT", "AIBOW_API_CTX": "AIBOW_SERVER_CTX"} {
 		if v := os.Getenv(old); v != "" {
 			notices = append(notices, fmt.Sprintf("環境変数 %s(%s)は使われなくなりました。%s に名前を変えてください(aibow-api を aibow-server に名前を変えたため)", old, v, now))
 		}
 	}
 	return c, notices, nil
+}
+
+// Local は、この PC からだけ(ループバックのアドレス)で待ち受けるか。
+func (c config) Local() bool {
+	if c.Host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(c.Host)
+	return ip != nil && ip.IsLoopback()
+}
+
+// KeysRequired は、OpenAI 互換の口と aibow 専用の口に API キーが要るか(0017 の決定事項 9)。
+// 127.0.0.1 の外では要る。127.0.0.1 だけでも、ログインが要る設定なら要る(ブラウザだけ守っても、同じ会話を口から読めては意味が無いため)
+func (c config) KeysRequired() bool { return !c.Local() || c.Login }
+
+// Scheme は待ち受ける形(証明書があれば https)。
+func (c config) Scheme() string {
+	if c.TLSCert != "" {
+		return "https"
+	}
+	return "http"
 }
 
 // pick は、引数(書かれていれば)> 設定ファイル > 環境変数 > 既定 の順で、最初に決まっている値を返す。空(0)は「決めていない」。

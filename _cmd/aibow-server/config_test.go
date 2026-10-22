@@ -34,7 +34,7 @@ func TestResolveOrder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := config{Port: 9000, Ctx: 16384, Model: "env-model", Lib: "arg-lib", ModelsDir: "models",
+	want := config{Port: 9000, Ctx: 16384, Model: "env-model", Lib: "arg-lib", ModelsDir: "models", Host: "127.0.0.1",
 		File: path, StatePath: filepath.Join(dir, stateFileName), DBPath: filepath.Join(dir, dbFileName)}
 	if c != want {
 		t.Errorf("設定:\n got  %+v\n want %+v", c, want)
@@ -86,5 +86,42 @@ func TestLogLevel(t *testing.T) {
 	os.WriteFile(path, []byte(`{"logLevel": "verbose"}`), 0o644)
 	if _, _, err := loadConfigFile(path); err == nil || !strings.Contains(err.Error(), "logLevel") {
 		t.Errorf("書き間違い: %v", err)
+	}
+}
+
+// 127.0.0.1 の外で待ち受けるなら、ログインと API キーが要る。証明書と秘密鍵は両方要る(0017 の 10-2)
+func TestResolveHost(t *testing.T) {
+	path := filepath.Join(t.TempDir(), configFileName)
+	os.WriteFile(path, []byte(`{"host": "0.0.0.0", "login": false}`), 0o644)
+	for _, k := range []string{"AIBOW_SERVER_HOST", "AIBOW_SERVER_LOGIN", "AIBOW_SERVER_TLS_CERT", "AIBOW_SERVER_TLS_KEY"} {
+		t.Setenv(k, "")
+	}
+	resolveArgs := func(args ...string) (config, []string, error) {
+		fs := flag.NewFlagSet("test", flag.ContinueOnError)
+		f := defineFlags(fs)
+		if err := fs.Parse(append([]string{"-config", path}, args...)); err != nil {
+			t.Fatal(err)
+		}
+		var env envReader
+		return resolve(fs, f, &env)
+	}
+	c, notices, err := resolveArgs()
+	if err != nil || c.Local() || !c.Login || !c.KeysRequired() || len(notices) != 1 || !strings.Contains(notices[0], "ログインを要る") {
+		t.Errorf("0.0.0.0: %+v %q %v", c, notices, err)
+	}
+	c, _, _ = resolveArgs("-host", "127.0.0.1")
+	if !c.Local() || c.Login || c.KeysRequired() || c.Scheme() != "http" {
+		t.Errorf("127.0.0.1(ログインなし): %+v", c)
+	}
+	c, _, _ = resolveArgs("-host", "localhost", "-login")
+	if !c.Local() || !c.KeysRequired() {
+		t.Errorf("localhost でもログインが要るならキーも要る: %+v", c)
+	}
+	if _, _, err := resolveArgs("-tls-cert", "a.pem"); err == nil || !strings.Contains(err.Error(), "両方") {
+		t.Errorf("証明書だけ: %v", err)
+	}
+	c, _, _ = resolveArgs("-tls-cert", "a.pem", "-tls-key", "b.pem")
+	if c.Scheme() != "https" {
+		t.Errorf("証明書があれば https: %+v", c)
 	}
 }

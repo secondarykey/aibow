@@ -13,6 +13,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"net"
 	"net/http"
 	"time"
 
@@ -77,13 +78,14 @@ func (s *Server) Handler() http.Handler {
 	// aibow 専用の口(0015)。/v1/ と分け、意味が同じものは llama.cpp の server の名前にそろえる
 	mux.HandleFunc("GET /models", s.handleServerModels)
 	mux.HandleFunc("POST /models/load", s.handleLoad)
-	mux.HandleFunc("POST /models/unload", s.handleUnload)
+	// サーバーの PC の事情を変える口(降ろす・GPU の層数・置き場所)は、サーバーの PC からだけ(localOnly。0017 の 10-2)
+	mux.HandleFunc("POST /models/unload", localOnly(s.handleUnload))
 	mux.HandleFunc("POST /apply-template", s.handleApplyTemplate)
 	mux.HandleFunc("POST /aibow/count-tokens", s.handleCountTokens)
-	mux.HandleFunc("POST /aibow/gpu-layers", s.handleGPULayers)
+	mux.HandleFunc("POST /aibow/gpu-layers", localOnly(s.handleGPULayers))
 	mux.HandleFunc("GET /aibow/places", s.handlePlaces)
-	mux.HandleFunc("POST /aibow/places/add", s.handleAddPlace)
-	mux.HandleFunc("POST /aibow/places/remove", s.handleRemovePlace)
+	mux.HandleFunc("POST /aibow/places/add", localOnly(s.handleAddPlace))
+	mux.HandleFunc("POST /aibow/places/remove", localOnly(s.handleRemovePlace))
 	mux.HandleFunc("GET /aibow/settings", s.handleSettings)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "invalid_request_error", "",
@@ -127,6 +129,22 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 // writeError は OpenAI と同じ形のエラーを返す:{"error": {"message", "type", "code"}}。
 // クライアントは type と code で見分ける(例: 長すぎるときの code は context_length_exceeded)。
+// localOnly は、サーバーの PC の上(127.0.0.1・::1)からの呼び出しだけを通す(0017 の 10-2。ユーザーと決めた)。
+// モデルを降ろす・GPU の層数・置き場所は、サーバーの PC と、ほかの人が使っているモデルに関わるので、ほかの PC からは変えさせない
+// (誰に許すかはステップ11の管理者で決め直す)。aibow-server が 127.0.0.1 だけで待ち受けているときは、いつも通る。
+func localOnly(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		host, _, err := net.SplitHostPort(r.RemoteAddr)
+		if ip := net.ParseIP(host); err != nil || ip == nil || !ip.IsLoopback() {
+			log.Warnf("サーバーの PC からだけの操作なので断りました: %s %s(%s)", r.Method, r.URL.Path, r.RemoteAddr)
+			writeError(w, http.StatusForbidden, "permission_error", "local_only",
+				"この操作(モデルを降ろす・GPU の層数・モデルの置き場所)は、aibow-server を動かしている PC からだけできます")
+			return
+		}
+		h(w, r)
+	}
+}
+
 func writeError(w http.ResponseWriter, status int, typ, code, msg string) {
 	writeJSON(w, status, errorBody{Error: errorObject{Message: msg, Type: typ, Code: code}})
 }

@@ -319,7 +319,14 @@ func openStore(cfg appConfig) (*store.SQLite, aibow.AppSettings, error) {
 func startModels(cfg *appConfig, app aibow.AppSettings) (ui.ModelHost, *engine.Engine, *models.Entry, error) {
 	if cfg.serverURL != "" {
 		c := apiclient.New(cfg.serverURL)
-		log.Noticef("生成は aibow-server に頼みます: %s(llama.cpp はこのアプリでは読み込みません)", c.URL())
+		c.SetKey(cfg.serverKey)
+		if cfg.serverCert != "" {
+			if err := c.TrustCert(cfg.serverCert); err != nil {
+				return nil, nil, nil, err
+			}
+			log.Noticef("aibow-server の証明書を信頼します: %s", cfg.serverCert)
+		}
+		log.Noticef("生成は aibow-server に頼みます: %s(llama.cpp はこのアプリでは読み込みません。API キー: %s)", c.URL(), map[bool]string{true: "あり", false: "なし"}[cfg.serverKey != ""])
 		return ui.NewRemoteHost(c), nil, nil, nil
 	}
 	added, err := ui.LoadPlacesFile(cfg.placesPath)

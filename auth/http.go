@@ -2,7 +2,7 @@ package auth
 
 // http.go: ログインの HTTP の口と、cookie からログインした人を決める係。
 //
-//	POST /aibow/auth/login   本文 {"name", "password"}。合っていれば cookie を渡して {"name"}、違えば 401
+//	POST /aibow/auth/login   本文 {"name", "password"}。合っていれば cookie を渡して {"name"}、違えば 401。続けて間違えると 429(limiter.go)
 //	POST /aibow/auth/logout  セッションを消して、cookie を消す
 //	GET  /aibow/auth/me      {"login": ログインが要るか, "name": ログインしている人の名前(していなければ空)}。画面が最初に聞く
 //
@@ -16,9 +16,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"mime"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/secondarykey/aibow/log"
 )
@@ -68,6 +70,7 @@ type Me struct {
 // Handler は /aibow/auth/ の下の口を返す。required はログインが要るか(aibow-server の設定)。
 // Middleware の内側に置く(me と logout は、ログインしている人を使う)。
 func Handler(s *Sessions, required bool) http.Handler {
+	lim := newLimiter(func() time.Time { return s.now() })
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /aibow/auth/me", func(w http.ResponseWriter, r *http.Request) {
 		me := Me{Login: required}
@@ -95,9 +98,16 @@ func Handler(s *Sessions, required bool) http.Handler {
 			writeError(w, http.StatusBadRequest, "本文が読めません: "+err.Error())
 			return
 		}
+		addr := remote(r)
+		if left := lim.wait(addr); left > 0 {
+			log.Warnf("ログインを続けて間違えたので、受け付けません: 名前 %q(%s。あと %s)", req.Name, addr, left.Round(time.Second))
+			writeError(w, http.StatusTooManyRequests, fmt.Sprintf("ログインを続けて間違えたので、しばらく受け付けません。%d 分ほど待ってから、もう一度ログインしてください", int(left.Minutes())+1))
+			return
+		}
 		token, u, err := s.Login(r.Context(), req.Name, req.Password)
 		if errors.Is(err, ErrLogin) {
-			log.Warnf("ログインできませんでした: 名前 %q(%s)", req.Name, remote(r))
+			lim.fail(addr)
+			log.Warnf("ログインできませんでした: 名前 %q(%s)", req.Name, addr)
 			writeError(w, http.StatusUnauthorized, err.Error())
 			return
 		}
@@ -106,8 +116,9 @@ func Handler(s *Sessions, required bool) http.Handler {
 			writeError(w, http.StatusInternalServerError, "ログインの途中で失敗しました: "+err.Error())
 			return
 		}
+		lim.ok(addr)
 		setCookie(w, r, token)
-		log.Noticef("ログインしました: %s(%s)", u.Name, remote(r))
+		log.Noticef("ログインしました: %s(%s)", u.Name, addr)
 		writeJSON(w, http.StatusOK, Me{Login: true, Name: u.Name})
 	})
 	mux.HandleFunc("POST /aibow/auth/logout", func(w http.ResponseWriter, r *http.Request) {

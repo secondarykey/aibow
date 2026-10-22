@@ -9,9 +9,11 @@ import (
 	"encoding/json"
 	"errors"
 	"net"
+	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -414,5 +416,29 @@ func TestGenerateAsksKnownModel(t *testing.T) {
 	}
 	if want := []string{"ollama:qwen3.5:9b", "ollama:qwen3.5:4b"}; !slices.Equal(m.loads, want) || g.Info().ID != "ollama:qwen3.5:4b" {
 		t.Errorf("前に知った 4B で生成するはず: 読み込んだモデル %v / 読み込み中 %s", m.loads, g.Info().ID)
+	}
+}
+
+// API キーを決めると、毎回のリクエストに Authorization: Bearer <キー> を付ける(0017 の 10-2)。サーバーが断れば、その理由の文がエラーになる
+func TestKey(t *testing.T) {
+	var got string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		if got != "Bearer aibow_test" {
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte(`{"error":{"message":"API キーが無いか、違います","type":"invalid_request_error","code":"invalid_api_key"}}`))
+			return
+		}
+		w.Write([]byte(`{"data":[],"ctx":32768,"gpu":true}`))
+	}))
+	defer srv.Close()
+	c := New(srv.URL)
+	if _, err := c.Models(); err == nil || !strings.Contains(err.Error(), "API キー") {
+		t.Errorf("キーなし: %v", err)
+	}
+	c.SetKey(" aibow_test ")
+	if _, err := c.Models(); err != nil || got != "Bearer aibow_test" {
+		t.Errorf("キーあり: %q %v", got, err)
 	}
 }

@@ -195,6 +195,14 @@ CREATE TABLE sessions (
 );
 CREATE INDEX sessions_by_user ON sessions(user_id);
 `,
+	// 版 8: API キー(0017 の 10-2)。1人1本なので、利用者の ID を主キーにする(作り直すと置き換わる)。保存するのはキーの SHA-256 だけ
+	`
+CREATE TABLE api_keys (
+	user_id    TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+	id         TEXT NOT NULL UNIQUE,     -- キーの SHA-256。キーそのものは保存しない
+	created_at TEXT NOT NULL
+);
+`,
 }
 
 func migrate(db *sql.DB) error {

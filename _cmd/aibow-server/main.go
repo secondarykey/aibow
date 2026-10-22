@@ -4,7 +4,8 @@
 //	aibow-server [-model モデル] [-ctx 作業領域の大きさ] [-port ポート] [-config 設定ファイル] [-login]
 //	aibow-server [-config 設定ファイル] user list|add|passwd|remove [名前]   … 利用者を扱う(users.go。ステップ10)
 //
-// Cline などの既製のツールから http://127.0.0.1:8089/v1 につなぐ。待ち受けは 127.0.0.1 だけ(PC の外からはつなげない)。
+// Cline などの既製のツールから http://127.0.0.1:8089/v1 につなぐ。待ち受けは既定で 127.0.0.1 だけ(PC の外からはつなげない)。
+// -host で広げると、ログインと API キーが要るようになる。証明書(-tls-cert・-tls-key。aibow-server cert で作れる)があれば HTTPS(ステップ10)。
 //
 // 中身は api パッケージにあり、ここは引数と環境変数を読み、エンジンとモデルを用意して起動するだけ
 // (aibow-mcp と mcp/server の関係と同じ)。画面のアプリ(_cmd/aibow)とは別の exe にしているのは、
@@ -19,6 +20,7 @@ package main
 import (
 	"cmp"
 	"context"
+	"crypto/tls"
 	"errors"
 	"flag"
 	"fmt"
@@ -70,6 +72,12 @@ func main() {
 }
 
 func run(c config, notices []string, cfgErr error, env *envReader) error {
+	if flag.Arg(0) == "cert" {
+		if cfgErr != nil {
+			return cfgErr
+		}
+		return runCert(c, flag.Args()[1:])
+	}
 	if flag.Arg(0) == "user" {
 		if cfgErr != nil {
 			return cfgErr
@@ -93,7 +101,7 @@ func run(c config, notices []string, cfgErr error, env *envReader) error {
 		log.Noticef("設定ファイル: %s", absPath(c.File))
 	}
 	// 待ち受けるアドレスは、モデルを読み込む前に出しておく(読み込みに失敗しても、どこで待ち受けるつもりだったかが分かるように)
-	log.Noticef("待ち受けるアドレス: http://127.0.0.1:%d(llama.cpp とモデルを読み込んでから待ち受けます)", c.Port)
+	log.Noticef("待ち受けるアドレス: %s://%s(llama.cpp とモデルを読み込んでから待ち受けます)", c.Scheme(), net.JoinHostPort(c.Host, strconv.Itoa(c.Port)))
 	// llama.cpp・モデルの場所は設定(引数・設定ファイル・環境変数)、GPU の層数・返事の既定はアプリと同じ環境変数で決める
 	// (画面の DB は読まない。DB はアプリのもの)
 	nCtx, port := c.Ctx, c.Port
@@ -151,19 +159,29 @@ func run(c config, notices []string, cfgErr error, env *envReader) error {
 	log.Noticef("モデルを読み込みました: %s(%s・書式 %s・作業領域 %d トークン・GPU %d 層 / %d 層・%.1f 秒)",
 		info.ID, info.Desc, info.Format, info.NCtx, min(info.GPULayers, int(info.Layers)), info.Layers, info.LoadSec)
 
-	// 127.0.0.1 だけで待ち受ける(PC の外からはつなげない。外から使うこと・API キーは 0012 の「やらないこと」。ログインと一緒にステップ10)
-	addr := net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
+	// 既定は 127.0.0.1 だけで待ち受ける(PC の外からはつなげない)。-host で広げたときは、resolve がログインを要るようにしてある(0017 の決定事項 2)
+	addr := net.JoinHostPort(c.Host, strconv.Itoa(port))
+	base := c.Scheme() + "://" + addr
+	tlsConfig, err := loadTLS(c)
+	if err != nil {
+		return err
+	}
 	srv := api.New(eng, mm, nCtx, defaults)
 	// ブラウザの会話(0016)。OpenAI 互換の口と同じ engine・同じ順番待ちの席で動かす
-	browser, closeBrowser, err := startBrowser(c, initial, eng, mm, nCtx, "http://"+addr, srv.Seat())
+	browser, keys, closeBrowser, err := startBrowser(c, initial, eng, mm, nCtx, base, srv.Seat())
 	if err != nil {
 		return err
 	}
 	defer closeBrowser()
+	// OpenAI 互換の口と aibow 専用の口は、要るときは API キーで守る(0017 の決定事項 9)
+	apiH := srv.Handler()
+	if c.KeysRequired() {
+		apiH = keys.RequireKey(apiH)
+	}
 
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
-		return fmt.Errorf("%s で待ち受けられません。ほかのプログラムがこのポートを使っているなら、-port で変えてください: %w", addr, err)
+		return fmt.Errorf("%s で待ち受けられません。ほかのプログラムがこのポートを使っているなら -port で、アドレスがこの PC のものでないなら -host で変えてください: %w", addr, err)
 	}
 
 	// Ctrl+C で止める。リクエストの context をこれにつなぐので、生成中なら次のトークンで止まる(ブラウザの知らせ(SSE)のつながりも閉じる)
@@ -176,24 +194,23 @@ func run(c config, notices []string, cfgErr error, env *envReader) error {
 		StateFile: absPath(c.StatePath),
 	})
 	hs := &http.Server{
-		Handler:           routes(srv.Handler(), browser, screen()),
+		Handler:           routes(apiH, browser, screen()),
 		ReadHeaderTimeout: 10 * time.Second,
+		TLSConfig:         tlsConfig,
 		// 書き込みの時間の上限(WriteTimeout)は付けない。返事の生成は数十秒〜数分かかることがあるため
 		BaseContext: func(net.Listener) context.Context { return ctx },
 	}
 	errc := make(chan error, 1)
-	go func() { errc <- hs.Serve(ln) }()
+	go func() {
+		if tlsConfig != nil {
+			errc <- hs.ServeTLS(ln, "", "") // 証明書は TLSConfig に読み込み済み(起動の前に読めるかを確かめるため)
+			return
+		}
+		errc <- hs.Serve(ln)
+	}()
 	log.Noticef("%s %s を起動しました(返事の上限の既定 %d・presence penalty %.1f)",
 		logPrefix, appVersion(), defaults.MaxTokens, defaults.PresencePenalty)
-	// つなぐ側が書く値をそのまま出す(画面のアプリは /v1 なし、Cline などの OpenAI 互換のクライアントは /v1 付き)
-	log.Noticef("画面のアプリのつなぎ先(settings.json の serverUrl / AIBOW_SERVER_URL): http://%s", addr)
-	log.Noticef("OpenAI 互換のクライアント(Cline など)の Base URL: http://%s/v1", addr)
-	log.Noticef("ブラウザで開く画面: http://%s/(会話は %s に保存します)", addr, absPath(c.DBPath))
-	if c.Login {
-		log.Notice("ブラウザの画面はログインが要ります(利用者は aibow-server user add <名前> で作ります)")
-	} else {
-		log.Notice("ブラウザの画面はログインなしで使えます(利用者は local。ログインを要るようにするには -login・設定ファイルの login)")
-	}
+	logAddresses(c, base)
 
 	select {
 	case err := <-errc:
@@ -204,6 +221,44 @@ func run(c config, notices []string, cfgErr error, env *envReader) error {
 	sctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	return hs.Shutdown(sctx)
+}
+
+// loadTLS は、証明書と秘密鍵を読む(HTTPS。0017 の 10-2)。証明書が無ければ nil(HTTP)。
+// 起動の途中(モデルを読み込む前)で読み、間違っていれば待ち受ける前に止める。
+// 127.0.0.1 の外で証明書なしなら、警告して HTTP で動かす(ユーザーと決めた。家の中など、信用できる網だけで使うとき向け)。
+func loadTLS(c config) (*tls.Config, error) {
+	if c.TLSCert == "" {
+		if !c.Local() {
+			log.Warnf("証明書なしで 127.0.0.1 の外(%s)に HTTP で出します。パスワード・API キー・会話が暗号化されずに流れます。"+
+				"信用できる網だけで使うか、aibow-server cert で証明書を作って tlsCert・tlsKey に書いてください", c.Host)
+		}
+		return nil, nil
+	}
+	cert, err := tls.LoadX509KeyPair(c.TLSCert, c.TLSKey)
+	if err != nil {
+		return nil, fmt.Errorf("HTTPS の証明書(%s)と秘密鍵(%s)を読めません: %w", absPath(c.TLSCert), absPath(c.TLSKey), err)
+	}
+	log.Noticef("HTTPS で待ち受けます(証明書: %s)", absPath(c.TLSCert))
+	return &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12}, nil
+}
+
+// logAddresses は、つなぐ側が書く値をそのまま出す(画面のアプリは /v1 なし、Cline などの OpenAI 互換のクライアントは /v1 付き)。
+// 全部のネットワークで待ち受けるとき(0.0.0.0 など)は、ほかの PC からはこの PC のアドレスでつなぐことも書く。
+func logAddresses(c config, base string) {
+	if ip := net.ParseIP(c.Host); ip != nil && ip.IsUnspecified() {
+		log.Noticef("全部のネットワークで待ち受けます。ほかの PC からは、%s の %s をこの PC のアドレス(IP アドレスか名前)に替えてつなぎます", base, c.Host)
+	}
+	log.Noticef("画面のアプリのつなぎ先(settings.json の serverUrl / AIBOW_SERVER_URL): %s", base)
+	log.Noticef("OpenAI 互換のクライアント(Cline など)の Base URL: %s/v1", base)
+	log.Noticef("ブラウザで開く画面: %s/(会話は %s に保存します)", base, absPath(c.DBPath))
+	if c.Login {
+		log.Notice("ブラウザの画面はログインが要ります(利用者は aibow-server user add <名前> で作ります)")
+	} else {
+		log.Notice("ブラウザの画面はログインなしで使えます(利用者は local。ログインを要るようにするには -login・設定ファイルの login)")
+	}
+	if c.KeysRequired() {
+		log.Notice("OpenAI 互換の口と aibow 専用の口は API キーが要ります(aibow-server user key <名前> で作ります)")
+	}
 }
 
 // initialSettings は、ブラウザの会話(0016)の、DB にまだ値が無いときの設定。画面のアプリと同じ環境変数と既定。

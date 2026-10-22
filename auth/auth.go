@@ -60,6 +60,13 @@ type Store interface {
 	DeleteUserSessions(ctx context.Context, user uuid.UUID) error
 	// DeleteExpiredSessions は期限の切れたセッションを消し、消した数を返す
 	DeleteExpiredSessions(ctx context.Context, now time.Time) (int, error)
+
+	// SetAPIKey は、利用者の API キー(KeyID の形)を置き換える(1人1本。前のキーは使えなくなる)。いなければ ErrUserNotFound
+	SetAPIKey(ctx context.Context, user uuid.UUID, id string, at time.Time) error
+	// UserByAPIKey は API キー(KeyID の形)の持ち主。無ければ ErrUserNotFound
+	UserByAPIKey(ctx context.Context, id string) (User, error)
+	// HasAPIKey は、利用者が API キーを持っているか(一覧に出すため)
+	HasAPIKey(ctx context.Context, user uuid.UUID) (bool, error)
 }
 
 var (

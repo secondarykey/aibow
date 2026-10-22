@@ -224,3 +224,91 @@ func TestHTTPWithoutLogin(t *testing.T) {
 		t.Errorf("login: %d", res.StatusCode)
 	}
 }
+
+// API キー:無い・違うと 401、合っていれば持ち主が ctx に入る。作り直すと前のキーは使えない
+func TestAPIKeys(t *testing.T) {
+	st := openStore(t)
+	u := addUser(t, st, "bob", "pw")
+	k := auth.NewKeys(st)
+	key := auth.NewAPIKey()
+	if !strings.HasPrefix(key, "aibow_") || len(key) < 40 {
+		t.Errorf("キーの形: %q", key)
+	}
+	if err := st.SetAPIKey(ctx, u.ID, auth.KeyID(key), time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(k.RequireKey(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		who, _ := auth.UserFrom(r.Context())
+		w.Write([]byte(who.Name))
+	})))
+	defer srv.Close()
+	get := func(auth string) (int, string) {
+		t.Helper()
+		req, _ := http.NewRequest("GET", srv.URL+"/v1/models", nil)
+		if auth != "" {
+			req.Header.Set("Authorization", auth)
+		}
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		var b strings.Builder
+		buf := make([]byte, 512)
+		n, _ := res.Body.Read(buf)
+		b.Write(buf[:n])
+		return res.StatusCode, b.String()
+	}
+	if code, body := get(""); code != http.StatusUnauthorized || !strings.Contains(body, "invalid_api_key") {
+		t.Errorf("キーが無い: %d %s", code, body)
+	}
+	if code, _ := get("Bearer aibow_違う"); code != http.StatusUnauthorized {
+		t.Errorf("違うキー: %d", code)
+	}
+	if code, body := get("Bearer " + key); code != http.StatusOK || body != "bob" {
+		t.Errorf("合っているキー: %d %s", code, body)
+	}
+	if has, _ := st.HasAPIKey(ctx, u.ID); !has {
+		t.Error("キーを持っているはず")
+	}
+	again := auth.NewAPIKey()
+	st.SetAPIKey(ctx, u.ID, auth.KeyID(again), time.Now())
+	if code, _ := get("Bearer " + key); code != http.StatusUnauthorized {
+		t.Errorf("作り直す前のキーは使えない: %d", code)
+	}
+	if code, _ := get("Bearer " + again); code != http.StatusOK {
+		t.Errorf("作り直したキー: %d", code)
+	}
+}
+
+// ログインを5回続けて間違えると、合っていても15分は 429。待てばまたログインできる
+func TestLoginLimit(t *testing.T) {
+	st := openStore(t)
+	addUser(t, st, "bob", "pw")
+	s := auth.NewSessions(st)
+	now := time.Now()
+	auth.SetNow(s, func() time.Time { return now })
+	srv := httptest.NewServer(s.Middleware(auth.Handler(s, true)))
+	defer srv.Close()
+	login := func(pw string) int {
+		t.Helper()
+		res, err := http.Post(srv.URL+"/aibow/auth/login", "application/json", strings.NewReader(`{"name":"bob","password":"`+pw+`"}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		return res.StatusCode
+	}
+	for i := range 5 {
+		if code := login("x"); code != http.StatusUnauthorized {
+			t.Fatalf("%d 回目: %d", i+1, code)
+		}
+	}
+	if code := login("pw"); code != http.StatusTooManyRequests {
+		t.Errorf("続けて間違えたあとは、合っていても断る: %d", code)
+	}
+	now = now.Add(16 * time.Minute)
+	if code := login("pw"); code != http.StatusOK {
+		t.Errorf("待てばログインできる: %d", code)
+	}
+}

@@ -26,11 +26,14 @@ package client
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -43,6 +46,8 @@ import (
 type Client struct {
 	base string // つなぎ先(例: http://127.0.0.1:8089)。後ろの / と /v1 は外してある
 	hc   *http.Client
+	// key は API キー(SetKey。0017 の 10-2)。空なら付けない(127.0.0.1 だけでログインの要らない aibow-server は、キーなしで通す)
+	key string
 
 	// mu は、最後に知ったサーバーの様子を守る。
 	// Info は呼ばれる回数が多い(メーター・発言の記録など)ので、毎回は聞きに行かず、
@@ -66,6 +71,29 @@ func New(baseURL string) *Client {
 
 // URL はつなぎ先(ログと画面に出す)。
 func (c *Client) URL() string { return c.base }
+
+// SetKey は、毎回のリクエストに付ける API キーを決める(Authorization: Bearer <キー>)。使い始める前に呼ぶ。
+func (c *Client) SetKey(key string) { c.key = strings.TrimSpace(key) }
+
+// TrustCert は、aibow-server の証明書(PEM のファイル)を信頼する(自己署名の証明書で HTTPS を待ち受けているとき。0017 の 10-2)。
+// 自己署名の証明書は、どの認証局も「本物」と保証していないので、そのままでは HTTPS のつなぎ方を確かめる段階で断られる。
+// サーバーの PC から写した証明書を「信頼する」と決めておくと、その証明書を出すサーバーにだけつなげる(ほかのサーバーのなりすましは断る)。
+// OS が信頼している認証局も、そのまま信頼する。使い始める前に呼ぶ。
+func (c *Client) TrustCert(path string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("aibow-server の証明書 %s を読めません: %w", path, err)
+	}
+	pool, err := x509.SystemCertPool()
+	if err != nil {
+		pool = x509.NewCertPool()
+	}
+	if !pool.AppendCertsFromPEM(data) {
+		return fmt.Errorf("aibow-server の証明書 %s に、PEM の形の証明書がありません", path)
+	}
+	c.hc = &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool}}}
+	return nil
+}
 
 // ---- エラー ----------------------------------------------------------------------------
 
@@ -151,6 +179,9 @@ func (c *Client) do(ctx context.Context, method, path string, body any) (*http.R
 	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
+	}
+	if c.key != "" {
+		req.Header.Set("Authorization", "Bearer "+c.key)
 	}
 	res, err := c.hc.Do(req)
 	if err != nil {

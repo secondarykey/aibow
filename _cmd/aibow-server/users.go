@@ -6,6 +6,7 @@ package main
 //	aibow-server [-config 設定ファイル] user add <名前>      … 利用者を作り、パスワードを作って表示する
 //	aibow-server [-config 設定ファイル] user passwd <名前>   … パスワードを作り直して表示する(ログイン中の画面はログインし直しになる)
 //	aibow-server [-config 設定ファイル] user remove <名前>   … 利用者と、その人の会話・プロファイル・設定を消す
+//	aibow-server [-config 設定ファイル] user key <名前>      … API キーを作って表示する(1人1本。作り直すと前のキーは使えなくなる。10-2)
 //
 // 管理者はまだいない(ステップ11)ので、サーバーの PC でこのコマンドを打てる人が実質の管理者。
 // llama.cpp もモデルも読み込まず、server.db だけを開く(aibow-server を動かしたままでも打てる。SQLite が順番に書く)。
@@ -33,7 +34,8 @@ const userUsage = `使い方:
   aibow-server [-config 設定ファイル] user list
   aibow-server [-config 設定ファイル] user add <名前>
   aibow-server [-config 設定ファイル] user passwd <名前>
-  aibow-server [-config 設定ファイル] user remove <名前>`
+  aibow-server [-config 設定ファイル] user remove <名前>
+  aibow-server [-config 設定ファイル] user key <名前>`
 
 // runUser は user のコマンドを実行する。args は user のあと。
 func runUser(c config, env *envReader, args []string) error {
@@ -64,6 +66,8 @@ func runUser(c config, env *envReader, args []string) error {
 		return resetPassword(ctx, st, rest[0])
 	case "remove":
 		return removeUser(ctx, st, rest[0])
+	case "key":
+		return newKey(ctx, st, rest[0])
 	}
 	return fmt.Errorf("知らないコマンドです: user %s\n%s", cmd, userUsage)
 }
@@ -79,8 +83,13 @@ func listUsers(ctx context.Context, st *store.SQLite) error {
 			pw = "パスワードなし(ログインできない)"
 		}
 		note := ""
+		if has, err := st.HasAPIKey(ctx, u.ID); err != nil {
+			return err
+		} else if has {
+			note = "・API キーあり"
+		}
 		if u.ID == aibow.LocalUser {
-			note = "・ログインなしの形の利用者"
+			note += "・ログインなしの形の利用者"
 		}
 		fmt.Printf("%s\t%s%s\t作った日時 %s\n", u.Name, pw, note, u.CreatedAt.Format("2006-01-02 15:04"))
 	}
@@ -150,6 +159,23 @@ func removeUser(ctx context.Context, st *store.SQLite, name string) error {
 		return err
 	}
 	log.Noticef("利用者 %s と、その人の会話・プロファイル・設定を消しました", name)
+	return nil
+}
+
+// newKey は API キーを作る(前のキーは使えなくなる)。表示はこのときだけ(保存するのはハッシュだけなので、あとからは見られない)。
+func newKey(ctx context.Context, st *store.SQLite, name string) error {
+	u, err := st.UserByName(ctx, name)
+	if err != nil {
+		return fmt.Errorf("利用者 %s: %w", name, err)
+	}
+	key := auth.NewAPIKey()
+	if err := st.SetAPIKey(ctx, u.ID, auth.KeyID(key), time.Now()); err != nil {
+		return err
+	}
+	log.Noticef("利用者 %s の API キーを作りました(前のキーは使えなくなりました)", name)
+	fmt.Printf("名前: %s\nAPI キー: %s\n", name, key)
+	fmt.Println("API キーは今だけ表示します。デスクトップのアプリは settings.json の serverKey に、Cline などは API Key の欄に書きます。" +
+		"忘れたら aibow-server user key " + name + " で作り直してください(前のキーは使えなくなります)")
 	return nil
 }
 

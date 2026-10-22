@@ -79,6 +79,8 @@ type appConfig struct {
 	// serverURL は生成を頼む aibow-server のつなぎ先(settings.json の serverUrl > 環境変数 AIBOW_SERVER_URL)。
 	// 空なら今までどおりアプリの中で llama.cpp を動かす。書けば llama.cpp を読み込まず、aibow-server につなぎに行く(0015 の 1・20)
 	serverURL string
+	// serverKey・serverCert は、aibow-server の API キーと証明書のファイル(settings.json の serverKey・serverCert > 環境変数 AIBOW_SERVER_KEY・AIBOW_SERVER_CERT。0017 の 10-2)
+	serverKey, serverCert string
 
 	// app は、画面で変えられるアプリ全体の設定の初期値。
 	// DB にまだ値が無いときだけ使う(画面で一度変えると DB の値が優先される)。
@@ -122,6 +124,8 @@ func loadConfig() (appConfig, error) {
 	if c.settings.ServerURL != "" {
 		c.serverURL = c.settings.ServerURL // settings.json が環境変数より強い(0015 の 20)
 	}
+	c.serverKey = cmp.Or(c.settings.ServerKey, os.Getenv("AIBOW_SERVER_KEY"))
+	c.serverCert = cmp.Or(c.settings.ServerCert, os.Getenv("AIBOW_SERVER_CERT"))
 
 	// AIBOW_CTX(コンテキスト長)は、会話の上限 + 返事の上限から aibow が計算するようになったので使わない
 	if v := os.Getenv("AIBOW_CTX"); v != "" {

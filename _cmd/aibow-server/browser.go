@@ -34,18 +34,19 @@ import (
 
 // startBrowser は、ブラウザの会話の DB を開き、会話の仕組みと画面用の口を作る。
 // initial は DB にまだ値が無いときの設定、url は aibow-server のアドレス(画面の「つなぎ先」に出す)。
-// 戻り値の handler は /aibow/ui/ と /aibow/auth/ の下を受け持つ。close は終了のときに呼ぶ(生成を止めて、DB を閉じる)。
-func startBrowser(c config, initial aibow.AppSettings, eng *engine.Engine, mm *modelManager, nCtx int, url string, seat *api.Seat) (http.Handler, func(), error) {
+// 戻り値の handler は /aibow/ui/ と /aibow/auth/ の下を受け持つ。keys は API キーの係(利用者は同じ server.db にいるので、ここで作る)。
+// close は終了のときに呼ぶ(生成を止めて、DB を閉じる)。
+func startBrowser(c config, initial aibow.AppSettings, eng *engine.Engine, mm *modelManager, nCtx int, url string, seat *api.Seat) (http.Handler, *auth.Keys, func(), error) {
 	st, err := store.Open(c.DBPath)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	log.Noticef("ブラウザの会話の保存先: %s", absPath(c.DBPath))
 	// 起動のときに読む人ごとの設定(新しい会話の既定)は、ログインなしの形の利用者のもの(ログインは 0017 の 10-1)
 	app, notes, err := aibow.LoadAppSettings(aibow.WithUser(context.Background(), aibow.LocalUser), st, initial)
 	if err != nil {
 		st.Close()
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	for _, n := range notes {
 		log.Notice(n)
@@ -68,7 +69,7 @@ func startBrowser(c config, initial aibow.AppSettings, eng *engine.Engine, mm *m
 	mux := http.NewServeMux()
 	mux.Handle("/aibow/ui/", ui.Handler(svc, events, who(c.Login)))
 	mux.Handle("/aibow/auth/", auth.Handler(sessions, c.Login))
-	return sessions.Middleware(mux), func() { life.Stop(); st.Close() }, nil
+	return sessions.Middleware(mux), auth.NewKeys(st), func() { life.Stop(); st.Close() }, nil
 }
 
 // errNotLoggedIn は、ログインが要るのにログインしていないときのエラー(画面はこれを 401 で受け取り、ログインの画面を出す)。

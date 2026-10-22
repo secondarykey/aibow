@@ -32,6 +32,12 @@ type SettingsFile struct {
 	// ServerURL は、生成を頼む aibow-server のつなぎ先(例: http://127.0.0.1:8089)。空なら、アプリの中で llama.cpp を動かす(0015 の 1・20)。
 	// 「その PC でどう起動するか」なので手で書くこのファイルに置く。環境変数 AIBOW_SERVER_URL より強い
 	ServerURL string `json:"serverUrl"`
+	// ServerKey は aibow-server の API キー(aibow-server user key <名前> で作ったもの。0017 の 10-2)。
+	// 127.0.0.1 だけでログインの要らない aibow-server なら要らない。環境変数 AIBOW_SERVER_KEY より強い
+	ServerKey string `json:"serverKey"`
+	// ServerCert は、aibow-server の証明書のファイル(自己署名の証明書で HTTPS を待ち受けているとき、サーバーの PC から写したもの)。
+	// 書けば、その証明書を信頼してつなぐ。環境変数 AIBOW_SERVER_CERT より強い
+	ServerCert string `json:"serverCert"`
 }
 
 // LoadSettingsFile は設定ファイルを読む。ファイルが無ければ空の設定を返す(MCP を使わないだけで、エラーにしない)。

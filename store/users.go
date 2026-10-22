@@ -163,3 +163,25 @@ func (s *SQLite) DeleteExpiredSessions(ctx context.Context, now time.Time) (int,
 	n, _ := res.RowsAffected()
 	return int(n), nil
 }
+
+// ---- API キー ---------------------------------------------------------------------------
+
+func (s *SQLite) SetAPIKey(ctx context.Context, user uuid.UUID, id string, at time.Time) error {
+	if _, err := s.UserByID(ctx, user); err != nil {
+		return err
+	}
+	// UPSERT: 1人1本なので、あれば置き換える
+	_, err := s.db.ExecContext(ctx, `INSERT INTO api_keys (user_id, id, created_at) VALUES (?, ?, ?)
+		ON CONFLICT(user_id) DO UPDATE SET id = excluded.id, created_at = excluded.created_at`, user.String(), id, formatTime(at))
+	return err
+}
+
+func (s *SQLite) UserByAPIKey(ctx context.Context, id string) (auth.User, error) {
+	return s.user(ctx, "id = (SELECT user_id FROM api_keys WHERE id = ?)", id)
+}
+
+func (s *SQLite) HasAPIKey(ctx context.Context, user uuid.UUID) (bool, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM api_keys WHERE user_id = ?", user.String()).Scan(&n)
+	return n > 0, err
+}
