@@ -13,6 +13,8 @@ import type { AppSettings, ConversationSettings, DisplaySettings } from "../../b
 import type { ServerInfo } from "../../bindings/github.com/secondarykey/aibow/mcp/client";
 import { ProfileSettings } from "./ProfileSettings";
 import { ModelSettings } from "./ModelSettings";
+import { UserSettings } from "./UserSettings";
+import { isBrowser, me } from "../backend";
 import type { Models } from "../useModels";
 // Go の models パッケージ。"…/aibow/models" と書くと aibow パッケージの models.ts が選ばれるので、index まで書く
 import type { Entry as ModelEntry } from "../../bindings/github.com/secondarykey/aibow/models/index";
@@ -33,12 +35,14 @@ interface Props {
   onToolsChanged(): void; // ツールを使う / 使わないを変えた(メーターと、会話で選べる MCP のサーバーを読み直す)
 }
 
-type Tab = "basic" | "model" | "conversation";
+type Tab = "basic" | "model" | "conversation" | "users";
 
 const TABS: { id: Tab; label: string; title: string }[] = [
   { id: "basic", label: "基本設定", title: "会話によらず、この PC で1つだけのもの(画面)" },
   { id: "model", label: "モデル", title: "モデルの一覧(読み込む / 降ろす・GPU の層数)と置き場所" },
   { id: "conversation", label: "会話", title: "プロファイル(新しい会話の既定・ツールの扱い)" },
+  // 利用者の管理は、ブラウザでログインした管理者だけ(0018 の決定事項 7)
+  { id: "users", label: "利用者", title: "aibow-server の利用者(作る・パスワードと API キーの作り直し・消す)" },
 ];
 
 export function SettingsView({ onClose, errors, app, models, modelState, servers, onProfilesChanged, onApplyLimits, onError, appDisabled, onDisplayChange, onToolsChanged }: Props) {
@@ -54,7 +58,7 @@ export function SettingsView({ onClose, errors, app, models, modelState, servers
         {errors.map(e => <div key={e.id} className="msg error">{e.text}</div>)}
 
         <div className="settings-tabs" role="tablist">
-          {TABS.map(t => (
+          {TABS.filter(t => t.id !== "users" || (isBrowser && me.admin)).map(t => (
             <button
               key={t.id}
               role="tab"
@@ -76,6 +80,8 @@ export function SettingsView({ onClose, errors, app, models, modelState, servers
         )}
 
         {tab === "model" && <ModelSettings models={modelState} disabled={appDisabled} onError={onError} />}
+
+        {tab === "users" && <UserSettings onError={onError} />}
 
         {tab === "conversation" && (
           <>

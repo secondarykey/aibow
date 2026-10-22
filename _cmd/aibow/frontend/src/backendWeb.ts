@@ -9,7 +9,7 @@
 //
 // ブラウザには OS のウィンドウもクリップボードの Go 側の書き込みも無いので、そこはブラウザの仕組みを使う(0016 の 17)。
 import type { ChatEvent } from "../bindings/github.com/secondarykey/aibow";
-import type { Backend, Call, ChatAPI, Me } from "./backend";
+import type { AdminAPI, Backend, Call, ChatAPI, Me } from "./backend";
 import { errorMessage } from "./errors";
 
 // CancelError は、cancel() で止めた呼び出しのエラー(Wails の CancelError と同じ役)
@@ -96,6 +96,32 @@ async function auth(method: "GET" | "POST", path: string, body?: unknown): Promi
   return data as Me;
 }
 
+// adminCall は、管理者の口(/aibow/admin/。0018 の 11-0)を呼ぶ。エラーは call と同じ形で読む
+async function adminCall<T>(method: "GET" | "POST" | "DELETE", path: string, body?: unknown): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(`/aibow/admin/${path}`, {
+      method,
+      headers: body === undefined ? {} : { "Content-Type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  } catch (err) {
+    throw new Error(`aibow-server につながりません(${errorMessage(err)})。aibow-server が動いているか確かめてください`);
+  }
+  const data = await res.json().catch(() => null);
+  if (res.status === 401) unauthorized.forEach(f => f());
+  if (!res.ok) throw new Error(data?.error?.message ?? `${path}: ${res.status} ${res.statusText}`);
+  return data as T;
+}
+
+const admin: AdminAPI = {
+  users: () => adminCall("GET", "users"),
+  create: name => adminCall("POST", "users", { name }),
+  resetPassword: name => adminCall("POST", `users/${encodeURIComponent(name)}/password`),
+  renewKey: name => adminCall("POST", `users/${encodeURIComponent(name)}/key`),
+  remove: async name => { await adminCall("DELETE", `users/${encodeURIComponent(name)}`); },
+};
+
 export const backend: Backend = {
   ChatService,
   isCancel: err => err instanceof CancelError,
@@ -121,6 +147,7 @@ export const backend: Backend = {
     unauthorized.add(f);
     return () => unauthorized.delete(f);
   },
+  admin,
 
   // http://127.0.0.1 は安全な場所として扱われるので、navigator.clipboard が使える
   copyText: text => navigator.clipboard.writeText(text),

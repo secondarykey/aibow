@@ -36,7 +36,7 @@ import (
 
 // startBrowser は、ブラウザの会話の DB を開き、会話の仕組みと画面用の口を作る。
 // initial は DB にまだ値が無いときの設定、url は aibow-server のアドレス(画面の「つなぎ先」に出す)。
-// 戻り値の handler は /aibow/ui/・/aibow/auth/・/aibow/store/ の下を受け持つ。keys は API キーの係(利用者は同じ server.db にいるので、ここで作る)。
+// 戻り値の handler は /aibow/ui/・/aibow/auth/・/aibow/store/・/aibow/admin/ の下を受け持つ。keys は API キーの係(利用者は同じ server.db にいるので、ここで作る)。
 // close は終了のときに呼ぶ(生成を止めて、DB を閉じる)。
 func startBrowser(c config, initial aibow.AppSettings, eng *engine.Engine, mm *modelManager, nCtx int, url string, seat *api.Seat) (http.Handler, *auth.Keys, func(), error) {
 	st, err := store.Open(c.DBPath)
@@ -80,6 +80,8 @@ func startBrowser(c config, initial aibow.AppSettings, eng *engine.Engine, mm *m
 	mux.Handle("/aibow/store/", storeH)
 	// 画面のアプリが、誰としてつないでいるかを聞く口(API キーの持ち主の名前。ブラウザの /aibow/auth/me にあたる)
 	mux.Handle("GET /aibow/auth/key", keys.MeHandler(c.KeysRequired()))
+	// 管理者の画面の口(利用者の管理。0018 の決定事項 7)。ブラウザでログインした管理者だけ
+	mux.Handle("/aibow/admin/", adminHandler(st, initial))
 	return sessions.Middleware(mux), keys, func() { life.Stop(); st.Close() }, nil
 }
 
@@ -148,7 +150,8 @@ func screen() http.Handler {
 	return mux
 }
 
-// routes は aibow-server の道筋。画面(/ と /assets/)・画面用の口(/aibow/ui/)とログインの口(/aibow/auth/)・それ以外(OpenAI 互換の口と aibow 専用の口)。
+// routes は aibow-server の道筋。画面(/ と /assets/)・画面用の口(/aibow/ui/)とログインの口(/aibow/auth/)・保存の口(/aibow/store/)・
+// 管理者の口(/aibow/admin/)・それ以外(OpenAI 互換の口と aibow 専用の口)。
 // 長いほうのパスが先に当たるので、画面の2つ以外はこれまでどおり api が受け取る(知らないパスの 404 も api の形)。
 func routes(apiH, browser, screen http.Handler) http.Handler {
 	mux := http.NewServeMux()
@@ -158,6 +161,7 @@ func routes(apiH, browser, screen http.Handler) http.Handler {
 	mux.Handle("/aibow/ui/", browser)
 	mux.Handle("/aibow/auth/", browser)
 	mux.Handle("/aibow/store/", browser)
+	mux.Handle("/aibow/admin/", browser)
 	mux.Handle("/", apiH)
 	return mux
 }

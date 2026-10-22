@@ -39,6 +39,7 @@ export interface Backend {
   login(name: string, password: string): Promise<Me>; // 違えば reject(message が理由の文)
   logout(): Promise<void>;
   onUnauthorized(f: () => void): () => void;      // 呼び出しが「ログインしてください」(401)で断られた(ログインの期限が切れた)
+  admin: AdminAPI;                                // 利用者の管理(ブラウザの管理者だけ。0018 の 11-0。デスクトップでは断る)
   copyText(text: string): Promise<void>;
   openURL(url: string): Promise<void>;            // リンクを開く(デスクトップは OS のブラウザ、ブラウザは新しいタブ)
   appWindow: {                                    // Frameless のウィンドウの操作(タイトルバー。ブラウザでは何もしない)
@@ -56,6 +57,26 @@ export interface Me {
   // viaKey は、ログインではなく API キーで利用者が決まっている(デスクトップのアプリが aibow-server につないでいるとき。0017 の 10-4)。
   // 名前は出すが、ログアウトは出さない(キーは settings.json に書いたもの)
   viaKey?: boolean;
+  admin?: boolean; // 管理者か(0018 の 11-0)。ブラウザの設定の画面に「利用者」のタブを出す
+}
+
+// AdminUser は、利用者の管理の一覧の1人(Go の _cmd/aibow-server の adminUser)。パスワードと API キーは、あるかだけ
+export interface AdminUser {
+  name: string;
+  admin: boolean;
+  password: boolean;
+  key: boolean;
+  local: boolean; // ログインなしの形の利用者(消せない)
+  created_at: string;
+}
+
+// AdminAPI は、利用者の管理の口(aibow-server の /aibow/admin/)。パスワードと API キーは返事でだけ受け取れる
+export interface AdminAPI {
+  users(): Promise<AdminUser[]>;
+  create(name: string): Promise<{ name: string; password: string }>;
+  resetPassword(name: string): Promise<{ name: string; password: string }>;
+  renewKey(name: string): Promise<{ name: string; key: string }>;
+  remove(name: string): Promise<void>;
 }
 
 // isBrowser は、ブラウザ(aibow-server が配った画面)か(0016 の 16)。見た目の分かれ道にだけ使う(呼び出しは分けない)。
@@ -115,6 +136,14 @@ export function logout(): Promise<void> {
 export function onUnauthorized(f: () => void): () => void {
   return b.onUnauthorized(f);
 }
+
+export const admin: AdminAPI = {
+  users: () => b.admin.users(),
+  create: name => b.admin.create(name),
+  resetPassword: name => b.admin.resetPassword(name),
+  renewKey: name => b.admin.renewKey(name),
+  remove: name => b.admin.remove(name),
+};
 
 export function copyText(text: string): Promise<void> {
   return b.copyText(text);

@@ -7,6 +7,10 @@ import { Browser, CancelError, Clipboard, Events, Window } from "@wailsio/runtim
 import { ChatService } from "../bindings/github.com/secondarykey/aibow/_cmd/aibow";
 import type { Backend } from "./backend";
 
+const notInApp = async (): Promise<never> => {
+  throw new Error("利用者の管理は、aibow-server の画面をブラウザで開いて、管理者でログインして行います");
+};
+
 export const backend: Backend = {
   ChatService,
   isCancel: err => err instanceof CancelError,
@@ -31,6 +35,14 @@ export const backend: Backend = {
   login: async () => { throw new Error("デスクトップのアプリにはログインがありません"); },
   logout: async () => {},
   onUnauthorized: () => () => {},
+  // 利用者の管理はブラウザの管理者だけ(0018 の 11-0)。デスクトップには「利用者」のタブを出さないので、呼ばれない
+  admin: {
+    users: notInApp,
+    create: notInApp,
+    resetPassword: notInApp,
+    renewKey: notInApp,
+    remove: notInApp,
+  },
 
   // まずブラウザの navigator.clipboard を使う(WebView2 の画面は http://wails.localhost で、安全な場所として扱われるので使える)。
   // 使えなかったときは、Wails のランタイムの Clipboard.SetText(Go 側で OS のクリップボードに書く)を使う

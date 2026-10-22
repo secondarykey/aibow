@@ -70,10 +70,10 @@ func TestUserCommands(t *testing.T) {
 		t.Errorf("いない人: %v", err)
 	}
 
-	if err := removeUser(ctx, st, "local"); err == nil {
+	if err := deleteUser(ctx, st, "local", ""); err == nil {
 		t.Error("ログインなしの形の利用者は消せない")
 	}
-	if err := removeUser(ctx, st, "bob"); err != nil {
+	if err := deleteUser(ctx, st, "bob", ""); err != nil {
 		t.Fatal(err)
 	}
 	if list, _ := st.ListProfiles(bob); len(list) != 0 {

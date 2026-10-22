@@ -16,6 +16,9 @@ package main
 //
 // パスワードは aibow-server が作って一度だけ表示する(ユーザーと決めた)。表示はログに残さず、画面(標準出力)にだけ出す。
 // 打ったパスワードがターミナルに残らず、短いパスワードにもならない。忘れたら passwd で作り直す。
+//
+// 作る・パスワードと API キーを作り直す・消すは、管理者の画面(admin.go。0018 の決定事項 7)からも同じ処理を使う
+// (createUser・renewPassword・renewKey・deleteUser。by はログに足す「誰が」)。コマンドはその結果を標準出力に出すだけ。
 
 import (
 	"context"
@@ -71,7 +74,7 @@ func runUser(c config, env *envReader, args []string) error {
 	case "passwd":
 		return resetPassword(ctx, st, rest[0])
 	case "remove":
-		return removeUser(ctx, st, rest[0])
+		return deleteUser(ctx, st, rest[0], "")
 	case "key":
 		return newKey(ctx, st, rest[0])
 	case "admin":
@@ -109,58 +112,78 @@ func listUsers(ctx context.Context, st *store.SQLite) error {
 	return nil
 }
 
-// addUser は利用者を作り、その人のプロファイル「既定」を作る(0017 の決定事項 5。今の PrepareProfiles と同じ)。
+// addUser は利用者を作り、パスワードを表示する(コマンド)。
 func addUser(ctx context.Context, st *store.SQLite, initial aibow.AppSettings, name string) error {
-	if err := checkName(name); err != nil {
+	password, err := createUser(ctx, st, initial, name, "")
+	if err != nil {
 		return err
+	}
+	printPassword(name, password)
+	return nil
+}
+
+// createUser は利用者を作り、その人のプロファイル「既定」を作る(0017 の決定事項 5。今の PrepareProfiles と同じ)。作ったパスワードを返す。
+func createUser(ctx context.Context, st *store.SQLite, initial aibow.AppSettings, name, by string) (string, error) {
+	if err := checkName(name); err != nil {
+		return "", err
 	}
 	password := auth.NewPassword()
 	hash, err := auth.HashPassword(password)
 	if err != nil {
-		return err
+		return "", err
 	}
 	now := time.Now()
 	u := auth.User{ID: uuid.NewV7(), Name: name, Password: hash, CreatedAt: now, UpdatedAt: now}
 	if err := st.CreateUser(ctx, u); err != nil {
-		return fmt.Errorf("利用者 %s を作れません: %w", name, err)
+		return "", fmt.Errorf("利用者 %s を作れません: %w", name, err)
 	}
 	// プロファイルの値は、新しい人の新しい会話の既定(サーバーの最後に使ったモデル・環境変数の初期値)から作る
 	uctx := aibow.WithUser(ctx, u.ID)
 	app, _, err := aibow.LoadAppSettings(uctx, st, initial)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if _, err := aibow.NewConversations(st, nil, app).PrepareProfiles(uctx); err != nil {
-		return fmt.Errorf("利用者 %s のプロファイルを作れません: %w", name, err)
+		return "", fmt.Errorf("利用者 %s のプロファイルを作れません: %w", name, err)
 	}
-	log.Noticef("利用者 %s を作りました", name)
+	log.Noticef("利用者 %s を作りました%s", name, by)
+	return password, nil
+}
+
+// resetPassword はパスワードを作り直して表示する(コマンド)。
+func resetPassword(ctx context.Context, st *store.SQLite, name string) error {
+	password, err := renewPassword(ctx, st, name, "")
+	if err != nil {
+		return err
+	}
 	printPassword(name, password)
 	return nil
 }
 
-func resetPassword(ctx context.Context, st *store.SQLite, name string) error {
+// renewPassword はパスワードを作り直し、新しいパスワードを返す。
+func renewPassword(ctx context.Context, st *store.SQLite, name, by string) (string, error) {
 	u, err := st.UserByName(ctx, name)
 	if err != nil {
-		return fmt.Errorf("利用者 %s: %w", name, err)
+		return "", fmt.Errorf("利用者 %s: %w", name, err)
 	}
 	password := auth.NewPassword()
 	hash, err := auth.HashPassword(password)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if err := st.SetPassword(ctx, u.ID, hash, time.Now()); err != nil {
-		return err
+		return "", err
 	}
 	// 前のパスワードでログインしていた画面は使えなくする(パスワードを作り直すのは、漏れたかもしれないときなので)
 	if err := st.DeleteUserSessions(ctx, u.ID); err != nil {
-		return err
+		return "", err
 	}
-	log.Noticef("利用者 %s のパスワードを作り直しました(ログイン中の画面はログインし直しになります)", name)
-	printPassword(name, password)
-	return nil
+	log.Noticef("利用者 %s のパスワードを作り直しました%s(ログイン中の画面はログインし直しになります)", name, by)
+	return password, nil
 }
 
-func removeUser(ctx context.Context, st *store.SQLite, name string) error {
+// deleteUser は利用者と、その人の会話・プロファイル・設定を消す。
+func deleteUser(ctx context.Context, st *store.SQLite, name, by string) error {
 	u, err := st.UserByName(ctx, name)
 	if err != nil {
 		return fmt.Errorf("利用者 %s: %w", name, err)
@@ -171,25 +194,34 @@ func removeUser(ctx context.Context, st *store.SQLite, name string) error {
 	if err := st.DeleteUser(ctx, u.ID); err != nil {
 		return err
 	}
-	log.Noticef("利用者 %s と、その人の会話・プロファイル・設定を消しました", name)
+	log.Noticef("利用者 %s と、その人の会話・プロファイル・設定を消しました%s", name, by)
 	return nil
 }
 
-// newKey は API キーを作る(前のキーは使えなくなる)。表示はこのときだけ(保存するのはハッシュだけなので、あとからは見られない)。
+// newKey は API キーを作って表示する(コマンド)。表示はこのときだけ(保存するのはハッシュだけなので、あとからは見られない)。
 func newKey(ctx context.Context, st *store.SQLite, name string) error {
-	u, err := st.UserByName(ctx, name)
+	key, err := renewKey(ctx, st, name, "")
 	if err != nil {
-		return fmt.Errorf("利用者 %s: %w", name, err)
-	}
-	key := auth.NewAPIKey()
-	if err := st.SetAPIKey(ctx, u.ID, auth.KeyID(key), time.Now()); err != nil {
 		return err
 	}
-	log.Noticef("利用者 %s の API キーを作りました(前のキーは使えなくなりました)", name)
 	fmt.Printf("名前: %s\nAPI キー: %s\n", name, key)
 	fmt.Println("API キーは今だけ表示します。デスクトップのアプリは settings.json の serverKey に、Cline などは API Key の欄に書きます。" +
 		"忘れたら aibow-server user key " + name + " で作り直してください(前のキーは使えなくなります)")
 	return nil
+}
+
+// renewKey は API キーを作り(前のキーは使えなくなる)、新しいキーを返す。
+func renewKey(ctx context.Context, st *store.SQLite, name, by string) (string, error) {
+	u, err := st.UserByName(ctx, name)
+	if err != nil {
+		return "", fmt.Errorf("利用者 %s: %w", name, err)
+	}
+	key := auth.NewAPIKey()
+	if err := st.SetAPIKey(ctx, u.ID, auth.KeyID(key), time.Now()); err != nil {
+		return "", err
+	}
+	log.Noticef("利用者 %s の API キーを作りました%s(前のキーは使えなくなりました)", name, by)
+	return key, nil
 }
 
 // setAdmin は管理者の印を付ける / 外す。外して一人もいなくなったら知らせる(止めはしない。0018 の決定事項 16)。

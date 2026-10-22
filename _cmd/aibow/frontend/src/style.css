@@ -575,6 +575,22 @@ nav.conversations.collapsed .settings.active { color: var(--accent); }
 .place-add { display: flex; gap: 6px; margin-top: 8px; }
 .settings-view .place-add input[type=text] { flex: 1; width: auto; min-width: 0; }
 .place-add button { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+/* 設定の画面の「利用者」のタブ(UserSettings.tsx。0018 の 11-0)。行は .model-row の subgrid を使う(名前 / 作った日 / 操作) */
+.user-table { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; column-gap: 12px; align-items: center; }
+.user-admin { color: var(--accent); flex-shrink: 0; }
+.user-key { color: var(--muted); flex-shrink: 0; }
+.user-date { color: var(--muted); font-size: 12px; }
+.user-actions { display: flex; align-items: center; gap: 4px; justify-content: flex-end; }
+.user-actions button { font-size: 12px; padding: 2px 8px; white-space: nowrap; }
+.user-actions .confirm-text { color: var(--error); font-size: 12px; margin-right: 4px; }
+.user-actions button.danger { color: #fff; background: var(--error); border-color: var(--error); }
+/* 作ったパスワード・API キー。今だけ出す(閉じたらもう見られない) */
+.secret-box {
+  display: flex; align-items: center; gap: 8px; margin: 0 0 10px; padding: 8px 10px;
+  border: 1px solid var(--accent); border-radius: 6px; min-width: 0;
+}
+.secret-label { flex-shrink: 0; color: var(--muted); font-size: 12px; }
+.secret-value { flex: 1; min-width: 0; overflow-wrap: anywhere; font-family: ui-monospace, Consolas, monospace; font-size: 12px; user-select: all; }
 /* 表示だけの設定。変え方は見出しの横の i の吹き出しに出す */
 .settings-info { color: var(--muted); align-self: center; cursor: help; }
 .host-settings { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 16px; row-gap: 4px; }
