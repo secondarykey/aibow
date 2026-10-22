@@ -16,6 +16,12 @@
 - `AIBOW_WINDOW` も一時フォルダのファイルにする(閉じるときにウィンドウの位置と大きさを書くので、ユーザーの `%APPDATA%\aibow\window.json` を書き換えないように)。
   一覧の開閉・幅・最後の会話は WebView2 の localStorage に覚えるので、WebView2 のデータフォルダも分けておく(Windows は [env-windows.md](env-windows.md))
 
+ブラウザの画面(aibow-server。ステップ9)を確かめるときは、aibow-server を一時フォルダの設定ファイルで起動する(`-config <一時フォルダ>\server.json`)。
+ブラウザの会話の DB(`server.db`)と `server-models.json` は設定ファイルの隣にできるので、ユーザーの `%APPDATA%\aibow\` に試しの会話を混ぜないため。
+`AIBOW_LOG_DIR` も一時フォルダにし、ポートはユーザーがふだん使う 8089 と別にする(`server.json` の `port`)。
+画面を先にビルドしておく(`wails3 build`。画面は exe に入る)。ブラウザはブラウザのツールで操作する(Windows は [env-windows.md](env-windows.md) の注意)。
+Cline の形のリクエストは curl で `/v1/chat/completions` に送れば、ブラウザと同時に使ったときの順番待ちも確かめられる
+
 ## 確認する項目
 
 次までを確認します。GPU や本物のモデルが無い環境では、llama.cpp の CPU 版と小さな GGUF(重みがランダムな極小モデルでもよい)で行います。

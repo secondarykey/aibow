@@ -37,6 +37,7 @@ OpenAI 互換のクライアント(Cline など)⇄ HTTP(127.0.0.1)⇄ aibow-ser
   (aibow 自身の `aibow-server` は別。中で動くのは aibow の engine と llama.cpp で、ユーザーが決めて作ったもの。ステップ6・8)
 - ただし **Ollama を「モデルの管理係」として使うのは OK**(ユーザーの方針)。Ollama が保存したファイルを aibow が直接読む。Ollama のサーバーや API は使わない
 - 画面は Wails v3 のデスクトップアプリ。画面のアプリは HTTP サーバーを立てない(以前のブラウザ版から移行した。OpenAI 互換の API は別の exe `aibow-server` が立てる)。
+  ブラウザから使うときは、`aibow-server` が同じ画面(`web`)を配り、会話も持つ(ステップ9。[_docs/api.md](_docs/api.md) の「画面用の口」)。
   GUI の無い環境で確かめるための Wails の server モードは、確認用の一時ビルドだけで使う([_docs/env-cloud.md](_docs/env-cloud.md))
 
 | 場所 | 中身 |

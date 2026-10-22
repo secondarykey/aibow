@@ -195,7 +195,9 @@ aibow-mcp [作業フォルダ]
 ## aibow のモデルをほかのアプリから使う(aibow-server)
 
 aibow が動かすモデルを、OpenAI 互換の API(`/v1/models`・`/v1/chat/completions`)として、ほかのアプリ(Cline など)から使えます。
+ブラウザで開けば、アプリと同じ画面で会話もできます(下の「ブラウザから使う」。ステップ9)。
 画面のアプリとは別の exe です。リポジトリのフォルダで次のようにビルドします(`go install ./_cmd/aibow-server` なら Go の bin フォルダに入ります)。
+ブラウザに配る画面は exe に入るので、先に `_cmd/aibow` で `wails3 build` を実行して画面をビルドしておきます(しないと、ブラウザには「画面がビルドされていません」と出ます。API は使えます)。
 
 ```bash
 go build -o aibow-server.exe ./_cmd/aibow-server

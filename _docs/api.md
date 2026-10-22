@@ -2,6 +2,7 @@
 
 aibow の「頭」(llama.cpp で動かすモデルと書式)を、OpenAI 互換の HTTP の API として出す仕組みです(ステップ6。仕様は [features/0012-openai-api.md](features/0012-openai-api.md))。
 使い方(起動・設定ファイル・環境変数・curl の例)は [usage.md](usage.md) の「aibow のモデルをほかのアプリから使う(aibow-server)」にあります。
+ステップ9で、aibow-server はブラウザに画面を配り、ブラウザの会話(会話の仕組みと保存)も持つようになった。その口は下の「画面用の口」。
 
 ```
 Cline など [ 会話の仕組み + 手 ] ⇄ HTTP(OpenAI 互換。127.0.0.1 だけ)⇄ aibow-server [ 頭(モデル + 書式)]
