@@ -9,9 +9,13 @@ package main
 //
 // 生成は同じ engine を直接使い、OpenAI 互換の口と同じ席を通す(HTTP で自分自身に頼まない。0016 の 11)。
 // ブラウザの会話ではツールを使わない(0016 の 7)。会話は server.db に保存し、画面のアプリの aibow.db とは別にする(0016 の 13)。
+//
+// 誰の会話かは、ここ(who)だけで決める(0017 の 12)。ログインが要る設定なら cookie のセッションの人(auth)、要らなければログインなしの形の利用者。
+// ログインの口は /aibow/auth/ の下(auth.Handler)。
 
 import (
 	"context"
+	"errors"
 	"io"
 	"io/fs"
 	"net/http"
@@ -20,6 +24,7 @@ import (
 
 	"github.com/secondarykey/aibow"
 	"github.com/secondarykey/aibow/api"
+	"github.com/secondarykey/aibow/auth"
 	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/store"
@@ -29,7 +34,7 @@ import (
 
 // startBrowser は、ブラウザの会話の DB を開き、会話の仕組みと画面用の口を作る。
 // initial は DB にまだ値が無いときの設定、url は aibow-server のアドレス(画面の「つなぎ先」に出す)。
-// 戻り値の close は終了のときに呼ぶ(生成を止めて、DB を閉じる)。
+// 戻り値の handler は /aibow/ui/ と /aibow/auth/ の下を受け持つ。close は終了のときに呼ぶ(生成を止めて、DB を閉じる)。
 func startBrowser(c config, initial aibow.AppSettings, eng *engine.Engine, mm *modelManager, nCtx int, url string, seat *api.Seat) (http.Handler, func(), error) {
 	st, err := store.Open(c.DBPath)
 	if err != nil {
@@ -58,13 +63,31 @@ func startBrowser(c config, initial aibow.AppSettings, eng *engine.Engine, mm *m
 		Notify: events, Seat: seat, WithoutTools: true,
 	})
 	life.Start() // 起動のときのモデルは main が読み込んだので、ここでは読み込まない(Initial を渡していない)
-	return ui.Handler(svc, events, who), func() { life.Stop(); st.Close() }, nil
+
+	sessions := auth.NewSessions(st)
+	mux := http.NewServeMux()
+	mux.Handle("/aibow/ui/", ui.Handler(svc, events, who(c.Login)))
+	mux.Handle("/aibow/auth/", auth.Handler(sessions, c.Login))
+	return sessions.Middleware(mux), func() { life.Stop(); st.Close() }, nil
 }
 
-// who は、画面用の口を呼んだ利用者を決める(ui.Who)。利用者の印を付けるのはここだけ(0017 の 12)。
-// まだログインが無いので、いつもログインなしの形の利用者(aibow.LocalUser)。10-1 で、ログインした人(cookie のセッション)に替える。
-func who(*http.Request) (uuid.UUID, error) {
-	return aibow.LocalUser, nil
+// errNotLoggedIn は、ログインが要るのにログインしていないときのエラー(画面はこれを 401 で受け取り、ログインの画面を出す)。
+var errNotLoggedIn = errors.New("ログインしてください")
+
+// who は、画面用の口を呼んだ利用者を決める係(ui.Who)。利用者の印を付けるのはここだけ(0017 の 12)。
+//   - ログインが要る:cookie のセッションの人(auth.Middleware がリクエストの ctx に入れた人)。いなければ 401
+//   - 要らない:いつもログインなしの形の利用者(aibow.LocalUser)。127.0.0.1 だけで待ち受けるので、その PC の人だけが使う
+func who(login bool) ui.Who {
+	return func(r *http.Request) (uuid.UUID, error) {
+		if !login {
+			return aibow.LocalUser, nil
+		}
+		u, ok := auth.UserFrom(r.Context())
+		if !ok {
+			return uuid.UUID{}, errNotLoggedIn
+		}
+		return u.ID, nil
+	}
 }
 
 // browserMarker は、aibow-server が配る index.html に足す印。画面はこれを見て、ブラウザ用の「Go を呼ぶ係」を使う(0016 の 16)。
@@ -99,13 +122,14 @@ func screen() http.Handler {
 	return mux
 }
 
-// routes は aibow-server の道筋。画面(/ と /assets/)・画面用の口(/aibow/ui/)・それ以外(OpenAI 互換の口と aibow 専用の口)。
+// routes は aibow-server の道筋。画面(/ と /assets/)・画面用の口(/aibow/ui/)とログインの口(/aibow/auth/)・それ以外(OpenAI 互換の口と aibow 専用の口)。
 // 長いほうのパスが先に当たるので、画面の2つ以外はこれまでどおり api が受け取る(知らないパスの 404 も api の形)。
 func routes(apiH, browser, screen http.Handler) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("GET /{$}", screen)
 	mux.Handle("GET /assets/", screen)
 	mux.Handle("/aibow/ui/", browser)
+	mux.Handle("/aibow/auth/", browser)
 	mux.Handle("/", apiH)
 	return mux
 }

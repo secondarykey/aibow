@@ -14,9 +14,10 @@
 //   終わった … 青(点滅しない。ほかの会話を見ている間に返事が終わった。その会話を開くと消える)
 // 一覧を畳んでいるときは、いちばん気にしてほしい印(確認待ち → エラー → 生成中 → 終わった)をハンバーガーに出す
 import { useEffect, useRef, useState } from "react";
-import { ChatService } from "../backend";
+import { ChatService, logout, me } from "../backend";
 import type { KeyboardEvent } from "react";
-import { LuMenu, LuPlus, LuSettings } from "react-icons/lu";
+import { LuMenu, LuPlus, LuSettings, LuUser } from "react-icons/lu";
+import { useMenuDismiss } from "./SplitButton";
 import { toggleMaximiseOnDoubleClick } from "./TitleBar";
 import type { Conversation } from "../../bindings/github.com/secondarykey/aibow";
 import type { Ended } from "../useChat";
@@ -136,6 +137,7 @@ export function ConversationList({
       </ul>
       <div className="footer">
         <AppName />
+        <UserMenu />
         <button className={"icon-btn " + settingsCls} title="設定" onClick={onToggleSettings}><LuSettings /></button>
       </div>
     </nav>
@@ -170,6 +172,34 @@ function AppName() {
     ChatService.Version().then(setVersion, () => setVersion(""));
   }, []);
   return <span className="app-name">AIBow{version && <span className="app-version">{version}</span>}</span>;
+}
+
+// UserMenu は、ログインしている人の名前。押すと「ログアウト」を出す(ブラウザでログインが要るときだけ。0017 の 10-1)。
+// ログアウトしたら画面を読み直す(ログインの画面になる)。
+function UserMenu() {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  useMenuDismiss(open, () => setOpen(false), box);
+  if (!me.login || me.name === "") return null;
+
+  const signOut = async () => {
+    setOpen(false);
+    // 失敗しても読み直す(cookie が残っていれば、読み直した画面がそのまま使える。消えていればログインの画面になる)
+    await logout().catch(() => undefined);
+    location.reload();
+  };
+  return (
+    <div className="user-menu" ref={box}>
+      <button className="user-btn" title={`${me.name} としてログインしています`} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(o => !o)}>
+        <LuUser /><span>{me.name}</span>
+      </button>
+      {open && (
+        <div className="split-menu up" role="menu">
+          <button role="menuitem" onClick={signOut}>ログアウト</button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 // 名前の入力欄。Enter かフォーカスが外れたら確定、Esc で取り消し(onDone に null)

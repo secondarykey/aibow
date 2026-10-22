@@ -51,6 +51,9 @@ type configFile struct {
 	Lib       string `json:"lib"`       // llama.cpp の DLL のフォルダ
 	ModelsDir string `json:"modelsDir"` // GGUF を置くフォルダ(Ollama の保存先は別に探す)
 	LogLevel  string `json:"logLevel"`  // ログのレベル(debug / info / notice / warn / error)。-debug があればそちら(log.go の logLevel)
+	// Login は、ブラウザの画面にログインを要るようにするか(0017 の 10-1)。書いていなければ環境変数か既定(要らない)。
+	// false と書いて環境変数より強くできるよう、ポインタにする(ほかの欄は 0 を「書いていない」にしているが、真偽値では false も値なので)
+	Login *bool `json:"login"`
 }
 
 // config は、強さの順で決めた設定。
@@ -61,6 +64,9 @@ type config struct {
 	Lib       string
 	ModelsDir string
 	LogLevel  string // 設定ファイルの logLevel(空なら -debug か既定)
+	// Login は、ブラウザの画面にログインが要るか(0017 の 10-1)。要らなければ、ブラウザはログインなしの形の利用者(aibow.LocalUser)になる。
+	// 127.0.0.1 だけで待ち受けるので既定は要らない(0017 の決定事項 8)。OpenAI 互換の口と aibow 専用の口は、まだ守らない(API キーは 10-2)
+	Login bool
 
 	// File は読んだ設定ファイル(無ければ空)。StatePath は aibow-server が書くファイル(server-models.json)、
 	// DBPath はブラウザの会話の DB(server.db)。どちらも設定ファイルの隣
@@ -73,7 +79,7 @@ type config struct {
 type flags struct {
 	config, model, lib, modelsDir *string
 	ctx, port                     *int
-	version, debug                *bool
+	version, debug, login         *bool
 	set                           map[string]bool
 }
 
@@ -88,6 +94,7 @@ func defineFlags(fs *flag.FlagSet) *flags {
 		modelsDir: fs.String("models", "", "GGUF を置くフォルダ(既定 models)。設定ファイルの modelsDir・環境変数 AIBOW_MODELS_DIR"),
 		version:   fs.Bool("version", false, "バージョンを表示して終わる"),
 		debug:     fs.Bool("debug", false, "ログを Debug レベルまで出す(設定ファイルの logLevel より強い。どちらも無ければ go run は Info、exe は Notice)"),
+		login:     fs.Bool("login", false, "ブラウザの画面にログインを要るようにする(利用者は aibow-server user add で作る)。設定ファイルの login・環境変数 AIBOW_SERVER_LOGIN"),
 	}
 }
 
@@ -123,6 +130,14 @@ func resolve(fs *flag.FlagSet, f *flags, env *envReader) (config, []string, erro
 	c.Lib = pick(f.set["lib"], *f.lib, file.Lib, os.Getenv("AIBOW_LIB"), "lib")
 	c.ModelsDir = pick(f.set["models"], *f.modelsDir, file.ModelsDir, os.Getenv("AIBOW_MODELS_DIR"), "models")
 	c.LogLevel = file.LogLevel
+	switch {
+	case f.set["login"]:
+		c.Login = *f.login
+	case file.Login != nil:
+		c.Login = *file.Login
+	default:
+		c.Login = env.bool("AIBOW_SERVER_LOGIN", false)
+	}
 
 	// aibow-api から名前を変えたとき(0015 の 18)に、環境変数の名前も変えた。古い名前は読まずに注意だけ出す
 	// (黙って無視すると、書いたつもりの値が効かない理由が分からないため。アプリが AIBOW_CTX をやめたときと同じやり方)
@@ -212,6 +227,19 @@ func (r *envReader) int(key string, def int) int {
 		return def
 	}
 	return n
+}
+
+func (r *envReader) bool(key string, def bool) bool {
+	v := os.Getenv(key)
+	if v == "" {
+		return def
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		r.errs = append(r.errs, fmt.Errorf("%s は 1 か 0(true か false)で指定してください: %q", key, v))
+		return def
+	}
+	return b
 }
 
 func (r *envReader) float(key string, def float64) float64 {

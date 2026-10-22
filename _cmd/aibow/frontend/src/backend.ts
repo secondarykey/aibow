@@ -34,6 +34,11 @@ export interface Backend {
   onModelLoaded(f: () => void): () => void;       // 起動時のモデルの読み込みが終わった(Go の ui.ModelsEventName)
   onWindowFocus(f: () => void): () => void;       // ウィンドウがアクティブに戻った(IME の対策。imeFocus.tsx)
   onReconnect(f: () => void): () => void;         // 知らせのつながりが切れて、つなぎ直した(ブラウザだけ。デスクトップでは来ない)
+  // ログイン(ブラウザだけ。0017 の 10-1)。デスクトップは利用者が1人なので、いつもログインが要らない形
+  session(): Promise<Me>;                         // ログインが要るか・ログインしている人(Go の auth.Me)
+  login(name: string, password: string): Promise<Me>; // 違えば reject(message が理由の文)
+  logout(): Promise<void>;
+  onUnauthorized(f: () => void): () => void;      // 呼び出しが「ログインしてください」(401)で断られた(ログインの期限が切れた)
   copyText(text: string): Promise<void>;
   openURL(url: string): Promise<void>;            // リンクを開く(デスクトップは OS のブラウザ、ブラウザは新しいタブ)
   appWindow: {                                    // Frameless のウィンドウの操作(タイトルバー。ブラウザでは何もしない)
@@ -42,6 +47,12 @@ export interface Backend {
     isMaximised(): Promise<boolean>;
     close(): Promise<void>;
   };
+}
+
+// Me は、ログインの様子(Go の auth.Me)。login が false なら、ログインが要らない形(ログインもログアウトも出さない)
+export interface Me {
+  login: boolean;
+  name: string; // ログインしている人の名前。していなければ空
 }
 
 // isBrowser は、ブラウザ(aibow-server が配った画面)か(0016 の 16)。見た目の分かれ道にだけ使う(呼び出しは分けない)。
@@ -79,6 +90,27 @@ export function onWindowFocus(f: () => void): () => void {
 
 export function onReconnect(f: () => void): () => void {
   return b.onReconnect(f);
+}
+
+// me は、起動のときに聞いたログインの様子(main.tsx が描く前に入れ、ログインしたら入れ直す)
+export let me: Me = { login: false, name: "" };
+
+export async function session(): Promise<Me> {
+  me = await b.session();
+  return me;
+}
+
+export async function login(name: string, password: string): Promise<Me> {
+  me = await b.login(name, password);
+  return me;
+}
+
+export function logout(): Promise<void> {
+  return b.logout();
+}
+
+export function onUnauthorized(f: () => void): () => void {
+  return b.onUnauthorized(f);
 }
 
 export function copyText(text: string): Promise<void> {

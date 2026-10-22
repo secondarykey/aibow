@@ -52,9 +52,10 @@ const (
 
 // Notifier は、Go から画面に知らせる係。デスクトップでは Wails のイベント、ブラウザでは SSE(9-1)。
 type Notifier interface {
-	// Chat は chat イベント(生成の途中経過)を送る
-	Chat(ev aibow.ChatEvent)
-	// ModelLoaded は models イベント(起動時のモデルの読み込みが終わった)を送る
+	// Chat は chat イベント(生成の途中経過)を送る。ctx は送信の呼び出しのもので、誰の会話かが入っている
+	// (ブラウザでは、その人の画面にだけ送る。0017 の 7)
+	Chat(ctx context.Context, ev aibow.ChatEvent)
+	// ModelLoaded は models イベント(起動時のモデルの読み込みが終わった)を送る。モデルは全員で分け合うので、全員に送る
 	ModelLoaded()
 }
 
@@ -926,15 +927,15 @@ func (s *Service) ConfirmTool(ctx context.Context, id uuid.UUID, reqID string, a
 // StopSummary は生成中の要約だけを止める(要約中に出る停止ボタン)。
 // 送信の途中の要約なら、その回は古い発言を外して(truncate)返事の生成に進む。
 // Promise の cancel() だと送信全体が止まってしまうので、別のメソッドにしている。
-func (s *Service) StopSummary() {
+func (s *Service) StopSummary(ctx context.Context) {
 	if s.startupErr == nil {
-		s.convs.StopSummary()
+		s.convs.StopSummary(ctx)
 	}
 }
 
 // run は Send / Compact の共通部分: 停止とアプリの終了で止める ctx を作り、chat イベントを画面に送りながらログに出す。
 func (s *Service) run(ctx context.Context, id uuid.UUID, f func(ctx context.Context, emit func(aibow.ChatEvent))) {
-	emit := s.notify.Chat
+	emit := func(ev aibow.ChatEvent) { s.notify.Chat(ctx, ev) }
 	if s.startupErr != nil {
 		emit(aibow.ChatEvent{ConversationID: id, Type: "error", Error: s.startupErr.Error()})
 		emit(aibow.ChatEvent{ConversationID: id, Type: "done"})

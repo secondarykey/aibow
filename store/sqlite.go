@@ -174,6 +174,27 @@ INSERT INTO user_settings (owner, key, value)
 	WHERE key IN ('default_profile', 'pin_question', 'theme');
 DELETE FROM app_settings WHERE key IN ('default_profile', 'pin_question', 'theme');
 `,
+	// 版 7: 利用者とセッション(0017 の 10-1。auth パッケージ)。ログインなしの形の利用者(aibow.LocalUser)を、名前 local で入れておく
+	// (パスワードは空 = ログインできない。aibow-server user passwd local で作れば、ログインが要る形でもその人の会話を使える)。
+	// 会話などの owner は、ALTER TABLE では外部キーにできないので、そのまま(利用者を消すときは、その人の行も消す。DeleteUser)
+	`
+CREATE TABLE users (
+	id         TEXT PRIMARY KEY,         -- UUIDv7(ログインなしの形の利用者だけ決まった値)
+	name       TEXT NOT NULL UNIQUE,     -- ログインの名前
+	password   TEXT NOT NULL,            -- パスワードのハッシュ(pbkdf2-sha256$回数$塩$値)。空ならログインできない
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+);
+INSERT INTO users (id, name, password, created_at, updated_at) VALUES ('00000000-0000-7000-8000-000000000001', 'local', '',
+	strftime('%Y-%m-%dT%H:%M:%S', 'now') || '.000000Z', strftime('%Y-%m-%dT%H:%M:%S', 'now') || '.000000Z');
+CREATE TABLE sessions (
+	id         TEXT PRIMARY KEY,         -- 合言葉(cookie の値)の SHA-256。合言葉そのものは保存しない
+	user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	created_at TEXT NOT NULL,
+	expires_at TEXT NOT NULL             -- 最後に使ってから 30 日(使うと延びる)
+);
+CREATE INDEX sessions_by_user ON sessions(user_id);
+`,
 }
 
 func migrate(db *sql.DB) error {

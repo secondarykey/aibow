@@ -1,7 +1,7 @@
 // ドロップダウン付きのボタン(スプリットボタン)。本体を押すといつもの動き、横の ▾ でほかの動きのメニューを出す。
 // メニューの外を押す・Esc・項目を選ぶと閉じる
 import { useEffect, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import type { ReactNode, RefObject } from "react";
 import { LuChevronDown } from "react-icons/lu";
 
 export interface MenuItem {
@@ -16,22 +16,7 @@ export function SplitButton({ children, menuLabel, items }: {
 }) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (!box.current?.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
+  useMenuDismiss(open, () => setOpen(false), box);
 
   return (
     <div className="split" ref={box}>
@@ -57,4 +42,23 @@ export function SplitButton({ children, menuLabel, items }: {
       )}
     </div>
   );
+}
+
+// useMenuDismiss は、開いているメニューを、box の外を押す・Esc で閉じる(SplitButton と、一覧の下の利用者のメニュー)。
+export function useMenuDismiss(open: boolean, close: () => void, box: RefObject<HTMLElement | null>) {
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (!box.current?.contains(e.target as Node)) close();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close();
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open, close, box]);
 }

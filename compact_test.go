@@ -384,7 +384,7 @@ func TestSummaryFailureFallsBackToTruncate(t *testing.T) {
 			cs.Send(context.Background(), c.ID, "次の質問", func(ev ChatEvent) {
 				evs = append(evs, ev)
 				if tc.stop && ev.Type == "summarizing" {
-					cs.StopSummary() // 要約だけが止まり、返事は生成される
+					cs.StopSummary(ctx) // 要約だけが止まり、返事は生成される
 				}
 			})
 

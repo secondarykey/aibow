@@ -47,8 +47,11 @@ func (s *ChatService) ServiceShutdown() error {
 // chat イベントの型は main.go の RegisterEvent で登録している。
 type wailsNotifier struct{}
 
-func (wailsNotifier) Chat(ev aibow.ChatEvent) { application.Get().Event.Emit(ui.ChatEventName, ev) }
-func (wailsNotifier) ModelLoaded()            { application.Get().Event.Emit(ui.ModelsEventName) }
+// 画面は1つ(利用者は1人)なので、誰の会話か(ctx)は見ない
+func (wailsNotifier) Chat(_ context.Context, ev aibow.ChatEvent) {
+	application.Get().Event.Emit(ui.ChatEventName, ev)
+}
+func (wailsNotifier) ModelLoaded() { application.Get().Event.Emit(ui.ModelsEventName) }
 
 // ChooseModelPlace は、置き場所を選ぶダイアログを出し(アプリの中で動かすときだけ使う。置き場所はモデルを読み込む PC のパスなので)、選んだフォルダ(kind が "dir")か GGUF のファイル(kind が "file")の
 // 絶対パスを返す。取り消したら空。足すのは AddModelPlace(選んだだけでは足さない)。

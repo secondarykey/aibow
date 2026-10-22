@@ -1,7 +1,8 @@
 // aibow-server は、aibow の「頭」(llama.cpp で動かすモデルと書式)を OpenAI 互換の HTTP の API として出すプログラム(ステップ6。0012)。
 // ステップ8(0015)で aibow-api から名前を変えた。モデルの一覧・切り替え・GPU の層数も持ち、画面のアプリもここにつなげる。
 //
-//	aibow-server [-model モデル] [-ctx 作業領域の大きさ] [-port ポート] [-config 設定ファイル]
+//	aibow-server [-model モデル] [-ctx 作業領域の大きさ] [-port ポート] [-config 設定ファイル] [-login]
+//	aibow-server [-config 設定ファイル] user list|add|passwd|remove [名前]   … 利用者を扱う(users.go。ステップ10)
 //
 // Cline などの既製のツールから http://127.0.0.1:8089/v1 につなぐ。待ち受けは 127.0.0.1 だけ(PC の外からはつなげない)。
 //
@@ -30,6 +31,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/secondarykey/aibow"
 	"github.com/secondarykey/aibow/api"
 	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/format"
@@ -41,7 +43,8 @@ import (
 func main() {
 	f := defineFlags(flag.CommandLine)
 	flag.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(), "使い方: %s [-model モデル] [-ctx 作業領域] [-port ポート] [-config 設定ファイル] [-debug]\n\n", filepath.Base(os.Args[0]))
+		fmt.Fprintf(flag.CommandLine.Output(), "使い方: %s [-model モデル] [-ctx 作業領域] [-port ポート] [-config 設定ファイル] [-login] [-debug]\n", filepath.Base(os.Args[0]))
+		fmt.Fprintf(flag.CommandLine.Output(), "        %s [-config 設定ファイル] user list|add|passwd|remove [名前]\n\n", filepath.Base(os.Args[0]))
 		fmt.Fprintln(flag.CommandLine.Output(), "aibow のモデルを OpenAI 互換の API(/v1/models・/v1/chat/completions)として出します。")
 		fmt.Fprintln(flag.CommandLine.Output(), "強さの順は 引数 > 設定ファイル > 環境変数 > 既定 です。")
 		flag.PrintDefaults()
@@ -67,6 +70,15 @@ func main() {
 }
 
 func run(c config, notices []string, cfgErr error, env *envReader) error {
+	if flag.Arg(0) == "user" {
+		if cfgErr != nil {
+			return cfgErr
+		}
+		if err := errors.Join(env.errs...); err != nil {
+			return err
+		}
+		return runUser(c, env, flag.Args()[1:])
+	}
 	if flag.NArg() > 0 {
 		flag.Usage()
 		return fmt.Errorf("知らない引数があります: %v", flag.Args())
@@ -98,13 +110,7 @@ func run(c config, notices []string, cfgErr error, env *envReader) error {
 		PresencePenalty: float32(env.float("AIBOW_PRESENCE_PENALTY", 1.5)),
 		Think:           true,
 	}
-	// ブラウザの会話(0016)の、DB にまだ値が無いときの設定。画面のアプリと同じ環境変数と既定
-	initial := ui.InitialAppSettings(ui.InitialValues{
-		GPULayers:       cfg.GPULayers,
-		PresencePenalty: env.float("AIBOW_PRESENCE_PENALTY", 1.5),
-		HistoryTokens:   env.int("AIBOW_HISTORY_TOKENS", 8192),
-		ReplyTokens:     defaults.MaxTokens,
-	})
+	initial := initialSettings(env, cfg.GPULayers)
 	if nCtx <= 0 || port <= 0 || defaults.MaxTokens <= 0 {
 		env.errs = append(env.errs, fmt.Errorf("作業領域の大きさ(ctx)・ポート(port)・AIBOW_MAX_TOKENS は 1 以上にしてください: %d / %d / %d", nCtx, port, defaults.MaxTokens))
 	}
@@ -183,6 +189,11 @@ func run(c config, notices []string, cfgErr error, env *envReader) error {
 	log.Noticef("画面のアプリのつなぎ先(settings.json の serverUrl / AIBOW_SERVER_URL): http://%s", addr)
 	log.Noticef("OpenAI 互換のクライアント(Cline など)の Base URL: http://%s/v1", addr)
 	log.Noticef("ブラウザで開く画面: http://%s/(会話は %s に保存します)", addr, absPath(c.DBPath))
+	if c.Login {
+		log.Notice("ブラウザの画面はログインが要ります(利用者は aibow-server user add <名前> で作ります)")
+	} else {
+		log.Notice("ブラウザの画面はログインなしで使えます(利用者は local。ログインを要るようにするには -login・設定ファイルの login)")
+	}
 
 	select {
 	case err := <-errc:
@@ -193,6 +204,17 @@ func run(c config, notices []string, cfgErr error, env *envReader) error {
 	sctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	return hs.Shutdown(sctx)
+}
+
+// initialSettings は、ブラウザの会話(0016)の、DB にまだ値が無いときの設定。画面のアプリと同じ環境変数と既定。
+// 新しい利用者のプロファイル「既定」もここから作る(users.go)。
+func initialSettings(env *envReader, gpuLayers int) aibow.AppSettings {
+	return ui.InitialAppSettings(ui.InitialValues{
+		GPULayers:       gpuLayers,
+		PresencePenalty: env.float("AIBOW_PRESENCE_PENALTY", 1.5),
+		HistoryTokens:   env.int("AIBOW_HISTORY_TOKENS", 8192),
+		ReplyTokens:     env.int("AIBOW_MAX_TOKENS", 8192),
+	})
 }
 
 // firstModel は、起動のときに読み込むモデルを探す。

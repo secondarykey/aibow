@@ -18,7 +18,8 @@ package ui
 // 画面から送られてきた値では決めない(ほかの人のふりができてしまうため)。
 //
 // SSE(Server-Sent Events)は、HTTP のつながりを開いたままにして、サーバーから「event: 名前\ndata: 中身\n\n」を送り続ける仕組み。
-// ブラウザは EventSource で受け取り、切れたら自分でつなぎ直す。ステップ9では、つないでいるブラウザ全部に送る(利用者は1人。0016 の 14)。
+// ブラウザは EventSource で受け取り、切れたら自分でつなぎ直す。生成の途中経過(chat)は、その会話の持ち主がつないでいる画面にだけ送る
+// (同じ人の別のタブ・別の PC には送る。0017 の 7)。モデルの読み込みの知らせ(models)は全員に送る。
 
 import (
 	"bytes"
@@ -82,7 +83,14 @@ func Handler(s *Service, ev *Events, who Who) http.Handler {
 		}
 		call(w, r.WithContext(aibow.WithUser(r.Context(), user)), name, m)
 	})
-	mux.HandleFunc("GET /aibow/ui/events", ev.serve)
+	mux.HandleFunc("GET /aibow/ui/events", func(w http.ResponseWriter, r *http.Request) {
+		user, err := who(r)
+		if err != nil {
+			writeError(w, http.StatusUnauthorized, err.Error())
+			return
+		}
+		ev.serve(w, r, user)
+	})
 	mux.HandleFunc("/aibow/ui/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "このパスはありません: "+r.Method+" "+r.URL.Path+
 			"(あるのは POST /aibow/ui/call/{メソッド}・GET /aibow/ui/events です)")
@@ -159,7 +167,7 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 // Events は、Go から画面への知らせを、SSE でブラウザに送る係(Notifier)。
 type Events struct {
 	mu   sync.Mutex
-	subs map[chan sseEvent]struct{}
+	subs map[chan sseEvent]uuid.UUID // つないでいる画面 → その画面の利用者
 }
 
 type sseEvent struct {
@@ -177,16 +185,25 @@ const keepAlive = 15 * time.Second
 
 // NewEvents は、まだ誰もつないでいない係を作る。
 func NewEvents() *Events {
-	return &Events{subs: map[chan sseEvent]struct{}{}}
+	return &Events{subs: map[chan sseEvent]uuid.UUID{}}
 }
 
-// Chat は chat イベントを、つないでいるブラウザ全部に送る。
-func (e *Events) Chat(ev aibow.ChatEvent) { e.send(ChatEventName, ev) }
+// Chat は chat イベントを、ctx の利用者がつないでいる画面にだけ送る。
+// 利用者が分からなければ送らない(ほかの人の画面に、会話の中身を流さないため)。
+func (e *Events) Chat(ctx context.Context, ev aibow.ChatEvent) {
+	user, ok := aibow.UserOf(ctx)
+	if !ok {
+		log.Errorf("誰の会話かが分からないので、画面に知らせません(会話 %s の %s)", ev.ConversationID, ev.Type)
+		return
+	}
+	e.send(ChatEventName, ev, &user)
+}
 
-// ModelLoaded は models イベントを送る(中身は無い)。
-func (e *Events) ModelLoaded() { e.send(ModelsEventName, nil) }
+// ModelLoaded は models イベントを、つないでいる画面全部に送る(中身は無い)。
+func (e *Events) ModelLoaded() { e.send(ModelsEventName, nil, nil) }
 
-func (e *Events) send(name string, v any) {
+// send は知らせを送る。to が nil なら全員、そうでなければその利用者の画面だけ。
+func (e *Events) send(name string, v any, to *uuid.UUID) {
 	data, err := json.Marshal(v)
 	if err != nil {
 		log.Errorf("画面への知らせ %s を JSON にできません: %v", name, err)
@@ -194,7 +211,10 @@ func (e *Events) send(name string, v any) {
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	for ch := range e.subs {
+	for ch, user := range e.subs {
+		if to != nil && user != *to {
+			continue
+		}
 		select {
 		case ch <- sseEvent{name: name, data: data}:
 		default:
@@ -205,10 +225,10 @@ func (e *Events) send(name string, v any) {
 	}
 }
 
-func (e *Events) subscribe() chan sseEvent {
+func (e *Events) subscribe(user uuid.UUID) chan sseEvent {
 	ch := make(chan sseEvent, eventBuffer)
 	e.mu.Lock()
-	e.subs[ch] = struct{}{}
+	e.subs[ch] = user
 	n := len(e.subs)
 	e.mu.Unlock()
 	log.Infof("ブラウザが知らせ(SSE)につながりました(つないでいる数: %d)", n)
@@ -226,8 +246,8 @@ func (e *Events) unsubscribe(ch chan sseEvent) {
 	log.Infof("ブラウザの知らせ(SSE)のつながりが切れました(つないでいる数: %d)", n)
 }
 
-// serve は GET /aibow/ui/events。つながりが切れるまで(ブラウザを閉じた・aibow-server を止めた)返らない。
-func (e *Events) serve(w http.ResponseWriter, r *http.Request) {
+// serve は GET /aibow/ui/events。つながりが切れるまで(ブラウザを閉じた・aibow-server を止めた)返らない。user はつないできた人。
+func (e *Events) serve(w http.ResponseWriter, r *http.Request, user uuid.UUID) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		writeError(w, http.StatusInternalServerError, "このつながりでは SSE を送れません")
@@ -238,7 +258,7 @@ func (e *Events) serve(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	// 先に受け取る側に入ってから、つながったことを最初のコメント行で知らせる(ブラウザの EventSource は、これで open になる)。
 	// 逆にすると、知らせてから入るまでの間の知らせを取りこぼす
-	ch := e.subscribe()
+	ch := e.subscribe(user)
 	defer e.unsubscribe(ch)
 	fmt.Fprint(w, ": connected\n\n")
 	flusher.Flush()

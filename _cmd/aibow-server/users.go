@@ -1,0 +1,171 @@
+package main
+
+// users.go: 利用者を作る・消す・パスワードを作り直すコマンド(0017 の決定事項 4。10-1)。
+//
+//	aibow-server [-config 設定ファイル] user list
+//	aibow-server [-config 設定ファイル] user add <名前>      … 利用者を作り、パスワードを作って表示する
+//	aibow-server [-config 設定ファイル] user passwd <名前>   … パスワードを作り直して表示する(ログイン中の画面はログインし直しになる)
+//	aibow-server [-config 設定ファイル] user remove <名前>   … 利用者と、その人の会話・プロファイル・設定を消す
+//
+// 管理者はまだいない(ステップ11)ので、サーバーの PC でこのコマンドを打てる人が実質の管理者。
+// llama.cpp もモデルも読み込まず、server.db だけを開く(aibow-server を動かしたままでも打てる。SQLite が順番に書く)。
+//
+// パスワードは aibow-server が作って一度だけ表示する(ユーザーと決めた)。表示はログに残さず、画面(標準出力)にだけ出す。
+// 打ったパスワードがターミナルに残らず、短いパスワードにもならない。忘れたら passwd で作り直す。
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+	"unicode"
+	"unicode/utf8"
+	"uuid"
+
+	"github.com/secondarykey/aibow"
+	"github.com/secondarykey/aibow/auth"
+	"github.com/secondarykey/aibow/log"
+	"github.com/secondarykey/aibow/store"
+)
+
+const userUsage = `使い方:
+  aibow-server [-config 設定ファイル] user list
+  aibow-server [-config 設定ファイル] user add <名前>
+  aibow-server [-config 設定ファイル] user passwd <名前>
+  aibow-server [-config 設定ファイル] user remove <名前>`
+
+// runUser は user のコマンドを実行する。args は user のあと。
+func runUser(c config, env *envReader, args []string) error {
+	if len(args) == 0 {
+		return errors.New(userUsage)
+	}
+	cmd, rest := args[0], args[1:]
+	want := 1
+	if cmd == "list" {
+		want = 0
+	}
+	if len(rest) != want {
+		return fmt.Errorf("引数の数が違います\n%s", userUsage)
+	}
+	st, err := store.Open(c.DBPath)
+	if err != nil {
+		return err
+	}
+	defer st.Close()
+	ctx := context.Background()
+
+	switch cmd {
+	case "list":
+		return listUsers(ctx, st)
+	case "add":
+		return addUser(ctx, st, initialSettings(env, 0), rest[0])
+	case "passwd":
+		return resetPassword(ctx, st, rest[0])
+	case "remove":
+		return removeUser(ctx, st, rest[0])
+	}
+	return fmt.Errorf("知らないコマンドです: user %s\n%s", cmd, userUsage)
+}
+
+func listUsers(ctx context.Context, st *store.SQLite) error {
+	list, err := st.Users(ctx)
+	if err != nil {
+		return err
+	}
+	for _, u := range list {
+		pw := "パスワードあり"
+		if u.Password == "" {
+			pw = "パスワードなし(ログインできない)"
+		}
+		note := ""
+		if u.ID == aibow.LocalUser {
+			note = "・ログインなしの形の利用者"
+		}
+		fmt.Printf("%s\t%s%s\t作った日時 %s\n", u.Name, pw, note, u.CreatedAt.Format("2006-01-02 15:04"))
+	}
+	return nil
+}
+
+// addUser は利用者を作り、その人のプロファイル「既定」を作る(0017 の決定事項 5。今の PrepareProfiles と同じ)。
+func addUser(ctx context.Context, st *store.SQLite, initial aibow.AppSettings, name string) error {
+	if err := checkName(name); err != nil {
+		return err
+	}
+	password := auth.NewPassword()
+	hash, err := auth.HashPassword(password)
+	if err != nil {
+		return err
+	}
+	now := time.Now()
+	u := auth.User{ID: uuid.NewV7(), Name: name, Password: hash, CreatedAt: now, UpdatedAt: now}
+	if err := st.CreateUser(ctx, u); err != nil {
+		return fmt.Errorf("利用者 %s を作れません: %w", name, err)
+	}
+	// プロファイルの値は、新しい人の新しい会話の既定(サーバーの最後に使ったモデル・環境変数の初期値)から作る
+	uctx := aibow.WithUser(ctx, u.ID)
+	app, _, err := aibow.LoadAppSettings(uctx, st, initial)
+	if err != nil {
+		return err
+	}
+	if _, err := aibow.NewConversations(st, nil, app).PrepareProfiles(uctx); err != nil {
+		return fmt.Errorf("利用者 %s のプロファイルを作れません: %w", name, err)
+	}
+	log.Noticef("利用者 %s を作りました", name)
+	printPassword(name, password)
+	return nil
+}
+
+func resetPassword(ctx context.Context, st *store.SQLite, name string) error {
+	u, err := st.UserByName(ctx, name)
+	if err != nil {
+		return fmt.Errorf("利用者 %s: %w", name, err)
+	}
+	password := auth.NewPassword()
+	hash, err := auth.HashPassword(password)
+	if err != nil {
+		return err
+	}
+	if err := st.SetPassword(ctx, u.ID, hash, time.Now()); err != nil {
+		return err
+	}
+	// 前のパスワードでログインしていた画面は使えなくする(パスワードを作り直すのは、漏れたかもしれないときなので)
+	if err := st.DeleteUserSessions(ctx, u.ID); err != nil {
+		return err
+	}
+	log.Noticef("利用者 %s のパスワードを作り直しました(ログイン中の画面はログインし直しになります)", name)
+	printPassword(name, password)
+	return nil
+}
+
+func removeUser(ctx context.Context, st *store.SQLite, name string) error {
+	u, err := st.UserByName(ctx, name)
+	if err != nil {
+		return fmt.Errorf("利用者 %s: %w", name, err)
+	}
+	if u.ID == aibow.LocalUser {
+		return fmt.Errorf("%s はログインなしの形の利用者なので消せません(ログインなしで使うときの会話の持ち主です)", name)
+	}
+	if err := st.DeleteUser(ctx, u.ID); err != nil {
+		return err
+	}
+	log.Noticef("利用者 %s と、その人の会話・プロファイル・設定を消しました", name)
+	return nil
+}
+
+// printPassword はパスワードを標準出力にだけ出す(ログには残さない)。
+func printPassword(name, password string) {
+	fmt.Printf("名前: %s\nパスワード: %s\n", name, password)
+	fmt.Println("パスワードは今だけ表示します。忘れたら aibow-server user passwd " + name + " で作り直してください")
+}
+
+// checkName は、利用者の名前に使えるか(ログインの画面で打つので、空白や見えない文字を入れない)。
+func checkName(name string) error {
+	if name == "" || utf8.RuneCountInString(name) > 32 {
+		return errors.New("名前は 1〜32 文字にしてください")
+	}
+	if strings.IndexFunc(name, func(r rune) bool { return unicode.IsSpace(r) || !unicode.IsPrint(r) }) >= 0 {
+		return fmt.Errorf("名前に空白や見えない文字は使えません: %q", name)
+	}
+	return nil
+}

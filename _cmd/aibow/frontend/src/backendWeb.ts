@@ -5,14 +5,18 @@
 //	メソッドの呼び出し … POST /aibow/ui/call/{メソッド}。本文は引数の JSON の配列、返事は戻り値の JSON(Wails の呼び出しと同じ形)
 //	Go からの知らせ   … GET /aibow/ui/events(SSE)を EventSource で受け取る。event の名前は Wails のイベントと同じ(chat・models)
 //	停止             … fetch を AbortController で止める。つながりが切れて、Go の ctx がキャンセルされる
+//	ログイン         … POST /aibow/auth/login で cookie を受け取る(0017 の 10-1)。以後の fetch と EventSource には、ブラウザが cookie を付ける
 //
 // ブラウザには OS のウィンドウもクリップボードの Go 側の書き込みも無いので、そこはブラウザの仕組みを使う(0016 の 17)。
 import type { ChatEvent } from "../bindings/github.com/secondarykey/aibow";
-import type { Backend, Call, ChatAPI } from "./backend";
+import type { Backend, Call, ChatAPI, Me } from "./backend";
 import { errorMessage } from "./errors";
 
 // CancelError は、cancel() で止めた呼び出しのエラー(Wails の CancelError と同じ役)
 class CancelError extends Error {}
+
+// unauthorized は、呼び出しが 401(ログインしてください)で断られたときに知らせる相手(onUnauthorized)
+const unauthorized = new Set<() => void>();
 
 // call は Go のメソッドを1つ呼ぶ。生成が終わるまで返らない長い呼び出し(Send など)も、返事が来るまで待つ。
 function call<T>(method: string, args: unknown[]): Call<T> {
@@ -27,6 +31,7 @@ function call<T>(method: string, args: unknown[]): Call<T> {
       });
       const body = await res.json().catch(() => null);
       if (ac.signal.aborted) throw new CancelError("停止しました"); // 本文を読んでいる間に止めた
+      if (res.status === 401) unauthorized.forEach(f => f()); // ログインの期限が切れた(画面はログインの画面に戻る)
       if (!res.ok) {
         // aibow-server のエラーの形:{"error": {"message", "type"}}。Wails と同じく、message が Go のエラーの文の Error にする
         throw new Error(body?.error?.message ?? `${method}: ${res.status} ${res.statusText}`);
@@ -74,6 +79,23 @@ function on(name: string, f: (data: string) => void): () => void {
   return () => s.removeEventListener(name, handler);
 }
 
+// auth は、ログインの口(/aibow/auth/)を呼ぶ。返事は auth.Me。エラーは call と同じ形で読む
+async function auth(method: "GET" | "POST", path: string, body?: unknown): Promise<Me> {
+  let res: Response;
+  try {
+    res = await fetch(`/aibow/auth/${path}`, {
+      method,
+      headers: body === undefined ? {} : { "Content-Type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  } catch (err) {
+    throw new Error(`aibow-server につながりません(${errorMessage(err)})。aibow-server が動いているか確かめてください`);
+  }
+  const data = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(data?.error?.message ?? `${path}: ${res.status} ${res.statusText}`);
+  return data as Me;
+}
+
 export const backend: Backend = {
   ChatService,
   isCancel: err => err instanceof CancelError,
@@ -90,6 +112,14 @@ export const backend: Backend = {
     events();
     reconnected.add(f);
     return () => reconnected.delete(f);
+  },
+
+  session: () => auth("GET", "me"),
+  login: (name, password) => auth("POST", "login", { name, password }),
+  logout: async () => { await auth("POST", "logout"); },
+  onUnauthorized: f => {
+    unauthorized.add(f);
+    return () => unauthorized.delete(f);
   },
 
   // http://127.0.0.1 は安全な場所として扱われるので、navigator.clipboard が使える

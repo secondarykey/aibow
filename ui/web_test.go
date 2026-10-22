@@ -474,7 +474,7 @@ func TestWebModelsWhileLoading(t *testing.T) {
 	}
 }
 
-// 誰の呼び出しかは aibow-server の who で決まり、会話・プロファイル・表示の設定はその人のものだけが見える(0017 の 10-0)。
+// 誰の呼び出しかは aibow-server の who で決まり、会話・プロファイル・表示の設定・生成の途中経過はその人のものだけが見える(0017)。
 // 決められなければ 401
 func TestWebUsers(t *testing.T) {
 	w := newTestWeb(t)
@@ -505,6 +505,19 @@ func TestWebUsers(t *testing.T) {
 	w.mustCall(t, &a, "AppSettings")
 	if a.Display.PinQuestion || a.Display.Theme != aibow.ThemeDark {
 		t.Errorf("自分の表示の設定: %+v", a.Display)
+	}
+
+	// 生成の途中経過(SSE)は、その会話の持ち主の画面にだけ届く(0017 の 7)
+	w.user.Store(&other)
+	theirs := w.openEvents(t)
+	w.user.Store(nil)
+	ours := w.openEvents(t)
+	w.mustCall(t, nil, "Send", mine.ID, "こんにちは?")
+	until(t, ours, "done")
+	select {
+	case m := <-theirs:
+		t.Errorf("ほかの人の画面に知らせが届いた: %+v", m)
+	case <-time.After(200 * time.Millisecond):
 	}
 
 	w.user.Store(&uuid.UUID{})

@@ -404,6 +404,15 @@ nav.conversations .footer { border-top: 1px solid var(--border); padding: 6px 10
 nav.conversations .footer .settings { margin-left: auto; }
 .app-name { font-size: 13px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .app-version { margin-left: 6px; font-weight: 400; font-size: 12px; color: var(--muted); }
+/* 一覧の下の、ログインしている人の名前(ブラウザでログインが要るときだけ)。押すと上にメニュー(ログアウト)を出す */
+.user-menu { position: relative; min-width: 0; }
+.user-btn {
+  display: flex; align-items: center; gap: 4px; max-width: 120px; padding: 4px 6px;
+  border: none; background: transparent; color: var(--muted); font-size: 12px;
+}
+.user-btn:hover { background: var(--bg); color: var(--text); }
+.user-btn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.split-menu.up { top: auto; bottom: 100%; left: 0; right: auto; margin: 0 0 2px; }
 nav.conversations .settings.active { background: var(--bg); border-color: var(--accent); }
 nav.conversations.collapsed .settings.active { color: var(--accent); }
 .conversation { display: flex; align-items: center; border-radius: 6px; margin-bottom: 2px; }
@@ -696,3 +705,18 @@ footer { border-top: 1px solid var(--border); background: var(--panel); padding:
 /* この会話のツール: プロファイルで使えない・固定で押せないもの */
 .conv-tools-item:disabled { color: var(--muted); cursor: default; }
 .conv-tools-item:disabled:hover { background: transparent; }
+
+/* ログインの画面(ブラウザでログインが要るとき。0017 の 10-1)。画面の中央に、名前・パスワード・ボタンだけ */
+.login { flex: 1; display: flex; align-items: center; justify-content: center; background: var(--bg); }
+.login-box {
+  width: 280px; display: flex; flex-direction: column; gap: 10px; padding: 28px 24px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+}
+.login-title { margin: 0 0 8px; text-align: center; font-size: 22px; font-weight: 600; }
+.login-box input {
+  font: inherit; font-size: 14px; padding: 8px 10px; border-radius: 6px;
+  border: 1px solid var(--border); background: var(--bg); color: var(--text);
+}
+.login-box input:focus { outline: none; border-color: var(--accent); }
+.login-box button { padding: 8px 12px; font-size: 14px; }
+.login-error { color: var(--error); font-size: 13px; }

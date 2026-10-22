@@ -634,7 +634,15 @@ func (cs *Conversations) generateSummary(ctx context.Context, id uuid.UUID, msgs
 
 // StopSummary は生成中の要約だけを止める(画面の要約中の停止ボタン)。
 // 送信の途中の要約なら、その回は truncate で収めて返事の生成に進む。
-func (cs *Conversations) StopSummary() {
+// 止められるのは、ctx の利用者の会話の要約だけ(ほかの人の要約は止めない。生成中の会話がその人の保存先にあるかで確かめる。0017)。
+func (cs *Conversations) StopSummary(ctx context.Context) {
+	g := cs.generating.Load()
+	if g == nil {
+		return
+	}
+	if _, _, err := cs.store.Conversation(ctx, *g); err != nil {
+		return
+	}
 	cs.summaryMu.Lock()
 	defer cs.summaryMu.Unlock()
 	if cs.stopSummary != nil {

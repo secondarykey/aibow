@@ -18,6 +18,11 @@ export const backend: Backend = {
   onWindowFocus: f => Events.On("aibow:window:focus", () => f()),
   // Wails のイベントはアプリの中で届くので、切れてつなぎ直すことは無い
   onReconnect: () => () => {},
+  // デスクトップは利用者が1人(手元の DB)なので、ログインは無い
+  session: async () => ({ login: false, name: "" }),
+  login: async () => { throw new Error("デスクトップのアプリにはログインがありません"); },
+  logout: async () => {},
+  onUnauthorized: () => () => {},
 
   // まずブラウザの navigator.clipboard を使う(WebView2 の画面は http://wails.localhost で、安全な場所として扱われるので使える)。
   // 使えなかったときは、Wails のランタイムの Clipboard.SetText(Go 側で OS のクリップボードに書く)を使う
