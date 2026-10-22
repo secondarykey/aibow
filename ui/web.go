@@ -11,10 +11,11 @@ package ui
 //	Go からの知らせ       Wails のイベント(chat・models)              GET /aibow/ui/events(SSE。event: chat / data: ChatEvent の JSON)
 //	停止                  Promise の cancel() → ctx がキャンセル       fetch を止める(AbortController)→ つながりが切れて r.Context() が終わる
 //
-// 呼べるメソッドは、ブラウザで使うものだけ(browserMethods)。ツールと、サーバーの PC の事情を変えるものは出さない(0016 の 6・7)。
+// 呼べるメソッドは、ブラウザで使うものだけ(browserMethods)。ツールは出さない(0016 の 7)。
+// サーバーの PC の事情を変えるもの(pcMethods)は、管理者とサーバーの PC の上から開いた画面だけが呼べる(0016 の 6・0018 の決定事項 8)。
 // 呼び出しは reflect で Service のメソッドを名前から探す(Wails のバインディングも、実行のときは同じことをしている)。
 //
-// 誰の呼び出しかは、aibow-server が渡す係(Who)で決め、メソッドに渡す ctx に入れる(aibow.WithUser。0017 の 12)。
+// 誰の呼び出しかは、aibow-server が渡す係(Who)で決め、メソッドに渡す ctx に入れる(aibow.WithUser。0017 の 12。管理者かも。caller.go)。
 // 画面から送られてきた値では決めない(ほかの人のふりができてしまうため)。
 //
 // SSE(Server-Sent Events)は、HTTP のつながりを開いたままにして、サーバーから「event: 名前\ndata: 中身\n\n」を送り続ける仕組み。
@@ -28,6 +29,7 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
+	"slices"
 	"sync"
 	"time"
 	"uuid"
@@ -38,7 +40,7 @@ import (
 
 // browserMethods は、ブラウザから呼べる Service のメソッド。
 //
-// 出さないもの:GPU の層数・降ろす・置き場所(サーバーの PC の事情。0016 の 6)、ツールと MCP・確認の答え(ブラウザではツールを使わない。0016 の 7)。
+// 出さないもの:基本設定の GPU の層数(モデルのタブのモデルごとの層の数で足りる)、ツールと MCP・確認の答え(ブラウザではツールを使わない。0016 の 7)。
 // ServerHost も断るが、口そのものにも出さない(断るだけだと、ブラウザの画面がそれを呼ぶ作りになっても気づけないため)。
 var browserMethods = []string{
 	// モデルと設定
@@ -53,20 +55,27 @@ var browserMethods = []string{
 	"Send", "Regenerate", "Resend", "Compact", "StopSummary",
 }
 
-// Who は、リクエストを送ってきた利用者を決める係(aibow-server が渡す)。決められなければエラー(401 で断る)。
-// 今はログインが無いので、aibow-server はいつもログインなしの形の利用者(aibow.LocalUser)を返す。ログインは 0017 の 10-1。
-type Who func(r *http.Request) (uuid.UUID, error)
+// pcMethods は、サーバーの PC の事情を変えるメソッド(モデルのタブ。0015 の 8-4)。管理者とサーバーの PC の上から開いた画面だけが呼べる
+// (Caller.ManagesPC。0018 の決定事項 8)。ほかの人は 403。
+var pcMethods = []string{"UnloadModel", "SetModelGPULayers", "ModelPlaces", "AddModelPlace", "RemoveModelPlace"}
+
+// Who は、リクエストを送ってきた人を決める係(aibow-server が渡す)。決められなければエラー(401 で断る)。
+type Who func(r *http.Request) (Caller, error)
 
 // Handler は、画面用の口(/aibow/ui/ の下)を返す。ev は New に Notify として渡したもの(SSE で送る)。who は利用者を決める係。
 func Handler(s *Service, ev *Events, who Who) http.Handler {
 	methods := map[string]reflect.Value{}
+	pcOnly := map[string]bool{}
 	v := reflect.ValueOf(s)
-	for _, name := range browserMethods {
+	for _, name := range append(slices.Clone(browserMethods), pcMethods...) {
 		m := v.MethodByName(name)
 		if !m.IsValid() {
-			panic("ui.Service に " + name + " がありません(browserMethods を直してください)")
+			panic("ui.Service に " + name + " がありません(browserMethods・pcMethods を直してください)")
 		}
 		methods[name] = m
+	}
+	for _, name := range pcMethods {
+		pcOnly[name] = true
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /aibow/ui/call/{method}", func(w http.ResponseWriter, r *http.Request) {
@@ -76,20 +85,25 @@ func Handler(s *Service, ev *Events, who Who) http.Handler {
 			writeError(w, http.StatusNotFound, "ブラウザからは呼べないメソッドです: "+name)
 			return
 		}
-		user, err := who(r)
+		c, err := who(r)
 		if err != nil {
 			writeError(w, http.StatusUnauthorized, err.Error())
 			return
 		}
-		call(w, r.WithContext(aibow.WithUser(r.Context(), user)), name, m)
+		if pcOnly[name] && !c.ManagesPC() {
+			log.Warnf("管理者だけのメソッドなので断りました: %s(%s)", name, r.RemoteAddr)
+			writeError(w, http.StatusForbidden, "この操作(モデルを降ろす・GPU の層数・モデルの置き場所)は、aibow-server を動かしている PC からか、管理者だけができます")
+			return
+		}
+		call(w, r.WithContext(withCaller(aibow.WithUser(r.Context(), c.ID), c)), name, m)
 	})
 	mux.HandleFunc("GET /aibow/ui/events", func(w http.ResponseWriter, r *http.Request) {
-		user, err := who(r)
+		c, err := who(r)
 		if err != nil {
 			writeError(w, http.StatusUnauthorized, err.Error())
 			return
 		}
-		ev.serve(w, r, user)
+		ev.serve(w, r, c.ID)
 	})
 	mux.HandleFunc("/aibow/ui/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "このパスはありません: "+r.Method+" "+r.URL.Path+

@@ -249,15 +249,18 @@ type ModelsResult struct {
 	Server string `json:"server,omitempty"`
 	// ServerError は aibow-server につながらない理由(と対処)。起動したら、アプリを起動し直さずに使える(一覧を取り直せば消える)
 	ServerError string `json:"server_error,omitempty"`
+	// Manage は、aibow-server の中で、サーバーの PC の事情(読み込む / 降ろす・層の数・置き場所・出どころ)を見せて変えてよい人か
+	// (管理者か、サーバーの PC の上から開いた画面。0018 の決定事項 8)。画面はモデルのタブを、アプリの中で動かすときと同じに出す
+	Manage bool `json:"manage,omitempty"`
 }
 
 // Models は使えるモデルの一覧と、今読み込んでいるモデルを返す。
-func (s *Service) Models() ModelsResult {
+func (s *Service) Models(ctx context.Context) ModelsResult {
 	if s.startupErr != nil {
 		return ModelsResult{Models: []models.Entry{}, Error: s.startupErr.Error(), Notices: s.notices}
 	}
 	r := ModelsResult{Models: []models.Entry{}, Notices: s.notices, Server: s.host.server()}
-	l, err := s.host.list()
+	l, err := s.host.list(ctx)
 	if err != nil {
 		// つながらない間は、一覧を取るたびにログを出さない(画面はウィンドウに戻るたびに取り直すため)
 		if !s.serverDown.Swap(true) {
@@ -269,7 +272,7 @@ func (s *Service) Models() ModelsResult {
 	if s.serverDown.Swap(false) {
 		log.Noticef("aibow-server につながりました: %s", s.host.server())
 	}
-	r.Models, r.Current, r.GPU, r.GPULayers = l.models, l.current, l.gpu, l.layers
+	r.Models, r.Current, r.GPU, r.GPULayers, r.Manage = l.models, l.current, l.gpu, l.layers, l.manage
 	r.LastModel = s.lastModel()
 	if name := s.loading.Load(); name != nil {
 		r.Loading = *name
@@ -408,12 +411,19 @@ func (s *Service) SetGPULayers(n int) (*engine.ModelInfo, error) {
 
 // UnloadModel は読み込み中のモデルを降ろす(VRAM を空ける。ほかのアプリと並べて使うため。0015 の 23)。
 // 降ろしたあとに送信すると、送信の前に会話のモデルを読み込む(0014 の 3)。
-func (s *Service) UnloadModel() error {
+func (s *Service) UnloadModel(ctx context.Context) error {
 	if s.startupErr != nil {
 		return s.startupErr
 	}
+	// aibow-server の中では、席を取ってから(生成中のほかの人の作業領域を入れ替えない。OpenAI 互換の口と同じ)
+	if s.seat != nil {
+		if !s.seat.Take(ctx) {
+			return ctx.Err()
+		}
+		defer s.seat.Release()
+	}
 	i := s.host.info()
-	if err := s.host.unload(); err != nil {
+	if err := s.host.unload(ctx); err != nil {
 		log.Error(err.Error())
 		return err
 	}
@@ -425,14 +435,20 @@ func (s *Service) UnloadModel() error {
 
 // SetModelGPULayers は、モデルごとの GPU の層数を変えて覚える。読み込み中のモデルなら読み直し、その情報を返す(ほかのモデルなら nil。
 // 次に読み込むときから効く)。直接ならアプリの DB、aibow-server 越しならサーバーの PC に覚える(0015 の 9)。
-func (s *Service) SetModelGPULayers(id string, n int) (*engine.ModelInfo, error) {
+func (s *Service) SetModelGPULayers(ctx context.Context, id string, n int) (*engine.ModelInfo, error) {
 	if s.startupErr != nil {
 		return nil, s.startupErr
 	}
 	if n < 0 {
 		return nil, errors.New("GPU に載せる層の数は 0 以上にしてください")
 	}
-	i, err := s.host.setModelGPULayers(id, n)
+	if s.seat != nil {
+		if !s.seat.Take(ctx) {
+			return nil, ctx.Err()
+		}
+		defer s.seat.Release()
+	}
+	i, err := s.host.setModelGPULayers(ctx, id, n)
 	if err != nil {
 		log.Error(err.Error())
 		return nil, err
@@ -446,20 +462,20 @@ func (s *Service) SetModelGPULayers(id string, n int) (*engine.ModelInfo, error)
 }
 
 // ModelPlaces はモデルの置き場所の一覧(models フォルダ・Ollama・足した置き場所。aibow-server 越しならサーバーの PC のもの)。
-func (s *Service) ModelPlaces() ([]models.Place, error) {
+func (s *Service) ModelPlaces(ctx context.Context) ([]models.Place, error) {
 	if s.startupErr != nil {
 		return nil, s.startupErr
 	}
-	return s.host.places()
+	return s.host.places(ctx)
 }
 
 // AddModelPlace は置き場所(フォルダか GGUF のファイル)を足し、足したあとの一覧を返す。
 // aibow-server 越しなら、path はサーバーの PC のパスで、サーバーがあるかを確かめる(0015 の 31)。
-func (s *Service) AddModelPlace(path string) ([]models.Place, error) {
+func (s *Service) AddModelPlace(ctx context.Context, path string) ([]models.Place, error) {
 	if s.startupErr != nil {
 		return nil, s.startupErr
 	}
-	l, err := s.host.addPlace(path)
+	l, err := s.host.addPlace(ctx, path)
 	if err != nil {
 		log.Warn(err.Error())
 	}
@@ -467,11 +483,11 @@ func (s *Service) AddModelPlace(path string) ([]models.Place, error) {
 }
 
 // RemoveModelPlace は足した置き場所を外し、外したあとの一覧を返す。手で決めた置き場所は外せない(0015 の 26)。
-func (s *Service) RemoveModelPlace(path string) ([]models.Place, error) {
+func (s *Service) RemoveModelPlace(ctx context.Context, path string) ([]models.Place, error) {
 	if s.startupErr != nil {
 		return nil, s.startupErr
 	}
-	l, err := s.host.removePlace(path)
+	l, err := s.host.removePlace(ctx, path)
 	if err != nil {
 		log.Warn(err.Error())
 	}

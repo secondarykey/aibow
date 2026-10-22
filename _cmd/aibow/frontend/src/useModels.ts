@@ -27,6 +27,9 @@ export interface Models {
   loading: boolean;          // モデルを読み込み中か(起動時・切り替え時)
   server: string;            // 生成を頼んでいる aibow-server のつなぎ先(アプリの中で動かしているときは空)
   serverError: string;       // aibow-server につながらない理由(つながっていれば空)
+  // manage は、aibow-server の中で、サーバーの PC の事情(降ろす・層の数・置き場所・出どころ)を見せて変えてよい人か
+  // (ブラウザの管理者か、サーバーの PC の上から開いた画面。0018 の決定事項 8)。モデルのタブをアプリの中で動かすときと同じに出す
+  manage: boolean;
   gpuLayers: { [id: string]: number | undefined }; // モデルの ID → 読み込むときの GPU の層数
   lastModel: string;         // 最後に読み込んだモデル(降ろしたあとも、どれを降ろしたかを出すため)
   switchModel(id: string): Promise<boolean>; // 読み込めたら true
@@ -50,6 +53,7 @@ export function useModels(n: Notifier, t: Pick<Transcript, "addError">, setBusy:
   const [loading, setLoading] = useState(false);
   const [server, setServer] = useState("");
   const [serverError, setServerError] = useState("");
+  const [manage, setManage] = useState(false);
   const [gpuLayers, setGpuLayers] = useState<{ [id: string]: number | undefined }>({});
   const [lastModel, setLastModel] = useState("");
   const serverDown = useRef(false); // つながらないことをカードで伝えたか(取り直すたびに出さないため)
@@ -86,6 +90,7 @@ export function useModels(n: Notifier, t: Pick<Transcript, "addError">, setBusy:
     }
     // aibow-server につながらない。カードは止まったときに1回だけ出し、つながったらお知らせで伝える
     setServerError(d.server_error ?? "");
+    setManage(!!d.manage);
     if (d.server_error) {
       if (!serverDown.current) {
         serverDown.current = true;
@@ -189,5 +194,5 @@ export function useModels(n: Notifier, t: Pick<Transcript, "addError">, setBusy:
     setBusy("idle");
   }, [current, models, reload, notify, dismissKey, addError, setBusy]);
 
-  return { models, current, gpu, loading, server, serverError, gpuLayers, lastModel, switchModel, unload, setLayers, reload };
+  return { models, current, gpu, loading, server, serverError, manage, gpuLayers, lastModel, switchModel, unload, setLayers, reload };
 }

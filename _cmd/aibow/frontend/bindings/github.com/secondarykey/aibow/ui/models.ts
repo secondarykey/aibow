@@ -120,4 +120,10 @@ export interface ModelsResult {
      * ServerError は aibow-server につながらない理由(と対処)。起動したら、アプリを起動し直さずに使える(一覧を取り直せば消える)
      */
     "server_error"?: string;
+
+    /**
+     * Manage は、aibow-server の中で、サーバーの PC の事情(読み込む / 降ろす・層の数・置き場所・出どころ)を見せて変えてよい人か
+     * (管理者か、サーバーの PC の上から開いた画面。0018 の決定事項 8)。画面はモデルのタブを、アプリの中で動かすときと同じに出す
+     */
+    "manage"?: boolean;
 }

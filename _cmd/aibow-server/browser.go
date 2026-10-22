@@ -95,19 +95,21 @@ func keyUser(r *http.Request) (uuid.UUID, error) {
 // errNotLoggedIn は、ログインが要るのにログインしていないときのエラー(画面はこれを 401 で受け取り、ログインの画面を出す)。
 var errNotLoggedIn = errors.New("ログインしてください")
 
-// who は、画面用の口を呼んだ利用者を決める係(ui.Who)。利用者の印を付けるのはここだけ(0017 の 12)。
+// who は、画面用の口を呼んだ人を決める係(ui.Who)。利用者の印を付けるのはここだけ(0017 の 12)。
 //   - ログインが要る:cookie のセッションの人(auth.Middleware がリクエストの ctx に入れた人)。いなければ 401
 //   - 要らない:いつもログインなしの形の利用者(aibow.LocalUser)。127.0.0.1 だけで待ち受けるので、その PC の人だけが使う
+//
+// 管理者か(その人の印)と、サーバーの PC の上から開いたか(どこから来たか)も一緒に決める(0018 の決定事項 8。ui.Caller)。
 func who(login bool) ui.Who {
-	return func(r *http.Request) (uuid.UUID, error) {
+	return func(r *http.Request) (ui.Caller, error) {
 		if !login {
-			return aibow.LocalUser, nil
+			return ui.Caller{ID: aibow.LocalUser, Local: api.IsLocal(r)}, nil
 		}
 		u, ok := auth.UserFrom(r.Context())
 		if !ok {
-			return uuid.UUID{}, errNotLoggedIn
+			return ui.Caller{}, errNotLoggedIn
 		}
-		return u.ID, nil
+		return ui.Caller{ID: u.ID, Admin: u.Admin, Local: api.IsLocal(r)}, nil
 	}
 }
 

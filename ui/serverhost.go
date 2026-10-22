@@ -9,9 +9,11 @@ package ui
 // 見せ方と断り方は、aibow-server につないだ画面のアプリ(RemoteHost)と同じ線にそろえる(0016 の 6)。
 // ブラウザの人はサーバーの PC の持ち主ではないので、降ろす・GPU の層数・置き場所・出どころ・サーバーの PC のパスは見せも変えもしない。
 // 見せるのはモデルの一覧(名前・大きさ・読み込み中か)と作業領域の大きさ。会話のモデルは選べる(席の中で読み直す)。
+// ただし管理者と、サーバーの PC の上から開いた画面には、全部を見せて変えさせる(0018 の決定事項 8。誰かは ctx の Caller。caller.go)。
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/secondarykey/aibow"
@@ -39,6 +41,14 @@ type ServerModels interface {
 	// Load は、そのモデルにサーバーの PC で覚えた GPU の層数で読み込む
 	Load(m models.Entry) (*engine.ModelInfo, error)
 	HasGPU() bool
+
+	// ここから下は、サーバーの PC の事情を変えてよい人だけが使う(0018 の 11-0。api.Models と同じ名前と意味)
+	GPULayers(id string) int
+	SetGPULayers(id string, n int) (*engine.ModelInfo, error)
+	Unload() (bool, error)
+	Places() []models.Place
+	AddPlace(path string) error
+	RemovePlace(path string) error
 }
 
 // ServerHost は、aibow-server の engine でブラウザの会話のモデルを扱う係。
@@ -83,8 +93,16 @@ func (h *ServerHost) current() *engine.ModelInfo {
 func (h *ServerHost) server() string { return h.url }
 
 // list は、サーバーの PC の置き方(出どころ・置き場所)と層の数を外した一覧(RemoteHost と同じ)。
-func (h *ServerHost) list() (hostModels, error) {
+// サーバーの PC の事情を見てよい人には、外さずに層の数も付ける(直接の形と同じ。0018 の決定事項 8)。
+func (h *ServerHost) list(ctx context.Context) (hostModels, error) {
 	l := h.models.List()
+	if managesPC(ctx) {
+		layers := map[string]int{}
+		for _, m := range l {
+			layers[m.ID] = h.models.GPULayers(m.ID)
+		}
+		return hostModels{models: l, current: h.current(), gpu: h.models.HasGPU(), layers: layers, manage: true}, nil
+	}
 	for i := range l {
 		l[i].Origin, l[i].Place = "", ""
 	}
@@ -114,22 +132,62 @@ func (h *ServerHost) gpuLayers() int {
 // tryContext は、サーバーの作業領域に入るかを確かめるだけ。
 func (h *ServerHost) tryContext(n int) (bool, error) { return h.gen.EnsureContextSize(n) }
 
-// 降ろす・GPU の層数・置き場所は、サーバーの PC の事情なのでブラウザからはしない(0016 の 6。口にも出さない。web.go)。
+// 降ろす・GPU の層数・置き場所は、サーバーの PC の事情なので、管理者とサーバーの PC の上から開いた画面だけ(0016 の 6・0018 の決定事項 8)。
+// 口でも、ほかの人からは呼べないようにしてある(web.go の pcMethods)。ここでも確かめるのは、口の作りを間違えても漏れないように。
+// 基本設定の「GPU の層数」(setGPULayers)は、モデルのタブのモデルごとの層の数で足りるので、ブラウザでは使わない。
 func (h *ServerHost) setGPULayers(int) (*engine.ModelInfo, error) {
 	return nil, errServerSide("GPU に載せる層の数")
 }
-func (h *ServerHost) setModelGPULayers(string, int) (*engine.ModelInfo, error) {
-	return nil, errServerSide("GPU に載せる層の数")
+
+func (h *ServerHost) setModelGPULayers(ctx context.Context, id string, n int) (*engine.ModelInfo, error) {
+	if !managesPC(ctx) {
+		return nil, errNotManager("GPU に載せる層の数")
+	}
+	m, err := h.models.Find(id)
+	if err != nil {
+		return nil, err
+	}
+	return h.models.SetGPULayers(m.ID, n) // 席は Service が持っている
 }
-func (h *ServerHost) unload() error { return errServerSide("モデルを降ろすこと") }
-func (h *ServerHost) places() ([]models.Place, error) {
-	return nil, errServerSide("モデルの置き場所")
+
+func (h *ServerHost) unload(ctx context.Context) error {
+	if !managesPC(ctx) {
+		return errNotManager("モデルを降ろすこと")
+	}
+	_, err := h.models.Unload()
+	return err
 }
-func (h *ServerHost) addPlace(string) ([]models.Place, error) {
-	return nil, errServerSide("モデルの置き場所")
+
+func (h *ServerHost) places(ctx context.Context) ([]models.Place, error) {
+	if !managesPC(ctx) {
+		return nil, errNotManager("モデルの置き場所")
+	}
+	return h.models.Places(), nil
 }
-func (h *ServerHost) removePlace(string) ([]models.Place, error) {
-	return nil, errServerSide("モデルの置き場所")
+
+func (h *ServerHost) addPlace(ctx context.Context, path string) ([]models.Place, error) {
+	if !managesPC(ctx) {
+		return nil, errNotManager("モデルの置き場所")
+	}
+	if err := h.models.AddPlace(path); err != nil {
+		return nil, err
+	}
+	return h.models.Places(), nil
+}
+
+func (h *ServerHost) removePlace(ctx context.Context, path string) ([]models.Place, error) {
+	if !managesPC(ctx) {
+		return nil, errNotManager("モデルの置き場所")
+	}
+	if err := h.models.RemovePlace(path); err != nil {
+		return nil, err
+	}
+	return h.models.Places(), nil
+}
+
+// errNotManager は、管理者でない人がサーバーの PC の事情を変えようとしたときのエラー。
+func errNotManager(what string) error {
+	return fmt.Errorf("%sは、aibow-server を動かしている PC からか、管理者だけが変えられます", what)
 }
 
 // settings は作業領域の大きさだけ(会話の上限 + 返事の上限がこれに入る必要があるので、画面に要る。RemoteHost と同じ)。

@@ -7,6 +7,9 @@
 // aibow-server 越しのとき:モデルの一覧(名前・大きさ・読み込み中か)と作業領域だけを出し、何も変えない(2026-10-22、ユーザーと決めた)。
 // 読み込む / 降ろす・層の数・置き場所・出どころ・サーバーの PC のパスは、サーバーの PC の事情でサーバーの側で決めること(中央の制御)。
 // つないでくる側から見せたり変えたりするのは別の問題なので出さない。モデルが変わるのは会話を送信するときだけ。
+//
+// ただしブラウザの管理者と、サーバーの PC の上から開いたブラウザ(models.manage)には、アプリの中で動かすときと同じものを出す
+// (0018 の決定事項 8)。置き場所はサーバーの PC のパスを書く(ブラウザからはサーバーの PC のフォルダを選べないので、選ぶボタンは出さない)。
 import { useCallback, useEffect, useState } from "react";
 import { LuCircleCheck, LuFile, LuFileX, LuFolder, LuFolderX, LuInfo, LuLock, LuX } from "react-icons/lu";
 import { ChatService } from "../backend";
@@ -16,6 +19,7 @@ import type { Entry as ModelEntry, Place } from "../../bindings/github.com/secon
 import type { Models } from "../useModels";
 import { NumberInput } from "./ConversationSettingsForm";
 import { errorMessage } from "../errors";
+import { isBrowser } from "../backend";
 
 interface Props {
   models: Models;
@@ -30,7 +34,8 @@ export function ModelSettings({ models, disabled, onError }: Props) {
   const [places, setPlaces] = useState<Place[]>([]);
   const [settings, setSettings] = useState<ModelSettingsResult | null>(null);
   const { reload } = models;
-  const remote = !!models.server;
+  // remote は、一覧と作業領域だけを出す形(aibow-server 越しで、サーバーの PC の事情を変えてよい人でない)
+  const remote = !!models.server && !models.manage;
 
   // タブを開いたときに取り直す(一覧の層の数・置き場所は、ほかで変わっていることがあるため)。aibow-server 越しなら置き場所は聞かない
   const refresh = useCallback(async () => {
@@ -72,11 +77,13 @@ export function ModelSettings({ models, disabled, onError }: Props) {
       <h2 title="読み込めるのは1つ(VRAM に1つしか載らない)">モデル</h2>
       <ModelTable models={models} disabled={disabled} />
 
-      <h2 className="section" title="モデルを探す場所">置き場所</h2>
-      <PlaceList places={places} onRemove={p => changePlaces(() => ChatService.RemoveModelPlace(p))} />
+      <h2 className="section" title={models.server ? "aibow-server の PC でモデルを探す場所" : "モデルを探す場所"}>置き場所</h2>
+      <PlaceList places={places} server={!!models.server} onRemove={p => changePlaces(() => ChatService.RemoveModelPlace(p))} />
       <AddPlace onAdd={p => changePlaces(() => ChatService.AddModelPlace(p))} onError={onError} />
 
-      {settings && <HostSettings s={settings} />}
+      {settings && (models.server
+        ? <RemoteSettings server={models.server} nCtx={settings.settings.n_ctx} />
+        : <HostSettings s={settings} />)}
     </>
   );
 }
@@ -167,9 +174,11 @@ function RemoteModelTable({ models }: { models: Models }) {
 
 // ---- 置き場所(アプリの中で動かすときだけ) ---------------------------------------------
 
-function PlaceList({ places, onRemove }: { places: Place[]; onRemove(path: string): void }) {
-  // 手で決めた置き場所(models フォルダ・Ollama)は表示だけ。どこで変えるかを錠の吹き出しに出す
-  const lockTitle = (p: Place) => p.origin === "ollama" ? "環境変数 OLLAMA_MODELS で変える" : "環境変数 AIBOW_MODELS_DIR で変える";
+function PlaceList({ places, server, onRemove }: { places: Place[]; server: boolean; onRemove(path: string): void }) {
+  // 手で決めた置き場所(models フォルダ・Ollama)は表示だけ。どこで変えるかを錠の吹き出しに出す(aibow-server は server.json)
+  const lockTitle = (p: Place) => p.origin === "ollama"
+    ? "環境変数 OLLAMA_MODELS で変える"
+    : server ? "aibow-server の server.json の modelsDir で変える" : "環境変数 AIBOW_MODELS_DIR で変える";
   return (
     <div className="place-list">
       {places.map(p => {
@@ -213,12 +222,14 @@ function AddPlace({ onAdd, onError }: {
         type="text"
         value={path}
         placeholder="D:\models\gguf"
-        title="フォルダか GGUF のファイル"
+        title={isBrowser ? "aibow-server の PC のフォルダか GGUF のファイル" : "フォルダか GGUF のファイル"}
         onChange={e => setPath(e.target.value)}
         onKeyDown={e => { if (e.key === "Enter" && path.trim()) add(); }}
       />
-      <button onClick={() => choose("dir")} title="フォルダを選ぶ"><LuFolder /> フォルダ</button>
-      <button onClick={() => choose("file")} title="GGUF のファイルを選ぶ"><LuFile /> ファイル</button>
+      {!isBrowser && <>
+        <button onClick={() => choose("dir")} title="フォルダを選ぶ"><LuFolder /> フォルダ</button>
+        <button onClick={() => choose("file")} title="GGUF のファイルを選ぶ"><LuFile /> ファイル</button>
+      </>}
       <button disabled={!path.trim()} onClick={add}>足す</button>
     </div>
   );

@@ -83,8 +83,11 @@ func (e *fakeEngine) Generate(ctx context.Context, p format.Prompt, opt engine.G
 
 // fakeModels は偽物のモデルの係(ServerModels)。
 type fakeModels struct {
-	eng   *fakeEngine
-	loads []string
+	eng      *fakeEngine
+	loads    []string
+	layers   map[string]int // SetGPULayers で覚えた層の数
+	added    []string       // AddPlace で足した置き場所
+	unloaded int            // Unload を呼んだ回数
 }
 
 func (m *fakeModels) List() []models.Entry {
@@ -113,6 +116,46 @@ func (m *fakeModels) Load(e models.Entry) (*engine.ModelInfo, error) {
 
 func (m *fakeModels) HasGPU() bool { return true }
 
+func (m *fakeModels) GPULayers(id string) int {
+	if n, ok := m.layers[id]; ok {
+		return n
+	}
+	return 999
+}
+
+func (m *fakeModels) SetGPULayers(id string, n int) (*engine.ModelInfo, error) {
+	if m.layers == nil {
+		m.layers = map[string]int{}
+	}
+	m.layers[id] = n
+	return nil, nil
+}
+
+func (m *fakeModels) Unload() (bool, error) {
+	m.unloaded++
+	m.eng.mu.Lock()
+	m.eng.model = ""
+	m.eng.mu.Unlock()
+	return true, nil
+}
+
+func (m *fakeModels) Places() []models.Place {
+	l := []models.Place{{Path: `C:\Users\server\.ollama\models`, Origin: models.OriginOllama, Kind: "dir", Models: 2}}
+	for _, p := range m.added {
+		l = append(l, models.Place{Path: p, Origin: models.OriginAdded, Kind: "dir"})
+	}
+	return l
+}
+
+func (m *fakeModels) AddPlace(path string) error {
+	m.added = append(m.added, path)
+	return nil
+}
+
+func (m *fakeModels) RemovePlace(path string) error {
+	return errors.New("外せません: " + path)
+}
+
 type testWeb struct {
 	url  string
 	eng  *fakeEngine
@@ -120,6 +163,8 @@ type testWeb struct {
 	seat *api.Seat
 	// user は、画面用の口を呼んだ利用者(aibow-server の who の代わり)。nil ならログインなしの形の利用者。テストの途中で替える
 	user atomic.Pointer[uuid.UUID]
+	// admin は、呼んだ人が管理者か(0018 の 11-0)。テストの途中で替える
+	admin atomic.Bool
 }
 
 // newTestWeb は、aibow-server の browser.go と同じ組み立てで、画面用の口を httptest で立てる。
@@ -148,15 +193,16 @@ func newTestWeb(t *testing.T) *testWeb {
 	})
 	t.Cleanup(life.Stop)
 	w := &testWeb{url: srv.URL, eng: eng, mm: mm, seat: seat}
-	srv.Config.Handler = Handler(svc, events, func(*http.Request) (uuid.UUID, error) {
+	// httptest は 127.0.0.1 で待ち受けるので、サーバーの PC の上からかは見ない(管理者かだけで、見せるものが変わることを確かめる)
+	srv.Config.Handler = Handler(svc, events, func(*http.Request) (Caller, error) {
 		u := w.user.Load()
 		switch {
 		case u == nil:
-			return aibow.LocalUser, nil
+			return Caller{ID: aibow.LocalUser, Admin: w.admin.Load()}, nil
 		case *u == (uuid.UUID{}):
-			return uuid.UUID{}, errors.New("ログインしてください")
+			return Caller{}, errors.New("ログインしてください")
 		}
-		return *u, nil
+		return Caller{ID: *u, Admin: w.admin.Load()}, nil
 	})
 	return w
 }
@@ -301,10 +347,25 @@ func TestWebCall(t *testing.T) {
 		t.Errorf("表示だけの設定は作業領域だけのはず: %+v", ms.Settings)
 	}
 
-	for _, name := range []string{"UnloadModel", "SetGPULayers", "AddModelPlace", "ToolPrefs", "ConfirmTool", "BuiltinTools", "ChooseWorkDir", "Nothing"} {
+	for _, name := range []string{"SetGPULayers", "ToolPrefs", "ConfirmTool", "BuiltinTools", "ChooseWorkDir", "Nothing"} {
 		if status, body := w.call(t, context.Background(), name); status != http.StatusNotFound {
 			t.Errorf("%s は 404 のはず: %d %s", name, status, body)
 		}
+	}
+	// サーバーの PC の事情を変えるものは、管理者でなければ 403(0018 の 11-0)
+	for _, c := range []struct {
+		name string
+		args []any
+	}{
+		{"UnloadModel", nil}, {"SetModelGPULayers", []any{"ollama:a", 10}}, {"ModelPlaces", nil},
+		{"AddModelPlace", []any{"/data"}}, {"RemoveModelPlace", []any{"/data"}},
+	} {
+		if status, body := w.call(t, context.Background(), c.name, c.args...); status != http.StatusForbidden {
+			t.Errorf("%s は 403 のはず: %d %s", c.name, status, body)
+		}
+	}
+	if w.mm.unloaded != 0 || len(w.mm.added) != 0 || len(w.mm.layers) != 0 {
+		t.Errorf("断ったのに変わっている: %+v", w.mm)
 	}
 	if status, body := w.call(t, context.Background(), "TryLimits", 1); status != http.StatusBadRequest {
 		t.Errorf("引数の数が違えば 400 のはず: %d %s", status, body)
@@ -321,6 +382,42 @@ func TestWebCall(t *testing.T) {
 	w.mustCall(t, &changed, "TryLimits", 8192, 8192)
 	if changed {
 		t.Error("作業領域は作り直さないはず")
+	}
+}
+
+// 管理者には、モデルのタブを全部見せて変えさせる(0018 の決定事項 8)
+func TestWebAdminModels(t *testing.T) {
+	w := newTestWeb(t)
+	w.admin.Store(true)
+
+	var m ModelsResult
+	w.mustCall(t, &m, "Models")
+	if !m.Manage || m.Models[0].Origin != models.OriginOllama || m.Models[0].Place == "" || m.GPULayers["ollama:a"] != 999 {
+		t.Fatalf("管理者には出どころ・置き場所・層の数を見せるはず: %+v", m)
+	}
+	var places []models.Place
+	w.mustCall(t, &places, "AddModelPlace", "/data")
+	if len(places) != 2 || places[1].Path != "/data" {
+		t.Errorf("足したあとの置き場所: %+v", places)
+	}
+	if status, body := w.call(t, context.Background(), "RemoveModelPlace", "/nothing"); status != http.StatusInternalServerError || !strings.Contains(string(body), "外せません") {
+		t.Errorf("外せない置き場所: %d %s", status, body)
+	}
+	w.mustCall(t, nil, "SetModelGPULayers", "ollama:b", 12)
+	if w.mm.layers["ollama:b"] != 12 {
+		t.Errorf("層の数: %+v", w.mm.layers)
+	}
+	w.mustCall(t, nil, "UnloadModel")
+	if w.mm.unloaded != 1 {
+		t.Error("降ろしていない")
+	}
+
+	// 管理者でなくなれば、見せない
+	w.admin.Store(false)
+	m = ModelsResult{}
+	w.mustCall(t, &m, "Models")
+	if m.Manage || m.Models[0].Origin != "" || m.Models[0].Place != "" || len(m.GPULayers) != 0 {
+		t.Errorf("管理者でない人に、サーバーの PC の事情が見えている: %+v", m)
 	}
 }
 

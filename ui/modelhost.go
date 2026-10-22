@@ -17,6 +17,7 @@ package ui
 // サーバーの PC の人は、aibow-server の server.json か口(POST /models/unload・/aibow/gpu-layers・/aibow/places/*)で変える。
 
 import (
+	"context"
 	"fmt"
 	"maps"
 	"path/filepath"
@@ -34,8 +35,9 @@ import (
 type ModelHost interface {
 	// generator は会話の仕組みに渡す生成の口(*engine.Engine か *client.Client)
 	generator() aibow.Generator
-	// list は使えるモデルの一覧と、読み込み中のモデル・GPU があるか。HTTP 越しでつながらなければエラー
-	list() (hostModels, error)
+	// list は使えるモデルの一覧と、読み込み中のモデル・GPU があるか。HTTP 越しでつながらなければエラー。
+	// ctx は呼んだ人(aibow-server の中では、サーバーの PC の事情を見せてよい人か。caller.go)
+	list(ctx context.Context) (hostModels, error)
 	// info は読み込み中のモデル(知らなければ nil)。聞きに行かない
 	info() *engine.ModelInfo
 	// load はモデルを読み込む。GPU の層数は、そのモデルに覚えた値
@@ -49,14 +51,16 @@ type ModelHost interface {
 	// server はつなぎ先(直接なら空)。画面の吹き出しとログに出す
 	server() string
 
+	// サーバーの PC の事情を変えるもの(0015 の 8-4)。ctx は呼んだ人(aibow-server の中では、変えてよい人かを確かめる。0018 の 11-0)
+	//
 	// unload は読み込み中のモデルを降ろす(VRAM を空ける。0015 の 23)。次の送信の前に会話のモデルを読み込む
-	unload() error
+	unload(ctx context.Context) error
 	// setModelGPULayers は、モデルごとの GPU の層数を変えて覚える。読み込み中のモデルなら読み直す(そのときだけ情報を返す)
-	setModelGPULayers(id string, n int) (*engine.ModelInfo, error)
+	setModelGPULayers(ctx context.Context, id string, n int) (*engine.ModelInfo, error)
 	// places はモデルの置き場所の一覧。addPlace / removePlace は、足した置き場所を足す / 外して、そのあとの一覧を返す
-	places() ([]models.Place, error)
-	addPlace(path string) ([]models.Place, error)
-	removePlace(path string) ([]models.Place, error)
+	places(ctx context.Context) ([]models.Place, error)
+	addPlace(ctx context.Context, path string) ([]models.Place, error)
+	removePlace(ctx context.Context, path string) ([]models.Place, error)
 	// settings は表示だけの設定(作業領域・ポート・llama.cpp の場所・最初のモデル。画面からは変えない。0015 の 21)
 	settings() (apiclient.ServerSettings, error)
 }
@@ -67,6 +71,8 @@ type hostModels struct {
 	current *engine.ModelInfo
 	gpu     bool
 	layers  map[string]int // モデルの ID → 読み込むときの GPU の層数
+	// manage は、サーバーの PC の事情を見せて変えてよい人に返した一覧か(aibow-server の中の管理者。0018 の 11-0)
+	manage bool
 }
 
 // ---- 直接(アプリの中の engine) --------------------------------------------------------
@@ -101,7 +107,7 @@ func (h *DirectHost) catalogNow() models.Catalog {
 }
 
 // list は一覧を作る。見つからない足した置き場所は一覧に出さず、見つからなくなったときに1回だけ Warn のログを出す(0015 の 28)。
-func (h *DirectHost) list() (hostModels, error) {
+func (h *DirectHost) list(context.Context) (hostModels, error) {
 	c := h.catalogNow()
 	lost, found := h.missing.Check(c)
 	logPlaces(lost, found)
@@ -150,7 +156,7 @@ func (h *DirectHost) setGPULayers(n int) (*engine.ModelInfo, error) {
 }
 
 // setModelGPULayers は、読み込み中のモデルなら読み直して覚え、ほかのモデルなら覚えるだけ(次に読み込むときから効く)。
-func (h *DirectHost) setModelGPULayers(id string, n int) (*engine.ModelInfo, error) {
+func (h *DirectHost) setModelGPULayers(_ context.Context, id string, n int) (*engine.ModelInfo, error) {
 	if i := h.eng.Info(); i != nil && i.ID == id {
 		return h.setGPULayers(n)
 	}
@@ -181,15 +187,17 @@ func (h *DirectHost) tryContext(n int) (bool, error) {
 	return changed, nil
 }
 
-func (h *DirectHost) unload() error {
+func (h *DirectHost) unload(context.Context) error {
 	_, err := h.eng.UnloadModel()
 	return err
 }
 
-func (h *DirectHost) places() ([]models.Place, error) { return h.catalogNow().Places(), nil }
+func (h *DirectHost) places(context.Context) ([]models.Place, error) {
+	return h.catalogNow().Places(), nil
+}
 
 // addPlace は置き場所を確かめて(あるか・フォルダか GGUF か・まだ入っていないか)、model-places.json に覚える。
-func (h *DirectHost) addPlace(path string) ([]models.Place, error) {
+func (h *DirectHost) addPlace(ctx context.Context, path string) ([]models.Place, error) {
 	c := h.catalogNow()
 	abs, err := c.CheckPlace(path)
 	if err != nil {
@@ -199,11 +207,11 @@ func (h *DirectHost) addPlace(path string) ([]models.Place, error) {
 		return nil, err
 	}
 	log.Noticef("モデルの置き場所を足しました: %s", abs)
-	return h.places()
+	return h.places(ctx)
 }
 
 // removePlace は足した置き場所を外す。手で決めた置き場所(AIBOW_MODELS_DIR・OLLAMA_MODELS)は外せない(0015 の 26)。
-func (h *DirectHost) removePlace(path string) ([]models.Place, error) {
+func (h *DirectHost) removePlace(ctx context.Context, path string) ([]models.Place, error) {
 	c := h.catalogNow()
 	p, ok := c.IsAdded(path)
 	if !ok {
@@ -213,7 +221,7 @@ func (h *DirectHost) removePlace(path string) ([]models.Place, error) {
 		return nil, err
 	}
 	log.Noticef("モデルの置き場所を外しました: %s", p)
-	return h.places()
+	return h.places(ctx)
 }
 
 // settings は、直接の形の表示だけの設定。作業領域は会話ごと(会話の上限 + 返事の上限)なので 0、ポートは無い(待ち受けない)。
@@ -250,7 +258,7 @@ func (h *RemoteHost) generator() aibow.Generator { return h.c }
 func (h *RemoteHost) info() *engine.ModelInfo    { return h.c.Shown() } // 画面に見せるモデル(入れ替えの途中は前のモデル)
 func (h *RemoteHost) server() string             { return h.c.URL() }
 
-func (h *RemoteHost) list() (hostModels, error) {
+func (h *RemoteHost) list(context.Context) (hostModels, error) {
 	l, err := h.c.Models()
 	if err != nil {
 		return hostModels{}, err
@@ -286,7 +294,7 @@ func (h *RemoteHost) setGPULayers(int) (*engine.ModelInfo, error) {
 	return nil, errServerSide("GPU に載せる層の数")
 }
 
-func (h *RemoteHost) setModelGPULayers(string, int) (*engine.ModelInfo, error) {
+func (h *RemoteHost) setModelGPULayers(context.Context, string, int) (*engine.ModelInfo, error) {
 	return nil, errServerSide("GPU に載せる層の数")
 }
 
@@ -296,16 +304,18 @@ func (h *RemoteHost) tryContext(n int) (bool, error) {
 }
 
 // unload は、aibow-server 越しではしない。会話に結びつかない降ろすは、サーバーを使っているほかの利用者と取り合いになるだけなので
-func (h *RemoteHost) unload() error { return errServerSide("モデルを降ろすこと") }
+func (h *RemoteHost) unload(context.Context) error {
+	return errServerSide("モデルを降ろすこと")
+}
 
 // places・addPlace・removePlace は、HTTP 越しではしない(置き場所のパスはサーバーの PC のファイル構成で、つないでくる側に見せない)。
-func (h *RemoteHost) places() ([]models.Place, error) {
+func (h *RemoteHost) places(context.Context) ([]models.Place, error) {
 	return nil, errServerSide("モデルの置き場所")
 }
-func (h *RemoteHost) addPlace(string) ([]models.Place, error) {
+func (h *RemoteHost) addPlace(context.Context, string) ([]models.Place, error) {
 	return nil, errServerSide("モデルの置き場所")
 }
-func (h *RemoteHost) removePlace(string) ([]models.Place, error) {
+func (h *RemoteHost) removePlace(context.Context, string) ([]models.Place, error) {
 	return nil, errServerSide("モデルの置き場所")
 }
 
