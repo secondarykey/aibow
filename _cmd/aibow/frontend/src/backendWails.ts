@@ -16,6 +16,8 @@ export const backend: Backend = {
   onModelLoaded: f => Events.On("models", () => f()),
   // 名前は main.go の windowFocusEventName と同じ
   onWindowFocus: f => Events.On("aibow:window:focus", () => f()),
+  // Wails のイベントはアプリの中で届くので、切れてつなぎ直すことは無い
+  onReconnect: () => () => {},
 
   // まずブラウザの navigator.clipboard を使う(WebView2 の画面は http://wails.localhost で、安全な場所として扱われるので使える)。
   // 使えなかったときは、Wails のランタイムの Clipboard.SetText(Go 側で OS のクリップボードに書く)を使う

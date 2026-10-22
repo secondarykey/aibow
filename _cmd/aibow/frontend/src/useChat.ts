@@ -188,7 +188,8 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
       else (heldErrors.current[id] ??= []).push(text);
     };
     let finish = () => {};
-    const finished = new Promise<void>(resolve => (finish = resolve));
+    let ended = false; // done が届いた・呼び出しが失敗した(この送信の終わりを済ませた)
+    const finished = new Promise<void>(resolve => (finish = () => { ended = true; resolve(); }));
     listener.current = ev => {
       if (ev.conversation_id !== id) return;
       switch (ev.type) {
@@ -311,6 +312,16 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
         else call.cancel();
       },
     };
+    call.then(() => {
+      // Go のメソッドは done を送ってから返る。返ったのに done が届かないのは、知らせのつながりが途中で切れていたとき(ブラウザ。0016 の 9-3)。
+      // 少し待っても来なければ、保存された内容で開き直して終える(生成中の吹き出しが途中のまま残らないように)
+      window.setTimeout(() => {
+        if (ended) return;
+        live.current = null;
+        finish();
+        reopen();
+      }, 3000);
+    }, () => {});
     call.catch(err => {
       if (isCancel(err)) return; // 停止ボタン。done イベントは Go から届く
       // Go のメソッドを呼べなかった(done イベントは来ない)

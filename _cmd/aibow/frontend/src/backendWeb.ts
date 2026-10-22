@@ -51,12 +51,24 @@ const ChatService = new Proxy({} as ChatAPI, {
 });
 
 // events は、知らせを受け取る SSE のつながり。最初に受け取るとき(画面を開いたとき)に1つだけ作り、画面を閉じるまで使う。
-// 切れたら EventSource が自分でつなぎ直す(切れている間の知らせは届かない。0016 の未決事項)
+// 切れたら EventSource が自分でつなぎ直す。切れている間の知らせは届かないので、つなぎ直したら画面が取り直す(onReconnect。0016 の 9-3)
 let source: EventSource | null = null;
+let opened = false; // 一度つながったか(2回目からの open がつなぎ直し)
+const reconnected = new Set<() => void>();
+
+function events(): EventSource {
+  if (!source) {
+    source = new EventSource("/aibow/ui/events");
+    source.addEventListener("open", () => {
+      if (opened) reconnected.forEach(f => f());
+      opened = true;
+    });
+  }
+  return source;
+}
 
 function on(name: string, f: (data: string) => void): () => void {
-  source ??= new EventSource("/aibow/ui/events");
-  const s = source;
+  const s = events();
   const handler = (e: MessageEvent<string>) => f(e.data);
   s.addEventListener(name, handler);
   return () => s.removeEventListener(name, handler);
@@ -73,6 +85,11 @@ export const backend: Backend = {
     const handler = () => f();
     window.addEventListener("focus", handler);
     return () => window.removeEventListener("focus", handler);
+  },
+  onReconnect: f => {
+    events();
+    reconnected.add(f);
+    return () => reconnected.delete(f);
   },
 
   // http://127.0.0.1 は安全な場所として扱われるので、navigator.clipboard が使える

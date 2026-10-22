@@ -33,6 +33,7 @@ export interface Backend {
   onChat(f: (ev: ChatEvent) => void): () => void; // 生成の途中経過(Go の ui.ChatEventName)
   onModelLoaded(f: () => void): () => void;       // 起動時のモデルの読み込みが終わった(Go の ui.ModelsEventName)
   onWindowFocus(f: () => void): () => void;       // ウィンドウがアクティブに戻った(IME の対策。imeFocus.tsx)
+  onReconnect(f: () => void): () => void;         // 知らせのつながりが切れて、つなぎ直した(ブラウザだけ。デスクトップでは来ない)
   copyText(text: string): Promise<void>;
   openURL(url: string): Promise<void>;            // リンクを開く(デスクトップは OS のブラウザ、ブラウザは新しいタブ)
   appWindow: {                                    // Frameless のウィンドウの操作(タイトルバー。ブラウザでは何もしない)
@@ -74,6 +75,10 @@ export function onModelLoaded(f: () => void): () => void {
 
 export function onWindowFocus(f: () => void): () => void {
   return b.onWindowFocus(f);
+}
+
+export function onReconnect(f: () => void): () => void {
+  return b.onReconnect(f);
 }
 
 export function copyText(text: string): Promise<void> {

@@ -39,7 +39,7 @@ import { Composer } from "./components/Composer";
 import { WorkDirBar } from "./components/WorkDirBar";
 import { ToolBar } from "./components/ToolBar";
 import { LuSettings } from "react-icons/lu";
-import { ChatService, isBrowser } from "./backend";
+import { ChatService, isBrowser, onReconnect } from "./backend";
 import type { ServerInfo } from "../bindings/github.com/secondarykey/aibow/mcp/client";
 import type { ConversationSettings } from "../bindings/github.com/secondarykey/aibow";
 import { ImeFocusRelay } from "./imeFocus";
@@ -158,14 +158,16 @@ export default function App() {
     prevBusy.current = busy;
   }, [busy, models.reload]);
 
-  // ウィンドウに戻ってきたら一覧を作り直す(aibow を起動したまま ollama pull したときのため)
+  // ウィンドウに戻ってきたら一覧を作り直す(aibow を起動したまま ollama pull したときのため)。
+  // 会話の一覧も取り直す(ブラウザのタブを2つ開いて、片方で会話を作った・消したとき。0016 の 9-3)
   useEffect(() => {
     const onFocus = () => {
       if (busy === "idle") models.reload().catch(() => {});
+      convs.reloadList().catch(() => {});
     };
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
-  }, [busy, models.reload]);
+  }, [busy, models.reload, convs.reloadList]);
 
   const currentId = convs.current?.conversation.id ?? null;
   // 開いている会話を覚えておき、次の起動で開く(新しい会話の画面なら消す)。
@@ -305,6 +307,23 @@ export default function App() {
   const convTitle = convs.list.find(c => c.id === currentId)?.title || "新しい会話";
   const showConvSettings = convSettingsOpen && convs.current !== null;
   const title = settingsOpen ? "設定" : showConvSettings ? "会話の設定" : convTitle;
+
+  // ブラウザのタブの題名は、開いている会話の名前(タブが並んでも見分けられるように。0016 の 9-3)。
+  // デスクトップのウィンドウの名前は Go が決める(タスクバーに出る。main.go)ので変えない
+  useEffect(() => {
+    if (isBrowser) document.title = currentId ? `${convTitle} - aibow` : "aibow";
+  }, [currentId, convTitle]);
+
+  // 知らせ(SSE)のつながりが切れて、つなぎ直したら、切れている間のことを取り直す(ブラウザだけ。0016 の 9-3)。
+  // 生成中の会話は、送信の終わりで開き直す(useChat)ので、ここでは開き直さない
+  const reconnectState = useRef({ currentId, generatingId: chat.generatingId });
+  reconnectState.current = { currentId, generatingId: chat.generatingId };
+  useEffect(() => onReconnect(() => {
+    const { currentId, generatingId } = reconnectState.current;
+    convs.reloadList().catch(() => {});
+    models.reload().catch(() => {});
+    if (currentId && currentId !== generatingId) convs.open(currentId).catch(err => addError(errorMessage(err)));
+  }), [convs.reloadList, convs.open, models.reload, addError]);
 
   const markSettingsFrom = () => setSettingsFrom(transcript.items.reduce((m, it) => Math.max(m, it.id), 0));
   const toggleSettings = () => {
