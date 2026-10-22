@@ -14,7 +14,7 @@ aibow は、ローカルLLMを使ったアプリを**自分で作りながら仕
 
 完成品を早く作ることより、**各段階で何が起きているかが読んで分かること**を優先してください。
 
-## 全体の構成(ステップ9: ブラウザからも使う)
+## 全体の構成(ステップ10: 利用者とログイン・ほかの PC から使う)
 
 ```
 ウィンドウ(_cmd/aibow/frontend の React) ⇄ Wails v3 ⇄ aibow/ui ⇄ aibow ⇄ aibow/engine ⇄ yzma ⇄ llama.cpp(_cmd/aibow/lib\ の DLL)⇄ GPU
@@ -25,11 +25,13 @@ aibow は、ローカルLLMを使ったアプリを**自分で作りながら仕
 MCP のクライアント(Claude Code・aibow など)⇄ 標準入出力 ⇄ aibow-mcp(_cmd/aibow-mcp)= aibow/mcp/server ⇄ aibow/tool
 aibow の組み込みのツール: 会話の仕組み ⇄ aibow/mcp/client の Local ⇄ MCP(メモリ内)⇄ aibow/mcp/server ⇄ aibow/tool
 
-OpenAI 互換のクライアント(Cline など)⇄ HTTP(127.0.0.1)⇄ aibow-server(_cmd/aibow-server)= aibow/api ⇄ aibow/engine
+OpenAI 互換のクライアント(Cline など)⇄ HTTP(S)(既定は 127.0.0.1。外では API キー)⇄ aibow-server(_cmd/aibow-server)= aibow/api ⇄ aibow/engine
 画面のアプリを aibow-server につなぐとき(settings.json の serverUrl。ステップ8・10):aibow ⇄ aibow/api/client(生成)・aibow/store/remote(保存)⇄ HTTP ⇄ aibow-server(アプリは llama.cpp を読み込まず、会話は server.db。
   つながないとき(既定)は上の図のとおりアプリの中で動かし、そのときは aibow-server と同時に使わない)
-ブラウザ(http://127.0.0.1:8089/。ステップ9)⇄ HTTP(127.0.0.1。画面と /aibow/ui/ の呼び出しと SSE)⇄ aibow-server = aibow/ui ⇄ aibow(ツールなし)⇄ aibow/engine
+ブラウザ(http://127.0.0.1:8089/。ステップ9)⇄ HTTP(S)(画面と /aibow/ui/ の呼び出しと SSE。ログインは cookie のセッション。ステップ10)⇄ aibow-server = aibow/ui ⇄ aibow(ツールなし)⇄ aibow/engine
   (画面は aibow/web に埋め込んだもので、デスクトップのアプリと同じ。会話は aibow-server の server.db。生成は OpenAI 互換の口と同じ engine・同じ順番待ちの席 api.Seat)
+利用者(ステップ10):aibow-server の server.db に利用者・セッション・API キー(aibow/auth)。会話・プロファイル・表示の設定は持ち主で分かれ、誰のものかは ctx で運ぶ(aibow.WithUser)。
+  既定は 127.0.0.1 だけでログインなし(利用者 local)。-host で外に出すとログインと API キーが要る([_docs/usage.md](_docs/usage.md) の「ほかの PC から使う」)
 ```
 
 - **Ollama などの外部 LLM サーバーは使わない**。aibow のプロセスの中で llama.cpp を直接動かす。
