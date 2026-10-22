@@ -204,8 +204,9 @@ go build -o aibow-server.exe ./_cmd/aibow-server
 ```
 
 ```
-aibow-server [-model モデル] [-ctx 作業領域の大きさ] [-port ポート] [-lib llama.cpp のフォルダ] [-models GGUF のフォルダ] [-config 設定ファイル] [-login] [-debug]
-aibow-server [-config 設定ファイル] user list|add|passwd|remove [名前]
+aibow-server [-model モデル] [-ctx 作業領域の大きさ] [-port ポート] [-host アドレス] [-tls-cert 証明書 -tls-key 秘密鍵] [-lib llama.cpp のフォルダ] [-models GGUF のフォルダ] [-config 設定ファイル] [-login] [-debug]
+aibow-server [-config 設定ファイル] user list|add|passwd|remove|key [名前]
+aibow-server [-config 設定ファイル] cert <ホスト名か IP アドレス>...
 ```
 
 以前の名前は `aibow-api` でした(ステップ8で、モデルの一覧や切り替えも持つ「aibow のサーバー」になるので名前を変えた)。
@@ -216,7 +217,7 @@ aibow-server [-config 設定ファイル] user list|add|passwd|remove [名前]
 - `-model` は `ollama:qwen3.5:4b` のような ID・`qwen3.5:4b` のような一覧の名前・GGUF ファイルのパス。書かなければ `AIBOW_MODEL`、それも無ければ一覧の先頭から、書式に対応している最初のモデルです(models フォルダに未対応のモデル(gemma4 など)を置いても起動できるように、GGUF の先頭から種類だけを読んで飛ばします)。書式に未対応のモデルを指定すると、読み込む前に理由を出して止まります。
   `-model` は起動したときに読み込むモデルで、リクエストの `model` が違えば読み直してから答えます(数秒〜十数秒。知らない名前なら読み込み中のモデルで答えます)。`/v1/models` は使えるモデルを全部返します
 - `-ctx` は作業領域の大きさ(プロンプト + 返事のトークン数。既定 32768。`AIBOW_SERVER_CTX`)。履歴がこれに入らないリクエストは、400 のエラー(`code: context_length_exceeded`)で断ります(compact はしません)
-- `-port` は待ち受けのポート(既定 8089。`AIBOW_SERVER_PORT`)。待ち受けは `127.0.0.1` だけで、PC の外からはつなげません
+- `-port` は待ち受けのポート(既定 8089。`AIBOW_SERVER_PORT`)。待ち受けは既定で `127.0.0.1` だけで、PC の外からはつなげません(広げるときは下の「ほかの PC から使う」)
 - `-lib`・`-models` は llama.cpp の DLL のフォルダと GGUF を置くフォルダ(既定はカレントフォルダの `lib`・`models`。`AIBOW_LIB`・`AIBOW_MODELS_DIR`)。
   リポジトリのフォルダで起動するときは `aibow-server -lib _cmd/aibow/lib -models _cmd/aibow/models` のように指定します
 - GPU の層数・返事の上限の既定・presence penalty は、アプリと同じ環境変数(下の表)で決めます。画面の設定(DB)は読みません
@@ -250,7 +251,7 @@ aibow-server [-config 設定ファイル] user list|add|passwd|remove [名前]
 }
 ```
 
-- 欄は `port`・`ctx`・`model`・`lib`・`modelsDir`・`logLevel`・`login` の7つ。知らない欄があると、書き間違いとして起動を止めます
+- 欄は `port`・`ctx`・`model`・`lib`・`modelsDir`・`logLevel`・`login`・`host`・`tlsCert`・`tlsKey` の10こ。知らない欄があると、書き間違いとして起動を止めます
 - `login` を `true` にすると、ブラウザの画面にログインが要るようになります(下の「ログインと利用者」)
 - 読んだときは、起動のログに「設定ファイル: …」と出ます
 - 同じフォルダの `server-models.json` は aibow-server が書くファイルです(モデルごとの GPU の層数など)。手で書かなくて構いません
@@ -265,7 +266,7 @@ VS Code の Cline(4.1.23 で確かめた)の設定(歯車)で、次のように�
 |---|---|
 | API Provider | OpenAI Compatible |
 | Base URL | `http://127.0.0.1:8089/v1` |
-| API Key | 何でもよい(aibow-server は見ない。空だと先に進めないことがある) |
+| API Key | ログインが要る形・ほかの PC から使う形なら、`aibow-server user key <名前>` で作ったキー。127.0.0.1 だけでログインなしなら何でもよい(空だと先に進めないことがある) |
 | Model ID | 起動したモデルの ID(例: `ollama:qwen3.5:4b`。`/v1/models` が返すもの) |
 | Supports Images(MODEL CONFIGURATION) | オフ |
 | Context Window Size(MODEL CONFIGURATION) | aibow-server の `-ctx` と同じ(既定 32768) |
@@ -298,6 +299,17 @@ curl http://127.0.0.1:8089/v1/chat/completions -H "Content-Type: application/jso
 }
 ```
 
+aibow-server がログインの要る形・ほかの PC の aibow-server につなぐときは、API キーも書きます(`aibow-server user key <名前>` で作ったもの)。
+自己署名の証明書で HTTPS にしている aibow-server なら、サーバーの PC から写した証明書のファイルも書きます(下の「ほかの PC から使う」)。
+
+```json
+{
+  "serverUrl": "https://192.168.1.10:8089",
+  "serverKey": "aibow_…",
+  "serverCert": "C:/Users/<ユーザー>/aibow/server-cert.pem"
+}
+```
+
 3. アプリを起動し直す(つなぎ先は起動したときに読みます)
 
 - 書かなければ(既定)、今までどおりアプリの中でモデルを動かします。HTTP は使わず、ポートも開きません。どちらの形でも、アプリは HTTP のサーバーを立てません(つなぎに行くだけ)
@@ -320,7 +332,7 @@ aibow-server を起動すると、ブラウザで `http://127.0.0.1:8089/` を�
 - 会話は aibow-server の `server.db` に保存します。画面のアプリの会話とは別です
 - ブラウザではツールを使いません。モデルを読み込む・降ろす・GPU の層数・置き場所も、ブラウザからは変えません(サーバーの PC で決めることなので)
 - 生成は Cline など(OpenAI 互換の口)と順番に行います。ほかの生成の途中で送ると「ほかの生成が終わるのを待っています…」と出て、終わってから返事を作ります
-- 待ち受けは `127.0.0.1` だけです(ほかの PC からはつなげません。ステップ10の 10-2 で、ログインと HTTPS と一緒に広げます)
+- 待ち受けは既定で `127.0.0.1` だけです。ほかの PC から使うときは、下の「ほかの PC から使う」
 - ブラウザのタブの題名は、開いている会話の名前になります。タブを2つ開いているときは、タブに戻ると会話の一覧を取り直します
 - aibow-server を起動し直したり、PC がスリープから戻ったりして知らせのつながりが切れても、自分でつなぎ直し、会話の一覧と開いている会話を取り直します。止まっている間に送ると「aibow-server につながりません」と出て、打った文は入力欄に戻ります
 
@@ -343,7 +355,37 @@ aibow-server user add bob
 - 設定ファイルを `-config` で指しているときは、コマンドにも同じ `-config` を付けます(`server.db` がその隣にあるため)
 - `local`(ログインなしの形の利用者)はパスワードが無いのでログインできません。ログインが要る形でも今までの会話を使うときは、`aibow-server user passwd local` でパスワードを作ります
 - ログインしたままでいられるのは、最後に使ってから 30 日です(使うたびに延びます。aibow-server を起動し直しても切れません)。ログアウトは、会話の一覧の下の名前を押すと出ます
-- まだ守っているのはブラウザの画面だけです。OpenAI 互換の口(Cline など)と画面のアプリのつなぎ先は、今までどおりログインなしで使えます(API キーはステップ10の 10-2)
+- ログインが要る形では、OpenAI 互換の口(Cline など)と画面のアプリのつなぎ先にも API キーが要ります。`aibow-server user key <名前>` で作り、このときだけ表示します(1人1本。作り直すと前のキーは使えません)
+- ログインを5回続けて間違えると、15 分はログインできません
+
+### ほかの PC から使う(ステップ10)
+
+`-host 0.0.0.0`(設定ファイルの `host`・`AIBOW_SERVER_HOST`)で、ほかの PC からもつなげるようにします。`127.0.0.1` の外で待ち受けると、ログインと API キーが必ず要ります。
+
+1. 証明書を作る(HTTPS にするため。作らなくても動きますが、パスワード・API キー・会話が暗号化されずに流れるので、起動のときに注意が出ます)
+
+   ```bash
+   aibow-server cert 192.168.1.10 my-pc.local
+   ```
+   ほかの PC からつなぐときのアドレス(IP アドレスか名前)を書きます。設定ファイルの隣に `server-cert.pem`(証明書)と `server-key.pem`(秘密鍵)ができます。有効なのは 397 日で、切れたら消して作り直します
+
+2. `server.json` に書いて起動し直す
+
+   ```json
+   {
+     "host": "0.0.0.0",
+     "tlsCert": "C:/Users/<ユーザー>/AppData/Roaming/aibow/server-cert.pem",
+     "tlsKey": "C:/Users/<ユーザー>/AppData/Roaming/aibow/server-key.pem"
+   }
+   ```
+   Windows では、初めて外で待ち受けるときにファイアウォールの許可を聞かれます(プライベートネットワークだけを許可します)
+
+3. 利用者を作り(`user add`)、使う人にパスワードと API キー(`user key`)を渡す
+
+- ブラウザ:`https://<サーバーの PC のアドレス>:8089/` を開きます。自己署名の証明書なので、初めは「この接続ではプライバシーが保護されません」と出ます。証明書がサーバーの PC で作ったものかを確かめて先へ進みます
+- 画面のアプリ:`settings.json` に `serverUrl`(`https://…`)・`serverKey`・`serverCert`(サーバーの PC から写した `server-cert.pem`。秘密鍵は写さない)を書きます(上の「画面のアプリを aibow-server につなぐ」)
+- Cline など:Base URL を `https://…/v1`、API Key を作ったキーにします。Node.js で動くものは、環境変数 `NODE_EXTRA_CA_CERTS` に写した証明書のファイルを書くと、自己署名の証明書を信頼します
+- モデルを降ろす・GPU の層数・モデルの置き場所は、サーバーの PC からだけ変えられます(ほかの PC からは「aibow-server を動かしている PC からだけできます」と断ります)
 
 ## 設定の変更
 
@@ -396,6 +438,8 @@ aibow-server user add bob
 | `AIBOW_LIB` | `lib` | llama.cpp の DLL があるフォルダ(相対パスはカレントフォルダが基準) |
 | `AIBOW_DB` | `%APPDATA%\aibow\aibow.db` | 会話を保存する SQLite のファイル。フォルダが無ければ作る |
 | `AIBOW_SETTINGS` | `%APPDATA%\aibow\settings.json` | 設定ファイル(手で書く設定。MCP のサーバーの `mcpServers` と、aibow-server のつなぎ先 `serverUrl`)。無ければ MCP を使わない |
+| `AIBOW_SERVER_KEY` | なし | aibow-server の API キー(ログインが要る形・ほかの PC の aibow-server につなぐとき)。settings.json の `serverKey` が優先 |
+| `AIBOW_SERVER_CERT` | なし | aibow-server の証明書のファイル(自己署名の証明書で HTTPS にしているとき)。settings.json の `serverCert` が優先 |
 | `AIBOW_SERVER_URL` | なし | 生成を頼む aibow-server のつなぎ先(例: `http://127.0.0.1:8089`)。書けばアプリは llama.cpp を読み込まない。settings.json の `serverUrl` が優先(「画面のアプリを aibow-server につなぐ」) |
 | `AIBOW_LOG_DIR` | `%APPDATA%\aibow\logs` | ログファイル(`aibow_<日付>.log`。日ごと)を書くフォルダ。exe は Notice 以上(起動した版・使ったモデル・変えた設定・注意・エラーなど)だけを書き、起動時に古いファイルを消して今日を含めて 10 日分を残す。異常終了したときは同じフォルダの `aibow_crash_<日時>.log` に内容が残る(次の起動で画面に知らせる)。MCP のサーバー `aibow-mcp` も同じフォルダの `aibow-mcp_<日付>.log` に、OpenAI 互換 API の `aibow-server` は `aibow-server_<日付>.log` に書く(どちらも Info 以上・10 日分)。フォルダが無ければ作る。`wails3 build` で作った exe は既定でここに書く。`wails3 dev` はターミナルに出し、ここの `aibow-dev_<日付>.log` にも書く(Info 以上・10 日分。exe のログと混ざらないよう名前を分けている) |
 | `AIBOW_TOOLS` | `%APPDATA%\aibow\tools.json` | ツールの扱いの、この PC の既定(設定の画面で変えたものを aibow が書く) |
@@ -407,7 +451,9 @@ aibow-server user add bob
 | `AIBOW_PRESENCE_PENALTY` | `1.5` | すでに生成した言葉を選ばれにくくする強さ。思考の堂々巡りを抑える。`0` で無効 |
 | `AIBOW_SERVER_CTX` | `32768` | `aibow-server` の作業領域の大きさ(プロンプト + 返事のトークン数)。引数の `-ctx`・設定ファイルの `ctx` が優先。以前の `AIBOW_API_CTX` は使わなくなった |
 | `AIBOW_SERVER_LOGIN` | `0` | `1` にすると、`aibow-server` のブラウザの画面にログインが要る(ステップ10)。引数の `-login`・設定ファイルの `login` が優先 |
-| `AIBOW_SERVER_PORT` | `8089` | `aibow-server` の待ち受けのポート(`127.0.0.1` だけ)。引数の `-port`・設定ファイルの `port` が優先。以前の `AIBOW_API_PORT` は使わなくなった |
+| `AIBOW_SERVER_HOST` | `127.0.0.1` | `aibow-server` の待ち受けのアドレス(`0.0.0.0` で全部のネットワーク。外ではログインと API キーが要る)。引数の `-host`・設定ファイルの `host` が優先 |
+| `AIBOW_SERVER_TLS_CERT`・`AIBOW_SERVER_TLS_KEY` | なし | `aibow-server` の HTTPS の証明書と秘密鍵のファイル(`aibow-server cert` で作れる)。引数の `-tls-cert`・`-tls-key`・設定ファイルの `tlsCert`・`tlsKey` が優先 |
+| `AIBOW_SERVER_PORT` | `8089` | `aibow-server` の待ち受けのポート。引数の `-port`・設定ファイルの `port` が優先。以前の `AIBOW_API_PORT` は使わなくなった |
 | `AIBOW_LLAMA_LOG` | なし | `1` にすると llama.cpp 自身の詳しいログ(どの層をどこに置いたか、読めない理由など)を出す。起動時に数千行出る |
 
 作業領域(コンテキスト長)は「会話の上限 + 返事の上限」から計算します(会話ごと。起動したときは新しい会話の既定の大きさで確保します)。増やすと長い会話ができますが、VRAM を使います(Qwen3.5 4B で 1 トークンあたり約 32KB)。

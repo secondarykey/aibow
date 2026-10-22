@@ -26,6 +26,7 @@
   - 版 7: 利用者 `users`(名前は UNIQUE・パスワードのハッシュ。空ならログインできない)とセッション `sessions`(合言葉の SHA-256・持ち主・期限)。
     ログインなしの形の利用者を名前 `local`・パスワード空で入れる。`auth.Store` の実装は `users.go`([auth](../auth) パッケージ。0017 の 10-1)。
     利用者を消すときは、その人の会話・プロファイル・人ごとの設定・セッションを1つのトランザクションで消す(`owner` は外部キーではないため)
+  - 版 8: API キー `api_keys`(1人1本なので利用者の ID が主キー。キーの SHA-256 は UNIQUE。利用者を消すと一緒に消える)。0017 の 10-2
 - 持ち主:会話・発言・要約・プロファイル・人ごとの設定は、`ctx` の利用者(`aibow.UserOf`)の行だけを読み書きする。ほかの人の行は無いものとして扱う(`ErrNotFound` など)。
   利用者の無い `ctx` は `aibow.ErrNoUser` で断る。`OneUser` を呼んだ DB(デスクトップのアプリの aibow.db)だけは、`aibow.LocalUser` のものとして扱う。
   アプリ全体の設定(`app_settings`)は利用者によらない。仕組みは [_docs/conversations.md](../_docs/conversations.md) の「持ち主」

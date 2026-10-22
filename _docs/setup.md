@@ -213,3 +213,15 @@ AIBOW_LIB=/d/Go/Projects/aibow/_cmd/aibow/lib AIBOW_MODELS_DIR=/d/Go/Projects/ai
 本体の `lib\` / `models\` へのジャンクション(フォルダの別名)は作らないでください。
 worktree を消すツールによっては、ジャンクションの先(本体の `lib\` / `models\`)の中身まで消してしまいます。
 `frontend/node_modules/` も Git に入っていないので、worktree の `_cmd/aibow/frontend` で `npm install` します。
+
+## ほかの PC から使えるようにする(aibow-server。ステップ10)
+
+aibow-server を同じ網のほかの PC から使うときの準備です。手順の詳細は [usage.md](usage.md) の「ログインと利用者」「ほかの PC から使う」にあります。
+
+1. 証明書を作る:`aibow-server cert <ほかの PC からつなぐときのアドレス>`(設定ファイルの隣に `server-cert.pem` と `server-key.pem` ができる)
+2. `server.json` に `"host": "0.0.0.0"` と `tlsCert`・`tlsKey` を書いて起動する(外で待ち受けると、ログインと API キーが必ず要る)
+3. 利用者を作る:`aibow-server user add <名前>`(パスワードを表示)と `aibow-server user key <名前>`(API キーを表示)。どちらもこのときだけ表示する
+4. 使う人に、アドレス・パスワード・API キーと、アプリや Cline で使うなら証明書(`server-cert.pem`。秘密鍵は渡さない)を渡す
+
+- ブラウザで初めて開くと、自己署名の証明書なので「この接続ではプライバシーが保護されません」と警告が出る。サーバーの PC で作った証明書かを確かめて先へ進む
+- Windows では、初めて外で待ち受けるときにファイアウォールの許可を聞かれる(プライベートネットワークだけを許可する)

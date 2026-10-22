@@ -59,7 +59,7 @@ OpenAI 互換のクライアント(Cline など)⇄ HTTP(127.0.0.1)⇄ aibow-ser
 | `internal/proc/` | 子プロセスまでまとめて止める仕組み(`tool` の `run_command` と `mcp/client` で使う) |
 | `log/` | aibow のログ(`log` パッケージ)。aibow のコードはログをここから出す。土台は wenteasy/log だが、使う人には `slog.Level` と `*slog.Logger` しか見せない。出口はアプリが `Init` で組み、ライブラリとして使う人は `SetLogger(*slog.Logger)` で aibow のログだけ別にできる(決めなければ `slog.Default()`)。詳しくは [log/AGENTS.md](log/AGENTS.md) |
 | `_cmd/aibow/` | デスクトップアプリ(Wails v3 + React)。別モジュール |
-| `_cmd/aibow-server/` | aibow のサーバーの exe(OpenAI 互換の API。`127.0.0.1` で待ち受ける。ステップ8で `aibow-api` から名前を変えた)。引数・設定ファイル(`server.json`)・環境変数を読み、モデルを読み込んで `api` を動かす。ブラウザの会話(`ui` と `server.db`)も同じポートに載せる(ステップ9)。ルートのモジュールに入れている |
+| `_cmd/aibow-server/` | aibow のサーバーの exe(OpenAI 互換の API。既定は `127.0.0.1` で待ち受け、`-host` で広げるとログインと API キーが要る。HTTPS と自己署名の証明書(`cert`)・利用者のコマンド(`user`)もここ。ステップ10。ステップ8で `aibow-api` から名前を変えた)。引数・設定ファイル(`server.json`)・環境変数を読み、モデルを読み込んで `api` を動かす。ブラウザの会話(`ui` と `server.db`)も同じポートに載せる(ステップ9)。ルートのモジュールに入れている |
 | `_cmd/aibow-mcp/` | MCP のサーバーの exe(標準入出力)。引数を読んで `mcp/server` を起動するだけ。ルートのモジュールに入れている(Wails を使わないため) |
 | `_docs/` | 仕組みごとの説明(下の表)と、機能の仕様(`_docs/features/`)。利用者向けの手順は `setup.md`(準備と起動)・`usage.md`(使い方と設定)・`structure.md`(構成とファイル) |
 | `TODO.md` | 全体の進み具合とロードマップ |

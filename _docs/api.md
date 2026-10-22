@@ -247,3 +247,21 @@ API はステートレスで、クライアントは毎回履歴の全部を送�
 - **cookie**:`HttpOnly`(画面のスクリプトから読めない)・`SameSite=Strict`(ほかのサイトからのリクエストには付かない)・HTTPS なら `Secure`
 - ログインが要らない形では、`/aibow/auth/login` は 400 で断り、`me` は `{"login": false}`
 - OpenAI 互換の口と aibow 専用の口は、まだ守っていない(API キーは 10-2)
+
+## API キーと外で待ち受け(ステップ10の 10-2。0017)
+
+```
+Cline・画面のアプリ ─ Authorization: Bearer aibow_… ─→ auth.Keys.RequireKey(キー → 利用者を ctx に)→ api.Server
+ほかの PC ──HTTPS(自己署名の証明書)──→ aibow-server(-host 0.0.0.0・tlsCert・tlsKey)
+```
+
+- **API キー**:利用者ごとに1本(`aibow-server user key <名前>`)。server.db には SHA-256 だけ。OpenAI の API と同じく `Authorization: Bearer <キー>` で毎回送る(サーバーは覚えない。ステートレス)。
+  無い・違うは 401(`{"error": {"code": "invalid_api_key", …}}`)
+- **要るとき**:`127.0.0.1` の外で待ち受けるとき、または `127.0.0.1` でもログインが要る設定のとき。OpenAI 互換の口と aibow 専用の口の全部(`_cmd/aibow-server` の `KeysRequired`)。
+  ログインなしの `127.0.0.1` だけなら、今までどおりキーなしで通す
+- **サーバーの PC からだけの口**:`POST /models/unload`・`/aibow/gpu-layers`・`/aibow/places/add`・`/aibow/places/remove` は、`127.0.0.1`・`::1` からの呼び出しだけ(ほかは 403・`code: local_only`。`api` の `localOnly`)。
+  サーバーの PC と、ほかの人が使っているモデルに関わるため(誰に許すかはステップ11の管理者で決め直す)
+- **待ち受けのアドレス**:`-host`(既定 `127.0.0.1`)。ループバックの外ならログインを必ず要るようにする(認証が無いまま LAN に出さない)
+- **HTTPS**:`tlsCert`・`tlsKey` を書くと `ServeTLS`(TLS 1.2 以上)。証明書なしで外に出すときは、警告して HTTP で動かす。ログインの cookie には `Secure` が付く
+- **自己署名の証明書**(`aibow-server cert`):誰も保証していない証明書なので、つなぐ側が「この証明書を信頼する」と決める。
+  アプリは `serverCert`(`api/client` の `TrustCert`。OS の認証局に足すだけなので、ほかの証明書のサーバーにはつながらない)、curl は `--cacert`、Node.js は `NODE_EXTRA_CA_CERTS`、ブラウザは警告の画面で先へ進む
