@@ -140,6 +140,9 @@ func screen() http.Handler {
 		io.WriteString(w, page)
 	})
 	mux.Handle("GET /assets/", assets)
+	// ブラウザは何も書かなくても /favicon.ico を取りに来る。画面はアイコンを持たないので、黙って 404 を返す
+	// (OpenAI 互換の口に落ちると、API キーが要る形では「キーが無い」の警告が開くたびにログに出てしまうため。0017 の 10-4 で気づいた)
+	mux.HandleFunc("GET /favicon.ico", http.NotFound)
 	return mux
 }
 
@@ -149,6 +152,7 @@ func routes(apiH, browser, screen http.Handler) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("GET /{$}", screen)
 	mux.Handle("GET /assets/", screen)
+	mux.Handle("GET /favicon.ico", screen)
 	mux.Handle("/aibow/ui/", browser)
 	mux.Handle("/aibow/auth/", browser)
 	mux.Handle("/aibow/store/", browser)

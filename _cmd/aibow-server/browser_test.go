@@ -46,6 +46,10 @@ func TestRoutes(t *testing.T) {
 			t.Errorf("%s %s は %s が受け取るはず: %.80q", c.method, c.path, c.want, body)
 		}
 	}
+	// ブラウザが自分で取りに来る /favicon.ico は、api(キーが要る形では 401 と警告)に渡さず 404
+	if code, body := get("GET", "/favicon.ico"); code != http.StatusNotFound || body == "api" {
+		t.Errorf("GET /favicon.ico: %d %q", code, body)
+	}
 	// /assets/ は画面のファイル(無いファイルは 404。api には渡さない)
 	if code, body := get("GET", "/assets/nothing.js"); code != http.StatusNotFound || body == "api" {
 		t.Errorf("GET /assets/ の無いファイル: %d %q", code, body)
