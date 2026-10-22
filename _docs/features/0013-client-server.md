@@ -48,6 +48,9 @@ MCP はツールとデータを AI アプリにつなぐ規格で、どの形で
 
 brender で実装し、ウィンドウの側も含めて動くことを確かめた。経緯は brender の `_docs/server-transport.md`、今の形は brender の Skill `brender-server-mode`。aibow のステップ9はこの形に合わせる。
 
+> **2026-10-22 に変えた**(ステップ9の仕様 [0016-browser.md](0016-browser.md)):ステップ8で aibow-server がサーバー役になったので、ブラウザは aibow-server につなぐ形にした。
+> 画面のアプリはブラウザに配らず、この節の Transport の差し替えは使わない。長い呼び出し・停止・SSE などの気づき(下の「aibow で気をつけること」)は 0016 でも使う。
+
 ```
 ウィンドウ(WebView) ──wails://──→ Wails の配信 ──→ バインディング(ctx に利用者なし → 自分)
 ブラウザ ──HTTP──→ 自前の http.Server(ログインの確認)
