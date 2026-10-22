@@ -1,6 +1,6 @@
 # 0016: ブラウザからも使う(aibow-server が画面を配る)
 
-- 状態: ⬜ 未着手
+- 状態: 🔧 作業中(9-0 済み。2026-10-22)
 - ロードマップ: ロードマップ2 ステップ 9
 - 決めた日: 2026-10-22(Chat でユーザーと決めた)
 - 前提: 0015(aibow-server・aibow 専用の口・サーバー越しの画面で PC の事情を見せない)、0014(プロファイル)、0013(クライアント/サーバー構成の検討メモ)
@@ -124,7 +124,7 @@ aibow.exe(画面のアプリ)は今のまま(直接でも aibow-server 越しで
 
 ## 作業の順番
 
-1. **9-0 下ごしらえ(動きは変えない)**
+1. **9-0 下ごしらえ(動きは変えない)** ✅ 2026-10-22
    - Go:`ChatService` の中身のうち Wails を使わない部分を、ルートのモジュールのパッケージに切り出す(上の 9)
    - 画面:「Go を呼ぶ係」を作り、部品がバインディングを直接 import しないようにする(中身は Wails のバインディングだけ)
    - 画面のアプリを、直接と aibow-server 越しの両方で確かめる
@@ -137,3 +137,22 @@ aibow.exe(画面のアプリ)は今のまま(直接でも aibow-server 越しで
 4. **9-3 確かめる・ドキュメント**
    - ブラウザ・Cline・サーバー越しの画面のアプリを同時に使って確かめる(完了の条件)
    - 未決事項の見た目をユーザーに確認する
+
+## 9-0 で決めたこと(Code が決めた。2026-10-22)
+
+決定事項の 9 で「名前と線の引き方は Code が決める」としたもの。
+
+- **パッケージはルートの `ui`**(`github.com/secondarykey/aibow/ui`)。画面から呼ぶメソッドの中身(`ui.Service`)と、モデルを扱う係(`ui.ModelHost`。直接 `DirectHost`・aibow-server 越し `RemoteHost`)、
+  直接の形で足した置き場所のファイル(`ui.PlacesFile`。model-places.json)を `_cmd/aibow` から移した。ルートの `aibow` を使い、Wails を import しない
+  - `ModelHost` のメソッドは小文字のままにして、`ui` の外では作れないようにした(形は2つだけ)。9-1 で aibow-server 用の形が要れば、そのとき開く
+- **`ChatService` は `*ui.Service` を埋め込むだけ**。Wails は埋め込んだ型のメソッドも `ChatService` のメソッドとしてバインディングにする(生成も実行も)ので、
+  画面から見た名前と ID(`main.ChatService.Send` など)は変わらない。変わったのは、戻り値の型(`ModelsResult` など)の置き場所が `bindings/…/ui` になったことだけ
+  - `ChatService` に残したのは Wails が要るものだけ:起動と終了の合図(`ServiceStartup` / `ServiceShutdown`)・ダイアログ(`ChooseWorkDir` / `ChooseModelPlace`)・Wails のイベントで知らせる係
+  - 起動と終了で呼ぶもの(起動時のモデルの読み込み・生成を止める)は `ui.New` が返す `ui.Lifecycle` に置いた。`Service` のメソッドにすると画面から呼べてしまうため(`modelLoader` と同じ考え方)
+- **Go から画面に知らせる係は `ui.Notifier`**(`Chat(ev)` と `ModelLoaded()`)。デスクトップは Wails のイベント(`wailsNotifier`)、ブラウザは SSE(9-1)。イベントの名前は `ui.ChatEventName` / `ui.ModelsEventName`
+- **画面の「Go を呼ぶ係」は `frontend/src/backend.ts`**。部品は `ChatService`(名前は Go と同じ)・イベントを受け取る `onChat` / `onModelLoaded` / `onWindowFocus`・止められる呼び出し `Call` と `isCancel` を、ここから使う
+  - Wails のランタイムに頼るもの(クリップボード `copyText`・リンク `openURL`・ウィンドウの操作 `appWindow`)も、ここに集めた(決定事項の 17 の分かれ道を、9-2 でこのファイルだけに書けるように)。
+    `@wailsio/runtime` とバインディングの呼び出しを import するのは `backend.ts` だけ
+  - Go の型(バインディングの `models.ts`)は、部品から直接 import したままにした。`-i` で生成した interface と enum だけで、Wails の呼び出しの仕組みを含まないので、ブラウザでもそのまま使える
+- 確かめたこと:`gofmt`・`go test ./...`・`wails3 build`・`go vet`。一時ビルド(CDP)で、直接(起動時のモデルの読み込みと models イベント・送信・停止・最大化と戻す・設定の画面のモデルのタブ)と
+  aibow-server 越し(送信・停止・モデルのタブが一覧とつなぎ先・作業領域だけ)の両方で、今までどおり動いた

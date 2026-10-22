@@ -32,7 +32,7 @@
   - 文章の中の HTML はタグとして解釈させず、文字として見せる
   - リンクは http / https だけを `<a>` にする。それ以外(`javascript:`・相対パスなど)は文字にする
   - 画像は読み込まない(外のサーバーに取りに行かない)。http / https ならリンクとして出す
-- リンクを押したら `Browser.OpenURL` で OS のふだんのブラウザで開く。ウィンドウの中で開くと画面がそのページに移り、チャットに戻れなくなるため
+- リンクを押したら、Go を呼ぶ係の `openURL`(`backend.ts`。中身は Wails の `Browser.OpenURL`)で OS のふだんのブラウザで開く。ウィンドウの中で開くと画面がそのページに移り、チャットに戻れなくなるため
 - mermaid は `securityLevel: "strict"`(クリックの動作を止める)と `htmlLabels: false`(ラベルを SVG の文字で描く)で描く(下の「mermaid の図」)
 
 ## コードブロック

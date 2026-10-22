@@ -17,10 +17,10 @@ aibow は、ローカルLLMを使ったアプリを**自分で作りながら仕
 ## 全体の構成(ステップ8: 画面のアプリを aibow-server につなぐ)
 
 ```
-ウィンドウ(_cmd/aibow/frontend の React) ⇄ Wails v3 ⇄ aibow ⇄ aibow/engine ⇄ yzma ⇄ llama.cpp(_cmd/aibow/lib\ の DLL)⇄ GPU
-                                                     ⇅          ↑ aibow/format(書式)・aibow/models(_cmd/aibow/models\*.gguf / Ollama の保存フォルダ)
-                                          aibow/store(SQLite: %APPDATA%\aibow\aibow.db)
-                                          aibow/mcp/client ⇄ MCP のサーバー(%APPDATA%\aibow\settings.json に書いたもの。子プロセス)
+ウィンドウ(_cmd/aibow/frontend の React) ⇄ Wails v3 ⇄ aibow/ui ⇄ aibow ⇄ aibow/engine ⇄ yzma ⇄ llama.cpp(_cmd/aibow/lib\ の DLL)⇄ GPU
+                                                                ⇅          ↑ aibow/format(書式)・aibow/models(_cmd/aibow/models\*.gguf / Ollama の保存フォルダ)
+                                                     aibow/store(SQLite: %APPDATA%\aibow\aibow.db)
+                                                     aibow/mcp/client ⇄ MCP のサーバー(%APPDATA%\aibow\settings.json に書いたもの。子プロセス)
 
 MCP のクライアント(Claude Code・aibow など)⇄ 標準入出力 ⇄ aibow-mcp(_cmd/aibow-mcp)= aibow/mcp/server ⇄ aibow/tool
 aibow の組み込みのツール: 会話の仕組み ⇄ aibow/mcp/client の Local ⇄ MCP(メモリ内)⇄ aibow/mcp/server ⇄ aibow/tool
@@ -49,6 +49,7 @@ OpenAI 互換のクライアント(Cline など)⇄ HTTP(127.0.0.1)⇄ aibow-ser
 | `mcp/server/` | MCP のサーバー(`server` パッケージ。ステップ5)。`tool` のツールを MCP のツールとして出す。書き換えるツールはサーバーからユーザーに確かめる(MRTR)。`tool` と SDK だけを使い、ルートの `aibow` は import しない |
 | `api/` | OpenAI 互換の API(`api` パッケージ。ステップ6)。`engine` で生成だけを使い、ルートの `aibow`(会話の仕組み)は import しない。HTTP は標準の `net/http`。ステップ8で aibow 専用の口と欄(モデルの一覧・読み込み・トークン数など)を足した |
 | `api/client/` | aibow-server につなぐクライアント(`client` パッケージ。ステップ8)。会話の仕組みの `Generator` と `ModelLoader` の HTTP 版。ルートの `aibow` は import しない |
+| `ui/` | 画面向けの処理(`ui` パッケージ。ステップ9の 9-0 で `_cmd/aibow` から切り出した)。画面から呼ぶメソッド(`Service`。モデル・会話・設定・送信)と、モデルを扱う係(直接 `DirectHost`・aibow-server 越し `RemoteHost`)。ルートの `aibow` を使い、Wails を import しない。デスクトップのアプリは `ChatService` に埋め込んで Wails に渡す。ブラウザ向けには aibow-server が使う(9-1) |
 | `mcp/internal/` | MCP のクライアントとサーバーの両方で使う部分(`meta`: `_meta` の名前) |
 | `internal/proc/` | 子プロセスまでまとめて止める仕組み(`tool` の `run_command` と `mcp/client` で使う) |
 | `log/` | aibow のログ(`log` パッケージ)。aibow のコードはログをここから出す。土台は wenteasy/log だが、使う人には `slog.Level` と `*slog.Logger` しか見せない。出口はアプリが `Init` で組み、ライブラリとして使う人は `SetLogger(*slog.Logger)` で aibow のログだけ別にできる(決めなければ `slog.Default()`)。詳しくは [log/AGENTS.md](log/AGENTS.md) |

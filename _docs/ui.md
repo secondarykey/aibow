@@ -294,7 +294,7 @@ aibow-server につないでいるときは、**モデルの一覧(名前・大�
 ## ウィンドウの移動とリサイズ(Frameless)
 
 - ドラッグできる場所は CSS の `--wails-draggable: drag`(`.titlebar`)、ボタンは `no-drag`
-- `main.tsx` で `@wailsio/runtime` を import しておく(ドラッグとリサイズはランタイムがページ全体のマウス操作を見て行う)
+- `main.tsx` で Go を呼ぶ係(`backend.ts`。`@wailsio/runtime` を読み込む)を最初に import しておく(ドラッグとリサイズはランタイムがページ全体のマウス操作を見て行う)。タイトルバーのボタンも `backend.ts` の `appWindow` を呼ぶ
 - リサイズの判定はマウスの座標だけで行われるので、ルート要素に余白は要らない(wails3 スキルの「5px の余白が必須」は beta.26 では不要)
 - ただし、ウィンドウの端に接してスクロールする要素(`.chat` / `.settings-view`)は、スクロールバーが端の数 px(Windows の SM_CXSIZEFRAME)の
   マウスを受け取ってリサイズできなくなる(ランタイムがずらすのはページ全体のスクロールバーだけ)。
