@@ -239,6 +239,11 @@ func (c *Client) Generate(ctx context.Context, p format.Prompt, opt engine.Gener
 	req.Model = c.model
 	known := c.info
 	c.mu.Unlock()
+	// LoadModel をまだ呼んでいない(会話のモデルが、最後に知った読み込み中のモデルと同じだった)ときは、そのモデルを頼む。
+	// 空で頼むとサーバーが今読み込んでいるモデルで答えるので、そのあとでほかの人が入れ替えていると、違うモデルで返事ができてしまう
+	if req.Model == "" && known != nil {
+		req.Model = known.ID
+	}
 	req.Stream = true
 	req.Temperature, req.MaxTokens, req.PresencePenalty = &opt.Temperature, opt.MaxTokens, &opt.PresencePenalty
 	req.Aibow = &aibowRequest{ReturnPrompt: true}

@@ -247,7 +247,7 @@ func NewRemoteHost(c *apiclient.Client) *RemoteHost {
 }
 
 func (h *RemoteHost) generator() aibow.Generator { return h.c }
-func (h *RemoteHost) info() *engine.ModelInfo    { return h.c.Info() }
+func (h *RemoteHost) info() *engine.ModelInfo    { return h.c.Shown() } // 画面に見せるモデル(入れ替えの途中は前のモデル)
 func (h *RemoteHost) server() string             { return h.c.URL() }
 
 func (h *RemoteHost) list() (hostModels, error) {
@@ -269,7 +269,7 @@ func (h *RemoteHost) load(id string) (*engine.ModelInfo, error) {
 
 // gpuLayers は、サーバーが読み込み中のモデルを読み込んだときの層の数(サーバーの PC の値)。
 func (h *RemoteHost) gpuLayers() int {
-	if i := h.c.Info(); i != nil {
+	if i := h.c.Shown(); i != nil {
 		return i.GPULayers
 	}
 	return 0

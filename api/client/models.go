@@ -30,6 +30,7 @@ type serverModels struct {
 	Current *engine.ModelInfo `json:"current"`
 	NCtx    int               `json:"n_ctx"`
 	GPU     bool              `json:"gpu"`
+	Loading string            `json:"loading"` // サーバーが入れ替えている先のモデル(入れ替えていなければ空)
 }
 
 // loadResult は POST /models/load と POST /aibow/gpu-layers の返事。
@@ -43,13 +44,25 @@ func (c *Client) Models() (ModelList, error) {
 	if err := c.call(http.MethodGet, "/models", nil, &sm, shortTimeout); err != nil {
 		return ModelList{}, err
 	}
-	l := ModelList{Models: []models.Entry{}, GPULayers: map[string]int{}, Current: sm.Current, NCtx: sm.NCtx, GPU: sm.GPU}
+	l := ModelList{Models: []models.Entry{}, GPULayers: map[string]int{}, NCtx: sm.NCtx, GPU: sm.GPU}
 	for _, m := range sm.Data {
 		l.Models = append(l.Models, m.Entry)
 		l.GPULayers[m.ID] = m.NGPULayers
 	}
 	c.mu.Lock()
-	c.info, c.nCtx = sm.Current, sm.NCtx
+	// サーバーがほかの人のためにモデルを入れ替えている間は current が null になる(前のモデルを解放してから読み込むので)。
+	// 画面には前に知ったモデルを見せ続け(shown)、本当のこと(info)は null にしておく。
+	// info が null なら、送信の前に会話の仕組みが会話のモデルを読み込ませる(LoadModel。サーバーの席で入れ替えが終わるのを待つ)。
+	// 降ろした(loading も空)なら、今までどおり「なし」にする
+	c.info = sm.Current
+	switch {
+	case sm.Current != nil:
+		c.shown = sm.Current
+	case sm.Loading == "":
+		c.shown = nil
+	}
+	c.nCtx = sm.NCtx
+	l.Current = c.shown
 	c.mu.Unlock()
 	return l, nil
 }
@@ -63,6 +76,9 @@ func (c *Client) LoadModel(id string) (*engine.ModelInfo, error) {
 	}
 	c.mu.Lock()
 	c.info, c.model = r.Model, id
+	if r.Model != nil {
+		c.shown = r.Model
+	}
 	c.mu.Unlock()
 	return r.Model, nil
 }
@@ -77,7 +93,7 @@ func (c *Client) SetGPULayers(id string, n int) (*engine.ModelInfo, error) {
 	}
 	if r.Model != nil {
 		c.mu.Lock()
-		c.info = r.Model
+		c.info, c.shown = r.Model, r.Model
 		c.mu.Unlock()
 	}
 	return r.Model, nil
@@ -90,7 +106,7 @@ func (c *Client) UnloadModel() error {
 		return err
 	}
 	c.mu.Lock()
-	c.info = nil
+	c.info, c.shown = nil, nil
 	c.mu.Unlock()
 	return nil
 }
@@ -152,6 +168,13 @@ func (c *Client) Info() *engine.ModelInfo {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.info
+}
+
+// Shown は、画面に見せる読み込み中のモデル。サーバーがほかの人のためにモデルを入れ替えている途中は、前に知ったモデル(Info は nil)。
+func (c *Client) Shown() *engine.ModelInfo {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.shown
 }
 
 // EnsureContextSize は、n トークンがサーバーの作業領域に入るかを確かめる。作り直しは頼めないので、いつも false(0015 の 3)。

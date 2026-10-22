@@ -8,7 +8,8 @@ package api
 //
 // 口は、意味が同じものは llama.cpp の server(router モード)の名前にそろえ、無いものだけ /aibow/ の下に置く(0015。2026-10-21 にユーザーと決めた):
 //
-//	GET  /models              使えるモデルの一覧(読み込み中か・GPU の層数つき)。llama.cpp と同じく status.value で状態を返す
+//	GET  /models              使えるモデルの一覧(読み込み中か・GPU の層数つき)。llama.cpp と同じく status.value で状態を返す。
+//	                          入れ替えの途中は current が null になるので、入れ替えている先を loading で知らせる(降ろしたのと見分けるため)
 //	POST /models/load         {"model"} を明示的に読み込む(送信の前に読み込んで、読み込み中のお知らせとログを出すため)
 //	POST /models/unload       {"model"} 読み込み中のモデルを降ろす(VRAM を空ける。8-4)
 //	POST /aibow/gpu-layers    {"model", "n_gpu_layers"} モデルごとの GPU の層数を変えて覚える(読み込み中のモデルなら読み直す)
@@ -63,6 +64,9 @@ type serverModels struct {
 	Current *engine.ModelInfo `json:"current"`
 	NCtx    int               `json:"n_ctx"`
 	GPU     bool              `json:"gpu"`
+	// Loading は、入れ替えている先のモデルの ID(入れ替えていなければ省く)。入れ替えの間は、前のモデルを解放してから読み込むので
+	// Current は null になる。つないでいる画面は、これがあれば前に知ったモデルを出し続ける(読み直しが終われば戻るので。2026-10-22)
+	Loading string `json:"loading,omitempty"`
 }
 
 // serverModel は一覧のモデル1つ。models.Entry の欄(id・name・source・size_gb)に、状態と GPU の層数を足す。
@@ -72,7 +76,7 @@ type serverModel struct {
 	NGPULayers int         `json:"n_gpu_layers"`
 }
 
-// modelStatus はモデルの状態。llama.cpp の router と同じく {"value": "loaded" | "unloaded"}(読み込み中・失敗は持たない)
+// modelStatus はモデルの状態。llama.cpp の router と同じく {"value": "loaded" | "loading" | "unloaded"}(失敗は持たない)
 type modelStatus struct {
 	Value string `json:"value"`
 }
@@ -94,7 +98,7 @@ type loadResult struct {
 // handleServerModels は GET /models。
 func (s *Server) handleServerModels(w http.ResponseWriter, r *http.Request) {
 	info := s.gen.Info()
-	out := serverModels{Object: "list", Data: []serverModel{}, Current: info, NCtx: s.nCtx}
+	out := serverModels{Object: "list", Data: []serverModel{}, Current: info, NCtx: s.nCtx, Loading: s.gen.Loading()}
 	if s.models == nil {
 		writeError(w, http.StatusNotFound, "invalid_request_error", "", "このサーバーはモデルの一覧を持っていません")
 		return
@@ -102,8 +106,11 @@ func (s *Server) handleServerModels(w http.ResponseWriter, r *http.Request) {
 	out.GPU = s.models.HasGPU()
 	for _, m := range s.models.List() {
 		st := "unloaded"
-		if info != nil && info.ID == m.ID {
+		switch {
+		case info != nil && info.ID == m.ID:
 			st = "loaded"
+		case out.Loading == m.ID:
+			st = "loading"
 		}
 		out.Data = append(out.Data, serverModel{Entry: m, Status: modelStatus{Value: st}, NGPULayers: s.models.GPULayers(m.ID)})
 	}

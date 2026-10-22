@@ -30,6 +30,8 @@ type Generator interface {
 	// ApplyTemplate は書式を当てた文字列(POST /apply-template)
 	ApplyTemplate(p format.Prompt) (string, error)
 	Info() *engine.ModelInfo
+	// Loading は、入れ替えている先のモデルの ID(入れ替えていなければ空)。入れ替えの間は Info が nil になる
+	Loading() string
 }
 
 // Defaults は、リクエストに書かれていないときに使う値。アプリの「新しい会話の既定」と同じ値を _cmd/aibow-server が渡す。

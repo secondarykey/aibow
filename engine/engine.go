@@ -104,6 +104,9 @@ type Engine struct {
 
 	// info は読み込み中のモデルの情報。生成中でも画面から読めるよう、別に持つ。
 	info atomic.Pointer[ModelInfo]
+	// loading は、入れ替えている先のモデルの ID(入れ替えていなければ nil)。
+	// 入れ替えの間は、前のモデルを解放してから読み込むので info が nil になる。降ろした(何も無い)のと見分けるために持つ
+	loading atomic.Pointer[string]
 
 	// cached は、今 KV キャッシュに入っているトークン列。
 	// KV キャッシュ = モデルが読み終えたトークンの計算結果の置き場。
@@ -157,6 +160,15 @@ func listDevices() (names []string, hasGPU bool) {
 // Info は読み込み中のモデルの情報を返す。未読み込みなら nil。
 func (e *Engine) Info() *ModelInfo {
 	return e.info.Load()
+}
+
+// Loading は、入れ替えている先のモデルの ID。入れ替えていなければ空。
+// 入れ替えの間は Info が nil になるので、aibow-server はこれを見て「読み直し中」と知らせる(降ろしたのとは違う)。
+func (e *Engine) Loading() string {
+	if id := e.loading.Load(); id != nil {
+		return *id
+	}
+	return ""
 }
 
 // LoadModel はモデルを入れ替える。数秒〜十数秒かかる。GPU に載せる層の数は今の値(Config.GPULayers)のまま。
@@ -218,6 +230,8 @@ func (e *Engine) UnloadModel() (bool, error) {
 // VRAM 8GB に2つのモデルは同時に載らないことが多いので、先に今のモデルを解放してから読み込む。
 // 読めなかったときは undo で設定を戻し、元のモデルを読み込み直して戻す。
 func (e *Engine) replace(m models.Entry, undo func()) (*ModelInfo, error) {
+	e.loading.Store(&m.ID)
+	defer e.loading.Store(nil)
 	prev := e.info.Load()
 	e.unload()
 

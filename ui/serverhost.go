@@ -12,6 +12,7 @@ package ui
 
 import (
 	"context"
+	"sync"
 
 	"github.com/secondarykey/aibow"
 	apiclient "github.com/secondarykey/aibow/api/client"
@@ -27,6 +28,8 @@ type ServerEngine interface {
 		onPrompt func(prompt string), onThinking, onContent func(text string)) (format.Output, engine.GenerateStats, error)
 	CountTokens(p format.Prompt) (int, error)
 	Info() *engine.ModelInfo
+	// Loading は、入れ替えている先のモデルの ID(入れ替えていなければ空。engine.Engine.Loading)
+	Loading() string
 }
 
 // ServerModels は、aibow-server のモデルの係(_cmd/aibow-server の modelManager。api.Models と同じもの)のうち、ServerHost が使うもの。
@@ -44,6 +47,10 @@ type ServerHost struct {
 	models ServerModels
 	// url は aibow-server のアドレス。ブラウザの画面には、サーバー越しの画面のアプリと同じく「つなぎ先」として出す
 	url string
+
+	// last は、最後に見た読み込み中のモデル。ほかの人のためにモデルを入れ替えている間(engine の Info が nil)は、これを見せる
+	mu   sync.Mutex
+	last *engine.ModelInfo
 }
 
 // NewServerHost は aibow-server の中で使う係を作る。nCtx はサーバーが起動のときに決めた作業領域の大きさ(0016 の 12)。
@@ -52,7 +59,25 @@ func NewServerHost(eng ServerEngine, mm ServerModels, nCtx int, url string) *Ser
 }
 
 func (h *ServerHost) generator() aibow.Generator { return h.gen }
-func (h *ServerHost) info() *engine.ModelInfo    { return h.gen.Info() }
+func (h *ServerHost) info() *engine.ModelInfo    { return h.current() }
+
+// current は画面に見せる読み込み中のモデル。入れ替えの途中(Cline などが別のモデルを頼んだ)は、前のモデルを見せ続ける
+// (api/client と同じ。画面のモデルが空になって、送信が止められないように。2026-10-22)。
+// 送信すると会話のモデルを席の中で読み直すので、見せ続けても困らない。降ろした(入れ替え中でもない)なら nil
+func (h *ServerHost) current() *engine.ModelInfo {
+	i := h.gen.Info()
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	switch {
+	case i != nil:
+		h.last = i
+	case h.gen.Loading() != "":
+		return h.last
+	default:
+		h.last = nil
+	}
+	return i
+}
 
 // server は aibow-server のアドレス。空でないので、画面はサーバー越しの画面のアプリと同じ見せ方になる(モデルのタブはつなぎ先と作業領域だけ)。
 func (h *ServerHost) server() string { return h.url }
@@ -63,7 +88,7 @@ func (h *ServerHost) list() (hostModels, error) {
 	for i := range l {
 		l[i].Origin, l[i].Place = "", ""
 	}
-	return hostModels{models: l, current: h.gen.Info(), gpu: h.models.HasGPU()}, nil
+	return hostModels{models: l, current: h.current(), gpu: h.models.HasGPU()}, nil
 }
 
 // load は、読み込み中のモデルと違えば読み込む。順番待ちの席は Service が持ってから呼ぶ(送信の前の読み直しも、入力欄の下で選んだときも)。
@@ -75,12 +100,12 @@ func (h *ServerHost) load(id string) (*engine.ModelInfo, error) {
 	if i := h.gen.Info(); i != nil && i.ID == m.ID {
 		return i, nil
 	}
-	return h.models.Load(m)
+	return h.models.Load(m) // 席の中なので、ほかの人の入れ替えとは重ならない
 }
 
 // gpuLayers は、読み込み中のモデルを読み込んだときの層の数(サーバーの PC の値。RemoteHost と同じ)。
 func (h *ServerHost) gpuLayers() int {
-	if i := h.gen.Info(); i != nil {
+	if i := h.current(); i != nil {
 		return i.GPULayers
 	}
 	return 0

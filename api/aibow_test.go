@@ -371,3 +371,39 @@ func TestPlaces(t *testing.T) {
 		t.Errorf("表示だけの設定: %+v", got)
 	}
 }
+
+// 入れ替えの途中は current が null になるので、入れ替えている先を loading と status で知らせる(降ろしたのと見分けるため)
+func TestServerModelsLoading(t *testing.T) {
+	g := &fakeGen{}
+	s := New(g, newFakeModels(g), 32768, Defaults{MaxTokens: 100})
+	g.mu.Lock()
+	g.none, g.loading = true, "ollama:qwen3.5:9b"
+	g.mu.Unlock()
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/models", nil))
+	var out struct {
+		Current *engine.ModelInfo `json:"current"`
+		Loading string            `json:"loading"`
+		Data    []struct {
+			ID     string `json:"id"`
+			Status struct {
+				Value string `json:"value"`
+			} `json:"status"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.Current != nil || out.Loading != "ollama:qwen3.5:9b" {
+		t.Errorf("current %+v / loading %q", out.Current, out.Loading)
+	}
+	for _, m := range out.Data {
+		want := "unloaded"
+		if m.ID == "ollama:qwen3.5:9b" {
+			want = "loading"
+		}
+		if m.Status.Value != want {
+			t.Errorf("%s の status: %s, want %s", m.ID, m.Status.Value, want)
+		}
+	}
+}

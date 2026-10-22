@@ -35,6 +35,13 @@ type fakeEngine struct {
 	wait    bool // ctx がキャンセルされるまで生成を終えない(停止のテスト)
 	started chan struct{}
 	tools   [][]string // 生成のたびに、モデルに知らせたツールの名前
+	loading string     // 入れ替えている先のモデル(Loading が返す)
+}
+
+func (e *fakeEngine) Loading() string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.loading
 }
 
 func (e *fakeEngine) Info() *engine.ModelInfo {
@@ -407,5 +414,49 @@ func TestWebSeat(t *testing.T) {
 	// 終わったら席を返している
 	if !w.seat.TryTake() {
 		t.Error("送信が終わったのに席が返っていない")
+	}
+}
+
+// ほかの人のためにモデルを入れ替えている間は、前のモデルを見せ続ける(画面のモデルが空にならない)。
+// 新しい会話もそのモデルで作り、送信すると席の中で読み直す。降ろしたなら「なし」(2026-10-22)
+func TestWebModelsWhileLoading(t *testing.T) {
+	w := newTestWeb(t)
+	var m ModelsResult
+	w.mustCall(t, &m, "Models")
+
+	w.eng.mu.Lock()
+	w.eng.model, w.eng.loading = "", "ollama:b" // 4B → 9B の入れ替えの途中(前のモデルは解放済み)
+	w.eng.mu.Unlock()
+	w.mustCall(t, &m, "Models")
+	if m.Current == nil || m.Current.ID != "ollama:a" {
+		t.Fatalf("入れ替えの途中は、前のモデルを見せるはず: %+v", m.Current)
+	}
+	// 画面と同じく、プロファイルの値(モデルは決めていない)を写した設定で作る
+	var d aibow.ConversationSettings
+	w.mustCall(t, &d, "ProfileDefaults", uuid.UUID{})
+	var c aibow.Conversation
+	w.mustCall(t, &c, "NewConversation", uuid.UUID{}, d)
+	if d.Model != "" || c.Settings.Model != "ollama:a" {
+		t.Errorf("新しい会話は前のモデルで作るはず: %q(プロファイルのモデル %q)", c.Settings.Model, d.Model)
+	}
+
+	// 入れ替えが終わって b になった。送信すると、会話のモデル a に読み直す
+	w.eng.mu.Lock()
+	w.eng.model, w.eng.loading = "ollama:b", ""
+	w.eng.mu.Unlock()
+	events := w.openEvents(t)
+	w.mustCall(t, nil, "Send", c.ID, "こんにちは?")
+	until(t, events, "done")
+	if w.eng.Info().ID != "ollama:a" {
+		t.Errorf("会話のモデルに読み直すはず: %s", w.eng.Info().ID)
+	}
+
+	// 降ろした(入れ替え中でもない)なら「なし」
+	w.eng.mu.Lock()
+	w.eng.model = ""
+	w.eng.mu.Unlock()
+	w.mustCall(t, &m, "Models")
+	if m.Current != nil {
+		t.Errorf("降ろしたら「なし」のはず: %+v", m.Current)
 	}
 }

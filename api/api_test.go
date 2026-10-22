@@ -29,12 +29,19 @@ type fakeGen struct {
 	calls   []format.ToolCall // モデルが書いたことにする呼び出し
 	id      string            // 読み込み中のモデル(空なら ollama:qwen3.5:4b)。fakeModels が書き換える
 	none    bool              // モデルを降ろした(Info が nil)。fakeModels が書き換える
+	loading string            // 入れ替えている先のモデル(Loading が返す)
 
 	mu      sync.Mutex
 	prompts []format.Prompt
 	opts    []engine.GenerateOptions
 	block   chan struct{} // nil でなければ、生成の途中でこれが閉じられるまで待つ
 	started chan struct{} // nil でなければ、生成を始めたら送る
+}
+
+func (f *fakeGen) Loading() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.loading
 }
 
 func (f *fakeGen) Info() *engine.ModelInfo {

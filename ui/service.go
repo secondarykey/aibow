@@ -789,12 +789,18 @@ func (s *Service) NewConversation(profile uuid.UUID, settings *aibow.Conversatio
 	if s.startupErr != nil {
 		return aibow.Conversation{}, s.startupErr
 	}
-	// プロファイルにモデルが無く(初めての起動)、モデルを降ろしている(0015 の 8-4)と、会話の仕組みは「読み込んでいるモデル」を
-	// 会話のモデルにできない。そのときは最後に使ったモデルにし、送信の前に読み込む(0015 の 29)
-	if settings != nil && settings.Model == "" && s.host.info() == nil {
-		if last := s.lastModel(); last != "" {
+	// プロファイルにモデルが無い(初めての起動)と、会話の仕組みは「読み込んでいるモデル」を会話のモデルにする。
+	// ここでは、画面が見せている読み込み中のモデルにする。aibow-server がほかの人のためにモデルを入れ替えている間は、
+	// 読み込んでいるモデルが無い(前のモデルは解放済み)が、画面には前のモデルを見せているため(2026-10-22)。
+	// モデルを降ろしている(0015 の 8-4)なら、最後に使ったモデルにし、送信の前に読み込む(0015 の 29)
+	if settings != nil && settings.Model == "" {
+		model := s.lastModel()
+		if i := s.host.info(); i != nil {
+			model = i.ID
+		}
+		if model != "" {
 			cp := *settings
-			cp.Model = last
+			cp.Model = model
 			settings = &cp
 		}
 	}

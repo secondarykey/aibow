@@ -33,7 +33,14 @@ type fakeGen struct {
 	st      engine.GenerateStats
 	block   chan struct{} // nil でなければ、生成の途中でこれが閉じられるか ctx が終わるまで待つ
 	started chan struct{}
-	err     error // nil でなければ、数えるときにこのエラーを返す
+	err     error  // nil でなければ、数えるときにこのエラーを返す
+	loading string // 入れ替えている先のモデル(Loading が返す)
+}
+
+func (f *fakeGen) Loading() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.loading
 }
 
 func (f *fakeGen) Info() *engine.ModelInfo {
@@ -358,5 +365,54 @@ func TestModelErrors(t *testing.T) {
 		if !errors.Is(err, tc.is) || err.Error() != tc.err.Error() {
 			t.Errorf("%v: 返ってきたエラー %v", tc.err, err)
 		}
+	}
+}
+
+// サーバーがほかの人のためにモデルを入れ替えている間(current が null・loading あり)は、画面には前に知ったモデルを見せ続ける(Shown)。
+// 本当のこと(Info)は null にしておき、会話の仕組みが送信の前に会話のモデルを読み込ませる。降ろしたなら「なし」(2026-10-22)
+func TestModelsWhileServerLoading(t *testing.T) {
+	g := &fakeGen{st: engine.GenerateStats{StopReason: "eos"}}
+	c, m := newServer(t, g)
+	if l, err := c.Models(); err != nil || l.Current == nil || l.Current.ID != "ollama:qwen3.5:4b" {
+		t.Fatalf("最初の一覧: %+v %v", l.Current, err)
+	}
+
+	// Cline などのために 9B に入れ替えている途中(前のモデルは解放済み)
+	g.mu.Lock()
+	g.id, g.loading = "", "ollama:qwen3.5:9b"
+	g.mu.Unlock()
+	l, err := c.Models()
+	if err != nil || l.Current == nil || l.Current.ID != "ollama:qwen3.5:4b" || c.Shown() == nil {
+		t.Fatalf("入れ替えの途中は、前に知ったモデルを見せるはず: %+v %v", l.Current, err)
+	}
+	if c.Info() != nil {
+		t.Errorf("本当のこと(Info)は null のはず(送信の前に読み込ませるため): %+v", c.Info())
+	}
+
+	// 降ろした(入れ替え中でもない)なら「なし」
+	g.mu.Lock()
+	g.loading = ""
+	g.mu.Unlock()
+	m.Unload()
+	if l, err := c.Models(); err != nil || l.Current != nil || c.Shown() != nil {
+		t.Errorf("降ろしたら「なし」のはず: %+v %v", l.Current, err)
+	}
+}
+
+// LoadModel を呼ばずに(会話のモデルが最後に知った読み込み中のモデルと同じ)生成するときは、そのモデルを頼む。
+// そのあとでほかの人が入れ替えていても、サーバーが読み直すので、違うモデルで返事をしない(2026-10-22)
+func TestGenerateAsksKnownModel(t *testing.T) {
+	g := &fakeGen{st: engine.GenerateStats{StopReason: "eos"}}
+	c, m := newServer(t, g)
+	if _, err := c.Models(); err != nil {
+		t.Fatal(err)
+	}
+	m.Load(models.Entry{ID: "ollama:qwen3.5:9b"}) // ほかの人が 9B に入れ替えた(こちらはまだ知らない)
+	if _, _, err := c.Generate(context.Background(), format.Prompt{Messages: []format.Message{{Role: "user", Content: "hi"}}},
+		engine.GenerateOptions{MaxTokens: 5}, func(string) {}, func(string) {}, func(string) {}); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"ollama:qwen3.5:9b", "ollama:qwen3.5:4b"}; !slices.Equal(m.loads, want) || g.Info().ID != "ollama:qwen3.5:4b" {
+		t.Errorf("前に知った 4B で生成するはず: 読み込んだモデル %v / 読み込み中 %s", m.loads, g.Info().ID)
 	}
 }
