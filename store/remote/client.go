@@ -127,6 +127,10 @@ func (c *Client) DeleteProfile(ctx context.Context, id uuid.UUID) error {
 	return c.call(ctx, "DeleteProfile", []any{id})
 }
 
+func (c *Client) SetProfileShare(ctx context.Context, id uuid.UUID, share string, with []string) error {
+	return c.call(ctx, "SetProfileShare", []any{id, share, with})
+}
+
 // ---- 設定 -------------------------------------------------------------------------------
 //
 // アプリ全体の設定は、サーバーではその人の設定として置かれる(handler.go の appAsUser)。

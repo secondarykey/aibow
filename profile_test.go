@@ -305,3 +305,50 @@ func mustDefaultID(t *testing.T, st Store) uuid.UUID {
 	}
 	return p.ID
 }
+
+// 配られたプロファイル(0018 の 11-1):写すと値と決まりが自分のものになる・もう配られていないものは新しい会話で選べない・
+// 最初に選ばれるものが見えなくなったら自分のプロファイルに戻る・名前の重なりは同じまとまりの中だけ
+func TestSharedProfiles(t *testing.T) {
+	cs, st := newTestConversations(t, &fakeGen{})
+	def, err := cs.DefaultProfile(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 管理者が配った「既定」(自分の「既定」と同じ名前でもよい)
+	shared := Profile{ID: uuid.NewV7(), Name: DefaultProfileName, Values: def.Values, Share: ShareAll, ReadOnly: true, OwnerName: "alice",
+		Rules: ProfileRules{Fixed: []string{"system"}}, CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	st.profiles = append(st.profiles, shared)
+
+	cp, err := cs.CopyProfile(ctx, shared.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cp.Name != "既定(写し)" || cp.Share != ShareNone || !slices.Equal(cp.Rules.Fixed, []string{"system"}) {
+		t.Errorf("写し: %+v", cp)
+	}
+	if cp2, err := cs.CopyProfile(ctx, shared.ID); err != nil || cp2.Name != "既定(写し 2)" {
+		t.Errorf("2回目の写し: %+v %v", cp2, err)
+	}
+	upd := shared
+	upd.Name = "変える"
+	if err := cs.UpdateProfile(ctx, upd); err != ErrProfileReadOnly {
+		t.Errorf("配られたものは変えられない: %v", err)
+	}
+
+	// 配られたものを最初に選ばれるものにし、見えなくなったら自分のプロファイルに戻る(印は残す)
+	if err := cs.SetDefaultProfile(ctx, shared.ID); err != nil {
+		t.Fatal(err)
+	}
+	if d, _ := cs.DefaultProfile(ctx); d.ID != shared.ID {
+		t.Errorf("最初に選ばれるもの: %+v", d)
+	}
+	st.profiles = slices.DeleteFunc(st.profiles, func(p Profile) bool { return p.ID == shared.ID })
+	if d, _ := cs.DefaultProfile(ctx); d.ID != def.ID {
+		t.Errorf("配られなくなったら自分のプロファイルに戻る: %+v", d)
+	}
+	shared.Withdrawn = true
+	st.profiles = append(st.profiles, shared)
+	if _, err := cs.DefaultsOf(ctx, shared.ID); err == nil {
+		t.Error("もう配られていないものは新しい会話で選べない")
+	}
+}

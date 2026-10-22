@@ -14,6 +14,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 
 	"github.com/secondarykey/aibow/models"
 )
@@ -216,11 +217,22 @@ func storedDefaultProfile(ctx context.Context, s Store) (Profile, bool, error) {
 	if err != nil || len(list) == 0 {
 		return Profile{}, false, err
 	}
-	i, err := markIndex(ctx, s, list)
-	if err != nil || i < 0 {
-		return Profile{}, false, err // 印が無ければ、PrepareProfiles が付け直す
+	var mark string
+	if _, err := loadUserSetting(ctx, s, SettingDefaultProfile, &mark); err != nil {
+		return Profile{}, false, err
 	}
-	return list[i], true, nil
+	if mark == "" {
+		return Profile{}, false, nil // 印が無ければ、PrepareProfiles が付け直す
+	}
+	if i := slices.IndexFunc(list, func(p Profile) bool { return p.ID.String() == mark }); i >= 0 {
+		return list[i], true, nil
+	}
+	// 印のプロファイルが見えない(配られたものを選んでいて、配られなくなった。0018 の決定事項 22)なら、自分のしまっていないプロファイルに戻る。
+	// 印は書き換えない(また配られたら、それに戻る)
+	if i := slices.IndexFunc(list, func(p Profile) bool { return p.Share == ShareNone && !p.Archived }); i >= 0 {
+		return list[i], true, nil
+	}
+	return Profile{}, false, nil
 }
 
 // migrateNCtx は、古い版の「コンテキスト長」(n_ctx)と、新しい会話の既定の「返事の上限」(max_tokens)を、

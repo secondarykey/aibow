@@ -29,6 +29,19 @@ const DefaultProfileName = "既定"
 // ErrProfileNotFound は、指定したプロファイルが保存先に無いときのエラー。
 var ErrProfileNotFound = errors.New("プロファイルが見つかりません(削除された可能性があります)")
 
+// ErrProfileReadOnly は、変えられないプロファイル(配られたもの)を変えようとしたときのエラー(0018 の決定事項 9)。
+var ErrProfileReadOnly = errors.New("配られたプロファイルは変えられません。変えたいときは、写して自分のプロファイルにしてください")
+
+// ErrNotAdmin は、管理者でない人がプロファイルを配ろうとしたときのエラー(0018 の決定事項 3)。
+var ErrNotAdmin = errors.New("プロファイルを配れるのは管理者だけです")
+
+// 配る範囲(Profile.Share。0018 の 11-1)
+const (
+	ShareNone  = ""      // 配らない(自分だけ)
+	ShareAll   = "all"   // 全員
+	ShareUsers = "users" // 指定した人(ShareWith)
+)
+
 // ErrProfileInUse は、使っている会話があるプロファイルを消そうとしたときのエラー。
 // 会話はプロファイルの決まりを引くので、使っている会話があるうちは消さず「しまう」(Archived)にする(0014 の 11)。
 var ErrProfileInUse = errors.New("このプロファイルから作った会話があるので消せません。しまうことはできます")
@@ -38,7 +51,21 @@ type Profile struct {
 	ID     uuid.UUID     `json:"id"` // UUIDv7
 	Name   string        `json:"name"`
 	Values ProfileValues `json:"values"` // 値:会話を作るときに写すもの
-	Rules  ProfileRules  `json:"rules"`  // 決まり:会話からそのつど見に行くもの(rules.go)
+
+	// 配る(0018 の 11-1)。Share は配る範囲(ShareNone / ShareAll / ShareUsers)、ShareWith は配る相手の名前(ShareUsers のとき)。
+	// 配ったプロファイルは「組織のもの」で、管理者なら誰でも変えられる(決定事項 20)。変えるのは SetProfileShare(UpdateProfile では変わらない)。
+	// ShareWith は変えられる人(管理者)にだけ入る(受け取った人には、ほかに誰が受け取ったかを見せない)
+	Share     string   `json:"share,omitempty"`
+	ShareWith []string `json:"share_with,omitempty"`
+	// 次の3つは、保存先が読むときに入れる(保存しない)。
+	// Owner は作った人(持ち主)、OwnerName はその名前(配ったときに覚えた名前。作った人を消しても残る)。
+	// ReadOnly は ctx の利用者が変えられない(配られたもの。管理者でない人と、管理者から外れた人)。
+	// Withdrawn は、もう配られていない(その人がこのプロファイルから作った会話の決まりのためだけに読める。新しい会話では選べない。決定事項 21)
+	Owner     uuid.UUID    `json:"owner"`
+	OwnerName string       `json:"owner_name,omitempty"`
+	ReadOnly  bool         `json:"read_only,omitempty"`
+	Withdrawn bool         `json:"withdrawn,omitempty"`
+	Rules     ProfileRules `json:"rules"` // 決まり:会話からそのつど見に行くもの(rules.go)
 	// Archived は「しまった」プロファイル。新しい会話では選べないが、決まりは残る(会話から引ける)。
 	// 消すと、使っていた会話の決まりが黙って外れてしまうので、使っている会話があるうちは消さずにしまう(0014 の 11)
 	Archived  bool      `json:"archived"`
@@ -394,12 +421,15 @@ func (p Profile) validate() error {
 
 // checkName は、プロファイルの名前がほかのプロファイル(しまったものも)と重ならないかを確かめる。
 // 新しい会話の画面の選択や一覧で見分けがつかなくなるので、重なる名前は保存のときに断る(0014 の未決事項。2026-10-20、ユーザーと決めた)。
+// 比べるのは同じまとまりの中だけ(自分のもの同士・配られたもの同士)。まとまりは画面で分けて出すので、まとまりをまたいで同じ名前でも見分けがつく
+// (受け取った人は皆「既定」を持っているので、配られた「既定」とも重なってしまうため。0018 の決定事項 22)。
 func (cs *Conversations) checkName(ctx context.Context, p Profile) error {
 	list, err := cs.store.ListProfiles(ctx)
 	if err != nil {
 		return err
 	}
-	if slices.ContainsFunc(list, func(q Profile) bool { return q.ID != p.ID && q.Name == p.Name }) {
+	shared := p.Share != ShareNone
+	if slices.ContainsFunc(list, func(q Profile) bool { return q.ID != p.ID && q.Name == p.Name && (q.Share != ShareNone) == shared }) {
 		return fmt.Errorf("プロファイル「%s」はもうあります。ほかの名前にしてください", p.Name)
 	}
 	return nil
@@ -435,7 +465,11 @@ func (cs *Conversations) UpdateProfile(ctx context.Context, p Profile) error {
 	if err != nil {
 		return err
 	}
+	if old.ReadOnly {
+		return ErrProfileReadOnly
+	}
 	p.Name = strings.TrimSpace(p.Name)
+	p.Share = old.Share
 	p.Values = valuesOf(p.Values.settings())
 	if err := p.validate(); err != nil {
 		return err
@@ -444,6 +478,7 @@ func (cs *Conversations) UpdateProfile(ctx context.Context, p Profile) error {
 		return err
 	}
 	p.Archived, p.CreatedAt, p.UpdatedAt = old.Archived, old.CreatedAt, time.Now()
+	p.Share = old.Share // 配る範囲は SetProfileShare で変える(名前の重なりを比べるまとまりのため、保存先のものを使う)
 	return cs.saveProfile(ctx, p)
 }
 
@@ -501,6 +536,9 @@ func (cs *Conversations) SetDefaultProfile(ctx context.Context, id uuid.UUID) er
 	if p.Archived {
 		return fmt.Errorf("プロファイル「%s」はしまってあるので、新しい会話で最初に選ばれるものにはできません", p.Name)
 	}
+	if p.Withdrawn {
+		return fmt.Errorf("プロファイル「%s」はもう配られていないので、新しい会話で最初に選ばれるものにはできません", p.Name)
+	}
 	return SaveUserSetting(ctx, cs.store, SettingDefaultProfile, p.ID.String())
 }
 
@@ -515,6 +553,9 @@ func (cs *Conversations) usableProfile(ctx context.Context, id uuid.UUID) (Profi
 	}
 	if p.Archived {
 		return Profile{}, fmt.Errorf("プロファイル「%s」はしまってあるので、新しい会話では選べません", p.Name)
+	}
+	if p.Withdrawn {
+		return Profile{}, fmt.Errorf("プロファイル「%s」はもう配られていないので、新しい会話では選べません", p.Name)
 	}
 	return p, nil
 }
@@ -541,6 +582,45 @@ func (cs *Conversations) SaveToProfile(ctx context.Context, conv, profileID uuid
 	}
 	p.Values = valuesOf(c.Settings)
 	return cs.UpdateProfile(ctx, p)
+}
+
+// CopyProfile は、プロファイル id(配られたものなど)を写して、自分の新しいプロファイルを作る(0018 の決定事項 9・19)。
+// 値と決まりを写す。写したものは自分のものなので、決まりも変えられる。名前は「<名前>(写し)」(重なれば「(写し 2)」…)。
+func (cs *Conversations) CopyProfile(ctx context.Context, id uuid.UUID) (Profile, error) {
+	p, err := cs.store.Profile(ctx, id)
+	if err != nil {
+		return Profile{}, err
+	}
+	list, err := cs.store.ListProfiles(ctx)
+	if err != nil {
+		return Profile{}, err
+	}
+	name := p.Name + "(写し)"
+	for n := 2; slices.ContainsFunc(list, func(q Profile) bool { return q.Share == ShareNone && q.Name == name }); n++ {
+		name = fmt.Sprintf("%s(写し %d)", p.Name, n)
+	}
+	rules := p.Rules
+	rules.Fixed = slices.Clone(rules.Fixed)
+	return cs.CreateProfile(ctx, name, p.Values, rules)
+}
+
+// SetProfileShare は、プロファイルを配る範囲と相手(利用者の名前)を変える(0018 の 11-1)。管理者だけ(保存先が確かめる)。
+// 配るときは、配られたもの同士で名前が重ならないかを確かめる。
+func (cs *Conversations) SetProfileShare(ctx context.Context, id uuid.UUID, share string, with []string) error {
+	p, err := cs.store.Profile(ctx, id)
+	if err != nil {
+		return err
+	}
+	if share == ShareUsers && len(with) == 0 {
+		return errors.New("配る相手を1人以上選んでください")
+	}
+	p.Share = share
+	if err := cs.checkName(ctx, p); err != nil {
+		return err
+	}
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+	return cs.store.SetProfileShare(ctx, id, share, with)
 }
 
 // SaveAsProfile は、会話 conv の今の設定の値で、新しいプロファイル name を作る(決まりは無し)。

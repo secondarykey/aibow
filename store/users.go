@@ -92,6 +92,8 @@ func (s *SQLite) SetAdmin(ctx context.Context, id uuid.UUID, admin bool, at time
 
 // DeleteUser は利用者と、その人の会話(発言・要約は会話と一緒に消える)・プロファイル・人ごとの設定・セッションを、1つのトランザクションで消す。
 // 会話を先に消す(会話がプロファイルを指しているので、逆だとプロファイルを消せない)。
+// 配ったプロファイルは消さずに配り続ける(組織のもの。0018 の決定事項 20)。配るのをやめたあとも、ほかの人の会話が使っているプロファイルは残す
+// (その人たちの会話が決まりを引き続けるため。決定事項 21)。
 func (s *SQLite) DeleteUser(ctx context.Context, id uuid.UUID) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -101,7 +103,7 @@ func (s *SQLite) DeleteUser(ctx context.Context, id uuid.UUID) error {
 	owner := id.String()
 	for _, q := range []string{
 		"DELETE FROM conversations WHERE owner = ?",
-		"DELETE FROM profiles WHERE owner = ?",
+		"DELETE FROM profiles WHERE owner = ? AND share = '' AND NOT EXISTS (SELECT 1 FROM conversations c WHERE c.profile_id = profiles.id)",
 		"DELETE FROM user_settings WHERE owner = ?",
 		"DELETE FROM sessions WHERE user_id = ?",
 	} {

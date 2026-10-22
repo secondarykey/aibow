@@ -60,6 +60,13 @@ type Store interface {
 	UpdateProfile(ctx context.Context, p Profile) error
 	// DeleteProfile はプロファイルを消す。そのプロファイルから作った会話があれば消さずに ErrProfileInUse。
 	DeleteProfile(ctx context.Context, id uuid.UUID) error
+	// SetProfileShare は、プロファイルを配る範囲と相手(名前)を変える(0018 の 11-1)。管理者でなければ ErrNotAdmin。
+	//
+	// 誰に何が見えて、誰が変えられるかは、保存先が1か所で決める(SQLite なら WHERE の条件。0018 の「学ぶこと」の認可):
+	//   - 読める:自分のもの・全員に配られたもの・自分に配られたもの・(管理者なら)配られたもの全部。
+	//     Profile(id) だけは、自分がそのプロファイルから作った会話があれば、配られなくなっても読める(Withdrawn。決まりを引き続けるため)
+	//   - 変えられる:自分の配っていないもの・(管理者なら)配られたもの。ほかは ErrProfileReadOnly
+	SetProfileShare(ctx context.Context, id uuid.UUID, share string, with []string) error
 
 	// AppSetting はアプリ全体の設定(利用者によらないもの)を1つ読む。まだ保存されていなければ ok=false。
 	AppSetting(ctx context.Context, key string) (value string, ok bool, err error)

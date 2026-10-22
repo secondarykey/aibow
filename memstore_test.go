@@ -79,6 +79,19 @@ func (s *memStore) DeleteProfile(_ context.Context, id uuid.UUID) error {
 	return nil
 }
 
+// SetProfileShare は、配る範囲だけを覚える(利用者の区別はしない。誰に見えるかは store の SQLite のテストで確かめる)。
+func (s *memStore) SetProfileShare(_ context.Context, id uuid.UUID, share string, with []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.profiles {
+		if s.profiles[i].ID == id {
+			s.profiles[i].Share, s.profiles[i].ShareWith = share, slices.Clone(with)
+			return nil
+		}
+	}
+	return ErrProfileNotFound
+}
+
 func (s *memStore) ListConversations(_ context.Context) ([]Conversation, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
