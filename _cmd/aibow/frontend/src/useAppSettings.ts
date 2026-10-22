@@ -6,7 +6,7 @@
 // 新しい会話の既定は、プロファイル(設定の画面の「会話」の「プロファイル」。ProfileSettings.tsx。0014)で変える。
 // ここの defaults は、新しい会話で最初に選ばれるプロファイルの値(Go が返す。表示のためだけに持つ)。
 import { useCallback, useRef, useState } from "react";
-import { ChatService } from "../bindings/github.com/secondarykey/aibow/_cmd/aibow";
+import { ChatService } from "./backend";
 import type { AppSettings, DisplaySettings } from "../bindings/github.com/secondarykey/aibow";
 import type { Transcript } from "./transcript";
 import { errorMessage } from "./errors";

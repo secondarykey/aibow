@@ -15,8 +15,7 @@
 //
 //	main.go    … 起動(このファイル)
 //	config.go  … 環境変数から設定を読む(settings.json は aibow.LoadSettingsFile、MCP のサーバーは startMCP)
-//	service.go … 画面から呼ばれるメソッド(モデル・会話・設定・送信)
-//	modelhost.go … モデルを扱う係(直接か aibow-server 越し。0015)
+//	service.go … 画面から呼ばれるメソッドを Wails に渡す(中身はルートの ui パッケージ。モデル・会話・設定・送信と、モデルを扱う係)
 //	frontend/  … 画面(React + TypeScript)。Vite でビルドした frontend/dist が実行ファイルに埋め込まれる
 //	build/     … wails3 build / wails3 dev の設定(アプリ名、アイコン、OS ごとの手順)
 package main
@@ -39,6 +38,7 @@ import (
 	"github.com/secondarykey/aibow/mcp/client"
 	"github.com/secondarykey/aibow/models"
 	"github.com/secondarykey/aibow/store"
+	"github.com/secondarykey/aibow/ui"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
@@ -62,7 +62,7 @@ var frontendFiles embed.FS
 func init() {
 	// chat イベントで送るデータの型を Wails に教えておく。
 	// バインディング生成のときに TypeScript の型(ChatEvent)が作られ、画面側で型付きで受け取れる。
-	application.RegisterEvent[aibow.ChatEvent](chatEventName)
+	application.RegisterEvent[aibow.ChatEvent](ui.ChatEventName)
 }
 
 func main() {
@@ -97,19 +97,20 @@ func main() {
 	}
 	var st *store.SQLite
 	var settings aibow.AppSettings
-	var host modelHost
+	var host ui.ModelHost
+	var eng *engine.Engine
 	var initial *models.Entry
 	if err == nil {
 		st, settings, err = openStore(cfg)
 	}
 	if err == nil {
 		defer st.Close()
-		host, initial, err = startModels(&cfg, settings)
+		host, eng, initial, err = startModels(&cfg, settings)
 	}
 	if err != nil {
 		log.Errorf("起動できません: %v", err)
-	} else if d, ok := host.(*directHost); ok {
-		defer d.eng.Close()
+	} else if eng != nil {
+		defer eng.Close()
 	}
 
 	assets, _ := fs.Sub(frontendFiles, "frontend/dist")
@@ -121,7 +122,10 @@ func main() {
 		// なお WebView2 の行([WebView2] …)は標準の log で来るが、slog.SetDefault のあとは標準の log も同じ出口に流れる
 		Logger: slog.Default(),
 		Services: []application.Service{
-			application.NewService(NewChatService(host, st, settings, initial, local, mcpm, prefs, appVersion(), cfg.notices, err)),
+			application.NewService(NewChatService(ui.Options{
+				Host: host, Store: st, App: settings, Initial: initial, Local: local, MCP: mcpm, Prefs: prefs,
+				Version: appVersion(), Notices: cfg.notices, StartupErr: err,
+			})),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
@@ -311,28 +315,29 @@ func openStore(cfg appConfig) (*store.SQLite, aibow.AppSettings, error) {
 //
 // 直接の形のときは、画面で足したモデルの置き場所(model-places.json)も読み、手で決めた置き場所に足す(0015 の 24)。
 // 読めなければ画面のお知らせで伝え、足した置き場所なしで起動する。
-func startModels(cfg *appConfig, app aibow.AppSettings) (modelHost, *models.Entry, error) {
+func startModels(cfg *appConfig, app aibow.AppSettings) (ui.ModelHost, *engine.Engine, *models.Entry, error) {
 	if cfg.serverURL != "" {
 		c := apiclient.New(cfg.serverURL)
 		log.Noticef("生成は aibow-server に頼みます: %s(llama.cpp はこのアプリでは読み込みません)", c.URL())
-		return &remoteHost{c: c}, nil, nil
+		return ui.NewRemoteHost(c), nil, nil, nil
 	}
-	added, err := loadPlacesFile(cfg.placesPath)
+	added, err := ui.LoadPlacesFile(cfg.placesPath)
 	if err != nil {
 		log.Warn(err.Error())
 		cfg.notices = append(cfg.notices, err.Error())
 	}
-	h := &directHost{catalog: cfg.catalog, added: added, lib: cfg.engine.LibPath, initialModel: cfg.initialModel}
-	eng, initial, err := startEngine(*cfg, h.catalogNow(), app)
+	// 手で決めた置き場所に、画面で足した置き場所を合わせた一覧から、起動時のモデルを選ぶ
+	catalog := cfg.catalog
+	catalog.Added = added.List()
+	eng, initial, err := startEngine(*cfg, catalog, app)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	h.eng = eng
-	return h, initial, nil
+	return ui.NewDirectHost(eng, cfg.catalog, added, cfg.engine.LibPath, cfg.initialModel), eng, initial, nil
 }
 
 // startEngine は llama.cpp を読み込み、起動時に読み込むモデルを決める。
-// モデルの読み込み自体は、ウィンドウを出してから ChatService が裏で行う。
+// モデルの読み込み自体は、ウィンドウを出してから ui.Service が裏で行う。
 // catalog は、手で決めた置き場所に画面で足した置き場所を合わせたもの。
 func startEngine(cfg appConfig, catalog models.Catalog, app aibow.AppSettings) (*engine.Engine, *models.Entry, error) {
 	ec := cfg.engine

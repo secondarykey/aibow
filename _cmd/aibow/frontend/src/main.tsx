@@ -1,6 +1,6 @@
 // ウィンドウのドラッグとリサイズ(Frameless)は @wailsio/runtime がページ全体のマウス操作を見て行う。
-// 確実に読み込まれるよう、入口で import しておく(副作用だけが目的)
-import '@wailsio/runtime'
+// 確実に読み込まれるよう、入口で Go を呼ぶ係(@wailsio/runtime を読み込む)を import しておく
+import './backend'
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'

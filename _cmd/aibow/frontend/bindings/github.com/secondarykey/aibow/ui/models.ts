@@ -3,16 +3,16 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as aibow$0 from "../../models.js";
+import * as aibow$0 from "../models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as client$0 from "../../api/client/models.js";
+import * as client$0 from "../api/client/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as engine$0 from "../../engine/models.js";
+import * as engine$0 from "../engine/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as models$0 from "../../models/models.js";
+import * as models$0 from "../models/models.js";
 
 /**
  * ConversationDetail は会話1つと、その発言。

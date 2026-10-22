@@ -6,8 +6,8 @@
 // 空の会話が一覧に並ばないようにするため。その画面で変えた設定は draft に持ち、作るときに渡す。
 // 新しい会話は、その画面で選んだプロファイル(draftProfile。最初は「最初に選ぶ」の印のもの)から作る(0014)。
 import { useCallback, useRef, useState } from "react";
-import { ChatService } from "../bindings/github.com/secondarykey/aibow/_cmd/aibow";
-import type { ConversationDetail } from "../bindings/github.com/secondarykey/aibow/_cmd/aibow";
+import { ChatService } from "./backend";
+import type { ConversationDetail } from "../bindings/github.com/secondarykey/aibow/ui";
 import type { Conversation, ConversationSettings, ProfileInfo, Usage } from "../bindings/github.com/secondarykey/aibow";
 import { errorMessage } from "./errors";
 

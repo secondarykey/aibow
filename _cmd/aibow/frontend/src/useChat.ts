@@ -4,9 +4,8 @@
 // Go が履歴を保存し、毎回並べ直してモデルに渡す(モデル自身は何も覚えていない)。
 // 会話の上限を超えたら、Go が compact で収めてから渡す(compact.go)。
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CancelError, Events } from "@wailsio/runtime";
-import type { CancellablePromise } from "@wailsio/runtime";
-import { ChatService } from "../bindings/github.com/secondarykey/aibow/_cmd/aibow";
+import { ChatService, isCancel, onChat } from "./backend";
+import type { Call } from "./backend";
 import type { ToolPolicy } from "../bindings/github.com/secondarykey/aibow";
 import type { ChatEvent, ConfirmRequest, StoredMessage } from "../bindings/github.com/secondarykey/aibow";
 import { messageItems, thinkLabel, toolCount, turnView, withConfirm } from "./transcript";
@@ -81,8 +80,7 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
   const listener = useRef<((ev: ChatEvent) => void) | null>(null);
 
   // Go の Send が送ってくる途中経過(aibow.ChatEvent)。
-  // main.go の RegisterEvent で型を登録してあるので、ev.data は ChatEvent 型になる。
-  useEffect(() => Events.On("chat", ev => listener.current?.(ev.data)), []);
+  useEffect(() => onChat(ev => listener.current?.(ev)), []);
 
   // 会話を開いたら、保存された発言から表示を作り直す。
   // その会話で生成中なら、生成中の返事を末尾に足す(Go がまだ保存していないため)。
@@ -133,7 +131,7 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
   // run は送信と「今すぐ要約」の共通部分。生成中の吹き出しを出し、chat イベントで書き換え、done で終わる。
   // manual は「今すぐ要約」(返事は生成しない。終わったら吹き出しを消して、区切りが出るように開き直す)
   // 戻り値は、この送信で届いたエラー(作り直す・送り直すで、開き直したあとに出し直すため)と、送った発言を Go が保存したか
-  const run = useCallback(async (id: string, start: () => CancellablePromise<void>, manual: boolean, userItemId: number | null): Promise<RunResult> => {
+  const run = useCallback(async (id: string, start: () => Call<void>, manual: boolean, userItemId: number | null): Promise<RunResult> => {
     const errors: string[] = [];
     let userSaved = false;
     const l: Live = {
@@ -314,7 +312,7 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
       },
     };
     call.catch(err => {
-      if (err instanceof CancelError) return; // 停止ボタン。done イベントは Go から届く
+      if (isCancel(err)) return; // 停止ボタン。done イベントは Go から届く
       // Go のメソッドを呼べなかった(done イベントは来ない)
       showError(`呼び出しエラー: ${errorMessage(err)}`);
       done();
@@ -389,7 +387,7 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
   // retry は作り直す・送り直すの共通部分(0011)。表示から最後のやり取りを外してから、送信と同じ流れで返事を作る。
   // 終わったら会話を開き直して、保存された内容に表示を合わせる(送れなかったときは Go が何も消していないので、元の表示に戻る)。
   // 開き直すと表示が作り直されるので、届いたエラーはそのあとに出し直す
-  const retry = useCallback(async (withUser: boolean, text: string, start: (id: string) => CancellablePromise<void>) => {
+  const retry = useCallback(async (withUser: boolean, text: string, start: (id: string) => Call<void>) => {
     if (controller.current || starting.current || !current) return;
     const id = current.conversation.id;
     starting.current = true;

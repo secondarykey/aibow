@@ -9,8 +9,8 @@
 // つないでくる側から見せたり変えたりするのは別の問題なので出さない。モデルが変わるのは会話を送信するときだけ。
 import { useCallback, useEffect, useState } from "react";
 import { LuCircleCheck, LuFile, LuFileX, LuFolder, LuFolderX, LuInfo, LuLock, LuX } from "react-icons/lu";
-import { ChatService } from "../../bindings/github.com/secondarykey/aibow/_cmd/aibow";
-import type { ModelSettingsResult } from "../../bindings/github.com/secondarykey/aibow/_cmd/aibow";
+import { ChatService } from "../backend";
+import type { ModelSettingsResult } from "../../bindings/github.com/secondarykey/aibow/ui";
 // Go の models パッケージ。"…/aibow/models" と書くと aibow パッケージの models.ts が選ばれるので、index まで書く
 import type { Entry as ModelEntry, Place } from "../../bindings/github.com/secondarykey/aibow/models/index";
 import type { Models } from "../useModels";

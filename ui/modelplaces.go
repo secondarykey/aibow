@@ -1,4 +1,4 @@
-package main
+package ui
 
 // modelplaces.go: 直接の形(aibow-server を使わないとき)で、画面から足したモデルの置き場所を覚える(0015 の 24・32)。
 //
@@ -18,8 +18,8 @@ import (
 	"sync"
 )
 
-// placesFile は model-places.json。
-type placesFile struct {
+// PlacesFile は model-places.json(直接の形の DirectHost が使う)。
+type PlacesFile struct {
 	path string
 
 	mu     sync.Mutex
@@ -34,10 +34,10 @@ type placesData struct {
 	Places []string `json:"places"`
 }
 
-// loadPlacesFile はファイルを読む。無ければ空(まだ何も足していない)。
+// LoadPlacesFile はファイルを読む。無ければ空(まだ何も足していない)。
 // 壊れていたらエラーを返し(画面のお知らせで伝える)、足した置き場所なしで動く。
-func loadPlacesFile(path string) (*placesFile, error) {
-	f := &placesFile{path: path}
+func LoadPlacesFile(path string) (*PlacesFile, error) {
+	f := &PlacesFile{path: path}
 	b, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return f, nil
@@ -53,14 +53,14 @@ func loadPlacesFile(path string) (*placesFile, error) {
 	return f, f.broken
 }
 
-func (f *placesFile) list() []string {
+func (f *PlacesFile) List() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return slices.Clone(f.places)
 }
 
 // set は置き場所を書く。一時ファイルに書いてから名前を変える(書いている途中で落ちても、前のファイルが壊れないように)。
-func (f *placesFile) set(places []string) error {
+func (f *PlacesFile) set(places []string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.broken != nil {

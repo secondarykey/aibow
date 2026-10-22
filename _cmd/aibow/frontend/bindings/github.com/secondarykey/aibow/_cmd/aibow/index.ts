@@ -5,9 +5,3 @@ import * as ChatService from "./chatservice.js";
 export {
     ChatService
 };
-
-export type {
-    ConversationDetail,
-    ModelSettingsResult,
-    ModelsResult
-} from "./models.js";

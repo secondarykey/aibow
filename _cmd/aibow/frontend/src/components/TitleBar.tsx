@@ -8,21 +8,21 @@
 // 会話の一覧の上(ハンバーガーの横)もドラッグできる(ConversationList.tsx)。
 import { useEffect, useState } from "react";
 import type { MouseEvent } from "react";
-import { Window } from "@wailsio/runtime";
+import { appWindow } from "../backend";
 import { LuCopy, LuMinus, LuSquare, LuX } from "react-icons/lu";
 
 // toggleMaximiseOnDoubleClick は、ドラッグできる場所のダブルクリックで最大化と元に戻すを切り替える
 // (OS のタイトルバーと同じ動き)。ボタンの上のダブルクリックは無視する。
 export function toggleMaximiseOnDoubleClick(e: MouseEvent) {
   if (e.target instanceof Element && e.target.closest("button, input")) return;
-  Window.ToggleMaximise();
+  appWindow.toggleMaximise();
 }
 
 export function TitleBar({ title }: { title: string }) {
   // 最大化しているかで、ボタンのアイコンを変える(元に戻す = 重なった四角)
   const [maximised, setMaximised] = useState(false);
   useEffect(() => {
-    const check = () => { Window.IsMaximised().then(setMaximised).catch(() => {}); };
+    const check = () => { appWindow.isMaximised().then(setMaximised).catch(() => {}); };
     check();
     window.addEventListener("resize", check); // 最大化・元に戻すとウィンドウの大きさが変わる
     return () => window.removeEventListener("resize", check);
@@ -32,11 +32,11 @@ export function TitleBar({ title }: { title: string }) {
     <div className="titlebar" onDoubleClick={toggleMaximiseOnDoubleClick}>
       <span className="conversation-title" title={title}>{title}</span>
       <div className="window-controls">
-        <button title="最小化" onClick={() => Window.Minimise()}><LuMinus /></button>
-        <button title={maximised ? "元に戻す" : "最大化"} onClick={() => Window.ToggleMaximise()}>
+        <button title="最小化" onClick={() => appWindow.minimise()}><LuMinus /></button>
+        <button title={maximised ? "元に戻す" : "最大化"} onClick={() => appWindow.toggleMaximise()}>
           {maximised ? <LuCopy /> : <LuSquare />}
         </button>
-        <button className="close" title="閉じる" onClick={() => Window.Close()}><LuX /></button>
+        <button className="close" title="閉じる" onClick={() => appWindow.close()}><LuX /></button>
       </div>
     </div>
   );

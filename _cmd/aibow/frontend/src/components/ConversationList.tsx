@@ -14,7 +14,7 @@
 //   終わった … 青(点滅しない。ほかの会話を見ている間に返事が終わった。その会話を開くと消える)
 // 一覧を畳んでいるときは、いちばん気にしてほしい印(確認待ち → エラー → 生成中 → 終わった)をハンバーガーに出す
 import { useEffect, useRef, useState } from "react";
-import { ChatService } from "../../bindings/github.com/secondarykey/aibow/_cmd/aibow";
+import { ChatService } from "../backend";
 import type { KeyboardEvent } from "react";
 import { LuMenu, LuPlus, LuSettings } from "react-icons/lu";
 import { toggleMaximiseOnDoubleClick } from "./TitleBar";

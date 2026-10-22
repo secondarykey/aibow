@@ -39,7 +39,7 @@ import { Composer } from "./components/Composer";
 import { WorkDirBar } from "./components/WorkDirBar";
 import { ToolBar } from "./components/ToolBar";
 import { LuSettings } from "react-icons/lu";
-import { ChatService } from "../bindings/github.com/secondarykey/aibow/_cmd/aibow";
+import { ChatService } from "./backend";
 import type { ServerInfo } from "../bindings/github.com/secondarykey/aibow/mcp/client";
 import type { ConversationSettings } from "../bindings/github.com/secondarykey/aibow";
 import { ImeFocusRelay } from "./imeFocus";

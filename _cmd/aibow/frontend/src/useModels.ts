@@ -6,8 +6,7 @@
 // aibow-server につないでいるとき(0015)は、一覧も読み込みもサーバーのもの。つながらなければエラーのカードを出し、
 // 一覧を取り直したとき(ウィンドウに戻ってきたとき・返事が終わったとき)につながれば、そのまま使える。
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Events } from "@wailsio/runtime";
-import { ChatService } from "../bindings/github.com/secondarykey/aibow/_cmd/aibow";
+import { ChatService, onModelLoaded } from "./backend";
 // Go の models パッケージ。"…/aibow/models" と書くと、Wails が aibow パッケージに作る models.ts の方が選ばれるので、index まで書く
 import type { Entry as ModelEntry } from "../bindings/github.com/secondarykey/aibow/models/index";
 import type { ModelInfo } from "../bindings/github.com/secondarykey/aibow/engine";
@@ -109,7 +108,7 @@ export function useModels(n: Notifier, t: Pick<Transcript, "addError">, setBusy:
 
   // 起動時の読み込みが終わった合図(models イベント)を待つ。最初の一覧の取得(reload)は App が呼ぶ
   useEffect(() => {
-    const off = Events.On("models", async () => {
+    const off = onModelLoaded(async () => {
       startupDone.current = true;
       const wasLoading = startupLoading.current;
       startupLoading.current = false;

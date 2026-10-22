@@ -4,7 +4,7 @@
 // どのフォルダを触らせているかがいつも見えるよう、設定の画面ではなく入力欄の上に出す。
 // フォルダを選ぶダイアログは Go の側で出す(ChatService.ChooseWorkDir)。
 import { LuFolder, LuX } from "react-icons/lu";
-import { ChatService } from "../../bindings/github.com/secondarykey/aibow/_cmd/aibow";
+import { ChatService } from "../backend";
 import { errorMessage } from "../errors";
 
 interface Props {

@@ -19,11 +19,10 @@ import * as client$0 from "../../mcp/client/models.js";
 import * as models$0 from "../../models/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as uuid$0 from "../../../../../uuid/models.js";
-
+import * as ui$0 from "../../ui/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as $models from "./models.js";
+import * as uuid$0 from "../../../../../uuid/models.js";
 
 /**
  * AddModelPlace は置き場所(フォルダか GGUF のファイル)を足し、足したあとの一覧を返す。
@@ -92,7 +91,7 @@ export function ConfirmTool(id: uuid$0.UUID, reqID: string, approved: boolean, r
 /**
  * Conversation は会話1つと、その発言を古い順に返す。
  */
-export function Conversation(id: uuid$0.UUID): $CancellablePromise<$models.ConversationDetail> {
+export function Conversation(id: uuid$0.UUID): $CancellablePromise<ui$0.ConversationDetail> {
     return $Call.ByID(499268636, id);
 }
 
@@ -150,14 +149,14 @@ export function ModelPlaces(): $CancellablePromise<models$0.Place[] | null> {
  * ModelSettings は、表示だけの設定(作業領域・ポート・llama.cpp の場所・最初のモデル・モデルの置き場所)を返す。
  * 画面からは変えない(aibow-server 越しなら server.json で変えて起動し直す。直接なら環境変数。0015 の 21)。
  */
-export function ModelSettings(): $CancellablePromise<$models.ModelSettingsResult> {
+export function ModelSettings(): $CancellablePromise<ui$0.ModelSettingsResult> {
     return $Call.ByID(3615230285);
 }
 
 /**
  * Models は使えるモデルの一覧と、今読み込んでいるモデルを返す。
  */
-export function Models(): $CancellablePromise<$models.ModelsResult> {
+export function Models(): $CancellablePromise<ui$0.ModelsResult> {
     return $Call.ByID(2626444425);
 }
 

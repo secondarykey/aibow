@@ -1,10 +1,11 @@
-package main
+package ui
 
 // modelhost.go: モデルを扱う係(0015 の 11)。
 //
 // 画面のアプリがモデルにすること(一覧・読み込み・GPU の層数・作業領域の確保)と、会話の仕組みに渡す生成の口は、
-// 直接(アプリの中の engine)と HTTP 越し(aibow-server。api/client)の2つの形がある。ChatService はどちらかを呼ぶだけにして、
+// 直接(アプリの中の engine)と HTTP 越し(aibow-server。api/client)の2つの形がある。Service はどちらかを呼ぶだけにして、
 // 画面からはどちらの形でも同じに見せる(8-4 のモデルを扱う画面も、この上に作る)。
+// 9-0 で _cmd/aibow からこのパッケージに移した(Wails を使わないので。0016 の 9)。係を作るのはアプリの main(NewDirectHost・NewRemoteHost)。
 //
 //	直接       … 今までどおり。GPU の層数はアプリの DB(model_gpu_layers)に覚え、作業領域は会話ごとに作り直す(0009)。
 //	             画面で足したモデルの置き場所は手元の model-places.json(modelplaces.go)
@@ -18,6 +19,7 @@ package main
 import (
 	"fmt"
 	"maps"
+	"path/filepath"
 	"slices"
 
 	"github.com/secondarykey/aibow"
@@ -27,7 +29,9 @@ import (
 	"github.com/secondarykey/aibow/models"
 )
 
-type modelHost interface {
+// ModelHost はモデルを扱う係。メソッドを小文字にして、このパッケージの外では作れないようにしている
+// (形は DirectHost と RemoteHost の2つだけ。外から使うのは Options に渡すときだけ)。
+type ModelHost interface {
 	// generator は会話の仕組みに渡す生成の口(*engine.Engine か *client.Client)
 	generator() aibow.Generator
 	// list は使えるモデルの一覧と、読み込み中のモデル・GPU があるか。HTTP 越しでつながらなければエラー
@@ -67,30 +71,37 @@ type hostModels struct {
 
 // ---- 直接(アプリの中の engine) --------------------------------------------------------
 
-type directHost struct {
-	s       *ChatService // GPU の層数(アプリの DB)を読み書きするため
+// DirectHost は、アプリの中の engine でモデルを扱う係。
+type DirectHost struct {
+	s       *Service // GPU の層数(アプリの DB)を読み書きするため。New が入れる
 	eng     *engine.Engine
 	catalog models.Catalog // 手で決めた置き場所(環境変数)。足した置き場所は added にあり、catalogNow で合わせる
-	added   *placesFile
+	added   *PlacesFile
 	missing models.MissingWatch
 
 	// lib と initialModel は、表示だけの設定のため(AIBOW_LIB・AIBOW_MODEL)
 	lib, initialModel string
 }
 
-func (h *directHost) generator() aibow.Generator { return h.eng }
-func (h *directHost) info() *engine.ModelInfo    { return h.eng.Info() }
-func (h *directHost) server() string             { return "" }
+// NewDirectHost は直接の形の係を作る。catalog は手で決めた置き場所、added は画面で足した置き場所(model-places.json)、
+// lib と initialModel は表示だけの設定(AIBOW_LIB・AIBOW_MODEL)。
+func NewDirectHost(eng *engine.Engine, catalog models.Catalog, added *PlacesFile, lib, initialModel string) *DirectHost {
+	return &DirectHost{eng: eng, catalog: catalog, added: added, lib: lib, initialModel: initialModel}
+}
+
+func (h *DirectHost) generator() aibow.Generator { return h.eng }
+func (h *DirectHost) info() *engine.ModelInfo    { return h.eng.Info() }
+func (h *DirectHost) server() string             { return "" }
 
 // catalogNow は、手で決めた置き場所に、画面で足した置き場所を合わせた一覧の係。
-func (h *directHost) catalogNow() models.Catalog {
+func (h *DirectHost) catalogNow() models.Catalog {
 	c := h.catalog
-	c.Added = h.added.list()
+	c.Added = h.added.List()
 	return c
 }
 
 // list は一覧を作る。見つからない足した置き場所は一覧に出さず、見つからなくなったときに1回だけ Warn のログを出す(0015 の 28)。
-func (h *directHost) list() (hostModels, error) {
+func (h *DirectHost) list() (hostModels, error) {
 	c := h.catalogNow()
 	lost, found := h.missing.Check(c)
 	logPlaces(lost, found)
@@ -104,7 +115,7 @@ func (h *directHost) list() (hostModels, error) {
 }
 
 // load は、そのモデルに覚えた層の数(覚えていなければ全体の値。0014 の 4)で読み込む。
-func (h *directHost) load(id string) (*engine.ModelInfo, error) {
+func (h *DirectHost) load(id string) (*engine.ModelInfo, error) {
 	m, err := h.catalogNow().Find(id)
 	if err != nil {
 		return nil, err
@@ -115,7 +126,7 @@ func (h *directHost) load(id string) (*engine.ModelInfo, error) {
 	return h.eng.LoadModelWithLayers(m, layers)
 }
 
-func (h *directHost) gpuLayers() int {
+func (h *DirectHost) gpuLayers() int {
 	h.s.appMu.Lock()
 	defer h.s.appMu.Unlock()
 	if i := h.eng.Info(); i != nil {
@@ -125,7 +136,7 @@ func (h *directHost) gpuLayers() int {
 }
 
 // setGPULayers は読み直し、読み込み中のモデルの値として DB に覚える。モデルが無ければ、まだ覚えていないモデルに使う全体の値を変える。
-func (h *directHost) setGPULayers(n int) (*engine.ModelInfo, error) {
+func (h *DirectHost) setGPULayers(n int) (*engine.ModelInfo, error) {
 	i, err := h.eng.SetGPULayers(n)
 	if err != nil {
 		return nil, err
@@ -139,7 +150,7 @@ func (h *directHost) setGPULayers(n int) (*engine.ModelInfo, error) {
 }
 
 // setModelGPULayers は、読み込み中のモデルなら読み直して覚え、ほかのモデルなら覚えるだけ(次に読み込むときから効く)。
-func (h *directHost) setModelGPULayers(id string, n int) (*engine.ModelInfo, error) {
+func (h *DirectHost) setModelGPULayers(id string, n int) (*engine.ModelInfo, error) {
 	if i := h.eng.Info(); i != nil && i.ID == id {
 		return h.setGPULayers(n)
 	}
@@ -151,7 +162,7 @@ func (h *directHost) setModelGPULayers(id string, n int) (*engine.ModelInfo, err
 }
 
 // rememberLayers は、モデルの GPU の層数をアプリの DB に覚える(0014 の 4。DB からファイルに移すかは TODO に記録だけした)。
-func (h *directHost) rememberLayers(id string, n int) {
+func (h *DirectHost) rememberLayers(id string, n int) {
 	h.s.appMu.Lock()
 	layers := maps.Clone(h.s.app.Workspace.ModelGPULayers)
 	h.s.appMu.Unlock()
@@ -162,7 +173,7 @@ func (h *directHost) rememberLayers(id string, n int) {
 	h.s.saveAppSetting(aibow.SettingModelGPULayers, layers, func(a *aibow.AppSettings) { a.Workspace.ModelGPULayers = layers })
 }
 
-func (h *directHost) tryContext(n int) (bool, error) {
+func (h *DirectHost) tryContext(n int) (bool, error) {
 	changed, err := h.eng.EnsureContextSize(n)
 	if err != nil {
 		return false, fmt.Errorf("上限を下げるか、GPU に載せる層の数を減らしてください: %w", err)
@@ -170,15 +181,15 @@ func (h *directHost) tryContext(n int) (bool, error) {
 	return changed, nil
 }
 
-func (h *directHost) unload() error {
+func (h *DirectHost) unload() error {
 	_, err := h.eng.UnloadModel()
 	return err
 }
 
-func (h *directHost) places() ([]models.Place, error) { return h.catalogNow().Places(), nil }
+func (h *DirectHost) places() ([]models.Place, error) { return h.catalogNow().Places(), nil }
 
 // addPlace は置き場所を確かめて(あるか・フォルダか GGUF か・まだ入っていないか)、model-places.json に覚える。
-func (h *directHost) addPlace(path string) ([]models.Place, error) {
+func (h *DirectHost) addPlace(path string) ([]models.Place, error) {
 	c := h.catalogNow()
 	abs, err := c.CheckPlace(path)
 	if err != nil {
@@ -192,7 +203,7 @@ func (h *directHost) addPlace(path string) ([]models.Place, error) {
 }
 
 // removePlace は足した置き場所を外す。手で決めた置き場所(AIBOW_MODELS_DIR・OLLAMA_MODELS)は外せない(0015 の 26)。
-func (h *directHost) removePlace(path string) ([]models.Place, error) {
+func (h *DirectHost) removePlace(path string) ([]models.Place, error) {
 	c := h.catalogNow()
 	p, ok := c.IsAdded(path)
 	if !ok {
@@ -206,7 +217,7 @@ func (h *directHost) removePlace(path string) ([]models.Place, error) {
 }
 
 // settings は、直接の形の表示だけの設定。作業領域は会話ごと(会話の上限 + 返事の上限)なので 0、ポートは無い(待ち受けない)。
-func (h *directHost) settings() (apiclient.ServerSettings, error) {
+func (h *DirectHost) settings() (apiclient.ServerSettings, error) {
 	return apiclient.ServerSettings{
 		Model: h.initialModel, Lib: absPath(h.lib),
 		ModelsDir: absPath(h.catalog.ModelsDir), OllamaDir: h.catalog.OllamaDir,
@@ -225,15 +236,21 @@ func logPlaces(lost, found []string) {
 
 // ---- HTTP 越し(aibow-server) ------------------------------------------------------------
 
-type remoteHost struct {
+// RemoteHost は、aibow-server にモデルを扱ってもらう係。
+type RemoteHost struct {
 	c *apiclient.Client
 }
 
-func (h *remoteHost) generator() aibow.Generator { return h.c }
-func (h *remoteHost) info() *engine.ModelInfo    { return h.c.Info() }
-func (h *remoteHost) server() string             { return h.c.URL() }
+// NewRemoteHost は aibow-server 越しの形の係を作る。
+func NewRemoteHost(c *apiclient.Client) *RemoteHost {
+	return &RemoteHost{c: c}
+}
 
-func (h *remoteHost) list() (hostModels, error) {
+func (h *RemoteHost) generator() aibow.Generator { return h.c }
+func (h *RemoteHost) info() *engine.ModelInfo    { return h.c.Info() }
+func (h *RemoteHost) server() string             { return h.c.URL() }
+
+func (h *RemoteHost) list() (hostModels, error) {
 	l, err := h.c.Models()
 	if err != nil {
 		return hostModels{}, err
@@ -246,12 +263,12 @@ func (h *remoteHost) list() (hostModels, error) {
 }
 
 // load はサーバーに読み込ませる。GPU の層数はサーバーの PC に覚えた値(0015 の 9)。
-func (h *remoteHost) load(id string) (*engine.ModelInfo, error) {
+func (h *RemoteHost) load(id string) (*engine.ModelInfo, error) {
 	return h.c.LoadModel(id)
 }
 
 // gpuLayers は、サーバーが読み込み中のモデルを読み込んだときの層の数(サーバーの PC の値)。
-func (h *remoteHost) gpuLayers() int {
+func (h *RemoteHost) gpuLayers() int {
 	if i := h.c.Info(); i != nil {
 		return i.GPULayers
 	}
@@ -265,36 +282,47 @@ func errServerSide(what string) error {
 }
 
 // setGPULayers・setModelGPULayers は、HTTP 越しではしない(層の数はサーバーの PC の VRAM に合わせる調整なので)。
-func (h *remoteHost) setGPULayers(int) (*engine.ModelInfo, error) {
+func (h *RemoteHost) setGPULayers(int) (*engine.ModelInfo, error) {
 	return nil, errServerSide("GPU に載せる層の数")
 }
 
-func (h *remoteHost) setModelGPULayers(string, int) (*engine.ModelInfo, error) {
+func (h *RemoteHost) setModelGPULayers(string, int) (*engine.ModelInfo, error) {
 	return nil, errServerSide("GPU に載せる層の数")
 }
 
 // tryContext は、サーバーの作業領域に入るかを確かめるだけ(作り直しは頼めない。0015 の 3)。
-func (h *remoteHost) tryContext(n int) (bool, error) {
+func (h *RemoteHost) tryContext(n int) (bool, error) {
 	return h.c.EnsureContextSize(n)
 }
 
 // unload は、aibow-server 越しではしない。会話に結びつかない降ろすは、サーバーを使っているほかの利用者と取り合いになるだけなので
-func (h *remoteHost) unload() error { return errServerSide("モデルを降ろすこと") }
+func (h *RemoteHost) unload() error { return errServerSide("モデルを降ろすこと") }
 
 // places・addPlace・removePlace は、HTTP 越しではしない(置き場所のパスはサーバーの PC のファイル構成で、つないでくる側に見せない)。
-func (h *remoteHost) places() ([]models.Place, error) {
+func (h *RemoteHost) places() ([]models.Place, error) {
 	return nil, errServerSide("モデルの置き場所")
 }
-func (h *remoteHost) addPlace(string) ([]models.Place, error) {
+func (h *RemoteHost) addPlace(string) ([]models.Place, error) {
 	return nil, errServerSide("モデルの置き場所")
 }
-func (h *remoteHost) removePlace(string) ([]models.Place, error) {
+func (h *RemoteHost) removePlace(string) ([]models.Place, error) {
 	return nil, errServerSide("モデルの置き場所")
 }
 
 // settings は、作業領域の大きさだけを返す(会話の上限 + 返事の上限がこれに入る必要があるので、画面に要る)。
 // ポート・llama.cpp や設定ファイルのパスなどは、サーバーの PC の事情なので渡さない
-func (h *remoteHost) settings() (apiclient.ServerSettings, error) {
+func (h *RemoteHost) settings() (apiclient.ServerSettings, error) {
 	v, err := h.c.Settings()
 	return apiclient.ServerSettings{NCtx: v.NCtx}, err
+}
+
+// absPath は、ログと表示に出すパスを絶対パスにする(相対パスのままだと、どこを指しているか分からないため)。
+func absPath(p string) string {
+	if p == "" {
+		return p
+	}
+	if a, err := filepath.Abs(p); err == nil {
+		return a
+	}
+	return p
 }

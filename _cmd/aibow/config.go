@@ -69,7 +69,7 @@ type appConfig struct {
 	settingsPath string // 設定ファイル(settings.json。手で書く設定。今は MCP のサーバーだけ)
 	toolsPath    string // ツールの扱いの PC の既定(tools.json。画面で変えたものを aibow が書く)
 	windowPath   string // ウィンドウの位置と大きさ(window.json。閉じるときに aibow が書く。windowstate.go)
-	placesPath   string // 画面で足したモデルの置き場所(model-places.json。直接の形のときだけ使う。modelplaces.go)
+	placesPath   string // 画面で足したモデルの置き場所(model-places.json。直接の形のときだけ使う。ui/modelplaces.go)
 	initialModel string // AIBOW_MODEL。空なら最後に使ったモデル → 一覧の先頭(書式に対応している最初のモデル)
 
 	// settings は settings.json の中身。settingsErr は読めなかった理由(MCP は使わずに起動し、お知らせで伝える。startMCP)

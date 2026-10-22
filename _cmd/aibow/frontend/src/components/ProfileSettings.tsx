@@ -8,7 +8,7 @@
 // 画面は一旦作ってから使い方を考える(0014 の 12)。ここは最初の形。
 import { useCallback, useEffect, useRef, useState } from "react";
 import { LuPlus } from "react-icons/lu";
-import { ChatService } from "../../bindings/github.com/secondarykey/aibow/_cmd/aibow";
+import { ChatService } from "../backend";
 import type { ConversationSettings, Profile, ProfileInfo } from "../../bindings/github.com/secondarykey/aibow";
 import type { ServerInfo } from "../../bindings/github.com/secondarykey/aibow/mcp/client";
 // Go の models パッケージ。"…/aibow/models" と書くと aibow パッケージの models.ts が選ばれるので、index まで書く

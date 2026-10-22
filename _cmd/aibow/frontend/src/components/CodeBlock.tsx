@@ -7,7 +7,7 @@
 // 生成中はコードブロックが途中のことがあるので、図にするのは閉じる記号(```)が届いてから。
 // それまでと、図の書き方が間違っていたときはコードのまま見せる
 import { useEffect, useState } from "react";
-import { Clipboard } from "@wailsio/runtime";
+import { copyText } from "../backend";
 import { LuCode, LuDownload } from "react-icons/lu";
 import { CopyButton } from "./CopyButton";
 import { highlight, isHighlighterLoaded, loadHighlighter } from "../highlight";
@@ -43,15 +43,6 @@ function Code({ code, lang }: { code: string; lang: string }) {
   const html = lang ? highlight(code, lang) : null;
   if (html === null) return <pre><code>{code}</code></pre>;
   return <pre><code className="hljs" dangerouslySetInnerHTML={{ __html: html }} /></pre>;
-}
-
-// メニューの「コードをコピー」。本体のコピーボタン(CopyButton)と同じく、使えなければ Wails のクリップボードを使う
-async function copyText(text: string): Promise<void> {
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch {
-    await Clipboard.SetText(text);
-  }
 }
 
 // 保存する図に敷く背景。図は返事の吹き出しの上に出ているので、吹き出しの背景(テーマの --panel)にする

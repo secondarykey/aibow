@@ -1,10 +1,9 @@
 // コピーのボタン。返事の最後(答え全体)と、コードブロックの右上(そのコードだけ)で使う。
 // 文字は出さずアイコンだけにし、マウスを乗せると title の「コピー」が出る。押したら少しの間 ✓ のアイコンにする。
 //
-// まずブラウザの navigator.clipboard を使う(WebView2 の画面は http://wails.localhost で、安全な場所として扱われるので使える)。
-// 使えなかったときは、Wails のランタイムの Clipboard.SetText(Go 側で OS のクリップボードに書く)を使う
+// 書き方(navigator.clipboard と、使えないときの Wails のクリップボード)は Go を呼ぶ係の copyText(backend.ts)。
 import { useEffect, useState } from "react";
-import { Clipboard } from "@wailsio/runtime";
+import { copyText } from "../backend";
 import { LuCheck, LuCopy } from "react-icons/lu";
 
 export function CopyButton({ text, className = "reply-action" }: { text: string; className?: string }) {
@@ -15,11 +14,7 @@ export function CopyButton({ text, className = "reply-action" }: { text: string;
     return () => window.clearTimeout(timer);
   }, [copied]);
   const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch {
-      await Clipboard.SetText(text);
-    }
+    await copyText(text);
     setCopied(true);
   };
   return (

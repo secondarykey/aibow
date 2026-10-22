@@ -7,7 +7,7 @@
 // 生成中は届くたびに全体を解析し直す。閉じていない書式(**生成 など)は、閉じる記号が届くまで記号のまま見える
 import { useMemo } from "react";
 import type { MouseEvent } from "react";
-import { Browser } from "@wailsio/runtime";
+import { openURL } from "../backend";
 import type { Token, Tokens } from "marked";
 import { CodeBlock } from "./CodeBlock";
 import { isWebURL, lex, toHTML } from "../markdown";
@@ -69,5 +69,5 @@ function openLinkInBrowser(e: MouseEvent<HTMLDivElement>) {
   e.preventDefault();
   const href = a.getAttribute("href") ?? "";
   if (!isWebURL(href)) return;
-  Browser.OpenURL(href).catch(err => console.error("リンクをブラウザで開けませんでした:", href, err));
+  openURL(href).catch(err => console.error("リンクをブラウザで開けませんでした:", href, err));
 }

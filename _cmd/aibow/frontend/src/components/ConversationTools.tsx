@@ -11,7 +11,7 @@
 // グループは、使っていてもいなくても畳んで出し、▶ で開ける(プロファイルの「ツール」と同じ)。
 import { useEffect, useState } from "react";
 import { LuChevronDown, LuChevronRight } from "react-icons/lu";
-import { ChatService } from "../../bindings/github.com/secondarykey/aibow/_cmd/aibow";
+import { ChatService } from "../backend";
 import { ToolPolicy } from "../../bindings/github.com/secondarykey/aibow";
 import type { ConversationSettings, Profile, ToolGroupState, ToolState } from "../../bindings/github.com/secondarykey/aibow";
 import type { ServerInfo } from "../../bindings/github.com/secondarykey/aibow/mcp/client";

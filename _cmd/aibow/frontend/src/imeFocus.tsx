@@ -8,10 +8,7 @@
 // そこで、Go から「ウィンドウに戻ってきた」(aibow:window:focus)が届いたら、
 // 画面外の見えない input に一度フォーカスを移し、次のフレームで元の入力欄に戻す。
 import { useEffect, useRef } from "react";
-import { Events } from "@wailsio/runtime";
-
-// main.go の windowFocusEventName と同じ名前
-const windowFocusEvent = "aibow:window:focus";
+import { onWindowFocus } from "./backend";
 
 // テキストを打つ入力欄か(ボタンやチェックボックスは対象外)
 function isTextInput(el: Element | null): el is HTMLTextAreaElement | HTMLInputElement {
@@ -35,7 +32,7 @@ export function ImeFocusRelay() {
       lastInput.current = isTextInput(active) && active !== relay.current ? active : null;
     };
 
-    const onWindowFocus = () => {
+    const onWindowFocusEvent = () => {
       // 変換中にフォーカスを動かすと、入力中の文字が壊れる
       if (composing.current || !relay.current) return;
       const active = document.activeElement;
@@ -63,7 +60,7 @@ export function ImeFocusRelay() {
     document.addEventListener("compositionstart", onCompositionStart, true);
     document.addEventListener("compositionend", onCompositionEnd, true);
     window.addEventListener("blur", onWindowBlur);
-    const off = Events.On(windowFocusEvent, onWindowFocus);
+    const off = onWindowFocus(onWindowFocusEvent);
     return () => {
       document.removeEventListener("compositionstart", onCompositionStart, true);
       document.removeEventListener("compositionend", onCompositionEnd, true);
