@@ -259,12 +259,43 @@ Cline・画面のアプリ ─ Authorization: Bearer aibow_… ─→ auth.Keys.
   無い・違うは 401(`{"error": {"code": "invalid_api_key", …}}`)
 - **要るとき**:`127.0.0.1` の外で待ち受けるとき、または `127.0.0.1` でもログインが要る設定のとき。OpenAI 互換の口と aibow 専用の口の全部(`_cmd/aibow-server` の `KeysRequired`)。
   ログインなしの `127.0.0.1` だけなら、今までどおりキーなしで通す
-- **サーバーの PC からだけの口**:`POST /models/unload`・`/aibow/gpu-layers`・`/aibow/places/add`・`/aibow/places/remove` は、`127.0.0.1`・`::1` からの呼び出しだけ(ほかは 403・`code: local_only`。`api` の `localOnly`)。
-  サーバーの PC と、ほかの人が使っているモデルに関わるため(誰に許すかはステップ11の管理者で決め直す)
+- **サーバーの PC か管理者だけの口**:`POST /models/unload`・`/aibow/gpu-layers`・`/aibow/places/add`・`/aibow/places/remove` は、`127.0.0.1`・`::1` からの呼び出しと、
+  管理者の API キーの呼び出しだけ(ほかは 403・`code: local_only`。`api` の `pcSide`)。サーバーの PC と、ほかの人が使っているモデルに関わるため。
+  管理者は 0018 の 11-0 で足した(下の「管理者」)
 - **待ち受けのアドレス**:`-host`(既定 `127.0.0.1`)。ループバックの外ならログインを必ず要るようにする(認証が無いまま LAN に出さない)
 - **HTTPS**:`tlsCert`・`tlsKey` を書くと `ServeTLS`(TLS 1.2 以上)。証明書なしで外に出すときは、警告して HTTP で動かす。ログインの cookie には `Secure` が付く
 - **自己署名の証明書**(`aibow-server cert`):誰も保証していない証明書なので、つなぐ側が「この証明書を信頼する」と決める。
   アプリは `serverCert`(`api/client` の `TrustCert`。OS の認証局に足すだけなので、ほかの証明書のサーバーにはつながらない)、curl は `--cacert`、Node.js は `NODE_EXTRA_CA_CERTS`、ブラウザは警告の画面で先へ進む
+
+## 管理者(ステップ11の 11-0。0018)
+
+```
+aibow-server user admin <名前>(コマンドだけ)→ server.db の users.admin(DB の版 10)
+                    │
+  ┌─────────────────┼──────────────────────────────────────────────┐
+  OpenAI 互換の口・aibow 専用の口   画面用の口(/aibow/ui/)              管理者の口(/aibow/admin/)
+  API キーの持ち主(auth.IsAdmin)  ui.Caller{Admin, Local}(who)       ブラウザでログインした管理者だけ
+  → PC の事情を変える口を通す       → モデルのタブを全部見せる(pcMethods) → 利用者の管理
+```
+
+- **誰が管理者か**は `auth.User.Admin`。決めるのは `aibow-server user admin <名前>` / `user unadmin <名前>` だけ(画面からは決めない。0018 の決定事項 6)。
+  一人もいなくてもよい(127.0.0.1 からはいつも PC の事情を変えられ、コマンドで戻せるため。決定事項 16)。ログインの様子(`/aibow/auth/me`・`/aibow/auth/key`)に `admin` を返す
+- **認可を決める場所**:`api` は auth を import せず、aibow-server が「管理者か」を決める係(`Server.SetAdmin(auth.IsAdmin)`)を渡す。
+  画面用の口は、aibow-server の `who` が呼んだ人(`ui.Caller`。ID・管理者か・サーバーの PC の上からか)を決めて ctx に入れる。
+  `ui.Handler` は PC の事情を変えるメソッド(`pcMethods`:`UnloadModel`・`SetModelGPULayers`・`ModelPlaces`・`AddModelPlace`・`RemoveModelPlace`・`SetModelEnabled`)を、
+  `Caller.ManagesPC()`(管理者か、サーバーの PC の上から)でなければ 403 で断り、`ServerHost` も同じことを確かめる(口の作りを間違えても漏れないように)
+- **管理者の口**(`_cmd/aibow-server/admin.go`。ブラウザでログインした管理者だけ。ほかは 401 / 403):
+  `GET /aibow/admin/users`(一覧。パスワードと API キーは、あるかだけ)・`POST /aibow/admin/users`(本文 `{"name"}`。返事にパスワード)・
+  `POST /aibow/admin/users/{名前}/password`・`POST /aibow/admin/users/{名前}/key`(返事に新しいパスワード / キー。一度だけ)・`DELETE /aibow/admin/users/{名前}`(自分と `local` は消せない)。
+  処理は user コマンドと同じ関数(`createUser`・`renewPassword`・`renewKey`・`deleteUser`)。返事は `Cache-Control: no-store`
+- **モデルの ID**:GGUF は `file:<ファイル名>`(以前は `file:<パス>`。サーバーの PC のパスが `/v1/models` や共有した会話に出ないように。0018 の決定事項 15)。
+  同じ名前のファイルは先の置き場所だけを出し、後ろは Warn のログ(`models.Catalog.Hidden`)。以前の形の ID は `models.IDOf` で読み替える
+  (会話・プロファイル・アプリの設定は読むときだけで DB は書き換えない。`server-models.json` の層の数のキーは、読み込むときに書き換える)
+- **使えるモデル**:管理者がモデルのタブで決め、`server-models.json` の `disabled` に「使えないモデル」の ID を覚える(新しく増えたモデルは使える。決定事項 17)。
+  使えないモデルは `/v1/models`・`GET /models`・画面の一覧に出さず(管理者の一覧にだけ印 `disabled` 付きで出す)、`Find` は `*models.DisabledError` を返す。
+  OpenAI 互換の口は知らないモデルと同じ 404 `model_not_found`(読み込み中のモデルで代わりに答えない)、aibow 専用の `/models/load` は 404 `model_disabled`、
+  会話の送信は注意で断る(`ChatEvent.Caution`。勝手にほかのモデルに替えない)。使えなくしたのが読み込み中のモデルなら降ろす。
+  一覧の外の GGUF をパスで読み込ませるのは起動のとき(`-model` など)だけ。つないでくる人には、パスで好きなファイルを読ませない
 
 ## 保存の口(画面のアプリの会話をサーバーに置く。ステップ10の 10-3。0017)
 

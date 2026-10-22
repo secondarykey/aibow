@@ -29,6 +29,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -299,7 +300,12 @@ func firstModel(mm *modelManager, arg string) (models.Entry, error) {
 		return m, nil
 	}
 	list := mm.List()
+	// 管理者が使えないようにしたモデルしか残っていないなら、そう言う(置き場所に足すのではなく、戻すのが対処なので。0018 の 11-0)
+	disabled := slices.ContainsFunc(mm.ListAll(), func(e models.Entry) bool { return e.Disabled })
 	if len(list) == 0 {
+		if disabled {
+			return models.Entry{}, fmt.Errorf("使えるモデルが1つもありません(管理者が使えないようにしました)。%s の disabled から、使うモデルの ID を外してください", absPath(mm.state.path))
+		}
 		return models.Entry{}, fmt.Errorf("モデルが1つも見つかりません。-models(AIBOW_MODELS_DIR)のフォルダに GGUF を置くか、ollama pull してください")
 	}
 	for _, m := range list {
@@ -308,6 +314,9 @@ func firstModel(mm *modelManager, arg string) (models.Entry, error) {
 			return m, nil
 		}
 		log.Infof("モデル %s の書式(種類: %s)には未対応なので、起動のときのモデルにしません", m.Name, cmp.Or(arch, "読めない"))
+	}
+	if disabled {
+		return models.Entry{}, fmt.Errorf("書式に対応している使えるモデル(Qwen3.5)がありません。管理者が使えないようにしたモデルを使うなら、%s の disabled から ID を外してください", absPath(mm.state.path))
 	}
 	return models.Entry{}, fmt.Errorf("書式に対応しているモデル(Qwen3.5)が見つかりません。-models(AIBOW_MODELS_DIR)のフォルダに Qwen3.5 の GGUF を置くか、ollama pull してください")
 }

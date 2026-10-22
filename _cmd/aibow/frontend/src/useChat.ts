@@ -66,7 +66,7 @@ export interface Chat {
 export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conversations, n: Notifier, onModelLoaded: () => Promise<unknown>): Chat {
   const { addUser, addError, addAssistant, updateAssistant, setSaved, remove, reset, dropLastTurn } = t;
   const { current, draft, draftProfile, openCount, open, adopt, unadopt, flushSettings, reloadList, setUsage, reloadSettings } = convs;
-  const { notify } = n;
+  const { notify, dismissKey } = n;
   const [generatingId, setGeneratingId] = useState<string | null>(null);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   // モデルに渡した文字列は保存しないので、会話ごとにここで覚えておく(再起動すると消える)
@@ -201,6 +201,8 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
       switch (ev.type) {
         case "done":
           setConfirmingId(null);
+          // 会話のモデルを読み込めずに終わったとき(使えないモデルなど)は、出したままの「読み込み中…」を消す(読み込めたら model で置き換え済み)
+          if (failed) dismissKey("model");
           done();
           live.current = null; // 開き直しても、もう生成中の吹き出しは足さない
           if (manual && compacted) reopen();
@@ -346,7 +348,7 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
     setBusy("idle");
     reloadList().catch(() => {}); // タイトルと並び順(更新の新しい順)が変わる
     return { errors, userSaved };
-  }, [open, reloadList, setUsage, addError, addAssistant, updateAssistant, setSaved, remove, setBusy, notify, onModelLoaded]);
+  }, [open, reloadList, setUsage, addError, addAssistant, updateAssistant, setSaved, remove, setBusy, notify, dismissKey, onModelLoaded]);
 
   const send = useCallback(async (text: string) => {
     if (controller.current || starting.current) return false;

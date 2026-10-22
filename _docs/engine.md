@@ -9,7 +9,7 @@ LLM を動かす部分(`engine/`・`format/`・`models/` の3つのパッケー�
 |---|---|
 | `engine/engine.go` | `engine` パッケージ。llama.cpp の呼び出し。モデルの読み込み・入れ替え、作業領域の作り直し、トークン数を数える(`CountTokens`)、KV キャッシュ再利用、decode、サンプリングの生成ループ |
 | `engine/stream.go` | UTF-8 の切れ目の処理(文字にならないバイトは U+FFFD) |
-| `models/models.go` | `models` パッケージ。モデルの一覧(`models\` の *.gguf と Ollama の保存フォルダ)。ID は `file:<パス>` / `ollama:<名前>` |
+| `models/models.go` | `models` パッケージ。モデルの一覧(`models\` の *.gguf と Ollama の保存フォルダ)。ID は `file:<ファイル名>` / `ollama:<名前>`(以前の `file:<パス>` は `IDOf` で読み替える。0018) |
 | `format/format.go` / `format/qwen35.go` | `format` パッケージ。書式(チャットテンプレート)。会話 → 文字列と、生成した文字列 → 思考・答え・ツール呼び出し。説明は [tools.md](tools.md) |
 | `engine/stream_test.go` / `format/qwen35_test.go` | UTF-8 の切れ目 / 書式(公式テンプレートとの一致・思考とツール呼び出しの振り分け)のテスト。モデル不要 |
 | `models/models_test.go` | Ollama の目録のテスト。モデル不要 |

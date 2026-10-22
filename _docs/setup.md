@@ -220,7 +220,8 @@ aibow-server を同じ網のほかの PC から使うときの準備です。手
 
 1. 証明書を作る:`aibow-server cert <ほかの PC からつなぐときのアドレス>`(設定ファイルの隣に `server-cert.pem` と `server-key.pem` ができる)
 2. `server.json` に `"host": "0.0.0.0"` と `tlsCert`・`tlsKey` を書いて起動する(外で待ち受けると、ログインと API キーが必ず要る)
-3. 利用者を作る:`aibow-server user add <名前>`(パスワードを表示)と `aibow-server user key <名前>`(API キーを表示)。どちらもこのときだけ表示する
+3. 利用者を作る:`aibow-server user add <名前>`(パスワードを表示)と `aibow-server user key <名前>`(API キーを表示)。どちらもこのときだけ表示する。
+   管理者にする人は `aibow-server user admin <名前>`(ステップ11。管理者はブラウザで利用者を管理し、ほかの PC からもモデルを扱える)
 4. 使う人に、アドレス・パスワード・API キーと、アプリや Cline で使うなら証明書(`server-cert.pem`。秘密鍵は渡さない)を渡す
 
 - ブラウザで初めて開くと、自己署名の証明書なので「この接続ではプライバシーが保護されません」と警告が出る。サーバーの PC で作った証明書かを確かめて先へ進む
