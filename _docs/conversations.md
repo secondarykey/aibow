@@ -29,7 +29,7 @@
 - **誰のものかは `ctx` で運ぶ**。`Store` のメソッドはどれも最初に `ctx` を受け取り、`ctx` の利用者(`UserOf`)のものだけを読み書きする。
   ほかの人の会話の ID を渡されても、無い会話と同じに扱う(`ErrNotFound` など。あることも見せない)。
   会話の仕組み(`Conversations`)と画面向けの処理(`ui.Service`)のメソッドも `ctx` を受け取り、そのまま渡すだけで、利用者を作ったり替えたりしない
-- **利用者を `ctx` に入れる(`WithUser`)のは、呼ぶ側の一番外だけ**:aibow-server の画面用の口(`ui.Handler` に渡す `who`。今はいつも `LocalUser`)と、
+- **利用者を `ctx` に入れる(`WithUser`)のは、呼ぶ側の一番外だけ**:aibow-server の画面用の口(`ui.Handler` に渡す `who`。ログインが要る形ならログインした人、要らなければ `LocalUser`。10-1)と、
   起動のときの引き継ぎ(`PrepareProfiles`・`FillMissingLimits`・`FillMissingModels`。利用者を分ける前の会話なので `LocalUser` として行う)。
   画面から送られてきた値では決めない(ほかの人のふりができてしまうため)
 - 利用者の入っていない `ctx` は、保存先が断る(`ErrNoUser`)。デスクトップのアプリの手元の DB(aibow.db)だけは、使うのがその PC の1人なので、

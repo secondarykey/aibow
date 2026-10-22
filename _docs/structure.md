@@ -47,6 +47,7 @@ Ollama が保存したファイルを aibow が直接読むので、Ollama は�
 | `store/sqlite.go` | 会話・発言・要約を SQLite のファイルに保存する部分(テーブルの作り変え = マイグレーションもここ) |
 | `*_test.go` | テスト(モデルなしで実行できる) |
 | `api/` | OpenAI 互換の API(`/v1/models`・`/v1/chat/completions`)。`engine` で生成し、会話の仕組みは持たない(履歴を持つのはクライアント)。HTTP は標準ライブラリの `net/http` |
+| `auth/` | aibow-server の利用者とログイン(ステップ10)。パスワードのハッシュ・cookie のセッション・ログインの口(`/aibow/auth/`)。保存は `store/users.go`(server.db) |
 | `api/client/` | aibow-server につなぐクライアント(ステップ8)。画面のアプリが aibow-server につなぐとき、会話の仕組みに渡す生成の口になる |
 | `ui/service.go` | 画面から呼ばれる Go のメソッド(モデル・会話・設定・メーター・送信・今すぐ要約)。会話の仕組みとの中継だけをする。Wails を使わないので、デスクトップのアプリと aibow-server(ブラウザ向け。ステップ9)の両方で使う |
 | `ui/modelhost.go` | モデルを扱う係。アプリの中で動かす形と、aibow-server につなぐ形の2つ |
