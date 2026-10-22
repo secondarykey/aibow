@@ -45,6 +45,8 @@ Ollama が保存したファイルを aibow が直接読むので、Ollama は�
 | `appsettings.go` | アプリの設定(GPU の層数・最後に使ったモデル・画面の設定)と新しい会話の既定の設定(会話の上限・返事の上限も入る) |
 | `profile.go` | 設定のプロファイル(名前の付いた新しい会話の既定。値と決まり)と、起動したときの引き継ぎ |
 | `store/sqlite.go` | 会話・発言・要約を SQLite のファイルに保存する部分(テーブルの作り変え = マイグレーションもここ) |
+| `store/users.go` | aibow-server の利用者・セッション・API キーを保存する部分(ステップ10) |
+| `store/remote/` | 画面のアプリの会話を aibow-server に保存するための口(サーバーの側)と、その HTTP 版(アプリの側)。ステップ10 |
 | `*_test.go` | テスト(モデルなしで実行できる) |
 | `api/` | OpenAI 互換の API(`/v1/models`・`/v1/chat/completions`)。`engine` で生成し、会話の仕組みは持たない(履歴を持つのはクライアント)。HTTP は標準ライブラリの `net/http` |
 | `auth/` | aibow-server の利用者とログイン(ステップ10)。パスワードのハッシュ・cookie のセッション・ログインの口(`/aibow/auth/`)。保存は `store/users.go`(server.db) |

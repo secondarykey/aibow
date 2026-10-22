@@ -265,3 +265,19 @@ Cline・画面のアプリ ─ Authorization: Bearer aibow_… ─→ auth.Keys.
 - **HTTPS**:`tlsCert`・`tlsKey` を書くと `ServeTLS`(TLS 1.2 以上)。証明書なしで外に出すときは、警告して HTTP で動かす。ログインの cookie には `Secure` が付く
 - **自己署名の証明書**(`aibow-server cert`):誰も保証していない証明書なので、つなぐ側が「この証明書を信頼する」と決める。
   アプリは `serverCert`(`api/client` の `TrustCert`。OS の認証局に足すだけなので、ほかの証明書のサーバーにはつながらない)、curl は `--cacert`、Node.js は `NODE_EXTRA_CA_CERTS`、ブラウザは警告の画面で先へ進む
+
+## 保存の口(画面のアプリの会話をサーバーに置く。ステップ10の 10-3。0017)
+
+画面のアプリを aibow-server につなぐと、生成だけでなく会話の保存もサーバーに頼む(表の C)。ループとツールはアプリの PC で動くので、HTTP を越えるのは画面の呼び出しではなく、会話の仕組みが保存先に頼む操作(`aibow.Store` のメソッド)。
+
+```
+画面のアプリ [ 会話の仕組み・ループ・ツール ] ─┬─ 生成:api/client ──────────→ /v1/chat/completions など ─→ engine
+                                              └─ 保存:store/remote.Client ─→ /aibow/store/{メソッド} ──→ server.db(ブラウザの会話と同じ)
+```
+
+- 形は画面用の口と同じ:`POST /aibow/store/{メソッド}`(`ListConversations`・`AddMessage` など `aibow.Store` と `aibow.ConversationLocks` のメソッド)。本文は引数の JSON の配列(ctx は除く)、返事は戻り値(error は除く)の JSON の配列
+- エラーは `{"error": {"message", "type", "code"}}`。`code` は `not_found`・`profile_not_found`・`profile_in_use`・`busy`(ほかの画面で生成中)・`no_user`。アプリの側で同じエラーに戻すので、会話の仕組みは直接のときと同じに見分けられる
+- 誰のものか:API キーが要る形ならキーの持ち主、要らない形ならログインなしの形の利用者(`local`)。アプリは利用者を送らない
+- アプリが書く「アプリ全体の設定」(最後に使ったモデルなど)は、その人の設定(`app.` で始まるキー)として置く(サーバー全体の設定を、ほかの人のアプリが書き換えないように)
+- 同じ server.db なので、アプリで作った会話を、同じ人がブラウザで開ける
+- **生成中の印**:同じ会話にブラウザとアプリ(または2台のアプリ)から同時に送ったら、後から来たほうを `busy`(409)で断る。印は送信の間だけ付け、期限 2 分・30 秒ごとに延ばす(`lock.go`)
