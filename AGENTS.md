@@ -14,7 +14,7 @@ aibow は、ローカルLLMを使ったアプリを**自分で作りながら仕
 
 完成品を早く作ることより、**各段階で何が起きているかが読んで分かること**を優先してください。
 
-## 全体の構成(ステップ8: 画面のアプリを aibow-server につなぐ)
+## 全体の構成(ステップ9: ブラウザからも使う。作業中)
 
 ```
 ウィンドウ(_cmd/aibow/frontend の React) ⇄ Wails v3 ⇄ aibow/ui ⇄ aibow ⇄ aibow/engine ⇄ yzma ⇄ llama.cpp(_cmd/aibow/lib\ の DLL)⇄ GPU
@@ -28,6 +28,8 @@ aibow の組み込みのツール: 会話の仕組み ⇄ aibow/mcp/client の L
 OpenAI 互換のクライアント(Cline など)⇄ HTTP(127.0.0.1)⇄ aibow-server(_cmd/aibow-server)= aibow/api ⇄ aibow/engine
 画面のアプリを aibow-server につなぐとき(settings.json の serverUrl。ステップ8):aibow ⇄ aibow/api/client ⇄ HTTP ⇄ aibow-server(アプリは llama.cpp を読み込まない。
   つながないとき(既定)は上の図のとおりアプリの中で動かし、そのときは aibow-server と同時に使わない)
+ブラウザ(ステップ9。画面を配るのは 9-2)⇄ HTTP(127.0.0.1。/aibow/ui/ の呼び出しと SSE)⇄ aibow-server = aibow/ui ⇄ aibow(ツールなし)⇄ aibow/engine
+  (会話は aibow-server の server.db。生成は OpenAI 互換の口と同じ engine・同じ順番待ちの席 api.Seat)
 ```
 
 - **Ollama などの外部 LLM サーバーは使わない**。aibow のプロセスの中で llama.cpp を直接動かす。
@@ -47,14 +49,14 @@ OpenAI 互換のクライアント(Cline など)⇄ HTTP(127.0.0.1)⇄ aibow-ser
 | `store/` | 会話の保存先(SQLite) |
 | `mcp/client/` | MCP のクライアント(`client` パッケージ。SDK のパッケージ名 `mcp` と重ならないよう `mcp/` の下に置く。サーバーは `mcp/server/` に並べる)。`settings.json` の MCP のサーバーを起動し、そのツールを `tool.Tool` として見せる。aibow の中で `mcp/server` を動かし、組み込みのツールを MCP 越しに渡す(`Local`)。`tool` と `mcp/server` を import し、ルートの `aibow` は import しない |
 | `mcp/server/` | MCP のサーバー(`server` パッケージ。ステップ5)。`tool` のツールを MCP のツールとして出す。書き換えるツールはサーバーからユーザーに確かめる(MRTR)。`tool` と SDK だけを使い、ルートの `aibow` は import しない |
-| `api/` | OpenAI 互換の API(`api` パッケージ。ステップ6)。`engine` で生成だけを使い、ルートの `aibow`(会話の仕組み)は import しない。HTTP は標準の `net/http`。ステップ8で aibow 専用の口と欄(モデルの一覧・読み込み・トークン数など)を足した |
+| `api/` | OpenAI 互換の API(`api` パッケージ。ステップ6)。`engine` で生成だけを使い、ルートの `aibow`(会話の仕組み)は import しない。HTTP は標準の `net/http`。ステップ8で aibow 専用の口と欄(モデルの一覧・読み込み・トークン数など)を足した。生成の順番待ちの席 `Seat` はブラウザの会話(`ui`)と分け合う(ステップ9) |
 | `api/client/` | aibow-server につなぐクライアント(`client` パッケージ。ステップ8)。会話の仕組みの `Generator` と `ModelLoader` の HTTP 版。ルートの `aibow` は import しない |
-| `ui/` | 画面向けの処理(`ui` パッケージ。ステップ9の 9-0 で `_cmd/aibow` から切り出した)。画面から呼ぶメソッド(`Service`。モデル・会話・設定・送信)と、モデルを扱う係(直接 `DirectHost`・aibow-server 越し `RemoteHost`)。ルートの `aibow` を使い、Wails を import しない。デスクトップのアプリは `ChatService` に埋め込んで Wails に渡す。ブラウザ向けには aibow-server が使う(9-1) |
+| `ui/` | 画面向けの処理(`ui` パッケージ。ステップ9の 9-0 で `_cmd/aibow` から切り出した)。画面から呼ぶメソッド(`Service`。モデル・会話・設定・送信)と、モデルを扱う係(直接 `DirectHost`・aibow-server 越し `RemoteHost`)。ルートの `aibow` を使い、Wails を import しない。デスクトップのアプリは `ChatService` に埋め込んで Wails に渡す。ブラウザ向けには aibow-server が使う:aibow-server の engine でモデルを扱う係(`ServerHost`)と、画面用の HTTP の口(`Handler`。`/aibow/ui/call/{メソッド}` と SSE の `/aibow/ui/events`)。9-1。仕組みは [_docs/api.md](_docs/api.md) の「画面用の口」 |
 | `mcp/internal/` | MCP のクライアントとサーバーの両方で使う部分(`meta`: `_meta` の名前) |
 | `internal/proc/` | 子プロセスまでまとめて止める仕組み(`tool` の `run_command` と `mcp/client` で使う) |
 | `log/` | aibow のログ(`log` パッケージ)。aibow のコードはログをここから出す。土台は wenteasy/log だが、使う人には `slog.Level` と `*slog.Logger` しか見せない。出口はアプリが `Init` で組み、ライブラリとして使う人は `SetLogger(*slog.Logger)` で aibow のログだけ別にできる(決めなければ `slog.Default()`)。詳しくは [log/AGENTS.md](log/AGENTS.md) |
 | `_cmd/aibow/` | デスクトップアプリ(Wails v3 + React)。別モジュール |
-| `_cmd/aibow-server/` | aibow のサーバーの exe(OpenAI 互換の API。`127.0.0.1` で待ち受ける。ステップ8で `aibow-api` から名前を変えた)。引数・設定ファイル(`server.json`)・環境変数を読み、モデルを読み込んで `api` を動かすだけ。ルートのモジュールに入れている |
+| `_cmd/aibow-server/` | aibow のサーバーの exe(OpenAI 互換の API。`127.0.0.1` で待ち受ける。ステップ8で `aibow-api` から名前を変えた)。引数・設定ファイル(`server.json`)・環境変数を読み、モデルを読み込んで `api` を動かす。ブラウザの会話(`ui` と `server.db`)も同じポートに載せる(ステップ9)。ルートのモジュールに入れている |
 | `_cmd/aibow-mcp/` | MCP のサーバーの exe(標準入出力)。引数を読んで `mcp/server` を起動するだけ。ルートのモジュールに入れている(Wails を使わないため) |
 | `_docs/` | 仕組みごとの説明(下の表)と、機能の仕様(`_docs/features/`)。利用者向けの手順は `setup.md`(準備と起動)・`usage.md`(使い方と設定)・`structure.md`(構成とファイル) |
 | `TODO.md` | 全体の進み具合とロードマップ |

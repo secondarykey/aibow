@@ -17,12 +17,15 @@ Cline など [ 会話の仕組み + 手 ] ⇄ HTTP(OpenAI 互換。127.0.0.1 だ
 | `api/chat.go` | `POST /v1/chat/completions`。順番待ち・モデルの読み直し・トークン数の確かめ・生成(まとめて / ストリーミング)・学習用のログ。`POST /apply-template`・`POST /aibow/count-tokens` も |
 | `api/models.go` | モデルの一覧と読み込み(ステップ8)。使う係の interface `Models`(本物は `_cmd/aibow-server` の `modelManager`)・`GET /models`・`POST /models/load`・`POST /aibow/gpu-layers` |
 | `api/places.go` | モデルの置き場所(`GET /aibow/places`・`POST /aibow/places/add`・`POST /aibow/places/remove`)と、表示だけのサーバーの設定(`GET /aibow/settings`。`Settings`)。8-4 |
+| `api/seat.go` | 生成の順番待ちの席(`Seat`)。ステップ9で `Server` の外に出し、ブラウザの会話(`ui`)も同じ席を通す(下の「画面用の口」) |
 | `api/api_test.go`・`api/aibow_test.go` | 偽物の生成とモデルの係でのテスト(モデル不要) |
 | `api/client/` | aibow-server につなぐクライアント(`client` パッケージ。ステップ8)。下の「クライアント(`api/client`)」 |
-| `_cmd/aibow-server/` | exe(ステップ8で `aibow-api` から名前を変えた。0015)。`config.go` は設定(強さの順は 引数 > 設定ファイル `server.json` > 環境変数 > 既定)、`models.go` はモデルの係(GPU の層数と画面で足した置き場所を `server-models.json` に覚える)、`main.go` はエンジンとモデルを用意して `api` を `127.0.0.1` で待ち受けるだけ。`log.go` はログの出口(`aibow-server_<日付>.log`)、`version` / `appversion.go` はアプリと同じバージョン(`_cmd/aibow/version` の写し) |
+| `ui/web.go`・`ui/serverhost.go` | 画面用の口(`/aibow/ui/` の下)と、aibow-server の中でブラウザの会話のモデルを扱う係(`ServerHost`)。ステップ9。下の「画面用の口」 |
+| `_cmd/aibow-server/` | exe(ステップ8で `aibow-api` から名前を変えた。0015)。`config.go` は設定(強さの順は 引数 > 設定ファイル `server.json` > 環境変数 > 既定)、`models.go` はモデルの係(GPU の層数と画面で足した置き場所を `server-models.json` に覚える)、`main.go` はエンジンとモデルを用意して `api` を `127.0.0.1` で待ち受けるだけ、`browser.go` はブラウザの会話(`server.db` を開き、`ui` の会話の仕組みと画面用の口を作る。ステップ9)。`log.go` はログの出口(`aibow-server_<日付>.log`)、`version` / `appversion.go` はアプリと同じバージョン(`_cmd/aibow/version` の写し) |
 
 依存の向きは `_cmd/aibow-server` → `api` → `engine` → `format` → `tool`。`api` はルートの `aibow`(会話の仕組み)を import しない。
 会話の保存・compact・エージェントループ・ツールの実行はクライアントの仕事なので、API の側には持たない。
+ブラウザの会話(ステップ9)は別の道で、`_cmd/aibow-server` → `ui` → `aibow`(会話の仕組み)→ `engine`。`api` とは席(`api.Seat`)だけを分け合う。
 
 ## 1回のリクエストの流れ(`api/chat.go`)
 
@@ -169,6 +172,38 @@ data: [DONE]
   `client_test.go` で、本物の `api.Server` を `httptest` で立て(生成だけ偽物)、サーバーが受け取った会話と、書式を当てた文字列が直接のときと同じになることを確かめている
 - 停止ボタン(ctx を止める)はつながりを切る。サーバーはそれを見て生成を止める。クライアントは届いた分を `StopReason: cancel` で返す(エラーにしない。engine と同じ)
 - つながらないとき(起動していない・止めた)は `ErrUnreachable`(つなぎ先と「aibow-server を起動してください」を添える)。サーバーのエラーは `APIError`(`code` で見分けられる)
+
+## 画面用の口(ブラウザの会話。ステップ9。0016)
+
+aibow-server は、ブラウザの画面のために会話の仕組みと保存も持つ(OpenAI 互換の口はステートレスのまま)。
+
+```
+ブラウザ ──HTTP──→ /aibow/ui/  → ui.Service → 会話の仕組み(ツールなし)→ engine ┐
+Cline など ──HTTP──→ /v1/ など → api.Server ──────────────────────────→ engine ┴─ 順番待ちの席は1つ(api.Seat)
+                                  会話の保存: server.db(server.json の隣。画面のアプリの aibow.db とは別)
+```
+
+デスクトップのアプリで Wails が仲立ちしていること(メソッドの呼び出し・Go からのイベント・停止)を、HTTP に自分で書いたもの。形を Wails にそろえた。
+
+| | デスクトップ(Wails) | 画面用の口 |
+|---|---|---|
+| 呼び出し | `ChatService.Send(id, text)` | `POST /aibow/ui/call/Send`、本文は引数の JSON の配列 `["<id>", "<text>"]`。返事は戻り値の JSON(無ければ `null`) |
+| エラー | Promise が reject | Go の `error` は 500、引数が読めない・数が違うは 400、ブラウザで呼べないメソッドは 404。形は `{"error": {"message", "type"}}`(OpenAI 互換の口と同じ) |
+| Go からの知らせ | Wails のイベント `chat`・`models` | `GET /aibow/ui/events`(SSE)。`event: chat` / `data: ChatEvent の JSON`。最初に `: connected`、何も無いときは 15 秒ごとに `: ping` |
+| 停止 | Promise の `cancel()` → ctx が止まる | fetch を止める → つながりが切れて、リクエストの ctx が止まる |
+
+- 呼び出しは `reflect` で `ui.Service` のメソッドを名前から探す(Wails のバインディングも、実行のときは同じことをしている)。最初の引数が `context.Context` なら、リクエストの ctx を渡す
+- 呼べるのは、ブラウザで使うメソッドだけ(`ui/web.go` の `browserMethods`)。ツールと MCP・確認の答え(ブラウザではツールを使わない)と、
+  GPU の層数・降ろす・置き場所(サーバーの PC の事情)は口に出さない(0016 の 6・7)
+- 送信(`Send`・`Regenerate`・`Resend`・`Compact`)は生成が終わるまで返らない長い呼び出し。経過は SSE の `chat` で届き、終わりは `done` で判定する(戻り値とは別の道で届くので。Wails と同じ)。
+  書き込みの時間の上限は付けていない
+- SSE は、つないでいるブラウザ全部に送る(利用者は1人。その人にだけ送るのはステップ10)。送り切れずに 1024 件溜まったら、そのつながりを切る(黙って捨てると、答えの途中が抜けたまま気づけないため)
+- **席**:送信の全体(会話のモデルの読み直し・要約・返事)の間、OpenAI 互換の口と同じ席を持つ。生成1回ごとに取り直すと、その間に Cline などがモデルを入れ替えてしまうため。
+  ふさがっていれば `notice`(「ほかの生成が終わるのを待っています…」)を送ってから待つ。入力欄の下でモデルを選んだとき(`SwitchModel`)も席を取ってから読み込む
+- **作業領域**:起動のときに決めた大きさで固定。会話の上限 + 返事の上限が入るかを確かめるだけで、作り直さない(`ui.ServerHost`。aibow-server につないだ画面のアプリと同じ `ContextError`)
+- **見せるもの**は、aibow-server につないだ画面のアプリと同じ:モデルの一覧(名前・大きさ・読み込み中か)・作業領域の大きさ・つなぎ先(aibow-server のアドレス)。出どころ・置き場所・層の数・サーバーの PC のパスは見せない
+- 実際に動かして確かめたこと(2026-10-22。qwen3.5:4b・9b):Cline の形のリクエストを 9B で送っている間にブラウザから送ると、「待っています」が届き、
+  Cline の返事のあとで会話のモデル(4B)を読み直して答えた。aibow-server を起動し直しても会話が残っていた
 
 ## KV キャッシュの再利用(実際に動かして分かったこと。2026-10-19)
 

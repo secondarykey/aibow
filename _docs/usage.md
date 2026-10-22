@@ -250,6 +250,7 @@ aibow-server [-model モデル] [-ctx 作業領域の大きさ] [-port ポート
 - 欄は `port`・`ctx`・`model`・`lib`・`modelsDir`・`logLevel` の6つ。知らない欄があると、書き間違いとして起動を止めます
 - 読んだときは、起動のログに「設定ファイル: …」と出ます
 - 同じフォルダの `server-models.json` は aibow-server が書くファイルです(モデルごとの GPU の層数など)。手で書かなくて構いません
+- 同じフォルダの `server.db` は、ブラウザから使ったときの会話を保存するファイルです(ステップ9で作っているところです)。アプリの会話(`aibow.db`)とは別です
 - アプリの `settings.json` とは別のファイルです(aibow-server を動かす PC と、アプリを動かす PC が別になりうるため)
 
 ### Cline からつなぐ
