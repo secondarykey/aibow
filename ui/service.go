@@ -558,15 +558,72 @@ func (s *Service) CreateProfile(ctx context.Context, name string, values aibow.P
 }
 
 // UpdateProfile は、プロファイルの名前・値・決まりを変える。値は今ある会話に効かず、決まりは今ある会話にもすぐ効く。
+// 配っているプロファイルなら、モデルは使えるモデルの中から(0018 の決定事項 13)。
 func (s *Service) UpdateProfile(ctx context.Context, p aibow.Profile) error {
 	if s.startupErr != nil {
 		return s.startupErr
+	}
+	if old, err := s.store.Profile(ctx, p.ID); err == nil && old.Share != aibow.ShareNone {
+		if err := s.usableModel(p.Values.Model); err != nil {
+			return err
+		}
 	}
 	if err := s.convs.UpdateProfile(ctx, p); err != nil {
 		return err
 	}
 	log.Noticef("プロファイル「%s」を変えました(固定 %v・使えない %+v)", p.Name, p.Rules.Fixed, p.Rules.Off)
 	return nil
+}
+
+// usableModel は、配るプロファイルのモデルが使えるか(管理者が使えないようにしたモデルでは配らない。0018 の決定事項 13)。
+func (s *Service) usableModel(id string) error {
+	if id == "" {
+		return nil
+	}
+	if err := s.host.usable(id); err != nil {
+		return fmt.Errorf("配るプロファイルのモデルは、使えるモデルから選んでください: %w", err)
+	}
+	return nil
+}
+
+// SetProfileShare は、プロファイルを配る範囲(""・all・users)と相手(利用者の名前)を変える(0018 の 11-1)。管理者だけ。
+func (s *Service) SetProfileShare(ctx context.Context, id uuid.UUID, share string, with []string) error {
+	if s.startupErr != nil {
+		return s.startupErr
+	}
+	p, err := s.store.Profile(ctx, id)
+	if err != nil {
+		return err
+	}
+	if share != aibow.ShareNone {
+		if err := s.usableModel(p.Values.Model); err != nil {
+			return err
+		}
+	}
+	if err := s.convs.SetProfileShare(ctx, id, share, with); err != nil {
+		return err
+	}
+	switch share {
+	case aibow.ShareNone:
+		log.Noticef("プロファイル「%s」を配るのをやめました", p.Name)
+	case aibow.ShareAll:
+		log.Noticef("プロファイル「%s」を全員に配りました", p.Name)
+	default:
+		log.Noticef("プロファイル「%s」を %s に配りました", p.Name, strings.Join(with, "・"))
+	}
+	return nil
+}
+
+// CopyProfile は、プロファイル(配られたものなど)を写して自分のプロファイルを作る(値と決まりも。0018 の決定事項 19)。
+func (s *Service) CopyProfile(ctx context.Context, id uuid.UUID) (aibow.Profile, error) {
+	if s.startupErr != nil {
+		return aibow.Profile{}, s.startupErr
+	}
+	p, err := s.convs.CopyProfile(ctx, id)
+	if err == nil {
+		log.Noticef("プロファイルを写して「%s」を作りました", p.Name)
+	}
+	return p, err
 }
 
 // SetProfileArchived は、プロファイルをしまう / 戻す。

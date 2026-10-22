@@ -19,6 +19,7 @@ import (
 
 	"github.com/secondarykey/aibow"
 	"github.com/secondarykey/aibow/api"
+	"github.com/secondarykey/aibow/auth"
 	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/format"
 	"github.com/secondarykey/aibow/models"
@@ -101,6 +102,9 @@ func (m *fakeModels) List() []models.Entry {
 func (m *fakeModels) Find(name string) (models.Entry, error) {
 	for _, e := range m.List() {
 		if e.ID == name || e.Name == name {
+			if m.disabled[e.ID] {
+				return models.Entry{}, &models.DisabledError{ID: e.ID}
+			}
 			return e, nil
 		}
 	}
@@ -178,6 +182,7 @@ type testWeb struct {
 	eng  *fakeEngine
 	mm   *fakeModels
 	seat *api.Seat
+	st   *store.SQLite
 	// user は、画面用の口を呼んだ利用者(aibow-server の who の代わり)。nil ならログインなしの形の利用者。テストの途中で替える
 	user atomic.Pointer[uuid.UUID]
 	// admin は、呼んだ人が管理者か(0018 の 11-0)。テストの途中で替える
@@ -209,7 +214,7 @@ func newTestWeb(t *testing.T) *testWeb {
 		Notify: events, Seat: seat, WithoutTools: true,
 	})
 	t.Cleanup(life.Stop)
-	w := &testWeb{url: srv.URL, eng: eng, mm: mm, seat: seat}
+	w := &testWeb{url: srv.URL, eng: eng, mm: mm, seat: seat, st: st}
 	// httptest は 127.0.0.1 で待ち受けるので、サーバーの PC の上からかは見ない(管理者かだけで、見せるものが変わることを確かめる)
 	srv.Config.Handler = Handler(svc, events, func(*http.Request) (Caller, error) {
 		u := w.user.Load()
@@ -596,6 +601,68 @@ func TestWebModelsWhileLoading(t *testing.T) {
 
 // 誰の呼び出しかは aibow-server の who で決まり、会話・プロファイル・表示の設定・生成の途中経過はその人のものだけが見える(0017)。
 // 決められなければ 401
+// 管理者がプロファイルを配り、受け取った人は読むだけで、写す・新しい会話で選べる。配るのをやめたら選べない(0018 の 11-1)
+func TestWebSharedProfile(t *testing.T) {
+	w := newTestWeb(t)
+	now := time.Now()
+	add := func(name string, admin bool) *uuid.UUID {
+		u := auth.User{ID: uuid.NewV7(), Name: name, Admin: admin, CreatedAt: now, UpdatedAt: now}
+		if err := w.st.CreateUser(context.Background(), u); err != nil {
+			t.Fatal(err)
+		}
+		return &u.ID
+	}
+	alice, bob := add("alice", true), add("bob", false)
+
+	w.user.Store(alice)
+	var p aibow.Profile
+	w.mustCall(t, &p, "CreateProfile", "調べもの",
+		aibow.ProfileValues{Model: "ollama:a", HistoryTokens: 4096, ReplyTokens: 1024}, aibow.ProfileRules{Fixed: []string{"system"}})
+	w.mm.disabled = map[string]bool{"ollama:a": true}
+	if status, body := w.call(t, context.Background(), "SetProfileShare", p.ID, aibow.ShareAll, []string{}); status == http.StatusOK || !strings.Contains(string(body), "使えるモデル") {
+		t.Errorf("使えないモデルのプロファイルは配れない: %d %s", status, body)
+	}
+	w.mm.disabled = nil
+	w.mustCall(t, nil, "SetProfileShare", p.ID, aibow.ShareUsers, []string{"bob"})
+
+	w.user.Store(bob)
+	var list []aibow.ProfileInfo
+	w.mustCall(t, &list, "Profiles")
+	if len(list) != 1 || list[0].Profile.ID != p.ID || !list[0].Profile.ReadOnly || list[0].Profile.OwnerName != "alice" {
+		t.Fatalf("受け取った人の一覧: %+v", list)
+	}
+	if status, body := w.call(t, context.Background(), "UpdateProfile", list[0].Profile); status == http.StatusOK || !strings.Contains(string(body), "写して") {
+		t.Errorf("受け取った人は変えられない: %d %s", status, body)
+	}
+	if status, _ := w.call(t, context.Background(), "SetProfileShare", p.ID, aibow.ShareAll, []string{}); status == http.StatusOK {
+		t.Error("管理者でない人は配れない")
+	}
+	var cp aibow.Profile
+	w.mustCall(t, &cp, "CopyProfile", p.ID)
+	if cp.Name != "調べもの(写し)" || cp.ReadOnly || len(cp.Rules.Fixed) != 1 {
+		t.Errorf("写し: %+v", cp)
+	}
+	var c aibow.Conversation
+	w.mustCall(t, &c, "NewConversation", p.ID, nil)
+	if c.ProfileID != p.ID || c.Settings.HistoryTokens != 4096 {
+		t.Errorf("配られたプロファイルの会話: %+v", c)
+	}
+
+	w.user.Store(alice)
+	w.mustCall(t, nil, "SetProfileShare", p.ID, aibow.ShareNone, []string{})
+	w.user.Store(bob)
+	w.mustCall(t, &list, "Profiles")
+	if len(list) != 1 || list[0].Profile.ID != cp.ID {
+		t.Errorf("配るのをやめたら一覧から消える: %+v", list)
+	}
+	if status, _ := w.call(t, context.Background(), "ProfileDefaults", p.ID); status == http.StatusOK {
+		t.Error("配るのをやめたものは新しい会話で選べない")
+	}
+	if status, body := w.call(t, context.Background(), "Conversation", c.ID); status != http.StatusOK {
+		t.Errorf("もう作った会話は開ける: %d %s", status, body)
+	}
+}
+
 func TestWebUsers(t *testing.T) {
 	w := newTestWeb(t)
 	mine := w.newConversation(t)

@@ -64,6 +64,8 @@ type ModelHost interface {
 	removePlace(ctx context.Context, path string) ([]models.Place, error)
 	// setModelEnabled は、モデルを使えるかを決める(aibow-server の中の管理者だけ。0018 の決定事項 13)
 	setModelEnabled(ctx context.Context, id string, enabled bool) error
+	// usable は、モデル id がこの形で使えるか(aibow-server の中では、管理者が使えないようにしていないか)。配るプロファイルのモデルを確かめる(0018 の決定事項 13)
+	usable(id string) error
 	// settings は表示だけの設定(作業領域・ポート・llama.cpp の場所・最初のモデル。画面からは変えない。0015 の 21)
 	settings() (apiclient.ServerSettings, error)
 }
@@ -227,6 +229,9 @@ func (h *DirectHost) removePlace(ctx context.Context, path string) ([]models.Pla
 	return h.places(ctx)
 }
 
+// usable は、直接の形では確かめない(使えるモデルを決めるのは aibow-server の管理者。手元で配ることも無い)。
+func (h *DirectHost) usable(string) error { return nil }
+
 // setModelEnabled は、直接の形ではしない(使えるモデルを決めるのは aibow-server の管理者。手元のモデルは置き場所で決める)。
 func (h *DirectHost) setModelEnabled(context.Context, string, bool) error {
 	return errors.New("使えるモデルを決めるのは aibow-server の管理者です(アプリの中で動かしているときは、置き場所で決めます)")
@@ -326,6 +331,9 @@ func (h *RemoteHost) addPlace(context.Context, string) ([]models.Place, error) {
 func (h *RemoteHost) removePlace(context.Context, string) ([]models.Place, error) {
 	return nil, errServerSide("モデルの置き場所")
 }
+
+// usable は確かめない(送信のときに aibow-server が断る。プロファイルを配るのはブラウザから)。
+func (h *RemoteHost) usable(string) error { return nil }
 
 func (h *RemoteHost) setModelEnabled(context.Context, string, bool) error {
 	return errServerSide("使えるモデル")

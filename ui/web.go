@@ -47,7 +47,7 @@ var browserMethods = []string{
 	"Models", "SwitchModel", "AppSettings", "TryLimits", "ModelSettings", "SetDisplay", "Version",
 	// プロファイル
 	"Profiles", "CreateProfile", "UpdateProfile", "SetProfileArchived", "DeleteProfile", "SetDefaultProfile",
-	"ProfileDefaults", "SaveToProfile", "SaveAsProfile",
+	"ProfileDefaults", "SaveToProfile", "SaveAsProfile", "CopyProfile", "SetProfileShare",
 	// 会話
 	"Conversations", "Conversation", "Usage", "NewConversation", "DeleteConversation", "RenameConversation",
 	"SetExcluded", "UpdateConversationSettings",

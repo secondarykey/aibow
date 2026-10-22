@@ -198,6 +198,12 @@ func (h *ServerHost) setModelEnabled(ctx context.Context, id string, enabled boo
 	return err
 }
 
+// usable は、モデルが一覧にあって、管理者が使えないようにしていないか。
+func (h *ServerHost) usable(id string) error {
+	_, err := h.models.Find(id)
+	return err
+}
+
 // errNotManager は、管理者でない人がサーバーの PC の事情を変えようとしたときのエラー。
 func errNotManager(what string) error {
 	return fmt.Errorf("%sは、aibow-server を動かしている PC からか、管理者だけが変えられます", what)
