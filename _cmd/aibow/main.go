@@ -38,6 +38,7 @@ import (
 	"github.com/secondarykey/aibow/mcp/client"
 	"github.com/secondarykey/aibow/models"
 	"github.com/secondarykey/aibow/store"
+	"github.com/secondarykey/aibow/store/remote"
 	"github.com/secondarykey/aibow/ui"
 	"github.com/secondarykey/aibow/web"
 
@@ -90,17 +91,24 @@ func main() {
 			cfg.notices = append(cfg.notices, n)
 		}
 	}
-	var st *store.SQLite
+	var st aibow.Store
 	var settings aibow.AppSettings
 	var host ui.ModelHost
 	var eng *engine.Engine
 	var initial *models.Entry
-	if err == nil {
-		st, settings, err = openStore(cfg)
+	var server *apiclient.Client // aibow-server につなぐとき(serverUrl)。生成も保存も、ここに頼む(0017 の 10-3)
+	if err == nil && cfg.serverURL != "" {
+		server, err = newServerClient(cfg)
 	}
 	if err == nil {
-		defer st.Close()
-		host, eng, initial, err = startModels(&cfg, settings)
+		var closeStore func()
+		st, settings, closeStore, err = openStore(cfg, server)
+		if closeStore != nil {
+			defer closeStore()
+		}
+	}
+	if err == nil {
+		host, eng, initial, err = startModels(&cfg, settings, server)
 	}
 	if err != nil {
 		log.Errorf("起動できません: %v", err)
@@ -285,26 +293,66 @@ func loadToolPrefs(cfg *appConfig) *aibow.ToolPrefs {
 	return prefs
 }
 
-// openStore は会話を保存する DB を開き、アプリ全体の設定を読む。
-func openStore(cfg appConfig) (*store.SQLite, aibow.AppSettings, error) {
-	st, err := store.Open(cfg.dbPath)
-	if err != nil {
-		return nil, cfg.app, err
+// newServerClient は aibow-server につなぐクライアントを作る(API キーと、自己署名の証明書を信頼するか。0017 の 10-2)。ここではまだつながない。
+func newServerClient(cfg appConfig) (*apiclient.Client, error) {
+	c := apiclient.New(cfg.serverURL)
+	c.SetKey(cfg.serverKey)
+	if cfg.serverCert != "" {
+		if err := c.TrustCert(cfg.serverCert); err != nil {
+			return nil, err
+		}
+		log.Noticef("aibow-server の証明書を信頼します: %s", cfg.serverCert)
 	}
-	// 手元の DB を使うのはこの PC の1人だけ。利用者の印の無い呼び出しを、ログインなしの形の利用者のものとして扱う(0017)
-	st.OneUser()
-	log.Noticef("会話の保存先: %s", absPath(cfg.dbPath))
-	app, notes, err := aibow.LoadAppSettings(context.Background(), st, cfg.app)
+	return c, nil
+}
+
+// openStore は会話を保存する先を開き、アプリ全体の設定を読む。close は終了のときに呼ぶ。
+//
+//   - aibow-server につなぐとき(server が nil でない):保存も aibow-server の server.db に頼む(store/remote。0017 の 10-3)。
+//     手元の aibow.db は開かない(手元の会話はサーバーに移さない。直接の形に戻せば見える)。
+//     サーバーがまだ起動していなくても、アプリは起動する(設定は初期値で始め、つながってから使う。0015 の 13)
+//   - つながないとき:手元の DB(aibow.db)
+func openStore(cfg appConfig, server *apiclient.Client) (st aibow.Store, app aibow.AppSettings, close func(), err error) {
+	if server != nil {
+		rs := remote.New(server)
+		log.Noticef("会話の保存先: aibow-server(%s)。手元の %s は使いません", server.URL(), absPath(cfg.dbPath))
+		app, notes, err := aibow.LoadAppSettings(context.Background(), rs, cfg.app)
+		if err != nil {
+			log.Warnf("aibow-server から設定を読めません(初期値で始めます): %v", err)
+			return rs, cfg.app, nil, nil
+		}
+		for _, n := range notes {
+			log.Notice(n)
+		}
+		return rs, app, nil, nil
+	}
+	sq, err := openLocalStore(cfg)
 	if err != nil {
-		st.Close()
-		return nil, cfg.app, err
+		return nil, cfg.app, nil, err
+	}
+	app, notes, err := aibow.LoadAppSettings(context.Background(), sq, cfg.app)
+	if err != nil {
+		sq.Close()
+		return nil, cfg.app, nil, err
 	}
 	for _, n := range notes {
 		log.Notice(n)
 	}
 	d := app.Defaults
 	log.Infof("新しい会話の既定: 会話の上限 %d + 返事の上限 %d = 作業領域 %d トークン", d.HistoryTokens, d.ReplyTokens, d.ContextSize())
-	return st, app, nil
+	return sq, app, func() { sq.Close() }, nil
+}
+
+// openLocalStore は手元の DB(aibow.db)を開く。
+func openLocalStore(cfg appConfig) (*store.SQLite, error) {
+	st, err := store.Open(cfg.dbPath)
+	if err != nil {
+		return nil, err
+	}
+	// 手元の DB を使うのはこの PC の1人だけ。利用者の印の無い呼び出しを、ログインなしの形の利用者のものとして扱う(0017)
+	st.OneUser()
+	log.Noticef("会話の保存先: %s", absPath(cfg.dbPath))
+	return st, nil
 }
 
 // startModels はモデルを扱う係を作る(0015 の 11)。
@@ -316,18 +364,10 @@ func openStore(cfg appConfig) (*store.SQLite, aibow.AppSettings, error) {
 //
 // 直接の形のときは、画面で足したモデルの置き場所(model-places.json)も読み、手で決めた置き場所に足す(0015 の 24)。
 // 読めなければ画面のお知らせで伝え、足した置き場所なしで起動する。
-func startModels(cfg *appConfig, app aibow.AppSettings) (ui.ModelHost, *engine.Engine, *models.Entry, error) {
-	if cfg.serverURL != "" {
-		c := apiclient.New(cfg.serverURL)
-		c.SetKey(cfg.serverKey)
-		if cfg.serverCert != "" {
-			if err := c.TrustCert(cfg.serverCert); err != nil {
-				return nil, nil, nil, err
-			}
-			log.Noticef("aibow-server の証明書を信頼します: %s", cfg.serverCert)
-		}
-		log.Noticef("生成は aibow-server に頼みます: %s(llama.cpp はこのアプリでは読み込みません。API キー: %s)", c.URL(), map[bool]string{true: "あり", false: "なし"}[cfg.serverKey != ""])
-		return ui.NewRemoteHost(c), nil, nil, nil
+func startModels(cfg *appConfig, app aibow.AppSettings, server *apiclient.Client) (ui.ModelHost, *engine.Engine, *models.Entry, error) {
+	if server != nil {
+		log.Noticef("生成は aibow-server に頼みます: %s(llama.cpp はこのアプリでは読み込みません。API キー: %s)", server.URL(), map[bool]string{true: "あり", false: "なし"}[cfg.serverKey != ""])
+		return ui.NewRemoteHost(server), nil, nil, nil
 	}
 	added, err := ui.LoadPlacesFile(cfg.placesPath)
 	if err != nil {

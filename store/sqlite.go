@@ -35,6 +35,7 @@ type SQLite struct {
 }
 
 var _ aibow.Store = (*SQLite)(nil) // aibow.Store のメソッドを全部持っているか、コンパイル時に確かめる
+var _ aibow.ConversationLocks = (*SQLite)(nil)
 
 // Open は DB ファイルを開く(無ければ作る)。テーブルが古ければ作り変える(マイグレーション)。
 func Open(path string) (*SQLite, error) {
@@ -202,6 +203,12 @@ CREATE TABLE api_keys (
 	id         TEXT NOT NULL UNIQUE,     -- キーの SHA-256。キーそのものは保存しない
 	created_at TEXT NOT NULL
 );
+`,
+	// 版 9: 会話の「生成中」の印(0017 の 10-3。aibow.ConversationLocks)。ブラウザとアプリが同じ会話に同時に送らないように。
+	// 印を付けた側(busy_by)と期限(busy_until)。期限を過ぎた印は無いものとして扱う(落ちたアプリの印が残り続けないように)
+	`
+ALTER TABLE conversations ADD COLUMN busy_by TEXT;
+ALTER TABLE conversations ADD COLUMN busy_until TEXT;
 `,
 }
 
@@ -393,6 +400,40 @@ func notFoundIfNone(res sql.Result, err error, notFound error) error {
 		return notFound
 	}
 	return nil
+}
+
+// LockConversation は会話に「生成中」の印を付ける(印が無い・期限が過ぎた・自分の印なら付けて延ばす)。
+// 確かめるのと付けるのを1つの UPDATE で行うので、2つの画面が同時に付けようとしても、片方だけが付けられる。
+func (s *SQLite) LockConversation(ctx context.Context, id uuid.UUID, holder string, until time.Time) error {
+	owner, err := s.owner(ctx)
+	if err != nil {
+		return err
+	}
+	res, err := s.db.ExecContext(ctx, `UPDATE conversations SET busy_by = ?, busy_until = ?
+		WHERE id = ? AND owner = ? AND (busy_by IS NULL OR busy_by = ? OR busy_until <= ?)`,
+		holder, formatTime(until), id.String(), owner, holder, formatTime(time.Now()))
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		return nil
+	}
+	// 付けられなかった:会話が無いのか、ほかの印があるのか
+	if _, _, err := s.Conversation(ctx, id); err != nil {
+		return err
+	}
+	return aibow.ErrBusy
+}
+
+// UnlockConversation は、holder の印を外す。
+func (s *SQLite) UnlockConversation(ctx context.Context, id uuid.UUID, holder string) error {
+	owner, err := s.owner(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, "UPDATE conversations SET busy_by = NULL, busy_until = NULL WHERE id = ? AND owner = ? AND busy_by = ?",
+		id.String(), owner, holder)
+	return err
 }
 
 // 発言と要約は持ち主の列を持たないので、会話の持ち主で確かめる(SQL の条件の部分)。

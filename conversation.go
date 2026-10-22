@@ -595,6 +595,13 @@ func (cs *Conversations) turn(ctx context.Context, id uuid.UUID, text string, dr
 		return
 	}
 	defer cs.generating.Store(nil)
+	// ほかの画面(ブラウザ・ほかの PC のアプリ)が同じ会話を生成中なら断る(lock.go。保存をサーバーに置いたとき)
+	unlock, err := cs.lockConversation(ctx, id)
+	if err != nil {
+		fail(busyError(err))
+		return
+	}
+	defer unlock()
 
 	conv, saved, err := cs.Get(ctx, id)
 	if err != nil {

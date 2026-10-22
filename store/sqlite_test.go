@@ -614,3 +614,34 @@ func TestMigrationFromVersion5(t *testing.T) {
 		t.Errorf("GPU の層数はアプリ全体の設定のまま: %q %v", v, ok)
 	}
 }
+
+// 「生成中」の印(0017 の 10-3):ほかの印が期限の内なら断り、期限が過ぎるか外せば付けられる。ほかの人の会話には付けられない
+func TestConversationLocks(t *testing.T) {
+	s, _ := openTemp(t)
+	c := newConv(t, s, time.Now())
+	soon := time.Now().Add(time.Minute)
+	if err := s.LockConversation(ctx, c.ID, "app", soon); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.LockConversation(ctx, c.ID, "app", soon.Add(time.Minute)); err != nil {
+		t.Errorf("自分の印は延ばせる: %v", err)
+	}
+	if err := s.LockConversation(ctx, c.ID, "browser", soon); !errors.Is(err, aibow.ErrBusy) {
+		t.Errorf("ほかの印があれば断る: %v", err)
+	}
+	s.UnlockConversation(ctx, c.ID, "browser") // ほかの印は外さない
+	if err := s.LockConversation(ctx, c.ID, "browser", soon); !errors.Is(err, aibow.ErrBusy) {
+		t.Errorf("ほかの holder では外れない: %v", err)
+	}
+	s.UnlockConversation(ctx, c.ID, "app")
+	if err := s.LockConversation(ctx, c.ID, "browser", time.Now().Add(-time.Second)); err != nil {
+		t.Errorf("外したら付けられる: %v", err)
+	}
+	if err := s.LockConversation(ctx, c.ID, "app", soon); err != nil {
+		t.Errorf("期限の過ぎた印は無いものとして扱う: %v", err)
+	}
+	other := aibow.WithUser(context.Background(), uuid.NewV7())
+	if err := s.LockConversation(other, c.ID, "x", soon); !errors.Is(err, aibow.ErrNotFound) {
+		t.Errorf("ほかの人の会話: %v", err)
+	}
+}

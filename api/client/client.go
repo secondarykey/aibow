@@ -220,3 +220,29 @@ func (c *Client) call(method, path string, body, out any, timeout time.Duration)
 	}
 	return nil
 }
+
+// Post は、aibow-server の path に body を JSON で送り、返事を out に読む(out が nil なら読まない)。
+// API キー・証明書・つながらないときのエラーは、ほかの呼び出しと同じ。ctx に期限が無ければ storeTimeout で区切る。
+// 会話の保存の口(store/remote。0017 の 10-3)が使う。
+func (c *Client) Post(ctx context.Context, path string, body, out any) error {
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, storeTimeout)
+		defer cancel()
+	}
+	res, err := c.do(ctx, http.MethodPost, path, body)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	if out == nil {
+		return nil
+	}
+	if err := json.NewDecoder(res.Body).Decode(out); err != nil {
+		return fmt.Errorf("aibow-server の返事が読めません(POST %s): %w", path, err)
+	}
+	return nil
+}
+
+// storeTimeout は、保存の口の1回のやり取りの上限(保存は生成と違って、すぐ終わるはずなので)。
+const storeTimeout = 30 * time.Second

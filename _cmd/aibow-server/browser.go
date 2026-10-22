@@ -12,6 +12,7 @@ package main
 //
 // 誰の会話かは、ここ(who)だけで決める(0017 の 12)。ログインが要る設定なら cookie のセッションの人(auth)、要らなければログインなしの形の利用者。
 // ログインの口は /aibow/auth/ の下(auth.Handler)。
+// 画面のアプリの保存の口(/aibow/store/。0017 の 10-3)も同じ server.db に載せる(アプリで作った会話をブラウザで開けるように)。
 
 import (
 	"context"
@@ -28,13 +29,14 @@ import (
 	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/store"
+	"github.com/secondarykey/aibow/store/remote"
 	"github.com/secondarykey/aibow/ui"
 	"github.com/secondarykey/aibow/web"
 )
 
 // startBrowser は、ブラウザの会話の DB を開き、会話の仕組みと画面用の口を作る。
 // initial は DB にまだ値が無いときの設定、url は aibow-server のアドレス(画面の「つなぎ先」に出す)。
-// 戻り値の handler は /aibow/ui/ と /aibow/auth/ の下を受け持つ。keys は API キーの係(利用者は同じ server.db にいるので、ここで作る)。
+// 戻り値の handler は /aibow/ui/・/aibow/auth/・/aibow/store/ の下を受け持つ。keys は API キーの係(利用者は同じ server.db にいるので、ここで作る)。
 // close は終了のときに呼ぶ(生成を止めて、DB を閉じる)。
 func startBrowser(c config, initial aibow.AppSettings, eng *engine.Engine, mm *modelManager, nCtx int, url string, seat *api.Seat) (http.Handler, *auth.Keys, func(), error) {
 	st, err := store.Open(c.DBPath)
@@ -69,7 +71,23 @@ func startBrowser(c config, initial aibow.AppSettings, eng *engine.Engine, mm *m
 	mux := http.NewServeMux()
 	mux.Handle("/aibow/ui/", ui.Handler(svc, events, who(c.Login)))
 	mux.Handle("/aibow/auth/", auth.Handler(sessions, c.Login))
-	return sessions.Middleware(mux), auth.NewKeys(st), func() { life.Stop(); st.Close() }, nil
+	keys := auth.NewKeys(st)
+	// 保存の口は、API キーが要る形ならキーの持ち主、要らない形(127.0.0.1 だけでログインなし)ならログインなしの形の利用者
+	var storeH http.Handler = remote.Handler(st, func(*http.Request) (uuid.UUID, error) { return aibow.LocalUser, nil })
+	if c.KeysRequired() {
+		storeH = keys.RequireKey(remote.Handler(st, keyUser))
+	}
+	mux.Handle("/aibow/store/", storeH)
+	return sessions.Middleware(mux), keys, func() { life.Stop(); st.Close() }, nil
+}
+
+// keyUser は、保存の口を呼んだ利用者(API キーの持ち主。auth.Keys.RequireKey がリクエストの ctx に入れた人)。
+func keyUser(r *http.Request) (uuid.UUID, error) {
+	u, ok := auth.UserFrom(r.Context())
+	if !ok {
+		return uuid.UUID{}, auth.ErrBadKey
+	}
+	return u.ID, nil
 }
 
 // errNotLoggedIn は、ログインが要るのにログインしていないときのエラー(画面はこれを 401 で受け取り、ログインの画面を出す)。
@@ -131,6 +149,7 @@ func routes(apiH, browser, screen http.Handler) http.Handler {
 	mux.Handle("GET /assets/", screen)
 	mux.Handle("/aibow/ui/", browser)
 	mux.Handle("/aibow/auth/", browser)
+	mux.Handle("/aibow/store/", browser)
 	mux.Handle("/", apiH)
 	return mux
 }
