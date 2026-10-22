@@ -183,12 +183,14 @@ tasks:
     run: once
     deps:
       - task: go:mod:tidy
-    # バインディングの元は Go だけ。リポジトリのルートの aibow パッケージ(../../*.go)の型も使うので含める
+    # バインディングの元は Go だけ。画面から呼ぶメソッドは ui パッケージ(ChatService に埋め込む ui.Service)にあり、
+    # 型はルートの aibow や models・engine・mcp/client などのものも使うので、リポジトリの Go を全部含める
+    # (ui.Service を _cmd/aibow から ui/ に移したとき(0016 の 9-0)にここを直し忘れ、ui だけを変えるとバインディングが古いままだった)
     sources:
       - "*.go"
       - go.mod
       - go.sum
-      - ../../*.go
+      - ../../**/*.go
       - ../../go.mod
       - frontend/bindings/**/*  # Rerun when switching between dev/production mode causes changes in output
     generates:
