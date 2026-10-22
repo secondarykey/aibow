@@ -143,6 +143,7 @@ aibow 起動
 wails3 build
 ```
 画面をビルドして埋め込み、アイコン付きの実行ファイル `bin\aibow.exe` を作ります。コンソールは出ません。
+画面のビルド結果はリポジトリのルートの `web/dist/app` にでき、aibow-server(ブラウザから使うとき)にも同じものが入ります。aibow-server は、このあとでビルドします([usage.md](usage.md) の「ブラウザから使う」)。
 
 ```bash
 wails3 task run
