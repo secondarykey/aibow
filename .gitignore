@@ -13,3 +13,6 @@
 !.github
 !.gitignore
 !.gitattributes
+
+# 画面のビルド結果(vite が web/dist/app に書く。0016)。web/dist/index.html(ビルドしていないときのページ)はコミットする
+/web/dist/app/

@@ -39,7 +39,7 @@ import { Composer } from "./components/Composer";
 import { WorkDirBar } from "./components/WorkDirBar";
 import { ToolBar } from "./components/ToolBar";
 import { LuSettings } from "react-icons/lu";
-import { ChatService } from "./backend";
+import { ChatService, isBrowser } from "./backend";
 import type { ServerInfo } from "../bindings/github.com/secondarykey/aibow/mcp/client";
 import type { ConversationSettings } from "../bindings/github.com/secondarykey/aibow";
 import { ImeFocusRelay } from "./imeFocus";
@@ -129,7 +129,9 @@ export default function App() {
 
   // 会話で選べる MCP のサーバー(settings.json に書いたもの全部)。起動したときと、ツールの扱い(確認しない)を変えたときに読む
   const [mcpServers, setMcpServers] = useState<ServerInfo[]>([]);
+  // ブラウザではツールを使わないので、聞かない(aibow-server はツールの口を出していない。0016 の 7)
   const reloadMcp = useCallback(() => {
+    if (isBrowser) return;
     ChatService.MCPServers().then(
       s => setMcpServers(s ?? []),
       err => addError(`MCP のサーバーの一覧を取得できません: ${errorMessage(err)}`),
@@ -244,8 +246,8 @@ export default function App() {
           // 送れなかった(発言が保存されなかった)ら、打った文を入力欄に戻す。その間に打ち始めていたら、そちらを残す
           if (!(await chat.send(t))) setText(cur => cur || t);
         }}
-        top={settings && (
-          // 入力欄の上: 作業フォルダと、この会話のツール(どちらも会話ごとの設定)
+        top={settings && !isBrowser && (
+          // 入力欄の上: 作業フォルダと、この会話のツール(どちらも会話ごとの設定)。ブラウザではツールを使わないので出さない(0016 の 18)
           <div className="composer-top">
             <WorkDirBar
               workDir={settings.work_dir}
@@ -529,7 +531,8 @@ export default function App() {
         <Splitter width={listWidth.width} onResize={listWidth.set} onCommit={listWidth.commit} onReset={listWidth.reset} />
       )}
       <div className="workspace">
-        <TitleBar title={title} />
+        {/* ブラウザにはブラウザのタイトルバーがあるので、ウィンドウのボタンのあるタイトルバーは出さない(0016 の 17) */}
+        {!isBrowser && <TitleBar title={title} />}
         <main>{content}</main>
       </div>
       {overlay && (

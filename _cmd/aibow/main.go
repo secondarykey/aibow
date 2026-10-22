@@ -16,15 +16,14 @@
 //	main.go    … 起動(このファイル)
 //	config.go  … 環境変数から設定を読む(settings.json は aibow.LoadSettingsFile、MCP のサーバーは startMCP)
 //	service.go … 画面から呼ばれるメソッドを Wails に渡す(中身はルートの ui パッケージ。モデル・会話・設定・送信と、モデルを扱う係)
-//	frontend/  … 画面(React + TypeScript)。Vite でビルドした frontend/dist が実行ファイルに埋め込まれる
+//	frontend/  … 画面(React + TypeScript)。Vite でビルドした結果は、共有のパッケージ web(リポジトリのルートの web/dist/app)に出て、実行ファイルに埋め込まれる
 //	build/     … wails3 build / wails3 dev の設定(アプリ名、アイコン、OS ごとの手順)
 package main
 
 import (
-	"embed"
+	_ "embed" // version を埋め込む
 	"fmt"
 	"io"
-	"io/fs"
 	"log/slog"
 	"maps"
 	"os"
@@ -39,6 +38,7 @@ import (
 	"github.com/secondarykey/aibow/models"
 	"github.com/secondarykey/aibow/store"
 	"github.com/secondarykey/aibow/ui"
+	"github.com/secondarykey/aibow/web"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
@@ -52,12 +52,6 @@ const windowFocusEventName = "aibow:window:focus"
 //
 //go:embed version
 var version string
-
-// Vite でビルドした画面(frontend/dist)を実行ファイルに埋め込む。
-// all: を付けないと、_ や . で始まるファイルが埋め込まれない。
-//
-//go:embed all:frontend/dist
-var frontendFiles embed.FS
 
 func init() {
 	// chat イベントで送るデータの型を Wails に教えておく。
@@ -113,7 +107,11 @@ func main() {
 		defer eng.Close()
 	}
 
-	assets, _ := fs.Sub(frontendFiles, "frontend/dist")
+	// 画面は共有のパッケージ web に埋め込んである(aibow-server がブラウザに配るものと同じ。0016)
+	assets, built := web.Files()
+	if !built {
+		log.Warn("画面がビルドされていません(web/dist/app が無い)。wails3 build で画面をビルドしてください")
+	}
 	app := application.New(application.Options{
 		Name:        "aibow",
 		Description: "ローカルLLMを自分で動かして仕組みを学ぶチャット",

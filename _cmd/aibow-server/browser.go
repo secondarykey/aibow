@@ -11,7 +11,10 @@ package main
 // ブラウザの会話ではツールを使わない(0016 の 7)。会話は server.db に保存し、画面のアプリの aibow.db とは別にする(0016 の 13)。
 
 import (
+	"io"
+	"io/fs"
 	"net/http"
+	"strings"
 
 	"github.com/secondarykey/aibow"
 	"github.com/secondarykey/aibow/api"
@@ -19,6 +22,7 @@ import (
 	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/store"
 	"github.com/secondarykey/aibow/ui"
+	"github.com/secondarykey/aibow/web"
 )
 
 // startBrowser は、ブラウザの会話の DB を開き、会話の仕組みと画面用の口を作る。
@@ -52,4 +56,47 @@ func startBrowser(c config, initial aibow.AppSettings, eng *engine.Engine, mm *m
 	})
 	life.Start() // 起動のときのモデルは main が読み込んだので、ここでは読み込まない(Initial を渡していない)
 	return ui.Handler(svc, events), func() { life.Stop(); st.Close() }, nil
+}
+
+// browserMarker は、aibow-server が配る index.html に足す印。画面はこれを見て、ブラウザ用の「Go を呼ぶ係」を使う(0016 の 16)。
+// 場所(URL)で見分けると、Wails の server モード(確認用の一時ビルド)の画面もブラウザだと思ってしまうので、配る側が印を付ける
+const browserMarker = `<meta name="aibow-browser" content="1">`
+
+// screen は画面のファイルを配る(web パッケージに埋め込んだもの。デスクトップのアプリと同じ)。
+// index.html だけは、ブラウザの印を足して返す。
+func screen() http.Handler {
+	files, built := web.Files()
+	if built {
+		log.Info("ブラウザの画面: 埋め込んだ画面を配ります")
+	} else {
+		log.Warn("画面がビルドされていません(web/dist/app が無い)。ブラウザには、ビルドの仕方を書いたページだけを出します")
+	}
+	index, err := fs.ReadFile(files, "index.html")
+	if err != nil {
+		// web.Files はいつも index.html を持つ(ビルドしていなければ、その代わりのページ)
+		panic("画面の index.html が読めません: " + err.Error())
+	}
+	page := strings.Replace(string(index), "<head>", "<head>\n    "+browserMarker, 1)
+	assets := http.FileServerFS(files)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		// 画面を作り直したら、開き直すだけで新しいものが読まれるように(assets はファイル名にハッシュが付くので、残っていてよい)
+		w.Header().Set("Cache-Control", "no-cache")
+		io.WriteString(w, page)
+	})
+	mux.Handle("GET /assets/", assets)
+	return mux
+}
+
+// routes は aibow-server の道筋。画面(/ と /assets/)・画面用の口(/aibow/ui/)・それ以外(OpenAI 互換の口と aibow 専用の口)。
+// 長いほうのパスが先に当たるので、画面の2つ以外はこれまでどおり api が受け取る(知らないパスの 404 も api の形)。
+func routes(apiH, browser, screen http.Handler) http.Handler {
+	mux := http.NewServeMux()
+	mux.Handle("GET /{$}", screen)
+	mux.Handle("GET /assets/", screen)
+	mux.Handle("/aibow/ui/", browser)
+	mux.Handle("/", apiH)
+	return mux
 }

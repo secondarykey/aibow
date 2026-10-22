@@ -86,8 +86,9 @@ tasks:
       - src/**/*
       - public/**/*
       - bindings/**/*
+    # ビルド結果は共有のパッケージ web/ に出す(vite.config.ts の outDir。0016)
     generates:
-      - dist/**/*
+      - ../../../web/dist/app/**/*
     deps:
       - task: install:frontend:deps
       - task: generate:bindings

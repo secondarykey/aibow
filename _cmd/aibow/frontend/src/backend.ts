@@ -1,73 +1,92 @@
 // backend.ts: Go を呼ぶ係(0016 の 3)。
 //
 // 画面の部品は、Go のメソッドの呼び出し・Go からの知らせ(イベント)・呼び出しの停止・ウィンドウやクリップボードなど
-// Wails のランタイムに頼ることを、ここだけを通して使う。
-// デスクトップのアプリ(Wails)では、中身は Wails のバインディングとランタイムをそのまま渡すだけ。
-// ブラウザから aibow-server につなぐとき(9-2)は、ここを fetch と SSE に差し替える(部品は変えない)。
+// 実行する場所に頼ることを、ここだけを通して使う。中身は2つあり、起動のとき(main.tsx の initBackend)にどちらかを読み込む:
+//
+//	デスクトップのアプリ(Wails)… backendWails.ts。Wails のバインディングとランタイムをそのまま渡す
+//	ブラウザ(aibow-server)    … backendWeb.ts。fetch(POST /aibow/ui/call/{メソッド})と SSE(GET /aibow/ui/events)
+//
+// ブラウザでは @wailsio/runtime を読み込まない(読み込むと、ページ全体の右クリックのメニューを消すなどの動きが入るため)。
+// そのため、どちらも import() であとから読み込み、ここは型と、読み込んだほうへの受け渡しだけを持つ。
 //
 // Go の型(bindings の models.ts。ConversationSettings など)は、部品から直接 import してよい。
 // interface と enum だけで Wails の呼び出しの仕組みを含まない(wails3 generate bindings の -i)ので、ブラウザでもそのまま使える。
-//
-// @wailsio/runtime は、読み込まれるとページ全体のマウス操作を見て、Frameless のウィンドウのドラッグとリサイズを行う。
-// main.tsx がこのファイルを最初に import するので、ここで読み込めば足りる。
-import { Browser, CancelError, Clipboard, Events, Window } from "@wailsio/runtime";
-import { ChatService as Bindings } from "../bindings/github.com/secondarykey/aibow/_cmd/aibow";
 import type { ChatEvent } from "../bindings/github.com/secondarykey/aibow";
-
-// ChatService は Go のメソッド。名前と引数は Go の ChatService(中身は ui.Service)のメソッドと同じ。
-// Go で error を返すと、Promise が reject される
-export const ChatService = Bindings;
+import type { ChatService as Bindings } from "../bindings/github.com/secondarykey/aibow/_cmd/aibow";
 
 // Call は止められる呼び出し(Send など、生成が終わるまで返らない長い呼び出し)。
 // cancel() を呼ぶと Go の ctx がキャンセルされ、Promise は isCancel(err) が true になるエラーで終わる
 export type Call<T> = Promise<T> & { cancel(): void };
 
-// isCancel は、cancel() で止めた呼び出しのエラーか
+// ChatAPI は Go のメソッド。名前と引数は Go の ChatService(中身は ui.Service)のメソッドと同じ(型はバインディングから取る)。
+// Go で error を返すと、Promise が reject される(message が Go のエラーの文)
+type Methods = typeof Bindings;
+export type ChatAPI = {
+  [K in keyof Methods]: (...args: Parameters<Methods[K]>) => Call<Awaited<ReturnType<Methods[K]>>>;
+};
+
+// Backend は、Go を呼ぶ係の中身(デスクトップとブラウザの2つ)が揃えるもの。
+export interface Backend {
+  ChatService: ChatAPI;
+  isCancel(err: unknown): boolean;
+  // Go からの知らせ。戻り値を呼ぶと受け取るのをやめる
+  onChat(f: (ev: ChatEvent) => void): () => void; // 生成の途中経過(Go の ui.ChatEventName)
+  onModelLoaded(f: () => void): () => void;       // 起動時のモデルの読み込みが終わった(Go の ui.ModelsEventName)
+  onWindowFocus(f: () => void): () => void;       // ウィンドウがアクティブに戻った(IME の対策。imeFocus.tsx)
+  copyText(text: string): Promise<void>;
+  openURL(url: string): Promise<void>;            // リンクを開く(デスクトップは OS のブラウザ、ブラウザは新しいタブ)
+  appWindow: {                                    // Frameless のウィンドウの操作(タイトルバー。ブラウザでは何もしない)
+    minimise(): Promise<void>;
+    toggleMaximise(): Promise<void>;
+    isMaximised(): Promise<boolean>;
+    close(): Promise<void>;
+  };
+}
+
+// isBrowser は、ブラウザ(aibow-server が配った画面)か(0016 の 16)。見た目の分かれ道にだけ使う(呼び出しは分けない)。
+// aibow-server は index.html にこの印を足して配る(_cmd/aibow-server の browser.go)。
+// 場所(URL)で見分けないのは、Wails の server モード(確認用の一時ビルド)の画面もブラウザだと思ってしまうため
+export const isBrowser = document.querySelector('meta[name="aibow-browser"]') !== null;
+
+let b: Backend;
+
+// ChatService は Go のメソッド。initBackend のあとに使える(import した側にも、入れ替えたものが見える)
+export let ChatService: ChatAPI;
+
+// initBackend は、どちらの中身を使うかを決めて読み込む。最初の描画の前に1回呼ぶ(main.tsx)。
+export async function initBackend(): Promise<void> {
+  const m = isBrowser ? await import("./backendWeb") : await import("./backendWails");
+  b = m.backend;
+  ChatService = b.ChatService;
+}
+
 export function isCancel(err: unknown): boolean {
-  return err instanceof CancelError;
+  return b.isCancel(err);
 }
 
-// ---- Go からの知らせ(イベント)。戻り値を呼ぶと受け取るのをやめる ---------------------------
-
-// onChat は、生成の途中経過(chat イベント。Go の ui.ChatEventName)を受け取る。
-// main.go の RegisterEvent で型を登録してあるので、ev.data は ChatEvent 型になる
 export function onChat(f: (ev: ChatEvent) => void): () => void {
-  return Events.On("chat", ev => f(ev.data));
+  return b.onChat(f);
 }
 
-// onModelLoaded は、起動時のモデルの読み込みが終わった合図(models イベント。Go の ui.ModelsEventName)を受け取る
 export function onModelLoaded(f: () => void): () => void {
-  return Events.On("models", () => f());
+  return b.onModelLoaded(f);
 }
 
-// onWindowFocus は、ウィンドウがアクティブに戻った合図を受け取る(IME の対策。imeFocus.tsx)。
-// 名前は main.go の windowFocusEventName と同じ
 export function onWindowFocus(f: () => void): () => void {
-  return Events.On("aibow:window:focus", () => f());
+  return b.onWindowFocus(f);
 }
 
-// ---- Wails のランタイムに頼ること ---------------------------------------------------------
-
-// copyText は文字をクリップボードに書く。
-// まずブラウザの navigator.clipboard を使う(WebView2 の画面は http://wails.localhost で、安全な場所として扱われるので使える)。
-// 使えなかったときは、Wails のランタイムの Clipboard.SetText(Go 側で OS のクリップボードに書く)を使う
-export async function copyText(text: string): Promise<void> {
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch {
-    await Clipboard.SetText(text);
-  }
+export function copyText(text: string): Promise<void> {
+  return b.copyText(text);
 }
 
-// openURL はリンクを OS のブラウザで開く
 export function openURL(url: string): Promise<void> {
-  return Browser.OpenURL(url);
+  return b.openURL(url);
 }
 
-// appWindow は Frameless のウィンドウの操作(タイトルバーのボタン。TitleBar.tsx)
-export const appWindow = {
-  minimise: () => Window.Minimise(),
-  toggleMaximise: () => Window.ToggleMaximise(),
-  isMaximised: () => Window.IsMaximised(),
-  close: () => Window.Close(),
+export const appWindow: Backend["appWindow"] = {
+  minimise: () => b.appWindow.minimise(),
+  toggleMaximise: () => b.appWindow.toggleMaximise(),
+  isMaximised: () => b.appWindow.isMaximised(),
+  close: () => b.appWindow.close(),
 };

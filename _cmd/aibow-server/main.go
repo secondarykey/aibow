@@ -169,12 +169,8 @@ func run(c config, notices []string, cfgErr error, env *envReader) error {
 		ConfigFile: absPath(cmp.Or(c.File, filepath.Join(filepath.Dir(c.StatePath), configFileName))), ConfigFound: c.File != "",
 		StateFile: absPath(c.StatePath),
 	})
-	// 画面用の口(/aibow/ui/ の下)と、それ以外(OpenAI 互換の口と aibow 専用の口)。長いほうのパスが先に当たる
-	mux := http.NewServeMux()
-	mux.Handle("/aibow/ui/", browser)
-	mux.Handle("/", srv.Handler())
 	hs := &http.Server{
-		Handler:           mux,
+		Handler:           routes(srv.Handler(), browser, screen()),
 		ReadHeaderTimeout: 10 * time.Second,
 		// 書き込みの時間の上限(WriteTimeout)は付けない。返事の生成は数十秒〜数分かかることがあるため
 		BaseContext: func(net.Listener) context.Context { return ctx },
@@ -186,7 +182,7 @@ func run(c config, notices []string, cfgErr error, env *envReader) error {
 	// つなぐ側が書く値をそのまま出す(画面のアプリは /v1 なし、Cline などの OpenAI 互換のクライアントは /v1 付き)
 	log.Noticef("画面のアプリのつなぎ先(settings.json の serverUrl / AIBOW_SERVER_URL): http://%s", addr)
 	log.Noticef("OpenAI 互換のクライアント(Cline など)の Base URL: http://%s/v1", addr)
-	log.Noticef("ブラウザの画面用の口: http://%s/aibow/ui/(POST call/{メソッド}・GET events)", addr)
+	log.Noticef("ブラウザで開く画面: http://%s/(会話は %s に保存します)", addr, absPath(c.DBPath))
 
 	select {
 	case err := <-errc:

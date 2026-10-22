@@ -12,6 +12,7 @@ import type { Entry as ModelEntry } from "../../bindings/github.com/secondarykey
 import { ConversationSettingsForm, LimitsForm } from "./ConversationSettingsForm";
 import { lockOf } from "../profileRules";
 import { ConversationTools } from "./ConversationTools";
+import { isBrowser } from "../backend";
 import { CopyButton } from "./CopyButton";
 
 interface Props {
@@ -100,8 +101,13 @@ export function ConversationSettingsView({ id, title, onRename, settings, models
         <LimitsForm history={settings.history_tokens} reply={settings.reply_tokens} disabled={limitsDisabled} lock={lock} onApply={onApplyLimits} />
         <SaveToProfile profile={profile} onSave={onSaveToProfile} onSaveAs={onSaveAsProfile} />
 
-        <h2 className="section" title="この会話で使うツール(入力欄の上の「この会話のツール」と同じ)">ツール</h2>
-        <ConversationTools id={id} settings={settings} servers={servers} profile={profile} onChange={onChange} />
+        {/* ブラウザではツールを使わないので出さない(0016 の 18) */}
+        {!isBrowser && (
+          <>
+            <h2 className="section" title="この会話で使うツール(入力欄の上の「この会話のツール」と同じ)">ツール</h2>
+            <ConversationTools id={id} settings={settings} servers={servers} profile={profile} onChange={onChange} />
+          </>
+        )}
 
         <h2 className="section">モデルに渡した文字列</h2>
         <p className="hint">

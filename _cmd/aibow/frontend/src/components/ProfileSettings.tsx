@@ -8,7 +8,7 @@
 // 画面は一旦作ってから使い方を考える(0014 の 12)。ここは最初の形。
 import { useCallback, useEffect, useRef, useState } from "react";
 import { LuPlus } from "react-icons/lu";
-import { ChatService } from "../backend";
+import { ChatService, isBrowser } from "../backend";
 import type { ConversationSettings, Profile, ProfileInfo } from "../../bindings/github.com/secondarykey/aibow";
 import type { ServerInfo } from "../../bindings/github.com/secondarykey/aibow/mcp/client";
 // Go の models パッケージ。"…/aibow/models" と書くと aibow パッケージの models.ts が選ばれるので、index まで書く
@@ -240,8 +240,13 @@ function ProfileEditor({ profile, info, models, servers, disabled, onChange, onA
         onApply={(h, r) => onApplyLimits(h, r, setValues)}
       />
 
-      <h2 className="section" title="このプロファイルでのツールの扱い(最初から使う・選べば使える・使えない)と、確認しない(この PC の設定)">ツール</h2>
-      <ProfileTools profile={profile} servers={servers} lock={lock} onChange={onChange} onPCChanged={onToolsChanged} />
+      {/* ブラウザではツールを使わないので出さない(0016 の 18) */}
+      {!isBrowser && (
+        <>
+          <h2 className="section" title="このプロファイルでのツールの扱い(最初から使う・選べば使える・使えない)と、確認しない(この PC の設定)">ツール</h2>
+          <ProfileTools profile={profile} servers={servers} lock={lock} onChange={onChange} onPCChanged={onToolsChanged} />
+        </>
+      )}
     </div>
   );
 }

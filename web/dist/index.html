@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<!--
+  画面をビルドしていないときに出すページ(web/embed.go の Files)。
+  ビルドした画面は、vite がこの隣の app/ に書く(Git には入れない)。このファイルは消さない(go:embed が dist を要るため)。
+-->
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <title>aibow</title>
+  </head>
+  <body style="font-family: sans-serif; padding: 2em;">
+    <h1>画面がビルドされていません</h1>
+    <p>
+      画面(<code>_cmd/aibow/frontend</code>)をビルドしてから、この exe をビルドし直してください。
+      <code>_cmd/aibow</code> で <code>wails3 build</code> を実行すると、画面のビルド結果が <code>web/dist/app</code> にできます。
+    </p>
+  </body>
+</html>

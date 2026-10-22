@@ -1,5 +1,6 @@
 .task
 bin
+# 以前の画面のビルド結果の場所(今は web/dist/app に出す。0016)。前のビルドで残ったものが出てこないように残している
 frontend/dist
 frontend/node_modules
 build/linux/appimage/build

@@ -10,4 +10,11 @@ export default defineConfig({
     strictPort: true,
   },
   plugins: [react(), wails("./bindings")],
+  build: {
+    // ビルド結果は、デスクトップのアプリと aibow-server の両方が埋め込む共有のパッケージ(リポジトリのルートの web/)に出す(0016)。
+    // 隣の web/dist/index.html(ビルドしていないときのページ)は消さないよう、その下の app/ に出す。
+    // 出力先が frontend の外なので、前のビルド結果を消すには emptyOutDir を書く必要がある
+    outDir: "../../../web/dist/app",
+    emptyOutDir: true,
+  },
 });
