@@ -18,8 +18,16 @@ export const backend: Backend = {
   onWindowFocus: f => Events.On("aibow:window:focus", () => f()),
   // Wails のイベントはアプリの中で届くので、切れてつなぎ直すことは無い
   onReconnect: () => () => {},
-  // デスクトップは利用者が1人(手元の DB)なので、ログインは無い
-  session: async () => ({ login: false, name: "" }),
+  // デスクトップは画面でログインしない。aibow-server につないでいれば、API キー(settings.json の serverKey)の持ち主の名前を聞く。
+  // 聞けなければ(aibow-server が止まっている)名前を出さない
+  session: async () => {
+    try {
+      const a = await ChatService.Account();
+      return { login: a.login, name: a.name, viaKey: a.login };
+    } catch {
+      return { login: false, name: "" };
+    }
+  },
   login: async () => { throw new Error("デスクトップのアプリにはログインがありません"); },
   logout: async () => {},
   onUnauthorized: () => () => {},

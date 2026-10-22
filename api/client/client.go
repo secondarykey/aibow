@@ -246,3 +246,16 @@ func (c *Client) Post(ctx context.Context, path string, body, out any) error {
 
 // storeTimeout は、保存の口の1回のやり取りの上限(保存は生成と違って、すぐ終わるはずなので)。
 const storeTimeout = 30 * time.Second
+
+// Me は、API キーの持ち主の名前(GET /aibow/auth/key。0017 の 10-4)。aibow-server がキーの要らない形なら login が false(誰でもない)。
+// 画面のアプリが、誰としてつないでいるかを画面に出すのに使う。
+func (c *Client) Me() (name string, login bool, err error) {
+	var me struct {
+		Login bool   `json:"login"`
+		Name  string `json:"name"`
+	}
+	if err := c.call(http.MethodGet, "/aibow/auth/key", nil, &me, shortTimeout); err != nil {
+		return "", false, err
+	}
+	return me.Name, me.Login, nil
+}

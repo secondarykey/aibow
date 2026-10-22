@@ -83,3 +83,18 @@ func writeAPIError(w http.ResponseWriter, status int, code, msg string) {
 	}
 	writeJSON(w, status, map[string]any{"error": map[string]string{"message": msg, "type": typ, "code": code}})
 }
+
+// MeHandler は GET /aibow/auth/key。API キーの持ち主(画面のアプリが、誰としてつないでいるかを画面に出すため。0017 の 10-4)。
+// 返事はブラウザの /aibow/auth/me と同じ形(Me)。キーが要らない形(127.0.0.1 だけでログインなし)なら、誰でもないので {"login": false}。
+// キーが無い・違うときは 401(RequireKey と同じ)。
+func (k *Keys) MeHandler(required bool) http.Handler {
+	if !required {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			writeJSON(w, http.StatusOK, Me{})
+		})
+	}
+	return k.RequireKey(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		u, _ := UserFrom(r.Context())
+		writeJSON(w, http.StatusOK, Me{Login: true, Name: u.Name})
+	}))
+}

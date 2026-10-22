@@ -644,6 +644,31 @@ func (s *Service) saveAppSetting(key string, v any, apply func(*aibow.AppSetting
 	}
 }
 
+// Account は、aibow-server に誰としてつないでいるか(Account の戻り値。0017 の 10-4)。
+type Account struct {
+	// Login は、利用者として(API キーで)つないでいるか。アプリの中で動かすとき・キーの要らない aibow-server なら false(名前を出さない)
+	Login bool   `json:"login"`
+	Name  string `json:"name"` // 利用者の名前(API キーの持ち主)
+}
+
+// Account は、aibow-server に誰としてつないでいるか(画面の一覧の下に名前を出す)。
+// アプリはログインの画面を持たず、settings.json の serverKey(API キー)で利用者が決まるので、その持ち主を aibow-server に聞く。
+// アプリの中で動かしているときは、利用者は1人なので Login が false。
+func (s *Service) Account() (Account, error) {
+	if s.startupErr != nil {
+		return Account{}, s.startupErr
+	}
+	r, ok := s.host.(*RemoteHost)
+	if !ok {
+		return Account{}, nil
+	}
+	name, login, err := r.c.Me()
+	if err != nil {
+		return Account{}, err
+	}
+	return Account{Login: login, Name: name}, nil
+}
+
 // Version はアプリのバージョン(画面の左下に出す)。起動に失敗していても返す。
 func (s *Service) Version() string {
 	return s.version

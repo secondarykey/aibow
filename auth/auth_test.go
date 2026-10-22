@@ -312,3 +312,34 @@ func TestLoginLimit(t *testing.T) {
 		t.Errorf("待てばログインできる: %d", code)
 	}
 }
+
+// GET /aibow/auth/key は API キーの持ち主の名前(アプリが画面に出す)。キーの要らない形なら誰でもない
+func TestKeyMe(t *testing.T) {
+	st := openStore(t)
+	u := addUser(t, st, "bob", "pw")
+	key := auth.NewAPIKey()
+	st.SetAPIKey(ctx, u.ID, auth.KeyID(key), time.Now())
+	k := auth.NewKeys(st)
+	for _, c := range []struct {
+		required bool
+		auth     string
+		code     int
+		want     auth.Me
+	}{
+		{true, "Bearer " + key, http.StatusOK, auth.Me{Login: true, Name: "bob"}},
+		{true, "", http.StatusUnauthorized, auth.Me{}},
+		{false, "", http.StatusOK, auth.Me{}},
+	} {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", "/aibow/auth/key", nil)
+		if c.auth != "" {
+			req.Header.Set("Authorization", c.auth)
+		}
+		k.MeHandler(c.required).ServeHTTP(rec, req)
+		var got auth.Me
+		json.NewDecoder(rec.Body).Decode(&got)
+		if rec.Code != c.code || (c.code == http.StatusOK && got != c.want) {
+			t.Errorf("required=%v auth=%q: %d %+v", c.required, c.auth, rec.Code, got)
+		}
+	}
+}

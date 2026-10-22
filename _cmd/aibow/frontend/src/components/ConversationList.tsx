@@ -176,11 +176,19 @@ function AppName() {
 
 // UserMenu は、ログインしている人の名前。押すと「ログアウト」を出す(ブラウザでログインが要るときだけ。0017 の 10-1)。
 // ログアウトしたら画面を読み直す(ログインの画面になる)。
+// デスクトップのアプリが aibow-server に API キーでつないでいるときは、名前だけを出す(ログアウトは無い。0017 の 10-4)。
 function UserMenu() {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   useMenuDismiss(open, () => setOpen(false), box);
   if (!me.login || me.name === "") return null;
+  if (me.viaKey) {
+    return (
+      <div className="user-menu">
+        <span className="user-btn" title={`API キーで ${me.name} としてつないでいます`}><LuUser /><span>{me.name}</span></span>
+      </div>
+    );
+  }
 
   const signOut = async () => {
     setOpen(false);

@@ -25,6 +25,15 @@ import * as ui$0 from "../../ui/models.js";
 import * as uuid$0 from "../../../../../uuid/models.js";
 
 /**
+ * Account は、aibow-server に誰としてつないでいるか(画面の一覧の下に名前を出す)。
+ * アプリはログインの画面を持たず、settings.json の serverKey(API キー)で利用者が決まるので、その持ち主を aibow-server に聞く。
+ * アプリの中で動かしているときは、利用者は1人なので Login が false。
+ */
+export function Account(): $CancellablePromise<ui$0.Account> {
+    return $Call.ByID(4020571366);
+}
+
+/**
  * AddModelPlace は置き場所(フォルダか GGUF のファイル)を足し、足したあとの一覧を返す。
  * aibow-server 越しなら、path はサーバーの PC のパスで、サーバーがあるかを確かめる(0015 の 31)。
  */

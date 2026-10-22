@@ -10,7 +10,7 @@ import { errorMessage } from "../errors";
 // 使っている途中で期限が切れた(呼び出しが 401 で断られた)ときもログインの画面に戻し、ログインしたら画面を読み直す
 // (知らせのつながり(SSE)や会話の一覧を、ログインした人のもので作り直すため)。
 export function LoginGate({ children }: { children: ReactNode }) {
-  const [needed, setNeeded] = useState(me.login && me.name === "");
+  const [needed, setNeeded] = useState(me.login && me.name === "" && !me.viaKey);
   const [expired, setExpired] = useState(false);
   useEffect(() => onUnauthorized(() => setExpired(true)), []);
 

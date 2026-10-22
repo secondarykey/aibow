@@ -78,6 +78,8 @@ func startBrowser(c config, initial aibow.AppSettings, eng *engine.Engine, mm *m
 		storeH = keys.RequireKey(remote.Handler(st, keyUser))
 	}
 	mux.Handle("/aibow/store/", storeH)
+	// 画面のアプリが、誰としてつないでいるかを聞く口(API キーの持ち主の名前。ブラウザの /aibow/auth/me にあたる)
+	mux.Handle("GET /aibow/auth/key", keys.MeHandler(c.KeysRequired()))
 	return sessions.Middleware(mux), keys, func() { life.Stop(); st.Close() }, nil
 }
 

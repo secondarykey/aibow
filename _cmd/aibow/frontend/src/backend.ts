@@ -34,7 +34,7 @@ export interface Backend {
   onModelLoaded(f: () => void): () => void;       // 起動時のモデルの読み込みが終わった(Go の ui.ModelsEventName)
   onWindowFocus(f: () => void): () => void;       // ウィンドウがアクティブに戻った(IME の対策。imeFocus.tsx)
   onReconnect(f: () => void): () => void;         // 知らせのつながりが切れて、つなぎ直した(ブラウザだけ。デスクトップでは来ない)
-  // ログイン(ブラウザだけ。0017 の 10-1)。デスクトップは利用者が1人なので、いつもログインが要らない形
+  // ログイン(ブラウザだけ。0017 の 10-1)。デスクトップは画面でログインしない(aibow-server につないでいれば、API キーの持ち主を返す)
   session(): Promise<Me>;                         // ログインが要るか・ログインしている人(Go の auth.Me)
   login(name: string, password: string): Promise<Me>; // 違えば reject(message が理由の文)
   logout(): Promise<void>;
@@ -53,6 +53,9 @@ export interface Backend {
 export interface Me {
   login: boolean;
   name: string; // ログインしている人の名前。していなければ空
+  // viaKey は、ログインではなく API キーで利用者が決まっている(デスクトップのアプリが aibow-server につないでいるとき。0017 の 10-4)。
+  // 名前は出すが、ログアウトは出さない(キーは settings.json に書いたもの)
+  viaKey?: boolean;
 }
 
 // isBrowser は、ブラウザ(aibow-server が配った画面)か(0016 の 16)。見た目の分かれ道にだけ使う(呼び出しは分けない)。

@@ -15,6 +15,21 @@ import * as engine$0 from "../engine/models.js";
 import * as models$0 from "../models/models.js";
 
 /**
+ * Account は、aibow-server に誰としてつないでいるか(Account の戻り値。0017 の 10-4)。
+ */
+export interface Account {
+    /**
+     * Login は、利用者として(API キーで)つないでいるか。アプリの中で動かすとき・キーの要らない aibow-server なら false(名前を出さない)
+     */
+    "login": boolean;
+
+    /**
+     * 利用者の名前(API キーの持ち主)
+     */
+    "name": string;
+}
+
+/**
  * ConversationDetail は会話1つと、その発言。
  */
 export interface ConversationDetail {
