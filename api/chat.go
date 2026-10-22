@@ -48,7 +48,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	logAccepted(req, p, len(s.turn) > 0, opt)
+	logAccepted(req, p, s.seat.Busy(), opt)
 
 	// 順番を待つ。待っている間につながりが切れたら、何も返さずに抜ける(列から外れる)
 	waitStart := time.Now()

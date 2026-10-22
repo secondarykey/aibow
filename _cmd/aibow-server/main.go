@@ -10,6 +10,9 @@
 // VRAM 8GB にモデルを2つ載せられず、1つの作業領域を画面の会話と API で取り合うと KV キャッシュを壊し合うため。
 // 画面のアプリが**アプリの中でモデルを動かしているときは、同時には使わない**(使うときはアプリを閉じる)。
 // 画面のアプリをここにつないでいるとき(settings.json の serverUrl。0015)は、アプリは GPU を使わないので同時に動かせる。
+//
+// ステップ9(0016)で、ブラウザの会話も持つようにした(browser.go)。会話の仕組みと保存(server.db)をここで動かし、
+// 画面用の口(/aibow/ui/)で出す。生成は同じ engine を使い、OpenAI 互換の口と同じ順番待ちの席を通す。
 package main
 
 import (
@@ -32,6 +35,7 @@ import (
 	"github.com/secondarykey/aibow/format"
 	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/models"
+	"github.com/secondarykey/aibow/ui"
 )
 
 func main() {
@@ -94,6 +98,13 @@ func run(c config, notices []string, cfgErr error, env *envReader) error {
 		PresencePenalty: float32(env.float("AIBOW_PRESENCE_PENALTY", 1.5)),
 		Think:           true,
 	}
+	// ブラウザの会話(0016)の、DB にまだ値が無いときの設定。画面のアプリと同じ環境変数と既定
+	initial := ui.InitialAppSettings(ui.InitialValues{
+		GPULayers:       cfg.GPULayers,
+		PresencePenalty: env.float("AIBOW_PRESENCE_PENALTY", 1.5),
+		HistoryTokens:   env.int("AIBOW_HISTORY_TOKENS", 8192),
+		ReplyTokens:     defaults.MaxTokens,
+	})
 	if nCtx <= 0 || port <= 0 || defaults.MaxTokens <= 0 {
 		env.errs = append(env.errs, fmt.Errorf("作業領域の大きさ(ctx)・ポート(port)・AIBOW_MAX_TOKENS は 1 以上にしてください: %d / %d / %d", nCtx, port, defaults.MaxTokens))
 	}
@@ -134,25 +145,36 @@ func run(c config, notices []string, cfgErr error, env *envReader) error {
 	log.Noticef("モデルを読み込みました: %s(%s・書式 %s・作業領域 %d トークン・GPU %d 層 / %d 層・%.1f 秒)",
 		info.ID, info.Desc, info.Format, info.NCtx, min(info.GPULayers, int(info.Layers)), info.Layers, info.LoadSec)
 
-	// 127.0.0.1 だけで待ち受ける(PC の外からはつなげない。外から使うこと・API キーは 0012 の「やらないこと」)
+	// 127.0.0.1 だけで待ち受ける(PC の外からはつなげない。外から使うこと・API キーは 0012 の「やらないこと」。ログインと一緒にステップ10)
 	addr := net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
+	srv := api.New(eng, mm, nCtx, defaults)
+	// ブラウザの会話(0016)。OpenAI 互換の口と同じ engine・同じ順番待ちの席で動かす
+	browser, closeBrowser, err := startBrowser(c, initial, eng, mm, nCtx, "http://"+addr, srv.Seat())
+	if err != nil {
+		return err
+	}
+	defer closeBrowser()
+
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return fmt.Errorf("%s で待ち受けられません。ほかのプログラムがこのポートを使っているなら、-port で変えてください: %w", addr, err)
 	}
 
-	// Ctrl+C で止める。リクエストの context をこれにつなぐので、生成中なら次のトークンで止まる
+	// Ctrl+C で止める。リクエストの context をこれにつなぐので、生成中なら次のトークンで止まる(ブラウザの知らせ(SSE)のつながりも閉じる)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
-	srv := api.New(eng, mm, nCtx, defaults)
 	// 表示だけのサーバーの設定(画面のモデルを扱う画面に出す。変えるのは server.json と起動し直し。0015 の 21)
 	srv.SetSettings(api.Settings{
 		Port: port, Model: c.Model, Lib: absPath(c.Lib), ModelsDir: absPath(c.ModelsDir), OllamaDir: catalog.OllamaDir,
 		ConfigFile: absPath(cmp.Or(c.File, filepath.Join(filepath.Dir(c.StatePath), configFileName))), ConfigFound: c.File != "",
 		StateFile: absPath(c.StatePath),
 	})
+	// 画面用の口(/aibow/ui/ の下)と、それ以外(OpenAI 互換の口と aibow 専用の口)。長いほうのパスが先に当たる
+	mux := http.NewServeMux()
+	mux.Handle("/aibow/ui/", browser)
+	mux.Handle("/", srv.Handler())
 	hs := &http.Server{
-		Handler:           srv.Handler(),
+		Handler:           mux,
 		ReadHeaderTimeout: 10 * time.Second,
 		// 書き込みの時間の上限(WriteTimeout)は付けない。返事の生成は数十秒〜数分かかることがあるため
 		BaseContext: func(net.Listener) context.Context { return ctx },
@@ -164,6 +186,7 @@ func run(c config, notices []string, cfgErr error, env *envReader) error {
 	// つなぐ側が書く値をそのまま出す(画面のアプリは /v1 なし、Cline などの OpenAI 互換のクライアントは /v1 付き)
 	log.Noticef("画面のアプリのつなぎ先(settings.json の serverUrl / AIBOW_SERVER_URL): http://%s", addr)
 	log.Noticef("OpenAI 互換のクライアント(Cline など)の Base URL: http://%s/v1", addr)
+	log.Noticef("ブラウザの画面用の口: http://%s/aibow/ui/(POST call/{メソッド}・GET events)", addr)
 
 	select {
 	case err := <-errc:

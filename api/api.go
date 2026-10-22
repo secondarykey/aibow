@@ -51,10 +51,9 @@ type Server struct {
 	// settings は、表示だけのサーバーの設定(GET /aibow/settings。8-4)。SetSettings で渡す
 	settings Settings
 
-	// turn は生成の順番。生成は作業領域が1つなので1つずつしかできない。
-	// 席が1つのチャンネルにして、空くまで待たせる(順番待ち。断らない)。
-	// 待っている間につながりが切れたら、列から外れる(select で r.Context().Done() も待つ)
-	turn chan struct{}
+	// seat は生成の順番待ちの席(seat.go)。待っている間につながりが切れたら、列から外れる。
+	// aibow-server の中のブラウザの会話も同じ席を使う(Seat で渡す。0016 の 11)
+	seat *Seat
 
 	now func() time.Time // テストで時刻を固定するため
 }
@@ -62,7 +61,7 @@ type Server struct {
 // New は API を作る。起動のときのモデルは gen にもう読み込んである前提(読み込みは _cmd/aibow-server が起動時に行う)。
 // mm が nil なら、リクエストの model ではモデルを切り替えない(0012 の形)。nCtx はサーバーの作業領域の大きさ(GET /models で知らせる)。
 func New(gen Generator, mm Models, nCtx int, d Defaults) *Server {
-	return &Server{gen: gen, models: mm, nCtx: nCtx, defaults: d, turn: make(chan struct{}, 1), now: time.Now}
+	return &Server{gen: gen, models: mm, nCtx: nCtx, defaults: d, seat: NewSeat(), now: time.Now}
 }
 
 // Handler は HTTP の道筋(パスと関数の対応)を返す。
@@ -101,20 +100,21 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, modelList{Object: "list", Data: s.modelObjects()})
 }
 
+// Seat は生成の順番待ちの席。aibow-server の中のブラウザの会話(ui)に渡し、同じ席で順番を待たせる(0016 の 11)。
+func (s *Server) Seat() *Seat { return s.seat }
+
 // takeTurn は順番待ちの席が空くまで待って取る。待っている間につながりが切れたら false(列から外れる)。
 // 取れたら、終わったときに releaseTurn で返す。
 func (s *Server) takeTurn(r *http.Request) bool {
 	start := time.Now()
-	select {
-	case s.turn <- struct{}{}:
+	if s.seat.Take(r.Context()) {
 		return true
-	case <-r.Context().Done():
-		log.Infof("順番を待っている間につながりが切れました(%.2f 秒待った)", time.Since(start).Seconds())
-		return false
 	}
+	log.Infof("順番を待っている間につながりが切れました(%.2f 秒待った)", time.Since(start).Seconds())
+	return false
 }
 
-func (s *Server) releaseTurn() { <-s.turn }
+func (s *Server) releaseTurn() { s.seat.Release() }
 
 // writeJSON は v を JSON で返す。
 func writeJSON(w http.ResponseWriter, status int, v any) {

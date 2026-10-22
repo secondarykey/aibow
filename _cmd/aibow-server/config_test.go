@@ -35,7 +35,7 @@ func TestResolveOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := config{Port: 9000, Ctx: 16384, Model: "env-model", Lib: "arg-lib", ModelsDir: "models",
-		File: path, StatePath: filepath.Join(dir, stateFileName)}
+		File: path, StatePath: filepath.Join(dir, stateFileName), DBPath: filepath.Join(dir, dbFileName)}
 	if c != want {
 		t.Errorf("設定:\n got  %+v\n want %+v", c, want)
 	}

@@ -34,6 +34,7 @@ import (
 	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/mcp/client"
 	"github.com/secondarykey/aibow/models"
+	"github.com/secondarykey/aibow/tool"
 )
 
 // 画面に知らせるイベントの名前。
@@ -52,9 +53,19 @@ type Notifier interface {
 	ModelLoaded()
 }
 
+// Seat は生成の順番待ちの席(本物は aibow-server の api.Seat)。
+// aibow-server の中のブラウザの会話は、OpenAI 互換の口(Cline など)と同じ席を通して生成とモデルの読み込みをする(0016 の 11)。
+type Seat interface {
+	// Take は席が空くまで待って取る。待っている間に ctx が終わったら false
+	Take(ctx context.Context) bool
+	// TryTake は、空いていれば取る(待たない)
+	TryTake() bool
+	Release()
+}
+
 // Options は New に渡すもの。
 type Options struct {
-	// Host はモデルを扱う係(NewDirectHost か NewRemoteHost)。起動に失敗したときは nil
+	// Host はモデルを扱う係(NewDirectHost・NewRemoteHost・NewServerHost)。起動に失敗したときは nil
 	Host  ModelHost
 	Store aibow.Store
 	App   aibow.AppSettings
@@ -71,7 +82,18 @@ type Options struct {
 	StartupErr error
 	// Notify は画面に知らせる係
 	Notify Notifier
+
+	// Seat は生成の順番待ちの席。nil なら待たない(デスクトップのアプリ。モデルを使うのはこのアプリだけか、待つのは aibow-server の側)
+	Seat Seat
+	// WithoutTools は、会話でツールを使わない(aibow-server の中のブラウザの会話。0016 の 7)。
+	// Local を渡さないだけだと、会話の仕組みは組み込みのツールを直接使うので、空のツールの係を渡す
+	WithoutTools bool
 }
+
+// noTools は、ツールを1つも出さない係(aibow.LocalTools)。
+type noTools struct{}
+
+func (noTools) Tools(string) []tool.Tool { return nil }
 
 type Service struct {
 	// host はモデルを扱う係(直接か aibow-server 越し。modelhost.go)。起動に失敗したときは nil
@@ -106,6 +128,8 @@ type Service struct {
 
 	// notify は画面に知らせる係(Wails のイベントか SSE)
 	notify Notifier
+	// seat は生成の順番待ちの席(nil なら待たない)
+	seat Seat
 
 	// quit はアプリの終了時にキャンセルされる。
 	// Wails は呼び出し中のメソッドの ctx を、アプリの終了ではキャンセルしない。
@@ -118,7 +142,7 @@ type Service struct {
 func New(o Options) (*Service, Lifecycle) {
 	quit, cancel := context.WithCancel(context.Background())
 	s := &Service{
-		host: o.Host, app: o.App, initial: o.Initial, notices: o.Notices, startupErr: o.StartupErr, notify: o.Notify,
+		host: o.Host, app: o.App, initial: o.Initial, notices: o.Notices, startupErr: o.StartupErr, notify: o.Notify, seat: o.Seat,
 		quit: quit, cancelQuit: cancel, mcp: o.MCP, prefs: o.Prefs, version: o.Version,
 	}
 	if d, ok := o.Host.(*DirectHost); ok {
@@ -130,7 +154,11 @@ func New(o Options) (*Service, Lifecycle) {
 		// 会話の仕組みから見ると、生成の口の相手が手元の engine か aibow-server かが変わるだけ(0015)
 		s.convs = aibow.NewConversations(st, o.Host.generator(), app)
 		// 組み込みのツールは aibow の中の自作の MCP サーバー越しに呼ぶ(0007 の 5-4)
-		s.convs.SetLocalTools(o.Local)
+		if o.WithoutTools {
+			s.convs.SetLocalTools(noTools{})
+		} else if o.Local != nil { // nil の *Local を interface に入れると nil に見えなくなる(MCP と同じ)
+			s.convs.SetLocalTools(o.Local)
+		}
 		if o.MCP != nil { // nil の *Manager を interface に入れると nil に見えなくなるので、確かめてから渡す
 			s.convs.SetRemoteTools(o.MCP)
 		}
@@ -246,9 +274,17 @@ func (s *Service) Models() ModelsResult {
 //
 // 読み込めるモデルは1つ(VRAM に1つしか載らない)。画面は入力欄の下でモデルを選んだとき、会話のモデルを変えてからこれを呼ぶ。
 // 会話を開いただけでは読み直さず、モデルの違う会話に送信するときに読み直す(Conversations.ensureWorkspace。0014 の 3)。
-func (s *Service) SwitchModel(id string) (*engine.ModelInfo, error) {
+//
+// 順番待ちの席があれば(aibow-server の中)、席を取ってから読み込む(生成中のほかの人の作業領域を、途中で入れ替えないように)。
+func (s *Service) SwitchModel(ctx context.Context, id string) (*engine.ModelInfo, error) {
 	if s.startupErr != nil {
 		return nil, s.startupErr
+	}
+	if s.seat != nil {
+		if !s.seat.Take(ctx) {
+			return nil, ctx.Err()
+		}
+		defer s.seat.Release()
 	}
 	return s.loadModel(id)
 }
@@ -882,6 +918,15 @@ func (s *Service) run(ctx context.Context, id uuid.UUID, f func(ctx context.Cont
 	stop := context.AfterFunc(s.quit, cancel)
 	defer stop()
 
+	// 順番待ちの席があれば(aibow-server の中)、送信の全体(モデルの読み直し・要約・返事)の間、席を持つ。
+	// 生成1回ごとに取り直すと、その間に Cline などがモデルを入れ替えてしまうため
+	if !s.takeSeat(ctx, id, emit) {
+		return
+	}
+	if s.seat != nil {
+		defer s.seat.Release()
+	}
+
 	f(ctx, func(ev aibow.ChatEvent) {
 		switch ev.Type {
 		case "summarizing":
@@ -906,6 +951,22 @@ func (s *Service) run(ctx context.Context, id uuid.UUID, f func(ctx context.Cont
 		}
 		emit(ev)
 	})
+}
+
+// takeSeat は順番待ちの席を取る(席が無ければ何もしない)。空いていなければ「待っています」と知らせてから待つ。
+// 待っている間に止められたら(停止ボタン・ブラウザを閉じた)、done を送って false。
+func (s *Service) takeSeat(ctx context.Context, id uuid.UUID, emit func(aibow.ChatEvent)) bool {
+	if s.seat == nil || s.seat.TryTake() {
+		return true
+	}
+	log.Infof("会話 %s: ほかの生成(Cline など)が終わるのを待っています", id)
+	emit(aibow.ChatEvent{ConversationID: id, Type: "notice", Text: "ほかの生成が終わるのを待っています…"})
+	if s.seat.Take(ctx) {
+		return true
+	}
+	log.Infof("会話 %s: 順番を待っている間に止められました", id)
+	emit(aibow.ChatEvent{ConversationID: id, Type: "done"})
+	return false
 }
 
 func tokPerSec(st engine.GenerateStats) float64 {

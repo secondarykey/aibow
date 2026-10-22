@@ -15,6 +15,7 @@ import (
 	"github.com/secondarykey/aibow/format"
 	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/models"
+	"github.com/secondarykey/aibow/ui"
 )
 
 // 設定の誤りはログで止めず、まとめて error で返す。
@@ -87,9 +88,6 @@ type appConfig struct {
 	notices []string
 }
 
-// defaultSystemPrompt は新しい会話の既定のシステムプロンプト(画面で変えられる)。
-const defaultSystemPrompt = "あなたは親切なアシスタントです。日本語で簡潔に答えてください。"
-
 func loadConfig() (appConfig, error) {
 	var env envReader
 	c := appConfig{
@@ -107,23 +105,13 @@ func loadConfig() (appConfig, error) {
 		windowPath:   env.str("AIBOW_WINDOW", configFile("window.json")),
 		placesPath:   env.str("AIBOW_MODEL_PLACES", configFile("model-places.json")),
 		initialModel: os.Getenv("AIBOW_MODEL"),
-		app: aibow.AppSettings{
-			Workspace: aibow.WorkspaceSettings{
-				GPULayers: env.int("AIBOW_GPU_LAYERS", 999), // 999 = 全部 GPU に載せる
-			},
-			// 画面の設定。質問を右上に出すのは初めはオン(長い返事を読んでいても、何を聞いたかが見えるように)。明るさは OS の設定に合わせる
-			Display: aibow.DisplaySettings{PinQuestion: true, Theme: aibow.ThemeSystem},
-			Defaults: aibow.ConversationSettings{
-				System:          defaultSystemPrompt,
-				Temperature:     0.7,
-				Think:           true,
-				PresencePenalty: env.float("AIBOW_PRESENCE_PENALTY", 1.5),
-				Compact:         aibow.CompactSummary,
-				// 会話の上限・返事の上限は新しい会話の既定(会話を作るときに写す。0009)
-				HistoryTokens: env.int("AIBOW_HISTORY_TOKENS", 8192),
-				ReplyTokens:   env.int("AIBOW_MAX_TOKENS", 8192),
-			},
-		},
+		// 既定のシステムプロンプトなど、環境変数で変えない初期値は ui にある(aibow-server のブラウザの会話と同じ既定にするため)
+		app: ui.InitialAppSettings(ui.InitialValues{
+			GPULayers:       env.int("AIBOW_GPU_LAYERS", 999), // 999 = 全部 GPU に載せる
+			PresencePenalty: env.float("AIBOW_PRESENCE_PENALTY", 1.5),
+			HistoryTokens:   env.int("AIBOW_HISTORY_TOKENS", 8192),
+			ReplyTokens:     env.int("AIBOW_MAX_TOKENS", 8192),
+		}),
 	}
 	// settings.json は MCP のサーバーとつなぎ先を書く場所。読めなくても起動は止めない(MCP は使わない。つなぎ先は環境変数を使う)
 	c.settings, c.settingsErr = aibow.LoadSettingsFile(c.settingsPath)

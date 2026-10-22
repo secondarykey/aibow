@@ -6,6 +6,8 @@ package main
 //
 //	server.json         … 手で書く設定(ポート・作業領域・最初のモデル・llama.cpp とモデルの場所)。aibow-server は書かない
 //	server-models.json  … aibow-server が書く値(モデルごとの GPU の層数など)。手で書かなくてよい
+//	server.db           … ブラウザの会話(SQLite。ステップ9。0016 の 13)。画面のアプリの aibow.db とは別のファイル
+//	                      (同じ PC で画面のアプリと aibow-server を同時に動かすため)
 //
 // 置き場所はアプリと同じ %APPDATA%\aibow\(-config で手で書くほうのファイルを指せば、書くほうのファイルもその隣に置く)。
 // アプリの settings.json と分けているのは、サーバーの PC とアプリの PC が別になりうるため(ステップ10)。
@@ -29,6 +31,7 @@ import (
 const (
 	configFileName = "server.json"
 	stateFileName  = "server-models.json"
+	dbFileName     = "server.db"
 )
 
 // 起動の引数と環境変数の既定(0012 の未決事項をユーザーと決めた。2026-10-19)。
@@ -59,9 +62,11 @@ type config struct {
 	ModelsDir string
 	LogLevel  string // 設定ファイルの logLevel(空なら -debug か既定)
 
-	// File は読んだ設定ファイル(無ければ空)。StatePath は aibow-server が書くファイル(server-models.json)
+	// File は読んだ設定ファイル(無ければ空)。StatePath は aibow-server が書くファイル(server-models.json)、
+	// DBPath はブラウザの会話の DB(server.db)。どちらも設定ファイルの隣
 	File      string
 	StatePath string
+	DBPath    string
 }
 
 // flags は起動の引数。書かれたかどうかは set で見る(書かれていない引数は、設定ファイル・環境変数より弱いため)。
@@ -108,7 +113,7 @@ func resolve(fs *flag.FlagSet, f *flags, env *envReader) (config, []string, erro
 		return config{}, nil, fmt.Errorf("-config の設定ファイルが見つかりません: %s", absPath(path))
 	}
 
-	c := config{StatePath: filepath.Join(filepath.Dir(path), stateFileName)}
+	c := config{StatePath: filepath.Join(filepath.Dir(path), stateFileName), DBPath: filepath.Join(filepath.Dir(path), dbFileName)}
 	if found {
 		c.File = path
 	}

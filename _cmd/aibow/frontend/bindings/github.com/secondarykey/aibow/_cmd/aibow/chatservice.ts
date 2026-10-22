@@ -320,6 +320,8 @@ export function StopSummary(): $CancellablePromise<void> {
  * 
  * 読み込めるモデルは1つ(VRAM に1つしか載らない)。画面は入力欄の下でモデルを選んだとき、会話のモデルを変えてからこれを呼ぶ。
  * 会話を開いただけでは読み直さず、モデルの違う会話に送信するときに読み直す(Conversations.ensureWorkspace。0014 の 3)。
+ * 
+ * 順番待ちの席があれば(aibow-server の中)、席を取ってから読み込む(生成中のほかの人の作業領域を、途中で入れ替えないように)。
  */
 export function SwitchModel(id: string): $CancellablePromise<engine$0.ModelInfo | null> {
     return $Call.ByID(1702876432, id);
