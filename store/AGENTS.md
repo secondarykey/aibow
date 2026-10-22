@@ -6,7 +6,7 @@
 | ファイル | 役割 |
 |---|---|
 | `sqlite.go` | `Store` の SQLite 実装(`modernc.org/sqlite`)。マイグレーションもここ |
-| `sqlite_test.go` | 一時フォルダの DB を使ったテスト(マイグレーションを含む) |
+| `sqlite_test.go` | 一時フォルダの DB を使ったテスト(マイグレーション・持ち主で分かれることを含む) |
 
 - ドライバーは `modernc.org/sqlite`(cgo 不要)。標準の `database/sql` 経由で使う。このドライバーを import するのはこのパッケージだけ。
   C コンパイラなし(`CGO_ENABLED=0`)でビルドできる状態を保つ
@@ -19,6 +19,12 @@
   - 版 5: `profiles`(設定のプロファイル。値 `settings` と決まり `rules` は JSON、しまった `archived`)と、`conversations` に `profile_id`(外部キー。
     `ON DELETE` を付けないので、使っている会話があるプロファイルは消せない。今ある会話は NULL で、起動したときに `PrepareProfiles` が紐づける)。
     [_docs/features/0014-profiles.md](../_docs/features/0014-profiles.md)
+  - 版 6: 会話の持ち主(0017 の 10-0)。`conversations` と `profiles` に `owner`(利用者の ID)、人ごとの設定の表 `user_settings`(持ち主 + キー → 値)。
+    今ある会話・プロファイルと、`app_settings` の `default_profile`・`pin_question`・`theme` は、ログインなしの形の利用者(`aibow.LocalUser`)のものにする(設定は `user_settings` に移す)。
+    利用者の表はまだ無いので `owner` は外部キーにしない。発言と要約は会話を通して持ち主が決まるので列を持たない
+- 持ち主:会話・発言・要約・プロファイル・人ごとの設定は、`ctx` の利用者(`aibow.UserOf`)の行だけを読み書きする。ほかの人の行は無いものとして扱う(`ErrNotFound` など)。
+  利用者の無い `ctx` は `aibow.ErrNoUser` で断る。`OneUser` を呼んだ DB(デスクトップのアプリの aibow.db)だけは、`aibow.LocalUser` のものとして扱う。
+  アプリ全体の設定(`app_settings`)は利用者によらない。仕組みは [_docs/conversations.md](../_docs/conversations.md) の「持ち主」
 - ID(`uuid.NewV7()`)は TEXT で入れる。発言の順番は ID の並びで決める(順番用の列は持たない)
 - DB ファイルの場所はこのパッケージでは決めない。`_cmd/aibow/config.go` が `AIBOW_DB`(既定は `%APPDATA%\aibow\aibow.db`)から決めて `Open` に渡す
 - 試すときは `AIBOW_DB` を一時フォルダのファイルにする(ユーザーの DB に試しの会話を混ぜない)

@@ -197,6 +197,9 @@ Cline など ──HTTP──→ /v1/ など → api.Server ──────�
 | 停止 | Promise の `cancel()` → ctx が止まる | fetch を止める → つながりが切れて、リクエストの ctx が止まる |
 
 - 呼び出しは `reflect` で `ui.Service` のメソッドを名前から探す(Wails のバインディングも、実行のときは同じことをしている)。最初の引数が `context.Context` なら、リクエストの ctx を渡す
+- **誰の呼び出しか**は、aibow-server が `ui.Handler` に渡す係(`ui.Who`。`browser.go` の `who`)で決め、メソッドに渡す ctx に入れる(`aibow.WithUser`。0017 の 12)。
+  会話・プロファイル・表示の設定は、その人のものだけが見える([conversations.md](conversations.md) の「持ち主」)。決められなければ 401。
+  今(0017 の 10-0)はログインが無いので、いつもログインなしの形の利用者(`aibow.LocalUser`)。server.db の会話は全部その人のもの
 - 呼べるのは、ブラウザで使うメソッドだけ(`ui/web.go` の `browserMethods`)。ツールと MCP・確認の答え(ブラウザではツールを使わない)と、
   GPU の層数・降ろす・置き場所(サーバーの PC の事情)は口に出さない(0016 の 6・7)
 - 送信(`Send`・`Regenerate`・`Resend`・`Compact`)は生成が終わるまで返らない長い呼び出し。経過は SSE の `chat` で届き、終わりは `done` で判定する(戻り値とは別の道で届くので。Wails と同じ)。

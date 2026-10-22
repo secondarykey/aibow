@@ -10,7 +10,8 @@
 |---|---|
 | `conversation.go` | 会話の仕組み(`Conversations`)。発言の保存、タイトルの自動付与と名前の変更、生成、答えが出なかった回の理由の文、生成は同時に1つ。ツールを使うループは `agent.go`([tools.md](tools.md)) |
 | `store.go` | 保存先の約束(`Store` interface)と、会話・発言・要約の型(`Conversation` / `StoredMessage` / `ReplyStats` / `ToolResult` / `Compaction`) |
-| `appsettings.go` | アプリの設定と新しい会話の既定(`app_settings` の読み書き)。モデルの読み込みに関わる設定は `WorkspaceSettings` にまとめる。新しい会話の既定は、プロファイルがあればその値を読む。前の置き場(`conversation_defaults`、もっと古い `history_tokens` / `reply_tokens`・`n_ctx`)は、プロファイル「既定」に引き継ぐためだけに読む。環境変数は DB に値が無いときの初期値 |
+| `user.go` | 会話の持ち主(利用者)を `ctx` で運ぶ仕組み(`WithUser` / `UserOf`)と、ログインなしの形の利用者 `LocalUser`(0017)。下の「持ち主」 |
+| `appsettings.go` | アプリ全体の設定(`app_settings`)・人ごとの設定(`user_settings`)と新しい会話の既定の読み書き。モデルの読み込みに関わる設定は `WorkspaceSettings` にまとめる。新しい会話の既定は、プロファイルがあればその値を読む。前の置き場(`conversation_defaults`、もっと古い `history_tokens` / `reply_tokens`・`n_ctx`)は、プロファイル「既定」に引き継ぐためだけに読む。環境変数は DB に値が無いときの初期値 |
 | `profile.go` | 設定のプロファイル(`Profile`。0014)。値(`ProfileValues`)、起動したときの引き継ぎ(`PrepareProfiles`)、新しい会話で最初に選ばれるプロファイルの値の変更(`SetDefaults` / `SetDefaultGroup` が使う) |
 | `rules.go` | プロファイルの決まり(`ProfileRules`:固定・使えない)の判定。使うときの設定に当てる(`withProfile`)・保存のときに断る(`checkRules`)・固定した項目は保存してある値を残す(`keepStored`) |
 | `memstore_test.go` | テスト用のメモリ上の保存先 |
@@ -20,6 +21,22 @@
 | `model_test.go` | 会話ごとのモデル(送信の前に読み直す・モデルを写す)とモデルごとの GPU の層数のテスト。モデル不要 |
 
 `Store` の SQLite 実装は [store/AGENTS.md](../store/AGENTS.md) を参照。
+
+## 持ち主(0017)
+
+会話・プロファイル・人ごとの設定は「その人のもの」。仕様は [features/0017-users.md](features/0017-users.md)(10-0 で下ごしらえまで。ログインは 10-1)。
+
+- **誰のものかは `ctx` で運ぶ**。`Store` のメソッドはどれも最初に `ctx` を受け取り、`ctx` の利用者(`UserOf`)のものだけを読み書きする。
+  ほかの人の会話の ID を渡されても、無い会話と同じに扱う(`ErrNotFound` など。あることも見せない)。
+  会話の仕組み(`Conversations`)と画面向けの処理(`ui.Service`)のメソッドも `ctx` を受け取り、そのまま渡すだけで、利用者を作ったり替えたりしない
+- **利用者を `ctx` に入れる(`WithUser`)のは、呼ぶ側の一番外だけ**:aibow-server の画面用の口(`ui.Handler` に渡す `who`。今はいつも `LocalUser`)と、
+  起動のときの引き継ぎ(`PrepareProfiles`・`FillMissingLimits`・`FillMissingModels`。利用者を分ける前の会話なので `LocalUser` として行う)。
+  画面から送られてきた値では決めない(ほかの人のふりができてしまうため)
+- 利用者の入っていない `ctx` は、保存先が断る(`ErrNoUser`)。デスクトップのアプリの手元の DB(aibow.db)だけは、使うのがその PC の1人なので、
+  利用者の無い `ctx` を `LocalUser` のものとして扱う(`store.SQLite.OneUser`。Wails から来る呼び出しには印が無いため)
+- **`LocalUser`** はログインなしの形の利用者。決まった ID(DB の作り変えの SQL にも同じ値を書く)。利用者を分ける前の会話・プロファイル・表示の設定は、この人のもの(DB の版 6)
+- 停止ボタンで `ctx` が止まっても、そこまでの返事・要約は保存し、メーターも出す。保存とそのあとの読み直しには、止める合図だけを外した `ctx`(`context.WithoutCancel`)を渡す
+  (利用者は残る。保存先が HTTP の向こうになっても(0017 の 11)、止めたのは生成で保存ではないため)
 
 ## 履歴の持ち方
 
@@ -49,16 +66,17 @@
 - 画面では、既定は設定の画面の「会話」のプロファイル、会話ごとの設定は一覧の各行の歯車で開く会話の設定の画面で変える([features/0009-conversation-settings.md](features/0009-conversation-settings.md))
 - 会話の上限・返事の上限(`history_tokens` / `reply_tokens`)も会話ごとの設定(0009)。会話を作るときに既定から写すので、既定を変えても今ある会話は変わらない。
   この機能より前に作った会話(0 のもの)には、起動したときに今の既定の値を写して保存する(`FillMissingLimits`)。作業領域の作り直しは [compact.md](compact.md)
-- アプリの設定(GPU の層数・最後に使ったモデル = `WorkspaceSettings`)も `app_settings`。会話の設定に無いものだけを持つ。
+- アプリの設定(GPU の層数・最後に使ったモデル = `WorkspaceSettings`)は `app_settings`(アプリ全体。利用者によらない)。会話の設定に無いものだけを持つ。
   GPU の層数はモデルごと(`model_gpu_layers`。モデルの ID → 層の数。`LayersFor`)で、まだ覚えていないモデルは全体の値(`gpu_layers`)。
   前の版の DB は、今の層の数を最後に使ったモデルの値として覚える(`LoadAppSettings`。0014 の 4・10)
-- 画面の設定(`DisplaySettings`。「スクロールしたら、質問を右上に出しておく」= `pin_question` と、明るさ = `theme`(`system` / `light` / `dark`。知らない値は `system`))も `app_settings`。会話によらずアプリ全体で1つで、
+- 画面の設定(`DisplaySettings`。「スクロールしたら、質問を右上に出しておく」= `pin_question` と、明るさ = `theme`(`system` / `light` / `dark`。知らない値は `system`))は `user_settings`(人ごと。0017 の 6)。会話によらず人ごとに1つで、
   会話の設定にもプロファイルにも入れない(2026-10-19、ユーザーの指示)。生成に関わらないので、変えてもモデルや作業領域は読み直さない(`SetDisplay`。変わった項目だけ保存してログに残す)。
-  初めは質問を右上に出す・明るさはシステム(`config.go`。環境変数は作っていない)
+  画面向けの処理はそのつど `ctx` の利用者の値を読む(`LoadDisplay`)。初めは質問を右上に出す・明るさはシステム(`ui.InitialDisplay`。環境変数は作っていない)
 - **モデルは会話ごと**(`model`。モデルの ID。0014 の 3)。送信・作り直す・今すぐ要約の前に、読み込んでいるモデルと違えば読み込む(`ensureWorkspace` → `ensureModel`。
   読み込むのはアプリが渡す係 `ModelLoader`。目録とモデルごとの層の数はアプリが持つ)。会話を開いただけでは読み直さない。読み直したら `model_loading` / `model` のイベントで知らせる。
   新しい会話はプロファイルのモデルを写す(プロファイルにモデルが無ければ読み込んでいるモデル)。この機能より前の会話には、起動したときに最後に使ったモデルを写す(`FillMissingModels`)
-- 新しい会話で最初に選ばれるプロファイルの ID も `app_settings`(`default_profile`)
+- 新しい会話で最初に選ばれるプロファイルの ID は `user_settings`(`default_profile`。プロファイルが人ごとなので)。覚えておかずに、そのつど保存先から読む(`DefaultProfile`。
+  同じ人がブラウザとアプリの両方から変えても食い違わないように)
 
 ## プロファイル(0014)
 

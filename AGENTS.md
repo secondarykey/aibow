@@ -42,7 +42,7 @@ OpenAI 互換のクライアント(Cline など)⇄ HTTP(127.0.0.1)⇄ aibow-ser
 
 | 場所 | 中身 |
 |---|---|
-| ルート(`aibow` パッケージ。モジュール名は `github.com/secondarykey/aibow`) | 会話の仕組み(会話・エージェントループ・compact・設定・保存の約束 `Store`・生成の約束 `Generator`)。Wails を import しないライブラリ |
+| ルート(`aibow` パッケージ。モジュール名は `github.com/secondarykey/aibow`) | 会話の仕組み(会話・エージェントループ・compact・設定・保存の約束 `Store`・生成の約束 `Generator`・会話の持ち主を `ctx` で運ぶ `WithUser`。0017)。Wails を import しないライブラリ |
 | `engine/` | llama.cpp で生成する部分(`engine` パッケージ。モデルの読み込み・生成・トークン数・KV キャッシュ)。`format` と `models` を使い、会話の仕組みは知らない(生成だけを使えるように。0012 の 6-0) |
 | `format/` | 書式(`format` パッケージ。チャットテンプレートと、会話の仕組みとエンジンの間で受け渡す形 `Message` / `Prompt` / `Output` / `ToolCall`)。`tool` だけを使う |
 | `models/` | 使えるモデルの一覧(`models` パッケージ。GGUF と Ollama の目録と、画面で足した置き場所。ステップ8)と、GGUF の先頭からモデルの種類だけを読む `Arch`。何にも依存しない |
