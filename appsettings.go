@@ -14,6 +14,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+
+	"github.com/secondarykey/aibow/models"
 )
 
 // app_settings のキー(アプリ全体)
@@ -107,6 +109,22 @@ type AppSettings struct {
 // 保存されていない項目は initial の値のまま(環境変数から作った初期値)。
 // 画面で一度変えると保存先に入るので、以降は環境変数より保存した値が優先される。
 //
+// LayersByID は、モデルごとの層の数のキーを、今の形のモデルの ID にする(models.IDOf)。
+// 以前の形と今の形の両方があれば、今の形の値を使う(読み替えたあとに覚え直した値のほうが新しいため)。nil なら空のマップ。
+func LayersByID(layers map[string]int) map[string]int {
+	out := make(map[string]int, len(layers))
+	for id, n := range layers {
+		if now := models.IDOf(id); now != id {
+			if _, ok := layers[now]; ok {
+				continue
+			}
+			id = now
+		}
+		out[id] = n
+	}
+	return out
+}
+
 // notes は、古い版の設定を引き継いだときのお知らせ(ログに出す)。
 //
 // 新しい会話の既定の会話の上限・返事の上限は、古い置き場(history_tokens / reply_tokens、もっと古い n_ctx)→
@@ -145,9 +163,10 @@ func LoadAppSettings(ctx context.Context, s Store, initial AppSettings) (a AppSe
 	if a.Display, err = LoadDisplay(ctx, s, initial.Display); err != nil {
 		return initial, nil, err
 	}
-	if a.Workspace.ModelGPULayers == nil {
-		a.Workspace.ModelGPULayers = map[string]int{}
-	}
+	// 以前の形のモデルの ID(file:<パス>)は、今の形(file:<ファイル名>)に読み替える(0018 の決定事項 15。DB は書き換えない。
+	// 次に層の数を覚えたときに、今の形で書かれる)
+	a.Workspace.Model = models.IDOf(a.Workspace.Model)
+	a.Workspace.ModelGPULayers = LayersByID(a.Workspace.ModelGPULayers)
 
 	if !found[SettingHistoryTokens] && !found[SettingReplyTokens] {
 		note, err := migrateNCtx(ctx, s, &a.Defaults)

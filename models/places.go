@@ -193,10 +193,11 @@ func checkGGUF(path string) error {
 }
 
 // dedup は、同じファイル(絶対パスで比べる)を2回出さない。先に見つかったほうを残す。
-// models フォルダの ID は相対パスのまま("file:models\…")なので、ID ではなく場所で比べる。
-func dedup(list []Entry) []Entry {
+// 違うファイルでも ID(ファイル名)が同じなら、先に見つかったほうだけを残し、後ろのほうは hidden に入れる(0018 の決定事項 15)。
+func dedup(list []Entry) (out, hidden []Entry) {
 	seen := map[string]bool{}
-	out := list[:0]
+	ids := map[string]bool{}
+	out = list[:0]
 	for _, e := range list {
 		key := e.Path
 		if a, err := filepath.Abs(e.Path); err == nil {
@@ -209,9 +210,38 @@ func dedup(list []Entry) []Entry {
 			continue
 		}
 		seen[key] = true
+		if ids[e.ID] {
+			hidden = append(hidden, e)
+			continue
+		}
+		ids[e.ID] = true
 		out = append(out, e)
 	}
-	return out
+	return out, hidden
+}
+
+// HiddenWatch は、同じ名前で隠したモデルが変わったときだけ知らせる係(MissingWatch と同じ考え方。ログを出すのは使う側)。
+type HiddenWatch struct {
+	mu   sync.Mutex
+	seen map[string]bool
+}
+
+// Check は、前に調べたときから新しく隠したモデルを返す。
+func (w *HiddenWatch) Check(c Catalog) []Entry {
+	var fresh []Entry
+	now := map[string]bool{}
+	for _, e := range c.Hidden() {
+		now[e.Path] = true
+		w.mu.Lock()
+		if !w.seen[e.Path] {
+			fresh = append(fresh, e)
+		}
+		w.mu.Unlock()
+	}
+	w.mu.Lock()
+	w.seen = now
+	w.mu.Unlock()
+	return fresh
 }
 
 // samePath は、2つのパスが同じ場所か(Windows は大文字と小文字を区別しない)。

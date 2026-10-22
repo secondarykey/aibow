@@ -36,6 +36,7 @@ type ServerEngine interface {
 
 // ServerModels は、aibow-server のモデルの係(_cmd/aibow-server の modelManager。api.Models と同じもの)のうち、ServerHost が使うもの。
 type ServerModels interface {
+	// List は使えるモデルの一覧(管理者が使えないようにしたモデルは出さない)
 	List() []models.Entry
 	Find(name string) (models.Entry, error)
 	// Load は、そのモデルにサーバーの PC で覚えた GPU の層数で読み込む
@@ -49,6 +50,9 @@ type ServerModels interface {
 	Places() []models.Place
 	AddPlace(path string) error
 	RemovePlace(path string) error
+	// ListAll は、使えないようにしたモデルも含めた一覧(印 Disabled 付き)。SetEnabled は使えるかを変えて覚える(使えなくした読み込み中のモデルは降ろす)
+	ListAll() []models.Entry
+	SetEnabled(id string, enabled bool) (bool, error)
 }
 
 // ServerHost は、aibow-server の engine でブラウザの会話のモデルを扱う係。
@@ -95,14 +99,15 @@ func (h *ServerHost) server() string { return h.url }
 // list は、サーバーの PC の置き方(出どころ・置き場所)と層の数を外した一覧(RemoteHost と同じ)。
 // サーバーの PC の事情を見てよい人には、外さずに層の数も付ける(直接の形と同じ。0018 の決定事項 8)。
 func (h *ServerHost) list(ctx context.Context) (hostModels, error) {
-	l := h.models.List()
 	if managesPC(ctx) {
+		l := h.models.ListAll() // 使えないようにしたモデルも、印を付けて見せる(戻せるように)
 		layers := map[string]int{}
 		for _, m := range l {
 			layers[m.ID] = h.models.GPULayers(m.ID)
 		}
 		return hostModels{models: l, current: h.current(), gpu: h.models.HasGPU(), layers: layers, manage: true}, nil
 	}
+	l := h.models.List()
 	for i := range l {
 		l[i].Origin, l[i].Place = "", ""
 	}
@@ -183,6 +188,14 @@ func (h *ServerHost) removePlace(ctx context.Context, path string) ([]models.Pla
 		return nil, err
 	}
 	return h.models.Places(), nil
+}
+
+func (h *ServerHost) setModelEnabled(ctx context.Context, id string, enabled bool) error {
+	if !managesPC(ctx) {
+		return errNotManager("使えるモデル")
+	}
+	_, err := h.models.SetEnabled(id, enabled) // 席は Service が持っている(使えなくしたモデルを降ろすことがあるため)
+	return err
 }
 
 // errNotManager は、管理者でない人がサーバーの PC の事情を変えようとしたときのエラー。

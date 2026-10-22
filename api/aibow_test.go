@@ -26,6 +26,8 @@ type fakeModels struct {
 	layers map[string]int
 	loads  []string // 読み込んだモデルの ID(順番)
 	places []string // 足した置き場所
+	// disabled は、管理者が使えないようにしたモデル(Find が DisabledError を返す。0018 の決定事項 13)
+	disabled map[string]bool
 }
 
 func newFakeModels(g *fakeGen) *fakeModels {
@@ -40,6 +42,9 @@ func (m *fakeModels) List() []models.Entry { return m.list }
 func (m *fakeModels) Find(name string) (models.Entry, error) {
 	for _, e := range m.list {
 		if e.ID == name || e.Name == name {
+			if m.disabled[e.ID] {
+				return models.Entry{}, &models.DisabledError{ID: e.ID}
+			}
 			return e, nil
 		}
 	}
@@ -170,6 +175,30 @@ func TestChatSwitchesModel(t *testing.T) {
 	}
 	if want := []string{"ollama:qwen3.5:9b", "ollama:qwen3.5:4b"}; !slices.Equal(m.loads, want) {
 		t.Errorf("読み込んだモデル %v, want %v", m.loads, want)
+	}
+}
+
+// 管理者が使えないようにしたモデルは、読み込み中のモデルで代わりに答えず 404 で断る。
+// OpenAI 互換の口は知らないモデルと同じ model_not_found、aibow 専用の /models/load は model_disabled(0018 の決定事項 13)
+func TestDisabledModel(t *testing.T) {
+	g := &fakeGen{nCtx: 100, tokens: 1, content: []string{"x"}, stop: "eos"}
+	m := newFakeModels(g)
+	m.disabled = map[string]bool{"ollama:qwen3.5:9b": true}
+	ts := newModelsServer(g, m)
+	defer ts.Close()
+
+	res := post(t, ts.URL, `{"model":"qwen3.5:9b","messages":[{"role":"user","content":"hi"}]}`)
+	got := decode[errorBody](t, res)
+	if res.StatusCode != http.StatusNotFound || got.Error.Code != "model_not_found" || !strings.Contains(got.Error.Message, "管理者") {
+		t.Errorf("チャット: %d %+v", res.StatusCode, got)
+	}
+	res = postPath(t, ts.URL, "/models/load", `{"model":"qwen3.5:9b"}`)
+	got = decode[errorBody](t, res)
+	if res.StatusCode != http.StatusNotFound || got.Error.Code != "model_disabled" {
+		t.Errorf("/models/load: %d %+v", res.StatusCode, got)
+	}
+	if len(m.loads) != 0 {
+		t.Errorf("読み込んでしまった: %v", m.loads)
 	}
 }
 

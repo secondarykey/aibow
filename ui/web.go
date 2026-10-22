@@ -57,7 +57,7 @@ var browserMethods = []string{
 
 // pcMethods は、サーバーの PC の事情を変えるメソッド(モデルのタブ。0015 の 8-4)。管理者とサーバーの PC の上から開いた画面だけが呼べる
 // (Caller.ManagesPC。0018 の決定事項 8)。ほかの人は 403。
-var pcMethods = []string{"UnloadModel", "SetModelGPULayers", "ModelPlaces", "AddModelPlace", "RemoveModelPlace"}
+var pcMethods = []string{"UnloadModel", "SetModelGPULayers", "ModelPlaces", "AddModelPlace", "RemoveModelPlace", "SetModelEnabled"}
 
 // Who は、リクエストを送ってきた人を決める係(aibow-server が渡す)。決められなければエラー(401 で断る)。
 type Who func(r *http.Request) (Caller, error)

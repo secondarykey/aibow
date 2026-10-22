@@ -6,7 +6,7 @@
  */
 export interface Entry {
     /**
-     * 例: "ollama:qwen3.5:4b" / "file:models\Qwen_Qwen3.5-4B-Q4_K_M.gguf"
+     * 例: "ollama:qwen3.5:4b" / "file:Qwen_Qwen3.5-4B-Q4_K_M.gguf"(パスは入れない。IDOf)
      */
     "id": string;
 
@@ -34,6 +34,12 @@ export interface Entry {
      * Place は、足した置き場所のどれから来たか(Origin が added のときだけ。足したときのパス)
      */
     "place"?: string;
+
+    /**
+     * Disabled は、aibow-server の管理者が使えないようにしたモデルか(0018 の決定事項 13・17)。
+     * 管理者に見せる一覧でだけ立つ(ほかの人の一覧には、使えないモデルは出さない)
+     */
+    "disabled"?: boolean;
 }
 
 /**

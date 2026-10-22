@@ -110,6 +110,51 @@ func TestAddedPlaces(t *testing.T) {
 	}
 }
 
+// GGUF のファイルの ID はファイル名だけ(パスを入れない)。同じ名前は先の置き場所だけを出し、以前の形の ID も読み替える(0018 の決定事項 15)
+func TestFileIDs(t *testing.T) {
+	dir := t.TempDir()
+	write := func(rel string) string {
+		p := filepath.Join(dir, filepath.FromSlash(rel))
+		os.MkdirAll(filepath.Dir(p), 0o755)
+		if err := os.WriteFile(p, []byte("GGUF"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	a := write("models/a.gguf")
+	write("extra/a.gguf") // 同じ名前の別のファイル
+	write("extra/b.gguf")
+	c := Catalog{ModelsDir: filepath.Join(dir, "models"), Added: []string{filepath.Join(dir, "extra")}}
+	list := c.List()
+	if len(list) != 2 || list[0].ID != "file:a.gguf" || list[0].Path != a || list[1].ID != "file:b.gguf" {
+		t.Fatalf("一覧: %+v", list)
+	}
+	if h := c.Hidden(); len(h) != 1 || h[0].Origin != OriginAdded || h[0].ID != "file:a.gguf" {
+		t.Errorf("隠したモデル: %+v", h)
+	}
+	var w HiddenWatch
+	if fresh := w.Check(c); len(fresh) != 1 {
+		t.Errorf("初めは知らせる: %+v", fresh)
+	}
+	if fresh := w.Check(c); len(fresh) != 0 {
+		t.Errorf("2回目は知らせない: %+v", fresh)
+	}
+
+	for _, old := range []string{"file:" + a, `file:D:\old\models\a.gguf`, "file:/srv/models/a.gguf", "file:models\\a.gguf"} {
+		if got := IDOf(old); got != "file:a.gguf" {
+			t.Errorf("IDOf(%q) = %q", old, got)
+		}
+		if m, err := c.Find(old); err != nil || m.Path != a {
+			t.Errorf("以前の形 %q で探せない: %+v %v", old, m, err)
+		}
+	}
+	for _, same := range []string{"file:a.gguf", "ollama:qwen3.5:4b", "ollama:hf.co/someone/repo:Q4_K_M"} {
+		if got := IDOf(same); got != same {
+			t.Errorf("IDOf(%q) = %q(変えないはず)", same, got)
+		}
+	}
+}
+
 // 見つからなくなったときと、また見つかったときだけ知らせる
 func TestMissingWatch(t *testing.T) {
 	dir := t.TempDir()

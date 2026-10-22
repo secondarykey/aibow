@@ -21,7 +21,8 @@ const NOTICE_MS = 20000;
 export type Busy = "idle" | "generating" | "loading" | "unavailable";
 
 export interface Models {
-  models: ModelEntry[];
+  models: ModelEntry[];      // 選べるモデル(管理者が使えないようにしたモデルは入れない)
+  allModels: ModelEntry[];   // モデルのタブの一覧(管理者には、使えないようにしたモデルも印 disabled 付きで入る。0018 の 11-0)
   current: ModelInfo | null; // 今読み込まれているモデル(Go の ModelInfo)
   gpu: boolean;
   loading: boolean;          // モデルを読み込み中か(起動時・切り替え時)
@@ -48,6 +49,7 @@ export function useModels(n: Notifier, t: Pick<Transcript, "addError">, setBusy:
   const { notify, dismissKey } = n;
   const { addError } = t;
   const [models, setModels] = useState<ModelEntry[]>([]);
+  const [allModels, setAllModels] = useState<ModelEntry[]>([]);
   const [current, setCurrent] = useState<ModelInfo | null>(null);
   const [gpu, setGpu] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -77,7 +79,8 @@ export function useModels(n: Notifier, t: Pick<Transcript, "addError">, setBusy:
       }
       return false;
     }
-    setModels(d.models ?? []);
+    setModels((d.models ?? []).filter(m => !m.disabled));
+    setAllModels(d.models ?? []);
     setCurrent(d.current);
     setGpu(d.gpu);
     setServer(d.server ?? "");
@@ -194,5 +197,5 @@ export function useModels(n: Notifier, t: Pick<Transcript, "addError">, setBusy:
     setBusy("idle");
   }, [current, models, reload, notify, dismissKey, addError, setBusy]);
 
-  return { models, current, gpu, loading, server, serverError, manage, gpuLayers, lastModel, switchModel, unload, setLayers, reload };
+  return { models, allModels, current, gpu, loading, server, serverError, manage, gpuLayers, lastModel, switchModel, unload, setLayers, reload };
 }

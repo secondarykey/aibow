@@ -292,6 +292,14 @@ export function SetGroupPolicy(group: string, policy: aibow$0.ToolPolicy): $Canc
 }
 
 /**
+ * SetModelEnabled は、モデルを使えるかを決める(aibow-server の管理者がモデルのタブで。0018 の決定事項 13)。
+ * 使えないモデルは一覧に出さず、頼まれても読み込まない。使えなくしたのが読み込み中のモデルなら降ろすので、席を取ってから行う。
+ */
+export function SetModelEnabled(id: string, enabled: boolean): $CancellablePromise<void> {
+    return $Call.ByID(582231299, id, enabled);
+}
+
+/**
  * SetModelGPULayers は、モデルごとの GPU の層数を変えて覚える。読み込み中のモデルなら読み直し、その情報を返す(ほかのモデルなら nil。
  * 次に読み込むときから効く)。直接ならアプリの DB、aibow-server 越しならサーバーの PC に覚える(0015 の 9)。
  */

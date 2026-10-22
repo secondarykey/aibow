@@ -41,7 +41,7 @@ export interface AppSettings {
  * 	           要約に失敗したときも Compact.Error に理由を入れて送る
  * 	usage    : メーターの値(モデルに渡す文字列のトークン数 / 会話の上限)。生成の前と、返事を保存したあとに送る
  * 	confirm  : ツールを実行する前に、ユーザーの確認を待っている(Confirm)。答えは Conversations.Confirm で返す
- * 	error    : エラー
+ * 	error    : エラー。Caution が立っていれば、赤いエラーではなく注意として出す(理由と対処が書いてある断り。例: 管理者が使えないようにしたモデル)
  * 	notice   : エラーではないお知らせ(Text。画面はトーストに出す)。例: 今すぐ要約で、要約するものが無かった
  * 	model_loading : 送信の前に、会話のモデルを読み込み始めた(Text にお知らせの文。0014 の 3)
  * 	model    : 会話のモデルを読み込んだ(Text にお知らせの文。画面は読み込んでいるモデルの表示を取り直す)
@@ -55,6 +55,11 @@ export interface ChatEvent {
     "type": string;
     "text"?: string;
     "error"?: string;
+
+    /**
+     * error を注意として出すか(isCaution)
+     */
+    "caution"?: boolean;
     "reply"?: StoredMessage | null;
     "message"?: StoredMessage | null;
     "usage"?: Usage | null;

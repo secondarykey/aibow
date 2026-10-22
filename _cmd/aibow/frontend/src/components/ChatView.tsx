@@ -114,7 +114,10 @@ export function ChatView({ items, firstId, conversationId, pinQuestion, onStop, 
                   </div>
                 );
               case "error":
-                return <div key={it.id} className="msg error">{it.text}</div>;
+                // 注意(理由と対処を書いた断り)は、要約できなかったお知らせと同じ見た目にする
+                return it.caution
+                  ? <div key={it.id} className="compact-note"><LuTriangleAlert className="icon" /><div>{it.text}</div></div>
+                  : <div key={it.id} className="msg error">{it.text}</div>;
               case "divider":
                 return <Divider key={it.id} compaction={it.compaction} />;
               case "assistant":

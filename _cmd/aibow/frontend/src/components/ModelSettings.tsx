@@ -75,7 +75,7 @@ export function ModelSettings({ models, disabled, onError }: Props) {
   return (
     <>
       <h2 title="読み込めるのは1つ(VRAM に1つしか載らない)">モデル</h2>
-      <ModelTable models={models} disabled={disabled} />
+      <ModelTable models={models} disabled={disabled} onError={onError} />
 
       <h2 className="section" title={models.server ? "aibow-server の PC でモデルを探す場所" : "モデルを探す場所"}>置き場所</h2>
       <PlaceList places={places} server={!!models.server} onRemove={p => changePlaces(() => ChatService.RemoveModelPlace(p))} />
@@ -90,20 +90,32 @@ export function ModelSettings({ models, disabled, onError }: Props) {
 
 // ---- モデルの一覧 ----------------------------------------------------------------------
 
-function ModelTable({ models, disabled }: { models: Models; disabled: boolean }) {
-  const { current, loading } = models;
-  if (!models.models.length) return <p className="hint">モデルが見つかりません</p>;
+function ModelTable({ models, disabled, onError }: { models: Models; disabled: boolean; onError(text: string): void }) {
+  const { current, loading, manage, reload } = models;
+  if (!models.allModels.length) return <p className="hint">モデルが見つかりません</p>;
+  // 使えるモデルを決める(aibow-server の管理者だけ。0018 の決定事項 13・18)。使えなくした読み込み中のモデルはサーバーが降ろす
+  const setEnabled = async (id: string, enabled: boolean) => {
+    try {
+      await ChatService.SetModelEnabled(id, enabled);
+    } catch (err) {
+      onError(errorMessage(err));
+    }
+    await reload().catch(err => onError(errorMessage(err)));
+  };
   return (
-    <div className="model-table">
+    <div className={"model-table" + (manage ? " manage" : "")}>
+      {manage && <span className="model-table-head" title="使えないモデルは、ほかの人の一覧に出ず、頼まれても読み込まない">使える</span>}
       <span className="model-table-head">名前</span>
       <span className="model-table-head">出どころ</span>
       <span className="model-table-head num">大きさ</span>
       <span className="model-table-head" title="GPU に載せる層の数。モデルの層数以上なら全部 GPU。読み込み中のモデルなら、変えると読み直す">GPU の層</span>
       <span className="model-table-head" />
-      {models.models.map(m => (
+      {models.allModels.map(m => (
         <ModelRow
           key={m.id}
           m={m}
+          manage={manage}
+          onEnabled={enabled => setEnabled(m.id, enabled)}
           loaded={current?.id === m.id}
           layers={models.gpuLayers[m.id] ?? 999}
           totalLayers={current?.id === m.id ? current.layers : undefined}
@@ -117,8 +129,10 @@ function ModelTable({ models, disabled }: { models: Models; disabled: boolean })
   );
 }
 
-function ModelRow({ m, loaded, layers, totalLayers, disabled, onLoad, onUnload, onLayers }: {
+function ModelRow({ m, manage, onEnabled, loaded, layers, totalLayers, disabled, onLoad, onUnload, onLayers }: {
   m: ModelEntry;
+  manage: boolean; // 使えるかのスイッチを出す(aibow-server の管理者)
+  onEnabled(enabled: boolean): void;
   loaded: boolean;
   layers: number;
   totalLayers?: number; // 読み込み中のモデルの層の数(読み込んでいなければ分からない)
@@ -131,7 +145,19 @@ function ModelRow({ m, loaded, layers, totalLayers, disabled, onLoad, onUnload, 
   useEffect(() => setN(layers), [layers]);
   const title = [m.id, m.place ? `置き場所: ${m.place}` : "", totalLayers ? `層の数: ${totalLayers}` : ""].filter(Boolean).join("\n");
   return (
-    <div className={"model-row" + (loaded ? " loaded" : "")}>
+    <div className={"model-row" + (loaded ? " loaded" : "") + (m.disabled ? " model-disabled" : "")}>
+      {manage && (
+        <span>
+          <input
+            type="checkbox"
+            checked={!m.disabled}
+            disabled={disabled}
+            onChange={e => onEnabled(e.target.checked)}
+            aria-label="使える"
+            title={m.disabled ? "使えるようにする" : "使えないようにする(読み込み中なら降ろす)"}
+          />
+        </span>
+      )}
       <span className="model-name" title={title}>
         {loaded && <LuCircleCheck className="model-loaded" aria-label="読み込み中" />}
         {m.name}
@@ -145,7 +171,7 @@ function ModelRow({ m, loaded, layers, totalLayers, disabled, onLoad, onUnload, 
       <span className="model-action">
         {loaded
           ? <button disabled={disabled} onClick={onUnload} title="VRAM を空ける。次に送信するときに会話のモデルを読み込む">降ろす</button>
-          : <button disabled={disabled} onClick={onLoad} title="今のモデルと入れ替える">読み込む</button>}
+          : !m.disabled && <button disabled={disabled} onClick={onLoad} title="今のモデルと入れ替える">読み込む</button>}
       </span>
     </div>
   );

@@ -15,6 +15,12 @@ import type { Busy } from "./useModels";
 import type { Notifier } from "./toast";
 import { errorMessage } from "./errors";
 
+// ErrorNote は、送信で届いたエラー1つ。caution なら赤いエラーではなく注意で出す
+interface ErrorNote {
+  text: string;
+  caution?: boolean;
+}
+
 const secSince = (t: number) => Math.round((performance.now() - t) / 1000);
 
 // 生成中の返事。生成中に別の会話を開いても生成は続くので、画面の表示とは別に持っておき、
@@ -39,7 +45,7 @@ export type Ended = "done" | "error";
 
 // RunResult は run の戻り値。
 interface RunResult {
-  errors: string[];   // この送信で届いたエラー
+  errors: ErrorNote[]; // この送信で届いたエラー
   userSaved: boolean; // 送った発言を Go が保存したか(user イベントが来たか)
 }
 
@@ -70,7 +76,7 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
   const viewing = useRef<string | null>(null); // 表示している会話の ID
   const [ended, setEnded] = useState<Record<string, Ended>>({});
   // ほかの会話を見ている間に届いたエラー。エラーは保存しないので、ここで持っておき、その会話を開いたときに出す
-  const heldErrors = useRef<Record<string, string[]>>({});
+  const heldErrors = useRef<Record<string, ErrorNote[]>>({});
   // 生成中の呼び出し(stop() で停止できる)。生成中でなければ null
   const controller = useRef<{ stop(): void } | null>(null);
   // 送信を受け付けてから生成が始まるまでの間に、もう一度送られないようにする
@@ -103,7 +109,7 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
       l.userItemId = null;
     }
     // 見ていない間に終わった会話を開いたら、一覧の印を消し、届いていたエラーを出す
-    heldErrors.current[id]?.forEach(addError);
+    heldErrors.current[id]?.forEach(e => addError(e.text, e.caution));
     delete heldErrors.current[id];
     setEnded(e => {
       if (!(id in e)) return e;
@@ -132,7 +138,7 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
   // manual は「今すぐ要約」(返事は生成しない。終わったら吹き出しを消して、区切りが出るように開き直す)
   // 戻り値は、この送信で届いたエラー(作り直す・送り直すで、開き直したあとに出し直すため)と、送った発言を Go が保存したか
   const run = useCallback(async (id: string, start: () => Call<void>, manual: boolean, userItemId: number | null): Promise<RunResult> => {
-    const errors: string[] = [];
+    const errors: ErrorNote[] = [];
     let userSaved = false;
     const l: Live = {
       convId: id, itemId: null, userItemId, thinkStart: 0, processStart: 0, saved: [], confirm: null,
@@ -182,10 +188,10 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
     let compacted = false; // 今すぐ要約で、要約が保存された
     let failed = false;    // エラーが届いた(一覧の印を赤にする)
     // エラーは、見ている会話なら表示に出し、ほかの会話なら開いたときに出すよう持っておく
-    const showError = (text: string) => {
+    const showError = (text: string, caution?: boolean) => {
       failed = true;
-      if (viewing.current === id) addError(text);
-      else (heldErrors.current[id] ??= []).push(text);
+      if (viewing.current === id) addError(text, caution);
+      else (heldErrors.current[id] ??= []).push({ text, caution });
     };
     let finish = () => {};
     let ended = false; // done が届いた・呼び出しが失敗した(この送信の終わりを済ませた)
@@ -265,8 +271,9 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
           show(liveProcess(false));
           return;
         case "error":
-          errors.push(ev.error ?? "");
-          showError(ev.error ?? "");
+          // caution は、理由と対処を書いた断り(管理者が使えないようにしたモデル、など。0018 の決定事項 13)。赤ではなく注意で出す
+          errors.push({ text: ev.error ?? "", caution: ev.caution });
+          showError(ev.error ?? "", ev.caution);
           return;
         case "model_loading":
           // 送信の前に、この会話のモデルを読み込んでいる(モデルの違う会話に切り替えた最初の送信。数秒〜十数秒)
@@ -415,7 +422,7 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
     const { errors } = await run(id, () => start(id), false, userItemId);
     if (errors.length && viewing.current === id) {
       await open(id).catch(err => addError(errorMessage(err)));
-      errors.forEach(addError);
+      errors.forEach(e => addError(e.text, e.caution));
     }
   }, [current, flushSettings, dropLastTurn, addUser, run, open, addError]);
 

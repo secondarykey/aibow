@@ -18,6 +18,7 @@ package ui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"path/filepath"
@@ -61,6 +62,8 @@ type ModelHost interface {
 	places(ctx context.Context) ([]models.Place, error)
 	addPlace(ctx context.Context, path string) ([]models.Place, error)
 	removePlace(ctx context.Context, path string) ([]models.Place, error)
+	// setModelEnabled は、モデルを使えるかを決める(aibow-server の中の管理者だけ。0018 の決定事項 13)
+	setModelEnabled(ctx context.Context, id string, enabled bool) error
 	// settings は表示だけの設定(作業領域・ポート・llama.cpp の場所・最初のモデル。画面からは変えない。0015 の 21)
 	settings() (apiclient.ServerSettings, error)
 }
@@ -224,6 +227,11 @@ func (h *DirectHost) removePlace(ctx context.Context, path string) ([]models.Pla
 	return h.places(ctx)
 }
 
+// setModelEnabled は、直接の形ではしない(使えるモデルを決めるのは aibow-server の管理者。手元のモデルは置き場所で決める)。
+func (h *DirectHost) setModelEnabled(context.Context, string, bool) error {
+	return errors.New("使えるモデルを決めるのは aibow-server の管理者です(アプリの中で動かしているときは、置き場所で決めます)")
+}
+
 // settings は、直接の形の表示だけの設定。作業領域は会話ごと(会話の上限 + 返事の上限)なので 0、ポートは無い(待ち受けない)。
 func (h *DirectHost) settings() (apiclient.ServerSettings, error) {
 	return apiclient.ServerSettings{
@@ -317,6 +325,10 @@ func (h *RemoteHost) addPlace(context.Context, string) ([]models.Place, error) {
 }
 func (h *RemoteHost) removePlace(context.Context, string) ([]models.Place, error) {
 	return nil, errServerSide("モデルの置き場所")
+}
+
+func (h *RemoteHost) setModelEnabled(context.Context, string, bool) error {
+	return errServerSide("使えるモデル")
 }
 
 // settings は、作業領域の大きさだけを返す(会話の上限 + 返事の上限がこれに入る必要があるので、画面に要る)。

@@ -26,6 +26,7 @@ import (
 	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/format"
 	"github.com/secondarykey/aibow/log"
+	"github.com/secondarykey/aibow/models"
 	"github.com/secondarykey/aibow/tool"
 )
 
@@ -59,6 +60,11 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	wait := time.Since(waitStart)
 
 	if err := s.requestedModel(req.Model); err != nil {
+		// 管理者が使えないようにしたモデルは、知らないモデルと同じ 404 で断る(0018 の決定事項 13)
+		if _, ok := errors.AsType[*models.DisabledError](err); ok {
+			writeError(w, http.StatusNotFound, "invalid_request_error", "model_not_found", err.Error())
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "server_error", "", err.Error())
 		return
 	}

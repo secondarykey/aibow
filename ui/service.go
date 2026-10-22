@@ -461,6 +461,25 @@ func (s *Service) SetModelGPULayers(ctx context.Context, id string, n int) (*eng
 	return i, nil
 }
 
+// SetModelEnabled は、モデルを使えるかを決める(aibow-server の管理者がモデルのタブで。0018 の決定事項 13)。
+// 使えないモデルは一覧に出さず、頼まれても読み込まない。使えなくしたのが読み込み中のモデルなら降ろすので、席を取ってから行う。
+func (s *Service) SetModelEnabled(ctx context.Context, id string, enabled bool) error {
+	if s.startupErr != nil {
+		return s.startupErr
+	}
+	if s.seat != nil {
+		if !s.seat.Take(ctx) {
+			return ctx.Err()
+		}
+		defer s.seat.Release()
+	}
+	if err := s.host.setModelEnabled(ctx, id, enabled); err != nil {
+		log.Warn(err.Error())
+		return err
+	}
+	return nil
+}
+
 // ModelPlaces はモデルの置き場所の一覧(models フォルダ・Ollama・足した置き場所。aibow-server 越しならサーバーの PC のもの)。
 func (s *Service) ModelPlaces(ctx context.Context) ([]models.Place, error) {
 	if s.startupErr != nil {

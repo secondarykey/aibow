@@ -6,6 +6,7 @@ import (
 	"errors"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 	"uuid"
@@ -616,6 +617,26 @@ func TestMigrationFromVersion5(t *testing.T) {
 }
 
 // 「生成中」の印(0017 の 10-3):ほかの印が期限の内なら断り、期限が過ぎるか外せば付けられる。ほかの人の会話には付けられない
+// 以前の形のモデルの ID(file:<パス>)で保存した会話とプロファイルは、読むときに今の形(file:<ファイル名>)に読み替える。DB は書き換えない(0018 の決定事項 15)
+func TestLegacyModelIDs(t *testing.T) {
+	s, _ := openTemp(t)
+	old := `file:D:` + string(rune(92)) + `models` + string(rune(92)) + `a.gguf`
+	c := newConv(t, s, time.Now())
+	c.Settings.Model = old
+	if err := s.UpdateConversation(ctx, c); err != nil {
+		t.Fatal(err)
+	}
+	got, _, err := s.Conversation(ctx, c.ID)
+	if err != nil || got.Settings.Model != "file:a.gguf" {
+		t.Errorf("会話のモデル: %q %v", got.Settings.Model, err)
+	}
+	var raw string
+	s.db.QueryRow("SELECT settings FROM conversations WHERE id = ?", c.ID.String()).Scan(&raw)
+	if !strings.Contains(raw, "models") {
+		t.Errorf("DB を書き換えている: %s", raw)
+	}
+}
+
 func TestConversationLocks(t *testing.T) {
 	s, _ := openTemp(t)
 	c := newConv(t, s, time.Now())

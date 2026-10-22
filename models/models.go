@@ -24,7 +24,7 @@ import (
 
 // Entry は一覧の1件。
 type Entry struct {
-	ID     string  `json:"id"`      // 例: "ollama:qwen3.5:4b" / "file:models\Qwen_Qwen3.5-4B-Q4_K_M.gguf"
+	ID     string  `json:"id"`      // 例: "ollama:qwen3.5:4b" / "file:Qwen_Qwen3.5-4B-Q4_K_M.gguf"(パスは入れない。IDOf)
 	Name   string  `json:"name"`    // 画面に出す名前
 	Source string  `json:"source"`  // "ollama" か "file"(ID の形。どこから来たかは Origin)
 	SizeGB float64 `json:"size_gb"` // ファイルサイズ
@@ -34,7 +34,21 @@ type Entry struct {
 	Origin string `json:"origin"`
 	// Place は、足した置き場所のどれから来たか(Origin が added のときだけ。足したときのパス)
 	Place string `json:"place,omitempty"`
+	// Disabled は、aibow-server の管理者が使えないようにしたモデルか(0018 の決定事項 13・17)。
+	// 管理者に見せる一覧でだけ立つ(ほかの人の一覧には、使えないモデルは出さない)
+	Disabled bool `json:"disabled,omitempty"`
 }
+
+// DisabledError は、aibow-server の管理者が使えないようにしたモデルを頼んだときのエラー(0018 の決定事項 13)。
+// OpenAI 互換の口は 404(model_not_found)で断り、会話の送信は注意で断る(Caution。勝手にほかのモデルに替えない)。
+type DisabledError struct{ ID string }
+
+func (e *DisabledError) Error() string {
+	return fmt.Sprintf("モデル %s は、aibow-server の管理者が使えないようにしました", e.ID)
+}
+
+// Caution は、エラー(赤)ではなく注意として見せる印(会話の仕組みは models を見ずに、この約束で見分ける)。
+func (e *DisabledError) Caution() bool { return true }
 
 // ---- models フォルダの *.gguf ----------------------------------------------------------
 
@@ -50,7 +64,7 @@ func listFileModels(dir string) []Entry {
 }
 
 func fileEntry(path string) Entry {
-	e := Entry{ID: "file:" + path, Name: filepath.Base(path), Source: "file", Path: path}
+	e := Entry{ID: "file:" + filepath.Base(path), Name: filepath.Base(path), Source: "file", Path: path}
 	if st, err := os.Stat(path); err == nil {
 		e.SizeGB = float64(st.Size()) / (1 << 30)
 	}
@@ -183,15 +197,50 @@ func (c Catalog) List() []Entry {
 		l, _ := listAdded(p)
 		list = append(list, l...)
 	}
-	return dedup(list)
+	list, _ = dedup(list)
+	return list
+}
+
+// Hidden は、ほかの置き場所に同じ名前のファイルがあるので一覧に出していないモデル(使う側が Warn のログを出すのに使う)。
+func (c Catalog) Hidden() []Entry {
+	list := []Entry{}
+	list = append(list, listFileModels(c.ModelsDir)...)
+	list = append(list, listOllamaModels(c.OllamaDir)...)
+	for _, p := range c.Added {
+		l, _ := listAdded(p)
+		list = append(list, l...)
+	}
+	_, hidden := dedup(list)
+	return hidden
+}
+
+// ---- モデルの ID(0018 の決定事項 15) ---------------------------------------------------
+//
+// GGUF のファイルの ID は "file:<ファイル名>"。以前は "file:<パス>"(例 file:D:\models\x.gguf)で、aibow-server では
+// サーバーの PC のパスが /v1/models で Cline にも、共有した会話の設定にも出てしまうので、ファイル名だけにした。
+// 同じ名前のファイルが2か所にあれば、一覧の先(models フォルダ → Ollama → 足した置き場所)だけを出す(dedup・Hidden)。
+// 保存済みの会話・プロファイル・層の数のキーにある以前の形は、IDOf で読み替える(DB は書き換えない)。
+
+// IDOf は、モデルの ID を今の形にする。以前の形 "file:<パス>" はファイル名だけにし、ほかはそのまま返す。
+// パスの区切りは、どの OS で作った ID でも読めるように \ と / の両方を見る。
+func IDOf(id string) string {
+	rest, ok := strings.CutPrefix(id, "file:")
+	if !ok {
+		return id
+	}
+	if i := strings.LastIndexAny(rest, `\/`); i >= 0 {
+		return "file:" + rest[i+1:]
+	}
+	return id
 }
 
 // Find は ID でモデルを探す。
-// "ollama:名前" か "file:パス" のほか、GGUF ファイルのパスを直接書いてもよい(AIBOW_MODEL 用)。
-// models フォルダの外にあるファイルも、パスを指定すれば使える。
+// "ollama:名前" か "file:ファイル名"(以前の形 "file:パス" も読み替える)のほか、GGUF ファイルのパスを直接書いてもよい(AIBOW_MODEL 用)。
+// models フォルダの外にあるファイルも、パスを指定すれば使える(一覧には出ないので、ほかのモデルに替えたあとは ID では戻れない)。
 func (c Catalog) Find(id string) (Entry, error) {
+	want := IDOf(id)
 	for _, m := range c.List() {
-		if m.ID == id {
+		if m.ID == want {
 			return m, nil
 		}
 	}

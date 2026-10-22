@@ -283,7 +283,12 @@ func initialSettings(env *envReader, gpuLayers int) aibow.AppSettings {
 //     起動できなくならないように、種類を GGUF の先頭だけ読んで確かめる(重みは読み込まない。models.Arch)
 func firstModel(mm *modelManager, arg string) (models.Entry, error) {
 	if arg != "" {
-		m, err := mm.Find(arg)
+		m, err := mm.findArg(arg)
+		if _, ok := errors.AsType[*models.DisabledError](err); ok {
+			// 管理者が使えないようにしたモデルでは起動しない。止めずに、使えるモデルから選ぶ(起動できないと、管理者が画面で戻せないため)
+			log.Warnf("起動のときのモデル %s は、管理者が使えないようにしたので、使えるモデルから選びます", arg)
+			return firstModel(mm, "")
+		}
 		if err != nil {
 			return models.Entry{}, err
 		}

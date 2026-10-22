@@ -20,6 +20,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -128,6 +129,11 @@ func (s *Server) handleLoad(w http.ResponseWriter, r *http.Request) {
 	}
 	defer s.releaseTurn()
 	m, err := s.models.Find(req.Model)
+	if _, ok := errors.AsType[*models.DisabledError](err); ok {
+		// aibow 専用の口では、知らないモデルと分けて知らせる(画面のアプリが、エラーではなく注意で出せるように。0018 の決定事項 13)
+		writeError(w, http.StatusNotFound, "invalid_request_error", "model_disabled", err.Error())
+		return
+	}
 	if err != nil {
 		writeError(w, http.StatusNotFound, "invalid_request_error", "model_not_found", err.Error())
 		return
@@ -247,6 +253,7 @@ func (s *Server) loadModel(m models.Entry) (*engine.ModelInfo, error) {
 
 // requestedModel は、チャットのリクエストの model を読み込む(違えば読み直す。0015 の 2)。順番待ちの席を持った状態で呼ぶ。
 // 知らない名前なら、読み込み中のモデルを使う(Cline などがおかしな名前を送ってきても動くように)。
+// 管理者が使えないようにしたモデルなら、読み込み中のモデルで代わりに答えず、そのエラーを返す(0018 の決定事項 13)。
 func (s *Server) requestedModel(name string) error {
 	info := s.gen.Info()
 	if name == "" || (info != nil && name == info.ID) {
@@ -257,6 +264,9 @@ func (s *Server) requestedModel(name string) error {
 		return nil
 	}
 	m, err := s.models.Find(name)
+	if _, ok := errors.AsType[*models.DisabledError](err); ok {
+		return err
+	}
 	if err != nil {
 		if info != nil {
 			log.Infof("リクエストのモデル %q が見つからないので、読み込み中の %s を使います", name, info.ID)

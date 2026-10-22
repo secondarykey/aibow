@@ -20,6 +20,7 @@ import (
 	"uuid"
 
 	"github.com/secondarykey/aibow"
+	"github.com/secondarykey/aibow/models"
 
 	_ "modernc.org/sqlite" // "sqlite" ドライバーを登録する
 )
@@ -297,6 +298,8 @@ func scanConversation(r rowScanner) (aibow.Conversation, error) {
 	if err := json.Unmarshal([]byte(settings), &c.Settings); err != nil {
 		return c, fmt.Errorf("会話 %s の設定が読めません: %w", id, err)
 	}
+	// 以前の形のモデルの ID(file:<パス>)は、今の形(file:<ファイル名>)に読み替える(0018 の決定事項 15。DB は書き換えない)
+	c.Settings.Model = models.IDOf(c.Settings.Model)
 	if c.CreatedAt, err = parseTime(created); err != nil {
 		return c, err
 	}
@@ -656,6 +659,7 @@ func scanProfile(r rowScanner) (aibow.Profile, error) {
 	if err := json.Unmarshal([]byte(values), &p.Values); err != nil {
 		return p, fmt.Errorf("プロファイル %s の値が読めません: %w", id, err)
 	}
+	p.Values.Model = models.IDOf(p.Values.Model) // 会話と同じく、以前の形のモデルの ID を読み替える
 	if err := json.Unmarshal([]byte(rules), &p.Rules); err != nil {
 		return p, fmt.Errorf("プロファイル %s の決まりが読めません: %w", id, err)
 	}

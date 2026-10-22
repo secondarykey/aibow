@@ -138,6 +138,10 @@ func (e *APIError) Unwrap() error {
 	return nil
 }
 
+// Caution は、エラー(赤)ではなく注意として見せるか。管理者が使えないようにしたモデル(code が model_disabled)のとき
+// (models.DisabledError と同じ約束。0018 の決定事項 13)。
+func (e *APIError) Caution() bool { return e.Code == "model_disabled" }
+
 // errorBody は返事のエラーの形。ストリーミングの途中のエラーも同じ形の塊で来る。
 type errorBody struct {
 	Error *struct {

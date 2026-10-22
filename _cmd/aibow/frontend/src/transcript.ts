@@ -58,7 +58,7 @@ export interface AssistantView {
 // excluded は、ユーザーが選んで「モデルに渡さない」にした吹き出し(0011。返事はツールの呼び出しと結果も一緒)
 export type Item =
   | { id: number; kind: "user"; text: string; msgId?: string; createdAt?: string; excluded?: boolean }
-  | { id: number; kind: "error"; text: string }
+  | { id: number; kind: "error"; text: string; caution?: boolean } // caution: 赤いエラーではなく注意(Go の ChatEvent.Caution)
   | { id: number; kind: "divider"; compaction: Compaction }
   | ({ id: number; kind: "assistant"; msgId?: string; excluded?: boolean } & AssistantView);
 
@@ -69,7 +69,7 @@ export type NewItem = DistributiveOmit<Item, "id">;
 export interface Transcript {
   items: Item[];
   addUser(text: string): number; // 追加した発言の id を返す
-  addError(text: string): void;
+  addError(text: string, caution?: boolean): void;
   addAssistant(view?: Partial<AssistantView>): number; // 追加した返事の id を返す
   updateAssistant(id: number, patch: Partial<AssistantView>): void;
   // 送信した発言・返事が保存されたら、保存された ID(薄い表示に使う)と時刻を付ける
@@ -94,7 +94,7 @@ export function useTranscript(): Transcript {
   return {
     items,
     addUser: useCallback(text => add({ kind: "user", text }), [add]),
-    addError: useCallback(text => { add({ kind: "error", text }); }, [add]),
+    addError: useCallback((text, caution) => { add({ kind: "error", text, caution }); }, [add]),
     addAssistant: useCallback(
       view => add({ kind: "assistant", waiting: true, thinking: "", thinkLabel: "", content: "", ...view }),
       [add],

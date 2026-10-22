@@ -62,7 +62,7 @@ type Generator interface {
 //	           要約に失敗したときも Compact.Error に理由を入れて送る
 //	usage    : メーターの値(モデルに渡す文字列のトークン数 / 会話の上限)。生成の前と、返事を保存したあとに送る
 //	confirm  : ツールを実行する前に、ユーザーの確認を待っている(Confirm)。答えは Conversations.Confirm で返す
-//	error    : エラー
+//	error    : エラー。Caution が立っていれば、赤いエラーではなく注意として出す(理由と対処が書いてある断り。例: 管理者が使えないようにしたモデル)
 //	notice   : エラーではないお知らせ(Text。画面はトーストに出す)。例: 今すぐ要約で、要約するものが無かった
 //	model_loading : 送信の前に、会話のモデルを読み込み始めた(Text にお知らせの文。0014 の 3)
 //	model    : 会話のモデルを読み込んだ(Text にお知らせの文。画面は読み込んでいるモデルの表示を取り直す)
@@ -72,6 +72,7 @@ type ChatEvent struct {
 	Type           string           `json:"type"`
 	Text           string           `json:"text,omitempty"`
 	Error          string           `json:"error,omitempty"`
+	Caution        bool             `json:"caution,omitempty"` // error を注意として出すか(isCaution)
 	Reply          *StoredMessage   `json:"reply,omitempty"`
 	Message        *StoredMessage   `json:"message,omitempty"`
 	Usage          *Usage           `json:"usage,omitempty"`
@@ -147,6 +148,13 @@ type limits struct {
 func hasRemedy(err error) bool {
 	var r interface{ HasRemedy() bool }
 	return errors.As(err, &r) && r.HasRemedy()
+}
+
+// isCaution は、err を赤いエラーではなく注意として見せるか(0018 の決定事項 13。管理者が使えないようにしたモデル)。
+// エラーの側が Caution() bool を持てば当てはまる(hasRemedy と同じく、models や api/client を見ずに見分けるための約束)。
+func isCaution(err error) bool {
+	var c interface{ Caution() bool }
+	return errors.As(err, &c) && c.Caution()
 }
 
 // ModelLoader は、会話のモデルを読み込む係(0014 の 3)。アプリが渡す(SetModelLoader)。
@@ -588,7 +596,9 @@ func lastUserIndex(history []StoredMessage) int {
 func (cs *Conversations) turn(ctx context.Context, id uuid.UUID, text string, drop dropFunc, emit func(ChatEvent)) {
 	var reply *StoredMessage
 	defer func() { emit(ChatEvent{ConversationID: id, Type: "done", Reply: reply}) }()
-	fail := func(err error) { emit(ChatEvent{ConversationID: id, Type: "error", Error: err.Error()}) }
+	fail := func(err error) {
+		emit(ChatEvent{ConversationID: id, Type: "error", Error: err.Error(), Caution: isCaution(err)})
+	}
 
 	if !cs.generating.CompareAndSwap(nil, &id) {
 		fail(ErrGenerating)

@@ -85,9 +85,10 @@ func (e *fakeEngine) Generate(ctx context.Context, p format.Prompt, opt engine.G
 type fakeModels struct {
 	eng      *fakeEngine
 	loads    []string
-	layers   map[string]int // SetGPULayers で覚えた層の数
-	added    []string       // AddPlace で足した置き場所
-	unloaded int            // Unload を呼んだ回数
+	layers   map[string]int  // SetGPULayers で覚えた層の数
+	added    []string        // AddPlace で足した置き場所
+	unloaded int             // Unload を呼んだ回数
+	disabled map[string]bool // SetEnabled で使えなくしたモデル(ListAll の印だけ。List と Find は変えない)
 }
 
 func (m *fakeModels) List() []models.Entry {
@@ -154,6 +155,22 @@ func (m *fakeModels) AddPlace(path string) error {
 
 func (m *fakeModels) RemovePlace(path string) error {
 	return errors.New("外せません: " + path)
+}
+
+func (m *fakeModels) ListAll() []models.Entry {
+	l := m.List()
+	for i := range l {
+		l[i].Disabled = m.disabled[l[i].ID]
+	}
+	return l
+}
+
+func (m *fakeModels) SetEnabled(id string, enabled bool) (bool, error) {
+	if m.disabled == nil {
+		m.disabled = map[string]bool{}
+	}
+	m.disabled[id] = !enabled
+	return false, nil
 }
 
 type testWeb struct {
@@ -358,7 +375,7 @@ func TestWebCall(t *testing.T) {
 		args []any
 	}{
 		{"UnloadModel", nil}, {"SetModelGPULayers", []any{"ollama:a", 10}}, {"ModelPlaces", nil},
-		{"AddModelPlace", []any{"/data"}}, {"RemoveModelPlace", []any{"/data"}},
+		{"AddModelPlace", []any{"/data"}}, {"RemoveModelPlace", []any{"/data"}}, {"SetModelEnabled", []any{"ollama:a", false}},
 	} {
 		if status, body := w.call(t, context.Background(), c.name, c.args...); status != http.StatusForbidden {
 			t.Errorf("%s は 403 のはず: %d %s", c.name, status, body)
@@ -410,6 +427,12 @@ func TestWebAdminModels(t *testing.T) {
 	w.mustCall(t, nil, "UnloadModel")
 	if w.mm.unloaded != 1 {
 		t.Error("降ろしていない")
+	}
+	w.mustCall(t, nil, "SetModelEnabled", "ollama:b", false)
+	m = ModelsResult{}
+	w.mustCall(t, &m, "Models")
+	if !m.Models[1].Disabled || m.Models[0].Disabled {
+		t.Errorf("使えないようにしたモデルに印が付いていない: %+v", m.Models)
 	}
 
 	// 管理者でなくなれば、見せない
