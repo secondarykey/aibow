@@ -28,8 +28,8 @@ aibow の組み込みのツール: 会話の仕組み ⇄ aibow/mcp/client の L
 OpenAI 互換のクライアント(Cline など)⇄ HTTP(127.0.0.1)⇄ aibow-server(_cmd/aibow-server)= aibow/api ⇄ aibow/engine
 画面のアプリを aibow-server につなぐとき(settings.json の serverUrl。ステップ8):aibow ⇄ aibow/api/client ⇄ HTTP ⇄ aibow-server(アプリは llama.cpp を読み込まない。
   つながないとき(既定)は上の図のとおりアプリの中で動かし、そのときは aibow-server と同時に使わない)
-ブラウザ(ステップ9。画面を配るのは 9-2)⇄ HTTP(127.0.0.1。/aibow/ui/ の呼び出しと SSE)⇄ aibow-server = aibow/ui ⇄ aibow(ツールなし)⇄ aibow/engine
-  (会話は aibow-server の server.db。生成は OpenAI 互換の口と同じ engine・同じ順番待ちの席 api.Seat)
+ブラウザ(http://127.0.0.1:8089/。ステップ9)⇄ HTTP(127.0.0.1。画面と /aibow/ui/ の呼び出しと SSE)⇄ aibow-server = aibow/ui ⇄ aibow(ツールなし)⇄ aibow/engine
+  (画面は aibow/web に埋め込んだもので、デスクトップのアプリと同じ。会話は aibow-server の server.db。生成は OpenAI 互換の口と同じ engine・同じ順番待ちの席 api.Seat)
 ```
 
 - **Ollama などの外部 LLM サーバーは使わない**。aibow のプロセスの中で llama.cpp を直接動かす。
@@ -52,6 +52,7 @@ OpenAI 互換のクライアント(Cline など)⇄ HTTP(127.0.0.1)⇄ aibow-ser
 | `api/` | OpenAI 互換の API(`api` パッケージ。ステップ6)。`engine` で生成だけを使い、ルートの `aibow`(会話の仕組み)は import しない。HTTP は標準の `net/http`。ステップ8で aibow 専用の口と欄(モデルの一覧・読み込み・トークン数など)を足した。生成の順番待ちの席 `Seat` はブラウザの会話(`ui`)と分け合う(ステップ9) |
 | `api/client/` | aibow-server につなぐクライアント(`client` パッケージ。ステップ8)。会話の仕組みの `Generator` と `ModelLoader` の HTTP 版。ルートの `aibow` は import しない |
 | `ui/` | 画面向けの処理(`ui` パッケージ。ステップ9の 9-0 で `_cmd/aibow` から切り出した)。画面から呼ぶメソッド(`Service`。モデル・会話・設定・送信)と、モデルを扱う係(直接 `DirectHost`・aibow-server 越し `RemoteHost`)。ルートの `aibow` を使い、Wails を import しない。デスクトップのアプリは `ChatService` に埋め込んで Wails に渡す。ブラウザ向けには aibow-server が使う:aibow-server の engine でモデルを扱う係(`ServerHost`)と、画面用の HTTP の口(`Handler`。`/aibow/ui/call/{メソッド}` と SSE の `/aibow/ui/events`)。9-1。仕組みは [_docs/api.md](_docs/api.md) の「画面用の口」 |
+| `web/` | 画面のビルド結果(`web` パッケージ。ステップ9の 9-2)。vite が `_cmd/aibow/frontend` から `web/dist/app` に書き、デスクトップのアプリと aibow-server の両方が `web.Files()` で埋め込む(写さない)。ビルドしていなければ `web/dist/index.html`(ビルドの仕方だけのページ) |
 | `mcp/internal/` | MCP のクライアントとサーバーの両方で使う部分(`meta`: `_meta` の名前) |
 | `internal/proc/` | 子プロセスまでまとめて止める仕組み(`tool` の `run_command` と `mcp/client` で使う) |
 | `log/` | aibow のログ(`log` パッケージ)。aibow のコードはログをここから出す。土台は wenteasy/log だが、使う人には `slog.Level` と `*slog.Logger` しか見せない。出口はアプリが `Init` で組み、ライブラリとして使う人は `SetLogger(*slog.Logger)` で aibow のログだけ別にできる(決めなければ `slog.Default()`)。詳しくは [log/AGENTS.md](log/AGENTS.md) |
@@ -136,7 +137,7 @@ go test ./...                    # 書式(公式テンプレートとの一致)�
 go vet ./... ./_cmd/aibow ./_cmd/aibow-mcp ./_cmd/aibow-server  # よくある間違いを静的チェック(./... は _cmd を含まないので並べる)
 ```
 
-`_cmd/aibow` は `frontend/dist` を埋め込むので、画面を一度もビルドしていないと `go vet` / `go build` が「パターンに一致するファイルが無い」で失敗します。先に `wails3 build` を実行します。
+画面のビルド結果は共有のパッケージ `web/`(`web/dist/app`。Git には入れない)に出て、`_cmd/aibow` と `_cmd/aibow-server` が埋め込みます。画面をビルドしていなくても `go vet` / `go build` は通ります(「画面がビルドされていません」と出すだけの `web/dist/index.html` が入る)。画面を確かめるとき・exe を作るときは、先に `wails3 build` で画面をビルドします。
 
 アプリを起動して確かめるときは、**先に必ず [_docs/testing.md](_docs/testing.md) と、今いる環境のファイルを読んでください**。
 

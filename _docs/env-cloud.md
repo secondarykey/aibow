@@ -27,7 +27,7 @@ Claude Code のクラウドセッションなど、画面も GPU も無い Linux
   `index.html` と `main.tsx` を置き、`npx vite build .harness --outDir <一時フォルダの絶対パス> --base ./` でビルドして、Playwright で開く。終わったら `.harness/` を消す
   - `--outDir` は `.harness` からの相対パスになるので、**必ず絶対パスで書く**(相対で書いてリポジトリの外に出力してしまったことがある)
 - ダウンロードは `page.waitForEvent("download")`、時刻は `page.clock.install()` で固定・早送りして確かめられる
-- 画面全体(`App.tsx`)も `frontend/dist` を開けば描けるが、Go の呼び出しはエラーになる(モデルの一覧のエラーが出る)
+- 画面全体(`App.tsx`)も `web/dist/app`(画面のビルド結果)を開けば描けるが、Go の呼び出しはエラーになる(モデルの一覧のエラーが出る)
 - ビルドしたものは `file://` で開くと、モジュールの script が読み込まれず何も描かれない。一時フォルダで小さな HTTP サーバー
   (`python3 -m http.server` か、Playwright のスクリプトの中で `node:http`)を立てて開く(2026-10-19)
 - Go を呼ぶ部品(`ProfileTools`・`ConversationTools` など。設定の画面ごと描くときも)は、Playwright の `page.route("**/wails/**", …)` で Go の返事を作ると描ける。

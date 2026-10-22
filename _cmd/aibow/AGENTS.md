@@ -15,7 +15,7 @@ Wails v3 のデスクトップアプリです。ルートの `aibow` パッケ�
 | `../../ui/modelplaces.go` | 直接の形で画面から足したモデルの置き場所を `%APPDATA%\aibow\model-places.json`(`AIBOW_MODEL_PLACES`)に覚える(`ui.PlacesFile`。0015 の 24)。壊れていたら書き換えずにお知らせで伝える |
 | `config.go` | 環境変数の読み込み。`settings.json` も読み、つなぎ先(`serverUrl` > `AIBOW_SERVER_URL`)を決める(つなぐときは `lib` が無くてもよい)。`settings.json` を読んで MCP のサーバーの係(`mcp/client` の `Manager`)を作るのは `main.go` の `startMCP`(アプリを閉じるときに止める)、`tools.json` を読むのは `loadToolPrefs` |
 | `service.go` | `ChatService`。中身(モデル・会話・設定(`TryLimits` / `SetGPULayers` / 画面の設定の `SetDisplay` など)・メーター(`Usage`)・`Send` / `Compact` / `StopSummary`)はルートの `ui` パッケージの `ui.Service`(`../../ui/service.go`)で、`ChatService` はそれを埋め込むだけ(埋め込んだ型のメソッドも Wails のバインディングになる。0016 の 9-0)。ここに残すのは Wails が要るものだけ:起動と終了の合図(`ServiceStartup` / `ServiceShutdown` → `ui.Lifecycle`)・ダイアログ(`ChooseWorkDir` / `ChooseModelPlace`)・Wails のイベントで画面に知らせる係(`wailsNotifier`。`ui.Notifier`)。画面の設定(質問を右上に出す・明るさ)は DB に置き、実際のライト / ダークは画面の `theme.ts` が決める([_docs/ui.md](../../_docs/ui.md) の「明るさ」)。生成の回ごとの統計・compact・ツールの実行のログは `ui.Service` が出す |
-| `frontend/src/` | チャット画面(React + TypeScript)。Vite でビルドした `frontend/dist` を `go:embed` で埋め込む。中身は [_docs/ui.md](../../_docs/ui.md) と [_docs/rendering.md](../../_docs/rendering.md) |
+| `frontend/src/` | チャット画面(React + TypeScript)。Vite でビルドした結果は共有のパッケージ `web`(ルートの `web/dist/app`)に出し、`main.go` が `web.Files()` で埋め込む(aibow-server がブラウザに配るものと同じ。0016)。中身は [_docs/ui.md](../../_docs/ui.md) と [_docs/rendering.md](../../_docs/rendering.md) |
 | `frontend/bindings/` | `wails3 generate bindings` の生成物(コミットする。手で直さない) |
 | `build/` / `Taskfile.yml` | `wails3 init`(react テンプレート)由来のビルド設定。ios / android / docker は削除して `.gitignore` 済み |
 | `version` | バージョンの唯一の正。`//go:embed` で exe に入る。扱いは [_docs/deploy.md](../../_docs/deploy.md) |
@@ -61,8 +61,11 @@ Ollama の保存先は Ollama と同じ `OLLAMA_MODELS`。意味と既定値は 
 
 ## Go と画面のやり取り
 
-- 画面の部品は、Go を呼ぶ係 `frontend/src/backend.ts` だけを通して Go を呼ぶ(0016 の 9-0)。バインディングと `@wailsio/runtime`(イベント・呼び出しの停止・クリップボード・リンク・ウィンドウの操作)を import するのはこのファイルだけ。
-  ブラウザでは中身を fetch と SSE に差し替える(9-2)。Go の型(バインディングの `models.ts`)は interface と enum だけなので、部品から直接 import してよい
+- 画面の部品は、Go を呼ぶ係 `frontend/src/backend.ts` だけを通して Go を呼ぶ(0016 の 9-0)。`backend.ts` は型と受け渡しだけで、中身は2つ:
+  `backendWails.ts`(デスクトップ。バインディングと `@wailsio/runtime`)と `backendWeb.ts`(ブラウザ。`POST /aibow/ui/call/{メソッド}` と SSE。0016 の 9-2)。
+  `main.tsx` が最初の描画の前に `initBackend` を呼び、aibow-server が index.html に足す印(`<meta name="aibow-browser">`)があればブラウザのほうを読み込む。
+  ブラウザでは `@wailsio/runtime` を読み込まない(読み込むと、ページ全体の右クリックのメニューが消えるなど、Wails の動きが入るため)。
+  見た目の分かれ道は `isBrowser`(`backend.ts`)だけで決める。Go の型(バインディングの `models.ts`)は interface と enum だけなので、部品から直接 import してよい
 - 画面 → Go は生成されたバインディング(`ChatService.Models()` など)で呼ぶ。Go のメソッドを変えたら `wails3 generate bindings -f '' -clean=true -ts -i` で作り直す
   (Taskfile と同じフラグ。`-i` は interface 生成なので、画面で `new` しない)。`wails3 dev` / `wails3 build` は自動で作り直す
 - Go → 画面は Wails のイベント(`ui.Notifier` を `wailsNotifier` が Wails のイベントにする。画面は `backend.ts` の `onChat` / `onModelLoaded` で受け取る)。`chat` イベントは `RegisterEvent[aibow.ChatEvent]` で型を登録してあり、画面では `ev.data` が `ChatEvent` 型になる。

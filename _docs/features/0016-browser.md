@@ -1,6 +1,6 @@
 # 0016: ブラウザからも使う(aibow-server が画面を配る)
 
-- 状態: 🔧 作業中(9-0・9-1 済み。2026-10-22)
+- 状態: 🔧 作業中(9-0・9-1・9-2 済み。2026-10-22)
 - ロードマップ: ロードマップ2 ステップ 9
 - 決めた日: 2026-10-22(Chat でユーザーと決めた)
 - 前提: 0015(aibow-server・aibow 専用の口・サーバー越しの画面で PC の事情を見せない)、0014(プロファイル)、0013(クライアント/サーバー構成の検討メモ)
@@ -109,6 +109,7 @@ aibow.exe(画面のアプリ)は今のまま(直接でも aibow-server 越しで
 - 画面のファイル(`_cmd/aibow/frontend` のビルド結果)を aibow-server に入れる方法。
   `go:embed` は `..` を含むパスやほかのモジュールのファイルを埋め込めないので、ルートのモジュールの aibow-server からは `_cmd/aibow/frontend/dist` を直接埋め込めない。
   ビルドのときに写す / 起動のときにフォルダを指定する、などの案を Code が出す(deploy の手順にも関わる)
+  - **決まった(2026-10-22、ユーザー)**:写さずに、共有のコンポーネントにする。画面のソースは `_cmd/aibow/frontend` のまま、ビルド結果を共有のパッケージ `web/`(`web/dist/app`)に出し、アプリと aibow-server の両方が import する(下の「9-2 で決めたこと」)。下の A〜C は、その前に Code が出した案(「写して」が気になる、とユーザー)
   - Code の案(2026-10-22。9-1 のあと。まだユーザーは決めていない):
     - A. ビルドのときに写して埋め込む:aibow-server のビルドの前に `_cmd/aibow/frontend/dist` を `_cmd/aibow-server` の下(Git に入れないフォルダ)に写し、`go:embed` する。
       exe 1つで配れる(組織の人に配る目的に合う)。画面を直したら aibow-server もビルドし直す。
@@ -139,7 +140,7 @@ aibow.exe(画面のアプリ)は今のまま(直接でも aibow-server 越しで
 2. **9-1 aibow-server に会話の仕組みと DB を載せる** ✅ 2026-10-22
    - DB(上の 13)・会話の仕組み(ツールなし)・生成は同じ席を通す(上の 11)
    - 画面用の口と SSE(上の 10・14)。`httptest` でテスト
-3. **9-2 画面を配る・ブラウザの「Go を呼ぶ係」**
+3. **9-2 画面を配る・ブラウザの「Go を呼ぶ係」** ✅ 2026-10-22
    - aibow-server が `/` で画面を配る(未決事項の「画面のファイルを入れる方法」を先に決める)
    - fetch と SSE の係・ブラウザかどうかの判定・ブラウザでの分かれ道(上の 16〜18)
 4. **9-3 確かめる・ドキュメント**
@@ -190,3 +191,32 @@ aibow.exe(画面のアプリ)は今のまま(直接でも aibow-server 越しで
   - 本物のモデル(qwen3.5:4b・9b)で、curl から:送信と SSE で答えが流れる・Cline の形のリクエスト(9B)を送っている間にブラウザから送ると「待っています」が届き、そのあと 4B に読み直して答える・
     aibow-server を起動し直しても会話が残る。aibow-server につないだ画面のアプリ(一時ビルドの CDP)で、モデルの選択と送信が今までどおり動く
   - 2回目の質問で KV キャッシュの再利用が 0 になるのは、画面のアプリと同じ(公式テンプレートが前の思考を捨てるため。[tuning.md](../tuning.md))
+
+## 9-2 で決めたこと(2026-10-22)
+
+- **画面のファイルの入れ方**(未決事項。ユーザーが決めた):ビルド結果を共有のパッケージ `web/` に出し、デスクトップのアプリと aibow-server の両方が import して埋め込む
+  - vite の出力先を `web/dist/app` にした(`vite.config.ts` の `outDir`。Git には入れない)。画面のソースは `_cmd/aibow/frontend` のまま
+    (`_` で始まるフォルダは Go が見ないので、`node_modules` がルートの `./...` に入らない。worktree の `node_modules` のジャンクションも今の場所のまま使える)
+  - ビルドしていなくてもルートのモジュールの `go vet` / `go test` / `go build` が通るように、「画面がビルドされていません」だけのページ `web/dist/index.html` をコミットした。
+    `web.Files()` は、`web/dist/app/index.html` があればそちら、無ければこのページを返す
+  - アプリは `//go:embed all:frontend/dist` をやめて `web.Files()` を使う。これで `_cmd/aibow` も、画面をビルドする前に `go vet` が通る
+  - 以前の出力先 `frontend/dist` は、`_cmd/aibow/.gitignore` に残した(前のビルドで残ったものが、Git に出てこないように)
+- **配り方**(Code が決めた):aibow-server は `GET /` と `GET /assets/` だけで画面を配る(vite の出力はこの2つ)。ほかのパスはこれまでどおり api と画面用の口が受け取る(知らないパスの 404 も api の形)
+- **ブラウザかどうかの決め方**(決定事項の 16。Code が決めた):aibow-server が配る index.html に `<meta name="aibow-browser">` を足し、画面は `backend.ts` の `isBrowser` でそれを見る
+  - 場所(URL)で見分けないのは、Wails の server モード(クラウドで確かめるための一時ビルド)の画面もブラウザだと思ってしまうため
+- **Go を呼ぶ係の中身を2つに分けた**:`backendWails.ts`(Wails のバインディングとランタイム)と `backendWeb.ts`(fetch と SSE)。`main.tsx` が最初の描画の前に `initBackend` でどちらかを `import()` する
+  - ブラウザでは `@wailsio/runtime` を読み込まない。読み込むと、ページ全体の右クリックのメニューを消す(Wails の `--default-contextmenu`)など、デスクトップ向けの動きが入るため
+  - ブラウザの `ChatService` は、呼ばれたメソッドの名前でそのまま `POST /aibow/ui/call/{名前}` に頼む(`Proxy`)。呼べるメソッドかは Go の側(`browserMethods`)が決める
+  - 停止は `AbortController` で fetch を止める。Wails と同じく、止めた呼び出しは `isCancel` が true のエラーで終わる
+- **ブラウザでの分かれ道**(決定事項の 17・18):タイトルバー(`TitleBar`)・入力欄の上の作業フォルダとツールの行・会話の設定とプロファイルの「ツール」を出さない。
+  ブラウザでは MCP のサーバーの一覧も聞かない。確認のカードは、ツールを使わないので出てこない(分かれ道は入れていない)。
+  リンクは新しいタブ、コピーは `navigator.clipboard`、IME の対策はブラウザの `focus`
+  - モデルのタブは、Go の `ServerHost` がつなぎ先を返すので、aibow-server につないだ画面のアプリと同じ見せ方になった(一覧とつなぎ先・作業領域だけ)。分かれ道は要らなかった
+- **SSE が切れたとき**(未決事項のまま):今は EventSource の既定の動き(自分でつなぎ直す。切れている間の経過は届かない)。どう見せるかは 9-3 でユーザーと決める
+- 確かめたこと:
+  - `go test ./...`(aibow-server の道筋のテスト `TestRoutes` を足した)・`wails3 build`・`go vet`
+  - Claude in Chrome で `http://127.0.0.1:8095/`(試しの aibow-server)を開き:画面が出る・`@wailsio/runtime` を読み込んでいない・送信と返事・停止・
+    設定の画面(基本設定・モデル・会話にツールが無い。モデルのタブは一覧・つなぎ先・作業領域)・読み直しても会話が残る・コンソールにエラーが無い
+  - デスクトップのアプリ(一時ビルドの CDP。aibow-server につないだ形):ランタイムを読み込み、タイトルバーとツールの行が出る・送信・最大化と戻す。印(meta)は無い
+  - 試しに headless の Edge を新しいプロファイルで起動したら、Windows のサインインから Microsoft アカウントに自動でサインインして同期を始めたので、すぐに止めてプロファイルを消した。
+    ブラウザの確認は Claude in Chrome で行った([env-windows.md](../env-windows.md))
