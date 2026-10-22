@@ -50,6 +50,26 @@ func TestUserCommands(t *testing.T) {
 		t.Error("パスワードが変わっていない")
 	}
 
+	// 管理者の印(0018 の 11-0)。外して一人もいなくなっても止めない(決定事項 16)
+	if u.Admin {
+		t.Error("作ったばかりの人が管理者になっている")
+	}
+	if err := setAdmin(ctx, st, "bob", true); err != nil {
+		t.Fatal(err)
+	}
+	if u, _ := st.UserByName(ctx, "bob"); !u.Admin {
+		t.Error("管理者になっていない")
+	}
+	if err := setAdmin(ctx, st, "bob", false); err != nil {
+		t.Fatal(err)
+	}
+	if u, _ := st.UserByName(ctx, "bob"); u.Admin {
+		t.Error("管理者から外れていない")
+	}
+	if err := setAdmin(ctx, st, "nobody", true); !errors.Is(err, auth.ErrUserNotFound) {
+		t.Errorf("いない人: %v", err)
+	}
+
 	if err := removeUser(ctx, st, "local"); err == nil {
 		t.Error("ログインなしの形の利用者は消せない")
 	}

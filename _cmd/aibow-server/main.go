@@ -2,7 +2,7 @@
 // ステップ8(0015)で aibow-api から名前を変えた。モデルの一覧・切り替え・GPU の層数も持ち、画面のアプリもここにつなげる。
 //
 //	aibow-server [-model モデル] [-ctx 作業領域の大きさ] [-port ポート] [-config 設定ファイル] [-login]
-//	aibow-server [-config 設定ファイル] user list|add|passwd|remove [名前]   … 利用者を扱う(users.go。ステップ10)
+//	aibow-server [-config 設定ファイル] user list|add|passwd|remove|key|admin|unadmin [名前]   … 利用者を扱う(users.go。ステップ10)
 //
 // Cline などの既製のツールから http://127.0.0.1:8089/v1 につなぐ。待ち受けは既定で 127.0.0.1 だけ(PC の外からはつなげない)。
 // -host で広げると、ログインと API キーが要るようになる。証明書(-tls-cert・-tls-key。aibow-server cert で作れる)があれば HTTPS(ステップ10)。
@@ -46,7 +46,7 @@ func main() {
 	f := defineFlags(flag.CommandLine)
 	flag.Usage = func() {
 		fmt.Fprintf(flag.CommandLine.Output(), "使い方: %s [-model モデル] [-ctx 作業領域] [-port ポート] [-config 設定ファイル] [-login] [-debug]\n", filepath.Base(os.Args[0]))
-		fmt.Fprintf(flag.CommandLine.Output(), "        %s [-config 設定ファイル] user list|add|passwd|remove [名前]\n\n", filepath.Base(os.Args[0]))
+		fmt.Fprintf(flag.CommandLine.Output(), "        %s [-config 設定ファイル] user list|add|passwd|remove|key|admin|unadmin [名前]\n\n", filepath.Base(os.Args[0]))
 		fmt.Fprintln(flag.CommandLine.Output(), "aibow のモデルを OpenAI 互換の API(/v1/models・/v1/chat/completions)として出します。")
 		fmt.Fprintln(flag.CommandLine.Output(), "強さの順は 引数 > 設定ファイル > 環境変数 > 既定 です。")
 		flag.PrintDefaults()

@@ -210,6 +210,10 @@ CREATE TABLE api_keys (
 ALTER TABLE conversations ADD COLUMN busy_by TEXT;
 ALTER TABLE conversations ADD COLUMN busy_until TEXT;
 `,
+	// 版 10: 管理者の印(0018 の 11-0)。aibow-server user admin <名前> で付ける。今いる人は管理者でない(0)
+	`
+ALTER TABLE users ADD COLUMN admin INTEGER NOT NULL DEFAULT 0;
+`,
 }
 
 func migrate(db *sql.DB) error {

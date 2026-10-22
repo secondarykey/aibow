@@ -23,7 +23,9 @@ type User struct {
 	ID   uuid.UUID `json:"id"`
 	Name string    `json:"name"`
 	// Password はパスワードのハッシュ(HashPassword の形)。空ならログインできない(パスワードをまだ作っていない)
-	Password  string    `json:"-"`
+	Password string `json:"-"`
+	// Admin は管理者か(0018 の 11-0)。管理者は、127.0.0.1 の外からもサーバーの PC の事情(モデル・層の数・置き場所)を変えられ、利用者を管理できる
+	Admin     bool      `json:"admin"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -50,6 +52,8 @@ type Store interface {
 	SetPassword(ctx context.Context, id uuid.UUID, hash string, at time.Time) error
 	// DeleteUser は利用者と、その人の会話・プロファイル・設定・セッションを消す。いなければ ErrUserNotFound
 	DeleteUser(ctx context.Context, id uuid.UUID) error
+	// SetAdmin は管理者の印を付ける / 外す。いなければ ErrUserNotFound
+	SetAdmin(ctx context.Context, id uuid.UUID, admin bool, at time.Time) error
 
 	CreateSession(ctx context.Context, s Session) error
 	// Session はセッション1つ。無ければ ErrNoSession(期限は見ない。見るのは Sessions)

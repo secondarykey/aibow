@@ -7,8 +7,11 @@ package main
 //	aibow-server [-config 設定ファイル] user passwd <名前>   … パスワードを作り直して表示する(ログイン中の画面はログインし直しになる)
 //	aibow-server [-config 設定ファイル] user remove <名前>   … 利用者と、その人の会話・プロファイル・設定を消す
 //	aibow-server [-config 設定ファイル] user key <名前>      … API キーを作って表示する(1人1本。作り直すと前のキーは使えなくなる。10-2)
+//	aibow-server [-config 設定ファイル] user admin <名前>    … 管理者にする(0018 の 11-0)
+//	aibow-server [-config 設定ファイル] user unadmin <名前>  … 管理者から外す
 //
-// 管理者はまだいない(ステップ11)ので、サーバーの PC でこのコマンドを打てる人が実質の管理者。
+// 管理者を決めるのはこのコマンドだけ(画面からは決めない。0018 の決定事項 6)。サーバーの PC でこのコマンドを打てる人が、いちばん上の管理者。
+// 管理者が一人もいなくなっても止めない(127.0.0.1 からはいつも PC の事情を変えられ、このコマンドでいつでも戻せるため。0018 の決定事項 16)。
 // llama.cpp もモデルも読み込まず、server.db だけを開く(aibow-server を動かしたままでも打てる。SQLite が順番に書く)。
 //
 // パスワードは aibow-server が作って一度だけ表示する(ユーザーと決めた)。表示はログに残さず、画面(標準出力)にだけ出す。
@@ -18,6 +21,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -35,7 +39,9 @@ const userUsage = `使い方:
   aibow-server [-config 設定ファイル] user add <名前>
   aibow-server [-config 設定ファイル] user passwd <名前>
   aibow-server [-config 設定ファイル] user remove <名前>
-  aibow-server [-config 設定ファイル] user key <名前>`
+  aibow-server [-config 設定ファイル] user key <名前>
+  aibow-server [-config 設定ファイル] user admin <名前>
+  aibow-server [-config 設定ファイル] user unadmin <名前>`
 
 // runUser は user のコマンドを実行する。args は user のあと。
 func runUser(c config, env *envReader, args []string) error {
@@ -68,6 +74,10 @@ func runUser(c config, env *envReader, args []string) error {
 		return removeUser(ctx, st, rest[0])
 	case "key":
 		return newKey(ctx, st, rest[0])
+	case "admin":
+		return setAdmin(ctx, st, rest[0], true)
+	case "unadmin":
+		return setAdmin(ctx, st, rest[0], false)
 	}
 	return fmt.Errorf("知らないコマンドです: user %s\n%s", cmd, userUsage)
 }
@@ -87,6 +97,9 @@ func listUsers(ctx context.Context, st *store.SQLite) error {
 			return err
 		} else if has {
 			note = "・API キーあり"
+		}
+		if u.Admin {
+			note += "・管理者"
 		}
 		if u.ID == aibow.LocalUser {
 			note += "・ログインなしの形の利用者"
@@ -176,6 +189,39 @@ func newKey(ctx context.Context, st *store.SQLite, name string) error {
 	fmt.Printf("名前: %s\nAPI キー: %s\n", name, key)
 	fmt.Println("API キーは今だけ表示します。デスクトップのアプリは settings.json の serverKey に、Cline などは API Key の欄に書きます。" +
 		"忘れたら aibow-server user key " + name + " で作り直してください(前のキーは使えなくなります)")
+	return nil
+}
+
+// setAdmin は管理者の印を付ける / 外す。外して一人もいなくなったら知らせる(止めはしない。0018 の決定事項 16)。
+func setAdmin(ctx context.Context, st *store.SQLite, name string, admin bool) error {
+	u, err := st.UserByName(ctx, name)
+	if err != nil {
+		return fmt.Errorf("利用者 %s: %w", name, err)
+	}
+	if u.Admin == admin {
+		if admin {
+			fmt.Println(name, "はもう管理者です")
+		} else {
+			fmt.Println(name, "は管理者ではありません")
+		}
+		return nil
+	}
+	if err := st.SetAdmin(ctx, u.ID, admin, time.Now()); err != nil {
+		return err
+	}
+	if admin {
+		log.Noticef("利用者 %s を管理者にしました", name)
+		return nil
+	}
+	log.Noticef("利用者 %s を管理者から外しました", name)
+	list, err := st.Users(ctx)
+	if err != nil {
+		return err
+	}
+	if !slices.ContainsFunc(list, func(u auth.User) bool { return u.Admin }) {
+		log.Warn("管理者が一人もいなくなりました。サーバーの PC の事情(モデル・層の数・置き場所)は 127.0.0.1 からだけ変えられます。" +
+			"戻すときは aibow-server user admin <名前> を実行してください")
+	}
 	return nil
 }
 

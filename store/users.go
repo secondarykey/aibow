@@ -18,12 +18,12 @@ import (
 
 var _ auth.Store = (*SQLite)(nil)
 
-const userColumns = "id, name, password, created_at, updated_at"
+const userColumns = "id, name, password, admin, created_at, updated_at"
 
 func scanUser(r rowScanner) (auth.User, error) {
 	var u auth.User
 	var id, created, updated string
-	if err := r.Scan(&id, &u.Name, &u.Password, &created, &updated); err != nil {
+	if err := r.Scan(&id, &u.Name, &u.Password, &u.Admin, &created, &updated); err != nil {
 		return u, err
 	}
 	var err error
@@ -38,8 +38,8 @@ func scanUser(r rowScanner) (auth.User, error) {
 }
 
 func (s *SQLite) CreateUser(ctx context.Context, u auth.User) error {
-	_, err := s.db.ExecContext(ctx, "INSERT INTO users ("+userColumns+") VALUES (?, ?, ?, ?, ?)",
-		u.ID.String(), u.Name, u.Password, formatTime(u.CreatedAt), formatTime(u.UpdatedAt))
+	_, err := s.db.ExecContext(ctx, "INSERT INTO users ("+userColumns+") VALUES (?, ?, ?, ?, ?, ?)",
+		u.ID.String(), u.Name, u.Password, u.Admin, formatTime(u.CreatedAt), formatTime(u.UpdatedAt))
 	// 名前は UNIQUE。SQLite のエラーの文で見分ける(ドライバーの型を使うと、このパッケージの外にドライバーの事情が漏れるため)
 	if err != nil && strings.Contains(err.Error(), "UNIQUE constraint failed: users.name") {
 		return auth.ErrUserExists
@@ -82,6 +82,11 @@ func (s *SQLite) user(ctx context.Context, where string, arg any) (auth.User, er
 
 func (s *SQLite) SetPassword(ctx context.Context, id uuid.UUID, hash string, at time.Time) error {
 	res, err := s.db.ExecContext(ctx, "UPDATE users SET password = ?, updated_at = ? WHERE id = ?", hash, formatTime(at), id.String())
+	return notFoundIfNone(res, err, auth.ErrUserNotFound)
+}
+
+func (s *SQLite) SetAdmin(ctx context.Context, id uuid.UUID, admin bool, at time.Time) error {
+	res, err := s.db.ExecContext(ctx, "UPDATE users SET admin = ?, updated_at = ? WHERE id = ?", admin, formatTime(at), id.String())
 	return notFoundIfNone(res, err, auth.ErrUserNotFound)
 }
 
