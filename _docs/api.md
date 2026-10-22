@@ -101,7 +101,7 @@ data: [DONE]
 
 | 口 | 本文 → 返事 | 順番待ち | 元にしたもの |
 |---|---|---|---|
-| `GET /models` | → `{"object":"list","data":[{"id","name","source","size_gb","origin","place","status":{"value":"loaded"\|"unloaded"},"n_gpu_layers"}],"current":<読み込み中のモデルの情報 か null>,"n_ctx","gpu"}` | 待たない | llama.cpp の router の `GET /models`(`status.value`) |
+| `GET /models` | → `{"object":"list","data":[{"id","name","source","size_gb","origin","place","status":{"value":"loaded"\|"loading"\|"unloaded"},"n_gpu_layers"}],"current":<読み込み中のモデルの情報 か null>,"loading":<入れ替えている先のモデルの ID。入れ替え中だけ>,"n_ctx","gpu"}` | 待たない | llama.cpp の router の `GET /models`(`status.value`) |
 | `POST /models/load` | `{"model"}` → `{"success":true,"model":<読み込んだモデルの情報>}` | 待つ | llama.cpp の router の `POST /models/load` |
 | `POST /models/unload` | `{"model"}` → `{"success":true,"model":null}`(VRAM を空ける。8-4) | 待つ | llama.cpp の router の `POST /models/unload` |
 | `POST /apply-template` | チャットと同じ本文 → `{"prompt"}`(書式を当てた文字列) | 待たない | llama.cpp の `POST /apply-template` |
@@ -112,6 +112,7 @@ data: [DONE]
 | `POST /aibow/places/remove` | `{"path"}` → 外したあとの `{"places"}`。足した置き場所でなければ 400 | 待たない | aibow だけ(8-4) |
 | `GET /aibow/settings` | → `{"port","n_ctx","model","lib","models_dir","ollama_dir","config_file","config_found","state_file"}`(表示だけ) | 待たない | aibow だけ(8-4) |
 
+- 入れ替え(`POST /models/load`・会話のモデルでの読み直し・GPU の層数を変えた読み直し)の途中は、前のモデルを解放してから読み込むので `current` が `null` になる。降ろした(何も無い)のと見分けられるよう、入れ替えている先を `loading` で返す(`engine.Loading`。2026-10-22。9-3 で、入れ替えの途中に一覧を取った画面のアプリのモデルが空になったため)
 - `n_ctx` はサーバーの作業領域の大きさ。**起動のときに決めた大きさで固定**で、クライアントからは変えられない(共有するサーバーで1人の都合で作り直すと、ほかの人の KV キャッシュが消えるため。0015 の 3)
 - `/aibow/gpu-layers` の `model` を書かなければ読み込み中のモデル。読み込み中のモデルなら読み直し、読み直せたら覚える。読み込んでいないモデルは覚えるだけ(次に読み込むときから効く)。
   覚える場所はサーバーの PC の `server-models.json`(GPU の層数は「その PC の人が決めること」なので。アプリの DB の `model_gpu_layers` とは別)
@@ -163,13 +164,15 @@ data: [DONE]
 | `Generate` | `POST /v1/chat/completions` | いつもストリーミング・`"aibow": {"return_prompt": true}`。届いた塊を `onThinking` / `onContent` / `onPrompt` に渡し、最後の塊の `timings` と `aibow` から `GenerateStats` と崩れた呼び出しを戻す |
 | `CountTokens` | `POST /aibow/count-tokens` | 生成と同じ形の本文で数える(形が違うとトークン数がずれるため) |
 | `EnsureContextSize` | (`GET /models` の `n_ctx`) | 作業領域は作り直さず、入るかを確かめるだけ。入らなければ `ContextError`(会話の上限を下げるか、aibow-server の `-ctx` を上げる) |
-| `Info` | なし | 最後に知った読み込み中のモデル。呼ばれる回数が多いので聞きに行かず、`LoadModel`・`Models`・生成の返事のモデルが変わったときに取り直す |
+| `Info` | なし | 最後に知った読み込み中のモデル。呼ばれる回数が多いので聞きに行かず、`LoadModel`・`Models`・生成の返事のモデルが変わったときに取り直す。サーバーが入れ替えの途中なら `null`(会話の仕組みが送信の前に `LoadModel` を呼び、サーバーの席で入れ替えが終わるのを待つ) |
+| `Shown` | なし | 画面に見せる読み込み中のモデル(`Models` の `Current` もこれ)。入れ替えの途中(`loading` あり)は、前に知ったモデルのまま。画面のモデルが空になって送信が止められないように、`Info` と分けた(2026-10-22) |
 | `LoadModel` | `POST /models/load` | 会話のモデルを読み込ませ、これからの生成でその `model` を頼む |
 | `Models`・`SetGPULayers` | `GET /models`・`POST /aibow/gpu-layers` | 画面のモデルの一覧と GPU の層数(8-2 でつなぐ) |
 
 - **会話 → JSON → 会話 で1文字も変えない**:引数の値はいつも JSON の文字列で送る(サーバーは文字列を中身のまま書式に戻すので、数や `True`・前後の空白も変わらない)。
   崩れた呼び出しは `aibow.broken_tool_calls` で順番つきで送り、サーバーがモデルの書いたまま(`raw`)を書式に戻す。
   `client_test.go` で、本物の `api.Server` を `httptest` で立て(生成だけ偽物)、サーバーが受け取った会話と、書式を当てた文字列が直接のときと同じになることを確かめている
+- `LoadModel` を呼ばずに生成するとき(会話のモデルが、最後に知った読み込み中のモデルと同じ)は、そのモデルを `model` で頼む。空で頼むとサーバーが今のモデルで答えるので、そのあとでほかの人が入れ替えていると、違うモデルで返事ができてしまうため
 - 停止ボタン(ctx を止める)はつながりを切る。サーバーはそれを見て生成を止める。クライアントは届いた分を `StopReason: cancel` で返す(エラーにしない。engine と同じ)
 - つながらないとき(起動していない・止めた)は `ErrUnreachable`(つなぎ先と「aibow-server を起動してください」を添える)。サーバーのエラーは `APIError`(`code` で見分けられる)
 
@@ -201,7 +204,7 @@ Cline など ──HTTP──→ /v1/ など → api.Server ──────�
 - **席**:送信の全体(会話のモデルの読み直し・要約・返事)の間、OpenAI 互換の口と同じ席を持つ。生成1回ごとに取り直すと、その間に Cline などがモデルを入れ替えてしまうため。
   ふさがっていれば `notice`(「ほかの生成が終わるのを待っています…」)を送ってから待つ。入力欄の下でモデルを選んだとき(`SwitchModel`)も席を取ってから読み込む
 - **作業領域**:起動のときに決めた大きさで固定。会話の上限 + 返事の上限が入るかを確かめるだけで、作り直さない(`ui.ServerHost`。aibow-server につないだ画面のアプリと同じ `ContextError`)
-- **見せるもの**は、aibow-server につないだ画面のアプリと同じ:モデルの一覧(名前・大きさ・読み込み中か)・作業領域の大きさ・つなぎ先(aibow-server のアドレス)。出どころ・置き場所・層の数・サーバーの PC のパスは見せない
+- **見せるもの**は、aibow-server につないだ画面のアプリと同じ:モデルの一覧(名前・大きさ・読み込み中か)・作業領域の大きさ・つなぎ先(aibow-server のアドレス)。Cline などのためにモデルを入れ替えている途中は、前のモデルを見せ続ける(`ServerHost`。api/client の `Shown` と同じ)。出どころ・置き場所・層の数・サーバーの PC のパスは見せない
 - 実際に動かして確かめたこと(2026-10-22。qwen3.5:4b・9b):Cline の形のリクエストを 9B で送っている間にブラウザから送ると、「待っています」が届き、
   Cline の返事のあとで会話のモデル(4B)を読み直して答えた。aibow-server を起動し直しても会話が残っていた
 
