@@ -35,6 +35,7 @@ import (
 
 	"github.com/secondarykey/aibow"
 	"github.com/secondarykey/aibow/api"
+	"github.com/secondarykey/aibow/auth"
 	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/format"
 	"github.com/secondarykey/aibow/log"
@@ -174,6 +175,8 @@ func run(c config, notices []string, cfgErr error, env *envReader) error {
 	}
 	defer closeBrowser()
 	// OpenAI 互換の口と aibow 専用の口は、要るときは API キーで守る(0017 の決定事項 9)
+	// サーバーの PC の事情を変える口は、127.0.0.1 からのほか、管理者にも許す(API キーの持ち主。0018 の決定事項 8)
+	srv.SetAdmin(auth.IsAdmin)
 	apiH := srv.Handler()
 	if c.KeysRequired() {
 		apiH = keys.RequireKey(apiH)

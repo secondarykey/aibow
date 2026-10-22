@@ -342,4 +342,24 @@ func TestKeyMe(t *testing.T) {
 			t.Errorf("required=%v auth=%q: %d %+v", c.required, c.auth, rec.Code, got)
 		}
 	}
+
+	// 管理者なら admin が付き、IsAdmin も true(0018 の 11-0)
+	if err := st.SetAdmin(ctx, u.ID, true, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/aibow/auth/key", nil)
+	req.Header.Set("Authorization", "Bearer "+key)
+	var admin bool
+	k.RequireKey(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { admin = auth.IsAdmin(r) })).ServeHTTP(rec, req)
+	if !admin {
+		t.Error("管理者のキーなのに IsAdmin が false")
+	}
+	rec = httptest.NewRecorder()
+	k.MeHandler(true).ServeHTTP(rec, req)
+	var got auth.Me
+	json.NewDecoder(rec.Body).Decode(&got)
+	if !got.Admin {
+		t.Errorf("管理者の Me: %+v", got)
+	}
 }

@@ -58,8 +58,15 @@ type Server struct {
 	// aibow-server の中のブラウザの会話も同じ席を使う(Seat で渡す。0016 の 11)
 	seat *Seat
 
+	// admin は、リクエストを送ってきた人が管理者か(SetAdmin で渡す。0018 の 11-0)。nil なら誰も管理者でない
+	admin func(r *http.Request) bool
+
 	now func() time.Time // テストで時刻を固定するため
 }
+
+// SetAdmin は、リクエストを送ってきた人が管理者かを決める係を渡す(0018 の 11-0)。
+// 誰かを決めるのは aibow-server(API キーの持ち主。auth)なので、api は auth を import せずに、決める係だけを受け取る。
+func (s *Server) SetAdmin(f func(r *http.Request) bool) { s.admin = f }
 
 // New は API を作る。起動のときのモデルは gen にもう読み込んである前提(読み込みは _cmd/aibow-server が起動時に行う)。
 // mm が nil なら、リクエストの model ではモデルを切り替えない(0012 の形)。nCtx はサーバーの作業領域の大きさ(GET /models で知らせる)。
@@ -78,14 +85,14 @@ func (s *Server) Handler() http.Handler {
 	// aibow 専用の口(0015)。/v1/ と分け、意味が同じものは llama.cpp の server の名前にそろえる
 	mux.HandleFunc("GET /models", s.handleServerModels)
 	mux.HandleFunc("POST /models/load", s.handleLoad)
-	// サーバーの PC の事情を変える口(降ろす・GPU の層数・置き場所)は、サーバーの PC からだけ(localOnly。0017 の 10-2)
-	mux.HandleFunc("POST /models/unload", localOnly(s.handleUnload))
+	// サーバーの PC の事情を変える口(降ろす・GPU の層数・置き場所)は、サーバーの PC からか管理者だけ(pcSide。0017 の 10-2・0018 の 11-0)
+	mux.HandleFunc("POST /models/unload", s.pcSide(s.handleUnload))
 	mux.HandleFunc("POST /apply-template", s.handleApplyTemplate)
 	mux.HandleFunc("POST /aibow/count-tokens", s.handleCountTokens)
-	mux.HandleFunc("POST /aibow/gpu-layers", localOnly(s.handleGPULayers))
+	mux.HandleFunc("POST /aibow/gpu-layers", s.pcSide(s.handleGPULayers))
 	mux.HandleFunc("GET /aibow/places", s.handlePlaces)
-	mux.HandleFunc("POST /aibow/places/add", localOnly(s.handleAddPlace))
-	mux.HandleFunc("POST /aibow/places/remove", localOnly(s.handleRemovePlace))
+	mux.HandleFunc("POST /aibow/places/add", s.pcSide(s.handleAddPlace))
+	mux.HandleFunc("POST /aibow/places/remove", s.pcSide(s.handleRemovePlace))
 	mux.HandleFunc("GET /aibow/settings", s.handleSettings)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "invalid_request_error", "",
@@ -129,20 +136,27 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 // writeError は OpenAI と同じ形のエラーを返す:{"error": {"message", "type", "code"}}。
 // クライアントは type と code で見分ける(例: 長すぎるときの code は context_length_exceeded)。
-// localOnly は、サーバーの PC の上(127.0.0.1・::1)からの呼び出しだけを通す(0017 の 10-2。ユーザーと決めた)。
-// モデルを降ろす・GPU の層数・置き場所は、サーバーの PC と、ほかの人が使っているモデルに関わるので、ほかの PC からは変えさせない
-// (誰に許すかはステップ11の管理者で決め直す)。aibow-server が 127.0.0.1 だけで待ち受けているときは、いつも通る。
-func localOnly(h http.HandlerFunc) http.HandlerFunc {
+// pcSide は、サーバーの PC の上(127.0.0.1・::1)からの呼び出しと、管理者の呼び出しだけを通す
+// (0017 の 10-2 で「サーバーの PC からだけ」にし、0018 の決定事項 8 で管理者にも許した)。
+// モデルを降ろす・GPU の層数・置き場所は、サーバーの PC と、ほかの人が使っているモデルに関わるので、ほかの人には変えさせない。
+// aibow-server が 127.0.0.1 だけで待ち受けているときは、いつも通る。
+func (s *Server) pcSide(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		host, _, err := net.SplitHostPort(r.RemoteAddr)
-		if ip := net.ParseIP(host); err != nil || ip == nil || !ip.IsLoopback() {
-			log.Warnf("サーバーの PC からだけの操作なので断りました: %s %s(%s)", r.Method, r.URL.Path, r.RemoteAddr)
+		if !IsLocal(r) && (s.admin == nil || !s.admin(r)) {
+			log.Warnf("サーバーの PC からか管理者だけの操作なので断りました: %s %s(%s)", r.Method, r.URL.Path, r.RemoteAddr)
 			writeError(w, http.StatusForbidden, "permission_error", "local_only",
-				"この操作(モデルを降ろす・GPU の層数・モデルの置き場所)は、aibow-server を動かしている PC からだけできます")
+				"この操作(モデルを降ろす・GPU の層数・モデルの置き場所)は、aibow-server を動かしている PC からか、管理者だけができます")
 			return
 		}
 		h(w, r)
 	}
+}
+
+// IsLocal は、リクエストがサーバーの PC の上(127.0.0.1・::1)から来たか。
+func IsLocal(r *http.Request) bool {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	ip := net.ParseIP(host)
+	return err == nil && ip != nil && ip.IsLoopback()
 }
 
 func writeError(w http.ResponseWriter, status int, typ, code, msg string) {

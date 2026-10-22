@@ -95,6 +95,6 @@ func (k *Keys) MeHandler(required bool) http.Handler {
 	}
 	return k.RequireKey(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		u, _ := UserFrom(r.Context())
-		writeJSON(w, http.StatusOK, Me{Login: true, Name: u.Name})
+		writeJSON(w, http.StatusOK, Me{Login: true, Name: u.Name, Admin: u.Admin})
 	}))
 }

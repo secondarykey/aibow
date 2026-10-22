@@ -36,6 +36,12 @@ func UserFrom(ctx context.Context) (User, bool) {
 	return u, ok
 }
 
+// IsAdmin は、リクエストの ctx に入っている利用者(ログインした人か API キーの持ち主)が管理者か(0018 の 11-0)。
+func IsAdmin(r *http.Request) bool {
+	u, ok := UserFrom(r.Context())
+	return ok && u.Admin
+}
+
 // Middleware は、cookie の合言葉からログインした人を決めて、リクエストの ctx に入れる(UserFrom で読む)。
 // ログインしていなくても断らずに次へ渡す(断るかは、受け取った側が決める。ログインの画面のファイルは誰にでも配るため)。
 // 期限の切れた cookie は消す。期限を延ばしたら、cookie の期限も延ばす。
@@ -65,6 +71,8 @@ func (s *Sessions) Middleware(next http.Handler) http.Handler {
 type Me struct {
 	Login bool   `json:"login"` // ログインが要るか(要らない形なら、画面はログインもログアウトも出さない)
 	Name  string `json:"name"`  // ログインしている人の名前。していなければ空
+	// Admin は、ログインしている人が管理者か(0018 の 11-0。画面が、管理者だけのものを出すかを決める)
+	Admin bool `json:"admin,omitempty"`
 }
 
 // Handler は /aibow/auth/ の下の口を返す。required はログインが要るか(aibow-server の設定)。
@@ -75,7 +83,7 @@ func Handler(s *Sessions, required bool) http.Handler {
 	mux.HandleFunc("GET /aibow/auth/me", func(w http.ResponseWriter, r *http.Request) {
 		me := Me{Login: required}
 		if u, ok := UserFrom(r.Context()); ok && required {
-			me.Name = u.Name
+			me.Name, me.Admin = u.Name, u.Admin
 		}
 		writeJSON(w, http.StatusOK, me)
 	})
@@ -119,7 +127,7 @@ func Handler(s *Sessions, required bool) http.Handler {
 		lim.ok(addr)
 		setCookie(w, r, token)
 		log.Noticef("ログインしました: %s(%s)", u.Name, addr)
-		writeJSON(w, http.StatusOK, Me{Login: true, Name: u.Name})
+		writeJSON(w, http.StatusOK, Me{Login: true, Name: u.Name, Admin: u.Admin})
 	})
 	mux.HandleFunc("POST /aibow/auth/logout", func(w http.ResponseWriter, r *http.Request) {
 		if c, err := r.Cookie(CookieName); err == nil {
