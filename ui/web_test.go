@@ -663,6 +663,74 @@ func TestWebSharedProfile(t *testing.T) {
 	}
 }
 
+// 会話を共有すると相手は読むだけで開け、写して続けられる。管理者は共有されていなくても読める(0018 の 11-2)
+func TestWebSharedConversation(t *testing.T) {
+	w := newTestWeb(t)
+	now := time.Now()
+	add := func(name string, admin bool) *uuid.UUID {
+		u := auth.User{ID: uuid.NewV7(), Name: name, Admin: admin, CreatedAt: now, UpdatedAt: now}
+		if err := w.st.CreateUser(context.Background(), u); err != nil {
+			t.Fatal(err)
+		}
+		uctx := aibow.WithUser(context.Background(), u.ID)
+		app, _, _ := aibow.LoadAppSettings(uctx, w.st, InitialAppSettings(InitialValues{GPULayers: 999, PresencePenalty: 1.5, HistoryTokens: 8192, ReplyTokens: 8192}))
+		if _, err := aibow.NewConversations(w.st, nil, app).PrepareProfiles(uctx); err != nil {
+			t.Fatal(err)
+		}
+		return &u.ID
+	}
+	alice, bob, carol := add("alice", true), add("bob", false), add("carol", false)
+
+	w.user.Store(bob)
+	c := w.newConversation(t)
+	w.mustCall(t, nil, "Send", c.ID, "こんにちは?")
+	if status, _ := w.call(t, context.Background(), "SetConversationShare", c.ID, aibow.ShareUsers, []string{}); status == http.StatusOK {
+		t.Error("相手を選ばずに指定した人にはできない")
+	}
+	w.mustCall(t, nil, "SetConversationShare", c.ID, aibow.ShareUsers, []string{"carol"})
+
+	w.user.Store(carol)
+	var refs []aibow.ConversationRef
+	w.mustCall(t, &refs, "SharedConversations")
+	if len(refs) != 1 || refs[0].ID != c.ID || refs[0].OwnerName != "bob" {
+		t.Fatalf("共有された会話: %+v", refs)
+	}
+	var r aibow.SharedRead
+	w.mustCall(t, &r, "ReadConversation", c.ID)
+	if r.ByAdmin || len(r.Messages) != 2 {
+		t.Errorf("読む: %+v", r)
+	}
+	// ほかの人の会話に送ってみる。Send は結果を SSE で返すので呼び出しは 200 で終わる。書き込めていないことは、最後に持ち主の会話で確かめる
+	w.call(t, context.Background(), "Send", c.ID, "書き込み")
+	var cp aibow.Conversation
+	w.mustCall(t, &cp, "CopyShared", c.ID)
+	var mine []aibow.Conversation
+	w.mustCall(t, &mine, "Conversations")
+	if len(mine) != 1 || mine[0].ID != cp.ID {
+		t.Errorf("写した会話は自分の一覧に出る: %+v", mine)
+	}
+	if status, _ := w.call(t, context.Background(), "UserConversations", "bob"); status == http.StatusOK {
+		t.Error("管理者でない人は人の会話の一覧を見られない")
+	}
+
+	w.user.Store(alice)
+	w.mustCall(t, &refs, "UserConversations", "bob")
+	if len(refs) != 1 {
+		t.Errorf("管理者が見る bob の会話: %+v", refs)
+	}
+	w.mustCall(t, &r, "ReadConversation", c.ID)
+	if !r.ByAdmin {
+		t.Error("共有されていない会話を管理者として読んだ印が無い")
+	}
+
+	w.user.Store(bob)
+	var detail ConversationDetail
+	w.mustCall(t, &detail, "Conversation", c.ID)
+	if len(detail.Messages) != 2 || detail.Conversation.Share != aibow.ShareUsers {
+		t.Errorf("ほかの人が書き込めてしまった・共有の印が無い: %d %+v", len(detail.Messages), detail.Conversation)
+	}
+}
+
 func TestWebUsers(t *testing.T) {
 	w := newTestWeb(t)
 	mine := w.newConversation(t)

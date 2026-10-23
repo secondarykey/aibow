@@ -51,6 +51,8 @@ var browserMethods = []string{
 	// 会話
 	"Conversations", "Conversation", "Usage", "NewConversation", "DeleteConversation", "RenameConversation",
 	"SetExcluded", "UpdateConversationSettings",
+	// 会話の共有と管理者が読む(0018 の 11-2。管理者かは保存先が確かめる)
+	"SetConversationShare", "SharedConversations", "UserConversations", "UserNames", "ReadConversation", "CopyShared",
 	// 送信(生成が終わるまで返らない長い呼び出し。経過は SSE の chat で送る)
 	"Send", "Regenerate", "Resend", "Compact", "StopSummary",
 }
