@@ -14,7 +14,7 @@ aibow は、ローカルLLMを使ったアプリを**自分で作りながら仕
 
 完成品を早く作ることより、**各段階で何が起きているかが読んで分かること**を優先してください。
 
-## 全体の構成(ステップ10: 利用者とログイン・ほかの PC から使う)
+## 全体の構成(ステップ11: 共有。管理者・会話の公開範囲・共有の作業)
 
 ```
 ウィンドウ(_cmd/aibow/frontend の React) ⇄ Wails v3 ⇄ aibow/ui ⇄ aibow ⇄ aibow/engine ⇄ yzma ⇄ llama.cpp(_cmd/aibow/lib\ の DLL)⇄ GPU
@@ -32,6 +32,8 @@ OpenAI 互換のクライアント(Cline など)⇄ HTTP(S)(既定は 127.0.0.1�
   (画面は aibow/web に埋め込んだもので、デスクトップのアプリと同じ。会話は aibow-server の server.db。生成は OpenAI 互換の口と同じ engine・同じ順番待ちの席 api.Seat)
 利用者(ステップ10):aibow-server の server.db に利用者・セッション・API キー(aibow/auth)。会話・プロファイル・表示の設定は持ち主で分かれ、誰のものかは ctx で運ぶ(aibow.WithUser)。
   既定は 127.0.0.1 だけでログインなし(利用者 local)。-host で外に出すとログインと API キーが要る([_docs/usage.md](_docs/usage.md) の「ほかの PC から使う」)
+共有(ステップ11):管理者(コマンドで決める)は利用者の管理・使えるモデル・サーバーの PC の事情を変えられ、ほかの人の会話を読むだけで読める(ログに残る)。
+  会話は全員か指定した人に共有でき(読むだけ。続けるときは写す)、管理者はプロファイルを配れる。誰に見えて誰が変えられるかは store の SQL の条件の1か所([_docs/conversations.md](_docs/conversations.md))
 ```
 
 - **Ollama などの外部 LLM サーバーは使わない**。aibow のプロセスの中で llama.cpp を直接動かす。
