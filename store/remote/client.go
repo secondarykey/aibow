@@ -103,6 +103,32 @@ func (c *Client) Compactions(ctx context.Context, conv uuid.UUID) (out []aibow.C
 	return out, err
 }
 
+// ---- 会話の共有(0018 の 11-2) ---------------------------------------------------------------
+
+func (c *Client) SetConversationShare(ctx context.Context, id uuid.UUID, share string, with []string) error {
+	return c.call(ctx, "SetConversationShare", []any{id, share, with})
+}
+
+func (c *Client) SharedConversations(ctx context.Context) (out []aibow.ConversationRef, err error) {
+	err = c.call(ctx, "SharedConversations", nil, &out)
+	return out, err
+}
+
+func (c *Client) UserConversations(ctx context.Context, name string) (out []aibow.ConversationRef, err error) {
+	err = c.call(ctx, "UserConversations", []any{name}, &out)
+	return out, err
+}
+
+func (c *Client) ReadConversation(ctx context.Context, id uuid.UUID) (out aibow.SharedRead, err error) {
+	err = c.call(ctx, "ReadConversation", []any{id}, &out)
+	return out, err
+}
+
+func (c *Client) UserNames(ctx context.Context) (out []string, err error) {
+	err = c.call(ctx, "UserNames", nil, &out)
+	return out, err
+}
+
 // ---- プロファイル -------------------------------------------------------------------------
 
 func (c *Client) ListProfiles(ctx context.Context) (out []aibow.Profile, err error) {

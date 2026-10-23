@@ -60,6 +60,20 @@ type Store interface {
 	UpdateProfile(ctx context.Context, p Profile) error
 	// DeleteProfile はプロファイルを消す。そのプロファイルから作った会話があれば消さずに ErrProfileInUse。
 	DeleteProfile(ctx context.Context, id uuid.UUID) error
+	// ---- 会話の共有(0018 の 11-2)。ほかの人の会話は、ここの読むだけのメソッドでだけ読める
+	// (上の会話のメソッドは、今までどおり自分の会話だけを読み書きする。書き込めないことを、メソッドの分け方で守る)。
+	//
+	// SetConversationShare は、自分の会話の共有の範囲と相手(名前)を変える。自分の会話でなければ ErrNotFound
+	SetConversationShare(ctx context.Context, id uuid.UUID, share string, with []string) error
+	// SharedConversations は、自分に共有された(全員か自分が相手の)ほかの人の会話の一覧(更新の新しい順)
+	SharedConversations(ctx context.Context) ([]ConversationRef, error)
+	// UserConversations は、利用者 name の会話の一覧(管理者だけ。ほかは ErrNotAdmin)
+	UserConversations(ctx context.Context, name string) ([]ConversationRef, error)
+	// ReadConversation は、ほかの人の会話を読む(共有されているか、管理者)。読めなければ ErrNotFound(あることも見せない)
+	ReadConversation(ctx context.Context, id uuid.UUID) (SharedRead, error)
+	// UserNames は、利用者の名前の一覧(共有の相手を選ぶため。ログインした人なら誰でも。ログインなしの形の利用者は入れない)
+	UserNames(ctx context.Context) ([]string, error)
+
 	// SetProfileShare は、プロファイルを配る範囲と相手(名前)を変える(0018 の 11-1)。管理者でなければ ErrNotAdmin。
 	//
 	// 誰に何が見えて、誰が変えられるかは、保存先が1か所で決める(SQLite なら WHERE の条件。0018 の「学ぶこと」の認可):
@@ -89,6 +103,30 @@ type Conversation struct {
 	ProfileID uuid.UUID `json:"profile_id"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+	// 共有(0018 の 11-2)。Share は共有の範囲(ShareNone 非公開 / ShareAll 全員 / ShareUsers 指定した人。プロファイルと同じ値)、
+	// ShareWith は相手の名前(会話1つを読んだときだけ入る)。変えるのは SetConversationShare(UpdateConversation では変わらない)
+	Share     string   `json:"share,omitempty"`
+	ShareWith []string `json:"share_with,omitempty"`
+}
+
+// ConversationRef は、ほかの人の会話の一覧の1件(共有された会話・管理者が見る人の会話。0018 の 11-2)。中身は ReadConversation で読む。
+type ConversationRef struct {
+	ID        uuid.UUID `json:"id"`
+	Title     string    `json:"title"`
+	OwnerName string    `json:"owner_name"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// SharedRead は、ほかの人の会話を読んだもの(読むだけ。0018 の 11-2)。
+type SharedRead struct {
+	Conversation Conversation    `json:"conversation"`
+	Messages     []StoredMessage `json:"messages"`
+	Compactions  []Compaction    `json:"compactions"`
+	OwnerName    string          `json:"owner_name"`
+	// ByAdmin は、共有されていないが管理者として読んだ(読んだことをログに残す。決定事項 1)
+	ByAdmin bool `json:"by_admin"`
+	// ReaderName は読んだ人(ctx の利用者)の名前(ログに書くため)
+	ReaderName string `json:"reader_name"`
 }
 
 // ConversationSettings は会話ごとの設定。変えると次の送信から効く。

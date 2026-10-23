@@ -389,6 +389,58 @@ func (cs *Conversations) Create(ctx context.Context, settings *ConversationSetti
 
 // CreateIn は、プロファイル profileID から新しい会話を作る(空なら新しい会話で最初に選ばれるプロファイル)。
 // 新しい会話の画面でプロファイルを選んだとき。しまったプロファイルからは作れない。ほかは Create と同じ。
+// CopyShared は、ほかの人の会話(共有された・管理者として読んだ)を写して、自分の会話にする(0018 の決定事項 2・26)。
+// 発言・要約・「モデルに渡さない」の印も写す(ID は新しく振り、要約がどの発言までかは写した発言に付け替える)。
+// 名前は「<名前>(写し)」。設定は写す(作業フォルダは持ち主の PC のパスなので写さない)。
+// プロファイルは、写す人にも見えるなら同じもの(決まりも同じ)、見えなければ写す人の最初に選ばれるもの。
+func (cs *Conversations) CopyShared(ctx context.Context, id uuid.UUID) (Conversation, error) {
+	src, err := cs.store.ReadConversation(ctx, id)
+	if err != nil {
+		return Conversation{}, err
+	}
+	profile := src.Conversation.ProfileID
+	if p, err := cs.store.Profile(ctx, profile); err != nil || p.Withdrawn || p.Archived {
+		def, err := cs.DefaultProfile(ctx)
+		if err != nil {
+			return Conversation{}, err
+		}
+		profile = def.ID
+	}
+	s := src.Conversation.Settings.normalized()
+	s.WorkDir, s.profile = "", nil
+	now := time.Now()
+	c := Conversation{ID: uuid.NewV7(), Title: src.Conversation.Title + "(写し)", Settings: s, ProfileID: profile, CreatedAt: now, UpdatedAt: now}
+	if err := cs.store.CreateConversation(ctx, c); err != nil {
+		return Conversation{}, fmt.Errorf("会話を写せません: %w", err)
+	}
+	// 発言の ID は作った順に並ぶので、古い順に新しい ID を振る(並びが変わらない)
+	ids := map[uuid.UUID]uuid.UUID{}
+	var excluded []uuid.UUID
+	for _, m := range src.Messages {
+		old := m.ID
+		m.ID, m.ConversationID = uuid.NewV7(), c.ID
+		ids[old] = m.ID
+		if err := cs.store.AddMessage(ctx, m); err != nil {
+			return c, fmt.Errorf("会話の発言を写せません: %w", err)
+		}
+		if m.Excluded {
+			excluded = append(excluded, m.ID)
+		}
+	}
+	if len(excluded) > 0 {
+		if err := cs.store.SetMessagesExcluded(ctx, excluded, true); err != nil {
+			return c, err
+		}
+	}
+	for _, k := range src.Compactions {
+		k.ID, k.ConversationID, k.UptoMessageID = uuid.NewV7(), c.ID, ids[k.UptoMessageID]
+		if err := cs.store.AddCompaction(ctx, k); err != nil {
+			return c, fmt.Errorf("会話の要約を写せません: %w", err)
+		}
+	}
+	return c, nil
+}
+
 func (cs *Conversations) CreateIn(ctx context.Context, profileID uuid.UUID, settings *ConversationSettings) (Conversation, error) {
 	p, err := cs.usableProfile(ctx, profileID)
 	if err != nil {

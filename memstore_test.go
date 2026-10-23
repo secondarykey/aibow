@@ -79,6 +79,26 @@ func (s *memStore) DeleteProfile(_ context.Context, id uuid.UUID) error {
 	return nil
 }
 
+// 会話の共有は、memStore では扱わない(利用者を区別しないため。誰に見えるかは store の SQLite のテストで確かめる)
+func (s *memStore) SetConversationShare(context.Context, uuid.UUID, string, []string) error {
+	return nil
+}
+func (s *memStore) SharedConversations(context.Context) ([]ConversationRef, error) { return nil, nil }
+func (s *memStore) UserConversations(context.Context, string) ([]ConversationRef, error) {
+	return nil, ErrNotAdmin
+}
+func (s *memStore) UserNames(context.Context) ([]string, error) { return nil, nil }
+
+// ReadConversation は、memStore の会話をほかの人の会話として読む(写すテストのため)
+func (s *memStore) ReadConversation(ctx context.Context, id uuid.UUID) (SharedRead, error) {
+	c, ms, err := s.Conversation(ctx, id)
+	if err != nil {
+		return SharedRead{}, err
+	}
+	comps, err := s.Compactions(ctx, id)
+	return SharedRead{Conversation: c, Messages: ms, Compactions: comps, OwnerName: "someone"}, err
+}
+
 // SetProfileShare は、配る範囲だけを覚える(利用者の区別はしない。誰に見えるかは store の SQLite のテストで確かめる)。
 func (s *memStore) SetProfileShare(_ context.Context, id uuid.UUID, share string, with []string) error {
 	s.mu.Lock()

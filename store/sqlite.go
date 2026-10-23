@@ -227,6 +227,16 @@ CREATE TABLE profile_shares (
 );
 CREATE INDEX profile_shares_by_user ON profile_shares(user_id);
 `,
+	// 版 12: 会話の共有(0018 の 11-2)。共有の範囲(share)と、指定した人(conversation_shares)。プロファイルの版 11 と同じ形
+	`
+ALTER TABLE conversations ADD COLUMN share TEXT NOT NULL DEFAULT '';  -- '' 非公開 / all 全員 / users 指定した人
+CREATE TABLE conversation_shares (
+	conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+	user_id         TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	PRIMARY KEY (conversation_id, user_id)
+);
+CREATE INDEX conversation_shares_by_user ON conversation_shares(user_id);
+`,
 }
 
 func migrate(db *sql.DB) error {
@@ -291,11 +301,14 @@ type rowScanner interface {
 
 const conversationColumns = "id, title, settings, profile_id, created_at, updated_at"
 
+// conversationSelect は、会話を読むときの列(保存する列 + 共有の範囲)。
+const conversationSelect = "SELECT " + conversationColumns + ", share FROM conversations"
+
 func scanConversation(r rowScanner) (aibow.Conversation, error) {
 	var c aibow.Conversation
 	var id, settings, created, updated string
 	var profile sql.NullString // プロファイルに紐づける前の会話は NULL
-	if err := r.Scan(&id, &c.Title, &settings, &profile, &created, &updated); err != nil {
+	if err := r.Scan(&id, &c.Title, &settings, &profile, &created, &updated, &c.Share); err != nil {
 		return c, err
 	}
 	var err error
@@ -326,7 +339,7 @@ func (s *SQLite) ListConversations(ctx context.Context) ([]aibow.Conversation, e
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, "SELECT "+conversationColumns+" FROM conversations WHERE owner = ? ORDER BY updated_at DESC, id DESC", owner)
+	rows, err := s.db.QueryContext(ctx, conversationSelect+" WHERE owner = ? ORDER BY updated_at DESC, id DESC", owner)
 	if err != nil {
 		return nil, err
 	}
@@ -348,15 +361,197 @@ func (s *SQLite) Conversation(ctx context.Context, id uuid.UUID) (aibow.Conversa
 		return aibow.Conversation{}, nil, err
 	}
 	// ほかの人の会話は、無い会話と同じに扱う(あることも見せない)
-	c, err := scanConversation(s.db.QueryRowContext(ctx, "SELECT "+conversationColumns+" FROM conversations WHERE id = ? AND owner = ?", id.String(), owner))
+	c, err := scanConversation(s.db.QueryRowContext(ctx, conversationSelect+" WHERE id = ? AND owner = ?", id.String(), owner))
 	if errors.Is(err, sql.ErrNoRows) {
 		return c, nil, aibow.ErrNotFound
 	}
 	if err != nil {
 		return c, nil, err
 	}
+	if c.ShareWith, err = s.shareNames(ctx, "conversation_shares", "conversation_id", c.Share, id); err != nil {
+		return c, nil, err
+	}
 	ms, err := s.messages(ctx, id)
 	return c, ms, err
+}
+
+// ---- 会話の共有(0018 の 11-2) --------------------------------------------------------------
+//
+// ほかの人の会話を読めるかは、ここの条件(conversationReadable)の1か所で決める(プロファイルの profileVisible と同じ考え方)。
+// 読むのは ReadConversation だけで、書くメソッド(UpdateConversation・AddMessage など)は今までどおり持ち主の行だけを触る。
+// なので、共有された人も管理者も書き込めない(決定事項 1・2)。
+
+// conversationShared は、:me に共有されたほかの人の会話(全員か、:me が相手)
+const conversationShared = `(conversations.owner <> :me AND (conversations.share = 'all'
+	OR (conversations.share = 'users' AND EXISTS (SELECT 1 FROM conversation_shares s WHERE s.conversation_id = conversations.id AND s.user_id = :me))))`
+
+// shareNames は、共有の相手(指定した人)の名前。範囲が users でなければ nil。
+func (s *SQLite) shareNames(ctx context.Context, table, column, share string, id uuid.UUID) ([]string, error) {
+	if share != aibow.ShareUsers {
+		return nil, nil
+	}
+	rows, err := s.db.QueryContext(ctx, "SELECT u.name FROM "+table+" s JOIN users u ON u.id = s.user_id WHERE s."+column+" = ? ORDER BY u.name", id.String())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []string{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		out = append(out, name)
+	}
+	return out, rows.Err()
+}
+
+// SetConversationShare は、自分の会話の共有の範囲と相手を変える。相手は名前で受け取り、いない名前ならエラー。自分は相手にしない。
+func (s *SQLite) SetConversationShare(ctx context.Context, id uuid.UUID, share string, with []string) error {
+	owner, err := s.owner(ctx)
+	if err != nil {
+		return err
+	}
+	switch share {
+	case aibow.ShareNone, aibow.ShareAll, aibow.ShareUsers:
+	default:
+		return fmt.Errorf("共有の範囲 %q は知らない値です(\"\"・all・users のどれか)", share)
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	res, err := tx.ExecContext(ctx, "UPDATE conversations SET share = ? WHERE id = ? AND owner = ?", share, id.String(), owner)
+	if err := notFoundIfNone(res, err, aibow.ErrNotFound); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, "DELETE FROM conversation_shares WHERE conversation_id = ?", id.String()); err != nil {
+		return err
+	}
+	if share == aibow.ShareUsers {
+		for _, n := range with {
+			var uid string
+			err := tx.QueryRowContext(ctx, "SELECT id FROM users WHERE name = ?", n).Scan(&uid)
+			if errors.Is(err, sql.ErrNoRows) {
+				return fmt.Errorf("共有の相手 %q という利用者はいません", n)
+			}
+			if err != nil {
+				return err
+			}
+			if uid == owner {
+				continue
+			}
+			if _, err := tx.ExecContext(ctx, "INSERT OR IGNORE INTO conversation_shares (conversation_id, user_id) VALUES (?, ?)", id.String(), uid); err != nil {
+				return err
+			}
+		}
+	}
+	return tx.Commit()
+}
+
+// conversationRefs は、ほかの人の会話の一覧(持ち主の名前付き)を where の条件で読む。
+func (s *SQLite) conversationRefs(ctx context.Context, where string, args ...any) ([]aibow.ConversationRef, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT conversations.id, conversations.title, COALESCE(u.name, ''), conversations.updated_at
+		FROM conversations LEFT JOIN users u ON u.id = conversations.owner WHERE `+where+` ORDER BY conversations.updated_at DESC, conversations.id DESC`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []aibow.ConversationRef{}
+	for rows.Next() {
+		var r aibow.ConversationRef
+		var id, updated string
+		if err := rows.Scan(&id, &r.Title, &r.OwnerName, &updated); err != nil {
+			return nil, err
+		}
+		if r.ID, err = parseID(id); err != nil {
+			return nil, err
+		}
+		if r.UpdatedAt, err = parseTime(updated); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func (s *SQLite) SharedConversations(ctx context.Context) ([]aibow.ConversationRef, error) {
+	me, err := s.owner(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.conversationRefs(ctx, conversationShared, sql.Named("me", me))
+}
+
+func (s *SQLite) UserConversations(ctx context.Context, name string) ([]aibow.ConversationRef, error) {
+	args, _, err := s.profileArgs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if args[1].(sql.NamedArg).Value.(int) != 1 {
+		return nil, aibow.ErrNotAdmin
+	}
+	return s.conversationRefs(ctx, "u.name = :name", sql.Named("name", name))
+}
+
+func (s *SQLite) ReadConversation(ctx context.Context, id uuid.UUID) (aibow.SharedRead, error) {
+	args, me, err := s.profileArgs(ctx)
+	if err != nil {
+		return aibow.SharedRead{}, err
+	}
+	admin := args[1].(sql.NamedArg).Value.(int) == 1
+	var r aibow.SharedRead
+	var owner string
+	var shared bool
+	err = s.db.QueryRowContext(ctx, "SELECT conversations.owner, COALESCE(u.name, ''), "+conversationShared+
+		" FROM conversations LEFT JOIN users u ON u.id = conversations.owner WHERE conversations.id = :id",
+		sql.Named("me", me), sql.Named("id", id.String())).Scan(&owner, &r.OwnerName, &shared)
+	if errors.Is(err, sql.ErrNoRows) {
+		return r, aibow.ErrNotFound
+	}
+	if err != nil {
+		return r, err
+	}
+	// 自分の会話は Conversation で読む。共有されていない人には(管理者でなければ)、あることも見せない
+	if owner == me || (!shared && !admin) {
+		return r, aibow.ErrNotFound
+	}
+	if r.Conversation, err = scanConversation(s.db.QueryRowContext(ctx, conversationSelect+" WHERE id = ?", id.String())); err != nil {
+		return r, err
+	}
+	r.Conversation.Settings.WorkDir = "" // 持ち主の PC のパスは見せない
+	if r.Messages, err = s.messages(ctx, id); err != nil {
+		return r, err
+	}
+	if r.Compactions, err = s.compactions(ctx, id, "conversation_id = ?", id.String()); err != nil {
+		return r, err
+	}
+	if err := s.db.QueryRowContext(ctx, "SELECT name FROM users WHERE id = ?", me).Scan(&r.ReaderName); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return r, err
+	}
+	r.ByAdmin = !shared
+	return r, nil
+}
+
+func (s *SQLite) UserNames(ctx context.Context) ([]string, error) {
+	if _, err := s.owner(ctx); err != nil {
+		return nil, err
+	}
+	rows, err := s.db.QueryContext(ctx, "SELECT name FROM users WHERE id <> ? ORDER BY name", aibow.LocalUser.String())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []string{}
+	for rows.Next() {
+		var n string
+		if err := rows.Scan(&n); err != nil {
+			return nil, err
+		}
+		out = append(out, n)
+	}
+	return out, rows.Err()
 }
 
 func (s *SQLite) CreateConversation(ctx context.Context, c aibow.Conversation) error {
@@ -620,8 +815,13 @@ func (s *SQLite) Compactions(ctx context.Context, conv uuid.UUID) ([]aibow.Compa
 	if err != nil {
 		return nil, err
 	}
+	return s.compactions(ctx, conv, "conversation_id = ? AND "+ownConversation, conv.String(), conv.String(), owner)
+}
+
+// compactions は、会話 conv の要約を where の条件で読む(自分の会話は Compactions、ほかの人の会話は ReadConversation から)。
+func (s *SQLite) compactions(ctx context.Context, conv uuid.UUID, where string, args ...any) ([]aibow.Compaction, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT id, upto_message_id, summary, model, stats, created_at
-		FROM compactions WHERE conversation_id = ? AND `+ownConversation+` ORDER BY id`, conv.String(), conv.String(), owner)
+		FROM compactions WHERE `+where+` ORDER BY id`, args...)
 	if err != nil {
 		return nil, err
 	}
