@@ -33,6 +33,7 @@ interface Props {
   appDisabled: boolean; // 生成中・読み込み中は変えられない(エンジンが1つのため)
   onDisplayChange(d: DisplaySettings): void; // 画面の設定を変える(生成に関わらないので、生成中でも変えられる)
   onToolsChanged(): void; // ツールを使う / 使わないを変えた(メーターと、会話で選べる MCP のサーバーを読み直す)
+  onReadConversation(id: string): void; // 管理者がほかの人の会話を読むだけで開く(0018 の 11-2)
 }
 
 type Tab = "basic" | "model" | "conversation" | "users";
@@ -45,7 +46,7 @@ const TABS: { id: Tab; label: string; title: string }[] = [
   { id: "users", label: "利用者", title: "aibow-server の利用者(作る・パスワードと API キーの作り直し・消す)" },
 ];
 
-export function SettingsView({ onClose, errors, app, models, modelState, servers, onProfilesChanged, onApplyLimits, onError, appDisabled, onDisplayChange, onToolsChanged }: Props) {
+export function SettingsView({ onClose, errors, app, models, modelState, servers, onProfilesChanged, onApplyLimits, onError, appDisabled, onDisplayChange, onToolsChanged, onReadConversation }: Props) {
   // 開くたびに「基本設定」から(開いている間だけ覚える)
   const [tab, setTab] = useState<Tab>("basic");
   return (
@@ -81,7 +82,7 @@ export function SettingsView({ onClose, errors, app, models, modelState, servers
 
         {tab === "model" && <ModelSettings models={modelState} disabled={appDisabled} onError={onError} />}
 
-        {tab === "users" && <UserSettings onError={onError} />}
+        {tab === "users" && <UserSettings onError={onError} onRead={onReadConversation} />}
 
         {tab === "conversation" && (
           <>

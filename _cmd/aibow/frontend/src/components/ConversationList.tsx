@@ -13,13 +13,17 @@
 //   エラー   … 赤(点滅しない。ほかの会話を見ている間にエラーで終わった。その会話を開くと消え、エラーが表示に出る)
 //   終わった … 青(点滅しない。ほかの会話を見ている間に返事が終わった。その会話を開くと消える)
 // 一覧を畳んでいるときは、いちばん気にしてほしい印(確認待ち → エラー → 生成中 → 終わった)をハンバーガーに出す
+//
+// 共有(0018 の 11-2):共有した会話は名前の右に共有のアイコン。ほかの人に共有された会話は、一覧の下の「共有された会話」の欄
+// (開閉できる・持ち主の名前付き。押すと読むだけで開く)。ログインが要る aibow-server につないでいるときは、
+// 一番下の名前の横に「管理者が読めます」を常に出す(決定事項 23。畳んだときは目のアイコンだけ)
 import { useEffect, useRef, useState } from "react";
 import { ChatService, logout, me } from "../backend";
 import type { KeyboardEvent } from "react";
-import { LuMenu, LuPlus, LuSettings, LuUser } from "react-icons/lu";
+import { LuChevronDown, LuChevronRight, LuEye, LuMenu, LuPlus, LuSettings, LuShare2, LuUser } from "react-icons/lu";
 import { useMenuDismiss } from "./SplitButton";
 import { toggleMaximiseOnDoubleClick } from "./TitleBar";
-import type { Conversation } from "../../bindings/github.com/secondarykey/aibow";
+import type { Conversation, ConversationRef } from "../../bindings/github.com/secondarykey/aibow";
 import type { Ended } from "../useChat";
 
 interface Props {
@@ -41,12 +45,16 @@ interface Props {
   open: boolean; // 一覧を開いているか
   onToggleOpen(): void;
   width: number; // 開いているときの幅(px)。一覧の右の仕切り(Splitter)で変えられる
+  shared: ConversationRef[]; // ほかの人に共有された会話(0018 の 11-2)
+  readingId: string | null;  // 読むだけで開いているほかの人の会話
+  onOpenShared(id: string): void;
 }
 
 export function ConversationList({
   list, currentId, generatingId, waitingId, ended, disabled, onOpen, onNew, onDelete, onRename, renamingId, onStartRename, onEndRename,
-  settingsOpen, onToggleSettings, open, onToggleOpen, width,
+  settingsOpen, onToggleSettings, open, onToggleOpen, width, shared, readingId, onOpenShared,
 }: Props) {
+  const [sharedOpen, setSharedOpen] = useState(true);
   // 削除の確認を出している会話。消すと戻せないので、もう一度押してもらう
   const [confirming, setConfirming] = useState<string | null>(null);
 
@@ -74,6 +82,7 @@ export function ConversationList({
         {menu}
         <button className="icon-btn" title="新しい会話" disabled={disabled} onClick={onNew}><LuPlus /></button>
         <span className="spacer" />
+        {me.login && <span className="admin-notice icon" title={ADMIN_NOTICE}><LuEye /></span>}
         <button className={"icon-btn " + settingsCls} title="設定" onClick={onToggleSettings}><LuSettings /></button>
       </nav>
     );
@@ -124,6 +133,7 @@ export function ConversationList({
               >
                 {mark && <span className={"dot " + mark} title={MARK_LABEL[mark]} />}
                 {title}
+                {c.share && <LuShare2 className="share-mark" title={c.share === "all" ? "全員に共有している" : "指定した人に共有している"} />}
               </button>
               <button
                 className="delete"
@@ -135,6 +145,26 @@ export function ConversationList({
           );
         })}
       </ul>
+      {shared.length > 0 && (
+        <div className="shared-list">
+          <button className="shared-head" onClick={() => setSharedOpen(o => !o)} aria-expanded={sharedOpen}>
+            {sharedOpen ? <LuChevronDown /> : <LuChevronRight />} 共有された会話
+          </button>
+          {sharedOpen && (
+            <ul>
+              {shared.map(c => (
+                <li key={c.id} className={"conversation" + (c.id === readingId ? " current" : "")}>
+                  <button className="title" title={`${c.title || "新しい会話"}(${c.owner_name} の会話。読むだけ)`} onClick={() => onOpenShared(c.id)}>
+                    {c.title || "新しい会話"}
+                    <span className="shared-owner">{c.owner_name}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+      {me.login && <div className="admin-notice row" title={ADMIN_NOTICE}><LuEye /> 管理者が読めます</div>}
       <div className="footer">
         <AppName />
         <UserMenu />
@@ -164,6 +194,9 @@ const MARK_BADGE_LABEL: Record<Mark, string> = {
   generating: "返事を生成中の会話があります",
   done: "返事が終わった会話があります",
 };
+
+// ADMIN_NOTICE は「管理者が読めます」の吹き出し(0018 の決定事項 1・23)
+const ADMIN_NOTICE = "会話(ツールの結果も)は管理者が読め、読んだことは記録に残ります";
 
 // AppName はアプリの名前とバージョン(Go の _cmd/aibow/version)。
 function AppName() {

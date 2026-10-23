@@ -35,13 +35,14 @@ import { ChatView } from "./components/ChatView";
 import { NewChat } from "./components/NewChat";
 import { SettingsView } from "./components/SettingsView";
 import { ConversationSettingsView } from "./components/ConversationSettingsView";
+import { ReadView } from "./components/ReadView";
 import { Composer } from "./components/Composer";
 import { WorkDirBar } from "./components/WorkDirBar";
 import { ToolBar } from "./components/ToolBar";
 import { LuSettings } from "react-icons/lu";
-import { ChatService, isBrowser, onReconnect } from "./backend";
+import { ChatService, isBrowser, me, onReconnect, onWindowFocus } from "./backend";
 import type { ServerInfo } from "../bindings/github.com/secondarykey/aibow/mcp/client";
-import type { ConversationSettings } from "../bindings/github.com/secondarykey/aibow";
+import type { ConversationRef, ConversationSettings, SharedRead } from "../bindings/github.com/secondarykey/aibow";
 import { ImeFocusRelay } from "./imeFocus";
 import { errorMessage } from "./errors";
 import { setTheme } from "./theme";
@@ -214,6 +215,11 @@ export default function App() {
     closeOverlay();
     setSettingsOpen(false); // 設定の画面を開いていたら閉じて、新しい会話の画面に戻る
     setConvSettingsOpen(false);
+    if (reading) {
+      setReading(null);
+      convs.goHome().then(focusInput, err => addError(errorMessage(err)));
+      return;
+    }
     if (home) {
       focusInput(); // すでに新しい会話の画面なら、入力欄に戻すだけ
       return;
@@ -340,10 +346,48 @@ export default function App() {
     setConvSettingsOpen(true);
   };
   // 一覧で会話を選んだら、設定の画面を閉じてその会話を出す
+  // ほかの人の会話を読むだけで開いているとき(共有された会話・管理者が読む。0018 の 11-2)
+  const [reading, setReading] = useState<SharedRead | null>(null);
+  const [shared, setShared] = useState<ConversationRef[]>([]);
+  const reloadShared = useCallback(() => {
+    if (!me.login) return; // ログインの要らない形(1人)には、ほかの人がいない
+    ChatService.SharedConversations().then(list => setShared(list ?? []), () => {});
+  }, []);
+  useEffect(() => {
+    reloadShared();
+    return onWindowFocus(reloadShared); // ほかの人が共有した・やめたことを、ウィンドウに戻ったときに拾う
+  }, [reloadShared]);
+  const onOpenShared = (id: string) => {
+    closeOverlay();
+    ChatService.ReadConversation(id).then(
+      r => {
+        setSettingsOpen(false);
+        setConvSettingsOpen(false);
+        setReading(r);
+      },
+      err => {
+        addError(errorMessage(err));
+        reloadShared();
+      },
+    );
+  };
+  // 写して続ける:写した会話(自分の会話)を開く
+  const copyReading = () => {
+    if (!reading) return;
+    ChatService.CopyShared(reading.conversation.id)
+      .then(c => {
+        setReading(null);
+        toasts.notify(`${reading.owner_name} の会話を写しました`);
+        return convs.reloadList().then(() => convs.open(c.id));
+      })
+      .then(focusInput, err => addError(errorMessage(err)));
+  };
+
   const onOpen = (id: string) => {
     closeOverlay();
     setSettingsOpen(false);
     setConvSettingsOpen(false);
+    setReading(null);
     convs.open(id).then(focusInput, err => addError(errorMessage(err)));
   };
 
@@ -426,8 +470,11 @@ export default function App() {
           reloadMcp();
           convs.refreshUsage().catch(err => addError(errorMessage(err)));
         }}
+        onReadConversation={onOpenShared}
       />
     );
+  } else if (reading) {
+    content = <ReadView read={reading} pinQuestion={app.settings?.display.pin_question ?? false} onCopy={copyReading} />;
   } else if (showConvSettings && convs.current) {
     const current = convs.current.conversation.settings;
     content = (
@@ -470,6 +517,14 @@ export default function App() {
         servers={mcpServers}
         limitsDisabled={busy !== "idle"}
         onApplyLimits={(h, r) => applyLimits(h, r, convs.updateSettings)}
+        share={convs.current.conversation.share ?? ""}
+        shareWith={convs.current.conversation.share_with ?? []}
+        onShare={(share, users) => {
+          const id = convs.current!.conversation.id;
+          ChatService.SetConversationShare(id, share, users)
+            .then(() => Promise.all([convs.open(id), convs.reloadList()])) // 共有の印(この画面と一覧)を読み直す
+            .catch(err => addError(errorMessage(err)));
+        }}
       />
     );
   } else if (home) {
@@ -537,6 +592,9 @@ export default function App() {
       setListOpen(!listOpen);
     },
     width: listWidth.width,
+    shared,
+    readingId: reading?.conversation.id ?? null,
+    onOpenShared,
   };
 
   // aibow-server につないでいるか(上限の欄の説明を変える。0015)

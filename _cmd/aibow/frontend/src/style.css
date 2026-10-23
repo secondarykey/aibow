@@ -751,3 +751,27 @@ footer { border-top: 1px solid var(--border); background: var(--panel); padding:
 .login-box input:focus { outline: none; border-color: var(--accent); }
 .login-box button { padding: 8px 12px; font-size: 14px; }
 .login-error { color: var(--error); font-size: 13px; }
+
+/* 会話の共有と管理者が読む(0018 の 11-2) */
+.share-mark { flex-shrink: 0; margin-left: 4px; color: var(--muted); font-size: 12px; vertical-align: -1px; }
+.shared-list { border-top: 1px solid var(--border); padding-top: 4px; max-height: 40%; overflow-y: auto; }
+.shared-head { display: flex; align-items: center; gap: 4px; width: 100%; padding: 4px 10px; border: none; background: transparent; color: var(--muted); font-size: 12px; text-align: left; }
+.shared-owner { margin-left: 6px; color: var(--muted); font-size: 11px; }
+.admin-notice { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: var(--muted); white-space: nowrap; cursor: help; }
+.admin-notice.icon { justify-content: center; padding: 6px 0; }
+.admin-notice.row { padding: 4px 12px 0; border-top: 1px solid var(--border); }
+.read-banner { display: flex; align-items: center; gap: 6px; padding: 6px 16px; font-size: 13px; color: var(--muted); border-bottom: 1px solid var(--border); background: var(--panel); }
+.read-banner.admin { color: var(--warn); }
+.read-footer { display: flex; justify-content: center; }
+.read-footer button { display: inline-flex; align-items: center; gap: 6px; }
+.conv-share { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.conv-share label[for] { margin: 0; }
+.conv-share select { width: auto; }
+.share-confirm { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; width: 100%; font-size: 13px; padding: 6px 8px; border: 1px solid var(--warn); border-radius: 6px; }
+.user-name { padding: 0; border: none; background: transparent; color: inherit; font: inherit; cursor: pointer; text-decoration: underline dotted; }
+.user-name:disabled { cursor: default; text-decoration: none; }
+.user-name.current { color: var(--accent); }
+.user-convs { display: flex; flex-direction: column; }
+.user-conv { display: flex; justify-content: space-between; gap: 8px; padding: 5px 0; border: none; border-top: 1px solid var(--border); background: transparent; color: inherit; text-align: left; }
+.user-conv:hover { color: var(--accent); }
+.user-conv-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

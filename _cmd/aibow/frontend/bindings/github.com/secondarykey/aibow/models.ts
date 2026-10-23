@@ -259,6 +259,23 @@ export interface Conversation {
     "profile_id": uuid$0.UUID;
     "created_at": string;
     "updated_at": string;
+
+    /**
+     * 共有(0018 の 11-2)。Share は共有の範囲(ShareNone 非公開 / ShareAll 全員 / ShareUsers 指定した人。プロファイルと同じ値)、
+     * ShareWith は相手の名前(会話1つを読んだときだけ入る)。変えるのは SetConversationShare(UpdateConversation では変わらない)
+     */
+    "share"?: string;
+    "share_with"?: string[] | null;
+}
+
+/**
+ * ConversationRef は、ほかの人の会話の一覧の1件(共有された会話・管理者が見る人の会話。0018 の 11-2)。中身は ReadConversation で読む。
+ */
+export interface ConversationRef {
+    "id": uuid$0.UUID;
+    "title": string;
+    "owner_name": string;
+    "updated_at": string;
 }
 
 /**
@@ -575,6 +592,26 @@ export interface ReplyStats {
      * 答えが出ないまま終わり、Content が理由の文になっている
      */
     "no_answer": boolean;
+}
+
+/**
+ * SharedRead は、ほかの人の会話を読んだもの(読むだけ。0018 の 11-2)。
+ */
+export interface SharedRead {
+    "conversation": Conversation;
+    "messages": StoredMessage[] | null;
+    "compactions": Compaction[] | null;
+    "owner_name": string;
+
+    /**
+     * ByAdmin は、共有されていないが管理者として読んだ(読んだことをログに残す。決定事項 1)
+     */
+    "by_admin": boolean;
+
+    /**
+     * ReaderName は読んだ人(ctx の利用者)の名前(ログに書くため)
+     */
+    "reader_name": string;
 }
 
 /**

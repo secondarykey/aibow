@@ -297,6 +297,14 @@ aibow-server user admin <名前>(コマンドだけ)→ server.db の users.admi
   会話の送信は注意で断る(`ChatEvent.Caution`。勝手にほかのモデルに替えない)。使えなくしたのが読み込み中のモデルなら降ろす。
   一覧の外の GGUF をパスで読み込ませるのは起動のとき(`-model` など)だけ。つないでくる人には、パスで好きなファイルを読ませない
 
+## 会話の共有と管理者が読む(ステップ11の 11-2。0018)
+
+- 画面用の口に `SetConversationShare`・`SharedConversations`・`UserConversations`・`UserNames`・`ReadConversation`・`CopyShared` を足した(`browserMethods`)。
+  誰が読めるかは保存先(`store`)が決め、管理者かも保存先が利用者の表で確かめる(`UserConversations` は管理者だけ)
+- 保存の口(`/aibow/store/`)にも、`aibow.Store` に足した同じメソッドが出る(`store/remote` の `Client`)。画面のアプリ(serverUrl)でも、共有された会話を読む・写す・自分の会話を共有するができる
+- 管理者が共有されていない会話を読むと、`ui.Service.ReadConversation` が Notice のログに残す(誰が・誰の・どの会話を)
+- OpenAI 互換の口は会話を持たない(履歴はクライアントが毎回送る)ので、共有と関係しない
+
 ## 保存の口(画面のアプリの会話をサーバーに置く。ステップ10の 10-3。0017)
 
 画面のアプリを aibow-server につなぐと、生成だけでなく会話の保存もサーバーに頼む(表の C)。ループとツールはアプリの PC で動くので、HTTP を越えるのは画面の呼び出しではなく、会話の仕組みが保存先に頼む操作(`aibow.Store` のメソッド)。

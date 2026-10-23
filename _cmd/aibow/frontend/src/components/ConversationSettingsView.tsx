@@ -12,7 +12,7 @@ import type { Entry as ModelEntry } from "../../bindings/github.com/secondarykey
 import { ConversationSettingsForm, LimitsForm } from "./ConversationSettingsForm";
 import { lockOf } from "../profileRules";
 import { ConversationTools } from "./ConversationTools";
-import { isBrowser } from "../backend";
+import { ChatService, isBrowser, me } from "../backend";
 import { CopyButton } from "./CopyButton";
 
 interface Props {
@@ -31,6 +31,9 @@ interface Props {
   servers: ServerInfo[]; // settings.json の MCP のサーバー
   limitsDisabled: boolean; // 生成中・読み込み中は上限を変えられない(作業領域を作り直すため)
   onApplyLimits(history: number, reply: number): void;
+  share: string;            // 共有の範囲(0018 の 11-2。"" 非公開 / all / users)
+  shareWith: string[];      // 共有の相手(名前)
+  onShare(share: string, users: string[]): void;
 }
 
 // TitleField は会話の名前の入力欄。打っている間は保存せず、Enter か欄を離れたときに保存する(一覧の名前の変更と同じ)。
@@ -73,6 +76,7 @@ function TitleField({ title, onRename }: { title: string; onRename(title: string
 }
 
 export function ConversationSettingsView({ id, title, onRename, settings, models, errors, onClose, onChange, profile, onSaveToProfile, onSaveAsProfile, lastPrompt, servers, limitsDisabled, onApplyLimits,
+  share, shareWith, onShare,
 }: Props) {
   const lock = lockOf(profile);
   return (
@@ -96,6 +100,7 @@ export function ConversationSettingsView({ id, title, onRename, settings, models
 
         <label title="この会話を作ったプロファイル。固定した項目と使えないツールは、このプロファイルの決まりで決まる">プロファイル</label>
         <div className="conv-profile">{profile ? profile.name : "(プロファイルを持たない会話)"}</div>
+        {me.login && <ShareField share={share} shareWith={shareWith} onShare={onShare} />}
 
         <ConversationSettingsForm settings={settings} models={models} lock={lock} onChange={onChange} />
         <LimitsForm history={settings.history_tokens} reply={settings.reply_tokens} disabled={limitsDisabled} lock={lock} onApply={onApplyLimits} />
@@ -118,6 +123,58 @@ export function ConversationSettingsView({ id, title, onRename, settings, models
         <pre className="last-prompt">{lastPrompt || "(まだ送信していません)"}</pre>
       </div>
     </section>
+  );
+}
+
+// ShareField は会話の共有(0018 の決定事項 24)。非公開から共有にするときは、ツールの結果も見えることを確かめる(決定事項 12)。
+function ShareField({ share, shareWith, onShare }: { share: string; shareWith: string[]; onShare(share: string, users: string[]): void }) {
+  const [names, setNames] = useState<string[]>([]);
+  const [pending, setPending] = useState<{ share: string; users: string[] } | null>(null); // 確かめている変更
+  useEffect(() => {
+    ChatService.UserNames().then(list => setNames((list ?? []).filter(n => n !== me.name)), () => setNames([]));
+  }, []);
+  // 非公開から共有にするときだけ確かめる(相手を足す・減らすときは聞かない)
+  const change = (next: string, users: string[]) => {
+    if (share === "" && next !== "") setPending({ share: next, users });
+    else onShare(next, users);
+  };
+  const toggle = (name: string) => {
+    const next = shareWith.includes(name) ? shareWith.filter(n => n !== name) : [...shareWith, name];
+    onShare(next.length ? "users" : "", next);
+  };
+  return (
+    <div className="conv-share">
+      <label htmlFor="conv-share" title="共有した会話は、相手の一覧の「共有された会話」に出て、読むだけで開ける。相手は写して続けられる">共有</label>
+      <select
+        id="conv-share"
+        value={pending?.share ?? share}
+        onChange={e => {
+          const v = e.target.value;
+          change(v, v === "users" ? (shareWith.length ? shareWith : names.slice(0, 1)) : []);
+        }}
+      >
+        <option value="">非公開</option>
+        <option value="all">全員</option>
+        <option value="users" disabled={names.length === 0}>指定した人</option>
+      </select>
+      {pending && (
+        <div className="share-confirm">
+          <span>共有すると、この会話のツールの結果(ファイルの中身・コマンドの出力)も相手に見えます。</span>
+          <button type="button" className="primary" onClick={() => { onShare(pending.share, pending.users); setPending(null); }}>共有する</button>
+          <button type="button" onClick={() => setPending(null)}>やめる</button>
+        </div>
+      )}
+      {!pending && share === "users" && (
+        <div className="share-users">
+          {names.map(n => (
+            <label key={n} className="check">
+              <input type="checkbox" checked={shareWith.includes(n)} onChange={() => toggle(n)} />
+              {n}
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 

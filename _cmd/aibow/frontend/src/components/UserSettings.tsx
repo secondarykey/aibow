@@ -3,9 +3,11 @@
 // 作る・パスワードと API キーの作り直し・消すができる(aibow-server の user コマンドと同じ処理。_cmd/aibow-server の admin.go)。
 // パスワードと API キーは、作ったときの返事でだけ受け取り、画面に一度だけ出す(保存されるのはハッシュだけで、あとからは見られない)。
 // 管理者の印を付ける / 外すのはコマンドだけ(0018 の決定事項 6)なので、ここでは印を見せるだけにする。
+// 名前を押すと、その人の会話の一覧を表の下に出し、押すと読むだけで開く(0018 の決定事項 25。読んだことはログに残る)。
 import { useCallback, useEffect, useState } from "react";
 import { LuKeyRound, LuShieldCheck, LuTrash2, LuX } from "react-icons/lu";
-import { admin, me, type AdminUser } from "../backend";
+import { admin, ChatService, me, type AdminUser } from "../backend";
+import type { ConversationRef } from "../../bindings/github.com/secondarykey/aibow";
 import { errorMessage } from "../errors";
 import { CopyButton } from "./CopyButton";
 
@@ -16,8 +18,16 @@ interface Secret {
   value: string;
 }
 
-export function UserSettings({ onError }: { onError(text: string): void }) {
+export function UserSettings({ onError, onRead }: { onError(text: string): void; onRead(id: string): void }) {
   const [users, setUsers] = useState<AdminUser[]>([]);
+  const [viewing, setViewing] = useState<{ name: string; list: ConversationRef[] } | null>(null); // 会話の一覧を見ている人
+  const view = (name: string) => {
+    if (viewing?.name === name) {
+      setViewing(null);
+      return;
+    }
+    ChatService.UserConversations(name).then(list => setViewing({ name, list: list ?? [] }), err => onError(errorMessage(err)));
+  };
   const [secret, setSecret] = useState<Secret | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null); // 消すかを聞いている人
 
@@ -72,8 +82,16 @@ export function UserSettings({ onError }: { onError(text: string): void }) {
         <span className="model-table-head" />
         {users.map(u => (
           <div key={u.name} className="model-row">
-            <span className="model-name" title={u.name}>
-              {u.name}
+            <span className="model-name">
+              <button
+                type="button"
+                className={"user-name" + (viewing?.name === u.name ? " current" : "")}
+                disabled={u.name === me.name}
+                title={u.name === me.name ? "自分の会話は会話の一覧で開く" : `${u.name} の会話の一覧(開くと読むだけ。読んだことは記録に残る)`}
+                onClick={() => view(u.name)}
+              >
+                {u.name}
+              </button>
               {u.admin && <LuShieldCheck className="user-admin" title="管理者" aria-label="管理者" />}
               {!u.password && <span className="origin-chip" title="パスワードが無いので、ログインできない">パスワードなし</span>}
               {u.key && <LuKeyRound className="user-key" title="API キーあり" aria-label="API キーあり" />}
@@ -107,6 +125,23 @@ export function UserSettings({ onError }: { onError(text: string): void }) {
         ))}
       </div>
       <AddUser onAdd={create} />
+      {viewing && (
+        <>
+          <h2 className="section">{viewing.name} の会話</h2>
+          {viewing.list.length === 0
+            ? <p className="hint">会話がありません</p>
+            : (
+              <div className="user-convs">
+                {viewing.list.map(c => (
+                  <button key={c.id} type="button" className="user-conv" onClick={() => onRead(c.id)}>
+                    <span className="user-conv-title">{c.title || "新しい会話"}</span>
+                    <span className="user-date">{c.updated_at.slice(0, 16).replace("T", " ")}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+        </>
+      )}
     </>
   );
 }

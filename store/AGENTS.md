@@ -32,6 +32,9 @@
   - 版 10: `users` に管理者の印 `admin`(0 / 1。`aibow-server user admin` で付ける)。0018 の 11-0
   - 版 11: プロファイルを配る(0018 の 11-1)。`profiles` に配る範囲 `share`(`''` / `all` / `users`)と、配ったときの作った人の名前 `owner_name`、
     指定した人の表 `profile_shares`(プロファイル + 利用者。どちらかを消すと一緒に消える)
+  - 版 12: 会話の共有(0018 の 11-2)。`conversations` に共有の範囲 `share`(`''` / `all` / `users`)と、指定した人の表 `conversation_shares`(会話か利用者を消すと一緒に消える)
+- 会話の共有:ほかの人の会話を読むのは `ReadConversation` だけ(条件 `conversationShared` と管理者か)。書くメソッドは持ち主の行だけなので、共有された人も管理者も書き込めない。
+  自分の会話を読むときは `share`(と1つ読むときは `ShareWith`)を入れる
 - プロファイルの読み書き:見える・変えられるの判定は `sqlite.go` の `profileVisible`・`profileUsed`・`profileEditable`(名前付きの引数 `:me`・`:admin`)の1か所だけ。
   `Profile` / `ListProfiles` は読むときに `Owner`・`OwnerName`・`ReadOnly`・`Withdrawn` を入れ、`ShareWith` は変えられる人にだけ入れる。
   利用者を消しても、配ったプロファイルと、ほかの人の会話が使っているプロファイルは残す(`DeleteUser`)。接続は1本(`SetMaxOpenConns(1)`)なので、トランザクションの途中でほかの読み出しをしない(閉じてから読む)

@@ -34,11 +34,12 @@ export interface Exclude {
 // truncate で外れて、モデルに渡していないので薄く表示する(発言そのものは保存されている)
 // conversationId は表示している会話の ID。会話を切り替えたら、一番下(最新の発言)から見せる
 // pinQuestion は、スクロールして質問が上に隠れたら、その質問を右上に出しておくか(アプリの設定の「画面」)
-export function ChatView({ items, firstId, conversationId, pinQuestion, onStop, onAnswer, exclude, retry }: {
+export function ChatView({ items, firstId, conversationId, pinQuestion, readOnly = false, onStop, onAnswer, exclude, retry }: {
   items: Item[];
   firstId: string | null;
   conversationId: string | null;
   pinQuestion: boolean;
+  readOnly?: boolean; // ほかの人の会話を読むだけ(0018 の 11-2)。直す・作り直す・モデルに渡さないを出さない
   onStop(): void;
   exclude: Exclude;
   retry: Retry;
@@ -104,12 +105,12 @@ export function ChatView({ items, firstId, conversationId, pinQuestion, onStop, 
                       {it.text}
                     </div>
                     <UserActions text={it.text} createdAt={it.createdAt}>
-                      {i === lastUser && it.msgId && (
+                      {!readOnly && i === lastUser && it.msgId && (
                         <button className="reply-action" disabled={retry.disabled} title="この発言を直して送り直す(この発言と返事は消える)" onClick={() => setEditing(it.id)}>
                           <LuPencil />
                         </button>
                       )}
-                      {it.msgId && <ExcludeButton msgId={it.msgId} excluded={!!it.excluded} exclude={exclude} />}
+                      {!readOnly && it.msgId && <ExcludeButton msgId={it.msgId} excluded={!!it.excluded} exclude={exclude} />}
                     </UserActions>
                   </div>
                 );
@@ -129,7 +130,7 @@ export function ChatView({ items, firstId, conversationId, pinQuestion, onStop, 
                     faded={!!faded(it.msgId)}
                     onStop={onStop}
                     onAnswer={onAnswer}
-                    excludeButton={it.msgId && (
+                    excludeButton={!readOnly && it.msgId && (
                       <>
                         <ExcludeButton msgId={it.msgId} excluded={!!it.excluded} exclude={exclude} />
                         {i === lastAssistant && i > lastUser && (

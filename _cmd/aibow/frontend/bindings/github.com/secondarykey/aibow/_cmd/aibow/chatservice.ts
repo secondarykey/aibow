@@ -120,6 +120,13 @@ export function CopyProfile(id: uuid$0.UUID): $CancellablePromise<aibow$0.Profil
 }
 
 /**
+ * CopyShared は、ほかの人の会話を写して自分の会話にする(写して続ける。決定事項 2)。
+ */
+export function CopyShared(id: uuid$0.UUID): $CancellablePromise<aibow$0.Conversation> {
+    return $Call.ByID(1722301887, id);
+}
+
+/**
  * CreateProfile は、新しいプロファイルを作る(設定の画面の「新しいプロファイル」)。
  */
 export function CreateProfile(name: string, values: aibow$0.ProfileValues, rules: aibow$0.ProfileRules): $CancellablePromise<aibow$0.Profile> {
@@ -201,6 +208,14 @@ export function Profiles(): $CancellablePromise<aibow$0.ProfileInfo[] | null> {
 }
 
 /**
+ * ReadConversation は、ほかの人の会話を読むだけで開く。管理者として読んだ(共有されていない)ときは、
+ * 誰が・誰の・どの会話を読んだかをログ(Notice)に残す(0018 の決定事項 1。組織の道具の監査のため)。
+ */
+export function ReadConversation(id: uuid$0.UUID): $CancellablePromise<aibow$0.SharedRead> {
+    return $Call.ByID(3963212952, id);
+}
+
+/**
  * Regenerate は最後の返事を作り直す(0011)。途中経過と終わり(done)は Send と同じく chat イベントで送る。
  */
 export function Regenerate(id: uuid$0.UUID): $CancellablePromise<void> {
@@ -255,6 +270,13 @@ export function SaveToProfile(conv: uuid$0.UUID, profile: uuid$0.UUID): $Cancell
  */
 export function Send(id: uuid$0.UUID, text: string): $CancellablePromise<void> {
     return $Call.ByID(2164379061, id, text);
+}
+
+/**
+ * SetConversationShare は、自分の会話の共有の範囲(""・all・users)と相手(利用者の名前)を変える。
+ */
+export function SetConversationShare(id: uuid$0.UUID, share: string, $with: string[] | null): $CancellablePromise<void> {
+    return $Call.ByID(1343982337, id, share, $with);
 }
 
 /**
@@ -334,6 +356,13 @@ export function SetProfileShare(id: uuid$0.UUID, share: string, $with: string[] 
  */
 export function SetToolPolicy(name: string, policy: aibow$0.ToolPolicy): $CancellablePromise<void> {
     return $Call.ByID(1851266373, name, policy);
+}
+
+/**
+ * SharedConversations は、自分に共有されたほかの人の会話の一覧(会話の一覧の下の「共有された会話」)。
+ */
+export function SharedConversations(): $CancellablePromise<aibow$0.ConversationRef[] | null> {
+    return $Call.ByID(4287806366);
 }
 
 /**
@@ -425,6 +454,20 @@ export function UpdateProfile(p: aibow$0.Profile): $CancellablePromise<void> {
  */
 export function Usage(id: uuid$0.UUID): $CancellablePromise<aibow$0.Usage | null> {
     return $Call.ByID(118846370, id);
+}
+
+/**
+ * UserConversations は、利用者 name の会話の一覧(管理者が「利用者」のタブから見る。決定事項 25)。
+ */
+export function UserConversations(name: string): $CancellablePromise<aibow$0.ConversationRef[] | null> {
+    return $Call.ByID(519364284, name);
+}
+
+/**
+ * UserNames は、共有の相手に選べる利用者の名前。
+ */
+export function UserNames(): $CancellablePromise<string[] | null> {
+    return $Call.ByID(4174638800);
 }
 
 /**
