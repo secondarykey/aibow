@@ -32,8 +32,8 @@ var ErrProfileNotFound = errors.New("プロファイルが見つかりません(
 // ErrProfileReadOnly は、変えられないプロファイル(配られたもの)を変えようとしたときのエラー(0018 の決定事項 9)。
 var ErrProfileReadOnly = errors.New("配られたプロファイルは変えられません。変えたいときは、写して自分のプロファイルにしてください")
 
-// ErrNotAdmin は、管理者でない人がプロファイルを配ろうとしたときのエラー(0018 の決定事項 3)。
-var ErrNotAdmin = errors.New("プロファイルを配れるのは管理者だけです")
+// ErrNotAdmin は、管理者でない人が管理者だけの操作(プロファイルを配る・人の会話の一覧)をしたときのエラー(0018 の決定事項 3・25)。
+var ErrNotAdmin = errors.New("管理者だけができる操作です(プロファイルを配る・ほかの人の会話の一覧を見る)。管理者は aibow-server user admin <名前> で決めます")
 
 // 配る範囲(Profile.Share。0018 の 11-1)
 const (
