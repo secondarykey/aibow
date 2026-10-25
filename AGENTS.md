@@ -84,7 +84,7 @@ OpenAI 互換のクライアント(Cline など)⇄ HTTP(S)(既定は 127.0.0.1�
 | 画面(配置・会話の一覧・発言と返事の操作・フォーカス・スクロール・ウィンドウの移動とリサイズ・IME) | [_docs/ui.md](_docs/ui.md) |
 | 返事の表示(Markdown・コードの色付け・mermaid の図と書き出し) | [_docs/rendering.md](_docs/rendering.md) |
 | バージョン・ローカルデプロイ | [_docs/deploy.md](_docs/deploy.md) |
-| 利用者向けの説明(README・準備と起動・使い方と設定・ファイル構成)を直す | README は外部の人向けの入口として短く保ち、詳しい説明は [_docs/setup.md](_docs/setup.md)・[_docs/usage.md](_docs/usage.md)・[_docs/structure.md](_docs/structure.md) に書く |
+| 利用者向けの説明(README・準備と起動・使い方と設定・ファイル構成)を直す | README は使ってみたい人が最初に読む入口。**セットアップに絡むこと(要るもの・起動の仕方・初めて起動したときの状態(既定の利用者や管理者がいるか)・最初にやること)は必ず README に書く**(2026-10-26、ユーザーの指示)。そのうえで短く保ち、詳しい説明は [_docs/setup.md](_docs/setup.md)・[_docs/usage.md](_docs/usage.md)・[_docs/structure.md](_docs/structure.md) に書く。セットアップが変わる機能を足したら README も直す |
 | アプリを起動して動作を確かめる(共通の手順と確認する項目) | [_docs/testing.md](_docs/testing.md) |
 | ユーザーの Windows 環境(worktree)で起動して確かめる | [_docs/env-windows.md](_docs/env-windows.md) |
 | クラウドセッション(GUI の無い Linux)で起動して確かめる | [_docs/env-cloud.md](_docs/env-cloud.md) |

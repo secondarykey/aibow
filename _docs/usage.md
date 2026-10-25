@@ -205,7 +205,7 @@ go build -o aibow-server.exe ./_cmd/aibow-server
 
 ```
 aibow-server [-model モデル] [-ctx 作業領域の大きさ] [-port ポート] [-host アドレス] [-tls-cert 証明書 -tls-key 秘密鍵] [-lib llama.cpp のフォルダ] [-models GGUF のフォルダ] [-config 設定ファイル] [-login] [-debug]
-aibow-server [-config 設定ファイル] user list|add|passwd|remove|key [名前]
+aibow-server [-config 設定ファイル] user list|add|passwd|remove|key|admin|unadmin [名前]
 aibow-server [-config 設定ファイル] cert <ホスト名か IP アドレス>...
 ```
 
