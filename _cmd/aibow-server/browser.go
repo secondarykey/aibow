@@ -59,6 +59,10 @@ func startBrowser(c config, initial aibow.AppSettings, eng *engine.Engine, mm *m
 			"画面で上限を下げるか、-ctx(設定ファイルの ctx)で作業領域を大きくしてください", d.HistoryTokens, d.ReplyTokens, d.ContextSize(), nCtx)
 	}
 
+	if c.Login {
+		noteFirstRun(st)
+	}
+
 	events := ui.NewEvents()
 	svc, life := ui.New(ui.Options{
 		Host:  ui.NewServerHost(eng, mm, nCtx, url),
@@ -83,6 +87,36 @@ func startBrowser(c config, initial aibow.AppSettings, eng *engine.Engine, mm *m
 	// 管理者の画面の口(利用者の管理。0018 の決定事項 7)。ブラウザでログインした管理者だけ
 	mux.Handle("/aibow/admin/", adminHandler(st, initial))
 	return sessions.Middleware(mux), keys, func() { life.Stop(); st.Close() }, nil
+}
+
+// noteFirstRun は、ログインが要る形で起動したときに、まだ使い始められない様子を知らせる(0020 の決定事項 2・4)。
+//   - パスワードのある管理者がいない(初めての起動など):作り方を出す。起動は止めない(最初の管理者はコマンドで決める。0018 の決定事項 6)
+//   - ログインなしの形で使っていた local の会話があるのに、local にパスワードが無い:その会話を使う道を出す(会話は動かさない)
+func noteFirstRun(st *store.SQLite) {
+	ctx := context.Background()
+	has, err := auth.HasAdmin(ctx, st)
+	if err != nil {
+		log.Errorf("管理者がいるかを確かめられません: %v", err)
+		return
+	}
+	if !has {
+		// ブラウザのログインの画面にも同じことを出す(auth の me の setup)
+		log.Warn("管理者がいません。サーバーの PC で aibow-server user add <名前> と aibow-server user admin <名前> を打ってください" +
+			"(パスワードは user add のときだけ表示します。設定ファイルを -config で指しているときは、コマンドにも同じ -config を付けます)")
+	}
+	local, err := st.UserByID(ctx, aibow.LocalUser)
+	if err != nil || local.Password != "" {
+		return
+	}
+	convs, err := st.ListConversations(aibow.WithUser(ctx, aibow.LocalUser))
+	if err != nil {
+		log.Errorf("local の会話を数えられません: %v", err)
+		return
+	}
+	if len(convs) > 0 {
+		log.Warnf("ログインなしの形で使っていた local の会話が %d 件あります。local はパスワードが無いのでログインできません。"+
+			"使うときは aibow-server user passwd local でパスワードを作って local でログインするか、login: false で起動してください", len(convs))
+	}
 }
 
 // keyUser は、保存の口を呼んだ利用者(API キーの持ち主。auth.Keys.RequireKey がリクエストの ctx に入れた人)。

@@ -75,6 +75,9 @@ type Me struct {
 	Name  string `json:"name"`  // ログインしている人の名前。していなければ空
 	// Admin は、ログインしている人が管理者か(0018 の 11-0。画面が、管理者だけのものを出すかを決める)
 	Admin bool `json:"admin,omitempty"`
+	// Setup は、ログインが要るのに、ログインできる管理者がまだいないか(初めての起動など。0020 の決定事項 5)。
+	// ログインの画面が、サーバーの PC で管理者を作るよう出す。いるかどうかだけで、誰がいるかは出さない
+	Setup bool `json:"setup,omitempty"`
 }
 
 // Handler は /aibow/auth/ の下の口を返す。required はログインが要るか(aibow-server の設定)。
@@ -86,6 +89,12 @@ func Handler(s *Sessions, required bool) http.Handler {
 		me := Me{Login: required}
 		if u, ok := UserFrom(r.Context()); ok && required {
 			me.Name, me.Admin = u.Name, u.Admin
+		} else if required {
+			has, err := HasAdmin(r.Context(), s.store)
+			if err != nil {
+				log.Errorf("管理者がいるかを確かめられません: %v", err)
+			}
+			me.Setup = err == nil && !has
 		}
 		writeJSON(w, http.StatusOK, me)
 	})

@@ -58,6 +58,7 @@ export interface Me {
   // 名前は出すが、ログアウトは出さない(キーは settings.json に書いたもの)
   viaKey?: boolean;
   admin?: boolean; // 管理者か(0018 の 11-0)。ブラウザの設定の画面に「利用者」のタブを出す
+  setup?: boolean; // ログインが要るのに、ログインできる管理者がまだいない(初めての起動など。0020)。ログインの画面に作り方を出す
 }
 
 // AdminUser は、利用者の管理の一覧の1人(Go の _cmd/aibow-server の adminUser)。パスワードと API キーは、あるかだけ

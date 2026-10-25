@@ -52,7 +52,7 @@ type configFile struct {
 	Lib       string `json:"lib"`       // llama.cpp の DLL のフォルダ
 	ModelsDir string `json:"modelsDir"` // GGUF を置くフォルダ(Ollama の保存先は別に探す)
 	LogLevel  string `json:"logLevel"`  // ログのレベル(debug / info / notice / warn / error)。-debug があればそちら(log.go の logLevel)
-	// Login は、ブラウザの画面にログインを要るようにするか(0017 の 10-1)。書いていなければ環境変数か既定(要らない)。
+	// Login は、ブラウザの画面にログインを要るようにするか(0017 の 10-1)。書いていなければ環境変数か既定(要る。0020)。
 	// false と書いて環境変数より強くできるよう、ポインタにする(ほかの欄は 0 を「書いていない」にしているが、真偽値では false も値なので)
 	Login *bool `json:"login"`
 	// Host は待ち受けるアドレス(0017 の 10-2)。既定は 127.0.0.1(この PC からだけ)。0.0.0.0 なら全部のネットワーク
@@ -71,7 +71,8 @@ type config struct {
 	ModelsDir string
 	LogLevel  string // 設定ファイルの logLevel(空なら -debug か既定)
 	// Login は、ブラウザの画面にログインが要るか(0017 の 10-1)。要らなければ、ブラウザはログインなしの形の利用者(aibow.LocalUser)になる。
-	// 127.0.0.1 だけで待ち受けるなら既定は要らない(0017 の決定事項 8)。127.0.0.1 の外で待ち受けるなら、書いた値によらず要る(決定事項 2。resolve で決める)
+	// 既定は要る(0020 の決定事項 1。以前は 127.0.0.1 だけなら要らなかった。0017 の決定事項 8)。login: false を書いたときだけ、127.0.0.1 でログインなしにできる。
+	// 127.0.0.1 の外で待ち受けるなら、書いた値によらず要る(0017 の決定事項 2。resolve で決める)
 	Login bool
 	// Host は待ち受けるアドレス(既定 127.0.0.1)。TLSCert・TLSKey は HTTPS の証明書と秘密鍵(どちらも空なら HTTP)
 	Host            string
@@ -104,7 +105,7 @@ func defineFlags(fs *flag.FlagSet) *flags {
 		modelsDir: fs.String("models", "", "GGUF を置くフォルダ(既定 models)。設定ファイルの modelsDir・環境変数 AIBOW_MODELS_DIR"),
 		version:   fs.Bool("version", false, "バージョンを表示して終わる"),
 		debug:     fs.Bool("debug", false, "ログを Debug レベルまで出す(設定ファイルの logLevel より強い。どちらも無ければ go run は Info、exe は Notice)"),
-		login:     fs.Bool("login", false, "ブラウザの画面にログインを要るようにする(利用者は aibow-server user add で作る)。設定ファイルの login・環境変数 AIBOW_SERVER_LOGIN"),
+		login:     fs.Bool("login", false, "ログインを要るようにする(既定で要る。-login=false なら、127.0.0.1 だけで待ち受けるときにログインなし。利用者は aibow-server user add で作る)。設定ファイルの login・環境変数 AIBOW_SERVER_LOGIN"),
 		host:      fs.String("host", "", "待ち受けるアドレス(既定 127.0.0.1。0.0.0.0 なら全部のネットワーク。127.0.0.1 の外ではログインと API キーが要る)。設定ファイルの host・環境変数 AIBOW_SERVER_HOST"),
 		tlsCert:   fs.String("tls-cert", "", "HTTPS の証明書のファイル(aibow-server cert で作れる)。設定ファイルの tlsCert・環境変数 AIBOW_SERVER_TLS_CERT"),
 		tlsKey:    fs.String("tls-key", "", "HTTPS の秘密鍵のファイル。設定ファイルの tlsKey・環境変数 AIBOW_SERVER_TLS_KEY"),
@@ -149,7 +150,7 @@ func resolve(fs *flag.FlagSet, f *flags, env *envReader) (config, []string, erro
 	case file.Login != nil:
 		c.Login = *file.Login
 	default:
-		c.Login = env.bool("AIBOW_SERVER_LOGIN", false)
+		c.Login = env.bool("AIBOW_SERVER_LOGIN", true) // 何も書かなければ要る(0020)
 	}
 	c.Host = pick(f.set["host"], *f.host, file.Host, os.Getenv("AIBOW_SERVER_HOST"), "127.0.0.1")
 	c.TLSCert = pick(f.set["tls-cert"], *f.tlsCert, file.TLSCert, os.Getenv("AIBOW_SERVER_TLS_CERT"), "")

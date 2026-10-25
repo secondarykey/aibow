@@ -260,7 +260,8 @@ func logAddresses(c config, base string) {
 	if c.Login {
 		log.Notice("ブラウザの画面はログインが要ります(利用者は aibow-server user add <名前> で作ります)")
 	} else {
-		log.Notice("ブラウザの画面はログインなしで使えます(利用者は local。ログインを要るようにするには -login・設定ファイルの login)")
+		// ログインなしは login: false を書いた人だけが選ぶ形なので、選んだことが分かるよう注意にする(0020 の決定事項 6)
+		log.Warn("ログインなしで使います(login: false。利用者は local だけで、この PC の人なら誰でも全部の会話を使えます。ログインを要るようにするには login: false を外します)")
 	}
 	if c.KeysRequired() {
 		log.Notice("OpenAI 互換の口と aibow 専用の口は API キーが要ります(aibow-server user key <名前> で作ります)")

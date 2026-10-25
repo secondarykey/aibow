@@ -91,6 +91,20 @@ type Store interface {
 	DeleteAppToken(ctx context.Context, id string) error
 }
 
+// HasAdmin は、ログインできる管理者(パスワードのある管理者)がいるか(0020)。
+func HasAdmin(ctx context.Context, st Store) (bool, error) {
+	users, err := st.Users(ctx)
+	if err != nil {
+		return false, err
+	}
+	for _, u := range users {
+		if u.Admin && u.Password != "" {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 var (
 	ErrUserNotFound = errors.New("その名前の利用者はいません")
 	ErrUserExists   = errors.New("その名前の利用者はもういます")

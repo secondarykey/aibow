@@ -164,3 +164,28 @@ func TestFingerprint(t *testing.T) {
 		t.Errorf("指紋の形: %s(期待 %s)", got, want)
 	}
 }
+
+// ログインが要るのにログインできる管理者がいなければ、me の setup が true(0020)。管理者を作れば false。ログインが要らない形では出さない
+func TestMeSetup(t *testing.T) {
+	st := openStore(t)
+	u := addUser(t, st, "alice", "pw")
+	s := auth.NewSessions(st)
+	me := func(required bool) auth.Me {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		auth.Handler(s, required).ServeHTTP(rec, httptest.NewRequest("GET", "/aibow/auth/me", nil))
+		var m auth.Me
+		json.NewDecoder(rec.Body).Decode(&m)
+		return m
+	}
+	if m := me(true); !m.Setup {
+		t.Errorf("管理者がいない: %+v", m)
+	}
+	if m := me(false); m.Setup {
+		t.Errorf("ログインが要らない形: %+v", m)
+	}
+	st.SetAdmin(ctx, u.ID, true, time.Now())
+	if m := me(true); m.Setup {
+		t.Errorf("管理者を作ったあと: %+v", m)
+	}
+}

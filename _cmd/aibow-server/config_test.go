@@ -23,6 +23,7 @@ func TestResolveOrder(t *testing.T) {
 	t.Setenv("AIBOW_LIB", "env-lib")     // 引数に負ける
 	t.Setenv("AIBOW_MODELS_DIR", "")     // どこにも無いので既定
 	t.Setenv("AIBOW_API_PORT", "8000")   // 古い名前。読まずに注意を出す
+	t.Setenv("AIBOW_SERVER_LOGIN", "")   // どこにも無いので既定(要る。0020)
 
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
 	f := defineFlags(fs)
@@ -34,13 +35,55 @@ func TestResolveOrder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := config{Port: 9000, Ctx: 16384, Model: "env-model", Lib: "arg-lib", ModelsDir: "models", Host: "127.0.0.1",
+	want := config{Port: 9000, Ctx: 16384, Model: "env-model", Lib: "arg-lib", ModelsDir: "models", Host: "127.0.0.1", Login: true,
 		File: path, StatePath: filepath.Join(dir, stateFileName), DBPath: filepath.Join(dir, dbFileName)}
 	if c != want {
 		t.Errorf("設定:\n got  %+v\n want %+v", c, want)
 	}
 	if len(notices) != 1 || !strings.Contains(notices[0], "AIBOW_API_PORT") {
 		t.Errorf("古い環境変数の注意: %q", notices)
+	}
+}
+
+// ログインは既定で要る。外すのは、書いたときだけ(引数 > 設定ファイル > 環境変数。0020 の決定事項 1)
+func TestResolveLogin(t *testing.T) {
+	dir := t.TempDir()
+	none := filepath.Join(dir, "none.json")
+	off := filepath.Join(dir, "off.json")
+	os.WriteFile(none, []byte(`{}`), 0o644)
+	os.WriteFile(off, []byte(`{"login": false}`), 0o644)
+	for _, k := range []string{"AIBOW_SERVER_HOST", "AIBOW_SERVER_LOGIN"} {
+		t.Setenv(k, "")
+	}
+	login := func(path, env string, args ...string) bool {
+		t.Helper()
+		t.Setenv("AIBOW_SERVER_LOGIN", env)
+		fs := flag.NewFlagSet("test", flag.ContinueOnError)
+		f := defineFlags(fs)
+		if err := fs.Parse(append([]string{"-config", path}, args...)); err != nil {
+			t.Fatal(err)
+		}
+		var env2 envReader
+		c, _, err := resolve(fs, f, &env2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return c.Login
+	}
+	for _, c := range []struct {
+		name, path, env string
+		args            []string
+		want            bool
+	}{
+		{"何も書かない", none, "", nil, true},
+		{"環境変数で外す", none, "0", nil, false},
+		{"設定ファイルで外す", off, "1", nil, false},
+		{"引数で外す", none, "", []string{"-login=false"}, false},
+		{"引数が設定ファイルより強い", off, "", []string{"-login"}, true},
+	} {
+		if got := login(c.path, c.env, c.args...); got != c.want {
+			t.Errorf("%s: %v", c.name, got)
+		}
 	}
 }
 
