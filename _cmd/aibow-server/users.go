@@ -213,7 +213,7 @@ func newKey(ctx context.Context, st *store.SQLite, name string) error {
 		return err
 	}
 	fmt.Printf("名前: %s\nAPI キー: %s\n", name, key)
-	fmt.Println("API キーは今だけ表示します。デスクトップのアプリは settings.json の serverKey に、Cline などは API Key の欄に書きます。" +
+	fmt.Println("API キーは今だけ表示します。Cline などは API Key の欄に書きます(デスクトップのアプリは設定の画面の「サーバー」でログインすれば要りません。settings.json に手で書いてつなぐときだけ serverKey に書きます)。" +
 		"忘れたら aibow-server user key " + name + " で作り直してください(前のキーは使えなくなります)")
 	return nil
 }
