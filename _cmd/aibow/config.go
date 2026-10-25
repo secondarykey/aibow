@@ -71,16 +71,23 @@ type appConfig struct {
 	toolsPath    string // ツールの扱いの PC の既定(tools.json。画面で変えたものを aibow が書く)
 	windowPath   string // ウィンドウの位置と大きさ(window.json。閉じるときに aibow が書く。windowstate.go)
 	placesPath   string // 画面で足したモデルの置き場所(model-places.json。直接の形のときだけ使う。ui/modelplaces.go)
+	connPath     string // 画面で決めた aibow-server のつなぎ先とログイン(connection.json。aibow が書く。0019)
 	initialModel string // AIBOW_MODEL。空なら最後に使ったモデル → 一覧の先頭(書式に対応している最初のモデル)
 
 	// settings は settings.json の中身。settingsErr は読めなかった理由(MCP は使わずに起動し、お知らせで伝える。startMCP)
 	settings    aibow.SettingsFile
 	settingsErr error
-	// serverURL は生成を頼む aibow-server のつなぎ先(settings.json の serverUrl > 環境変数 AIBOW_SERVER_URL)。
+	// serverURL は生成を頼む aibow-server のつなぎ先(settings.json の serverUrl > 環境変数 AIBOW_SERVER_URL > 画面で決めたもの。loadServer)。
 	// 空なら今までどおりアプリの中で llama.cpp を動かす。書けば llama.cpp を読み込まず、aibow-server につなぎに行く(0015 の 1・20)
 	serverURL string
-	// serverKey・serverCert は、aibow-server の API キーと証明書のファイル(settings.json の serverKey・serverCert > 環境変数 AIBOW_SERVER_KEY・AIBOW_SERVER_CERT。0017 の 10-2)
-	serverKey, serverCert string
+	// serverKey・serverCert は、aibow-server の API キーと証明書のファイル(settings.json の serverKey・serverCert > 環境変数 AIBOW_SERVER_KEY・AIBOW_SERVER_CERT。0017 の 10-2)。
+	// 画面で決めたつなぎ先なら、serverKey はアプリ用のトークン、serverPin は信頼した証明書の指紋(0019)
+	serverKey, serverCert, serverPin string
+	// serverSource はつなぎ先をどこで決めたか(serverSettings・serverEnv・serverScreen。つながないなら空)。
+	// 手で書いた値(settings.json・環境変数)が画面の値より強い(0019 の決定事項 5)
+	serverSource string
+	// conn は connection.json の中身(画面で決めたつなぎ先。手で書いた値があれば使わないが、画面に出すために読む)
+	conn aibow.ConnectionFile
 
 	// app は、画面で変えられるアプリ全体の設定の初期値。
 	// DB にまだ値が無いときだけ使う(画面で一度変えると DB の値が優先される)。
@@ -106,6 +113,7 @@ func loadConfig() (appConfig, error) {
 		toolsPath:    env.str("AIBOW_TOOLS", configFile("tools.json")),
 		windowPath:   env.str("AIBOW_WINDOW", configFile("window.json")),
 		placesPath:   env.str("AIBOW_MODEL_PLACES", configFile("model-places.json")),
+		connPath:     env.str("AIBOW_CONNECTION", configFile("connection.json")),
 		initialModel: os.Getenv("AIBOW_MODEL"),
 		// 既定のシステムプロンプトなど、環境変数で変えない初期値は ui にある(aibow-server のブラウザの会話と同じ既定にするため)
 		app: ui.InitialAppSettings(ui.InitialValues{
@@ -117,15 +125,7 @@ func loadConfig() (appConfig, error) {
 	}
 	// settings.json は MCP のサーバーとつなぎ先を書く場所。読めなくても起動は止めない(MCP は使わない。つなぎ先は環境変数を使う)
 	c.settings, c.settingsErr = aibow.LoadSettingsFile(c.settingsPath)
-	c.serverURL = os.Getenv("AIBOW_SERVER_URL")
-	if err := aibow.CheckServerURL(c.serverURL); err != nil {
-		env.errs = append(env.errs, fmt.Errorf("AIBOW_SERVER_URL: %w", err))
-	}
-	if c.settings.ServerURL != "" {
-		c.serverURL = c.settings.ServerURL // settings.json が環境変数より強い(0015 の 20)
-	}
-	c.serverKey = cmp.Or(c.settings.ServerKey, os.Getenv("AIBOW_SERVER_KEY"))
-	c.serverCert = cmp.Or(c.settings.ServerCert, os.Getenv("AIBOW_SERVER_CERT"))
+	c.loadServer(&env)
 
 	// AIBOW_CTX(コンテキスト長)は、会話の上限 + 返事の上限から aibow が計算するようになったので使わない
 	if v := os.Getenv("AIBOW_CTX"); v != "" {
@@ -152,6 +152,50 @@ func loadConfig() (appConfig, error) {
 		env.errs = append(env.errs, errors.New("会話を保存する場所が決められません。AIBOW_DB で DB ファイルの場所を指定してください"))
 	}
 	return c, errors.Join(env.errs...)
+}
+
+// つなぎ先をどこで決めたか(appConfig.serverSource)。
+const (
+	serverSettings = "settings" // settings.json の serverUrl(手で書いた)
+	serverEnv      = "env"      // 環境変数 AIBOW_SERVER_URL(手で書いた)
+	serverScreen   = "screen"   // 画面で決めた(connection.json)
+)
+
+// loadServer は aibow-server のつなぎ先を決める。強い順に settings.json の serverUrl > 環境変数 AIBOW_SERVER_URL(0015 の 20)> 画面で決めたもの(connection.json)。
+// 手で書いた値があれば、画面の値は使わない(書いたのに効かない、が起きないように。0019 の決定事項 5)。どれも無ければアプリの中で動かす。
+func (c *appConfig) loadServer(env *envReader) {
+	envURL := os.Getenv("AIBOW_SERVER_URL")
+	if err := aibow.CheckServerURL(envURL); err != nil {
+		env.errs = append(env.errs, fmt.Errorf("AIBOW_SERVER_URL: %w", err))
+		envURL = ""
+	}
+	// 画面に出すため、手で書いてあっても読んでおく(読めなければお知らせで伝え、無いものとして起動する)
+	conn, err := aibow.LoadConnectionFile(c.connPath)
+	if err != nil {
+		c.notices = append(c.notices, err.Error())
+	}
+	c.conn = conn
+	switch {
+	case c.settings.ServerURL != "":
+		c.serverURL, c.serverSource = c.settings.ServerURL, serverSettings
+	case envURL != "":
+		c.serverURL, c.serverSource = envURL, serverEnv
+	case conn.ServerURL != "":
+		c.serverURL, c.serverSource, c.serverPin = conn.ServerURL, serverScreen, conn.Fingerprint
+		token, err := conn.PlainToken()
+		if err != nil {
+			c.notices = append(c.notices, err.Error()+"。設定の画面の「サーバー」で、もう一度ログインしてください")
+		}
+		c.serverKey = token
+		if conn.Token != "" && !conn.TokenProtected() {
+			log.Warnf("aibow-server のアプリ用のトークンを、包まずに保存しています(この OS では包めません): %s", absPath(c.connPath))
+		}
+		return
+	default:
+		return
+	}
+	c.serverKey = cmp.Or(c.settings.ServerKey, os.Getenv("AIBOW_SERVER_KEY"))
+	c.serverCert = cmp.Or(c.settings.ServerCert, os.Getenv("AIBOW_SERVER_CERT"))
 }
 
 // configFile は、DB ファイル・設定ファイルの既定の場所。Windows では %APPDATA%\aibow\<name>。

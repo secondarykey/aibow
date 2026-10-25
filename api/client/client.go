@@ -192,6 +192,12 @@ func (c *Client) do(ctx context.Context, method, path string, body any) (*http.R
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
+		// 証明書が覚えたものと違うのは「起動していない」ではないので、そのまま伝える(0019)
+		if errors.Is(err, ErrCertChanged) {
+			var ce *certChangedError
+			errors.As(err, &ce)
+			return nil, ce
+		}
 		return nil, c.unreachable(err)
 	}
 	if res.StatusCode == http.StatusOK {

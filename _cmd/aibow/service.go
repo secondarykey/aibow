@@ -22,13 +22,15 @@ type ChatService struct {
 
 	// life は起動と終了のときに呼ぶ係。フィールドなので画面からは呼べない
 	life ui.Lifecycle
+	// conn は aibow-server のつなぎ先を画面で決める係(connection.go。0019)
+	conn *connection
 }
 
 // NewChatService は ChatService を作る。画面に知らせる係は、ここで Wails のイベントにする。
-func NewChatService(o ui.Options) *ChatService {
+func NewChatService(o ui.Options, conn *connection) *ChatService {
 	o.Notify = wailsNotifier{}
 	s, life := ui.New(o)
-	return &ChatService{Service: s, life: life}
+	return &ChatService{Service: s, life: life, conn: conn}
 }
 
 // ServiceStartup はアプリの起動時に Wails から呼ばれる(画面からは呼べない特別な名前)。起動時のモデルを裏で読み込む。
