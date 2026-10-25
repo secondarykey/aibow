@@ -214,15 +214,31 @@ AIBOW_LIB=/d/Go/Projects/aibow/_cmd/aibow/lib AIBOW_MODELS_DIR=/d/Go/Projects/ai
 worktree を消すツールによっては、ジャンクションの先(本体の `lib\` / `models\`)の中身まで消してしまいます。
 `frontend/node_modules/` も Git に入っていないので、worktree の `_cmd/aibow/frontend` で `npm install` します。
 
+## aibow-server をログインありで使い始める(ステップ10・11)
+
+初めて起動した aibow-server の利用者は `local` の1人だけで(パスワードは空)、**管理者は一人もいません。既定の admin も作りません**
+(決まったパスワードの管理者がいると、変え忘れたまま外に出したときに誰でも入れてしまうため。最初の管理者は、サーバーの PC でコマンドを打てる人が決める)。
+ログインありで使うときは、最初にサーバーの PC で管理者を作ります。詳しくは [usage.md](usage.md) の「ログインと利用者」にあります。
+
+1. 管理者にする人を作る:`aibow-server user add <名前>`(パスワードをこのときだけ表示する)
+2. 管理者にする:`aibow-server user admin <名前>`
+3. `server.json` に `"login": true` を書いて(または `-login` を付けて)起動する
+4. ブラウザで aibow-server の画面を開いてその人でログインし、設定の画面の「利用者」のタブで、ほかの人を作る
+
+- 1 と 2 は aibow-server を動かしたままでも打てる。設定ファイルを `-config` で指しているときは、コマンドにも同じ `-config` を付ける
+- 管理者がいなくても動く(サーバーの PC からはモデルなどをいつでも変えられ、利用者はコマンドで扱える)
+
 ## ほかの PC から使えるようにする(aibow-server。ステップ10)
 
 aibow-server を同じ網のほかの PC から使うときの準備です。手順の詳細は [usage.md](usage.md) の「ログインと利用者」「ほかの PC から使う」にあります。
 
-1. 証明書を作る:`aibow-server cert <ほかの PC からつなぐときのアドレス>`(設定ファイルの隣に `server-cert.pem` と `server-key.pem` ができる)
-2. `server.json` に `"host": "0.0.0.0"` と `tlsCert`・`tlsKey` を書いて起動する(外で待ち受けると、ログインと API キーが必ず要る)
-3. 利用者を作る:`aibow-server user add <名前>`(パスワードを表示)と `aibow-server user key <名前>`(API キーを表示)。どちらもこのときだけ表示する。
-   管理者にする人は `aibow-server user admin <名前>`(ステップ11。管理者はブラウザで利用者を管理し、ほかの PC からもモデルを扱える)
-4. 使う人に、アドレス・パスワード・API キーと、アプリや Cline で使うなら証明書(`server-cert.pem`。秘密鍵は渡さない)を渡す
+1. 証明書を作る:`aibow-server cert <ほかの PC からつなぐときのアドレス>`(設定ファイルの隣に `server-cert.pem` と `server-key.pem` ができ、証明書の指紋が表示される)
+2. `server.json` に `"host": "0.0.0.0"` と `tlsCert`・`tlsKey` を書いて起動する(外で待ち受けると、ログインが必ず要る。起動のときのログにも証明書の指紋が出る)
+3. 利用者を作る:上の「aibow-server をログインありで使い始める」と同じ(管理者は、コマンドかブラウザの「利用者」のタブで、ほかの人を作る)
+4. 使う人に、アドレス・パスワード・証明書の指紋を渡す
+   - 画面のアプリ:設定の画面の「サーバー」のタブでアドレスを入れ、出てきた指紋が渡されたものと同じなら信頼して、名前とパスワードでログインする(0019。API キーと証明書のファイルは要らない)
+   - Cline など(OpenAI 互換のクライアント):API キー(`aibow-server user key <名前>`。このときだけ表示する)と、証明書のファイル(`server-cert.pem`。秘密鍵は渡さない)も渡す
+   - 画面のアプリを `settings.json` に手で書いてつなぐときも、`serverKey` に API キー、`serverCert` に証明書のファイルを書く
 
 - ブラウザで初めて開くと、自己署名の証明書なので「この接続ではプライバシーが保護されません」と警告が出る。サーバーの PC で作った証明書かを確かめて先へ進む
 - Windows では、初めて外で待ち受けるときにファイアウォールの許可を聞かれる(プライベートネットワークだけを許可する)
