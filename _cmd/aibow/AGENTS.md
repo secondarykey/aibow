@@ -13,8 +13,9 @@ Wails v3 のデスクトップアプリです。ルートの `aibow` パッケ�
 | `windowstate.go` | ウィンドウの位置・大きさ・最大化を `%APPDATA%\aibow\window.json`(`AIBOW_WINDOW`)に覚え、次の起動で戻す。仕組みは [_docs/ui.md](../../_docs/ui.md) の「次の起動で戻すもの」 |
 | `../../ui/modelhost.go`(ルートの `ui` パッケージ) | モデルを扱う係(`ui.ModelHost`。0015 の 11)。直接(`DirectHost`。engine を動かし、GPU の層数をアプリの DB に覚える)と aibow-server 越し(`RemoteHost`。`api/client`。作業領域はサーバーで固定)の2つの実装。`ui.Service` はどちらかを呼ぶだけ。作るのは `main.go` の `startModels`(`ui.NewDirectHost` / `ui.NewRemoteHost`)。8-4 で降ろす・モデルごとの層の数・置き場所を足す / 外す・表示だけの設定を足した。`RemoteHost` はそのどれもせず(サーバーの PC の事情なので断る)、一覧からは出どころを外し、表示だけの設定は作業領域だけを渡す(0015 の 21) |
 | `../../ui/modelplaces.go` | 直接の形で画面から足したモデルの置き場所を `%APPDATA%\aibow\model-places.json`(`AIBOW_MODEL_PLACES`)に覚える(`ui.PlacesFile`。0015 の 24)。壊れていたら書き換えずにお知らせで伝える |
-| `config.go` | 環境変数の読み込み。`settings.json` も読み、つなぎ先(`serverUrl` > `AIBOW_SERVER_URL`)を決める(つなぐときは `lib` が無くてもよい)。`settings.json` を読んで MCP のサーバーの係(`mcp/client` の `Manager`)を作るのは `main.go` の `startMCP`(アプリを閉じるときに止める)、`tools.json` を読むのは `loadToolPrefs` |
+| `config.go` | 環境変数の読み込み。`settings.json` も読み、つなぎ先(`serverUrl` > `AIBOW_SERVER_URL` > 画面で決めた `connection.json`。`loadServer`。手で書いた値が強い。0019)を決める(つなぐときは `lib` が無くてもよい)。`settings.json` を読んで MCP のサーバーの係(`mcp/client` の `Manager`)を作るのは `main.go` の `startMCP`(アプリを閉じるときに止める)、`tools.json` を読むのは `loadToolPrefs` |
 | `service.go` | `ChatService`。中身(モデル・会話・設定(`TryLimits` / `SetGPULayers` / 画面の設定の `SetDisplay` など)・メーター(`Usage`)・`Send` / `Compact` / `StopSummary`)はルートの `ui` パッケージの `ui.Service`(`../../ui/service.go`)で、`ChatService` はそれを埋め込むだけ(埋め込んだ型のメソッドも Wails のバインディングになる。0016 の 9-0)。ここに残すのは Wails が要るものだけ:起動と終了の合図(`ServiceStartup` / `ServiceShutdown` → `ui.Lifecycle`)・ダイアログ(`ChooseWorkDir` / `ChooseModelPlace`)・Wails のイベントで画面に知らせる係(`wailsNotifier`。`ui.Notifier`)。画面の設定(質問を右上に出す・明るさ)は DB に置き、実際のライト / ダークは画面の `theme.ts` が決める([_docs/ui.md](../../_docs/ui.md) の「明るさ」)。生成の回ごとの統計・compact・ツールの実行のログは `ui.Service` が出す |
+| `connection.go` | 画面から aibow-server につなぐ・ログインする・戻す(0019)。`ServerConnection`・`CheckServer`(つなぎ先と証明書の指紋を確かめる)・`ConnectServer`(アプリ用のトークンをもらい、DPAPI で包んで `%APPDATA%\aibow\connection.json`(`AIBOW_CONNECTION`)に書く)・`DisconnectServer`。変えたらウィンドウを閉じ、後片付けのあとに自分を起動し直す(`relaunch`。`wails3 dev` では起動し直さない)。手で書いたつなぎ先があれば断る |
 | `frontend/src/` | チャット画面(React + TypeScript)。Vite でビルドした結果は共有のパッケージ `web`(ルートの `web/dist/app`)に出し、`main.go` が `web.Files()` で埋め込む(aibow-server がブラウザに配るものと同じ。0016)。中身は [_docs/ui.md](../../_docs/ui.md) と [_docs/rendering.md](../../_docs/rendering.md) |
 | `frontend/bindings/` | `wails3 generate bindings` の生成物(コミットする。手で直さない) |
 | `build/` / `Taskfile.yml` | `wails3 init`(react テンプレート)由来のビルド設定。ios / android / docker は削除して `.gitignore` 済み |
@@ -30,7 +31,7 @@ Wails v3 のデスクトップアプリです。ルートの `aibow` パッケ�
 
 ## 環境変数
 
-`AIBOW_MODEL` / `AIBOW_MODELS_DIR` / `AIBOW_LIB` / `AIBOW_DB` / `AIBOW_SETTINGS` / `AIBOW_SERVER_URL` / `AIBOW_SERVER_KEY` / `AIBOW_SERVER_CERT` / `AIBOW_TOOLS` / `AIBOW_MODEL_PLACES` / `AIBOW_WINDOW` / `AIBOW_LOG_DIR` / `AIBOW_HISTORY_TOKENS` / `AIBOW_MAX_TOKENS` / `AIBOW_GPU_LAYERS` / `AIBOW_PRESENCE_PENALTY` / `AIBOW_LLAMA_LOG`、
+`AIBOW_MODEL` / `AIBOW_MODELS_DIR` / `AIBOW_LIB` / `AIBOW_DB` / `AIBOW_SETTINGS` / `AIBOW_SERVER_URL` / `AIBOW_SERVER_KEY` / `AIBOW_SERVER_CERT` / `AIBOW_CONNECTION` / `AIBOW_TOOLS` / `AIBOW_MODEL_PLACES` / `AIBOW_WINDOW` / `AIBOW_LOG_DIR` / `AIBOW_HISTORY_TOKENS` / `AIBOW_MAX_TOKENS` / `AIBOW_GPU_LAYERS` / `AIBOW_PRESENCE_PENALTY` / `AIBOW_LLAMA_LOG`、
 Ollama の保存先は Ollama と同じ `OLLAMA_MODELS`。意味と既定値は [_docs/usage.md](../../_docs/usage.md) の表にある。
 
 - `AIBOW_CTX` は 0002 で廃止(設定されていたらログとトーストで伝える)

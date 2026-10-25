@@ -291,6 +291,18 @@ curl http://127.0.0.1:8089/v1/chat/completions -H "Content-Type: application/jso
 つないでいる間、会話は aibow-server の `server.db` に置かれます。同じ人がブラウザで開けば、アプリで作った会話が見えます。
 会話の保存・ツール・MCP・実行前の確認・compact は、今までどおりアプリの中で動きます。
 
+**画面からつなぐ**(0019):設定の画面の「サーバー」のタブで、aibow-server が起動のときに出す「画面のアプリのつなぎ先」を入れて「確かめる」を押します。
+
+- 自己署名の証明書で HTTPS にしている aibow-server なら、証明書の指紋が出ます。aibow-server が起動のとき(ログ)と `aibow-server cert` のときに出す指紋と同じなら「この証明書を信頼する」を押します。
+  覚えた指紋と違う証明書を出すサーバーには、そのあとつながりません(作り直したなら、もう一度確かめて信頼します)
+- ログインが要る aibow-server なら、名前とパスワードを入れて「ログインしてつなぐ」を押します。パスワードは覚えず、aibow-server が出すアプリ用のトークンを覚えます。
+  トークンは作ってから **10 日**で切れます(使っても延びません)。切れたら同じタブでもう一度ログインします。トークンは PC ごとに1本で、ほかの PC のログインは切れません
+- つなぐとアプリが起動し直し、生成と会話の保存が aibow-server になります。「ログアウトして戻す」で、トークンを消してアプリの中で動かす形に戻ります(これも起動し直します)
+- 覚えるのは `%APPDATA%\aibow\connection.json`(`AIBOW_CONNECTION`)。トークンは Windows の DPAPI で包むので、ファイルをほかの PC やほかの Windows の利用者に写しても使えません
+- `wails3 dev` で動かしているときは起動し直さないので、手で起動し直します
+
+**手で書く**(今までの形):`settings.json` か環境変数に書きます。**手で書いてあれば、画面で決めたつなぎ先より強く**、「サーバー」のタブでは表示だけになります。
+
 1. aibow-server を起動しておく(上の手順)
 2. アプリの `settings.json`(`%APPDATA%\aibow\settings.json`)につなぎ先を書く。環境変数 `AIBOW_SERVER_URL` でもよい(両方あれば settings.json が優先)
 
@@ -400,7 +412,7 @@ aibow-server user add bob
 3. 利用者を作り(`user add`)、使う人にパスワードと API キー(`user key`)を渡す
 
 - ブラウザ:`https://<サーバーの PC のアドレス>:8089/` を開きます。自己署名の証明書なので、初めは「この接続ではプライバシーが保護されません」と出ます。証明書がサーバーの PC で作ったものかを確かめて先へ進みます
-- 画面のアプリ:`settings.json` に `serverUrl`(`https://…`)・`serverKey`・`serverCert`(サーバーの PC から写した `server-cert.pem`。秘密鍵は写さない)を書きます(上の「画面のアプリを aibow-server につなぐ」)
+- 画面のアプリ:設定の画面の「サーバー」のタブで `https://…` を入れ、証明書の指紋を確かめてログインします。手で書くなら `settings.json` に `serverUrl`(`https://…`)・`serverKey`・`serverCert`(サーバーの PC から写した `server-cert.pem`。秘密鍵は写さない)を書きます(上の「画面のアプリを aibow-server につなぐ」)
 - Cline など:Base URL を `https://…/v1`、API Key を作ったキーにします。Node.js で動くものは、環境変数 `NODE_EXTRA_CA_CERTS` に写した証明書のファイルを書くと、自己署名の証明書を信頼します
 - モデルを降ろす・GPU の層数・モデルの置き場所は、サーバーの PC からか管理者だけが変えられます(ほかの人は「aibow-server を動かしている PC からか、管理者だけができます」と断ります)
 
@@ -424,7 +436,7 @@ aibow-server user add bob
 
 **設定の画面**: 会話の一覧の右下にある歯車のアイコンで開きます(左下にはアプリの名前とバージョンが出ます)。
 
-上のタブで「基本設定」「モデル」「会話」を切り替えます(開くたびに「基本設定」から始まります)。
+上のタブで「基本設定」「モデル」「会話」「サーバー」を切り替えます(開くたびに「基本設定」から始まります。「サーバー」はデスクトップのアプリだけ)。
 
 - **基本設定**(会話によらず、この PC で1つだけのもの)
   - 画面: 「明るさ」はシステム(OS のライト / ダークの設定に合わせる。初め)・ライト・ダーク。
@@ -444,6 +456,7 @@ aibow-server user add bob
     錠で固定した項目と「使えない」にしたツールは、そのプロファイルから作った会話で変えられず、あとから決めても今ある会話にすぐ効きます。
     「最初に選ぶ」の印のものが、新しい会話の画面で最初に選ばれます。使っている会話のあるプロファイルは消せず、「しまう」(新しい会話では選べなくする)ことができます
   - ツール: ツールを使う / 使わない・確認するか(この PC の全部の会話の既定)
+- **サーバー**(デスクトップのアプリだけ。0019): 今の形(アプリの中で動かす / aibow-server に誰としてつないでいるか・ログインの期限・信頼した証明書の指紋)と、aibow-server につなぐ・ログインする・戻す(上の「画面のアプリを aibow-server につなぐ」)
 
 環境変数でも変えられます。bash では `名前=値 コマンド` と書くと、そのコマンドにだけ渡せます(`export 名前=値` ならそのターミナルの中でずっと有効)。
 
@@ -457,6 +470,7 @@ aibow-server user add bob
 | `AIBOW_SETTINGS` | `%APPDATA%\aibow\settings.json` | 設定ファイル(手で書く設定。MCP のサーバーの `mcpServers` と、aibow-server のつなぎ先 `serverUrl`)。無ければ MCP を使わない |
 | `AIBOW_SERVER_KEY` | なし | aibow-server の API キー(ログインが要る形・ほかの PC の aibow-server につなぐとき)。settings.json の `serverKey` が優先 |
 | `AIBOW_SERVER_CERT` | なし | aibow-server の証明書のファイル(自己署名の証明書で HTTPS にしているとき)。settings.json の `serverCert` が優先 |
+| `AIBOW_CONNECTION` | `%APPDATA%\aibow\connection.json` | 設定の画面の「サーバー」で決めた aibow-server のつなぎ先・信頼した証明書の指紋・アプリ用のトークン(DPAPI で包む)。aibow が書く。`serverUrl`・`AIBOW_SERVER_URL` を手で書いてあれば使わない |
 | `AIBOW_SERVER_URL` | なし | 生成を頼む aibow-server のつなぎ先(例: `http://127.0.0.1:8089`)。書けばアプリは llama.cpp を読み込まない。settings.json の `serverUrl` が優先(「画面のアプリを aibow-server につなぐ」) |
 | `AIBOW_LOG_DIR` | `%APPDATA%\aibow\logs` | ログファイル(`aibow_<日付>.log`。日ごと)を書くフォルダ。exe は Notice 以上(起動した版・使ったモデル・変えた設定・注意・エラーなど)だけを書き、起動時に古いファイルを消して今日を含めて 10 日分を残す。異常終了したときは同じフォルダの `aibow_crash_<日時>.log` に内容が残る(次の起動で画面に知らせる)。MCP のサーバー `aibow-mcp` も同じフォルダの `aibow-mcp_<日付>.log` に、OpenAI 互換 API の `aibow-server` は `aibow-server_<日付>.log` に書く(どちらも Info 以上・10 日分)。フォルダが無ければ作る。`wails3 build` で作った exe は既定でここに書く。`wails3 dev` はターミナルに出し、ここの `aibow-dev_<日付>.log` にも書く(Info 以上・10 日分。exe のログと混ざらないよう名前を分けている) |
 | `AIBOW_TOOLS` | `%APPDATA%\aibow\tools.json` | ツールの扱いの、この PC の既定(設定の画面で変えたものを aibow が書く) |

@@ -37,9 +37,11 @@ Ollama が保存したファイルを aibow が直接読むので、Ollama は�
 | `mcp/server/` | 自作の MCP のサーバー。`tool` のツールを MCP のツールとして出す(公式の Go SDK を使う)。書き換えるツールは、実行する前にサーバーの側からユーザーに確かめる |
 | `mcp/internal/` | MCP のクライアントとサーバーの両方で使う部分 |
 | `internal/proc/` | 起動したプロセスを、子プロセスまでまとめて止める仕組み(コマンドのツールと MCP のサーバーで使う) |
+| `internal/secret/` | 手元に置くアプリ用のトークンを、Windows の DPAPI で包む(標準の `syscall` で `crypt32.dll` を呼ぶ。Windows 以外は包まない。0019) |
 | `log/` | aibow のログ。aibow のコードはここからログを出す。aibow をライブラリとして使う人は `log.SetLogger` で aibow のログの出し先(`*slog.Logger`)を決められる(決めなければ `slog.Default()`) |
 | `settingsfile.go` | 設定ファイル `settings.json`(手で書く設定。MCP のサーバーと aibow-server のつなぎ先)の読み込み |
 | `toolprefs.go` | ツールの扱い(使わない / 確認する / 確認しない)と、その PC の既定 `tools.json` の読み書き |
+| `connectionfile.go` | 設定の画面の「サーバー」で決めた aibow-server のつなぎ先 `connection.json` の読み書き(アプリ用のトークンは `internal/secret` で包む。0019) |
 | `compact.go` | 長くなった会話を「会話の上限」に収める仕組み(古い発言を捨てる / 要約する)と、メーターの計算 |
 | `store.go` | 会話の保存先の約束(interface)と、会話・発言・要約の形。会話の仕組みは保存先が SQLite かどうかを知らない |
 | `appsettings.go` | アプリの設定(GPU の層数・最後に使ったモデル・画面の設定)と新しい会話の既定の設定(会話の上限・返事の上限も入る) |
@@ -62,6 +64,7 @@ Ollama が保存したファイルを aibow が直接読むので、Ollama は�
 | `_cmd/aibow-mcp/` | 自作の MCP のサーバーの exe(標準入出力で話す)。`main.go` は引数の作業フォルダを読んで `mcp/server` を動かすだけ、`log.go` はログの出口(アプリと同じフォルダの `aibow-mcp_<日付>.log`)、`version` / `appversion.go` はアプリと同じバージョン(`_cmd/aibow/version` の写し)。ルートのモジュールに入っている |
 | `_cmd/aibow/main.go` | デスクトップアプリの起動(Wails のアプリとウィンドウを作る) |
 | `_cmd/aibow/config.go` | 環境変数から設定を読む(`settings.json` も読み、aibow-server のつなぎ先を決める。MCP の係を作るのは `main.go`) |
+| `_cmd/aibow/connection.go` | 設定の画面の「サーバー」から呼ぶメソッド(つなぎ先を確かめる・ログインしてつなぐ・戻す)と、変えたあとに起動し直す仕組み(0019) |
 | `_cmd/aibow/service.go` | `ui/service.go` のメソッドを Wails に渡す(`ChatService`)。Wails が要るもの(フォルダを選ぶダイアログ・画面へのイベント)だけを持つ |
 | `_cmd/aibow/frontend/src/` | チャット画面(React + TypeScript)。`App.tsx` が全体、`backend.ts` が Go を呼ぶ係(Go を呼ぶのはここだけ。中身はデスクトップの `backendWails.ts` とブラウザの `backendWeb.ts`)、`use*.ts` が Go とのやり取り、`components/` が表示 |
 | `_cmd/aibow/frontend/bindings/` | `wails3 generate bindings` が作る、Go のメソッドを呼ぶ関数と型(自動生成。手で直さない) |
