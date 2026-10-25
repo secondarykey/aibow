@@ -51,6 +51,31 @@ wails3 dev
 ```
 アプリを開発モードで起動します。詳しい手順・うまく動かないとき・実行ファイルの作り方は [_docs/setup.md](_docs/setup.md) にあります。
 
+### 環境変数(セットアップに関わるもの)
+
+llama.cpp とモデルは、既定ではカレントフォルダの `lib\`・`models\` を探します。ほかの場所に置いたときや、別のフォルダ(worktree など)から起動するときは、環境変数で場所を指します。
+
+| 環境変数 | 既定 | 内容 |
+|---|---|---|
+| `AIBOW_LIB` | `lib` | llama.cpp の DLL のフォルダ |
+| `AIBOW_MODELS_DIR` | `models` | GGUF を置くフォルダ |
+| `OLLAMA_MODELS` | `%USERPROFILE%\.ollama\models` | Ollama の保存フォルダ(Ollama 自身と同じ変数) |
+| `AIBOW_MODEL` | 最後に使ったモデル | 起動のときに読み込むモデル(例: `ollama:qwen3.5:4b`) |
+| `AIBOW_GPU_LAYERS` | `999`(全部) | GPU に載せる層の数。VRAM に入らないときに減らす |
+| `AIBOW_DB`・`AIBOW_LOG_DIR` | `%APPDATA%\aibow\` の下 | 会話の DB とログの場所(試すときは一時フォルダにすると、ふだんの会話と混ざらない) |
+| `AIBOW_SERVER_URL` | なし | 画面のアプリを aibow-server につなぐ(画面の「サーバー」のタブでもつなげる) |
+
+```bash
+AIBOW_LIB=/d/aibow/lib AIBOW_MODELS_DIR=/d/aibow/models wails3 dev
+```
+
+- **読むのは起動のときだけ**です。変えたら起動し直します
+- **画面で変えられる設定**(GPU の層数・会話の上限など)の環境変数は、まだ画面で変えていないときの初期値です。画面で一度変えると、画面の値が優先されます
+- **aibow-server のつなぎ先**は、`settings.json` の `serverUrl` > `AIBOW_SERVER_URL` > 画面で決めたもの、の順に強く、手で書いてあれば画面では変えられません
+- **aibow-server** は、起動の引数 > 設定ファイル `server.json` > 環境変数、の順に強くなります。アプリと同じ名前の環境変数(`AIBOW_LIB`・`AIBOW_MODELS_DIR` など)を読みます
+
+全部の環境変数と効き方は [_docs/usage.md](_docs/usage.md) の「環境変数の効き方」と表にあります。
+
 ### aibow-server を動かす(ブラウザ・Cline・ほかの PC から使うとき)
 
 画面のアプリとは別の exe です。ブラウザに配る画面は exe に入るので、先に画面をビルドしてから、リポジトリのフォルダでビルドします。

@@ -486,6 +486,21 @@ aibow-server user add bob
 
 環境変数でも変えられます。bash では `名前=値 コマンド` と書くと、そのコマンドにだけ渡せます(`export 名前=値` ならそのターミナルの中でずっと有効)。
 
+### 環境変数の効き方
+
+- **読むのは起動のときだけ**です。変えたら、アプリ(または aibow-server)を起動し直します。起動したままの値は変わりません
+- 値の形が違う(数でないところに文字など)ときは、アプリはウィンドウに理由を出し、aibow-server は起動の前に止まります
+- **画面のアプリ**の優先の順番(左が強い):
+  - aibow-server のつなぎ先:`settings.json` の `serverUrl` > `AIBOW_SERVER_URL` > 設定の画面の「サーバー」で決めたもの(`connection.json`)。
+    手で書いた値(左の2つ)があれば、画面のつなぎ先とログインは使いません。そのときの API キーと証明書は `settings.json` の `serverKey`・`serverCert` > `AIBOW_SERVER_KEY`・`AIBOW_SERVER_CERT`
+  - 画面で変えられる設定(`AIBOW_HISTORY_TOKENS`・`AIBOW_MAX_TOKENS`・`AIBOW_GPU_LAYERS`・`AIBOW_PRESENCE_PENALTY`):画面で変えて DB に保存した値 > 環境変数(DB にまだ値が無いときの初期値)> 既定
+  - 起動のときのモデル:`AIBOW_MODEL` > 最後に使ったモデル > 一覧の先頭
+  - そのほか(`AIBOW_LIB`・`AIBOW_MODELS_DIR`・`OLLAMA_MODELS`・ファイルの置き場所など):環境変数 > 既定
+- **aibow-server** の優先の順番(左が強い):起動の引数(`-port` など)> 設定ファイル `server.json` > 環境変数 > 既定。
+  引数はそのときだけ試すためのもの、ファイルは決めて書いたものなので、環境変数より強くしています。
+  GPU の層数は、画面(管理者・サーバーの PC の上のブラウザ)で決めたモデルごとの値(`server-models.json`)> `AIBOW_GPU_LAYERS`。aibow-server はアプリの DB を読みません
+- アプリと aibow-server は同じ名前の環境変数(`AIBOW_LIB`・`AIBOW_MODELS_DIR`・`AIBOW_MODEL`・`AIBOW_GPU_LAYERS`・`AIBOW_LOG_DIR` など)を読みます。同じターミナルから両方を起動すると、両方に効きます
+
 | 環境変数 | 既定値 | 内容 |
 |---|---|---|
 | `AIBOW_MODEL` | 最後に使ったモデル → 一覧の先頭(書式に対応している最初のモデル) | 起動時に読み込むモデル。`ollama:qwen3.5:4b` のような Ollama の名前か、GGUF ファイルのパス |
@@ -494,8 +509,8 @@ aibow-server user add bob
 | `AIBOW_LIB` | `lib` | llama.cpp の DLL があるフォルダ(相対パスはカレントフォルダが基準) |
 | `AIBOW_DB` | `%APPDATA%\aibow\aibow.db` | 会話を保存する SQLite のファイル。フォルダが無ければ作る |
 | `AIBOW_SETTINGS` | `%APPDATA%\aibow\settings.json` | 設定ファイル(手で書く設定。MCP のサーバーの `mcpServers` と、aibow-server のつなぎ先 `serverUrl`)。無ければ MCP を使わない |
-| `AIBOW_SERVER_KEY` | なし | aibow-server の API キー(ログインが要る形・ほかの PC の aibow-server につなぐとき)。settings.json の `serverKey` が優先 |
-| `AIBOW_SERVER_CERT` | なし | aibow-server の証明書のファイル(自己署名の証明書で HTTPS にしているとき)。settings.json の `serverCert` が優先 |
+| `AIBOW_SERVER_KEY` | なし | aibow-server の API キー(`aibow-server user key <名前>` で作ったもの)。つなぎ先を `settings.json` の `serverUrl` か `AIBOW_SERVER_URL` に手で書いて、ログインが要る aibow-server につなぐときだけ使う。設定の画面の「サーバー」でログインしたときは要らない(アプリ用のトークンを使う。0019)。settings.json の `serverKey` が優先 |
+| `AIBOW_SERVER_CERT` | なし | aibow-server の証明書のファイル(自己署名の証明書で HTTPS にしているとき)。`AIBOW_SERVER_KEY` と同じく、つなぎ先を手で書いたときだけ使う(画面でつないだときは、確かめた指紋で信頼する)。settings.json の `serverCert` が優先 |
 | `AIBOW_CONNECTION` | `%APPDATA%\aibow\connection.json` | 設定の画面の「サーバー」で決めた aibow-server のつなぎ先・信頼した証明書の指紋・アプリ用のトークン(DPAPI で包む)。aibow が書く。`serverUrl`・`AIBOW_SERVER_URL` を手で書いてあれば使わない |
 | `AIBOW_SERVER_URL` | なし | 生成を頼む aibow-server のつなぎ先(例: `http://127.0.0.1:8089`)。書けばアプリは llama.cpp を読み込まない。settings.json の `serverUrl` が優先(「画面のアプリを aibow-server につなぐ」) |
 | `AIBOW_LOG_DIR` | `%APPDATA%\aibow\logs` | ログファイル(`aibow_<日付>.log`。日ごと)を書くフォルダ。exe は Notice 以上(起動した版・使ったモデル・変えた設定・注意・エラーなど)だけを書き、起動時に古いファイルを消して今日を含めて 10 日分を残す。異常終了したときは同じフォルダの `aibow_crash_<日時>.log` に内容が残る(次の起動で画面に知らせる)。MCP のサーバー `aibow-mcp` も同じフォルダの `aibow-mcp_<日付>.log` に、OpenAI 互換 API の `aibow-server` は `aibow-server_<日付>.log` に書く(どちらも Info 以上・10 日分)。フォルダが無ければ作る。`wails3 build` で作った exe は既定でここに書く。`wails3 dev` はターミナルに出し、ここの `aibow-dev_<日付>.log` にも書く(Info 以上・10 日分。exe のログと混ざらないよう名前を分けている) |
