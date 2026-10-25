@@ -61,6 +61,7 @@ Ollama が保存したファイルを aibow が直接読むので、Ollama は�
 | `web/` | 画面のビルド結果(`web/dist/app`。Git には入れない)。デスクトップのアプリと aibow-server が同じものを埋め込む。ビルドしていなければ `web/dist/index.html` の「画面がビルドされていません」が出る |
 | `ui/modelplaces.go` | アプリの中で動かすときに、設定の画面の「モデル」のタブで足した置き場所を `%APPDATA%\aibow\model-places.json` に覚える |
 | `_cmd/aibow-server/` | aibow のサーバー(OpenAI 互換の API と、ブラウザに配る画面と会話)の exe。`config.go` は引数・設定ファイル(`%APPDATA%/aibow/server.json`)・環境変数を読む部分、`main.go` はモデルを読み込んで `api` を `127.0.0.1` で待ち受けるだけ、`browser.go` はブラウザの会話(会話を `server.db` に保存し、`ui/web.go` の口を同じポートに載せる。ステップ9)、`log.go` はログの出口(`aibow-server_<日付>.log`)、`version` / `appversion.go` はアプリと同じバージョン。ルートのモジュールに入っている。画面のアプリがアプリの中でモデルを動かしているときは同時に使わない(アプリを aibow-server につないでいるときは同時に動かせる) |
+| `_cmd/dev/` | aibow-server を開発で動かす(`go run ./_cmd/dev server`。画面は vite の開発用サーバーから配る)・画面と一緒に exe を作る(`go run ./_cmd/dev build`)スクリプト |
 | `_cmd/aibow-mcp/` | 自作の MCP のサーバーの exe(標準入出力で話す)。`main.go` は引数の作業フォルダを読んで `mcp/server` を動かすだけ、`log.go` はログの出口(アプリと同じフォルダの `aibow-mcp_<日付>.log`)、`version` / `appversion.go` はアプリと同じバージョン(`_cmd/aibow/version` の写し)。ルートのモジュールに入っている |
 | `_cmd/aibow/main.go` | デスクトップアプリの起動(Wails のアプリとウィンドウを作る) |
 | `_cmd/aibow/config.go` | 環境変数から設定を読む(`settings.json` も読み、aibow-server のつなぎ先を決める。MCP の係を作るのは `main.go`) |

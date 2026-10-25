@@ -78,11 +78,20 @@ AIBOW_LIB=/d/aibow/lib AIBOW_MODELS_DIR=/d/aibow/models wails3 dev
 
 ### aibow-server を動かす(ブラウザ・Cline・ほかの PC から使うとき)
 
-画面のアプリとは別の exe です。ブラウザに配る画面は exe に入るので、先に画面をビルドしてから、リポジトリのフォルダでビルドします。
+画面のアプリとは別の exe です。ブラウザに配る画面(`_cmd/aibow/frontend`)を exe に埋め込むので、**画面のビルドと一緒にする入り口を使います**
+(`go build` だけで作ると、前にビルドした古い画面が入ります)。どちらもリポジトリのフォルダで実行し、要るのは Go と Node.js です(wails3 は要りません)。
+
+開発で動かすときは、画面を vite の開発用サーバーから配り、aibow-server を `go run` で動かします(画面のソースを保存すると、ブラウザにすぐ出ます)。
+ブラウザは `http://127.0.0.1:9246/` を開きます。後ろに aibow-server の引数を付けられます。
 
 ```bash
-(cd _cmd/aibow && wails3 build)
-go build -o aibow-server.exe ./_cmd/aibow-server
+go run ./_cmd/dev server
+```
+
+exe を作るときは、画面をビルドしてから aibow-server.exe を作ります。
+
+```bash
+go run ./_cmd/dev build
 ./aibow-server.exe -lib _cmd/aibow/lib -models _cmd/aibow/models
 ```
 既定では `127.0.0.1:8089` だけで待ち受け、**ログインが要ります**。ブラウザで `http://127.0.0.1:8089/` を開いてログインすると、アプリと同じ画面で会話できます。

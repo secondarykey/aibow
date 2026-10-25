@@ -64,6 +64,7 @@ OpenAI 互換のクライアント(Cline など)⇄ HTTP(S)(既定は 127.0.0.1�
 | `log/` | aibow のログ(`log` パッケージ)。aibow のコードはログをここから出す。土台は wenteasy/log だが、使う人には `slog.Level` と `*slog.Logger` しか見せない。出口はアプリが `Init` で組み、ライブラリとして使う人は `SetLogger(*slog.Logger)` で aibow のログだけ別にできる(決めなければ `slog.Default()`)。詳しくは [log/AGENTS.md](log/AGENTS.md) |
 | `_cmd/aibow/` | デスクトップアプリ(Wails v3 + React)。別モジュール |
 | `_cmd/aibow-server/` | aibow のサーバーの exe(OpenAI 互換の API。既定は `127.0.0.1` で待ち受け、`-host` で広げるとログインと API キーが要る。HTTPS と自己署名の証明書(`cert`)・利用者のコマンド(`user`)もここ。ステップ10。ステップ8で `aibow-api` から名前を変えた)。引数・設定ファイル(`server.json`)・環境変数を読み、モデルを読み込んで `api` を動かす。ブラウザの会話(`ui` と `server.db`)も同じポートに載せる(ステップ9)。ルートのモジュールに入れている |
+| `_cmd/dev/` | aibow-server を開発で動かす(`go run ./_cmd/dev server`。画面を vite の開発用サーバーから配り、aibow-server を `go run` で動かす)・exe を作る(`build`。画面をビルドしてから `go build`)スクリプト(0021)。画面のビルドを忘れて古い画面が埋め込まれる、をなくす。ルートのモジュールに入れている |
 | `_cmd/aibow-mcp/` | MCP のサーバーの exe(標準入出力)。引数を読んで `mcp/server` を起動するだけ。ルートのモジュールに入れている(Wails を使わないため) |
 | `_docs/` | 仕組みごとの説明(下の表)と、機能の仕様(`_docs/features/`)。利用者向けの手順は `setup.md`(準備と起動)・`usage.md`(使い方と設定)・`structure.md`(構成とファイル) |
 | `TODO.md` | 全体の進み具合とロードマップ |
@@ -143,7 +144,7 @@ go test ./...                    # 書式(公式テンプレートとの一致)�
 go vet ./... ./_cmd/aibow ./_cmd/aibow-mcp ./_cmd/aibow-server  # よくある間違いを静的チェック(./... は _cmd を含まないので並べる)
 ```
 
-画面のビルド結果は共有のパッケージ `web/`(`web/dist/app`。Git には入れない)に出て、`_cmd/aibow` と `_cmd/aibow-server` が埋め込みます。画面をビルドしていなくても `go vet` / `go build` は通ります(「画面がビルドされていません」と出すだけの `web/dist/index.html` が入る)。画面を確かめるとき・exe を作るときは、先に `wails3 build` で画面をビルドします。
+画面のビルド結果は共有のパッケージ `web/`(`web/dist/app`。Git には入れない)に出て、`_cmd/aibow` と `_cmd/aibow-server` が埋め込みます。画面をビルドしていなくても `go vet` / `go build` は通ります(「画面がビルドされていません」と出すだけの `web/dist/index.html` が入る)。画面を確かめるとき・exe を作るときは、先に `wails3 build` で画面をビルドします。aibow-server は `go run ./_cmd/dev server`(画面は vite から配る)・`go run ./_cmd/dev build`(画面をビルドしてから exe を作る)を使う(0021)。
 
 アプリを起動して確かめるときは、**先に必ず [_docs/testing.md](_docs/testing.md) と、今いる環境のファイルを読んでください**。
 

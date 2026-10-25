@@ -196,12 +196,25 @@ aibow-mcp [作業フォルダ]
 
 aibow が動かすモデルを、OpenAI 互換の API(`/v1/models`・`/v1/chat/completions`)として、ほかのアプリ(Cline など)から使えます。
 ブラウザで開けば、アプリと同じ画面で会話もできます(下の「ブラウザから使う」。ステップ9)。
-画面のアプリとは別の exe です。リポジトリのフォルダで次のようにビルドします(`go install ./_cmd/aibow-server` なら Go の bin フォルダに入ります)。
-ブラウザに配る画面は exe に入るので、先に `_cmd/aibow` で `wails3 build` を実行して画面をビルドしておきます(しないと、ブラウザには「画面がビルドされていません」と出ます。API は使えます)。
+画面のアプリとは別の exe です。ブラウザに配る画面を exe に埋め込むので、画面のビルドと一緒にする入り口(`_cmd/dev`。0021)を使います。
+どちらもリポジトリのフォルダで実行し、要るのは Go と Node.js です(`node_modules` が無ければ先に `npm install` します)。
 
 ```bash
-go build -o aibow-server.exe ./_cmd/aibow-server
+go run ./_cmd/dev build
 ```
+画面をビルドしてから(`npm run build` → `web/dist/app`)、`aibow-server.exe` を作ります(`-o` で出力先を変えられます)。
+`go build ./_cmd/aibow-server` だけで作ると、前にビルドした画面(ビルドしていなければ「画面がビルドされていません」のページ)が入ります。
+
+```bash
+go run ./_cmd/dev server
+```
+開発で動かすときはこちらです。画面を vite の開発用サーバー(`http://127.0.0.1:9246/`)から配り、aibow-server を `go run` で動かします。
+ブラウザは 9246 のほうを開きます(画面のソースを保存すると、すぐ出ます)。vite は `/aibow/` の呼び出しを aibow-server に渡し、ブラウザの印を足します。
+
+- 後ろに aibow-server の引数を付けられます(例: `go run ./_cmd/dev server -config D:/tmp/server.json -port 18089`)。渡す先のアドレスは、引数か設定ファイルの `port`・`host`・`tlsCert` から決めます
+- `lib`・`models` をどこにも書いていなければ、`_cmd/aibow/lib`・`_cmd/aibow/models` を使います
+- OpenAI 互換の口(Cline など)と画面のアプリは、今までどおり aibow-server(既定 `:8089`)につなぎます
+- Ctrl+C で両方止まります。Go のコードを変えたら、止めて打ち直します。Go のメソッドを変えたときのバインディングは、今までどおり `wails3 generate bindings` で作り直します
 
 ```
 aibow-server [-model モデル] [-ctx 作業領域の大きさ] [-port ポート] [-host アドレス] [-tls-cert 証明書 -tls-key 秘密鍵] [-lib llama.cpp のフォルダ] [-models GGUF のフォルダ] [-config 設定ファイル] [-login=false] [-debug]
@@ -346,7 +359,7 @@ aibow-server がログインの要る形・ほかの PC の aibow-server につ�
 
 aibow-server を起動すると、ブラウザで `http://127.0.0.1:8089/` を開いて、画面のアプリと同じ画面で会話できます(ステップ9)。
 
-- 画面は aibow-server の exe に入っています。aibow-server をビルドする前に、`_cmd/aibow` で `wails3 build` を実行して画面をビルドしておきます(していないと「画面がビルドされていません」と出ます)
+- 画面は aibow-server の exe に入っています。exe は `go run ./_cmd/dev build` で、画面と一緒にビルドします(上の「aibow-server」)
 - 会話は aibow-server の `server.db` に保存します。画面のアプリの会話とは別です
 - ブラウザではツールを使いません。モデルを読み込む・降ろす・GPU の層数・置き場所も、ブラウザからは変えません(サーバーの PC で決めることなので)
 - 生成は Cline など(OpenAI 互換の口)と順番に行います。ほかの生成の途中で送ると「ほかの生成が終わるのを待っています…」と出て、終わってから返事を作ります

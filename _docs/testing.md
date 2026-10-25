@@ -19,7 +19,7 @@
 ブラウザの画面(aibow-server。ステップ9)を確かめるときは、aibow-server を一時フォルダの設定ファイルで起動する(`-config <一時フォルダ>\server.json`)。
 ブラウザの会話の DB(`server.db`)と `server-models.json` は設定ファイルの隣にできるので、ユーザーの `%APPDATA%\aibow\` に試しの会話を混ぜないため。
 `AIBOW_LOG_DIR` も一時フォルダにし、ポートはユーザーがふだん使う 8089 と別にする(`server.json` の `port`)。
-画面を先にビルドしておく(`wails3 build`。画面は exe に入る)。ブラウザはブラウザのツールで操作する(Windows は [env-windows.md](env-windows.md) の注意)。
+`go run ./_cmd/dev server -config <一時フォルダ>\server.json` で起動すれば、画面のビルドは要らない(vite から配る。ブラウザは `http://127.0.0.1:9246/`)。exe で確かめるときは `go run ./_cmd/dev build` で画面と一緒に作る。ブラウザはブラウザのツールで操作する(Windows は [env-windows.md](env-windows.md) の注意)。
 Cline の形のリクエストは curl で `/v1/chat/completions` に送れば、ブラウザと同時に使ったときの順番待ちも確かめられる
 
 ## 確認する項目
