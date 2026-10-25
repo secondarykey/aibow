@@ -51,8 +51,7 @@ func (s *Sessions) Login(ctx context.Context, name, password string) (token stri
 	if _, err := s.store.DeleteExpiredSessions(ctx, now); err != nil {
 		return "", User{}, err
 	}
-	token = newToken()
-	if err := s.store.CreateSession(ctx, Session{ID: tokenID(token), UserID: u.ID, CreatedAt: now, ExpiresAt: now.Add(SessionTTL)}); err != nil {
+	if token, err = s.newSession(ctx, u); err != nil {
 		return "", User{}, err
 	}
 	return token, u, nil

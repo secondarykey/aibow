@@ -20,14 +20,16 @@ func TestUserCommands(t *testing.T) {
 	defer st.Close()
 	ctx := context.Background()
 	var env envReader
-	if err := addUser(ctx, st, initialSettings(&env, 0), "bob"); err != nil {
+	base := linkURL{base: "http://127.0.0.1:8089"}
+	if err := addUser(ctx, st, initialSettings(&env, 0), "bob", base); err != nil {
 		t.Fatal(err)
 	}
-	if err := addUser(ctx, st, initialSettings(&env, 0), "bob"); !errors.Is(err, auth.ErrUserExists) {
+	if err := addUser(ctx, st, initialSettings(&env, 0), "bob", base); !errors.Is(err, auth.ErrUserExists) {
 		t.Errorf("同じ名前: %v", err)
 	}
+	// 作った人にはまだパスワードが無い(招待のリンクで本人が決める。0022)
 	u, err := st.UserByName(ctx, "bob")
-	if err != nil || u.Password == "" {
+	if err != nil || u.Password != "" {
 		t.Fatalf("作った利用者: %+v %v", u, err)
 	}
 	bob := aibow.WithUser(ctx, u.ID)
@@ -42,12 +44,13 @@ func TestUserCommands(t *testing.T) {
 		t.Errorf("ほかの人のプロファイルは作らない: %+v", mine)
 	}
 
-	before := u.Password
-	if err := resetPassword(ctx, st, "bob"); err != nil {
+	hash, _ := auth.HashPassword("bob-password-1")
+	st.SetPassword(ctx, u.ID, hash, u.CreatedAt)
+	if err := passwdUser(ctx, st, "bob", base); err != nil {
 		t.Fatal(err)
 	}
-	if u, _ := st.UserByName(ctx, "bob"); u.Password == before {
-		t.Error("パスワードが変わっていない")
+	if u, _ := st.UserByName(ctx, "bob"); u.Password != "" {
+		t.Error("再設定のリンクを出したら、今のパスワードは使えなくなるはず")
 	}
 
 	// 管理者の印(0018 の 11-0)。外して一人もいなくなっても止めない(決定事項 16)
@@ -83,5 +86,15 @@ func TestUserCommands(t *testing.T) {
 		if checkName(bad) == nil {
 			t.Errorf("使えない名前を受け付けた: %q", bad)
 		}
+	}
+}
+
+// コマンドが出すリンクの頭は、待ち受けから作る。0.0.0.0 なら 127.0.0.1 にして、置き換えるよう添える(0022 の決定事項 11)
+func TestLinkBase(t *testing.T) {
+	if b := linkBase(config{Host: "127.0.0.1", Port: 8089}); b.base != "http://127.0.0.1:8089" || b.note != "" {
+		t.Errorf("127.0.0.1: %+v", b)
+	}
+	if b := linkBase(config{Host: "0.0.0.0", Port: 18089, TLSCert: "c.pem"}); b.base != "https://127.0.0.1:18089" || b.note == "" {
+		t.Errorf("0.0.0.0: %+v", b)
 	}
 }

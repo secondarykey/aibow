@@ -50,6 +50,15 @@ type AppToken struct {
 	ExpiresAt time.Time
 }
 
+// PasswordLink は、パスワードを決めるリンク1つ(0022。links.go)。
+type PasswordLink struct {
+	// ID は合言葉の SHA-256。合言葉そのものは保存しない
+	ID        string
+	UserID    uuid.UUID
+	CreatedAt time.Time
+	ExpiresAt time.Time
+}
+
 // Store は利用者とセッションの保存先(本物は store パッケージの SQLite。server.db)。
 type Store interface {
 	// CreateUser は利用者を足す。同じ名前がいれば ErrUserExists
@@ -89,9 +98,16 @@ type Store interface {
 	AppToken(ctx context.Context, id string) (AppToken, error)
 	// DeleteAppToken はトークンを消す(無くてもエラーにしない)
 	DeleteAppToken(ctx context.Context, id string) error
+
+	// SetPasswordLink はパスワードを決めるリンクを足す。その人のリンクがあれば置き換える(1人1本。0022)
+	SetPasswordLink(ctx context.Context, l PasswordLink) error
+	// PasswordLink はリンク1つ(ID は SHA-256)。無ければ ErrBadLink(期限は見ない)
+	PasswordLink(ctx context.Context, id string) (PasswordLink, error)
+	// DeletePasswordLink はリンクを消す(無くてもエラーにしない)
+	DeletePasswordLink(ctx context.Context, id string) error
 }
 
-// HasAdmin は、ログインできる管理者(パスワードのある管理者)がいるか(0020)。
+// HasAdmin は、ログインできる管理者(パスワードのある管理者)がいるか(0020)。招待のリンクをまだ使っていない管理者は、まだいないものとする(0022 の決定事項 14)。
 func HasAdmin(ctx context.Context, st Store) (bool, error) {
 	users, err := st.Users(ctx)
 	if err != nil {

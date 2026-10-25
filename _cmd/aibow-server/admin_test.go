@@ -14,7 +14,7 @@ import (
 	"github.com/secondarykey/aibow/store"
 )
 
-// 利用者の管理の口(0018 の決定事項 7)。ブラウザでログインした管理者だけが呼べ、パスワードと API キーは返事で一度だけ渡す
+// 利用者の管理の口(0018 の決定事項 7)。ブラウザでログインした管理者だけが呼べ、招待・再設定のリンクの合言葉と API キーは返事で一度だけ渡す(0022)
 func TestAdminUsers(t *testing.T) {
 	st, err := store.Open(filepath.Join(t.TempDir(), "server.db"))
 	if err != nil {
@@ -24,18 +24,24 @@ func TestAdminUsers(t *testing.T) {
 	ctx := context.Background()
 	var env envReader
 	initial := initialSettings(&env, 0)
-	alicePW, err := createUser(ctx, st, initial, "alice", "")
-	if err != nil {
-		t.Fatal(err)
+	sessions := auth.NewSessions(st)
+	// 作った人は、招待のリンクでパスワードを決める(0022)
+	invite := func(name, pw string) {
+		t.Helper()
+		l, err := createUser(ctx, st, initial, name, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := sessions.UseLink(ctx, l.Token, pw); err != nil {
+			t.Fatal(err)
+		}
 	}
-	bobPW, err := createUser(ctx, st, initial, "bob", "")
-	if err != nil {
-		t.Fatal(err)
-	}
+	alicePW, bobPW := "alice-password", "bob-password-1"
+	invite("alice", alicePW)
+	invite("bob", bobPW)
 	if err := setAdmin(ctx, st, "alice", true); err != nil {
 		t.Fatal(err)
 	}
-	sessions := auth.NewSessions(st)
 	srv := httptest.NewServer(sessions.Middleware(adminHandler(st, initial)))
 	defer srv.Close()
 	login := func(name, pw string) string {
@@ -82,11 +88,11 @@ func TestAdminUsers(t *testing.T) {
 	code, body = do(alice, "POST", "/aibow/admin/users", `{"name":"carol"}`)
 	var made map[string]string
 	json.Unmarshal([]byte(body), &made)
-	if code != http.StatusOK || made["name"] != "carol" || made["password"] == "" {
+	if code != http.StatusOK || made["name"] != "carol" || made["token"] == "" || strings.Contains(body, "password") {
 		t.Fatalf("作る: %d %s", code, body)
 	}
-	if _, _, err := sessions.Login(ctx, "carol", made["password"]); err != nil {
-		t.Errorf("返したパスワードでログインできない: %v", err)
+	if _, _, err := sessions.UseLink(ctx, made["token"], "carol-password"); err != nil {
+		t.Errorf("返したリンクでパスワードを決められない: %v", err)
 	}
 	if code, _ := do(alice, "POST", "/aibow/admin/users", `{"name":"carol"}`); code != http.StatusConflict {
 		t.Errorf("同じ名前: %d", code)
@@ -98,13 +104,20 @@ func TestAdminUsers(t *testing.T) {
 		t.Errorf("JSON でない本文: %d", code)
 	}
 
-	// パスワードを作り直すと、その人のログインは切れる
+	// 再設定のリンクを出すと、その時点で今のパスワードは使えず、その人のログインは切れる(0022 の決定事項 3)
 	code, body = do(alice, "POST", "/aibow/admin/users/bob/password", "")
-	if code != http.StatusOK || !strings.Contains(body, `"password"`) {
-		t.Fatalf("パスワードを作り直す: %d %s", code, body)
+	if code != http.StatusOK || !strings.Contains(body, `"token"`) {
+		t.Fatalf("再設定のリンク: %d %s", code, body)
 	}
 	if _, _, err := sessions.User(ctx, bob); err == nil {
-		t.Error("パスワードを作り直しても、前のログインが残っている")
+		t.Error("再設定のリンクを出しても、前のログインが残っている")
+	}
+	if _, _, err := sessions.Login(ctx, "bob", bobPW); err == nil {
+		t.Error("再設定のリンクを出しても、前のパスワードでログインできる")
+	}
+	// 自分には使えない(自分を締め出さないように。決定事項 6)
+	if code, _ := do(alice, "POST", "/aibow/admin/users/alice/password", ""); code != http.StatusBadRequest {
+		t.Errorf("自分の再設定: %d", code)
 	}
 
 	code, body = do(alice, "POST", "/aibow/admin/users/carol/key", "")

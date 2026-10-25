@@ -101,8 +101,9 @@ func noteFirstRun(st *store.SQLite) {
 	}
 	if !has {
 		// ブラウザのログインの画面にも同じことを出す(auth の me の setup)
-		log.Warn("管理者がいません。サーバーの PC で aibow-server user add <名前> と aibow-server user admin <名前> を打ってください" +
-			"(パスワードは user add のときだけ表示します。設定ファイルを -config で指しているときは、コマンドにも同じ -config を付けます)")
+		log.Warn("管理者がいません。サーバーの PC で aibow-server user add <名前> と aibow-server user admin <名前> を打ち、" +
+			"user add が出したリンクを開いてパスワードを決めてください(リンクは 1 時間。切れたら user passwd <名前> で出し直します。" +
+			"設定ファイルを -config で指しているときは、コマンドにも同じ -config を付けます)")
 	}
 	local, err := st.UserByID(ctx, aibow.LocalUser)
 	if err != nil || local.Password != "" {

@@ -249,6 +249,16 @@ CREATE TABLE app_tokens (
 	UNIQUE (user_id, device)
 );
 `,
+	// 版 14: パスワードを決めるリンク(0022)。管理者かコマンドが出し、本人がパスワードを決める。期限は 1 時間・一度だけ。
+	// 1人1本なので利用者の ID を主キーにする(出し直すと置き換わる)。保存するのは合言葉の SHA-256 だけ
+	`
+CREATE TABLE password_links (
+	user_id    TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+	id         TEXT NOT NULL UNIQUE,     -- 合言葉の SHA-256。合言葉そのものは保存しない
+	created_at TEXT NOT NULL,
+	expires_at TEXT NOT NULL             -- 出してから 1 時間
+);
+`,
 }
 
 func migrate(db *sql.DB) error {

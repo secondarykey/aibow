@@ -198,6 +198,41 @@ func (s *SQLite) HasAPIKey(ctx context.Context, user uuid.UUID) (bool, error) {
 	return n > 0, err
 }
 
+// ---- パスワードを決めるリンク(0022) ------------------------------------------------------
+
+func (s *SQLite) SetPasswordLink(ctx context.Context, l auth.PasswordLink) error {
+	// UPSERT: 1人1本なので、あれば置き換える(前のリンクは使えなくなる)
+	_, err := s.db.ExecContext(ctx, `INSERT INTO password_links (user_id, id, created_at, expires_at) VALUES (?, ?, ?, ?)
+		ON CONFLICT(user_id) DO UPDATE SET id = excluded.id, created_at = excluded.created_at, expires_at = excluded.expires_at`,
+		l.UserID.String(), l.ID, formatTime(l.CreatedAt), formatTime(l.ExpiresAt))
+	return err
+}
+
+func (s *SQLite) PasswordLink(ctx context.Context, id string) (auth.PasswordLink, error) {
+	l := auth.PasswordLink{ID: id}
+	var user, created, expires string
+	err := s.db.QueryRowContext(ctx, "SELECT user_id, created_at, expires_at FROM password_links WHERE id = ?", id).Scan(&user, &created, &expires)
+	if errors.Is(err, sql.ErrNoRows) {
+		return l, auth.ErrBadLink
+	}
+	if err != nil {
+		return l, err
+	}
+	if l.UserID, err = parseID(user); err != nil {
+		return l, err
+	}
+	if l.CreatedAt, err = parseTime(created); err != nil {
+		return l, err
+	}
+	l.ExpiresAt, err = parseTime(expires)
+	return l, err
+}
+
+func (s *SQLite) DeletePasswordLink(ctx context.Context, id string) error {
+	_, err := s.db.ExecContext(ctx, "DELETE FROM password_links WHERE id = ?", id)
+	return err
+}
+
 // ---- アプリ用のトークン(0019) ------------------------------------------------------------
 
 func (s *SQLite) SetAppToken(ctx context.Context, t auth.AppToken) error {

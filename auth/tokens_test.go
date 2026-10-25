@@ -189,3 +189,79 @@ func TestMeSetup(t *testing.T) {
 		t.Errorf("管理者を作ったあと: %+v", m)
 	}
 }
+
+// パスワードを決めるリンク(0022):1 時間・一度だけ・出し直すと前のは使えない・決めたらログインして、ほかのセッションは切れる
+func TestPasswordLinks(t *testing.T) {
+	st := openStore(t)
+	u := addUser(t, st, "bob", "old-password-1")
+	s := auth.NewSessions(st)
+	now := time.Now()
+	auth.SetNow(s, func() time.Time { return now })
+	before, _, _ := s.Login(ctx, "bob", "old-password-1")
+
+	first, _, err := s.IssueLink(ctx, u.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, exp, _ := s.IssueLink(ctx, u.ID)
+	if !exp.Equal(now.Add(time.Hour)) {
+		t.Errorf("期限: %v", exp)
+	}
+	if _, err := s.LinkUser(ctx, first); !errors.Is(err, auth.ErrBadLink) {
+		t.Errorf("出し直したら前のリンクは使えない: %v", err)
+	}
+	if who, err := s.LinkUser(ctx, token); err != nil || who.Name != "bob" {
+		t.Errorf("リンクの持ち主: %+v %v", who, err)
+	}
+	for _, pw := range []string{"short", "BOB"} {
+		if _, _, err := s.UseLink(ctx, token, pw); err == nil {
+			t.Errorf("決まりに合わない %q を断るはず", pw)
+		}
+	}
+	session, who, err := s.UseLink(ctx, token, "new-password-12")
+	if err != nil || who.Name != "bob" || session == "" {
+		t.Fatalf("リンクで決める: %v", err)
+	}
+	if _, _, err := s.UseLink(ctx, token, "another-password"); !errors.Is(err, auth.ErrBadLink) {
+		t.Errorf("一度使ったリンクは使えない: %v", err)
+	}
+	if _, _, err := s.User(ctx, before); !errors.Is(err, auth.ErrNoSession) {
+		t.Errorf("前のセッションは切れる: %v", err)
+	}
+	if _, _, err := s.User(ctx, session); err != nil {
+		t.Errorf("決めたらそのままログインしている: %v", err)
+	}
+	if _, _, err := s.Login(ctx, "bob", "new-password-12"); err != nil {
+		t.Errorf("決めたパスワードでログインできる: %v", err)
+	}
+
+	late, _, _ := s.IssueLink(ctx, u.ID)
+	now = now.Add(time.Hour)
+	if _, err := s.LinkUser(ctx, late); !errors.Is(err, auth.ErrLinkExpired) {
+		t.Errorf("1 時間で切れる: %v", err)
+	}
+}
+
+// 本人がパスワードを変える:今のパスワードが要る・変えたら新しいセッション・前のセッションは切れる
+func TestChangePassword(t *testing.T) {
+	st := openStore(t)
+	u := addUser(t, st, "bob", "old-password-1")
+	s := auth.NewSessions(st)
+	before, _, _ := s.Login(ctx, "bob", "old-password-1")
+	if _, err := s.ChangePassword(ctx, u, "違う", "new-password-12"); !errors.Is(err, auth.ErrWrongPassword) {
+		t.Errorf("今のパスワードが違う: %v", err)
+	}
+	if _, err := s.ChangePassword(ctx, u, "old-password-1", "short"); err == nil {
+		t.Error("短いパスワードは断る")
+	}
+	session, err := s.ChangePassword(ctx, u, "old-password-1", "new-password-12")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.User(ctx, before); !errors.Is(err, auth.ErrNoSession) {
+		t.Errorf("前のセッションは切れる: %v", err)
+	}
+	if _, _, err := s.User(ctx, session); err != nil {
+		t.Errorf("今の画面は新しいセッションで続く: %v", err)
+	}
+}

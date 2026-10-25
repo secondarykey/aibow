@@ -3,14 +3,15 @@ package main
 // admin.go: 管理者の画面の口(利用者の管理。0018 の決定事項 7。11-0)。
 //
 //	GET    /aibow/admin/users                  利用者の一覧([]adminUser)
-//	POST   /aibow/admin/users                  本文 {"name"}。作って {"name", "password"} を返す
-//	POST   /aibow/admin/users/{name}/password  パスワードを作り直して {"name", "password"} を返す(その人のログインは切れる)
+//	POST   /aibow/admin/users                  本文 {"name"}。作って {"name", "token", "expiresAt"} を返す(招待のリンクの合言葉。0022)
+//	POST   /aibow/admin/users/{name}/password  今のパスワードを使えなくし、{"name", "token", "expiresAt"} を返す(再設定のリンク。その人のログインは切れる)。自分には使えない
 //	POST   /aibow/admin/users/{name}/key       API キーを作り直して {"name", "key"} を返す(前のキーは使えなくなる)
 //	DELETE /aibow/admin/users/{name}           利用者と、その人の会話・プロファイル・設定を消す
 //
 // 呼べるのは、ブラウザでログインした管理者だけ(cookie のセッション。auth.Middleware がリクエストの ctx に入れた人)。
 // ログインが要らない形(127.0.0.1 だけ)では、利用者の管理はコマンドで行う(画面からはだれも呼べない)。
-// 処理はコマンド(users.go)と同じものを使う。パスワードと API キーは返事で一度だけ渡し、ログには残さない(コマンドと同じ考え方)。
+// 処理はコマンド(users.go)と同じものを使う。リンクの合言葉と API キーは返事で一度だけ渡し、ログには残さない(コマンドと同じ考え方)。
+// リンクの URL は画面が作る(管理者が開いている画面のアドレス + /#reset=<合言葉>)。
 // 管理者の印を付ける / 外すのはコマンドだけ(0018 の決定事項 6。画面からは決めない)。
 
 import (
@@ -67,21 +68,26 @@ func adminHandler(st *store.SQLite, initial aibow.AppSettings) http.Handler {
 			writeAdminError(w, http.StatusBadRequest, err)
 			return
 		}
-		password, err := createUser(r.Context(), st, initial, req.Name, by(r))
+		l, err := createUser(r.Context(), st, initial, req.Name, by(r))
 		if err != nil {
 			writeAdminError(w, statusOf(err), err)
 			return
 		}
-		writeAdminJSON(w, map[string]string{"name": req.Name, "password": password})
+		writeAdminJSON(w, map[string]any{"name": req.Name, "token": l.Token, "expiresAt": l.ExpiresAt})
 	})
 	mux.HandleFunc("POST /aibow/admin/users/{name}/password", func(w http.ResponseWriter, r *http.Request) {
 		name := r.PathValue("name")
-		password, err := renewPassword(r.Context(), st, name, by(r))
+		// 自分には使えない(使うと自分を締め出す。自分のパスワードは基本設定の「パスワードを変える」で変える。0022 の決定事項 6)
+		if me, _ := auth.UserFrom(r.Context()); me.Name == name {
+			writeAdminError(w, http.StatusBadRequest, errors.New("自分のパスワードは、設定の画面の「基本設定」の「パスワードを変える」で変えます"))
+			return
+		}
+		l, err := resetPassword(r.Context(), st, name, by(r))
 		if err != nil {
 			writeAdminError(w, statusOf(err), err)
 			return
 		}
-		writeAdminJSON(w, map[string]string{"name": name, "password": password})
+		writeAdminJSON(w, map[string]any{"name": name, "token": l.Token, "expiresAt": l.ExpiresAt})
 	})
 	mux.HandleFunc("POST /aibow/admin/users/{name}/key", func(w http.ResponseWriter, r *http.Request) {
 		name := r.PathValue("name")

@@ -3,8 +3,8 @@ package main
 // users.go: 利用者を作る・消す・パスワードを作り直すコマンド(0017 の決定事項 4。10-1)。
 //
 //	aibow-server [-config 設定ファイル] user list
-//	aibow-server [-config 設定ファイル] user add <名前>      … 利用者を作り、パスワードを作って表示する
-//	aibow-server [-config 設定ファイル] user passwd <名前>   … パスワードを作り直して表示する(ログイン中の画面はログインし直しになる)
+//	aibow-server [-config 設定ファイル] user add <名前>      … 利用者を作り、本人がパスワードを決める招待のリンクを表示する(0022)
+//	aibow-server [-config 設定ファイル] user passwd <名前>   … 今のパスワードを使えなくし、再設定のリンクを表示する(ログイン中の画面とアプリは切れる)
 //	aibow-server [-config 設定ファイル] user remove <名前>   … 利用者と、その人の会話・プロファイル・設定を消す
 //	aibow-server [-config 設定ファイル] user key <名前>      … API キーを作って表示する(1人1本。作り直すと前のキーは使えなくなる。10-2)
 //	aibow-server [-config 設定ファイル] user admin <名前>    … 管理者にする(0018 の 11-0)
@@ -14,17 +14,20 @@ package main
 // 管理者が一人もいなくなっても止めない(127.0.0.1 からはいつも PC の事情を変えられ、このコマンドでいつでも戻せるため。0018 の決定事項 16)。
 // llama.cpp もモデルも読み込まず、server.db だけを開く(aibow-server を動かしたままでも打てる。SQLite が順番に書く)。
 //
-// パスワードは aibow-server が作って一度だけ表示する(ユーザーと決めた)。表示はログに残さず、画面(標準出力)にだけ出す。
-// 打ったパスワードがターミナルに残らず、短いパスワードにもならない。忘れたら passwd で作り直す。
+// パスワードは本人が決める(0022。以前は aibow-server が作って一度だけ表示していた)。コマンドと管理者の画面は、パスワードを作らず、
+// 本人がパスワードを決めるリンク(1 時間・一度だけ。auth の links.go)を出す。リンクは標準出力にだけ出し、ログには残さない。
+// 入れなくなったら(管理者が自分のパスワードを忘れたなど)、サーバーの PC で passwd を打ってリンクを出し直す。
 //
-// 作る・パスワードと API キーを作り直す・消すは、管理者の画面(admin.go。0018 の決定事項 7)からも同じ処理を使う
-// (createUser・renewPassword・renewKey・deleteUser。by はログに足す「誰が」)。コマンドはその結果を標準出力に出すだけ。
+// 作る・再設定のリンクと API キーを作り直す・消すは、管理者の画面(admin.go。0018 の決定事項 7)からも同じ処理を使う
+// (createUser・resetPassword・renewKey・deleteUser。by はログに足す「誰が」)。コマンドはその結果を標準出力に出すだけ。
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -70,9 +73,9 @@ func runUser(c config, env *envReader, args []string) error {
 	case "list":
 		return listUsers(ctx, st)
 	case "add":
-		return addUser(ctx, st, initialSettings(env, 0), rest[0])
+		return addUser(ctx, st, initialSettings(env, 0), rest[0], linkBase(c))
 	case "passwd":
-		return resetPassword(ctx, st, rest[0])
+		return passwdUser(ctx, st, rest[0], linkBase(c))
 	case "remove":
 		return deleteUser(ctx, st, rest[0], "")
 	case "key":
@@ -112,74 +115,79 @@ func listUsers(ctx context.Context, st *store.SQLite) error {
 	return nil
 }
 
-// addUser は利用者を作り、パスワードを表示する(コマンド)。
-func addUser(ctx context.Context, st *store.SQLite, initial aibow.AppSettings, name string) error {
-	password, err := createUser(ctx, st, initial, name, "")
+// link は、本人がパスワードを決めるリンク(合言葉と期限)。URL にするのは、出す側(コマンドは linkBase、画面は開いているアドレス)。
+type link struct {
+	Token     string    `json:"token"`
+	ExpiresAt time.Time `json:"expiresAt"`
+}
+
+// addUser は利用者を作り、招待のリンクを表示する(コマンド)。
+func addUser(ctx context.Context, st *store.SQLite, initial aibow.AppSettings, name string, base linkURL) error {
+	l, err := createUser(ctx, st, initial, name, "")
 	if err != nil {
 		return err
 	}
-	printPassword(name, password)
+	printLink(name, "招待", l, base)
 	return nil
 }
 
-// createUser は利用者を作り、その人のプロファイル「既定」を作る(0017 の決定事項 5。今の PrepareProfiles と同じ)。作ったパスワードを返す。
-func createUser(ctx context.Context, st *store.SQLite, initial aibow.AppSettings, name, by string) (string, error) {
+// createUser は、パスワードの無い利用者を作り、その人のプロファイル「既定」を作る(0017 の決定事項 5。今の PrepareProfiles と同じ)。
+// 本人がパスワードを決める招待のリンクを返す(0022)。リンクを使うまでログインできない。
+func createUser(ctx context.Context, st *store.SQLite, initial aibow.AppSettings, name, by string) (link, error) {
 	if err := checkName(name); err != nil {
-		return "", err
-	}
-	password := auth.NewPassword()
-	hash, err := auth.HashPassword(password)
-	if err != nil {
-		return "", err
+		return link{}, err
 	}
 	now := time.Now()
-	u := auth.User{ID: uuid.NewV7(), Name: name, Password: hash, CreatedAt: now, UpdatedAt: now}
+	u := auth.User{ID: uuid.NewV7(), Name: name, CreatedAt: now, UpdatedAt: now}
 	if err := st.CreateUser(ctx, u); err != nil {
-		return "", fmt.Errorf("利用者 %s を作れません: %w", name, err)
+		return link{}, fmt.Errorf("利用者 %s を作れません: %w", name, err)
 	}
 	// プロファイルの値は、新しい人の新しい会話の既定(サーバーの最後に使ったモデル・環境変数の初期値)から作る
 	uctx := aibow.WithUser(ctx, u.ID)
 	app, _, err := aibow.LoadAppSettings(uctx, st, initial)
 	if err != nil {
-		return "", err
+		return link{}, err
 	}
 	if _, err := aibow.NewConversations(st, nil, app).PrepareProfiles(uctx); err != nil {
-		return "", fmt.Errorf("利用者 %s のプロファイルを作れません: %w", name, err)
+		return link{}, fmt.Errorf("利用者 %s のプロファイルを作れません: %w", name, err)
 	}
-	log.Noticef("利用者 %s を作りました%s", name, by)
-	return password, nil
+	token, exp, err := auth.NewSessions(st).IssueLink(ctx, u.ID)
+	if err != nil {
+		return link{}, err
+	}
+	log.Noticef("利用者 %s を作りました%s(本人がパスワードを決める招待のリンクを出しました。期限 %s)", name, by, exp.Local().Format("15:04"))
+	return link{Token: token, ExpiresAt: exp}, nil
 }
 
-// resetPassword はパスワードを作り直して表示する(コマンド)。
-func resetPassword(ctx context.Context, st *store.SQLite, name string) error {
-	password, err := renewPassword(ctx, st, name, "")
+// passwdUser は、今のパスワードを使えなくして、再設定のリンクを表示する(コマンド)。
+func passwdUser(ctx context.Context, st *store.SQLite, name string, base linkURL) error {
+	l, err := resetPassword(ctx, st, name, "")
 	if err != nil {
 		return err
 	}
-	printPassword(name, password)
+	printLink(name, "再設定", l, base)
 	return nil
 }
 
-// renewPassword はパスワードを作り直し、新しいパスワードを返す。
-func renewPassword(ctx context.Context, st *store.SQLite, name, by string) (string, error) {
+// resetPassword は、今のパスワードを使えなくし(ログイン中の画面とアプリ用のトークンも切れる)、本人が決め直す再設定のリンクを返す(0022 の決定事項 3)。
+// パスワードを作り直すのは、忘れたか漏れたかもしれないときなので、リンクを使うまで前のパスワードは使わせない。
+func resetPassword(ctx context.Context, st *store.SQLite, name, by string) (link, error) {
 	u, err := st.UserByName(ctx, name)
 	if err != nil {
-		return "", fmt.Errorf("利用者 %s: %w", name, err)
+		return link{}, fmt.Errorf("利用者 %s: %w", name, err)
 	}
-	password := auth.NewPassword()
-	hash, err := auth.HashPassword(password)
-	if err != nil {
-		return "", err
+	if err := st.SetPassword(ctx, u.ID, "", time.Now()); err != nil {
+		return link{}, err
 	}
-	if err := st.SetPassword(ctx, u.ID, hash, time.Now()); err != nil {
-		return "", err
-	}
-	// 前のパスワードでログインしていた画面とアプリは使えなくする(パスワードを作り直すのは、漏れたかもしれないときなので。アプリ用のトークンも消える。0019)
 	if err := st.DeleteUserSessions(ctx, u.ID); err != nil {
-		return "", err
+		return link{}, err
 	}
-	log.Noticef("利用者 %s のパスワードを作り直しました%s(ログイン中の画面とアプリはログインし直しになります)", name, by)
-	return password, nil
+	token, exp, err := auth.NewSessions(st).IssueLink(ctx, u.ID)
+	if err != nil {
+		return link{}, err
+	}
+	log.Noticef("利用者 %s のパスワードを使えなくし、再設定のリンクを出しました%s(期限 %s。ログイン中の画面とアプリはログインし直しになります)", name, by, exp.Local().Format("15:04"))
+	return link{Token: token, ExpiresAt: exp}, nil
 }
 
 // deleteUser は利用者と、その人の会話・プロファイル・設定を消す。
@@ -257,10 +265,29 @@ func setAdmin(ctx context.Context, st *store.SQLite, name string, admin bool) er
 	return nil
 }
 
-// printPassword はパスワードを標準出力にだけ出す(ログには残さない)。
-func printPassword(name, password string) {
-	fmt.Printf("名前: %s\nパスワード: %s\n", name, password)
-	fmt.Println("パスワードは今だけ表示します。忘れたら aibow-server user passwd " + name + " で作り直してください")
+// linkURL は、コマンドが出すリンクの頭(http://127.0.0.1:8089 など)と、そのアドレスについての添え書き。
+type linkURL struct {
+	base, note string
+}
+
+// linkBase は、コマンドが出すリンクの頭を、aibow-server の待ち受け(引数・server.json・環境変数)から作る(0022 の決定事項 11)。
+// 全部のネットワークで待ち受けるとき(0.0.0.0 など)は、この PC から開ける 127.0.0.1 にし、ほかの PC からはアドレスを置き換えるよう添える。
+func linkBase(c config) linkURL {
+	host, note := c.Host, ""
+	if ip := net.ParseIP(host); ip != nil && ip.IsUnspecified() {
+		host = "127.0.0.1"
+		note = "ほかの PC で開くときは、127.0.0.1 をこの PC のアドレス(IP アドレスか名前)に置き換えてください"
+	}
+	return linkURL{base: c.Scheme() + "://" + net.JoinHostPort(host, strconv.Itoa(c.Port)), note: note}
+}
+
+// printLink は、パスワードを決めるリンクを標準出力にだけ出す(ログには残さない。持っている人なら誰でもパスワードを決められるため)。
+func printLink(name, what string, l link, base linkURL) {
+	fmt.Printf("名前: %s\n%sのリンク(%s まで・一度だけ): %s/#reset=%s\n", name, what, l.ExpiresAt.Local().Format("15:04"), base.base, l.Token)
+	if base.note != "" {
+		fmt.Println(base.note)
+	}
+	fmt.Println("このリンクを本人に渡し、ブラウザで開いてパスワードを決めてもらいます(12 文字以上)。期限が切れたら aibow-server user passwd " + name + " で出し直します")
 }
 
 // checkName は、利用者の名前に使えるか(ログインの画面で打つので、空白や見えない文字を入れない)。

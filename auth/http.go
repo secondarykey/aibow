@@ -7,6 +7,9 @@ package auth
 //	GET  /aibow/auth/me      {"login": ログインが要るか, "name": ログインしている人の名前(していなければ空)}。画面が最初に聞く
 //	POST /aibow/auth/token   本文 {"name", "password", "device"}。アプリのログイン(0019)。合っていればアプリ用のトークン(AppLogin)。間違いの数え方はログインと同じ
 //	POST /aibow/auth/token/revoke  Authorization: Bearer <トークン> のトークンを消す(アプリのログアウト)
+//	POST /aibow/auth/link/check    本文 {"token"}。パスワードを決めるリンクの持ち主の名前(0022)。使えなければ 400
+//	POST /aibow/auth/link          本文 {"token", "password"}。リンクでパスワードを決め、そのままログインする(cookie を渡す)
+//	POST /aibow/auth/password      本文 {"current", "password"}。ログインしている本人がパスワードを変える(新しい cookie を渡す)
 //
 // cookie は次の性質を付ける(どれも、ほかの人に合言葉を使われないため):
 //
@@ -198,10 +201,98 @@ func Handler(s *Sessions, required bool) http.Handler {
 		log.Noticef("アプリでログアウトしました(%s)", remote(r))
 		writeJSON(w, http.StatusOK, map[string]any{})
 	})
+	// パスワードを決めるリンク(0022)。合言葉は画面が URL の # の後ろから読んで、本文で送ってくる
+	mux.HandleFunc("POST /aibow/auth/link/check", func(w http.ResponseWriter, r *http.Request) {
+		if !required {
+			writeError(w, http.StatusBadRequest, "この aibow-server はログインなしで使う設定なので、パスワードは使いません")
+			return
+		}
+		var req struct {
+			Token string `json:"token"`
+		}
+		if !readJSON(w, r, &req) {
+			return
+		}
+		u, err := s.LinkUser(r.Context(), req.Token)
+		if linkError(w, err) {
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"name": u.Name})
+	})
+	mux.HandleFunc("POST /aibow/auth/link", func(w http.ResponseWriter, r *http.Request) {
+		if !required {
+			writeError(w, http.StatusBadRequest, "この aibow-server はログインなしで使う設定なので、パスワードは使いません")
+			return
+		}
+		var req struct {
+			Token    string `json:"token"`
+			Password string `json:"password"`
+		}
+		if !readJSON(w, r, &req) {
+			return
+		}
+		session, u, err := s.UseLink(r.Context(), req.Token, req.Password)
+		if linkError(w, err) {
+			return
+		}
+		setCookie(w, r, session)
+		log.Noticef("リンクでパスワードを決めました: %s(%s)", u.Name, remote(r))
+		writeJSON(w, http.StatusOK, Me{Login: true, Name: u.Name, Admin: u.Admin})
+	})
+	mux.HandleFunc("POST /aibow/auth/password", func(w http.ResponseWriter, r *http.Request) {
+		u, ok := UserFrom(r.Context())
+		if !required || !ok {
+			writeError(w, http.StatusUnauthorized, "ログインしてください")
+			return
+		}
+		var req struct {
+			Current  string `json:"current"`
+			Password string `json:"password"`
+		}
+		if !readJSON(w, r, &req) {
+			return
+		}
+		// 今のパスワードを当てようとするのを防ぐため、間違いはログインと一緒に数える
+		addr := remote(r)
+		if left := lim.wait(addr); left > 0 {
+			writeError(w, http.StatusTooManyRequests, fmt.Sprintf("パスワードを続けて間違えたので、しばらく受け付けません。%d 分ほど待ってください", int(left.Minutes())+1))
+			return
+		}
+		session, err := s.ChangePassword(r.Context(), u, req.Current, req.Password)
+		if errors.Is(err, ErrWrongPassword) {
+			lim.fail(addr)
+			log.Warnf("パスワードを変えられませんでした(今のパスワードが違う): %s(%s)", u.Name, addr)
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if linkError(w, err) {
+			return
+		}
+		lim.ok(addr)
+		setCookie(w, r, session)
+		log.Noticef("パスワードを変えました: %s(%s。ほかのログイン中の画面とアプリはログインし直しになります)", u.Name, addr)
+		writeJSON(w, http.StatusOK, Me{Login: true, Name: u.Name, Admin: u.Admin})
+	})
 	mux.HandleFunc("/aibow/auth/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "このパスはありません: "+r.Method+" "+r.URL.Path)
 	})
 	return mux
+}
+
+// linkError は、リンクのエラーを返事に書く(書いたら true)。リンクが使えない・パスワードの決まりに合わないは 400、それ以外は 500。
+func linkError(w http.ResponseWriter, err error) bool {
+	switch {
+	case err == nil:
+		return false
+	case errors.Is(err, ErrBadLink), errors.Is(err, ErrLinkExpired):
+		writeError(w, http.StatusBadRequest, err.Error())
+	case isPasswordRule(err):
+		writeError(w, http.StatusBadRequest, err.Error())
+	default:
+		log.Errorf("パスワードを決められません: %v", err)
+		writeError(w, http.StatusInternalServerError, "パスワードを決められません: "+err.Error())
+	}
+	return true
 }
 
 // readJSON はログインの本文を読む。読めなければエラーを返事に書いて false。
