@@ -56,7 +56,9 @@ function Login({ onDone }: { onDone(): void }) {
         {error && <div className="login-error" role="alert">{error}</div>}
         {me.setup && (
           <div className="login-note">
-            管理者がいません。サーバーの PC で <code>aibow-server user add &lt;名前&gt;</code> と <code>aibow-server user admin &lt;名前&gt;</code> を打ってください
+            管理者がいません。サーバーの PC で次を打ってください
+            <code>aibow-server user add &lt;名前&gt;</code>
+            <code>aibow-server user admin &lt;名前&gt;</code>
           </div>
         )}
       </form>

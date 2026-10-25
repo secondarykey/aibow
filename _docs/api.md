@@ -199,7 +199,7 @@ Cline など ──HTTP──→ /v1/ など → api.Server ──────�
 - 呼び出しは `reflect` で `ui.Service` のメソッドを名前から探す(Wails のバインディングも、実行のときは同じことをしている)。最初の引数が `context.Context` なら、リクエストの ctx を渡す
 - **誰の呼び出しか**は、aibow-server が `ui.Handler` に渡す係(`ui.Who`。`browser.go` の `who`)で決め、メソッドに渡す ctx に入れる(`aibow.WithUser`。0017 の 12)。
   会話・プロファイル・表示の設定は、その人のものだけが見える([conversations.md](conversations.md) の「持ち主」)。決められなければ 401(SSE も同じ)。
-  ログインが要る形ならログインした人(下の「ログイン」)、要らない形(既定)ならいつもログインなしの形の利用者(`aibow.LocalUser`。名前 `local`)
+  ログインが要る形(既定。0020)ならログインした人(下の「ログイン」)、要らない形(`login: false`)ならいつもログインなしの形の利用者(`aibow.LocalUser`。名前 `local`)
 - 呼べるのは、ブラウザで使うメソッドだけ(`ui/web.go` の `browserMethods`)。ツールと MCP・確認の答え(ブラウザではツールを使わない)と、
   GPU の層数・降ろす・置き場所(サーバーの PC の事情)は口に出さない(0016 の 6・7)
 - 送信(`Send`・`Regenerate`・`Resend`・`Compact`)は生成が終わるまで返らない長い呼び出し。経過は SSE の `chat` で届き、終わりは `done` で判定する(戻り値とは別の道で届くので。Wails と同じ)。
@@ -227,7 +227,8 @@ API はステートレスで、クライアントは毎回履歴の全部を送�
 
 ## ログイン(ブラウザの画面。ステップ10の 10-1。0017)
 
-`-login`(`server.json` の `login`・`AIBOW_SERVER_LOGIN`)で、ブラウザの画面にログインを要るようにする。仕組みは `auth` パッケージ。
+ブラウザの画面にログインを要るようにする(既定。`-login=false`・`server.json` の `"login": false`・`AIBOW_SERVER_LOGIN=0` でログインなし。0020)。仕組みは `auth` パッケージ。
+ログインできる管理者がまだいなければ、`GET /aibow/auth/me` が `"setup": true` を返し、ログインの画面が管理者の作り方を出す(起動のときにも注意を出す)。
 
 ```
 ブラウザ ─ POST /aibow/auth/login {"name","password"} ─→ auth(パスワードを確かめる)→ セッションを作る → Set-Cookie: aibow_session=<合言葉>
@@ -258,7 +259,7 @@ Cline・画面のアプリ ─ Authorization: Bearer aibow_… ─→ auth.Keys.
 - **API キー**:利用者ごとに1本(`aibow-server user key <名前>`)。server.db には SHA-256 だけ。OpenAI の API と同じく `Authorization: Bearer <キー>` で毎回送る(サーバーは覚えない。ステートレス)。
   無い・違うは 401(`{"error": {"code": "invalid_api_key", …}}`)
 - **要るとき**:`127.0.0.1` の外で待ち受けるとき、または `127.0.0.1` でもログインが要る設定のとき。OpenAI 互換の口と aibow 専用の口の全部(`_cmd/aibow-server` の `KeysRequired`)。
-  ログインなしの `127.0.0.1` だけなら、今までどおりキーなしで通す
+  ログインなし(`login: false`)の `127.0.0.1` だけなら、キーなしで通す
 - **サーバーの PC か管理者だけの口**:`POST /models/unload`・`/aibow/gpu-layers`・`/aibow/places/add`・`/aibow/places/remove` は、`127.0.0.1`・`::1` からの呼び出しと、
   管理者の API キーの呼び出しだけ(ほかは 403・`code: local_only`。`api` の `pcSide`)。サーバーの PC と、ほかの人が使っているモデルに関わるため。
   管理者は 0018 の 11-0 で足した(下の「管理者」)

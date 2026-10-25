@@ -761,8 +761,8 @@ footer { border-top: 1px solid var(--border); background: var(--panel); padding:
 .login-box input:focus { outline: none; border-color: var(--accent); }
 .login-box button { padding: 8px 12px; font-size: 14px; }
 .login-error { color: var(--error); font-size: 13px; }
-.login-note { color: var(--muted); font-size: 12.5px; line-height: 1.6; overflow-wrap: anywhere; }
-.login-note code { font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+.login-note { color: var(--muted); font-size: 12.5px; line-height: 1.6; }
+.login-note code { display: block; margin-top: 4px; font-family: ui-monospace, Consolas, monospace; font-size: 12px; white-space: nowrap; overflow-x: auto; color: var(--text); }
 
 /* 会話の共有と管理者が読む(0018 の 11-2) */
 .share-mark { flex-shrink: 0; margin-left: 4px; color: var(--muted); font-size: 12px; vertical-align: -1px; }

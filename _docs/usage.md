@@ -204,7 +204,7 @@ go build -o aibow-server.exe ./_cmd/aibow-server
 ```
 
 ```
-aibow-server [-model モデル] [-ctx 作業領域の大きさ] [-port ポート] [-host アドレス] [-tls-cert 証明書 -tls-key 秘密鍵] [-lib llama.cpp のフォルダ] [-models GGUF のフォルダ] [-config 設定ファイル] [-login] [-debug]
+aibow-server [-model モデル] [-ctx 作業領域の大きさ] [-port ポート] [-host アドレス] [-tls-cert 証明書 -tls-key 秘密鍵] [-lib llama.cpp のフォルダ] [-models GGUF のフォルダ] [-config 設定ファイル] [-login=false] [-debug]
 aibow-server [-config 設定ファイル] user list|add|passwd|remove|key|admin|unadmin [名前]
 aibow-server [-config 設定ファイル] cert <ホスト名か IP アドレス>...
 ```
@@ -266,7 +266,7 @@ VS Code の Cline(4.1.23 で確かめた)の設定(歯車)で、次のように�
 |---|---|
 | API Provider | OpenAI Compatible |
 | Base URL | `http://127.0.0.1:8089/v1` |
-| API Key | ログインが要る形・ほかの PC から使う形なら、`aibow-server user key <名前>` で作ったキー。127.0.0.1 だけでログインなしなら何でもよい(空だと先に進めないことがある) |
+| API Key | `aibow-server user key <名前>` で作ったキー。ログインなし(`login: false`)にしたときだけ何でもよい(空だと先に進めないことがある) |
 | Model ID | 起動したモデルの ID(例: `ollama:qwen3.5:4b`。`/v1/models` が返すもの) |
 | Supports Images(MODEL CONFIGURATION) | オフ |
 | Context Window Size(MODEL CONFIGURATION) | aibow-server の `-ctx` と同じ(既定 32768) |
@@ -356,9 +356,11 @@ aibow-server を起動すると、ブラウザで `http://127.0.0.1:8089/` を�
 
 ### ログインと利用者(ステップ10)
 
-既定では、ブラウザの画面はログインなしで使えます(利用者は `local` の1人。今までの会話もこの人のものです)。
-`-login`(設定ファイルの `login`・環境変数 `AIBOW_SERVER_LOGIN=1`)を付けると、ブラウザで開いたときにログインの画面が出て、会話・プロファイル・画面の設定(明るさなど)が利用者ごとに分かれます。
-ほかの人の会話は見えません。
+**既定でログインが要ります**(0020。以前は 127.0.0.1 だけならログインなしでした)。ブラウザで開くとログインの画面が出て、会話・プロファイル・画面の設定(明るさなど)が利用者ごとに分かれます。
+ほかの人の会話は見えません。OpenAI 互換の口(Cline など)と画面のアプリにも、API キーかログインが要ります。
+
+1人で自分の PC だけで使うなら、`-login=false`(設定ファイルの `"login": false`・環境変数 `AIBOW_SERVER_LOGIN=0`)でログインなしにできます。
+そのときの利用者は `local` の1人だけで、その PC の人なら誰でも全部の会話を使えます(起動のときに注意が出ます)。`-host` で 127.0.0.1 の外に出すときは、書いてもログインが要ります。
 
 **初めて起動したとき**:`server.db` を作るときに入る利用者は `local` の1人だけです。パスワードは空で、管理者ではありません。
 **管理者は一人もいません。既定の admin(決まった名前とパスワードの管理者)も作りません**。
@@ -366,7 +368,7 @@ aibow-server を起動すると、ブラウザで `http://127.0.0.1:8089/` を�
 最初の管理者は、サーバーの PC でコマンドを打てる人(`server.json` も書ける人)が決めます(0018 の決定事項 6)。
 管理者がいなくても動きます。サーバーの PC の上から開いた画面と `127.0.0.1` からの呼び出しでは、モデル・GPU の層数・置き場所をいつでも変えられ、利用者はコマンドで扱えます(0018 の決定事項 16)。
 
-**ログインありで使い始める**(サーバーの PC で。aibow-server を動かしたままでも打てます):
+**使い始める**(サーバーの PC で。aibow-server を動かしたままでも打てます)。管理者がいない間は、起動のときのログとブラウザのログインの画面に「管理者がいません」と出ます:
 
 1. 管理者にする人を作る。パスワードが表示されるのはこのときだけです
 
@@ -378,11 +380,11 @@ aibow-server を起動すると、ブラウザで `http://127.0.0.1:8089/` を�
    ```bash
    aibow-server user admin alice
    ```
-3. ログインを要るようにして起動する(`server.json` に `"login": true`、または `-login`)。`-host` で外に出すときは、書かなくてもログインが要ります
+3. aibow-server を起動する(1・2 の前に起動していてもよい)
 4. ブラウザで aibow-server の画面を開き、alice でログインする。設定の画面の「利用者」のタブから、ほかの人を作れます(パスワードは作ったときに一度だけ出ます)
 5. 画面のアプリは、設定の画面の「サーバー」のタブで同じ名前とパスワードでログインします(上の「画面のアプリを aibow-server につなぐ」。API キーは要りません)
 
-- 今までの会話(`local` のもの)をログインありでも使うときは、`aibow-server user passwd local` でパスワードを作り、`local` でログインします(管理者にするなら `user admin local`)
+- ログインなしで使っていた会話(`local` のもの)は、`aibow-server user passwd local` でパスワードを作り、`local` でログインすれば使えます(管理者にするなら `user admin local`)。`local` に会話があってパスワードが無いと、起動のときにそのことが出ます
 - 設定ファイルを `-config` で指しているときは、コマンドにも同じ `-config` を付けます
 
 利用者は、サーバーの PC で aibow-server のコマンドで扱います(aibow-server を動かしたままでも打てます。管理者はブラウザの設定の画面からも扱えます)。
@@ -522,7 +524,7 @@ aibow-server user add bob
 | `AIBOW_GPU_LAYERS` | `999` | GPU に載せる層の数。VRAM に入りきらないモデルは減らす(残りは CPU で計算)。画面ではモデルごとに変えられます(まだ変えていないモデルはこの値) |
 | `AIBOW_PRESENCE_PENALTY` | `1.5` | すでに生成した言葉を選ばれにくくする強さ。思考の堂々巡りを抑える。`0` で無効 |
 | `AIBOW_SERVER_CTX` | `32768` | `aibow-server` の作業領域の大きさ(プロンプト + 返事のトークン数)。引数の `-ctx`・設定ファイルの `ctx` が優先。以前の `AIBOW_API_CTX` は使わなくなった |
-| `AIBOW_SERVER_LOGIN` | `0` | `1` にすると、`aibow-server` のブラウザの画面にログインが要る(ステップ10)。引数の `-login`・設定ファイルの `login` が優先 |
+| `AIBOW_SERVER_LOGIN` | `1` | `0` にすると、`aibow-server` をログインなしにする(127.0.0.1 だけで待ち受けるとき。0020 で既定を要るにした)。引数の `-login`・設定ファイルの `login` が優先 |
 | `AIBOW_SERVER_HOST` | `127.0.0.1` | `aibow-server` の待ち受けのアドレス(`0.0.0.0` で全部のネットワーク。外ではログインと API キーが要る)。引数の `-host`・設定ファイルの `host` が優先 |
 | `AIBOW_SERVER_TLS_CERT`・`AIBOW_SERVER_TLS_KEY` | なし | `aibow-server` の HTTPS の証明書と秘密鍵のファイル(`aibow-server cert` で作れる)。引数の `-tls-cert`・`-tls-key`・設定ファイルの `tlsCert`・`tlsKey` が優先 |
 | `AIBOW_SERVER_PORT` | `8089` | `aibow-server` の待ち受けのポート。引数の `-port`・設定ファイルの `port` が優先。以前の `AIBOW_API_PORT` は使わなくなった |
