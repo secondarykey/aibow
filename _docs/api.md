@@ -240,9 +240,14 @@ API はステートレスで、クライアントは毎回履歴の全部を送�
 | `GET /aibow/auth/me` | `{"login": ログインが要るか, "name": ログインしている人}`。画面は最初にこれを聞き、要るのにしていなければログインの画面を出す |
 | `POST /aibow/auth/login` | 本文 `{"name", "password"}`(JSON だけ)。合っていれば cookie を渡して `{"login": true, "name"}`、違えば 401「名前かパスワードが違います」 |
 | `POST /aibow/auth/logout` | セッションを消して cookie を消す |
+| `POST /aibow/auth/link/check` | 本文 `{"token"}`。パスワードを決めるリンクの持ち主 `{"name"}`(0022)。使えない・期限切れは 400 |
+| `POST /aibow/auth/link` | 本文 `{"token", "password"}`。リンクでパスワードを決め、cookie を渡して `{"login": true, "name"}`(そのままログイン)。ほかのセッションとアプリ用のトークンは消える |
+| `POST /aibow/auth/password` | 本文 `{"current", "password"}`(ログインしている本人)。パスワードを変え、新しい cookie を渡す。今のパスワードの間違いはログインと一緒に数える |
 
 - **認証と認可**:`auth` は「この人は誰か」(認証)だけを決める。「何をしてよいか」(認可)は、今は「自分のものだけ」で、保存先が持ち主で分ける([conversations.md](conversations.md) の「持ち主」)。管理者などの認可はステップ11
-- **パスワード**は保存しない。塩を付けて PBKDF2(HMAC-SHA256)を 60 万回重ねた値を `users.password` に保存する(`pbkdf2-sha256$回数$塩$値`)。パスワードは `aibow-server user add|passwd` が作って一度だけ表示する
+- **パスワード**は保存しない。塩を付けて PBKDF2(HMAC-SHA256)を 60 万回重ねた値を `users.password` に保存する(`pbkdf2-sha256$回数$塩$値`)。
+  パスワードは本人が決める(0022。12 文字以上)。`aibow-server user add|passwd` と管理者の画面は、決めるリンク(`/#reset=<合言葉>`。1 時間・一度だけ・`password_links` には SHA-256 だけ)を出す。
+  合言葉は URL の `#` の後ろなので、サーバーのアクセスに乗らない(画面が読んで本文で送る)
 - **セッション**:ステートレスな OpenAI 互換の口(毎回全部を送る)と違い、サーバーが「誰がログインしているか」を覚える。合言葉(32 バイトのでたらめな値)を cookie で渡し、server.db には SHA-256 だけを保存する。
   期限は最後に使ってから 30 日(1日以上たってから使うと延ばし、cookie の期限も延ばす)。server.db にあるので、起動し直しても切れない
 - **cookie**:`HttpOnly`(画面のスクリプトから読めない)・`SameSite=Strict`(ほかのサイトからのリクエストには付かない)・HTTPS なら `Secure`

@@ -1,21 +1,29 @@
 // 設定の画面の「利用者」のタブ(0018 の決定事項 7。11-0)。ブラウザの管理者だけに出す。
 //
 // 作る・パスワードと API キーの作り直し・消すができる(aibow-server の user コマンドと同じ処理。_cmd/aibow-server の admin.go)。
-// パスワードと API キーは、作ったときの返事でだけ受け取り、画面に一度だけ出す(保存されるのはハッシュだけで、あとからは見られない)。
+// 作る・再設定は、パスワードを作らず、本人がパスワードを決めるリンク(1 時間・一度だけ)を出す(0022)。自分の行には再設定を出さない(自分を締め出さないように)。
+// リンクと API キーは、作ったときの返事でだけ受け取り、画面に一度だけ出す(保存されるのはハッシュだけで、あとからは見られない)。
 // 管理者の印を付ける / 外すのはコマンドだけ(0018 の決定事項 6)なので、ここでは印を見せるだけにする。
 // 名前を押すと、その人の会話の一覧を表の下に出し、押すと読むだけで開く(0018 の決定事項 25。読んだことはログに残る)。
 import { useCallback, useEffect, useState } from "react";
 import { LuKeyRound, LuShieldCheck, LuTrash2, LuX } from "react-icons/lu";
-import { admin, ChatService, me, type AdminUser } from "../backend";
+import { admin, ChatService, linkURL, me, type AdminUser, type Link } from "../backend";
 import type { ConversationRef } from "../../bindings/github.com/secondarykey/aibow";
 import { errorMessage } from "../errors";
 import { CopyButton } from "./CopyButton";
 
-// Secret は、一度だけ出すパスワードか API キー
+// Secret は、一度だけ出すリンクか API キー
 interface Secret {
   name: string;
-  label: string; // パスワード / API キー
+  label: string; // 招待のリンク / 再設定のリンク / API キー
   value: string;
+  until?: string; // リンクの期限(1 時間)
+}
+
+// linkSecret は、リンクの合言葉を、一度だけ出す URL にする
+function linkSecret(label: string, l: Link): Secret {
+  const until = new Date(l.expiresAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return { name: l.name, label, value: linkURL(l.token), until };
 }
 
 export function UserSettings({ onError, onRead }: { onError(text: string): void; onRead(id: string): void }) {
@@ -30,6 +38,7 @@ export function UserSettings({ onError, onRead }: { onError(text: string): void;
   };
   const [secret, setSecret] = useState<Secret | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null); // 消すかを聞いている人
+  const [resetting, setResetting] = useState<string | null>(null);   // 再設定のリンクを出すかを聞いている人
 
   const reload = useCallback(async () => {
     try {
@@ -53,13 +62,10 @@ export function UserSettings({ onError, onRead }: { onError(text: string): void;
     return true;
   };
 
-  const create = (name: string) => run(async () => {
-    const r = await admin.create(name);
-    return { name: r.name, label: "パスワード", value: r.password };
-  });
+  const create = (name: string) => run(async () => linkSecret("招待のリンク", await admin.create(name)));
   const resetPassword = (name: string) => run(async () => {
-    const r = await admin.resetPassword(name);
-    return { name: r.name, label: "パスワード", value: r.password };
+    setResetting(null);
+    return linkSecret("再設定のリンク", await admin.resetPassword(name));
   });
   const renewKey = (name: string) => run(async () => {
     const r = await admin.renewKey(name);
@@ -93,12 +99,19 @@ export function UserSettings({ onError, onRead }: { onError(text: string): void;
                 {u.name}
               </button>
               {u.admin && <LuShieldCheck className="user-admin" title="管理者" aria-label="管理者" />}
-              {!u.password && <span className="origin-chip" title="パスワードが無いので、ログインできない">パスワードなし</span>}
+              {!u.password && <span className="origin-chip" title="本人がリンクでパスワードを決めるまで、ログインできない">パスワードなし</span>}
               {u.key && <LuKeyRound className="user-key" title="API キーあり" aria-label="API キーあり" />}
               {u.local && <span className="origin-chip" title="ログインなしで使うときの会話の持ち主">ログインなし</span>}
             </span>
             <span className="user-date">{u.created_at.slice(0, 10)}</span>
-            {confirming === u.name
+            {resetting === u.name && (
+              <span className="user-actions">
+                <span className="confirm-text" title="その人のログイン中の画面とアプリも切れる。リンクでパスワードを決めるまでログインできない">今のパスワードは使えなくなります</span>
+                <button className="danger" onClick={() => resetPassword(u.name)}>リンクを出す</button>
+                <button onClick={() => setResetting(null)}>やめる</button>
+              </span>
+            )}
+            {resetting !== u.name && (confirming === u.name
               ? (
                 <span className="user-actions">
                   <span className="confirm-text" title="その人の会話・プロファイル・設定も消える">削除しますか?</span>
@@ -108,7 +121,9 @@ export function UserSettings({ onError, onRead }: { onError(text: string): void;
               )
               : (
                 <span className="user-actions">
-                  <button onClick={() => resetPassword(u.name)} title="新しいパスワードを作る(その人のログイン中の画面はログインし直しになる)">パスワード</button>
+                  {u.name !== me.name && (
+                    <button onClick={() => { setConfirming(null); setResetting(u.name); }} title="本人がパスワードを決め直すリンク(1 時間・一度だけ)を出す。出した時点で今のパスワードは使えなくなる">パスワード</button>
+                  )}
                   <button onClick={() => renewKey(u.name)} title="新しい API キーを作る(前のキーは使えなくなる)">API キー</button>
                   <button
                     className="place-remove"
@@ -120,7 +135,7 @@ export function UserSettings({ onError, onRead }: { onError(text: string): void;
                     <LuTrash2 />
                   </button>
                 </span>
-              )}
+              ))}
           </div>
         ))}
       </div>
@@ -149,8 +164,8 @@ export function UserSettings({ onError, onRead }: { onError(text: string): void;
 // SecretBox は、作ったパスワードか API キーを一度だけ出す(閉じたら、もう見られない)
 function SecretBox({ secret, onClose }: { secret: Secret; onClose(): void }) {
   return (
-    <div className="secret-box" title="今だけ表示する。閉じたらもう見られない(忘れたら作り直す)">
-      <span className="secret-label">{secret.name} の{secret.label}</span>
+    <div className="secret-box" title="今だけ表示する。閉じたらもう見られない(忘れたら作り直す)。リンクは本人に渡し、開いてパスワードを決めてもらう">
+      <span className="secret-label">{secret.name} の{secret.label}{secret.until && `(${secret.until} まで・一度だけ)`}</span>
       <code className="secret-value">{secret.value}</code>
       <CopyButton text={secret.value} className="place-remove" />
       <button className="place-remove" onClick={onClose} title="閉じる" aria-label="閉じる"><LuX /></button>
@@ -169,7 +184,7 @@ function AddUser({ onAdd }: { onAdd(name: string): Promise<boolean> }) {
         type="text"
         value={name}
         placeholder="名前"
-        title="ログインの名前(1〜32 文字。空白は使えない)。パスワードは作ったときに一度だけ出す"
+        title="ログインの名前(1〜32 文字。空白は使えない)。作ると、本人がパスワードを決める招待のリンクを一度だけ出す"
         onChange={e => setName(e.target.value)}
         onKeyDown={e => { if (e.key === "Enter" && name.trim()) add(); }}
       />

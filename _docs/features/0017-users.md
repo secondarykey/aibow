@@ -143,7 +143,7 @@ Cline など ──HTTPS(API キー)──→ aibow-server [ OpenAI 互換の口
   保存の約束 `auth.Store` は、会話の `aibow.Store` とは別(利用者を扱うのは aibow-server だけなので)。実装は `store/users.go`(server.db)
 - **パスワード**(決定事項 1):`crypto/pbkdf2`(PBKDF2-HMAC-SHA256・60 万回・16 バイトの塩)。保存の形は `pbkdf2-sha256$回数$塩$値`。比べるのは決まった時間(`subtle.ConstantTimeCompare`)。
   いない名前でも同じだけ時間をかけ、エラーは「名前かパスワードが違います」の1つ(いる名前を探られないように)
-- **パスワードは aibow-server が作る**(ユーザーと決めた):`user add`・`user passwd` で 16 文字(4 文字ずつ `-` で区切る。見間違えやすい 0/o・1/l/i は使わない)を作り、標準出力に一度だけ出す(ログには残さない)。
+- **パスワードは aibow-server が作る**(ユーザーと決めた):`user add`・`user passwd` で 16 文字(4 文字ずつ `-` で区切る。見間違えやすい 0/o・1/l/i は使わない)を作り、標準出力に一度だけ出す(ログには残さない)。 **2026-10-26 に決め直した**:パスワードは本人が決め、コマンドと管理者の画面は決めるリンクを出す(0022)
   自分で打つ形にしなかったのは、標準ライブラリだけでは打った文字が画面に出てしまうため(隠すには `golang.org/x/term` が要る)
 - **利用者のコマンド**(決定事項 4):`aibow-server [-config …] user list|add|passwd|remove [名前]`。llama.cpp を読み込まずに server.db だけを開く。
   `add` はその人のプロファイル「既定」も作る(決定事項 5。`PrepareProfiles` をその人として呼ぶ)。`passwd` はその人のセッションを全部消す。`remove` はその人の会話・プロファイル・設定も消す。名前は 1〜32 文字で、空白と見えない文字は使えない

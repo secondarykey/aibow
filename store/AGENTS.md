@@ -35,6 +35,7 @@
   - 版 12: 会話の共有(0018 の 11-2)。`conversations` に共有の範囲 `share`(`''` / `all` / `users`)と、指定した人の表 `conversation_shares`(会話か利用者を消すと一緒に消える)
   - 版 13: アプリ用のトークン `app_tokens`(0019)。トークンの SHA-256・持ち主・PC の名前・期限(作ってから 10 日)。利用者と PC の名前の組は UNIQUE(PC ごとに1本)。
     利用者を消すと一緒に消え、パスワードを作り直すとブラウザのセッションと一緒に消える(`DeleteUserSessions`)
+  - 版 14: パスワードを決めるリンク `password_links`(0022)。1人1本なので利用者の ID が主キー、合言葉の SHA-256 は UNIQUE・期限(出してから 1 時間)。利用者を消すと一緒に消える
 - 会話の共有:ほかの人の会話を読むのは `ReadConversation` だけ(条件 `conversationShared` と管理者か)。書くメソッドは持ち主の行だけなので、共有された人も管理者も書き込めない。
   自分の会話を読むときは `share`(と1つ読むときは `ShareWith`)を入れる
 - プロファイルの読み書き:見える・変えられるの判定は `sqlite.go` の `profileVisible`・`profileUsed`・`profileEditable`(名前付きの引数 `:me`・`:admin`)の1か所だけ。

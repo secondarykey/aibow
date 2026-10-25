@@ -10,6 +10,9 @@ import type { Backend } from "./backend";
 const notInApp = async (): Promise<never> => {
   throw new Error("利用者の管理は、aibow-server の画面をブラウザで開いて、管理者でログインして行います");
 };
+const passwordInBrowser = async (): Promise<never> => {
+  throw new Error("パスワードを決める・変えるのは、aibow-server の画面をブラウザで開いて行います");
+};
 
 export const backend: Backend = {
   ChatService,
@@ -34,6 +37,10 @@ export const backend: Backend = {
   },
   login: async () => { throw new Error("デスクトップのアプリにはログインがありません"); },
   logout: async () => {},
+  // パスワードを決める・変えるはブラウザで行う(0022 のやらないこと)
+  linkUser: passwordInBrowser,
+  applyLink: passwordInBrowser,
+  changePassword: passwordInBrowser,
   onUnauthorized: () => () => {},
   // 利用者の管理はブラウザの管理者だけ(0018 の 11-0)。デスクトップには「利用者」のタブを出さないので、呼ばれない
   admin: {

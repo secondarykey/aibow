@@ -16,7 +16,8 @@ import { ProfileSettings } from "./ProfileSettings";
 import { ModelSettings } from "./ModelSettings";
 import { UserSettings } from "./UserSettings";
 import { ServerSettings } from "./ServerSettings";
-import { isBrowser, me } from "../backend";
+import { changePassword, isBrowser, me } from "../backend";
+import { errorMessage } from "../errors";
 import type { Models } from "../useModels";
 // Go の models パッケージ。"…/aibow/models" と書くと aibow パッケージの models.ts が選ばれるので、index まで書く
 import type { Entry as ModelEntry } from "../../bindings/github.com/secondarykey/aibow/models/index";
@@ -81,6 +82,8 @@ export function SettingsView({ onClose, errors, app, models, modelState, servers
           <>
             <h2 title="画面の見せ方。生成には関わらない">画面</h2>
             {app && <DisplaySettingsForm display={app.display} onChange={onDisplayChange} />}
+            {/* 自分のパスワードを変える(ブラウザでログインしているときだけ。0022) */}
+            {isBrowser && me.login && me.name !== "" && <PasswordForm />}
           </>
         )}
 
@@ -107,6 +110,49 @@ export function SettingsView({ onClose, errors, app, models, modelState, servers
         )}
       </div>
     </section>
+  );
+}
+
+// PasswordForm は、ログインしている本人がパスワードを変える(0022 の決定事項 4)。変えたら、ほかのログイン中の画面とアプリは切れる。
+// 間違いはフォームの下に出す(設定の画面のエラーの欄に積むと、変えられたあとも残って紛らわしいため)
+function PasswordForm() {
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [again, setAgain] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
+  const [error, setError] = useState("");
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    if (next !== again) {
+      setError("2つの新しいパスワードが違います");
+      return;
+    }
+    setBusy(true);
+    try {
+      await changePassword(current, next);
+      setCurrent(""); setNext(""); setAgain("");
+      setDone(true);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <form className="password-form" onSubmit={submit}>
+      <h2 className="section" title="変えると、ほかのログイン中の画面とアプリはログインし直しになる(この画面はそのまま)">パスワード</h2>
+      <label htmlFor="pw-current">今のパスワード</label>
+      <input id="pw-current" type="password" autoComplete="current-password" value={current} onChange={e => { setCurrent(e.target.value); setDone(false); }} />
+      <label htmlFor="pw-next">新しいパスワード(12 文字以上)</label>
+      <input id="pw-next" type="password" autoComplete="new-password" value={next} onChange={e => { setNext(e.target.value); setDone(false); }} />
+      <label htmlFor="pw-again">新しいパスワード(もう一度)</label>
+      <input id="pw-again" type="password" autoComplete="new-password" value={again} onChange={e => { setAgain(e.target.value); setDone(false); }} />
+      <button type="submit" className="apply" disabled={busy || !current || !next || !again}>パスワードを変える</button>
+      {error && <p className="login-error" role="alert">{error}</p>}
+      {done && <p className="hint">パスワードを変えました</p>}
+    </form>
   );
 }
 

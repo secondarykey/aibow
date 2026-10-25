@@ -39,6 +39,10 @@ export interface Backend {
   login(name: string, password: string): Promise<Me>; // 違えば reject(message が理由の文)
   logout(): Promise<void>;
   onUnauthorized(f: () => void): () => void;      // 呼び出しが「ログインしてください」(401)で断られた(ログインの期限が切れた)
+  // パスワードは本人が決める(ブラウザだけ。0022)。合言葉は URL の #reset= の後ろ
+  linkUser(token: string): Promise<string>;       // パスワードを決めるリンクの持ち主の名前。使えなければ reject
+  applyLink(token: string, password: string): Promise<Me>; // リンクでパスワードを決めて、そのままログインする
+  changePassword(current: string, password: string): Promise<void>; // ログインしている本人がパスワードを変える
   admin: AdminAPI;                                // 利用者の管理(ブラウザの管理者だけ。0018 の 11-0。デスクトップでは断る)
   copyText(text: string): Promise<void>;
   openURL(url: string): Promise<void>;            // リンクを開く(デスクトップは OS のブラウザ、ブラウザは新しいタブ)
@@ -71,11 +75,18 @@ export interface AdminUser {
   created_at: string;
 }
 
-// AdminAPI は、利用者の管理の口(aibow-server の /aibow/admin/)。パスワードと API キーは返事でだけ受け取れる
+// Link は、本人がパスワードを決めるリンクの合言葉と期限(0022)。URL は画面が作る(開いているアドレス + /#reset=<合言葉>)
+export interface Link {
+  name: string;
+  token: string;
+  expiresAt: string;
+}
+
+// AdminAPI は、利用者の管理の口(aibow-server の /aibow/admin/)。リンクの合言葉と API キーは返事でだけ受け取れる
 export interface AdminAPI {
   users(): Promise<AdminUser[]>;
-  create(name: string): Promise<{ name: string; password: string }>;
-  resetPassword(name: string): Promise<{ name: string; password: string }>;
+  create(name: string): Promise<Link>;          // 作って、招待のリンク
+  resetPassword(name: string): Promise<Link>;   // 今のパスワードを使えなくして、再設定のリンク
   renewKey(name: string): Promise<{ name: string; key: string }>;
   remove(name: string): Promise<void>;
 }
@@ -136,6 +147,24 @@ export function logout(): Promise<void> {
 
 export function onUnauthorized(f: () => void): () => void {
   return b.onUnauthorized(f);
+}
+
+export function linkUser(token: string): Promise<string> {
+  return b.linkUser(token);
+}
+
+export async function applyLink(token: string, password: string): Promise<Me> {
+  me = await b.applyLink(token, password);
+  return me;
+}
+
+export function changePassword(current: string, password: string): Promise<void> {
+  return b.changePassword(current, password);
+}
+
+// linkURL は、リンクの合言葉を URL にする(管理者が開いている画面のアドレス。0022 の決定事項 11)
+export function linkURL(token: string): string {
+  return `${location.origin}/#reset=${token}`;
 }
 
 export const admin: AdminAPI = {

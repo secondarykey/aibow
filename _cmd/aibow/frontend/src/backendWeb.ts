@@ -143,6 +143,9 @@ export const backend: Backend = {
   session: () => auth("GET", "me"),
   login: (name, password) => auth("POST", "login", { name, password }),
   logout: async () => { await auth("POST", "logout"); },
+  linkUser: async token => ((await auth("POST", "link/check", { token })) as unknown as { name: string }).name,
+  applyLink: (token, password) => auth("POST", "link", { token, password }),
+  changePassword: async (current, password) => { await auth("POST", "password", { current, password }); },
   onUnauthorized: f => {
     unauthorized.add(f);
     return () => unauthorized.delete(f);
