@@ -156,9 +156,14 @@ func (s *SQLite) DeleteSession(ctx context.Context, id string) error {
 	return err
 }
 
+// DeleteUserSessions は、その人のブラウザのセッションとアプリ用のトークンを全部消す(パスワードを作り直したとき。0019 の決定事項 10)。
 func (s *SQLite) DeleteUserSessions(ctx context.Context, user uuid.UUID) error {
-	_, err := s.db.ExecContext(ctx, "DELETE FROM sessions WHERE user_id = ?", user.String())
-	return err
+	for _, q := range []string{"DELETE FROM sessions WHERE user_id = ?", "DELETE FROM app_tokens WHERE user_id = ?"} {
+		if _, err := s.db.ExecContext(ctx, q, user.String()); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *SQLite) DeleteExpiredSessions(ctx context.Context, now time.Time) (int, error) {
@@ -191,4 +196,40 @@ func (s *SQLite) HasAPIKey(ctx context.Context, user uuid.UUID) (bool, error) {
 	var n int
 	err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM api_keys WHERE user_id = ?", user.String()).Scan(&n)
 	return n > 0, err
+}
+
+// ---- アプリ用のトークン(0019) ------------------------------------------------------------
+
+func (s *SQLite) SetAppToken(ctx context.Context, t auth.AppToken) error {
+	// UPSERT: PC ごとに1本なので、同じ利用者・同じ PC の名前のトークンがあれば置き換える(前のトークンは使えなくなる)
+	_, err := s.db.ExecContext(ctx, `INSERT INTO app_tokens (id, user_id, device, created_at, expires_at) VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(user_id, device) DO UPDATE SET id = excluded.id, created_at = excluded.created_at, expires_at = excluded.expires_at`,
+		t.ID, t.UserID.String(), t.Device, formatTime(t.CreatedAt), formatTime(t.ExpiresAt))
+	return err
+}
+
+func (s *SQLite) AppToken(ctx context.Context, id string) (auth.AppToken, error) {
+	t := auth.AppToken{ID: id}
+	var user, created, expires string
+	err := s.db.QueryRowContext(ctx, "SELECT user_id, device, created_at, expires_at FROM app_tokens WHERE id = ?", id).
+		Scan(&user, &t.Device, &created, &expires)
+	if errors.Is(err, sql.ErrNoRows) {
+		return t, auth.ErrBadKey
+	}
+	if err != nil {
+		return t, err
+	}
+	if t.UserID, err = parseID(user); err != nil {
+		return t, err
+	}
+	if t.CreatedAt, err = parseTime(created); err != nil {
+		return t, err
+	}
+	t.ExpiresAt, err = parseTime(expires)
+	return t, err
+}
+
+func (s *SQLite) DeleteAppToken(ctx context.Context, id string) error {
+	_, err := s.db.ExecContext(ctx, "DELETE FROM app_tokens WHERE id = ?", id)
+	return err
 }

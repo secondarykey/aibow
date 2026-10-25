@@ -237,6 +237,18 @@ CREATE TABLE conversation_shares (
 );
 CREATE INDEX conversation_shares_by_user ON conversation_shares(user_id);
 `,
+	// 版 13: アプリ用のトークン(0019)。画面のアプリでログインすると aibow-server が出す、期限が固定(10 日)の合言葉。
+	// PC ごとに1本なので、利用者と PC の名前の組は UNIQUE(同じ PC でログインし直すと置き換わる)。保存するのはトークンの SHA-256 だけ
+	`
+CREATE TABLE app_tokens (
+	id         TEXT PRIMARY KEY,         -- トークンの SHA-256。トークンそのものは保存しない
+	user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	device     TEXT NOT NULL,            -- ログインした PC の名前(アプリが送ってくる)
+	created_at TEXT NOT NULL,
+	expires_at TEXT NOT NULL,            -- 作ってから 10 日(使っても延ばさない)
+	UNIQUE (user_id, device)
+);
+`,
 }
 
 func migrate(db *sql.DB) error {

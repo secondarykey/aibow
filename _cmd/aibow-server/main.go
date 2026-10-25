@@ -243,6 +243,8 @@ func loadTLS(c config) (*tls.Config, error) {
 		return nil, fmt.Errorf("HTTPS の証明書(%s)と秘密鍵(%s)を読めません: %w", absPath(c.TLSCert), absPath(c.TLSKey), err)
 	}
 	log.Noticef("HTTPS で待ち受けます(証明書: %s)", absPath(c.TLSCert))
+	// 画面のアプリは、初めてつなぐときにこの指紋を画面に出す。同じなら信頼してよい(0019 の決定事項 6)
+	log.Noticef("証明書の指紋(SHA-256): %s", auth.Fingerprint(cert.Certificate[0]))
 	return &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12}, nil
 }
 

@@ -39,6 +39,17 @@ type Session struct {
 	ExpiresAt time.Time
 }
 
+// AppToken はアプリ用のトークン1つ(0019。tokens.go)。
+type AppToken struct {
+	// ID はトークンの SHA-256。トークンそのものは保存しない(セッションと同じ)
+	ID     string
+	UserID uuid.UUID
+	// Device はログインした PC の名前。利用者と PC の名前の組で1本(同じ PC でログインし直すと置き換わる)
+	Device    string
+	CreatedAt time.Time
+	ExpiresAt time.Time
+}
+
 // Store は利用者とセッションの保存先(本物は store パッケージの SQLite。server.db)。
 type Store interface {
 	// CreateUser は利用者を足す。同じ名前がいれば ErrUserExists
@@ -60,7 +71,7 @@ type Store interface {
 	Session(ctx context.Context, id string) (Session, error)
 	ExtendSession(ctx context.Context, id string, expires time.Time) error
 	DeleteSession(ctx context.Context, id string) error
-	// DeleteUserSessions はその人のセッションを全部消す(パスワードを作り直したとき)
+	// DeleteUserSessions はその人のセッションとアプリ用のトークンを全部消す(パスワードを作り直したとき)
 	DeleteUserSessions(ctx context.Context, user uuid.UUID) error
 	// DeleteExpiredSessions は期限の切れたセッションを消し、消した数を返す
 	DeleteExpiredSessions(ctx context.Context, now time.Time) (int, error)
@@ -71,6 +82,13 @@ type Store interface {
 	UserByAPIKey(ctx context.Context, id string) (User, error)
 	// HasAPIKey は、利用者が API キーを持っているか(一覧に出すため)
 	HasAPIKey(ctx context.Context, user uuid.UUID) (bool, error)
+
+	// SetAppToken はアプリ用のトークンを足す。同じ利用者・同じ PC の名前のトークンがあれば置き換える(PC ごとに1本。0019 の決定事項 9)
+	SetAppToken(ctx context.Context, t AppToken) error
+	// AppToken はトークン1つ(ID は SHA-256)。無ければ ErrBadKey(期限は見ない。見るのは Keys)
+	AppToken(ctx context.Context, id string) (AppToken, error)
+	// DeleteAppToken はトークンを消す(無くてもエラーにしない)
+	DeleteAppToken(ctx context.Context, id string) error
 }
 
 var (

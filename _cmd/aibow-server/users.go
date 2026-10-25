@@ -174,11 +174,11 @@ func renewPassword(ctx context.Context, st *store.SQLite, name, by string) (stri
 	if err := st.SetPassword(ctx, u.ID, hash, time.Now()); err != nil {
 		return "", err
 	}
-	// 前のパスワードでログインしていた画面は使えなくする(パスワードを作り直すのは、漏れたかもしれないときなので)
+	// 前のパスワードでログインしていた画面とアプリは使えなくする(パスワードを作り直すのは、漏れたかもしれないときなので。アプリ用のトークンも消える。0019)
 	if err := st.DeleteUserSessions(ctx, u.ID); err != nil {
 		return "", err
 	}
-	log.Noticef("利用者 %s のパスワードを作り直しました%s(ログイン中の画面はログインし直しになります)", name, by)
+	log.Noticef("利用者 %s のパスワードを作り直しました%s(ログイン中の画面とアプリはログインし直しになります)", name, by)
 	return password, nil
 }
 

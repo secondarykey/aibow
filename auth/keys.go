@@ -16,6 +16,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/secondarykey/aibow/log"
 )
@@ -36,15 +37,20 @@ func NewAPIKey() string {
 // KeyID は、API キーを保存する形(SHA-256 の16進)にする。
 func KeyID(key string) string { return tokenID(key) }
 
-// Keys は API キーから利用者を引く係。
+// Keys は API キー(とアプリ用のトークン。tokens.go)から利用者を引く係。
 type Keys struct {
 	store Store
+	now   func() time.Time // アプリ用のトークンの期限を見る(テストで時刻を進めるため)
 }
 
-func NewKeys(st Store) *Keys { return &Keys{store: st} }
+func NewKeys(st Store) *Keys { return &Keys{store: st, now: time.Now} }
 
-// User は API キーの持ち主。違えば ErrBadKey。
+// User は API キーかアプリ用のトークンの持ち主。違えば ErrBadKey、トークンの期限が切れていれば ErrTokenExpired。
+// どちらも同じ口(Authorization: Bearer)で受け付け、使える口も同じ(0019 の決定事項 11)。
 func (k *Keys) User(ctx context.Context, key string) (User, error) {
+	if IsAppToken(key) {
+		return k.appTokenUser(ctx, key)
+	}
 	if !strings.HasPrefix(key, keyPrefix) {
 		return User{}, ErrBadKey
 	}
@@ -61,6 +67,12 @@ func (k *Keys) RequireKey(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		key, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 		u, err := k.User(r.Context(), strings.TrimSpace(key))
+		if ok && errors.Is(err, ErrTokenExpired) {
+			// 期限切れは、キーの間違いと分けて知らせる(アプリが「もう一度ログインして」と出せるように)
+			log.Warnf("アプリのログインの期限が切れていたので断りました: %s %s(%s)", r.Method, r.URL.Path, remote(r))
+			writeAPIError(w, http.StatusUnauthorized, "token_expired", err.Error())
+			return
+		}
 		if !ok || errors.Is(err, ErrBadKey) {
 			log.Warnf("API キーが無いか違うので断りました: %s %s(%s)", r.Method, r.URL.Path, remote(r))
 			writeAPIError(w, http.StatusUnauthorized, "invalid_api_key", ErrBadKey.Error())

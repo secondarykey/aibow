@@ -43,16 +43,8 @@ func NewSessions(st Store) *Sessions {
 // Login は名前とパスワードを確かめ、セッションを作って合言葉(cookie に入れる値)を返す。
 // 違っていれば ErrLogin(名前とパスワードのどちらが違うかは言わない)。
 func (s *Sessions) Login(ctx context.Context, name, password string) (token string, u User, err error) {
-	u, err = s.store.UserByName(ctx, strings.TrimSpace(name))
-	if errors.Is(err, ErrUserNotFound) {
-		CheckPassword(dummyHash, password) // いる名前と同じだけ時間をかける
-		return "", User{}, ErrLogin
-	}
-	if err != nil {
+	if u, err = s.check(ctx, name, password); err != nil {
 		return "", User{}, err
-	}
-	if !CheckPassword(u.Password, password) {
-		return "", User{}, ErrLogin
 	}
 	now := s.now()
 	// ついでに、期限の切れたセッションを片付ける(ログインのときだけなので、手間は小さい)
@@ -64,6 +56,22 @@ func (s *Sessions) Login(ctx context.Context, name, password string) (token stri
 		return "", User{}, err
 	}
 	return token, u, nil
+}
+
+// check は名前とパスワードを確かめる(ブラウザのログインとアプリのログインで同じ)。違っていれば ErrLogin。
+func (s *Sessions) check(ctx context.Context, name, password string) (User, error) {
+	u, err := s.store.UserByName(ctx, strings.TrimSpace(name))
+	if errors.Is(err, ErrUserNotFound) {
+		CheckPassword(dummyHash, password) // いる名前と同じだけ時間をかける
+		return User{}, ErrLogin
+	}
+	if err != nil {
+		return User{}, err
+	}
+	if !CheckPassword(u.Password, password) {
+		return User{}, ErrLogin
+	}
+	return u, nil
 }
 
 // Logout はセッションを消す(無くてもエラーにしない)。

@@ -5,6 +5,8 @@ package auth
 //	POST /aibow/auth/login   本文 {"name", "password"}。合っていれば cookie を渡して {"name"}、違えば 401。続けて間違えると 429(limiter.go)
 //	POST /aibow/auth/logout  セッションを消して、cookie を消す
 //	GET  /aibow/auth/me      {"login": ログインが要るか, "name": ログインしている人の名前(していなければ空)}。画面が最初に聞く
+//	POST /aibow/auth/token   本文 {"name", "password", "device"}。アプリのログイン(0019)。合っていればアプリ用のトークン(AppLogin)。間違いの数え方はログインと同じ
+//	POST /aibow/auth/token/revoke  Authorization: Bearer <トークン> のトークンを消す(アプリのログアウト)
 //
 // cookie は次の性質を付ける(どれも、ほかの人に合言葉を使われないため):
 //
@@ -92,18 +94,11 @@ func Handler(s *Sessions, required bool) http.Handler {
 			writeError(w, http.StatusBadRequest, "この aibow-server はログインなしで使う設定です")
 			return
 		}
-		// 本文は JSON だけ受け付ける。ほかのサイトのフォームからは JSON を送れない(送るには、ブラウザがこのサーバーに先に聞く)ので、
-		// 知らないうちにほかの人の名前でログインさせられることを防げる
-		if ct, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type")); ct != "application/json" {
-			writeError(w, http.StatusUnsupportedMediaType, "本文は JSON で送ってください(Content-Type: application/json)")
-			return
-		}
 		var req struct {
 			Name     string `json:"name"`
 			Password string `json:"password"`
 		}
-		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "本文が読めません: "+err.Error())
+		if !readJSON(w, r, &req) {
 			return
 		}
 		addr := remote(r)
@@ -143,10 +138,76 @@ func Handler(s *Sessions, required bool) http.Handler {
 		}
 		writeJSON(w, http.StatusOK, Me{Login: required})
 	})
+	// アプリのログイン(0019)。名前とパスワードを確かめて、アプリ用のトークンを返す。間違いの回数はブラウザのログインと一緒に数える
+	mux.HandleFunc("POST /aibow/auth/token", func(w http.ResponseWriter, r *http.Request) {
+		if !required {
+			writeError(w, http.StatusBadRequest, "この aibow-server はログインなしで使う設定です(つなぐのに API キーもトークンも要りません)")
+			return
+		}
+		var req struct {
+			Name     string `json:"name"`
+			Password string `json:"password"`
+			Device   string `json:"device"`
+		}
+		if !readJSON(w, r, &req) {
+			return
+		}
+		addr := remote(r)
+		if left := lim.wait(addr); left > 0 {
+			log.Warnf("ログインを続けて間違えたので、アプリのログインを受け付けません: 名前 %q(%s。あと %s)", req.Name, addr, left.Round(time.Second))
+			writeError(w, http.StatusTooManyRequests, fmt.Sprintf("ログインを続けて間違えたので、しばらく受け付けません。%d 分ほど待ってから、もう一度ログインしてください", int(left.Minutes())+1))
+			return
+		}
+		login, err := s.IssueAppToken(r.Context(), req.Name, req.Password, req.Device)
+		if errors.Is(err, ErrLogin) {
+			lim.fail(addr)
+			log.Warnf("アプリのログインができませんでした: 名前 %q(%s)", req.Name, addr)
+			writeError(w, http.StatusUnauthorized, err.Error())
+			return
+		}
+		if err != nil {
+			log.Errorf("アプリのログインの途中で失敗しました: %v", err)
+			writeError(w, http.StatusInternalServerError, "アプリのログインの途中で失敗しました: "+err.Error())
+			return
+		}
+		lim.ok(addr)
+		log.Noticef("アプリでログインしました: %s(PC: %s・%s。期限 %s)", login.Name, strings.TrimSpace(req.Device), addr, login.ExpiresAt.Local().Format("2006-01-02 15:04"))
+		writeJSON(w, http.StatusOK, login)
+	})
+	// アプリのログアウト。Authorization: Bearer のトークンを消す(期限が切れていても、無くても 200。消えていればよいので)
+	mux.HandleFunc("POST /aibow/auth/token/revoke", func(w http.ResponseWriter, r *http.Request) {
+		token, _ := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if token = strings.TrimSpace(token); !IsAppToken(token) {
+			writeError(w, http.StatusBadRequest, "消すアプリ用のトークンを Authorization: Bearer <トークン> で送ってください")
+			return
+		}
+		if err := s.RevokeAppToken(r.Context(), token); err != nil {
+			log.Errorf("アプリのログアウトができません: %v", err)
+			writeError(w, http.StatusInternalServerError, "アプリのログアウトができません: "+err.Error())
+			return
+		}
+		log.Noticef("アプリでログアウトしました(%s)", remote(r))
+		writeJSON(w, http.StatusOK, map[string]any{})
+	})
 	mux.HandleFunc("/aibow/auth/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "このパスはありません: "+r.Method+" "+r.URL.Path)
 	})
 	return mux
+}
+
+// readJSON はログインの本文を読む。読めなければエラーを返事に書いて false。
+// 本文は JSON だけ受け付ける。ほかのサイトのフォームからは JSON を送れない(送るには、ブラウザがこのサーバーに先に聞く)ので、
+// 知らないうちにほかの人の名前でログインさせられることを防げる
+func readJSON(w http.ResponseWriter, r *http.Request, v any) bool {
+	if ct, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type")); ct != "application/json" {
+		writeError(w, http.StatusUnsupportedMediaType, "本文は JSON で送ってください(Content-Type: application/json)")
+		return false
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(v); err != nil {
+		writeError(w, http.StatusBadRequest, "本文が読めません: "+err.Error())
+		return false
+	}
+	return true
 }
 
 func setCookie(w http.ResponseWriter, r *http.Request, token string) {
