@@ -114,10 +114,10 @@ export function ConfirmTool(id: uuid$0.UUID, reqID: string, approved: boolean, r
 }
 
 /**
- * ConnectServer は aibow-server につなぐ:もう一度確かめ、ログインが要ればアプリ用のトークンをもらって、connection.json に書き、起動し直す。
- * 確かめられないつなぎ先は書かない(起動し直してから「つながりません」となるのを避ける。決定事項 8)。
+ * ConnectServer は aibow-server につなぐように決める:もう一度確かめ、ログインが要ればアプリ用のトークンをもらって、connection.json に書く。
+ * 起動し直すと切り替わる。確かめられないつなぎ先は書かない(起動し直してから「つながりません」となるのを避ける。決定事項 8)。
  */
-export function ConnectServer(req: $models.ConnectRequest): $CancellablePromise<$models.ConnectResult> {
+export function ConnectServer(req: $models.ConnectRequest): $CancellablePromise<void> {
     return $Call.ByID(768792652, req);
 }
 
@@ -171,9 +171,10 @@ export function DeleteProfile(id: uuid$0.UUID): $CancellablePromise<void> {
 }
 
 /**
- * DisconnectServer はアプリの中で動かす形に戻す:トークンを aibow-server で消し(つながらなければ手元だけ)、connection.json を消して、起動し直す。
+ * DisconnectServer はアプリの中で動かす形に戻すように決める:トークンを aibow-server で消し(つながらなければ手元だけ)、connection.json を消す。
+ * 起動し直すと切り替わる。
  */
-export function DisconnectServer(): $CancellablePromise<$models.ConnectResult> {
+export function DisconnectServer(): $CancellablePromise<void> {
     return $Call.ByID(1665219790);
 }
 

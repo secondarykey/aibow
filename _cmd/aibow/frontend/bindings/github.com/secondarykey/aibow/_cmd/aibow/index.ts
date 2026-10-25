@@ -8,6 +8,5 @@ export {
 
 export type {
     ConnectRequest,
-    ConnectResult,
     ServerConnection
 } from "./models.js";

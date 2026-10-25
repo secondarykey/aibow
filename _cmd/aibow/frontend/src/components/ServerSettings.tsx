@@ -3,7 +3,10 @@
 // 今の形(アプリの中で動かす / aibow-server に誰としてつないでいるか)を出し、画面から aibow-server につなぐ・戻す。
 //
 //	つなぎ先を打つ → 確かめる(CheckServer)── 自己署名の証明書なら、指紋を見せて人が確かめる(信頼したら、もう一度確かめる)
-//	              → ログインが要れば名前とパスワード → つなぐ(ConnectServer)── アプリが起動し直す
+//	              → ログインが要れば名前とパスワード → つなぐ(ConnectServer)── 保存して、起動し直すと切り替わる
+//
+// アプリは自分で起動し直さない(2026-10-26、ユーザーと決め直した)。起動し直すまでは前の形のまま動くので、
+// 「起動し直すと切り替わります」を、起動し直すまで出し続ける(Go の ServerConnection の pending。タブを開き直しても出る)。
 //
 // パスワードはアプリ用のトークンをもらうのに使うだけで、Go も画面も覚えない(0019 の決定事項 2)。
 // つなぎ先を settings.json か環境変数に手で書いてあれば、そちらが強いので、ここでは表示だけ(決定事項 5)。
@@ -21,8 +24,8 @@ export function ServerSettings({ disabled, onError }: { disabled: boolean; onErr
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState<string | null>(null); // つないだ / 戻したあとの様子(起動し直す)
 
+  const reload = useCallback(() => ChatService.ServerConnection().then(setConn, err => onError(errorMessage(err))), [onError]);
   useEffect(() => {
     ChatService.ServerConnection().then(c => {
       setConn(c);
@@ -48,26 +51,33 @@ export function ServerSettings({ disabled, onError }: { disabled: boolean; onErr
 
   if (!conn) return null;
   const handWritten = conn.source === "settings" || conn.source === "env";
-  const done = status !== null; // つなぎ先を変えたら、起動し直すまで何もさせない
-  const off = disabled || busy || done;
+  const off = disabled || busy;
 
   const check = () => run(async () => setProbe(await ChatService.CheckServer(url.trim(), "")));
   // 指紋を信頼して、もう一度確かめる(ここで初めて aibow-server にリクエストを送る。ログインが要るかが分かる)
   const trust = (fp: string) => run(async () => setProbe(await ChatService.CheckServer(url.trim(), fp)));
   const connect = (p: Probe) => run(async () => {
     const fingerprint = p.https && !p.systemTrusted ? p.fingerprint ?? "" : "";
-    const r = await ChatService.ConnectServer({ url: p.url, fingerprint, name: p.login ? name : "", password: p.login ? password : "" });
+    await ChatService.ConnectServer({ url: p.url, fingerprint, name: p.login ? name : "", password: p.login ? password : "" });
     setPassword("");
-    setStatus(r.restart ? "aibow-server につなぎます。起動し直しています…" : "保存しました。aibow を起動し直すと aibow-server につなぎます");
+    setProbe(null);
+    await reload();
   });
   const disconnect = () => run(async () => {
-    const r = await ChatService.DisconnectServer();
-    setStatus(r.restart ? "アプリの中で動かす形に戻します。起動し直しています…" : "保存しました。aibow を起動し直すとアプリの中で動かす形に戻ります");
+    await ChatService.DisconnectServer();
+    await reload();
   });
 
   return (
     <>
       <h2 className="section">今の形</h2>
+      {conn.pending && (
+        <p className="server-status" role="status">
+          {conn.pending === "server"
+            ? `保存しました。aibow を起動し直すと、aibow-server(${conn.pendingUrl})につなぎます`
+            : "保存しました。aibow を起動し直すと、アプリの中で動かす形に戻ります"}
+        </p>
+      )}
       <CurrentRows conn={conn} />
       {conn.plain && <p className="hint">アプリ用のトークンを包まずに保存しています(この OS では包めません)</p>}
       {handWritten && (
@@ -118,7 +128,7 @@ export function ServerSettings({ disabled, onError }: { disabled: boolean; onErr
             </form>
           )}
 
-          {conn.source === "screen" && (
+          {(conn.pending === "server" || (conn.pending === "" && conn.source === "screen")) && (
             <>
               <h2 className="section">アプリの中で動かす</h2>
               <button
@@ -132,7 +142,6 @@ export function ServerSettings({ disabled, onError }: { disabled: boolean; onErr
           )}
         </>
       )}
-      {status && <p className="server-status">{status}</p>}
     </>
   );
 }

@@ -602,7 +602,7 @@ nav.conversations.collapsed .settings.active { color: var(--accent); }
 .fingerprint-value { flex: 1 1 100%; min-width: 0; overflow-wrap: anywhere; user-select: all; }
 .fingerprint-box button { display: inline-flex; align-items: center; gap: 4px; }
 .server-login .hint { display: flex; align-items: center; gap: 4px; margin-top: 10px; }
-.server-status { margin-top: 12px; color: var(--accent); }
+.server-status { margin: 4px 0 12px; padding: 8px 10px; border: 1px solid var(--accent); border-radius: 6px; color: var(--text); }
 .host-setting.expired .host-value { color: var(--error); }
 /* 表示だけの設定。変え方は見出しの横の i の吹き出しに出す */
 .settings-info { color: var(--muted); align-self: center; cursor: help; }

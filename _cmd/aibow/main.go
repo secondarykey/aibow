@@ -15,7 +15,7 @@
 //
 //	main.go    … 起動(このファイル)
 //	config.go  … 環境変数から設定を読む(settings.json は aibow.LoadSettingsFile、MCP のサーバーは startMCP。aibow-server のつなぎ先は loadServer)
-//	connection.go … 画面から aibow-server につなぐ・ログインする・戻す(connection.json。0019)と、起動し直す
+//	connection.go … 画面から aibow-server につなぐ・ログインする・戻す(connection.json。0019。起動し直すと切り替わる)
 //	service.go … 画面から呼ばれるメソッドを Wails に渡す(中身はルートの ui パッケージ。モデル・会話・設定・送信と、モデルを扱う係)
 //	frontend/  … 画面(React + TypeScript)。Vite でビルドした結果は、共有のパッケージ web(リポジトリのルートの web/dist/app)に出て、実行ファイルに埋め込まれる
 //	build/     … wails3 build / wails3 dev の設定(アプリ名、アイコン、OS ごとの手順)
@@ -66,19 +66,11 @@ func main() {
 	// ログの出口を最初に組む(設定の読み込みのログから残すため)。aibow のライブラリのログも、アプリのログもここに集まる
 	logs, logNotices := startLog()
 	defer logs.Close()
-	// 画面でつなぎ先を変えたら、ほかの後片付け(モデルの解放・DB を閉じる)が済んでから起動し直す(0019 の決定事項 1)。
-	// defer は後に書いたものから動くので、ログを閉じる直前に動く
-	var conn *connection
-	defer func() {
-		if conn != nil && conn.restart.Load() {
-			relaunch()
-		}
-	}()
 
 	// 起動に失敗しても(lib が無いなど)ウィンドウは出し、理由を画面に表示する。
 	// リリース版(wails3 build)はコンソールが無く、ログだけでは何も見えずに終わってしまうため。
 	cfg, err := loadConfig()
-	conn = newConnection(cfg)
+	conn := newConnection(cfg)
 	// ログが書けない・前回は異常終了した、などは起動を止めず、画面のお知らせで伝える
 	cfg.notices = append(cfg.notices, logNotices...)
 	var mcpm *client.Manager

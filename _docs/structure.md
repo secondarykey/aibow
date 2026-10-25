@@ -65,7 +65,7 @@ Ollama が保存したファイルを aibow が直接読むので、Ollama は�
 | `_cmd/aibow-mcp/` | 自作の MCP のサーバーの exe(標準入出力で話す)。`main.go` は引数の作業フォルダを読んで `mcp/server` を動かすだけ、`log.go` はログの出口(アプリと同じフォルダの `aibow-mcp_<日付>.log`)、`version` / `appversion.go` はアプリと同じバージョン(`_cmd/aibow/version` の写し)。ルートのモジュールに入っている |
 | `_cmd/aibow/main.go` | デスクトップアプリの起動(Wails のアプリとウィンドウを作る) |
 | `_cmd/aibow/config.go` | 環境変数から設定を読む(`settings.json` も読み、aibow-server のつなぎ先を決める。MCP の係を作るのは `main.go`) |
-| `_cmd/aibow/connection.go` | 設定の画面の「サーバー」から呼ぶメソッド(つなぎ先を確かめる・ログインしてつなぐ・戻す)と、変えたあとに起動し直す仕組み(0019) |
+| `_cmd/aibow/connection.go` | 設定の画面の「サーバー」から呼ぶメソッド(つなぎ先を確かめる・ログインしてつなぐ・戻す。起動し直すと切り替わる。0019) |
 | `_cmd/aibow/service.go` | `ui/service.go` のメソッドを Wails に渡す(`ChatService`)。Wails が要るもの(フォルダを選ぶダイアログ・画面へのイベント)だけを持つ |
 | `_cmd/aibow/frontend/src/` | チャット画面(React + TypeScript)。`App.tsx` が全体、`backend.ts` が Go を呼ぶ係(Go を呼ぶのはここだけ。中身はデスクトップの `backendWails.ts` とブラウザの `backendWeb.ts`)、`use*.ts` が Go とのやり取り、`components/` が表示 |
 | `_cmd/aibow/frontend/bindings/` | `wails3 generate bindings` が作る、Go のメソッドを呼ぶ関数と型(自動生成。手で直さない) |

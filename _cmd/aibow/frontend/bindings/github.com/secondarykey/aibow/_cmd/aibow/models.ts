@@ -20,16 +20,6 @@ export interface ConnectRequest {
 }
 
 /**
- * ConnectResult は、つなぎ先を変えたあとどうなるか。
- */
-export interface ConnectResult {
-    /**
-     * Restart は、アプリが自分で起動し直すか(false なら、手で起動し直す。wails3 dev)
-     */
-    "restart": boolean;
-}
-
-/**
  * ServerConnection は、設定の画面の「サーバー」のタブに出す今の形。
  */
 export interface ServerConnection {
@@ -71,7 +61,8 @@ export interface ServerConnection {
     "plain": boolean;
 
     /**
-     * ManualRestart は、つなぎ先を変えたら手で起動し直すか(wails3 dev。決定事項 16)
+     * Pending は、保存したがまだ効いていない形("server"・"direct"。起動し直すと切り替わる)。PendingURL はそのつなぎ先
      */
-    "manualRestart": boolean;
+    "pending": string;
+    "pendingUrl": string;
 }

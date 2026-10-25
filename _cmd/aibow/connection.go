@@ -4,11 +4,12 @@ package main
 //
 //	ServerConnection … 今の形(アプリの中で動かす / aibow-server に誰としてつないでいるか)と、つなぎ先をどこで決めたか
 //	CheckServer      … つなぎ先を確かめる(つながるか・ログインが要るか・証明書の指紋)
-//	ConnectServer    … ログインしてアプリ用のトークンをもらい、connection.json に書いて、起動し直す
-//	DisconnectServer … トークンを aibow-server で消し、connection.json を消して、起動し直す(アプリの中で動かす形に戻す)
+//	ConnectServer    … ログインしてアプリ用のトークンをもらい、connection.json に書く
+//	DisconnectServer … トークンを aibow-server で消し、connection.json を消す(アプリの中で動かす形に戻す)
 //
 // 切り替えると生成の口(engine か api/client)も会話の保存先(aibow.db か server.db)も丸ごと替わるので、起動したまま替えず、
-// 保存してアプリが自分で起動し直す(決定事項 1)。起動の流れ(main.go)は今のまま使える。
+// 保存して、起動し直すと切り替わる(起動の流れ main.go は今のまま使える)。アプリは自分で起動し直さない(2026-10-26、ユーザーと決め直した。決定事項 1)。
+// 起動し直すまでは前の形のまま動くので、画面は「起動し直すと切り替わります」を出し続ける(ServerConnection の Pending)。
 // 手で書いた値(settings.json・環境変数)があれば、そちらが強いので画面からは変えない(決定事項 5)。
 // デスクトップのアプリだけのメソッドなので ui ではなくここに置く(ブラウザの画面用の口からは呼べない)。
 
@@ -18,16 +19,13 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
-	"sync/atomic"
+	"sync"
 	"time"
 
 	"github.com/secondarykey/aibow"
 	apiclient "github.com/secondarykey/aibow/api/client"
 	"github.com/secondarykey/aibow/log"
-
-	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 // connection は、つなぎ先を決めるのに要るもの(起動のときの設定から)。ChatService が持つ。
@@ -35,16 +33,18 @@ type connection struct {
 	path         string               // connection.json
 	settingsPath string               // settings.json(手で書いたときに、どこに書いてあるかを画面に出す)
 	source       string               // つなぎ先をどこで決めたか(serverSettings など。つながないなら空)
-	url          string               // 今のつなぎ先
-	file         aibow.ConnectionFile // 起動のときに読んだ connection.json
-	key          string               // 今のトークン(画面で決めたとき。ログアウトで消すため)
+	url          string               // 今動いている形のつなぎ先
+	file         aibow.ConnectionFile // 起動のときに読んだ connection.json(今動いている形)
 
-	// restart は、起動し直すよう頼まれたか(main がウィンドウを閉じたあとに見る)
-	restart atomic.Bool
+	// 保存したもの(起動し直すと効く)。起動し直す前に、もう一度つなぎ直す・戻すこともあるので、今動いている形とは分けて持つ
+	mu      sync.Mutex
+	saved   aibow.ConnectionFile // 今の connection.json の中身(消したら空)
+	key     string               // saved のトークン(ログアウトのときに aibow-server で消すため)
+	pending string               // 保存したが、まだ効いていない形("server"・"direct"。無ければ空)
 }
 
 func newConnection(cfg appConfig) *connection {
-	c := &connection{path: cfg.connPath, settingsPath: cfg.settingsPath, source: cfg.serverSource, url: cfg.serverURL, file: cfg.conn}
+	c := &connection{path: cfg.connPath, settingsPath: cfg.settingsPath, source: cfg.serverSource, url: cfg.serverURL, file: cfg.conn, saved: cfg.conn}
 	if cfg.serverSource == serverScreen {
 		c.key = cfg.serverKey
 	}
@@ -69,17 +69,21 @@ type ServerConnection struct {
 	Expired bool `json:"expired"`
 	// Plain は、トークンを包まずに保存しているか(この OS では包めない。0019 の決定事項 4)
 	Plain bool `json:"plain"`
-	// ManualRestart は、つなぎ先を変えたら手で起動し直すか(wails3 dev。決定事項 16)
-	ManualRestart bool `json:"manualRestart"`
+	// Pending は、保存したがまだ効いていない形("server"・"direct"。起動し直すと切り替わる)。PendingURL はそのつなぎ先
+	Pending    string `json:"pending"`
+	PendingURL string `json:"pendingUrl"`
 }
 
 // ServerConnection は今の形を返す。
 func (s *ChatService) ServerConnection() ServerConnection {
 	c := s.conn
-	v := ServerConnection{Mode: "direct", Source: c.source, URL: c.url, ManualRestart: isDev}
+	v := ServerConnection{Mode: "direct", Source: c.source, URL: c.url}
 	if c.url != "" {
 		v.Mode = "server"
 	}
+	c.mu.Lock()
+	v.Pending, v.PendingURL = c.pending, c.saved.ServerURL
+	c.mu.Unlock()
 	switch c.source {
 	case serverSettings:
 		v.SourcePath = absPath(c.settingsPath)
@@ -100,8 +104,11 @@ func (s *ChatService) CheckServer(url, fingerprint string) (apiclient.Probe, err
 	if err := s.conn.editable(); err != nil {
 		return apiclient.Probe{}, err
 	}
-	if fingerprint == "" && sameServer(url, s.conn.file.ServerURL) {
-		fingerprint = s.conn.file.Fingerprint // 前に信頼した指紋(つなぎ直すとき)
+	s.conn.mu.Lock()
+	saved := s.conn.saved
+	s.conn.mu.Unlock()
+	if fingerprint == "" && sameServer(url, saved.ServerURL) {
+		fingerprint = saved.Fingerprint // 前に信頼した指紋(つなぎ直すとき)
 	}
 	return apiclient.ProbeServer(context.Background(), url, fingerprint)
 }
@@ -116,77 +123,83 @@ type ConnectRequest struct {
 	Password string `json:"password"`
 }
 
-// ConnectResult は、つなぎ先を変えたあとどうなるか。
-type ConnectResult struct {
-	// Restart は、アプリが自分で起動し直すか(false なら、手で起動し直す。wails3 dev)
-	Restart bool `json:"restart"`
-}
-
-// ConnectServer は aibow-server につなぐ:もう一度確かめ、ログインが要ればアプリ用のトークンをもらって、connection.json に書き、起動し直す。
-// 確かめられないつなぎ先は書かない(起動し直してから「つながりません」となるのを避ける。決定事項 8)。
-func (s *ChatService) ConnectServer(req ConnectRequest) (ConnectResult, error) {
+// ConnectServer は aibow-server につなぐように決める:もう一度確かめ、ログインが要ればアプリ用のトークンをもらって、connection.json に書く。
+// 起動し直すと切り替わる。確かめられないつなぎ先は書かない(起動し直してから「つながりません」となるのを避ける。決定事項 8)。
+func (s *ChatService) ConnectServer(req ConnectRequest) error {
 	c := s.conn
 	if err := c.editable(); err != nil {
-		return ConnectResult{}, err
+		return err
 	}
 	p, err := apiclient.ProbeServer(context.Background(), req.URL, req.Fingerprint)
 	if err != nil {
-		return ConnectResult{}, err
+		return err
 	}
 	if !p.Trusted {
-		return ConnectResult{}, fmt.Errorf("aibow-server の証明書の指紋(%s)を確かめてから、つないでください", p.Fingerprint)
+		return fmt.Errorf("aibow-server の証明書の指紋(%s)を確かめてから、つないでください", p.Fingerprint)
 	}
 	f := aibow.ConnectionFile{ServerURL: p.URL}
 	if p.HTTPS && !p.SystemTrusted {
 		f.Fingerprint = p.Fingerprint
 	}
+	token := ""
 	if p.Login {
-		if err := login(&f, req); err != nil {
-			return ConnectResult{}, err
+		if token, err = login(&f, req); err != nil {
+			return err
 		}
 	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	// ほかの aibow-server につなぎ替えるときは、前のトークンを消しておく(同じサーバーなら、同じ PC の前のトークンは今ので置き換わった)
-	if c.key != "" && !sameServer(c.file.ServerURL, f.ServerURL) {
+	if c.key != "" && !sameServer(c.saved.ServerURL, f.ServerURL) {
 		c.revoke()
 	}
 	if err := f.Save(c.path); err != nil {
-		return ConnectResult{}, err
+		return err
 	}
-	log.Noticef("aibow-server につなぐように決めました: %s(%s。%s)", f.ServerURL, cmp.Or(f.User, "ログインなし"), absPath(c.path))
-	return ConnectResult{Restart: s.restart()}, nil
+	c.saved, c.key, c.pending = f, token, "server"
+	log.Noticef("aibow-server につなぐように決めました: %s(%s。%s)。起動し直すと切り替わります", f.ServerURL, cmp.Or(f.User, "ログインなし"), absPath(c.path))
+	return nil
 }
 
 // login は名前とパスワードでアプリ用のトークンをもらい、f に入れる(包むのは SetToken)。もらったトークンで本当につながるかも確かめる。
-func login(f *aibow.ConnectionFile, req ConnectRequest) error {
+// もらったトークンも返す(起動し直す前にログアウトするとき、aibow-server で消すため)。
+func login(f *aibow.ConnectionFile, req ConnectRequest) (string, error) {
 	if strings.TrimSpace(req.Name) == "" || req.Password == "" {
-		return errors.New("この aibow-server はログインが要ります。名前とパスワードを入れてください")
+		return "", errors.New("この aibow-server はログインが要ります。名前とパスワードを入れてください")
 	}
 	cl := apiclient.New(f.ServerURL)
 	cl.PinCert(f.Fingerprint)
 	got, err := cl.AppLogin(strings.TrimSpace(req.Name), req.Password, deviceName())
 	if err != nil {
-		return err
+		return "", err
 	}
 	cl.SetKey(got.Token)
 	if _, _, err := cl.Me(); err != nil {
-		return fmt.Errorf("ログインはできましたが、もらったトークンでつながりません: %w", err)
+		return "", fmt.Errorf("ログインはできましたが、もらったトークンでつながりません: %w", err)
 	}
 	f.User, f.ExpiresAt = got.Name, got.ExpiresAt
-	return f.SetToken(got.Token)
+	return got.Token, f.SetToken(got.Token)
 }
 
-// DisconnectServer はアプリの中で動かす形に戻す:トークンを aibow-server で消し(つながらなければ手元だけ)、connection.json を消して、起動し直す。
-func (s *ChatService) DisconnectServer() (ConnectResult, error) {
+// DisconnectServer はアプリの中で動かす形に戻すように決める:トークンを aibow-server で消し(つながらなければ手元だけ)、connection.json を消す。
+// 起動し直すと切り替わる。
+func (s *ChatService) DisconnectServer() error {
 	c := s.conn
 	if err := c.editable(); err != nil {
-		return ConnectResult{}, err
+		return err
 	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.revoke()
 	if err := aibow.RemoveConnectionFile(c.path); err != nil {
-		return ConnectResult{}, err
+		return err
 	}
-	log.Noticef("aibow-server につなぐのをやめ、アプリの中で動かす形に戻しました(%s を消しました)", absPath(c.path))
-	return ConnectResult{Restart: s.restart()}, nil
+	c.saved, c.key, c.pending = aibow.ConnectionFile{}, "", "direct"
+	if c.url == "" {
+		c.pending = "" // 今もアプリの中で動いている(起動し直す前につないだのを取りやめた)ので、起動し直さなくてよい
+	}
+	log.Noticef("アプリの中で動かす形に戻すように決めました(%s を消しました)。起動し直すと切り替わります", absPath(c.path))
+	return nil
 }
 
 // editable は、画面でつなぎ先を変えてよいか(手で書いてあれば変えない)。
@@ -200,49 +213,20 @@ func (c *connection) editable() error {
 	return nil
 }
 
-// revoke は、今のトークンを aibow-server で消す(ログアウト)。つながらなくても止めない(手元の connection.json は呼ぶ側が消す・書き換える)。
+// revoke は、保存してあるトークンを aibow-server で消す(ログアウト)。つながらなくても止めない(手元の connection.json は呼ぶ側が消す・書き換える)。
+// mu を持って呼ぶ。
 func (c *connection) revoke() {
 	if c.key == "" {
 		return
 	}
-	cl := apiclient.New(c.file.ServerURL)
-	cl.PinCert(c.file.Fingerprint)
+	cl := apiclient.New(c.saved.ServerURL)
+	cl.PinCert(c.saved.Fingerprint)
 	cl.SetKey(c.key)
 	if err := cl.RevokeToken(); err != nil {
 		log.Warnf("aibow-server でアプリ用のトークンを消せませんでした(手元からは消します。期限の 10 日で使えなくなります): %v", err)
 		return
 	}
-	log.Noticef("aibow-server からログアウトしました: %s(%s)", c.file.ServerURL, c.file.User)
-}
-
-// restart は、ウィンドウを閉じて起動し直すよう頼む。wails3 dev では起動し直さず false(画面が「起動し直してください」と出す。決定事項 16)。
-// 返事が画面に届いてから閉じるよう、少し待ってから閉じる。
-func (s *ChatService) restart() bool {
-	if isDev {
-		return false
-	}
-	s.conn.restart.Store(true)
-	go func() {
-		time.Sleep(500 * time.Millisecond)
-		application.Get().Quit()
-	}()
-	return true
-}
-
-// relaunch は、このアプリをもう一度起動する(同じ引数・同じカレントフォルダ・同じ環境変数)。古いほうは、このあと終わる。
-func relaunch() {
-	exe, err := os.Executable()
-	if err != nil {
-		log.Errorf("起動し直せません(自分の場所が分かりません。手で起動してください): %v", err)
-		return
-	}
-	cmd := exec.Command(exe, os.Args[1:]...)
-	if err := cmd.Start(); err != nil {
-		log.Errorf("起動し直せません(手で起動してください): %v", err)
-		return
-	}
-	log.Noticef("起動し直しました(新しいプロセス: %d)", cmd.Process.Pid)
-	cmd.Process.Release()
+	log.Noticef("aibow-server からログアウトしました: %s(%s)", c.saved.ServerURL, c.saved.User)
 }
 
 // deviceName は、aibow-server に送るこの PC の名前(トークンは PC ごとに1本。決定事項 9)。
