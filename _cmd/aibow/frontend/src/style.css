@@ -478,8 +478,8 @@ nav.conversations.collapsed .settings.active { color: var(--accent); }
 .settings-view label.check { display: flex; align-items: center; gap: 6px; color: var(--text); }
 .settings-view code { font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; }
 .settings-view textarea, .settings-view input[type=range], .settings-view input[type=number], .settings-view select { width: 100%; }
-.settings-view input[type=text] { width: 100%; }
-.settings-view input[type=number], .settings-view input[type=text], .settings-view select {
+.settings-view input[type=text], .settings-view input[type=password] { width: 100%; }
+.settings-view input[type=number], .settings-view input[type=text], .settings-view input[type=password], .settings-view select {
   font: inherit; font-size: 13px; padding: 5px 6px; border-radius: 6px;
   border: 1px solid var(--border); background: var(--bg); color: var(--text);
 }
@@ -594,6 +594,16 @@ nav.conversations.collapsed .settings.active { color: var(--accent); }
 }
 .secret-label { flex-shrink: 0; color: var(--muted); font-size: 12px; }
 .secret-value { flex: 1; min-width: 0; overflow-wrap: anywhere; font-family: ui-monospace, Consolas, monospace; font-size: 12px; user-select: all; }
+/* 「サーバー」のタブ(0019)。まだ信頼していない証明書の指紋と、つないだあとの様子 */
+.fingerprint-box {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; padding: 8px 10px;
+  border: 1px solid var(--border); border-radius: 6px; min-width: 0;
+}
+.fingerprint-value { flex: 1 1 100%; min-width: 0; overflow-wrap: anywhere; user-select: all; }
+.fingerprint-box button { display: inline-flex; align-items: center; gap: 4px; }
+.server-login .hint { display: flex; align-items: center; gap: 4px; margin-top: 10px; }
+.server-status { margin-top: 12px; color: var(--accent); }
+.host-setting.expired .host-value { color: var(--error); }
 /* 表示だけの設定。変え方は見出しの横の i の吹き出しに出す */
 .settings-info { color: var(--muted); align-self: center; cursor: help; }
 .host-settings { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 16px; row-gap: 4px; }

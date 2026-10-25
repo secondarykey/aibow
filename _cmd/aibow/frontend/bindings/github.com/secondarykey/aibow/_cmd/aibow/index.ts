@@ -5,3 +5,9 @@ import * as ChatService from "./chatservice.js";
 export {
     ChatService
 };
+
+export type {
+    ConnectRequest,
+    ConnectResult,
+    ServerConnection
+} from "./models.js";

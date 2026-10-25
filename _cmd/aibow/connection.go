@@ -64,7 +64,7 @@ type ServerConnection struct {
 	Fingerprint string `json:"fingerprint"`
 	// User はログインした名前、ExpiresAt はトークンの期限(画面でつないで、ログインしたとき)
 	User      string    `json:"user"`
-	ExpiresAt time.Time `json:"expiresAt"`
+	ExpiresAt time.Time `json:"expiresAt,omitzero"`
 	// Expired はトークンの期限が切れているか
 	Expired bool `json:"expired"`
 	// Plain は、トークンを包まずに保存しているか(この OS では包めない。0019 の決定事項 4)
@@ -94,17 +94,16 @@ func (s *ChatService) ServerConnection() ServerConnection {
 	return v
 }
 
-// CheckServer は、つなぎ先 url を確かめる(つながるか・ログインが要るか・証明書)。
+// CheckServer は、つなぎ先 url を確かめる(つながるか・ログインが要るか・証明書)。fingerprint は、人が画面で確かめて信頼した指紋(まだなら空)。
 // 自己署名の証明書で、まだ信頼していなければ、指紋だけを返す(trusted が false。画面が指紋を見せ、人が確かめる)。
-func (s *ChatService) CheckServer(url string) (apiclient.Probe, error) {
+func (s *ChatService) CheckServer(url, fingerprint string) (apiclient.Probe, error) {
 	if err := s.conn.editable(); err != nil {
 		return apiclient.Probe{}, err
 	}
-	pinned := ""
-	if sameServer(url, s.conn.file.ServerURL) {
-		pinned = s.conn.file.Fingerprint // 前に信頼した指紋(つなぎ直すとき)
+	if fingerprint == "" && sameServer(url, s.conn.file.ServerURL) {
+		fingerprint = s.conn.file.Fingerprint // 前に信頼した指紋(つなぎ直すとき)
 	}
-	return apiclient.ProbeServer(context.Background(), url, pinned)
+	return apiclient.ProbeServer(context.Background(), url, fingerprint)
 }
 
 // ConnectRequest は ConnectServer に渡すもの。

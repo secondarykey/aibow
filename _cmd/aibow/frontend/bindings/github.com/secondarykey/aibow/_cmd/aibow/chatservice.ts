@@ -10,6 +10,9 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 import * as aibow$0 from "../../models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as client$1 from "../../api/client/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as engine$0 from "../../engine/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -23,6 +26,10 @@ import * as ui$0 from "../../ui/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as uuid$0 from "../../../../../uuid/models.js";
+
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as $models from "./models.js";
 
 /**
  * Account は、aibow-server に誰としてつないでいるか(画面の一覧の下に名前を出す)。
@@ -66,6 +73,14 @@ export function BuiltinTools(): $CancellablePromise<aibow$0.KnownTool[] | null> 
 }
 
 /**
+ * CheckServer は、つなぎ先 url を確かめる(つながるか・ログインが要るか・証明書)。fingerprint は、人が画面で確かめて信頼した指紋(まだなら空)。
+ * 自己署名の証明書で、まだ信頼していなければ、指紋だけを返す(trusted が false。画面が指紋を見せ、人が確かめる)。
+ */
+export function CheckServer(url: string, fingerprint: string): $CancellablePromise<client$1.Probe> {
+    return $Call.ByID(3612261202, url, fingerprint);
+}
+
+/**
  * ChooseModelPlace は、置き場所を選ぶダイアログを出し(アプリの中で動かすときだけ使う。置き場所はモデルを読み込む PC のパスなので)、選んだフォルダ(kind が "dir")か GGUF のファイル(kind が "file")の
  * 絶対パスを返す。取り消したら空。足すのは AddModelPlace(選んだだけでは足さない)。
  */
@@ -96,6 +111,14 @@ export function Compact(id: uuid$0.UUID): $CancellablePromise<void> {
  */
 export function ConfirmTool(id: uuid$0.UUID, reqID: string, approved: boolean, reason: string, remember: aibow$0.ToolPolicy): $CancellablePromise<void> {
     return $Call.ByID(665849895, id, reqID, approved, reason, remember);
+}
+
+/**
+ * ConnectServer は aibow-server につなぐ:もう一度確かめ、ログインが要ればアプリ用のトークンをもらって、connection.json に書き、起動し直す。
+ * 確かめられないつなぎ先は書かない(起動し直してから「つながりません」となるのを避ける。決定事項 8)。
+ */
+export function ConnectServer(req: $models.ConnectRequest): $CancellablePromise<$models.ConnectResult> {
+    return $Call.ByID(768792652, req);
 }
 
 /**
@@ -145,6 +168,13 @@ export function DeleteConversation(id: uuid$0.UUID): $CancellablePromise<void> {
  */
 export function DeleteProfile(id: uuid$0.UUID): $CancellablePromise<void> {
     return $Call.ByID(648749573, id);
+}
+
+/**
+ * DisconnectServer はアプリの中で動かす形に戻す:トークンを aibow-server で消し(つながらなければ手元だけ)、connection.json を消して、起動し直す。
+ */
+export function DisconnectServer(): $CancellablePromise<$models.ConnectResult> {
+    return $Call.ByID(1665219790);
 }
 
 /**
@@ -270,6 +300,13 @@ export function SaveToProfile(conv: uuid$0.UUID, profile: uuid$0.UUID): $Cancell
  */
 export function Send(id: uuid$0.UUID, text: string): $CancellablePromise<void> {
     return $Call.ByID(2164379061, id, text);
+}
+
+/**
+ * ServerConnection は今の形を返す。
+ */
+export function ServerConnection(): $CancellablePromise<$models.ServerConnection> {
+    return $Call.ByID(3197122296);
 }
 
 /**

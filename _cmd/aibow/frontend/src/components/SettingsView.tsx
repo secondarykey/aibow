@@ -1,4 +1,5 @@
-// 設定の画面: タブで「基本設定」(画面)・「モデル」(モデルの一覧・置き場所・GPU の層数。0015 の 8-4)・「会話」(プロファイル・ツール)に分ける。
+// 設定の画面: タブで「基本設定」(画面)・「モデル」(モデルの一覧・置き場所・GPU の層数。0015 の 8-4)・「会話」(プロファイル・ツール)・
+// 「サーバー」(aibow-server につなぐ・戻す。デスクトップだけ。0019)に分ける。
 // 会話に関わらないアプリの設定と、会話の既定として使われる値を、同じ画面に混ぜないため(2026-10-19、ユーザーの指示)。
 // GPU の層数は、以前は基本設定で読み込み中のモデルの値だけを変えていたが、「モデル」のタブでモデルごとに変えるようにした。
 // ツールは、プロファイルの中の1つの一覧で決める(最初から使う・選べば使える・使えないはプロファイル、確認しないはこの PC。0014)。
@@ -14,6 +15,7 @@ import type { ServerInfo } from "../../bindings/github.com/secondarykey/aibow/mc
 import { ProfileSettings } from "./ProfileSettings";
 import { ModelSettings } from "./ModelSettings";
 import { UserSettings } from "./UserSettings";
+import { ServerSettings } from "./ServerSettings";
 import { isBrowser, me } from "../backend";
 import type { Models } from "../useModels";
 // Go の models パッケージ。"…/aibow/models" と書くと aibow パッケージの models.ts が選ばれるので、index まで書く
@@ -36,12 +38,14 @@ interface Props {
   onReadConversation(id: string): void; // 管理者がほかの人の会話を読むだけで開く(0018 の 11-2)
 }
 
-type Tab = "basic" | "model" | "conversation" | "users";
+type Tab = "basic" | "model" | "conversation" | "server" | "users";
 
 const TABS: { id: Tab; label: string; title: string }[] = [
   { id: "basic", label: "基本設定", title: "会話によらず、この PC で1つだけのもの(画面)" },
   { id: "model", label: "モデル", title: "モデルの一覧(読み込む / 降ろす・GPU の層数)と置き場所" },
   { id: "conversation", label: "会話", title: "プロファイル(新しい会話の既定・ツールの扱い)" },
+  // aibow-server につなぐ・戻すは、デスクトップのアプリだけ(0019。ブラウザは aibow-server そのものの画面)
+  { id: "server", label: "サーバー", title: "aibow-server につなぐ・ログインする・アプリの中で動かす形に戻す" },
   // 利用者の管理は、ブラウザでログインした管理者だけ(0018 の決定事項 7)
   { id: "users", label: "利用者", title: "aibow-server の利用者(作る・パスワードと API キーの作り直し・消す)" },
 ];
@@ -59,7 +63,7 @@ export function SettingsView({ onClose, errors, app, models, modelState, servers
         {errors.map(e => <div key={e.id} className="msg error">{e.text}</div>)}
 
         <div className="settings-tabs" role="tablist">
-          {TABS.filter(t => t.id !== "users" || (isBrowser && me.admin)).map(t => (
+          {TABS.filter(t => (t.id !== "users" || (isBrowser && me.admin)) && (t.id !== "server" || !isBrowser)).map(t => (
             <button
               key={t.id}
               role="tab"
@@ -83,6 +87,8 @@ export function SettingsView({ onClose, errors, app, models, modelState, servers
         {tab === "model" && <ModelSettings models={modelState} disabled={appDisabled} onError={onError} />}
 
         {tab === "users" && <UserSettings onError={onError} onRead={onReadConversation} />}
+
+        {tab === "server" && <ServerSettings disabled={appDisabled} onError={onError} />}
 
         {tab === "conversation" && (
           <>
