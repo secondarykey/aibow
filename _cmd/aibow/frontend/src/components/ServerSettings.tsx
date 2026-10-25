@@ -79,7 +79,7 @@ export function ServerSettings({ disabled, onError }: { disabled: boolean; onErr
       {!handWritten && (
         <>
           <h2 className="section">
-            aibow-server につなぐ
+            {conn.mode === "server" ? "つなぎ直す" : "aibow-server につなぐ"}
             <LuInfo
               className="settings-info"
               title="つなぐと、生成と会話の保存を aibow-server に頼みます(手元の会話は移しません)。つなぎ先を変えると、aibow が起動し直します"

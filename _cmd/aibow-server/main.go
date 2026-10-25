@@ -254,7 +254,7 @@ func logAddresses(c config, base string) {
 	if ip := net.ParseIP(c.Host); ip != nil && ip.IsUnspecified() {
 		log.Noticef("全部のネットワークで待ち受けます。ほかの PC からは、%s の %s をこの PC のアドレス(IP アドレスか名前)に替えてつなぎます", base, c.Host)
 	}
-	log.Noticef("画面のアプリのつなぎ先(settings.json の serverUrl / AIBOW_SERVER_URL): %s", base)
+	log.Noticef("画面のアプリのつなぎ先(設定の画面の「サーバー」か、settings.json の serverUrl / AIBOW_SERVER_URL): %s", base)
 	log.Noticef("OpenAI 互換のクライアント(Cline など)の Base URL: %s/v1", base)
 	log.Noticef("ブラウザで開く画面: %s/(会話は %s に保存します)", base, absPath(c.DBPath))
 	if c.Login {
