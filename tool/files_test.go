@@ -235,14 +235,18 @@ func TestReadFile(t *testing.T) {
 		t.Errorf("limit: %q, %v", got, err)
 	}
 
-	// 8,000 文字で切る。1行だけで超えるなら、その行を切って次へ進めるようにする
+	// 8,000 文字で切る
 	got, err = run(t, tl, "path", "many.txt")
 	if err != nil || len(got) > readMaxRunes+200 || !strings.Contains(got, "続きは offset=78 で読めます") {
 		t.Errorf("文字数: %d 文字 / 末尾 %q, %v", len(got), got[max(0, len(got)-80):], err)
 	}
+	// 長い行は 1,000 文字ごとに分けて、別の行として数える。続きも offset で読める(0025)
 	got, err = run(t, tl, "path", "wide.txt")
-	if err != nil || !strings.Contains(got, "1 行目は長いため、途中で切りました") || !strings.Contains(got, "続きは offset=2 で読めます") {
+	if err != nil || !strings.HasPrefix(got, "1\t"+strings.Repeat("あ", readWrap)+"\n2\t") || !strings.Contains(got, "(全 10 行のうち 1〜7 行目です。続きは offset=8 で読めます)") {
 		t.Errorf("長い行: 末尾 %q, %v", got[max(0, len(got)-120):], err)
+	}
+	if got, err := run(t, tl, "path", "wide.txt", "offset", "9"); err != nil || got != "9\t"+strings.Repeat("あ", 100)+"\n10\tnext" {
+		t.Errorf("長い行の続き: %q, %v", got, err)
 	}
 
 	if got, err := run(t, tl, "path", "empty.go"); err != nil || !strings.Contains(got, "空のファイル") {

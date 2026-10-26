@@ -23,9 +23,12 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 	"uuid"
 
 	"github.com/secondarykey/aibow/format"
@@ -71,6 +74,7 @@ func (cs *Conversations) runTurn(ctx context.Context, conv Conversation, history
 	var last *StoredMessage
 	calls := 0  // この送信でツールを実行した回数
 	broken := 0 // 呼び出しが全部読み取れなかった回が、いくつ続いているか
+	var failed repeatedFailure
 	for round := 1; ; round++ {
 		// 1. モデルに渡す内容を決める。2回目からは、ツールの結果を足しても収まるかを先に確かめる
 		if round > 1 {
@@ -125,6 +129,9 @@ func (cs *Conversations) runTurn(ctx context.Context, conv Conversation, history
 				if res, err = cs.fitResult(conv.Settings, history, res); err != nil {
 					return last, err
 				}
+				if c.Error == "" { // 書式の崩れは maxBrokenRounds で止める
+					failed.note(c, res)
+				}
 			}
 			if err := cs.save(ctx, res, ""); err != nil {
 				return last, err
@@ -139,6 +146,10 @@ func (cs *Conversations) runTurn(ctx context.Context, conv Conversation, history
 		}
 		if overLimit {
 			return last, fmt.Errorf("1回の送信で実行できるツール(%d 回)を超えたため、止めました。続けるときは、もう一度送信してください", maxToolCalls)
+		}
+		if err := failed.stop(); err != nil {
+			log.Warn(err.Error())
+			return last, err
 		}
 		if allBroken(r.ToolCalls) {
 			broken++
@@ -481,12 +492,13 @@ func (cs *Conversations) execute(ctx context.Context, t tool.Tool, args tool.Arg
 	}
 }
 
-// fitResult は、結果を足すと今の組が会話の上限を超えるとき、結果の代わりに「長すぎて渡せない」エラーの結果にする。
+// fitResult は、結果を足すと今の組が会話の上限を超えるとき、入る長さで結果を切り、どこで切ったかと続きの取り方を添える(0025 の決定事項 4)。
 //
 // 結果をそのまま保存すると、次の生成の前の checkFits で止まり、会話は上限を超えたまま残ってしまう
 // (最新の組は要約しないので、次の質問を送るまで「今すぐ要約」もできない)。
-// 代わりにエラーとして返せば、モデルは範囲を絞って呼び直せる(失敗しても送信は止めない、と同じ考え方)。
-// ツールは実行済みなので、結果を捨てるだけ。
+// 以前は結果を捨てて「範囲を絞って呼び直して」とだけ返していたが、小さいモデルはどう変えればよいか決められず、
+// 同じ呼び出しを繰り返した(2026-10-25。_docs/tuning.md の「仕様の相談を試す」)。渡せる分を渡し、続きは具体的な数で伝える。
+// 1行も入らないほど残りが無ければ、今までどおり渡さずにエラーの結果にする(失敗しても送信は止めない、と同じ考え方)。
 func (cs *Conversations) fitResult(set ConversationSettings, history []StoredMessage, res StoredMessage) (StoredMessage, error) {
 	limit := cs.limitsOf(set).history
 	with, err := cs.turnTokens(set, append(slices.Clip(history), res))
@@ -497,11 +509,108 @@ func (cs *Conversations) fitResult(set ConversationSettings, history []StoredMes
 	if err != nil {
 		return res, err
 	}
-	res.Content = fmt.Sprintf("%s結果が長すぎて会話の上限に入らないため、渡せません(結果は約 %d トークン、残りは約 %d トークン)。"+
-		"範囲を絞って呼び直してください(list_files なら path で下のフォルダを、read_file なら offset と limit で行を指定する)",
+	// 残りを全部使うと、モデルが次に書く呼び出しや答えが入らない(次の回の checkFits で止まる)。残りの 3/4 までにして、1/4 を空けておく
+	cut, ok, err := cs.cutToFit(set, history, res, without+(limit-without)*3/4)
+	if err != nil {
+		return res, err
+	}
+	name := res.ToolResult.Call.Name
+	if ok {
+		log.Infof("ツール %s の結果が会話の上限に入らないので、切って渡します(結果は約 %d トークン、残りは約 %d トークン。渡すのは %d 文字のうち %d 文字)",
+			name, with-without, limit-without, utf8.RuneCountInString(res.Content), utf8.RuneCountInString(cut.Content))
+		return cut, nil
+	}
+	log.Infof("ツール %s の結果が会話の上限に入らず、残りが少ないので渡しません(結果は約 %d トークン、残りは約 %d トークン)", name, with-without, max(0, limit-without))
+	res.Content = fmt.Sprintf("%s結果が長すぎて会話の上限に入らないため、渡せません(結果は約 %d トークン、会話の上限の残りは約 %d トークンしかありません)。"+
+		"これ以上ツールの結果を読めないので、ここまでに分かったことで答えてください",
 		errorPrefix, with-without, max(0, limit-without))
 	res.ToolResult.Error = true
 	return res, nil
+}
+
+// cutToFit は、結果の先頭から、今の組が target トークンに収まる長さだけを残し、切ったことと続きの取り方を書き添える。
+// 長さは二分探索で決める(数えるのは毎回、モデルに渡すのと同じ形の文字列。トークンと文字数の比は文の種類で違うため)。
+// 行の切れ目で切る(read_file の結果は行番号の付いた行なので、続きを offset で言える)。何も残らなければ ok が false。
+func (cs *Conversations) cutToFit(set ConversationSettings, history []StoredMessage, res StoredMessage, target int) (StoredMessage, bool, error) {
+	runes := []rune(res.Content)
+	var best StoredMessage
+	found := false
+	lo, hi := 1, len(runes)-1 // 残す文字数の候補
+	for lo <= hi {
+		mid := (lo + hi) / 2
+		c := res
+		c.Content = cutResult(res.ToolResult.Call.Name, runes, mid)
+		if c.Content == "" {
+			lo = mid + 1
+			continue
+		}
+		n, err := cs.turnTokens(set, append(slices.Clip(history), c))
+		if err != nil {
+			return res, false, err
+		}
+		if n <= target {
+			best, found = c, true
+			lo = mid + 1
+		} else {
+			hi = mid - 1
+		}
+	}
+	return best, found, nil
+}
+
+// readLine は、read_file の結果の行の頭(行番号とタブ)。
+var readLine = regexp.MustCompile(`(?m)^(\d+)\t`)
+
+// cutResult は、結果の先頭 keep 文字を行の切れ目まで戻して残し、切ったことと続きの取り方を書き添える。
+// 1行目の途中でしか切れない(改行が無い長い結果)なら、そこで切る。read_file の結果は行の途中では切らない(続きを offset で言えないため)。
+// 1行も残らないなら空。
+func cutResult(tool string, runes []rune, keep int) string {
+	text := string(runes[:keep])
+	i := strings.LastIndexByte(text, '\n')
+	if i >= 0 {
+		text = text[:i]
+	}
+	if tool == "read_file" {
+		m := readLine.FindAllStringSubmatch(text, -1)
+		if i < 0 || len(m) == 0 {
+			return ""
+		}
+		last := m[len(m)-1][1]
+		n, _ := strconv.Atoi(last)
+		return fmt.Sprintf("%s\n(会話の上限に入らないため、%d 行目までで切りました。続きは offset=%d で読めます)", text, n, n+1)
+	}
+	return fmt.Sprintf("%s\n(会話の上限に入らないため、ここで切りました。渡したのは結果の約 %d%% です。続きが要るときは、範囲を絞って呼び直してください)",
+		text, len([]rune(text))*100/len(runes))
+}
+
+// repeatedFailure は、同じ呼び出しが同じエラーで続いたかを見る(0025 の決定事項 6)。
+// 小さいモデルは、エラーの結果を読んでも呼び出しを変えずに繰り返すことがある。maxToolCalls(20 回)まで待たずに止め、理由と対処を出す。
+type repeatedFailure struct {
+	last   string // 直前のエラーの呼び出しと結果(エラーでなければ空)
+	twice  bool
+	call   string
+	result string
+}
+
+func (f *repeatedFailure) note(c format.ToolCall, res StoredMessage) {
+	if !res.ToolResult.Error {
+		f.last = ""
+		return
+	}
+	key := fmt.Sprintf("%s %v\x00%s", c.Name, c.Args, res.Content)
+	if key == f.last {
+		f.twice, f.call, f.result = true, c.Name, res.Content
+	}
+	f.last = key
+}
+
+// stop は、同じ呼び出しが同じエラーで2回続いていたら、止める理由のエラーを返す。
+func (f *repeatedFailure) stop() error {
+	if !f.twice {
+		return nil
+	}
+	return fmt.Errorf("ツール %s を同じ引数で呼び、同じエラーが2回続いたため、止めました(%s)。"+
+		"会話の上限を上げるか、読む範囲やファイルを指定して頼み直してください", f.call, firstLine(strings.TrimPrefix(f.result, errorPrefix)))
 }
 
 // toolMessage はツールの結果の発言を作る。

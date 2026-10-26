@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -355,13 +357,13 @@ func TestSummaryIncludesToolCalls(t *testing.T) {
 	}
 }
 
-// ツールの結果を足すと今の組が会話の上限を超えるときは、結果の代わりに「長すぎて渡せない」エラーを返し、ループは続ける。
-// モデルは範囲を絞って呼び直せる。会話は上限を超えた状態にならない
-func TestAgentRejectsResultThatDoesNotFit(t *testing.T) {
+// ツールの結果を足すと今の組が会話の上限を超えるときは、入る分だけ切って渡し、切ったことを書き添える。ループは続ける(0025)。
+// 会話は上限を超えた状態にならない
+func TestAgentCutsResultToFit(t *testing.T) {
 	huge := fakeTool{name: "huge", run: func(context.Context, tool.Args) (string, error) {
 		return strings.Repeat("大", 5000), nil
 	}}
-	g := &fakeGen{replies: []fakeReply{{toolCalls: []format.ToolCall{toolCall("huge")}}, {content: "範囲を絞ります"}}}
+	g := &fakeGen{replies: []fakeReply{{toolCalls: []format.ToolCall{toolCall("huge")}}, {content: "読みました"}}}
 	cs, _, c := newToolConversation(t, g, huge)
 	setLimits(t, cs, &c, 4000, 100)
 	evs := sendRaw(cs, c, "大きいのを")
@@ -370,14 +372,83 @@ func TestAgentRejectsResultThatDoesNotFit(t *testing.T) {
 	}
 	_, ms, _ := cs.Get(ctx, c.ID)
 	res := ms[2]
-	if res.Role != "tool" || !res.ToolResult.Error || !strings.Contains(res.Content, "会話の上限に入らないため、渡せません") || strings.Contains(res.Content, "大大") {
+	if res.Role != "tool" || res.ToolResult.Error || !strings.HasPrefix(res.Content, "大大") ||
+		!strings.Contains(res.Content, "会話の上限に入らないため、ここで切りました。渡したのは結果の約") {
 		t.Errorf("結果: %+v", res)
 	}
-	if len(g.calls) != 2 || ms[len(ms)-1].Content != "範囲を絞ります" {
+	if len(g.calls) != 2 || ms[len(ms)-1].Content != "読みました" {
 		t.Errorf("ループは続くはず: 生成 %d 回 / 最後 %q", len(g.calls), ms[len(ms)-1].Content)
 	}
 	if u, _ := cs.Usage(ctx, c.ID); u.Tokens > u.Limit {
 		t.Errorf("上限を超えています: %d / %d", u.Tokens, u.Limit)
+	}
+}
+
+// read_file の結果は行の切れ目で切り、続きを offset の数で伝える(小さいモデルが呼び直し方を決められるように。0025)
+func TestAgentCutsReadFileByLine(t *testing.T) {
+	var lines []string
+	for i := 1; i <= 100; i++ {
+		lines = append(lines, fmt.Sprintf("%d\t%s", i, strings.Repeat("行", 60)))
+	}
+	read := fakeTool{name: "read_file", run: func(context.Context, tool.Args) (string, error) {
+		return strings.Join(lines, "\n") + "\n(全 300 行のうち 1〜100 行目です。続きは offset=101 で読めます)", nil
+	}}
+	g := &fakeGen{replies: []fakeReply{{toolCalls: []format.ToolCall{toolCall("read_file")}}, {content: "読みました"}}}
+	cs, _, c := newToolConversation(t, g, read)
+	setLimits(t, cs, &c, 4000, 100)
+	sendRaw(cs, c, "読んで")
+	_, ms, _ := cs.Get(ctx, c.ID)
+	res := ms[2].Content
+	m := regexp.MustCompile(`(\d+) 行目までで切りました。続きは offset=(\d+) で読めます`).FindStringSubmatch(res)
+	if m == nil || ms[2].ToolResult.Error {
+		t.Fatalf("read_file の切り方: 末尾 %q", res[max(0, len(res)-120):])
+	}
+	n, _ := strconv.Atoi(m[1])
+	next, _ := strconv.Atoi(m[2])
+	if next != n+1 || n < 10 || n >= 100 || !strings.Contains(res, lines[n-1]+"\n(") || strings.Contains(res, "全 300 行") {
+		t.Errorf("%d 行目まで・続きは %d: 末尾 %q", n, next, res[max(0, len(res)-160):])
+	}
+	if u, _ := cs.Usage(ctx, c.ID); u.Tokens > u.Limit {
+		t.Errorf("上限を超えています: %d / %d", u.Tokens, u.Limit)
+	}
+}
+
+// 残りが少なくて1行も入らないなら、渡さずにエラーの結果にし、残りの数を書く
+func TestAgentNoRoomForResult(t *testing.T) {
+	read := fakeTool{name: "read_file", run: func(context.Context, tool.Args) (string, error) {
+		return "1\t" + strings.Repeat("長", 3000) + "\n2\tnext", nil
+	}}
+	g := &fakeGen{replies: []fakeReply{{toolCalls: []format.ToolCall{toolCall("read_file")}}, {content: "あきらめます"}}}
+	cs, _, c := newToolConversation(t, g, read)
+	setLimits(t, cs, &c, 2500, 100)
+	sendRaw(cs, c, "読んで")
+	_, ms, _ := cs.Get(ctx, c.ID)
+	if res := ms[2]; !res.ToolResult.Error || !strings.Contains(res.Content, "会話の上限の残りは約") || strings.Contains(res.Content, "長長") {
+		t.Errorf("結果: %q", res.Content)
+	}
+}
+
+// 同じ呼び出しが同じエラーで2回続いたら、ツールの上限(20 回)を待たずに止め、理由と対処を出す(0025)
+func TestAgentStopsOnRepeatedFailure(t *testing.T) {
+	missing := fakeTool{name: "missing", run: func(context.Context, tool.Args) (string, error) {
+		return "", errors.New("見つかりません")
+	}}
+	same := []format.ToolCall{toolCall("missing")}
+	g := &fakeGen{replies: []fakeReply{{toolCalls: same}, {toolCalls: same}, {toolCalls: same}, {content: "終わり"}}}
+	cs, _, c := newToolConversation(t, g, missing)
+	errs := errorsOf(sendRaw(cs, c, "探して"))
+	if len(errs) != 1 || !strings.Contains(errs[0], "同じエラーが2回続いたため、止めました(見つかりません)") {
+		t.Errorf("エラー: %v", errs)
+	}
+	if len(g.calls) != 2 {
+		t.Errorf("2回目で止まるはず: 生成 %d 回", len(g.calls))
+	}
+
+	// 引数を変えて呼び直すなら止めない
+	g2 := &fakeGen{replies: []fakeReply{{toolCalls: same}, {toolCalls: []format.ToolCall{toolCall("missing", "x", "b")}}, {content: "終わり"}}}
+	cs2, _, c2 := newToolConversation(t, g2, missing)
+	if errs := errorsOf(sendRaw(cs2, c2, "探して")); len(errs) != 0 || len(g2.calls) != 3 {
+		t.Errorf("引数を変えたら続くはず: エラー %v / 生成 %d 回", errs, len(g2.calls))
 	}
 }
 
