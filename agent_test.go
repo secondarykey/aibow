@@ -433,6 +433,15 @@ func TestAgentNoRoomForResult(t *testing.T) {
 	if c2, _, _ := cs.Get(ctx, c.ID); c2.Settings.BuiltinOff {
 		t.Error("会話の設定は変えないはず")
 	}
+	// その回だけ、最後に「もう読めないので答えて」を足す。保存はしない
+	if m := g.calls[1].messages; m[len(m)-1].Role != "user" || m[len(m)-1].Content != noRoomNote {
+		t.Errorf("最後の生成の終わり: %+v", m[len(m)-1])
+	}
+	for _, m := range ms {
+		if strings.Contains(m.Content, "aibow からのお知らせ") {
+			t.Errorf("お知らせを保存している: %+v", m)
+		}
+	}
 
 	// それでもツールを呼んだら、実行せずに止める
 	g2 := &fakeGen{replies: []fakeReply{{toolCalls: []format.ToolCall{toolCall("read_file")}}, {toolCalls: []format.ToolCall{toolCall("read_file", "x", "2")}}}}

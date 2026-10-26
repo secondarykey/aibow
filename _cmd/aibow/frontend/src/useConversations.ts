@@ -10,6 +10,7 @@ import { ChatService } from "./backend";
 import type { ConversationDetail } from "../bindings/github.com/secondarykey/aibow/ui";
 import type { Conversation, ConversationSettings, ProfileInfo, Usage } from "../bindings/github.com/secondarykey/aibow";
 import { errorMessage } from "./errors";
+import { grantedFolder } from "./profileRules";
 
 // 設定を変えてから Go に保存するまで待つ時間。
 // 1文字打つたびに保存すると、呼び出しの到着順が入れ替わって古い値が残ることがあるので、まとめて送る
@@ -127,7 +128,8 @@ export function useConversations(onError: (text: string) => void): Conversations
     ++openSeq.current;
     // 会話のプロファイル(決まりを画面に出すため)は、選んでいたもの
     const profile = profilesRef.current.find(i => i.profile.id === c.profile_id)?.profile ?? null;
-    setCurrent({ conversation: c, messages: [], compactions: [], generating: false, usage: null, profile });
+    // 資料のフォルダの名前も、新しい会話の画面で見せていたもの(Go は会話を開き直すときに決め直す。0024 の 12-2)
+    setCurrent({ conversation: c, messages: [], compactions: [], generating: false, usage: null, profile, folder: grantedFolder(profile) });
     setDraft(null);
     reloadList().catch(() => {});
   }, [setCurrent, setDraft, reloadList]);

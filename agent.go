@@ -94,7 +94,13 @@ func (cs *Conversations) runTurn(ctx context.Context, conv Conversation, history
 		cs.emitUsage(emit, conv.ID, p.usage(history, cs.limitsOf(conv.Settings).history))
 
 		// 2. 生成して保存する
-		r, err := cs.generate(ctx, conv, p.messages, emit)
+		messages := p.messages
+		if noRoom {
+			// ツールを外すだけでは、小さいモデルは前の回の呼び出しをまねてまた呼ぶ(2026-10-26、12-4 の試し)。
+			// この回だけ、最後に「もう読めないので答えて」を足す(保存しない。次の送信のモデルには渡らない)
+			messages = append(slices.Clip(messages), format.Message{Role: "user", Content: noRoomNote})
+		}
+		r, err := cs.generate(ctx, conv, messages, emit)
 		if err != nil || r == nil {
 			return last, err // r == nil: 何も生成されなかった(すぐに停止した、など)
 		}
@@ -596,6 +602,12 @@ func cutResult(tool string, runes []rune, keep int) string {
 	return fmt.Sprintf("%s\n(会話の上限に入らないため、ここで切りました。渡したのは結果の約 %d%% です。続きが要るときは、範囲を絞って呼び直してください)",
 		text, len([]rune(text))*100/len(runes))
 }
+
+// noRoomNote は、会話の上限の残りが無くなったあとの生成で、最後に足す頼み(0025 の決定事項 12)。
+// 返事を書くのはモデルなので、何語で頼まれたかに合わせられるよう、短い日本語と英語の両方で書く
+const noRoomNote = "(aibow からのお知らせ)会話の上限に達したので、これ以上ファイルを読めず、ツールも使えません。" +
+	"ここまでに読んだ内容だけで、頼まれたことに答えてください。読めなかったファイルがあれば、その名前を添えてください。\n" +
+	"(Note from aibow) The conversation limit has been reached. You cannot read more files or call tools. Answer with what you have read so far."
 
 // repeatedFailure は、同じ呼び出しが同じエラーで続いたかを見る(0025 の決定事項 6)。
 // 小さいモデルは、エラーの結果を読んでも呼び出しを変えずに繰り返すことがある。maxToolCalls(20 回)まで待たずに止め、理由と対処を出す。
