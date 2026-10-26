@@ -75,6 +75,8 @@ func (cs *Conversations) runTurn(ctx context.Context, conv Conversation, history
 	calls := 0  // この送信でツールを実行した回数
 	broken := 0 // 呼び出しが全部読み取れなかった回が、いくつ続いているか
 	var failed repeatedFailure
+	// noRoom は、会話の上限の残りが無く、ツールの結果を渡せなかったか。次の生成はツールを見せず、ここまでに分かったことで答えさせる(0025 の決定事項 11)
+	noRoom := false
 	for round := 1; ; round++ {
 		// 1. モデルに渡す内容を決める。2回目からは、ツールの結果を足しても収まるかを先に確かめる
 		if round > 1 {
@@ -107,6 +109,11 @@ func (cs *Conversations) runTurn(ctx context.Context, conv Conversation, history
 		if len(r.ToolCalls) == 0 {
 			break
 		}
+		if noRoom {
+			// ツールを見せずに頼んだのに呼んだ(書式をまねした、など)。実行すると、また入らない結果になるだけなので止める
+			return last, errors.New("会話の上限の残りが無いので、ツールを使わずに答えるよう頼みましたが、モデルがツールを呼んだため止めました。" +
+				"会話の上限を上げるか、読む範囲やファイルを指定して頼み直してください")
+		}
 
 		// 4. 順に実行して、結果を保存する。上限を超えた分・止められた後の分は、実行せずにその旨を結果にする
 		// (どの呼び出しにも必ず結果がある形にしておくと、次の送信でモデルに渡す履歴が崩れない)
@@ -125,10 +132,12 @@ func (cs *Conversations) runTurn(ctx context.Context, conv Conversation, history
 				}
 				emit(ChatEvent{ConversationID: conv.ID, Type: "tool_start", ToolCall: &c})
 				res = cs.runTool(ctx, conv, c, emit)
+				var full bool
 				var err error
-				if res, err = cs.fitResult(conv.Settings, history, res); err != nil {
+				if res, full, err = cs.fitResult(conv.Settings, history, res); err != nil {
 					return last, err
 				}
+				noRoom = noRoom || full
 				if c.Error == "" { // 書式の崩れは maxBrokenRounds で止める
 					failed.note(c, res)
 				}
@@ -150,6 +159,11 @@ func (cs *Conversations) runTurn(ctx context.Context, conv Conversation, history
 		if err := failed.stop(); err != nil {
 			log.Warn(err.Error())
 			return last, err
+		}
+		if noRoom && !conv.Settings.BuiltinOff {
+			// この送信の残りだけ、ツールを使わない設定にする(保存はしない)。プロンプトからツールの説明も外れるので、その分も空く
+			log.Infof("会話 %s: 会話の上限の残りが無いので、次はツールを見せずに答えさせます", conv.ID)
+			conv.Settings.BuiltinOff, conv.Settings.MCPServers = true, nil
 		}
 		if allBroken(r.ToolCalls) {
 			broken++
@@ -498,34 +512,34 @@ func (cs *Conversations) execute(ctx context.Context, t tool.Tool, args tool.Arg
 // (最新の組は要約しないので、次の質問を送るまで「今すぐ要約」もできない)。
 // 以前は結果を捨てて「範囲を絞って呼び直して」とだけ返していたが、小さいモデルはどう変えればよいか決められず、
 // 同じ呼び出しを繰り返した(2026-10-25。_docs/tuning.md の「仕様の相談を試す」)。渡せる分を渡し、続きは具体的な数で伝える。
-// 1行も入らないほど残りが無ければ、今までどおり渡さずにエラーの結果にする(失敗しても送信は止めない、と同じ考え方)。
-func (cs *Conversations) fitResult(set ConversationSettings, history []StoredMessage, res StoredMessage) (StoredMessage, error) {
+// 1行も入らないほど残りが無ければ、今までどおり渡さずにエラーの結果にし、full を true で返す(呼ぶ側は、次の生成でツールを見せない)。
+func (cs *Conversations) fitResult(set ConversationSettings, history []StoredMessage, res StoredMessage) (fitted StoredMessage, full bool, err error) {
 	limit := cs.limitsOf(set).history
 	with, err := cs.turnTokens(set, append(slices.Clip(history), res))
 	if err != nil || with <= limit {
-		return res, err
+		return res, false, err
 	}
 	without, err := cs.turnTokens(set, history)
 	if err != nil {
-		return res, err
+		return res, false, err
 	}
 	// 残りを全部使うと、モデルが次に書く呼び出しや答えが入らない(次の回の checkFits で止まる)。残りの 3/4 までにして、1/4 を空けておく
 	cut, ok, err := cs.cutToFit(set, history, res, without+(limit-without)*3/4)
 	if err != nil {
-		return res, err
+		return res, false, err
 	}
 	name := res.ToolResult.Call.Name
 	if ok {
 		log.Infof("ツール %s の結果が会話の上限に入らないので、切って渡します(結果は約 %d トークン、残りは約 %d トークン。渡すのは %d 文字のうち %d 文字)",
 			name, with-without, limit-without, utf8.RuneCountInString(res.Content), utf8.RuneCountInString(cut.Content))
-		return cut, nil
+		return cut, false, nil
 	}
 	log.Infof("ツール %s の結果が会話の上限に入らず、残りが少ないので渡しません(結果は約 %d トークン、残りは約 %d トークン)", name, with-without, max(0, limit-without))
 	res.Content = fmt.Sprintf("%s結果が長すぎて会話の上限に入らないため、渡せません(結果は約 %d トークン、会話の上限の残りは約 %d トークンしかありません)。"+
 		"これ以上ツールの結果を読めないので、ここまでに分かったことで答えてください",
 		errorPrefix, with-without, max(0, limit-without))
 	res.ToolResult.Error = true
-	return res, nil
+	return res, true, nil
 }
 
 // cutToFit は、結果の先頭から、今の組が target トークンに収まる長さだけを残し、切ったことと続きの取り方を書き添える。

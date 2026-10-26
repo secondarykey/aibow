@@ -426,6 +426,21 @@ func TestAgentNoRoomForResult(t *testing.T) {
 	if res := ms[2]; !res.ToolResult.Error || !strings.Contains(res.Content, "会話の上限の残りは約") || strings.Contains(res.Content, "長長") {
 		t.Errorf("結果: %q", res.Content)
 	}
+	// 次の生成ではツールを見せず、ここまでに分かったことで答えさせる(設定は保存しない)
+	if len(g.calls) != 2 || len(g.calls[1].tools) != 0 || len(g.calls[0].tools) == 0 || ms[len(ms)-1].Content != "あきらめます" {
+		t.Errorf("2回目の生成のツール: %d 個 / 生成 %d 回", len(g.calls[len(g.calls)-1].tools), len(g.calls))
+	}
+	if c2, _, _ := cs.Get(ctx, c.ID); c2.Settings.BuiltinOff {
+		t.Error("会話の設定は変えないはず")
+	}
+
+	// それでもツールを呼んだら、実行せずに止める
+	g2 := &fakeGen{replies: []fakeReply{{toolCalls: []format.ToolCall{toolCall("read_file")}}, {toolCalls: []format.ToolCall{toolCall("read_file", "x", "2")}}}}
+	cs2, _, c2 := newToolConversation(t, g2, read)
+	setLimits(t, cs2, &c2, 2500, 100)
+	if errs := errorsOf(sendRaw(cs2, c2, "読んで")); len(errs) != 1 || !strings.Contains(errs[0], "ツールを使わずに答えるよう頼みました") {
+		t.Errorf("エラー: %v", errs)
+	}
 }
 
 // 同じ呼び出しが同じエラーで2回続いたら、ツールの上限(20 回)を待たずに止め、理由と対処を出す(0025)

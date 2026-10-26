@@ -56,7 +56,7 @@ aibow 全体の進み具合(入口)。ルールと全体の構成は `AGENTS.md`
 | ✅ | モデルを扱う画面(設定の画面の「モデル」のタブ。0015 の 8-4 で作った) | [0015-api-client.md](_docs/features/0015-api-client.md) の 8-4 |
 | ⬜ | 複数のモデルを同時に動かす | [検討メモ](_docs/backlog.md) |
 | ⬜ | 複数の人で GPU を分け合う(ステップ12より後にやる) | [0023-parallel.md](_docs/features/0023-parallel.md) |
-| 🔧 | ツールの結果が会話の上限に入らないときの立て直し(2026-10-25、仕様の相談を試して見つけた) | [0025-small-reads.md](_docs/features/0025-small-reads.md) |
+| ✅ | ツールの結果が会話の上限に入らないときの立て直し(入る分だけ切って渡す・同じ失敗の繰り返しで止める) | [0025-small-reads.md](_docs/features/0025-small-reads.md) |
 | ✅ | TODO.md を短い入口にする(2026-10-26。経過は仕様へ、検討メモは `_docs/backlog.md` へ移した) | [0025-small-reads.md](_docs/features/0025-small-reads.md) |
 | ✅ | モデルごとの GPU の層数を DB からファイルに移すか(決めて済んだ) | [0017-users.md](_docs/features/0017-users.md) |
 | 🔧 | 画面から aibow-server に切り替える | [0019-app-login.md](_docs/features/0019-app-login.md) |
