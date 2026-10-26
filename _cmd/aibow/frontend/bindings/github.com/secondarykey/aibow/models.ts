@@ -746,6 +746,11 @@ export interface ToolPrefsView {
      * 読めなかったときの理由(書き換えない)
      */
     "error": string;
+
+    /**
+     * Ban は、「使わない」を禁止として扱うか(aibow-server の管理者の既定。0024 の決定事項 22)
+     */
+    "ban": boolean;
 }
 
 /**

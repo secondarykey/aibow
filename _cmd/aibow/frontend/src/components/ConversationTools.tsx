@@ -172,7 +172,7 @@ function Group({ name, title, on, lockReason, onToggle, open, onToggleOpen, tool
                   <input
                     type="checkbox"
                     checked={t.policy !== ToolPolicy.ToolOff}
-                    disabled={!on || t.from === "profile"} // 使っていないグループのツールは選んでも使われない。プロファイルで使えないツールは選べない
+                    disabled={!on || t.from === "profile" || t.from === "admin"} // 使っていないグループのツールは選んでも使われない。プロファイル・管理者が使えないにしたツールは選べない
                     onChange={e => onToggleTool(t, e.target.checked)}
                   />
                   <code>{short}</code>
@@ -201,6 +201,9 @@ function StateTag({ tool, workDir }: { tool: ToolState; workDir: string }) {
   const off = tool.policy === ToolPolicy.ToolOff;
   if (tool.from === "profile") {
     return <span className="tool-tag" title="この会話のプロファイルで使えないにしてある(この会話でも使えない)">プロファイルで使えない</span>;
+  }
+  if (tool.from === "admin") {
+    return <span className="tool-tag" title="aibow-server の管理者が使わないにしてある(どの会話でも使えない)">管理者が使えないにしている</span>;
   }
   if (tool.from === "conversation") {
     if (off) return <span className="tool-tag" title="この会話では使わない(プロファイルで最初は使わないツールも、会話を作るときにここに入る)">この会話で使わない</span>;

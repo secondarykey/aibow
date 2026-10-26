@@ -16,6 +16,7 @@ import { ProfileSettings } from "./ProfileSettings";
 import { ModelSettings } from "./ModelSettings";
 import { UserSettings } from "./UserSettings";
 import { ServerSettings } from "./ServerSettings";
+import { ServerTools } from "./ServerTools";
 import { changePassword, isBrowser, me } from "../backend";
 import { errorMessage } from "../errors";
 import type { Models } from "../useModels";
@@ -39,12 +40,14 @@ interface Props {
   onReadConversation(id: string): void; // 管理者がほかの人の会話を読むだけで開く(0018 の 11-2)
 }
 
-type Tab = "basic" | "model" | "conversation" | "server" | "users";
+type Tab = "basic" | "model" | "conversation" | "tools" | "server" | "users";
 
 const TABS: { id: Tab; label: string; title: string }[] = [
   { id: "basic", label: "基本設定", title: "会話によらず、この PC で1つだけのもの(画面)" },
   { id: "model", label: "モデル", title: "モデルの一覧(読み込む / 降ろす・GPU の層数)と置き場所" },
   { id: "conversation", label: "会話", title: "プロファイル(新しい会話の既定・ツールの扱い)" },
+  // ブラウザの会話のツールの扱いの、aibow-server 全体の既定(0024 の決定事項 21)。変えるのは管理者だけで、ほかの人は見るだけ
+  { id: "tools", label: "ツール", title: "ブラウザの会話のツールの扱い(使わない・確認する・確認しない)。aibow-server 全体の既定" },
   // aibow-server につなぐ・戻すは、デスクトップのアプリだけ(0019。ブラウザは aibow-server そのものの画面)
   { id: "server", label: "サーバー", title: "aibow-server につなぐ・ログインする・アプリの中で動かす形に戻す" },
   // 利用者の管理は、ブラウザでログインした管理者だけ(0018 の決定事項 7)
@@ -64,7 +67,7 @@ export function SettingsView({ onClose, errors, app, models, modelState, servers
         {errors.map(e => <div key={e.id} className="msg error">{e.text}</div>)}
 
         <div className="settings-tabs" role="tablist">
-          {TABS.filter(t => (t.id !== "users" || (isBrowser && me.admin)) && (t.id !== "server" || !isBrowser)).map(t => (
+          {TABS.filter(t => (t.id !== "users" || (isBrowser && me.admin)) && (t.id !== "server" || !isBrowser) && (t.id !== "tools" || isBrowser)).map(t => (
             <button
               key={t.id}
               role="tab"
@@ -90,6 +93,8 @@ export function SettingsView({ onClose, errors, app, models, modelState, servers
         {tab === "model" && <ModelSettings models={modelState} disabled={appDisabled} onError={onError} />}
 
         {tab === "users" && <UserSettings onError={onError} onRead={onReadConversation} />}
+
+        {tab === "tools" && <ServerTools servers={servers} manage={modelState.manage} onChanged={onToolsChanged} />}
 
         {tab === "server" && <ServerSettings disabled={appDisabled} onError={onError} />}
 

@@ -9,9 +9,12 @@
 //
 // MCP のサーバーのツールの一覧は、サーバーを最後に起動したときに Go が tools.json に覚えたもの。
 // 開いたグループで一覧がまだ無ければ、Go がサーバーを一時的に起動して受け取る(ChatService.LoadToolList)。読み直すボタンでも受け取り直せる。
+//
+// ブラウザでは、確認しないの枠・一覧の読み直し・保存先を出さない。それは aibow-server の管理者の既定で、設定の画面の「ツール」で扱う(0024 の決定事項 21)。
+// チェック(最初から使う)と錠(使えない)はプロファイルの値と決まりなので、アプリと同じに扱う。
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
 import { LuChevronDown, LuChevronRight, LuLoaderCircle, LuLock, LuLockOpen, LuRefreshCw } from "react-icons/lu";
-import { ChatService } from "../backend";
+import { ChatService, isBrowser } from "../backend";
 import { ToolPolicy } from "../../bindings/github.com/secondarykey/aibow";
 import type { KnownTool, Profile, ToolPrefsView, ToolState } from "../../bindings/github.com/secondarykey/aibow";
 import type { ServerInfo } from "../../bindings/github.com/secondarykey/aibow/mcp/client";
@@ -63,7 +66,7 @@ export function ProfileTools({ profile, servers, lock, onChange, onPCChanged }: 
   useEffect(() => {
     if (!prefs) return;
     for (const s of servers) {
-      if (opened[s.name] && (prefs.known?.[s.name]?.length ?? 0) === 0 && !tried.current.has(s.name)) {
+      if (!isBrowser && opened[s.name] && (prefs.known?.[s.name]?.length ?? 0) === 0 && !tried.current.has(s.name)) {
         tried.current.add(s.name);
         loadList(s.name);
       }
@@ -125,7 +128,10 @@ export function ProfileTools({ profile, servers, lock, onChange, onPCChanged }: 
   });
 
   const groups = [
-    { group: "", name: BUILTIN, title: "aibow の中で動くツール(時刻・計算・ファイル・コマンド)", tools: builtin, prefix: "", pcPolicy: prefs?.builtin },
+    {
+      group: "", name: BUILTIN, tools: builtin, prefix: "", pcPolicy: prefs?.builtin,
+      title: isBrowser ? "aibow-server の中で動くツール(時刻・計算)" : "aibow の中で動くツール(時刻・計算・ファイル・コマンド)",
+    },
     ...servers.map(s => ({
       group: s.name,
       name: s.name,
@@ -161,7 +167,7 @@ export function ProfileTools({ profile, servers, lock, onChange, onPCChanged }: 
                 <input type="checkbox" checked={used} disabled={groupOff} onChange={e => setGroupUse(g.group, e.target.checked)} />
                 <span className="tool-group-name">{g.name}</span>
               </label>
-              {!groupOff && (
+              {!groupOff && !isBrowser && (
                 <ConfirmChip
                   allow={groupAllow}
                   title={(groupAllow
@@ -177,7 +183,7 @@ export function ProfileTools({ profile, servers, lock, onChange, onPCChanged }: 
                 onToggle={l => setGroupLocked(g.group, l)}
               />
               {g.tools.length > 0 && <span className="tool-count">{usable} / {g.tools.length}</span>}
-              {isServer && shown && (
+              {isServer && shown && !isBrowser && (
                 <button type="button" className="tool-reload" disabled={loading[g.group]} onClick={() => loadList(g.group)} title="ツールの一覧を読み直す(サーバーを一時的に起動します)">
                   {loading[g.group] ? <LuLoaderCircle className="spin" /> : <LuRefreshCw />}
                 </button>
@@ -203,7 +209,7 @@ export function ProfileTools({ profile, servers, lock, onChange, onPCChanged }: 
                           onChange={e => setDefaultUse(t.name, e.target.checked)}
                         />
                         <code>{short}</code>
-                        {locked ? <span /> : (
+                        {locked || isBrowser ? <span /> : (
                           <ConfirmChip
                             allow={allow}
                             title={(allow ? "このツールは確認せずに実行する(押すと確認する)" : "このツールを確認せずに実行するようにする") + PC_NOTE}
@@ -226,7 +232,7 @@ export function ProfileTools({ profile, servers, lock, onChange, onPCChanged }: 
           </div>
         );
       })}
-      {prefs?.path && <p className="hint tool-path" title="この PC での、確認の扱いの保存先">{prefs.path}</p>}
+      {prefs?.path && !isBrowser && <p className="hint tool-path" title="この PC での、確認の扱いの保存先">{prefs.path}</p>}
     </div>
   );
 }

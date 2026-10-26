@@ -67,6 +67,7 @@ export function AppSettings(): $CancellablePromise<aibow$0.AppSettings> {
 
 /**
  * BuiltinTools は組み込みのツール(aibow の中で動くツール)の一覧(設定の画面の「ツール」に出す)。
+ * ブラウザでは、作業フォルダを使わないツール(時刻・計算)だけ(0024 の決定事項 17)。
  */
 export function BuiltinTools(): $CancellablePromise<aibow$0.KnownTool[] | null> {
     return $Call.ByID(704771653);
@@ -180,6 +181,7 @@ export function DisconnectServer(): $CancellablePromise<void> {
 
 /**
  * LoadToolList は、MCP のサーバーを一時的に起動してツールの一覧を受け取り、tools.json に覚える(設定の画面で、一覧が無いときと「読み直す」)。
+ * ブラウザでは管理者だけ(サーバーの PC でプロセスを起動するため)。
  */
 export function LoadToolList(server: string): $CancellablePromise<void> {
     return $Call.ByID(4133085097, server);
@@ -188,6 +190,7 @@ export function LoadToolList(server: string): $CancellablePromise<void> {
 /**
  * MCPServers は、会話ごとに使うものを選ぶ MCP のサーバーの一覧(settings.json に書いたもの全部)。書いてなければ空。
  * 設定の画面の「ツール」のチェックは「新しい会話で最初から選ぶか」だけなので、チェックを外したものもここに出す。
+ * ブラウザでは aibow-server の server.json に書いたもの。${workdir} を使うサーバーは出さない(資料のフォルダは 12-2。0024 の決定事項 24)。
  */
 export function MCPServers(): $CancellablePromise<client$0.ServerInfo[] | null> {
     return $Call.ByID(287669679);
@@ -361,6 +364,7 @@ export function SetGPULayers(n: number): $CancellablePromise<engine$0.ModelInfo 
 /**
  * SetGroupPolicy は、グループ(空なら組み込み、そうでなければ MCP のサーバー)の全部のツールの確認の扱いの PC の既定を変える
  * (確認する ask / 確認しない allow / 決めていない 空。tools.json に書く)。
+ * ブラウザでは aibow-server の管理者だけが変えられ(server-tools.json に書く)、使わない(off。禁止)も決められる(0024 の決定事項 21・22)。
  */
 export function SetGroupPolicy(group: string, policy: aibow$0.ToolPolicy): $CancellablePromise<void> {
     return $Call.ByID(2609014370, group, policy);
@@ -399,6 +403,7 @@ export function SetProfileShare(id: uuid$0.UUID, share: string, $with: string[] 
 /**
  * SetToolPolicy は、ツールの扱いの PC の既定を変える(tools.json に書く)。policy が空なら決めていない状態に戻す。
  * 次の送信から効く(プロンプトに入るツールが変わるので、画面はメーターを数え直す)。
+ * ブラウザでは aibow-server の管理者だけが変えられる(server-tools.json に書く。使わないは禁止。0024 の決定事項 21・22)。
  */
 export function SetToolPolicy(name: string, policy: aibow$0.ToolPolicy): $CancellablePromise<void> {
     return $Call.ByID(1851266373, name, policy);
@@ -436,7 +441,7 @@ export function SwitchModel(id: string): $CancellablePromise<engine$0.ModelInfo 
 
 /**
  * ToolDefaults は、会話の上書きが無いときのツールの扱い(PC の既定と決まりの既定。設定の画面の「ツール」に出す)。
- * この PC の既定なので、プロファイルの決まりは当てない。
+ * この PC の既定なので、プロファイルの決まりは当てない。ブラウザでは aibow-server の管理者の既定(誰でも見られる。変えるのは管理者だけ)。
  */
 export function ToolDefaults(): $CancellablePromise<aibow$0.ToolGroupState[] | null> {
     return $Call.ByID(3034059471);
@@ -445,6 +450,7 @@ export function ToolDefaults(): $CancellablePromise<aibow$0.ToolGroupState[] | n
 /**
  * ToolPrefs は、ツールの扱いの PC の既定(tools.json)と、サーバーを起動したときに見えたツールの一覧。
  * 新しい会話で最初から使うグループはプロファイルの値なので、設定の画面はプロファイルから出す(ここの notDefault は引き継ぐ前の値)。
+ * ブラウザでは aibow-server の管理者の既定。ファイルの場所(サーバーの PC のパス)は管理者にだけ見せる(0024 の決定事項 25)。
  */
 export function ToolPrefs(): $CancellablePromise<aibow$0.ToolPrefsView> {
     return $Call.ByID(2378033441);

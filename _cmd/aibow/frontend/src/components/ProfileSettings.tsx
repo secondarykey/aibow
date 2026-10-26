@@ -279,13 +279,10 @@ function ProfileEditor({ profile, info, models, servers, disabled, onChange, onA
         onApply={(h, r) => onApplyLimits(h, r, setValues)}
       />
 
-      {/* ブラウザでは出さない。ブラウザの会話のツールの扱いの既定は管理者が決めるので、プロファイルのツールと一緒に管理者の「ツール」の画面で扱う(0024 の 12-1b) */}
-      {!isBrowser && (
-        <>
-          <h2 className="section" title="このプロファイルでのツールの扱い(最初から使う・選べば使える・使えない)と、確認しない(この PC の設定)">ツール</h2>
-          <ProfileTools profile={profile} servers={servers} lock={lock} onChange={onChange} onPCChanged={onToolsChanged} />
-        </>
-      )}
+      <h2 className="section" title={isBrowser
+        ? "このプロファイルでのツールの扱い(最初から使う・選べば使える・使えない)。確認するかは aibow-server の既定(設定の画面の「ツール」)"
+        : "このプロファイルでのツールの扱い(最初から使う・選べば使える・使えない)と、確認しない(この PC の設定)"}>ツール</h2>
+      <ProfileTools profile={profile} servers={servers} lock={lock} onChange={onChange} onPCChanged={onToolsChanged} />
     </div>
   );
 }

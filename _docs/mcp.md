@@ -202,6 +202,25 @@ aibow から同じものを使うと、次のことが分かりました。
 - `uvx --from <拡張のフォルダ> blender-mcp` は `uv.lock` を使わず最新の版を入れるので、`mcp` 2.x が入って動かない(`No module named 'mcp.server.fastmcp'`)
 - **`env` の `UV_PROJECT_ENVIRONMENT` で環境を別のフォルダに作らせる**と、`uv.lock` の版のまま、Claude とぶつからずに起動できた(26 個のツール。2025-11-25 版で話す)
 
+## aibow-server の MCP のサーバー(ブラウザの会話。0024 の 12-1b)
+
+ブラウザの会話のツールは aibow-server の PC で動く。アプリの `settings.json` と同じ形で、`server.json` の `mcpServers` に書く(`_cmd/aibow-server/browser.go` の `startServerTools`)。
+
+| | アプリ | aibow-server(ブラウザの会話) |
+|---|---|---|
+| サーバーを書くところ | `settings.json` の `mcpServers` | `server.json` の `mcpServers`(確かめ方は同じ `aibow.CheckMCPServers`) |
+| 扱いの既定 | `tools.json`(その PC の人が決める) | `server-tools.json`(管理者が設定の画面の「ツール」で決める。`aibow.LoadServerToolPrefs`) |
+| 「使わない」 | 既定では使わない(会話で「使う」にできる) | 禁止(会話で「使う」にできない。`ToolPrefs.banned` → `PolicyFromAdmin`) |
+| 起動 | 最初に使われたとき。アプリを閉じるまで | 最初に使われたとき。aibow-server を止めるまで全員で1つ |
+| `${workdir}` | 作業フォルダごとに1つ | ブラウザには出さない(資料のフォルダは 12-2) |
+
+- 「使わない」を禁止にしたのは、利用者が自分のプロファイルを作れるため(配るプロファイルの「使えない」では止められない)。グループごとの「使わない」も禁止として持つ(アプリのように「新しい会話で最初から選ばない」には読み替えない)
+- 既定を変える(`SetToolPolicy`・`SetGroupPolicy`)・一覧を読み直す(`LoadToolList`)は、管理者とサーバーの PC の上から開いた画面だけ(画面用の口の `adminToolMethods` で 403 にし、`ui.Service.canSetTools` でも確かめる)
+- 人をまたいで状態が残るサーバー・社内の URL に届く fetch・外に出る検索の語の危うさは [usage.md](usage.md) の「ブラウザの会話のツール」
+- 実際に試したこと(2026-10-26。qwen3.5:4b を CPU で):公式の fetch(`mcp-server-fetch`)を書き、管理者の「ツール」で一覧を読み直すと `fetch__fetch` が出た。
+  会話の「この会話のツール」で fetch を選んで https://example.com を頼むと、最初の送信で起動し、確認のカード(サーバー fetch・URL)を許可すると取ってきて答えた。
+  グループを「使わない」にすると、会話で「使う」にしても `管理者が使えないにしている` になり、モデルに見せなかった
+
 ## ログ
 
 - 起動(コマンド)・つながったとき(かかった秒数・版・サーバーの名前・ツールの数と名前)・止めたとき

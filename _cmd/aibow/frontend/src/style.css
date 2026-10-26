@@ -528,6 +528,16 @@ nav.conversations.collapsed .settings.active { color: var(--accent); }
 /* 会話の設定の画面の「ツール」: 使えない理由の枠と、この会話で使っていないグループのツール(薄く出す) */
 .tool-tag { flex-shrink: 0; font-size: 11px; padding: 0 5px; border-radius: 4px; border: 1px solid var(--border); color: var(--muted); font-weight: normal; }
 .tool-item.unused code { color: var(--muted); }
+/* 設定の画面の「ツール」(ブラウザ。aibow-server の既定。0024): グループの見出しに扱いの選択、ツールは 名前 / 扱い / 説明 の3列 */
+.settings-view select.tool-policy { width: auto; padding: 2px 4px; font-size: 12px; }
+.server-tool-list {
+  margin: 2px 0 10px 7px; padding-left: 16px; border-left: 2px solid var(--border);
+  display: grid; grid-template-columns: fit-content(40%) auto minmax(0, 1fr); column-gap: 8px; row-gap: 2px; align-items: center;
+}
+.server-tool-list > .tool-none { grid-column: 1 / -1; }
+.server-tool { display: contents; }
+.server-tool > code { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.server-tool.unused > code { color: var(--muted); }
 .tool-settings .tool-none { color: var(--muted); margin: 2px 0; }
 .tool-path { font-size: 11.5px; word-break: break-all; }
 .settings-view textarea {
