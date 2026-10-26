@@ -202,7 +202,8 @@ type testWeb struct {
 }
 
 // newTestWeb は、aibow-server の browser.go と同じ組み立てで、画面用の口を httptest で立てる。
-func newTestWeb(t *testing.T) *testWeb {
+// opts は、組み立ての Options を変えるもの(MCP のサーバーとツールの扱いの既定を渡すとき。webtools_test.go)。
+func newTestWeb(t *testing.T, opts ...func(*Options)) *testWeb {
 	t.Helper()
 	st, err := store.Open(filepath.Join(t.TempDir(), "server.db"))
 	if err != nil {
@@ -222,11 +223,15 @@ func newTestWeb(t *testing.T) *testWeb {
 	t.Cleanup(srv.Close)
 	local := client.NewLocal(client.Options{Version: "0.0.1-test"})
 	t.Cleanup(local.Close)
-	svc, life := New(Options{
+	o := Options{
 		Host:  NewServerHost(eng, mm, 32768, srv.URL),
 		Store: st, App: app, Version: "0.0.1-test",
 		Notify: events, Seat: seat, Local: local, Browser: true,
-	})
+	}
+	for _, f := range opts {
+		f(&o)
+	}
+	svc, life := New(o)
 	t.Cleanup(life.Stop)
 	w := &testWeb{url: srv.URL, eng: eng, mm: mm, seat: seat, st: st}
 	// httptest は 127.0.0.1 で待ち受けるので、サーバーの PC の上からかは見ない(管理者かだけで、見せるものが変わることを確かめる)
@@ -383,7 +388,7 @@ func TestWebCall(t *testing.T) {
 		t.Errorf("表示だけの設定は作業領域だけのはず: %+v", ms.Settings)
 	}
 
-	for _, name := range []string{"SetGPULayers", "ToolPrefs", "SetToolPolicy", "SetGroupPolicy", "LoadToolList", "ToolDefaults", "ChooseWorkDir", "Nothing"} {
+	for _, name := range []string{"SetGPULayers", "AllMCPServers", "ChooseWorkDir", "Nothing"} {
 		if status, body := w.call(t, context.Background(), name); status != http.StatusNotFound {
 			t.Errorf("%s は 404 のはず: %d %s", name, status, body)
 		}
@@ -395,6 +400,7 @@ func TestWebCall(t *testing.T) {
 	}{
 		{"UnloadModel", nil}, {"SetModelGPULayers", []any{"ollama:a", 10}}, {"ModelPlaces", nil},
 		{"AddModelPlace", []any{"/data"}}, {"RemoveModelPlace", []any{"/data"}}, {"SetModelEnabled", []any{"ollama:a", false}},
+		{"SetToolPolicy", []any{"calculate", "allow"}}, {"SetGroupPolicy", []any{"", "allow"}}, {"LoadToolList", []any{"web"}},
 	} {
 		if status, body := w.call(t, context.Background(), c.name, c.args...); status != http.StatusForbidden {
 			t.Errorf("%s は 403 のはず: %d %s", c.name, status, body)

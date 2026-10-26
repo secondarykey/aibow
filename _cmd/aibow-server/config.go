@@ -6,6 +6,7 @@ package main
 //
 //	server.json         … 手で書く設定(ポート・作業領域・最初のモデル・llama.cpp とモデルの場所)。aibow-server は書かない
 //	server-models.json  … aibow-server が書く値(モデルごとの GPU の層数など)。手で書かなくてよい
+//	server-tools.json   … ブラウザの会話のツールの扱いの既定(管理者が設定の画面の「ツール」で変える。形はアプリの tools.json と同じ。0024)
 //	server.db           … ブラウザの会話(SQLite。ステップ9。0016 の 13)。画面のアプリの aibow.db とは別のファイル
 //	                      (同じ PC で画面のアプリと aibow-server を同時に動かすため)
 //
@@ -26,12 +27,16 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+
+	"github.com/secondarykey/aibow"
+	"github.com/secondarykey/aibow/mcp/client"
 )
 
 // 設定ファイルの名前(アプリの settings.json・tools.json・aibow.db と重ならない名前)
 const (
 	configFileName = "server.json"
 	stateFileName  = "server-models.json"
+	toolsFileName  = "server-tools.json"
 	dbFileName     = "server.db"
 )
 
@@ -60,6 +65,9 @@ type configFile struct {
 	// TLSCert・TLSKey は HTTPS の証明書と秘密鍵のファイル(aibow-server cert で作れる)。両方書けば HTTPS で待ち受ける
 	TLSCert string `json:"tlsCert"`
 	TLSKey  string `json:"tlsKey"`
+	// MCPServers は、ブラウザの会話で使う MCP のサーバー(0024 の決定事項 7・23)。形はアプリの settings.json の mcpServers と同じ。
+	// サーバーの PC で動き、全員で1つを使う(決定事項 9)。最初に使われたときに起動する(決定事項 20)
+	MCPServers map[string]client.ServerConfig `json:"mcpServers"`
 }
 
 // config は、強さの順で決めた設定。
@@ -78,11 +86,15 @@ type config struct {
 	Host            string
 	TLSCert, TLSKey string
 
+	// MCPServers は、ブラウザの会話で使う MCP のサーバー(設定ファイルにだけ書ける。0024)
+	MCPServers map[string]client.ServerConfig
+
 	// File は読んだ設定ファイル(無ければ空)。StatePath は aibow-server が書くファイル(server-models.json)、
-	// DBPath はブラウザの会話の DB(server.db)。どちらも設定ファイルの隣
+	// DBPath はブラウザの会話の DB(server.db)、ToolsPath はツールの扱いの既定(server-tools.json)。どれも設定ファイルの隣
 	File      string
 	StatePath string
 	DBPath    string
+	ToolsPath string
 }
 
 // flags は起動の引数。書かれたかどうかは set で見る(書かれていない引数は、設定ファイル・環境変数より弱いため)。
@@ -134,7 +146,9 @@ func resolve(fs *flag.FlagSet, f *flags, env *envReader) (config, []string, erro
 		return config{}, nil, fmt.Errorf("-config の設定ファイルが見つかりません: %s", absPath(path))
 	}
 
-	c := config{StatePath: filepath.Join(filepath.Dir(path), stateFileName), DBPath: filepath.Join(filepath.Dir(path), dbFileName)}
+	dir := filepath.Dir(path)
+	c := config{StatePath: filepath.Join(dir, stateFileName), DBPath: filepath.Join(dir, dbFileName), ToolsPath: filepath.Join(dir, toolsFileName),
+		MCPServers: file.MCPServers}
 	if found {
 		c.File = path
 	}
@@ -230,6 +244,9 @@ func loadConfigFile(path string) (file configFile, found bool, err error) {
 	}
 	if file.Port < 0 || file.Ctx < 0 {
 		return configFile{}, false, fmt.Errorf("設定ファイル %s の port と ctx は 1 以上にしてください: %d / %d", path, file.Port, file.Ctx)
+	}
+	if err := aibow.CheckMCPServers(path, file.MCPServers); err != nil {
+		return configFile{}, false, err
 	}
 	return file, true, nil
 }

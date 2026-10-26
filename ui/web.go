@@ -15,8 +15,9 @@ package ui
 // 確認のカードは、送信の長い呼び出しが返る前に届き、その答えは別の呼び出しで返す。会話の仕組みは答えが来るまでループを止めて待つ
 // (Wails の中で済んでいたことを、知らせ(SSE)と呼び出し(HTTP)に分けただけ)。送信の呼び出しが切れたら(タブを閉じた)停止と同じ。
 //
-// 呼べるメソッドは、ブラウザで使うものだけ(browserMethods)。ツールの扱いの既定を変えるものは出さない(0024 の決定事項 3)。
-// サーバーの PC の事情を変えるもの(pcMethods)は、管理者とサーバーの PC の上から開いた画面だけが呼べる(0016 の 6・0018 の決定事項 8)。
+// 呼べるメソッドは、ブラウザで使うものだけ(browserMethods)。
+// サーバーの PC の事情を変えるもの(pcMethods)とツールの扱いの既定を変えるもの(adminToolMethods)は、
+// 管理者とサーバーの PC の上から開いた画面だけが呼べる(0016 の 6・0018 の決定事項 8・0024 の決定事項 21)。
 // 呼び出しは reflect で Service のメソッドを名前から探す(Wails のバインディングも、実行のときは同じことをしている)。
 //
 // 誰の呼び出しかは、aibow-server が渡す係(Who)で決め、メソッドに渡す ctx に入れる(aibow.WithUser。0017 の 12。管理者かも。caller.go)。
@@ -45,8 +46,8 @@ import (
 // browserMethods は、ブラウザから呼べる Service のメソッド。
 //
 // 出さないもの:基本設定の GPU の層数(モデルのタブのモデルごとの層の数で足りる)。
-// ツールの扱いの既定を変えるもの(SetToolPolicy・SetGroupPolicy・ToolPrefs など)と、MCP のサーバーを起動して一覧を取るもの(LoadToolList)。
-// ブラウザの会話のツールはサーバーの PC で動き、その既定は管理者が決める(0024 の決定事項 3。管理者の画面は 12-1b)。
+// ツールの扱いの既定を変えるもの(SetToolPolicy・SetGroupPolicy・LoadToolList)は、管理者だけ(adminToolMethods)。
+// ブラウザの会話のツールはサーバーの PC で動き、その既定は管理者が決める(0024 の決定事項 3)。
 // ServerHost も断るが、口そのものにも出さない(断るだけだと、ブラウザの画面がそれを呼ぶ作りになっても気づけないため)。
 var browserMethods = []string{
 	// モデルと設定
@@ -64,11 +65,29 @@ var browserMethods = []string{
 	// 会話のツール(0024 の 12-1a)。この会話で使うか(会話の設定)と、実行前の確認への答え。
 	// 確認のカードは SSE の chat(confirm)で届き、答えは ConfirmTool で返す。つなぎ直したら PendingConfirm で取り直す
 	"ToolStates", "MCPServers", "ConfirmTool", "PendingConfirm",
+	// ツールの扱いの既定(設定の画面の「ツール」。0024 の 12-1b)。誰でも見られる(変えるのは adminToolMethods)
+	"ToolPrefs", "ToolDefaults", "BuiltinTools",
 }
 
 // pcMethods は、サーバーの PC の事情を変えるメソッド(モデルのタブ。0015 の 8-4)。管理者とサーバーの PC の上から開いた画面だけが呼べる
 // (Caller.ManagesPC。0018 の決定事項 8)。ほかの人は 403。
 var pcMethods = []string{"UnloadModel", "SetModelGPULayers", "ModelPlaces", "AddModelPlace", "RemoveModelPlace", "SetModelEnabled"}
+
+// adminToolMethods は、ツールの扱いの既定を変えるメソッド(設定の画面の「ツール」。0024 の決定事項 21)。
+// サーバー全体の既定(server-tools.json)を変え、一覧の読み直しはサーバーの PC で MCP のサーバーを起動するので、pcMethods と同じ人だけが呼べる。ほかの人は 403。
+var adminToolMethods = []string{"SetToolPolicy", "SetGroupPolicy", "LoadToolList"}
+
+// adminOnly は、管理者だけが呼べるメソッドと、ほかの人に断るときの文。
+var adminOnly = map[string]string{}
+
+func init() {
+	for _, name := range pcMethods {
+		adminOnly[name] = "この操作(モデルを降ろす・GPU の層数・モデルの置き場所)は、aibow-server を動かしている PC からか、管理者だけができます"
+	}
+	for _, name := range adminToolMethods {
+		adminOnly[name] = "ツールの扱いの既定は、aibow-server を動かしている PC からか、管理者だけが変えられます"
+	}
+}
 
 // Who は、リクエストを送ってきた人を決める係(aibow-server が渡す)。決められなければエラー(401 で断る)。
 type Who func(r *http.Request) (Caller, error)
@@ -76,17 +95,13 @@ type Who func(r *http.Request) (Caller, error)
 // Handler は、画面用の口(/aibow/ui/ の下)を返す。ev は New に Notify として渡したもの(SSE で送る)。who は利用者を決める係。
 func Handler(s *Service, ev *Events, who Who) http.Handler {
 	methods := map[string]reflect.Value{}
-	pcOnly := map[string]bool{}
 	v := reflect.ValueOf(s)
-	for _, name := range append(slices.Clone(browserMethods), pcMethods...) {
+	for _, name := range slices.Concat(browserMethods, pcMethods, adminToolMethods) {
 		m := v.MethodByName(name)
 		if !m.IsValid() {
-			panic("ui.Service に " + name + " がありません(browserMethods・pcMethods を直してください)")
+			panic("ui.Service に " + name + " がありません(browserMethods・pcMethods・adminToolMethods を直してください)")
 		}
 		methods[name] = m
-	}
-	for _, name := range pcMethods {
-		pcOnly[name] = true
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /aibow/ui/call/{method}", func(w http.ResponseWriter, r *http.Request) {
@@ -101,9 +116,9 @@ func Handler(s *Service, ev *Events, who Who) http.Handler {
 			writeError(w, http.StatusUnauthorized, err.Error())
 			return
 		}
-		if pcOnly[name] && !c.ManagesPC() {
+		if msg, ok := adminOnly[name]; ok && !c.ManagesPC() {
 			log.Warnf("管理者だけのメソッドなので断りました: %s(%s)", name, r.RemoteAddr)
-			writeError(w, http.StatusForbidden, "この操作(モデルを降ろす・GPU の層数・モデルの置き場所)は、aibow-server を動かしている PC からか、管理者だけができます")
+			writeError(w, http.StatusForbidden, msg)
 			return
 		}
 		call(w, r.WithContext(withCaller(aibow.WithUser(r.Context(), c.ID), c)), name, m)

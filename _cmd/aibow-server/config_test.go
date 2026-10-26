@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -36,8 +37,8 @@ func TestResolveOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := config{Port: 9000, Ctx: 16384, Model: "env-model", Lib: "arg-lib", ModelsDir: "models", Host: "127.0.0.1", Login: true,
-		File: path, StatePath: filepath.Join(dir, stateFileName), DBPath: filepath.Join(dir, dbFileName)}
-	if c != want {
+		File: path, StatePath: filepath.Join(dir, stateFileName), DBPath: filepath.Join(dir, dbFileName), ToolsPath: filepath.Join(dir, toolsFileName)}
+	if !reflect.DeepEqual(c, want) {
 		t.Errorf("設定:\n got  %+v\n want %+v", c, want)
 	}
 	if len(notices) != 1 || !strings.Contains(notices[0], "AIBOW_API_PORT") {
@@ -166,5 +167,23 @@ func TestResolveHost(t *testing.T) {
 	c, _, _ = resolveArgs("-tls-cert", "a.pem", "-tls-key", "b.pem")
 	if c.Scheme() != "https" {
 		t.Errorf("証明書があれば https: %+v", c)
+	}
+}
+
+// server.json の mcpServers は、アプリの settings.json と同じ形で読み、同じように確かめる(0024 の決定事項 23)
+func TestConfigMCPServers(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, configFileName)
+	os.WriteFile(path, []byte(`{"mcpServers": {"fetch": {"command": "uvx", "args": ["mcp-server-fetch"]}}}`), 0o644)
+	file, _, err := loadConfigFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f := file.MCPServers["fetch"]; f.Command != "uvx" || len(f.Args) != 1 {
+		t.Errorf("mcpServers: %+v", file.MCPServers)
+	}
+	os.WriteFile(path, []byte(`{"mcpServers": {"broken": {}}}`), 0o644)
+	if _, _, err := loadConfigFile(path); err == nil || !strings.Contains(err.Error(), "broken") {
+		t.Errorf("書き間違えたサーバーは、名前の分かるエラーのはず: %v", err)
 	}
 }

@@ -57,23 +57,31 @@ func LoadSettingsFile(path string) (SettingsFile, error) {
 	if err := CheckServerURL(s.ServerURL); err != nil {
 		return SettingsFile{}, fmt.Errorf("設定ファイル %s の serverUrl: %w", path, err)
 	}
+	if err := CheckMCPServers(path, s.MCPServers); err != nil {
+		return SettingsFile{}, err
+	}
+	return s, nil
+}
+
+// CheckMCPServers は、設定ファイル path に書いた mcpServers を確かめる(アプリの settings.json と aibow-server の server.json で同じ。0024)。
+func CheckMCPServers(path string, servers map[string]client.ServerConfig) error {
 	prefixes := map[string]string{} // ツールの名前の前に付ける形 → サーバーの名前
-	for _, name := range slices.Sorted(maps.Keys(s.MCPServers)) {
+	for _, name := range slices.Sorted(maps.Keys(servers)) {
 		if name == "" {
-			return SettingsFile{}, fmt.Errorf("設定ファイル %s の mcpServers に、名前が空のサーバーがあります", path)
+			return fmt.Errorf("設定ファイル %s の mcpServers に、名前が空のサーバーがあります", path)
 		}
 		// サーバーの名前はツールの名前の前に付く(filesystem__read_file)。英数字・_・- 以外は _ になるので、重なると区別できない
 		p := client.ServerPrefix(name)
 		if other, dup := prefixes[p]; dup {
-			return SettingsFile{}, fmt.Errorf("設定ファイル %s の mcpServers の %s と %s は、ツールの名前に付けると同じ %s__… になり、区別できません。"+
+			return fmt.Errorf("設定ファイル %s の mcpServers の %s と %s は、ツールの名前に付けると同じ %s__… になり、区別できません。"+
 				"名前を変えてください(英数字・_・- だけで書くと、そのまま使われます)", path, other, name, p)
 		}
 		prefixes[p] = name
-		if err := s.MCPServers[name].Validate(); err != nil {
-			return SettingsFile{}, fmt.Errorf("設定ファイル %s の mcpServers の %s: %w", path, name, err)
+		if err := servers[name].Validate(); err != nil {
+			return fmt.Errorf("設定ファイル %s の mcpServers の %s: %w", path, name, err)
 		}
 	}
-	return s, nil
+	return nil
 }
 
 // jsonErrorLine は、JSON の読み間違いの場所を「N 行目」にする。

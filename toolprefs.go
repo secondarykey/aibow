@@ -95,12 +95,27 @@ type ToolPrefs struct {
 	// beforeSeen は、Seen の仕組みより前に書かれたファイル(seen のキーが無い)を読んだか。
 	// そのときは、今あるサーバーを全部「見た」ことにする(それまでの扱いを変えない。NoteServers)
 	beforeSeen bool
+	// ban は、「使わない」を禁止として扱うか(aibow-server の管理者の既定。LoadServerToolPrefs)
+	ban bool
 }
 
 // LoadToolPrefs は tools.json を読む。ファイルが無ければ空(何も決めていない)。
 // 読めない・壊れているときはエラーを返すが、ToolPrefs も返す(そのときは何も決めていない扱いで、ファイルは書き換えない)。
 func LoadToolPrefs(path string) (*ToolPrefs, error) {
-	p := &ToolPrefs{path: path}
+	return loadToolPrefs(path, false)
+}
+
+// LoadServerToolPrefs は、aibow-server の管理者が決めるツールの扱いの既定(server-tools.json。形は tools.json と同じ)を読む(0024 の決定事項 10・22)。
+//
+// アプリの PC の既定との違いは「使わない」の意味だけ。アプリでは「既定では使わない」で、会話ごとに「使う」にできる(その PC の人が自分で決めるので)。
+// aibow-server では禁止で、利用者は会話で「使う」にできない。利用者は自分のプロファイルを作れるので、配るプロファイルの「使えない」では止められないため。
+// グループ(組み込み・MCP のサーバー)ごとの「使わない」も禁止として持つ(アプリのように「新しい会話で最初から選ばない」には読み替えない)。
+func LoadServerToolPrefs(path string) (*ToolPrefs, error) {
+	return loadToolPrefs(path, true)
+}
+
+func loadToolPrefs(path string, ban bool) (*ToolPrefs, error) {
+	p := &ToolPrefs{path: path, ban: ban}
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return p, nil
@@ -113,7 +128,9 @@ func LoadToolPrefs(path string) (*ToolPrefs, error) {
 		p.data.Builtin = p.data.LegacyLocal
 	}
 	p.data.LegacyLocal = ""
-	p.data.moveGroupOff()
+	if !ban {
+		p.data.moveGroupOff()
+	}
 	if err == nil {
 		err = p.data.validate()
 	}
@@ -265,6 +282,19 @@ func (p *ToolPrefs) clearOff(names []string) error {
 	}, "")
 }
 
+// banned は、ツールが禁止されているか(aibow-server の管理者が、ツールかグループを「使わない」にした。LoadServerToolPrefs)。
+// アプリの PC の既定では、いつも false(「使わない」は「既定では使わない」なので)。
+func (p *ToolPrefs) banned(group, name string) bool {
+	if p == nil || !p.ban {
+		return false
+	}
+	v, ok := p.policy(group, name)
+	return ok && v == ToolOff
+}
+
+// Bans は、「使わない」を禁止として扱うか(aibow-server の管理者の既定)。
+func (p *ToolPrefs) Bans() bool { return p != nil && p.ban }
+
 // confirmPolicy は、会話で「使う」(ToolOn)にしたツールの、PC の既定での確認の扱い。決めていなければ ok が false。
 // 「使わない」は会話の「使う」で打ち消されるので飛ばし、ツールごと → グループごと、の順に見る。
 func (p *ToolPrefs) confirmPolicy(group, name string) (ToolPolicy, bool) {
@@ -309,8 +339,9 @@ func (p *ToolPrefs) SetBuiltinPolicy(policy ToolPolicy) error {
 
 // SetGroupPolicy は、グループ(組み込みなら空、MCP ならサーバーの名前)の全部のツールの確認の扱いの PC の既定を変えて、tools.json に書く。
 // 確認する(ask)・確認しない(allow)・決めていない(空)だけ(グループごとの「使わない」は「新しい会話で最初から選ばない」= プロファイルの使うツールのグループ。Conversations.SetDefaultGroup)。
+// aibow-server の管理者の既定(LoadServerToolPrefs)では、使わない(off。禁止)も決められる。
 func (p *ToolPrefs) SetGroupPolicy(group string, policy ToolPolicy) error {
-	if policy != "" && policy != ToolAsk && policy != ToolAllow {
+	if ok := policy == "" || policy == ToolAsk || policy == ToolAllow || policy == ToolOff && p.Bans(); !ok {
 		return fmt.Errorf("グループの扱いは確認する(ask)か確認しない(allow)です: %q", policy)
 	}
 	if group == "" {
@@ -432,6 +463,8 @@ type ToolPrefsView struct {
 	NotDefault NotDefault             `json:"notDefault"` // 新しい会話で最初から選ばないグループ
 	Path       string                 `json:"path"`       // tools.json の場所(画面に出す)
 	Error      string                 `json:"error"`      // 読めなかったときの理由(書き換えない)
+	// Ban は、「使わない」を禁止として扱うか(aibow-server の管理者の既定。0024 の決定事項 22)
+	Ban bool `json:"ban"`
 }
 
 // View は画面に出すための写しを返す。
@@ -452,6 +485,7 @@ func (p *ToolPrefs) View() ToolPrefsView {
 	maps.Copy(v.Tools, c.Tools)
 	maps.Copy(v.Known, c.Known)
 	v.Path = p.path
+	v.Ban = p.ban
 	if p.readOnly {
 		v.Error = "ファイルを読めなかったので、書き換えません"
 	}

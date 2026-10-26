@@ -186,7 +186,7 @@ func (cs *Conversations) runTool(ctx context.Context, conv Conversation, c forma
 func (cs *Conversations) runFound(ctx context.Context, conv Conversation, c format.ToolCall, t tool.Tool, args tool.Args, emit func(ChatEvent)) StoredMessage {
 	var conf *Confirmation
 	var err error
-	if cs.needsConfirm(conv.Settings, t) {
+	if cs.needsConfirm(conv.ID, conv.Settings, t) {
 		ct, ok := t.(tool.Confirmable)
 		if !ok {
 			ct = argsPreview{t} // 確認の内容を作れないツール(読むだけのツールを「確認する」にしたとき)は、引数を見せる
@@ -289,7 +289,7 @@ func (cs *Conversations) lookupTool(set ConversationSettings, c format.ToolCall)
 // needsConfirm は、ツールを確認してから実行するか(扱いが「確認する」なら確認する)。
 // 「確認しない」は、設定の画面の「ツール」(PC の既定)と会話の設定の画面の「ツール」(この会話だけ)で選ぶ(0010)。
 // ふだんは確認するツール(書き換えるツール・コマンド・MCP のツール)を聞かずに実行するときは、ログに出す。
-func (cs *Conversations) needsConfirm(set ConversationSettings, t tool.Tool) bool {
+func (cs *Conversations) needsConfirm(conv uuid.UUID, set ConversationSettings, t tool.Tool) bool {
 	if _, ok := t.(tool.SelfConfirming); ok {
 		// 確認は、実行の途中でツール(aibow の中の自作の MCP サーバー)が差分を送ってきたときに1回だけ聞く(askFor。聞くかは扱いで決める)
 		return false
@@ -299,7 +299,7 @@ func (cs *Conversations) needsConfirm(set ConversationSettings, t tool.Tool) boo
 	}
 	_, confirmable := t.(tool.Confirmable)
 	if confirmable {
-		log.Noticef("ツール %s は「確認しない」の扱いなので、聞かずに実行します", t.Def().Name)
+		log.Noticef("ツール %s は「確認しない」の扱いなので、聞かずに実行します(会話 %s)", t.Def().Name, conv)
 	}
 	return false
 }
@@ -543,7 +543,8 @@ func (cs *Conversations) toolsFor(set ConversationSettings) []tool.Tool {
 
 // toolPolicy は、会話でのツールの扱い(使わない / 確認する / 確認しない)を決める。扱いを決めるのはここだけ。
 //
-//  0. プロファイルで使えない(0014 の 5。会話のプロファイルの決まり)。会話の上書きでも使えるようにはできない
+//  0. プロファイルで使えない(0014 の 5。会話のプロファイルの決まり)・aibow-server の管理者が禁止した(0024 の決定事項 22)。
+//     会話の上書きでも使えるようにはできない
 //  1. 会話ごとの上書き(会話の設定の tool_policies)。「使う」(on)は使うかだけを決め、確認するかは 2・3 で決める
 //  2. PC の既定(tools.json)。グループ(組み込み / MCP のサーバー)ごと「使わない」なら使わない。
 //     そうでなければ、ツールごと → グループごとの順(ToolPrefs.policy)
@@ -565,7 +566,8 @@ func (cs *Conversations) toolPolicy(set ConversationSettings, t tool.Tool) ToolP
 const (
 	PolicyFromProfile      = "profile"      // プロファイルの決まり(使えない。0014)
 	PolicyFromConversation = "conversation" // 会話ごとの上書き(tool_policies)
-	PolicyFromPC           = "pc"           // PC の既定(tools.json)
+	PolicyFromPC           = "pc"           // PC の既定(tools.json。aibow-server なら管理者の既定 server-tools.json)
+	PolicyFromAdmin        = "admin"        // aibow-server の管理者が禁止した(server-tools.json の「使わない」。0024 の決定事項 22)
 	PolicyFromDefault      = "default"      // 決まりの既定
 )
 
@@ -576,6 +578,9 @@ const (
 func (cs *Conversations) policyOf(set ConversationSettings, group, name string, confirmable bool) (ToolPolicy, string) {
 	if set.profile != nil && set.profile.Rules.offTool(group, name) {
 		return ToolOff, PolicyFromProfile
+	}
+	if cs.prefs.banned(group, name) {
+		return ToolOff, PolicyFromAdmin // aibow-server の管理者が禁止した(会話の上書きでも使えない。0024 の決定事項 22)
 	}
 	p, ok := set.ToolPolicies[name]
 	if ok && p != ToolOn {

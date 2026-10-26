@@ -8,7 +8,8 @@ package main
 //	Cline など ──HTTP──→ /v1/ など → api ─────────────────────→ engine ┴─ 順番待ちの席は1つ(api.Seat)
 //
 // 生成は同じ engine を直接使い、OpenAI 互換の口と同じ席を通す(HTTP で自分自身に頼まない。0016 の 11)。
-// ブラウザの会話のツールはサーバーの PC で動く(0024)。12-1a では組み込みの時刻・計算だけ。確認のカードは SSE で届き、答えは画面用の口で返す。
+// ブラウザの会話のツールはサーバーの PC で動く(0024)。組み込みの時刻・計算と、server.json の mcpServers に書いた MCP のサーバー。
+// 扱いの既定は管理者が決める(server-tools.json)。確認のカードは SSE で届き、答えは画面用の口で返す。
 // 会話は server.db に保存し、画面のアプリの aibow.db とは別にする(0016 の 13)。
 //
 // 誰の会話かは、ここ(who)だけで決める(0017 の 12)。ログインが要る設定なら cookie のセッションの人(auth)、要らなければログインなしの形の利用者。
@@ -20,7 +21,9 @@ import (
 	"errors"
 	"io"
 	"io/fs"
+	"maps"
 	"net/http"
+	"slices"
 	"strings"
 	"uuid"
 
@@ -69,10 +72,11 @@ func startBrowser(c config, initial aibow.AppSettings, eng *engine.Engine, mm *m
 	// 組み込みのツールは、アプリと同じく aibow の中の自作の MCP サーバー越しに呼ぶ(0007 の 5-4)。
 	// ブラウザの会話は作業フォルダを使わない(Browser)ので、時刻と計算だけになる(0024 の 12-1a)
 	local := client.NewLocal(client.Options{Version: appVersion()})
+	mcpm, prefs := startServerTools(c)
 	svc, life := ui.New(ui.Options{
 		Host:  ui.NewServerHost(eng, mm, nCtx, url),
 		Store: st, App: app, Version: appVersion(),
-		Notify: events, Seat: seat, Local: local, Browser: true,
+		Notify: events, Seat: seat, Local: local, MCP: mcpm, Prefs: prefs, Browser: true,
 	})
 	life.Start() // 起動のときのモデルは main が読み込んだので、ここでは読み込まない(Initial を渡していない)
 
@@ -91,7 +95,33 @@ func startBrowser(c config, initial aibow.AppSettings, eng *engine.Engine, mm *m
 	mux.Handle("GET /aibow/auth/key", keys.MeHandler(c.KeysRequired()))
 	// 管理者の画面の口(利用者の管理。0018 の決定事項 7)。ブラウザでログインした管理者だけ
 	mux.Handle("/aibow/admin/", adminHandler(st, initial))
-	return sessions.Middleware(mux), keys, func() { life.Stop(); local.Close(); st.Close() }, nil
+	stop := func() {
+		life.Stop()
+		if mcpm != nil {
+			mcpm.Close() // 起動した MCP のサーバーも止める(子プロセスまで)
+		}
+		local.Close()
+		st.Close()
+	}
+	return sessions.Middleware(mux), keys, stop, nil
+}
+
+// startServerTools は、ブラウザの会話で使う MCP のサーバー(server.json の mcpServers)と、ツールの扱いの既定(server-tools.json)を用意する(0024 の 12-1b)。
+// MCP のサーバーはここでは起動しない。そのサーバーを使う会話で最初に送信したときに起動し、aibow-server を止めるまで全員で1つを使う(決定事項 9・20)。
+// 既定のファイルが壊れていたら、決まりの既定で動き、ファイルは書き換えない(アプリの tools.json と同じ)。
+func startServerTools(c config) (*client.Manager, *aibow.ToolPrefs) {
+	prefs, err := aibow.LoadServerToolPrefs(c.ToolsPath)
+	if err != nil {
+		log.Error(err.Error())
+	}
+	log.Noticef("ブラウザの会話のツールの扱いの既定: %s(管理者が設定の画面の「ツール」で変えます)", absPath(c.ToolsPath))
+	if len(c.MCPServers) == 0 {
+		log.Info("ブラウザの会話の MCP のサーバー: なし(server.json の mcpServers)")
+		return nil, prefs
+	}
+	names := slices.Sorted(maps.Keys(c.MCPServers))
+	log.Noticef("ブラウザの会話の MCP のサーバー: %s(server.json の mcpServers。要る最初の送信で起動し、全員で1つを使います)", strings.Join(names, ", "))
+	return client.New(c.MCPServers, client.Options{Version: appVersion()}), prefs
 }
 
 // noteFirstRun は、ログインが要る形で起動したときに、まだ使い始められない様子を知らせる(0020 の決定事項 2・4)。
