@@ -130,9 +130,8 @@ export default function App() {
 
   // 会話で選べる MCP のサーバー(settings.json に書いたもの全部)。起動したときと、ツールの扱い(確認しない)を変えたときに読む
   const [mcpServers, setMcpServers] = useState<ServerInfo[]>([]);
-  // ブラウザではツールを使わないので、聞かない(aibow-server はツールの口を出していない。0016 の 7)
+  // ブラウザでは aibow-server の設定に書いた MCP のサーバー(0024)
   const reloadMcp = useCallback(() => {
-    if (isBrowser) return;
     ChatService.MCPServers().then(
       s => setMcpServers(s ?? []),
       err => addError(`MCP のサーバーの一覧を取得できません: ${errorMessage(err)}`),
@@ -254,17 +253,20 @@ export default function App() {
           // 送れなかった(発言が保存されなかった)ら、打った文を入力欄に戻す。その間に打ち始めていたら、そちらを残す
           if (!(await chat.send(t))) setText(cur => cur || t);
         }}
-        top={settings && !isBrowser && (
-          // 入力欄の上: 作業フォルダと、この会話のツール(どちらも会話ごとの設定)。ブラウザではツールを使わないので出さない(0016 の 18)
+        top={settings && (
+          // 入力欄の上: 作業フォルダと、この会話のツール(どちらも会話ごとの設定)。
+          // ブラウザの会話は作業フォルダを持たない(ツールはサーバーの PC で動くため。0024 の決定事項 17)ので、ツールだけ
           <div className="composer-top">
-            <WorkDirBar
-              workDir={settings.work_dir}
-              onChange={workDir => {
-                convs.updateSettings({ work_dir: workDir });
-                focusInput();
-              }}
-              onError={addError}
-            />
+            {!isBrowser && (
+              <WorkDirBar
+                workDir={settings.work_dir}
+                onChange={workDir => {
+                  convs.updateSettings({ work_dir: workDir });
+                  focusInput();
+                }}
+                onError={addError}
+              />
+            )}
             <ToolBar
               builtinOn={!settings.builtin_off}
               servers={mcpServers}
@@ -321,7 +323,8 @@ export default function App() {
   }, [currentId, convTitle]);
 
   // 知らせ(SSE)のつながりが切れて、つなぎ直したら、切れている間のことを取り直す(ブラウザだけ。0016 の 9-3)。
-  // 生成中の会話は、送信の終わりで開き直す(useChat)ので、ここでは開き直さない
+  // 生成中の会話は、送信の終わりで開き直す(useChat)ので、ここでは開き直さない。
+  // ただし確認を待っていたら、そのカードは今出す(答えるまで送信が進まないため。0024 の決定事項 15)
   const reconnectState = useRef({ currentId, generatingId: chat.generatingId });
   reconnectState.current = { currentId, generatingId: chat.generatingId };
   useEffect(() => onReconnect(() => {
@@ -329,7 +332,8 @@ export default function App() {
     convs.reloadList().catch(() => {});
     models.reload().catch(() => {});
     if (currentId && currentId !== generatingId) convs.open(currentId).catch(err => addError(errorMessage(err)));
-  }), [convs.reloadList, convs.open, models.reload, addError]);
+    chat.resync();
+  }), [convs.reloadList, convs.open, models.reload, addError, chat.resync]);
 
   const markSettingsFrom = () => setSettingsFrom(transcript.items.reduce((m, it) => Math.max(m, it.id), 0));
   const toggleSettings = () => {

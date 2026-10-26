@@ -9,6 +9,7 @@ import { LuCheck, LuWrench } from "react-icons/lu";
 import type { ServerInfo } from "../../bindings/github.com/secondarykey/aibow/mcp/client";
 import type { Profile } from "../../bindings/github.com/secondarykey/aibow";
 import { FIX, offGroup } from "../profileRules";
+import { isBrowser } from "../backend";
 
 // BUILTIN は、組み込みのツールのグループの名前(プロファイルの「ツール」と同じ)
 export const BUILTIN = "組み込み";
@@ -63,7 +64,7 @@ export function ToolBar({ builtinOn, servers, selected, workDir, profile, onBuil
             className="conv-tools-item"
             disabled={lockOf("") !== ""}
             onClick={() => onBuiltinChange(!builtinOn)}
-            title={lockOf("") || "aibow の中で動くツール(時刻・計算・ファイル・コマンド)"}
+            title={lockOf("") || (isBrowser ? "aibow-server の中で動くツール(時刻・計算)" : "aibow の中で動くツール(時刻・計算・ファイル・コマンド)")}
           >
             <span className="conv-tools-check">{builtinOn && !offGroup(profile, "") && <LuCheck />}</span>
             {BUILTIN}

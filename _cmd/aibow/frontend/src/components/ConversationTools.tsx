@@ -5,13 +5,15 @@
 // プロファイルで「最初は使わない」ツールは、会話を作るときに上書き(off)として写る。禁止ではないので、この会話では使うにできる。
 // プロファイルで「使えない」ツールは押せない(会話の上書きでも使えない)。既定と同じにしたら上書きを消す。
 // 「確認しない」の枠で、この会話だけ確認せずに実行するにできる(会話の上書きの allow / ask。0010)。既定と同じにしたら上書きを消す。
+// ブラウザでは「確認しない」の枠を出さない(ツールはサーバーの PC で動き、確認しないかは管理者が決める。利用者が決められるのは
+// 確認のカードの「この会話では今後聞かない」だけ。0024 の決定事項 3・18。Go も断る)。
 // 扱いは Go の toolPolicy と同じ決め方で Go に決めてもらう(ChatService.ToolStates)。画面で同じ判断を書き直さない。
 // 既定と違うツールと、既定で使わないツールには、どこで決まったか(この会話 / 既定)を添える。
 //
 // グループは、使っていてもいなくても畳んで出し、▶ で開ける(プロファイルの「ツール」と同じ)。
 import { useEffect, useState } from "react";
 import { LuChevronDown, LuChevronRight } from "react-icons/lu";
-import { ChatService } from "../backend";
+import { ChatService, isBrowser } from "../backend";
 import { ToolPolicy } from "../../bindings/github.com/secondarykey/aibow";
 import type { ConversationSettings, Profile, ToolGroupState, ToolState } from "../../bindings/github.com/secondarykey/aibow";
 import type { ServerInfo } from "../../bindings/github.com/secondarykey/aibow/mcp/client";
@@ -174,7 +176,7 @@ function Group({ name, title, on, lockReason, onToggle, open, onToggleOpen, tool
                     onChange={e => onToggleTool(t, e.target.checked)}
                   />
                   <code>{short}</code>
-                  {t.policy !== ToolPolicy.ToolOff && on && (
+                  {t.policy !== ToolPolicy.ToolOff && on && !isBrowser && (
                     <ConfirmChip
                       allow={t.policy === ToolPolicy.ToolAllow}
                       title={t.policy === ToolPolicy.ToolAllow ? "この会話では確認せずに実行する(押すと確認する)" : "この会話では確認せずに実行するようにする"}
@@ -207,7 +209,8 @@ function StateTag({ tool, workDir }: { tool: ToolState; workDir: string }) {
     return <span className="tool-tag" title="確認するかを、この会話だけ変えています">この会話</span>;
   }
   if (off) {
-    return <span className="tool-tag" title="この PC の既定(tools.json)で使わないにしてある">既定で使わない</span>;
+    const where = isBrowser ? "aibow-server の既定(管理者が決める)" : "この PC の既定(tools.json)";
+    return <span className="tool-tag" title={`${where}で使わないにしてある`}>既定で使わない</span>;
   }
   if (tool.needs_work_dir && !workDir) {
     return <span className="tool-tag" title="作業フォルダを決めた会話でだけ使えます">作業フォルダが要る</span>;

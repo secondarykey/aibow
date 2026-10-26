@@ -145,7 +145,7 @@ var errNotLoggedIn = errors.New("ログインしてください")
 func who(login bool) ui.Who {
 	return func(r *http.Request) (ui.Caller, error) {
 		if !login {
-			return ui.Caller{ID: aibow.LocalUser, Local: api.IsLocal(r)}, nil
+			return ui.Caller{ID: aibow.LocalUser, Name: "local", Local: api.IsLocal(r)}, nil // 名前は server.db の利用者 local と同じ
 		}
 		u, ok := auth.UserFrom(r.Context())
 		if !ok {

@@ -60,6 +60,7 @@ export interface Chat {
   resend(text: string): Promise<void>; // 最後の発言を直して送り直す(開いている会話。0011)
   compact(): Promise<void>;    // 今すぐ要約(開いている会話)
   stop(): void;
+  resync(): void; // 知らせ(SSE)をつなぎ直したとき、生成中の送信で待っている確認を取り直す(ブラウザ。0024 の決定事項 15)
 }
 
 // onModelLoaded は、送信の前に Go が会話のモデルを読み直したときに呼ぶ(読み込んでいるモデルの表示を取り直す。0014 の 3)
@@ -388,6 +389,18 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
 
   const stop = useCallback(() => controller.current?.stop(), []);
 
+  // 知らせが切れている間に届かなかった confirm イベントを、Go が待っている確認から作り直す。
+  // 待っている確認が無いか、もうカードを出している確認なら何もしない(切れている間に来た結果などは、送信の終わりに開き直して揃える)
+  const resync = useCallback(() => {
+    const l = live.current;
+    if (!l) return;
+    ChatService.PendingConfirm(l.convId).then(req => {
+      if (req && live.current === l && l.confirm?.id !== req.id) {
+        listener.current?.({ conversation_id: l.convId, type: "confirm", confirm: req });
+      }
+    }, err => addError(errorMessage(err)));
+  }, [addError]);
+
   const lastPrompt = current ? prompts[current.conversation.id] ?? "" : "";
   // 確認に答える。答えは Go の待っているループに届き、実行(か拒否の結果)の tool_result が返ってくる。
   // remember はこのツールのこの会話でのこれから先の扱い(空 = この1回だけ、allow = この会話では今後聞かない、off = 今後許可しない。0010)。
@@ -431,5 +444,5 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
   const regenerate = useCallback(() => retry(false, "", id => ChatService.Regenerate(id)), [retry]);
   const resend = useCallback((text: string) => retry(true, text, id => ChatService.Resend(id, text)), [retry]);
 
-  return { generatingId, ended, confirmingId, answer, lastPrompt, send, regenerate, resend, compact, stop };
+  return { generatingId, ended, confirmingId, answer, lastPrompt, send, regenerate, resend, compact, stop, resync };
 }

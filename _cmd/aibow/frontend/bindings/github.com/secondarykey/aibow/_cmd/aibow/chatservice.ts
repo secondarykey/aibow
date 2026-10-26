@@ -225,6 +225,14 @@ export function NewConversation(profile: uuid$0.UUID, settings: aibow$0.Conversa
 }
 
 /**
+ * PendingConfirm は、会話 id で答えを待っている確認(待っていなければ null)。
+ * ブラウザの画面は、知らせ(SSE)をつなぎ直したときにこれを呼び、切れている間に届かなかった確認のカードを出し直す(0024 の決定事項 15)。
+ */
+export function PendingConfirm(id: uuid$0.UUID): $CancellablePromise<aibow$0.ConfirmRequest | null> {
+    return $Call.ByID(2644505738, id);
+}
+
+/**
  * ProfileDefaults は、プロファイル id から新しい会話を作るときの設定(新しい会話の画面でプロファイルを選んだとき)。
  */
 export function ProfileDefaults(id: uuid$0.UUID): $CancellablePromise<aibow$0.ConversationSettings> {
