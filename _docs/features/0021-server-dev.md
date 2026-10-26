@@ -44,3 +44,11 @@
 - Go のコードが変わったら aibow-server を自動で起動し直す(Ctrl+C して打ち直す)
 - バインディング(`frontend/bindings`)を作り直す(Go のメソッドを変えたら、今までどおり `wails3 generate bindings` か `wails3 build`。Git に入っている)
 - 配布の仕組み(ビルド済みの exe を配る)。`build` はその土台になる
+
+## 経過(TODO.md から移した。2026-10-26)
+
+TODO.md を短い入口にしたとき(0025)、TODO.md の行に書き足してきた経過と決めたことを、そのまま移した。
+
+### aibow-server の開発とビルドの入り口(`_cmd/dev`)
+
+aibow-server の開発とビルドの入り口(2026-10-26、ユーザーの要望。画面のビルドを忘れて古い画面が埋め込まれたため。**2026-10-26 に完了**):`go run ./_cmd/dev server`(画面は vite の開発用サーバーから配り、aibow-server は go run)・`go run ./_cmd/dev build`(画面をビルドしてから exe を作る)
