@@ -67,7 +67,7 @@ export function AppSettings(): $CancellablePromise<aibow$0.AppSettings> {
 
 /**
  * BuiltinTools は組み込みのツール(aibow の中で動くツール)の一覧(設定の画面の「ツール」に出す)。
- * ブラウザでは、作業フォルダを使わないツール(時刻・計算)だけ(0024 の決定事項 17)。
+ * ブラウザでは、コマンドのツールを出さない。資料のフォルダが無ければ、作業フォルダを使わないツール(時刻・計算)だけ(0024 の決定事項 5・17)。
  */
 export function BuiltinTools(): $CancellablePromise<aibow$0.KnownTool[] | null> {
     return $Call.ByID(704771653);
@@ -180,6 +180,14 @@ export function DisconnectServer(): $CancellablePromise<void> {
 }
 
 /**
+ * Folders は aibow-server の資料のフォルダの名前(名前の順。パスは返さない)。配るプロファイルで選ぶ(0024 の 12-2)。
+ * 名前は誰でも見られる(どのフォルダを使えるかは、配られたプロファイルで決まる)。アプリの中で動かすときは空。
+ */
+export function Folders(): $CancellablePromise<string[] | null> {
+    return $Call.ByID(2760372572);
+}
+
+/**
  * LoadToolList は、MCP のサーバーを一時的に起動してツールの一覧を受け取り、tools.json に覚える(設定の画面で、一覧が無いときと「読み直す」)。
  * ブラウザでは管理者だけ(サーバーの PC でプロセスを起動するため)。
  */
@@ -190,7 +198,8 @@ export function LoadToolList(server: string): $CancellablePromise<void> {
 /**
  * MCPServers は、会話ごとに使うものを選ぶ MCP のサーバーの一覧(settings.json に書いたもの全部)。書いてなければ空。
  * 設定の画面の「ツール」のチェックは「新しい会話で最初から選ぶか」だけなので、チェックを外したものもここに出す。
- * ブラウザでは aibow-server の server.json に書いたもの。${workdir} を使うサーバーは出さない(資料のフォルダは 12-2。0024 の決定事項 24)。
+ * ブラウザでは aibow-server の server.json に書いたもの。${workdir} を使うサーバーは、資料のフォルダが無ければ出さない
+ * (資料のフォルダのある会話でだけ起動する。0024 の決定事項 8・24)。
  */
 export function MCPServers(): $CancellablePromise<client$0.ServerInfo[] | null> {
     return $Call.ByID(287669679);

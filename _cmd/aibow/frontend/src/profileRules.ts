@@ -26,6 +26,14 @@ export interface Lock {
   onToggle?(item: string): void;
 }
 
+// grantedFolder は、プロファイルで使える aibow-server の資料のフォルダの名前(使えなければ空。0024 の 12-2)。
+// Go の Profile.GrantedFolder と同じ決め方(配っていて、まだ配られているときだけ)。新しい会話の画面で、選んだプロファイルのフォルダを出すのに使う
+// (会話を開いているときは、Go が返す会話の詳細の folder を使う)
+export function grantedFolder(p: Profile | null | undefined): string {
+  if (!p || !p.share || p.withdrawn) return "";
+  return p.rules.folder ?? "";
+}
+
 // lockOf は、会話のプロファイルから、会話の設定の画面に渡す Lock を作る。プロファイルを持たない会話なら undefined。
 export function lockOf(p: Profile | null | undefined): Lock | undefined {
   if (!p) return undefined;

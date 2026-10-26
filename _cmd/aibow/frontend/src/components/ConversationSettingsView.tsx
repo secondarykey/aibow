@@ -12,7 +12,7 @@ import type { Entry as ModelEntry } from "../../bindings/github.com/secondarykey
 import { ConversationSettingsForm, LimitsForm } from "./ConversationSettingsForm";
 import { lockOf } from "../profileRules";
 import { ConversationTools } from "./ConversationTools";
-import { ChatService, me } from "../backend";
+import { ChatService, isBrowser, me } from "../backend";
 import { CopyButton } from "./CopyButton";
 
 interface Props {
@@ -25,6 +25,7 @@ interface Props {
   onClose(): void;                        // 会話に戻る
   onChange(patch: Partial<ConversationSettings>): void;
   profile: Profile | null;              // この会話のプロファイル(どのプロファイルから作ったか・決まり。0014)
+  folder: string;                       // ブラウザの会話の資料のフォルダの名前(無ければ空。0024 の 12-2)
   onSaveToProfile(): void;              // この会話の設定で、プロファイルの値を上書きする
   onSaveAsProfile(name: string): void;  // この会話の設定で、新しいプロファイルを作る
   lastPrompt: string;
@@ -75,7 +76,7 @@ function TitleField({ title, onRename }: { title: string; onRename(title: string
   );
 }
 
-export function ConversationSettingsView({ id, title, onRename, settings, models, errors, onClose, onChange, profile, onSaveToProfile, onSaveAsProfile, lastPrompt, servers, limitsDisabled, onApplyLimits,
+export function ConversationSettingsView({ id, title, onRename, settings, models, errors, onClose, onChange, profile, folder, onSaveToProfile, onSaveAsProfile, lastPrompt, servers, limitsDisabled, onApplyLimits,
   share, shareWith, onShare,
 }: Props) {
   const lock = lockOf(profile);
@@ -100,6 +101,12 @@ export function ConversationSettingsView({ id, title, onRename, settings, models
 
         <label title="この会話を作ったプロファイル。固定した項目と使えないツールは、このプロファイルの決まりで決まる">プロファイル</label>
         <div className="conv-profile">{profile ? profile.name : "(プロファイルを持たない会話)"}</div>
+        {isBrowser && (
+          <>
+            <label title="この会話のツールが読み書きする aibow-server の資料のフォルダ。管理者が配ったプロファイルで決まる">資料のフォルダ</label>
+            <div className="conv-profile">{folder || "(なし)"}</div>
+          </>
+        )}
         {me.login && <ShareField share={share} shareWith={shareWith} onShare={onShare} />}
 
         <ConversationSettingsForm settings={settings} models={models} lock={lock} onChange={onChange} />
@@ -107,7 +114,7 @@ export function ConversationSettingsView({ id, title, onRename, settings, models
         <SaveToProfile profile={profile} onSave={onSaveToProfile} onSaveAs={onSaveAsProfile} />
 
         <h2 className="section" title="この会話で使うツール(入力欄の上の「この会話のツール」と同じ)">ツール</h2>
-        <ConversationTools id={id} settings={settings} servers={servers} profile={profile} onChange={onChange} />
+        <ConversationTools id={id} settings={settings} workDir={isBrowser ? folder : settings.work_dir} servers={servers} profile={profile} onChange={onChange} />
 
 
         <h2 className="section">モデルに渡した文字列</h2>

@@ -217,6 +217,8 @@ Cline など ──HTTP──→ /v1/ など → api.Server ──────�
   - ツールの実行のログには、利用者の名前と会話が付く(`ツール calculate(...)(bob の会話 …)`)
   - MCP のサーバー(`server.json` の `mcpServers`)と管理者の既定(`server-tools.json`)は [mcp.md](mcp.md) の「aibow-server の MCP のサーバー」。
     既定を見る `ToolPrefs`・`ToolDefaults`・`BuiltinTools` は誰でも呼べ(既定のファイルの場所は管理者にだけ返す)、変える `SetToolPolicy`・`SetGroupPolicy`・`LoadToolList` は管理者だけ(ほかの人は 403)
+  - 資料のフォルダ(0024 の 12-2):`Folders` は `server.json` の `folders` の名前だけを返す。会話の詳細(`Conversation`)の `folder` はその会話で使えるフォルダの名前。
+    パスはどの返事にも入れない。資料のフォルダのある会話では、コマンドのツール(`run_command`)をモデルにも画面にも出さない(`ui.noCommand`・`forBrowser`)
 - **作業領域**:起動のときに決めた大きさで固定。会話の上限 + 返事の上限が入るかを確かめるだけで、作り直さない(`ui.ServerHost`。aibow-server につないだ画面のアプリと同じ `ContextError`)
 - **見せるもの**は、aibow-server につないだ画面のアプリと同じ:モデルの一覧(名前・大きさ・読み込み中か)・作業領域の大きさ・つなぎ先(aibow-server のアドレス)。Cline などのためにモデルを入れ替えている途中は、前のモデルを見せ続ける(`ServerHost`。api/client の `Shown` と同じ)。出どころ・置き場所・層の数・サーバーの PC のパスは見せない
 - 実際に動かして確かめたこと(2026-10-22。qwen3.5:4b・9b):Cline の形のリクエストを 9B で送っている間にブラウザから送ると、「待っています」が届き、

@@ -26,12 +26,13 @@ import { FIX, offGroup } from "../profileRules";
 interface Props {
   id: string; // 会話の ID(プロファイルの決まりを Go が引くため)
   settings: ConversationSettings;
+  workDir: string; // 作業フォルダ(ブラウザでは資料のフォルダの名前)。決めていなければ空。作業フォルダが要るツールの印に使う
   servers: ServerInfo[]; // settings.json の MCP のサーバー
   profile: Profile | null; // この会話のプロファイル(使うグループの固定・使えないグループ。0014)
   onChange(patch: Partial<ConversationSettings>): void;
 }
 
-export function ConversationTools({ id, settings, servers, profile, onChange }: Props) {
+export function ConversationTools({ id, settings, workDir, servers, profile, onChange }: Props) {
   // グループのチェックを押せない理由(プロファイルで固定・使えない)。押せるなら空
   const groupLock = (group: string) =>
     offGroup(profile, group) ? `プロファイル「${profile?.name}」で使えない`
@@ -90,7 +91,7 @@ export function ConversationTools({ id, settings, servers, profile, onChange }: 
               open={opened[""]}
               onToggleOpen={() => setOpened(o => ({ ...o, "": !o[""] }))}
               tools={g.tools ?? []}
-              workDir={settings.work_dir}
+              workDir={workDir}
               label={t => TOOL_LABELS[t.name] ?? t.description}
               onToggleTool={toggleTool}
               onToggleConfirm={toggleConfirm}
@@ -111,7 +112,7 @@ export function ConversationTools({ id, settings, servers, profile, onChange }: 
             open={opened[g.server]}
             onToggleOpen={() => setOpened(o => ({ ...o, [g.server]: !o[g.server] }))}
             tools={g.tools ?? []}
-            workDir={settings.work_dir}
+            workDir={workDir}
             needsWorkDir={info.uses_work_dir}
             // モデルに見せる名前は「サーバーの名前__ツールの名前」。サーバーの名前の部分は見出しにあるので外す
             prefix={g.server.replace(/[^A-Za-z0-9_-]/gu, "_") + "__"}

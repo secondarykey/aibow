@@ -269,6 +269,7 @@ function ProfileEditor({ profile, info, models, servers, disabled, onChange, onA
         </button>
       </div>
       {isBrowser && me.admin && <ShareForm profile={profile} onShare={onShare} onError={onError} />}
+      {isBrowser && <FolderField profile={profile} onChange={onChange} onError={onError} />}
 
       <ConversationSettingsForm settings={settings} models={models} lock={lock} onChange={setValues} />
       <LimitsForm
@@ -283,6 +284,38 @@ function ProfileEditor({ profile, info, models, servers, disabled, onChange, onA
         ? "このプロファイルでのツールの扱い(最初から使う・選べば使える・使えない)。確認するかは aibow-server の既定(設定の画面の「ツール」)"
         : "このプロファイルでのツールの扱い(最初から使う・選べば使える・使えない)と、確認しない(この PC の設定)"}>ツール</h2>
       <ProfileTools profile={profile} servers={servers} lock={lock} onChange={onChange} onPCChanged={onToolsChanged} />
+    </div>
+  );
+}
+
+// FolderField は、プロファイルの資料のフォルダ(ブラウザだけ。0024 の 12-2)。選べるのは管理者だけで、ほかの人には名前だけを出す。
+// 配っているプロファイルで、配られた人の会話の作業フォルダになる(配っていなければ効かない)。aibow-server にフォルダが無ければ出さない
+function FolderField({ profile, onChange, onError }: { profile: Profile; onChange(f: (p: Profile) => Profile): void; onError(text: string): void }) {
+  const [names, setNames] = useState<string[]>([]);
+  useEffect(() => {
+    ChatService.Folders().then(n => setNames(n ?? []), err => onError(errorMessage(err)));
+  }, [onError]);
+  const folder = profile.rules.folder ?? "";
+  if (names.length === 0 && !folder) return null;
+  const title = "このプロファイルの会話で読み書きする aibow-server の資料のフォルダ。配っているプロファイルで、配られた人だけが使える";
+  if (!me.admin || profile.read_only) {
+    return (
+      <div className="profile-share">
+        <label title={title}>資料のフォルダ</label>
+        <span>{folder || "なし"}</span>
+      </div>
+    );
+  }
+  return (
+    <div className="profile-share">
+      <label htmlFor="profile-folder" title={title}>資料のフォルダ</label>
+      <select id="profile-folder" value={folder} onChange={e => {
+        const v = e.target.value;
+        onChange(p => ({ ...p, rules: { ...p.rules, folder: v } }));
+      }}>
+        <option value="">なし</option>
+        {names.map(n => <option key={n} value={n}>{n}</option>)}
+      </select>
     </div>
   );
 }

@@ -35,7 +35,7 @@ aibow 全体の進み具合(入口)。ルールと全体の構成は `AGENTS.md`
 | ✅ | 9. ブラウザからも使う:aibow-server が画面を配り、ブラウザから会話する | [0016-browser.md](_docs/features/0016-browser.md) |
 | ✅ | 10. 利用者とログイン・会話の持ち主 | [0017-users.md](_docs/features/0017-users.md) |
 | ✅ | 11. 共有:管理者・会話の公開範囲・共有の作業 | [0018-sharing.md](_docs/features/0018-sharing.md) |
-| 🔧 | 12. サーバーの上で動かすツール:12-1 Web のツール(**12-1a・12-1b 済み**)・12-2 サーバーの資料のフォルダ・12-3 コマンドと隔離(作らない) | [0024-server-tools.md](_docs/features/0024-server-tools.md) |
+| 🔧 | 12. サーバーの上で動かすツール:12-1 Web のツール・12-2 サーバーの資料のフォルダ(**12-1・12-2 済み。残りは 12-4 の確かめ**)・12-3 コマンドと隔離(作らない) | [0024-server-tools.md](_docs/features/0024-server-tools.md) |
 
 ## ロードマップの外でやりたいこと
 

@@ -37,6 +37,19 @@ export function WorkDirBar({ workDir, onChange, onError }: Props) {
   );
 }
 
+// FolderBar は、ブラウザの会話の資料のフォルダ(aibow-server。0024 の決定事項 26)。アプリの作業フォルダと同じ場所に、名前だけを押せない形で出す。
+// フォルダは管理者が配るプロファイルで決めるので、ここでは選べない。
+export function FolderBar({ name }: { name: string }) {
+  return (
+    <div className="workdir-bar set">
+      <span className="workdir folder-fixed" title="資料のフォルダ(aibow-server の PC。管理者が配ったプロファイルで決まる)。この会話のツールは、このフォルダの中を読み書きする">
+        <LuFolder />
+        <span className="workdir-name">{name}</span>
+      </span>
+    </div>
+  );
+}
+
 // baseName はパスの最後の名前(D:\Work\example → example)。ドライブそのもの(D:\)ならそのまま
 function baseName(path: string): string {
   const parts = path.split(/[\\/]+/).filter(Boolean);

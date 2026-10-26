@@ -86,7 +86,9 @@
 「新しい会話の既定」に名前を付けたもの。仕様と進み具合は [features/0014-profiles.md](features/0014-profiles.md)。作業の順番の 1〜4(保存と引き継ぎ・会話ごとのモデル・決まり・画面の最初の形)まで済み。
 
 - **値は写し、決まりは参照**。値(`ProfileValues`:システムプロンプト・temperature・思考・presence penalty・compact の方式・会話の上限・返事の上限・モデル・使うツールのグループ)は会話を作るときに写す。
-  決まり(`ProfileRules`:固定した項目・使えないツール)は、会話が覚えているプロファイル(`Conversation.ProfileID`)からそのつど引く(`rules.go`)
+  決まり(`ProfileRules`:固定した項目・使えないツール・aibow-server の資料のフォルダ)は、会話が覚えているプロファイル(`Conversation.ProfileID`)からそのつど引く(`rules.go`)
+- **資料のフォルダ**(`ProfileRules.Folder`。0024 の 12-2):aibow-server の `server.json` の `folders` の名前。配っていて、その人にまだ配られているときだけ効く(`Profile.GrantedFolder`)。
+  ブラウザの会話では、会話に保存した作業フォルダは使わず(`IgnoreWorkDir`)、これを作業フォルダにする(`Conversations.workDir`。パスは画面に返す設定には入れない)。写したプロファイルには写さない。選べるのは管理者だけ(`ui.Service.checkFolder`)
 - ツールごとの「最初は使わない」(`tools_off`)はプロファイルの値。会話を作るときに会話の上書き(`tool_policies` の off)として写す(値は写し)。
   前はこの PC の既定(tools.json の tools の off)で、起動したときに全部のプロファイルと今ある会話の上書きに移して tools.json から消す(`moveToolsOff`。2026-10-20)
 - **決まりの当て方**(扱いを決めるのは Go の1か所。画面は結果を出すだけ):

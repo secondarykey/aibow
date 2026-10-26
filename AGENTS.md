@@ -28,7 +28,7 @@ aibow の組み込みのツール: 会話の仕組み ⇄ aibow/mcp/client の L
 OpenAI 互換のクライアント(Cline など)⇄ HTTP(S)(既定は 127.0.0.1。外では API キー)⇄ aibow-server(_cmd/aibow-server)= aibow/api ⇄ aibow/engine
 画面のアプリを aibow-server につなぐとき(settings.json の serverUrl。ステップ8・10):aibow ⇄ aibow/api/client(生成)・aibow/store/remote(保存)⇄ HTTP ⇄ aibow-server(アプリは llama.cpp を読み込まず、会話は server.db。
   つながないとき(既定)は上の図のとおりアプリの中で動かし、そのときは aibow-server と同時に使わない)
-ブラウザ(http://127.0.0.1:8089/。ステップ9)⇄ HTTP(S)(画面と /aibow/ui/ の呼び出しと SSE。ログインは cookie のセッション。ステップ10)⇄ aibow-server = aibow/ui ⇄ aibow(ツールはサーバーの PC で動く。ステップ12)⇄ aibow/engine
+ブラウザ(http://127.0.0.1:8089/。ステップ9)⇄ HTTP(S)(画面と /aibow/ui/ の呼び出しと SSE。ログインは cookie のセッション。ステップ10)⇄ aibow-server = aibow/ui ⇄ aibow(ツールはサーバーの PC で動く。配るプロファイルで選んだ資料のフォルダを読み書きする。ステップ12)⇄ aibow/engine
   (画面は aibow/web に埋め込んだもので、デスクトップのアプリと同じ。会話は aibow-server の server.db。生成は OpenAI 互換の口と同じ engine・同じ順番待ちの席 api.Seat)
 利用者(ステップ10):aibow-server の server.db に利用者・セッション・API キー(aibow/auth)。会話・プロファイル・表示の設定は持ち主で分かれ、誰のものかは ctx で運ぶ(aibow.WithUser)。
   既定でログインと API キーが要る(0020。login: false で 127.0.0.1 だけならログインなし(利用者 local))。-host で外に出すと、書いた値によらず要る([_docs/usage.md](_docs/usage.md) の「ほかの PC から使う」)

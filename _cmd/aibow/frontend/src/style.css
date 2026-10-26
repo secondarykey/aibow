@@ -653,6 +653,11 @@ footer { border-top: 1px solid var(--border); background: var(--panel); padding:
 .workdir-bar.set .workdir { border-color: var(--border); background: var(--bg); color: var(--text); }
 .workdir-bar .workdir-clear { padding: 2px 4px; }
 .workdir-name { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 資料のフォルダ(ブラウザ。押せない)。作業フォルダを決めたときの枠と同じ見た目にする */
+.workdir-bar .folder-fixed {
+  display: inline-flex; align-items: center; gap: 5px; padding: 2px 7px; border-radius: 6px;
+  border: 1px solid var(--border); background: var(--bg); color: var(--text);
+}
 /* この会話のツール(作業フォルダの隣)。使うものがあればレンチのアイコンの横に名前を枠付きで出す。
    押すと上に一覧が開く(入力欄の上にあるので、下に開くと入力欄に重なる) */
 .conv-tools { position: relative; font-size: 12.5px; color: var(--muted); }

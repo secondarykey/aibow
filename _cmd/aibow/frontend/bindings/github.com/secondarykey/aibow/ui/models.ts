@@ -56,6 +56,11 @@ export interface ConversationDetail {
      * プロファイルを持たない会話なら null
      */
     "profile": aibow$0.Profile | null;
+
+    /**
+     * Folder は、この会話で使える aibow-server の資料のフォルダの名前(パスは出さない。無ければ空。0024 の決定事項 26)
+     */
+    "folder"?: string;
 }
 
 /**

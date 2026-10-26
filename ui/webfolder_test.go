@@ -176,3 +176,28 @@ func TestWebFolderAccess(t *testing.T) {
 		t.Errorf("フォルダのツールを知らせている: %v", last)
 	}
 }
+
+// 同じファイルを2人が書くとき:確認を待っている間にほかの人が書き換えたら、見せた差分と違うので書き戻さない(0024 の決定事項 5)
+func TestWebFolderWriteConflict(t *testing.T) {
+	w := newFolderWeb(t)
+	w.user.Store(w.bob)
+	events := w.openEvents(t)
+	var c aibow.Conversation
+	w.mustCall(t, &c, "NewConversation", w.profile.ID, nil)
+	w.eng.calls = [][]format.ToolCall{{{Call: tool.Call{Name: "write_file", Args: []tool.Arg{{Name: "path", Value: "README.md"}, {Name: "content", Value: "# bob の版\n"}}}}}}
+	done := w.sendAsync(t, context.Background(), c.ID, "README を書き直して")
+	got := until(t, events, "confirm")
+
+	// bob が確認のカードを見ている間に、ほかの人(carol の会話や、管理者の git pull)が書き換えた
+	readme := filepath.Join(w.dir, "README.md")
+	os.WriteFile(readme, []byte("# carol の版\n"), 0o644)
+	w.mustCall(t, nil, "ConfirmTool", c.ID, got[len(got)-1].Confirm.ID, true, "", "")
+	until(t, events, "done")
+	<-done
+	if b, _ := os.ReadFile(readme); string(b) != "# carol の版\n" {
+		t.Errorf("後から書いた人の中身を消した: %q", b)
+	}
+	if r := w.toolResult(t, c.ID); !r.ToolResult.Error || !strings.Contains(r.Content, "確認のあとでファイルが変わった") {
+		t.Errorf("結果: %q", r.Content)
+	}
+}

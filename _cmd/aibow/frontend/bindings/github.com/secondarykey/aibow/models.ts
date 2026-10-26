@@ -507,6 +507,12 @@ export interface ProfileRules {
      * Off は使えないもの。PC の既定(tools.json)や会話の上書きより先に見る
      */
     "off"?: ProfileOff;
+
+    /**
+     * Folder は、aibow-server の資料のフォルダの名前(server.json の folders。0024 の 12-2)。
+     * 配っているプロファイルで、その人にまだ配られているときだけ効く(Profile.GrantedFolder)。決まりなので、変えると今ある会話にもすぐ効く
+     */
+    "folder"?: string;
 }
 
 /**

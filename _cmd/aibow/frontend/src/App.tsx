@@ -37,7 +37,7 @@ import { SettingsView } from "./components/SettingsView";
 import { ConversationSettingsView } from "./components/ConversationSettingsView";
 import { ReadView } from "./components/ReadView";
 import { Composer } from "./components/Composer";
-import { WorkDirBar } from "./components/WorkDirBar";
+import { FolderBar, WorkDirBar } from "./components/WorkDirBar";
 import { ToolBar } from "./components/ToolBar";
 import { LuSettings } from "react-icons/lu";
 import { ChatService, isBrowser, me, onReconnect, onWindowFocus } from "./backend";
@@ -46,7 +46,7 @@ import type { ConversationRef, ConversationSettings, SharedRead } from "../bindi
 import { ImeFocusRelay } from "./imeFocus";
 import { errorMessage } from "./errors";
 import { setTheme } from "./theme";
-import { FIX, fixedTitle, lockOf, locked } from "./profileRules";
+import { FIX, fixedTitle, grantedFolder, lockOf, locked } from "./profileRules";
 import { NARROW_QUERY, useMediaQuery } from "./mediaQuery";
 import { STORED_LAST_CONVERSATION, STORED_LIST_OPEN, loadStored, saveStored } from "./stored";
 
@@ -240,6 +240,8 @@ export default function App() {
   // 開いている会話のプロファイル(新しい会話の画面では、選んだプロファイル)。固定・使えないを画面に出すため(0014)
   const profile = convs.current ? convs.current.profile : convs.profiles.find(i => i.profile.id === convs.draftProfile)?.profile ?? null;
   const lock = lockOf(profile);
+  // ブラウザの会話の資料のフォルダ(名前だけ。0024 の 12-2)。開いている会話は Go が決めたもの、新しい会話の画面は選んだプロファイルのもの
+  const folder = !isBrowser ? "" : convs.current ? convs.current.folder ?? "" : grantedFolder(profile);
   const input = (
     <>
       <Composer
@@ -255,8 +257,10 @@ export default function App() {
         }}
         top={settings && (
           // 入力欄の上: 作業フォルダと、この会話のツール(どちらも会話ごとの設定)。
-          // ブラウザの会話は作業フォルダを持たない(ツールはサーバーの PC で動くため。0024 の決定事項 17)ので、ツールだけ
+          // ブラウザの会話は作業フォルダを選ばない(ツールはサーバーの PC で動くため。0024 の決定事項 17)。
+          // 配られたプロファイルに資料のフォルダがあれば、その名前を押せない形で出す(決定事項 26)
           <div className="composer-top">
+            {isBrowser && folder && <FolderBar name={folder} />}
             {!isBrowser && (
               <WorkDirBar
                 workDir={settings.work_dir}
@@ -271,7 +275,7 @@ export default function App() {
               builtinOn={!settings.builtin_off}
               servers={mcpServers}
               selected={settings.mcp_servers ?? []}
-              workDir={settings.work_dir}
+              workDir={isBrowser ? folder : settings.work_dir}
               profile={profile}
               onBuiltinChange={on => convs.updateSettings({ builtin_off: !on })}
               onServersChange={mcp_servers => convs.updateSettings({ mcp_servers })}
@@ -495,6 +499,7 @@ export default function App() {
         }}
         onChange={convs.updateSettings}
         profile={convs.current.profile}
+        folder={folder}
         onSaveToProfile={() => {
           const id = convs.current!.conversation.id;
           const p = convs.current!.profile;
