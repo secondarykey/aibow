@@ -17,6 +17,8 @@ import (
 // Caller は画面用の口を呼んだ人。
 type Caller struct {
 	ID uuid.UUID
+	// Name は利用者の名前(ログに出す。ツールを誰が動かしたか。0024 の決定事項 11)
+	Name string
 	// Admin は管理者か(aibow-server user admin で決めた人)
 	Admin bool
 	// Local は、サーバーの PC の上(127.0.0.1・::1)から呼んだか。サーバーの PC の人は、server.json も書けるので管理者と同じに扱う
@@ -33,8 +35,14 @@ func withCaller(ctx context.Context, c Caller) context.Context {
 	return context.WithValue(ctx, callerKey{}, c)
 }
 
+// callerOf は、ctx の呼んだ人(画面用の口から呼ばれたときだけ入っている)。
+func callerOf(ctx context.Context) (Caller, bool) {
+	c, ok := ctx.Value(callerKey{}).(Caller)
+	return c, ok
+}
+
 // managesPC は、ctx の呼んだ人が、サーバーの PC の事情を見せたり変えたりしてよいか。呼んだ人が入っていなければ false。
 func managesPC(ctx context.Context) bool {
-	c, ok := ctx.Value(callerKey{}).(Caller)
+	c, ok := callerOf(ctx)
 	return ok && c.ManagesPC()
 }

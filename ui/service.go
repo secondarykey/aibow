@@ -26,9 +26,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 	"unicode/utf8"
 	"uuid"
 
@@ -39,7 +41,6 @@ import (
 	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/mcp/client"
 	"github.com/secondarykey/aibow/models"
-	"github.com/secondarykey/aibow/tool"
 )
 
 // 画面に知らせるイベントの名前。
@@ -91,15 +92,12 @@ type Options struct {
 
 	// Seat は生成の順番待ちの席。nil なら待たない(デスクトップのアプリ。モデルを使うのはこのアプリだけか、待つのは aibow-server の側)
 	Seat Seat
-	// WithoutTools は、会話でツールを使わない(aibow-server の中のブラウザの会話。0016 の 7)。
-	// Local を渡さないだけだと、会話の仕組みは組み込みのツールを直接使うので、空のツールの係を渡す
-	WithoutTools bool
+	// Browser は、aibow-server の中のブラウザの会話か(0024)。ツールはサーバーの PC で動くので、次のように守る:
+	//   - 会話に保存した作業フォルダを使わない(サーバーの PC のフォルダに触れさせない。決定事項 17)
+	//   - 確認を待つのは confirmLimit まで(席を持ったまま待つので、ほかの人と Cline をずっと待たせない。決定事項 16)
+	//   - 利用者は会話の設定で「確認しない」を足せない(足せるのは確認のカードから。決定事項 3・18)
+	Browser bool
 }
-
-// noTools は、ツールを1つも出さない係(aibow.LocalTools)。
-type noTools struct{}
-
-func (noTools) Tools(string) []tool.Tool { return nil }
 
 type Service struct {
 	// host はモデルを扱う係(直接か aibow-server 越し。modelhost.go)。起動に失敗したときは nil
@@ -138,6 +136,12 @@ type Service struct {
 	// seat は生成の順番待ちの席(nil なら待たない)
 	seat Seat
 
+	// browser は、aibow-server の中のブラウザの会話か(Options.Browser)
+	browser bool
+	// waits は、確認を待っている送信を打ち切るタイマー(確認の ID → タイマー。ブラウザだけ)。答えたら止める
+	waitMu sync.Mutex
+	waits  map[string]*time.Timer
+
 	// quit はアプリの終了時にキャンセルされる。
 	// Wails は呼び出し中のメソッドの ctx を、アプリの終了ではキャンセルしない。
 	// 生成中にウィンドウを閉じても生成が最後まで続かないよう、自分で止める。
@@ -151,6 +155,7 @@ func New(o Options) (*Service, Lifecycle) {
 	s := &Service{
 		host: o.Host, app: o.App, initial: o.Initial, notices: o.Notices, startupErr: o.StartupErr, notify: o.Notify, seat: o.Seat,
 		quit: quit, cancelQuit: cancel, mcp: o.MCP, prefs: o.Prefs, version: o.Version,
+		browser: o.Browser, waits: map[string]*time.Timer{},
 	}
 	if d, ok := o.Host.(*DirectHost); ok {
 		d.s = s // 直接の形は、GPU の層数をアプリの DB(Service が持つ設定)に覚える
@@ -161,10 +166,11 @@ func New(o Options) (*Service, Lifecycle) {
 		// 会話の仕組みから見ると、生成の口の相手が手元の engine か aibow-server かが変わるだけ(0015)
 		s.convs = aibow.NewConversations(st, o.Host.generator(), app)
 		// 組み込みのツールは aibow の中の自作の MCP サーバー越しに呼ぶ(0007 の 5-4)
-		if o.WithoutTools {
-			s.convs.SetLocalTools(noTools{})
-		} else if o.Local != nil { // nil の *Local を interface に入れると nil に見えなくなる(MCP と同じ)
+		if o.Local != nil { // nil の *Local を interface に入れると nil に見えなくなる(MCP と同じ)
 			s.convs.SetLocalTools(o.Local)
+		}
+		if o.Browser {
+			s.convs.IgnoreWorkDir() // 作業フォルダが無いので、組み込みのツールは時刻と計算だけになる
 		}
 		if o.MCP != nil { // nil の *Manager を interface に入れると nil に見えなくなるので、確かめてから渡す
 			s.convs.SetRemoteTools(o.MCP)
@@ -816,7 +822,15 @@ func (s *Service) ToolStates(ctx context.Context, id uuid.UUID, settings aibow.C
 	if s.startupErr != nil {
 		return nil, s.startupErr
 	}
-	return s.convs.ConversationToolStates(ctx, id, settings)
+	groups, err := s.convs.ConversationToolStates(ctx, id, settings)
+	if err != nil || !s.browser {
+		return groups, err
+	}
+	// ブラウザの会話は作業フォルダを持たないので、作業フォルダのツール(ファイル・コマンド)は「作業フォルダが要る」とも見せない(0024 の決定事項 17)
+	for i := range groups {
+		groups[i].Tools = slices.DeleteFunc(groups[i].Tools, func(t aibow.ToolState) bool { return t.NeedsWorkDir })
+	}
+	return groups, nil
 }
 
 // ToolPrefs は、ツールの扱いの PC の既定(tools.json)と、サーバーを起動したときに見えたツールの一覧。
@@ -1015,6 +1029,11 @@ func (s *Service) NewConversation(ctx context.Context, profile uuid.UUID, settin
 	// ここでは、画面が見せている読み込み中のモデルにする。aibow-server がほかの人のためにモデルを入れ替えている間は、
 	// 読み込んでいるモデルが無い(前のモデルは解放済み)が、画面には前のモデルを見せているため(2026-10-22)。
 	// モデルを降ろしている(0015 の 8-4)なら、最後に使ったモデルにし、送信の前に読み込む(0015 の 29)
+	if settings != nil {
+		if err := s.noNewAllow(nil, settings.ToolPolicies); err != nil {
+			return aibow.Conversation{}, err
+		}
+	}
 	if settings != nil && settings.Model == "" {
 		model := s.lastModel()
 		if i := s.host.info(); i != nil {
@@ -1070,7 +1089,31 @@ func (s *Service) UpdateConversationSettings(ctx context.Context, id uuid.UUID, 
 	if s.startupErr != nil {
 		return s.startupErr
 	}
+	if s.browser {
+		c, _, err := s.convs.Get(ctx, id)
+		if err != nil {
+			return err
+		}
+		if err := s.noNewAllow(c.Settings.ToolPolicies, settings.ToolPolicies); err != nil {
+			return err
+		}
+	}
 	return s.convs.UpdateSettings(ctx, id, settings)
+}
+
+// noNewAllow は、ブラウザの利用者が、会話の設定でツールを「確認しない」にしていないかを確かめる(0024 の決定事項 3・18)。
+// 確認しないで実行するかの既定は管理者が決める。利用者が「確認しない」にできるのは、確認のカードの「この会話では今後聞かない」だけ
+// (そのツールの呼び出しを一度見てから決めることになる)。もう「確認しない」にしてあるツールは、そのまま残せる。
+func (s *Service) noNewAllow(old, next map[string]aibow.ToolPolicy) error {
+	if !s.browser {
+		return nil
+	}
+	for name, p := range next {
+		if p == aibow.ToolAllow && old[name] != aibow.ToolAllow {
+			return fmt.Errorf("ツール %s を「確認しない」にできるのは、確認のカードの「この会話では今後聞かない」からだけです", name)
+		}
+	}
+	return nil
 }
 
 // ---- 送信 -------------------------------------------------------------------------------
@@ -1119,7 +1162,63 @@ func (s *Service) ConfirmTool(ctx context.Context, id uuid.UUID, reqID string, a
 	if s.startupErr != nil {
 		return s.startupErr
 	}
-	return s.convs.Answer(ctx, id, reqID, aibow.Confirmation{Approved: approved, Reason: reason, Remember: remember})
+	if s.browser {
+		// ほかの人の会話の確認には答えさせない(会話が ctx の利用者のものかを、保存先で確かめる)
+		if _, _, err := s.convs.Get(ctx, id); err != nil {
+			return err
+		}
+	}
+	if err := s.convs.Answer(ctx, id, reqID, aibow.Confirmation{Approved: approved, Reason: reason, Remember: remember}); err != nil {
+		return err
+	}
+	s.stopWait(reqID)
+	return nil
+}
+
+// PendingConfirm は、会話 id で答えを待っている確認(待っていなければ null)。
+// ブラウザの画面は、知らせ(SSE)をつなぎ直したときにこれを呼び、切れている間に届かなかった確認のカードを出し直す(0024 の決定事項 15)。
+func (s *Service) PendingConfirm(ctx context.Context, id uuid.UUID) (*aibow.ConfirmRequest, error) {
+	if s.startupErr != nil {
+		return nil, s.startupErr
+	}
+	return s.convs.Pending(ctx, id)
+}
+
+// confirmLimit は、ブラウザの会話で確認を待つ時間の上限(0024 の決定事項 16)。テストで短くするので変数にしている。
+// 確認を待つ間も生成の席を持っている(送信の全体で持つ。takeSeat)ので、超えたら送信を止めて席を返す
+var confirmLimit = 5 * time.Minute
+
+// waitConfirm は、確認を待ち始めた送信を、confirmLimit を過ぎたら止めるタイマーを仕掛ける(ブラウザだけ)。
+// 止め方は停止ボタンと同じ(送信の ctx をキャンセルする)。待っている確認は「停止されたため実行していません」になる。
+func (s *Service) waitConfirm(id uuid.UUID, req *aibow.ConfirmRequest, emit func(aibow.ChatEvent), cancel context.CancelFunc) {
+	if !s.browser {
+		return
+	}
+	s.waitMu.Lock()
+	defer s.waitMu.Unlock()
+	s.waits[req.ID] = time.AfterFunc(confirmLimit, func() {
+		s.waitMu.Lock()
+		_, waiting := s.waits[req.ID]
+		delete(s.waits, req.ID)
+		s.waitMu.Unlock()
+		if !waiting {
+			return // 止める直前に答えた
+		}
+		log.Warnf("会話 %s: ツール %s の確認に %s 答えがないので、送信を止めます(待っている間は、ほかの人の生成が待たされるため)", id, req.Call.Name, confirmLimit)
+		emit(aibow.ChatEvent{ConversationID: id, Type: "error", Caution: true,
+			Error: fmt.Sprintf("確認に %s 答えがなかったので、送信を止めました(待っている間は、ほかの人の生成が待たされるため)。続けるときは、もう一度送信してください", confirmLimit)})
+		cancel()
+	})
+}
+
+// stopWait は、確認の ID reqID の打ち切りのタイマーを止める(答えた・送信が終わった)。
+func (s *Service) stopWait(reqID string) {
+	s.waitMu.Lock()
+	defer s.waitMu.Unlock()
+	if t, ok := s.waits[reqID]; ok {
+		t.Stop()
+		delete(s.waits, reqID)
+	}
 }
 
 // StopSummary は生成中の要約だけを止める(要約中に出る停止ボタン)。
@@ -1155,6 +1254,13 @@ func (s *Service) run(ctx context.Context, id uuid.UUID, f func(ctx context.Cont
 		defer s.seat.Release()
 	}
 
+	who := whoOf(ctx)
+	var asked []string // この送信で待った確認の ID(停止で終わったときも、打ち切りのタイマーを残さない)
+	defer func() {
+		for _, id := range asked {
+			s.stopWait(id)
+		}
+	}()
 	f(ctx, func(ev aibow.ChatEvent) {
 		switch ev.Type {
 		case "summarizing":
@@ -1166,6 +1272,8 @@ func (s *Service) run(ctx context.Context, id uuid.UUID, f func(ctx context.Cont
 		case "confirm":
 			if c := ev.Confirm; c != nil {
 				log.Infof("確認を待っています: %s %s(%s)", c.Call.Name, c.Preview.Path, c.Preview.Note)
+				asked = append(asked, c.ID)
+				s.waitConfirm(id, c, emit, cancel)
 			}
 		case "reply":
 			// ツールを使うと1回の送信で何回も生成する。回ごとに出すと、KV キャッシュの再利用数の変化が見える
@@ -1175,10 +1283,19 @@ func (s *Service) run(ctx context.Context, id uuid.UUID, f func(ctx context.Cont
 					st.PromptTokens, st.ReusedTokens, st.PromptSec, st.GenTokens, st.GenSec, tokPerSec(st.GenerateStats), st.StopReason, len(r.ToolCalls))
 			}
 		case "tool_result":
-			logTool(ev.Message)
+			logTool(ev.Message, who)
 		}
 		emit(ev)
 	})
+}
+
+// whoOf は、ログに出す「誰の会話か」(ブラウザの会話なら利用者の名前と会話。0024 の決定事項 11)。
+// デスクトップのアプリは利用者が1人なので空(会話の ID だけを出す)。
+func whoOf(ctx context.Context) string {
+	if c, ok := callerOf(ctx); ok {
+		return cmp.Or(c.Name, c.ID.String())
+	}
+	return ""
 }
 
 // takeSeat は順番待ちの席を取る(席が無ければ何もしない)。空いていなければ「待っています」と知らせてから待つ。
@@ -1206,7 +1323,8 @@ func tokPerSec(st engine.GenerateStats) float64 {
 
 // logTool はツールの実行をログに出す(学習用: 名前・引数・結果の長さ・秒数・エラー)。
 // 書式が崩れていた呼び出しは、モデルが書いたままの文字列も出す(どう崩れたかを見るため)。
-func logTool(m *aibow.StoredMessage) {
+// who は誰の会話か(ブラウザの会話。aibow-server では、誰が・どの会話でツールを動かしたかを残す。0024 の決定事項 11)。
+func logTool(m *aibow.StoredMessage, who string) {
 	r := m.ToolResult
 	if r == nil {
 		return
@@ -1219,7 +1337,11 @@ func logTool(m *aibow.StoredMessage) {
 	if r.Error {
 		status = m.Content
 	}
-	log.Infof("ツール %s(%s): 結果 %d 文字 / %.3f 秒 / %s", cmp.Or(r.Call.Name, "?"), strings.Join(args, ", "),
+	where := ""
+	if who != "" {
+		where = fmt.Sprintf("(%s の会話 %s)", who, m.ConversationID)
+	}
+	log.Infof("ツール %s(%s)%s: 結果 %d 文字 / %.3f 秒 / %s", cmp.Or(r.Call.Name, "?"), strings.Join(args, ", "), where,
 		utf8.RuneCountInString(m.Content), r.Sec, status)
 	if c := r.Confirm; c != nil {
 		if c.Approved {

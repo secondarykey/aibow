@@ -22,11 +22,12 @@ import (
 	"github.com/secondarykey/aibow/auth"
 	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/format"
+	"github.com/secondarykey/aibow/mcp/client"
 	"github.com/secondarykey/aibow/models"
 	"github.com/secondarykey/aibow/store"
 )
 
-// 画面用の口(web.go)のテスト。aibow-server の中と同じ組み立て(ServerHost・席・ツールなし)を、偽物の engine で作る(モデル不要)。
+// 画面用の口(web.go)のテスト。aibow-server の中と同じ組み立て(ServerHost・席・組み込みのツール・Browser)を、偽物の engine で作る(モデル不要)。
 
 var testFormat = format.For("qwen35")
 
@@ -37,7 +38,10 @@ type fakeEngine struct {
 	wait    bool // ctx がキャンセルされるまで生成を終えない(停止のテスト)
 	started chan struct{}
 	tools   [][]string // 生成のたびに、モデルに知らせたツールの名前
+	prompts []string   // 生成のたびに、モデルに渡した文字列
 	loading string     // 入れ替えている先のモデル(Loading が返す)
+	// calls は、生成のたびに先頭から1つずつ返すツールの呼び出し(空になったら、ツールを呼ばずに答える)
+	calls [][]format.ToolCall
 }
 
 func (e *fakeEngine) Loading() string {
@@ -67,9 +71,17 @@ func (e *fakeEngine) Generate(ctx context.Context, p format.Prompt, opt engine.G
 	}
 	e.mu.Lock()
 	e.tools = append(e.tools, names)
+	e.prompts = append(e.prompts, testFormat.BuildPrompt(p))
 	wait, started := e.wait, e.started
+	var calls []format.ToolCall
+	if len(e.calls) > 0 {
+		calls, e.calls = e.calls[0], e.calls[1:]
+	}
 	e.mu.Unlock()
 	onPrompt(testFormat.BuildPrompt(p))
+	if calls != nil {
+		return format.Output{ToolCalls: calls}, engine.GenerateStats{GenTokens: 1, StopReason: "tool"}, nil
+	}
 	if wait {
 		onContent("途中")
 		if started != nil {
@@ -208,10 +220,12 @@ func newTestWeb(t *testing.T) *testWeb {
 	srv := httptest.NewUnstartedServer(nil)
 	srv.Start()
 	t.Cleanup(srv.Close)
+	local := client.NewLocal(client.Options{Version: "0.0.1-test"})
+	t.Cleanup(local.Close)
 	svc, life := New(Options{
 		Host:  NewServerHost(eng, mm, 32768, srv.URL),
 		Store: st, App: app, Version: "0.0.1-test",
-		Notify: events, Seat: seat, WithoutTools: true,
+		Notify: events, Seat: seat, Local: local, Browser: true,
 	})
 	t.Cleanup(life.Stop)
 	w := &testWeb{url: srv.URL, eng: eng, mm: mm, seat: seat, st: st}
@@ -369,7 +383,7 @@ func TestWebCall(t *testing.T) {
 		t.Errorf("表示だけの設定は作業領域だけのはず: %+v", ms.Settings)
 	}
 
-	for _, name := range []string{"SetGPULayers", "ToolPrefs", "ConfirmTool", "BuiltinTools", "ChooseWorkDir", "Nothing"} {
+	for _, name := range []string{"SetGPULayers", "ToolPrefs", "SetToolPolicy", "SetGroupPolicy", "LoadToolList", "ToolDefaults", "ChooseWorkDir", "Nothing"} {
 		if status, body := w.call(t, context.Background(), name); status != http.StatusNotFound {
 			t.Errorf("%s は 404 のはず: %d %s", name, status, body)
 		}
@@ -477,8 +491,8 @@ func TestWebSend(t *testing.T) {
 	if len(d.Messages) != 2 || d.Messages[1].Content != "こんにちは" || d.Generating {
 		t.Errorf("保存された発言: %+v", d.Messages)
 	}
-	if len(w.eng.tools) != 1 || len(w.eng.tools[0]) != 0 {
-		t.Errorf("ブラウザの会話ではツールを知らせないはず: %v", w.eng.tools)
+	if len(w.eng.tools) != 1 || strings.Join(w.eng.tools[0], ",") != "calculate,get_current_time" {
+		t.Errorf("ブラウザの会話では組み込みの時刻・計算だけを知らせるはず: %v", w.eng.tools)
 	}
 }
 

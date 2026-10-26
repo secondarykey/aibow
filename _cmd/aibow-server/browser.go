@@ -8,7 +8,8 @@ package main
 //	Cline など ──HTTP──→ /v1/ など → api ─────────────────────→ engine ┴─ 順番待ちの席は1つ(api.Seat)
 //
 // 生成は同じ engine を直接使い、OpenAI 互換の口と同じ席を通す(HTTP で自分自身に頼まない。0016 の 11)。
-// ブラウザの会話ではツールを使わない(0016 の 7)。会話は server.db に保存し、画面のアプリの aibow.db とは別にする(0016 の 13)。
+// ブラウザの会話のツールはサーバーの PC で動く(0024)。12-1a では組み込みの時刻・計算だけ。確認のカードは SSE で届き、答えは画面用の口で返す。
+// 会話は server.db に保存し、画面のアプリの aibow.db とは別にする(0016 の 13)。
 //
 // 誰の会話かは、ここ(who)だけで決める(0017 の 12)。ログインが要る設定なら cookie のセッションの人(auth)、要らなければログインなしの形の利用者。
 // ログインの口は /aibow/auth/ の下(auth.Handler)。
@@ -28,6 +29,7 @@ import (
 	"github.com/secondarykey/aibow/auth"
 	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/log"
+	"github.com/secondarykey/aibow/mcp/client"
 	"github.com/secondarykey/aibow/store"
 	"github.com/secondarykey/aibow/store/remote"
 	"github.com/secondarykey/aibow/ui"
@@ -64,10 +66,13 @@ func startBrowser(c config, initial aibow.AppSettings, eng *engine.Engine, mm *m
 	}
 
 	events := ui.NewEvents()
+	// 組み込みのツールは、アプリと同じく aibow の中の自作の MCP サーバー越しに呼ぶ(0007 の 5-4)。
+	// ブラウザの会話は作業フォルダを使わない(Browser)ので、時刻と計算だけになる(0024 の 12-1a)
+	local := client.NewLocal(client.Options{Version: appVersion()})
 	svc, life := ui.New(ui.Options{
 		Host:  ui.NewServerHost(eng, mm, nCtx, url),
 		Store: st, App: app, Version: appVersion(),
-		Notify: events, Seat: seat, WithoutTools: true,
+		Notify: events, Seat: seat, Local: local, Browser: true,
 	})
 	life.Start() // 起動のときのモデルは main が読み込んだので、ここでは読み込まない(Initial を渡していない)
 
@@ -86,7 +91,7 @@ func startBrowser(c config, initial aibow.AppSettings, eng *engine.Engine, mm *m
 	mux.Handle("GET /aibow/auth/key", keys.MeHandler(c.KeysRequired()))
 	// 管理者の画面の口(利用者の管理。0018 の決定事項 7)。ブラウザでログインした管理者だけ
 	mux.Handle("/aibow/admin/", adminHandler(st, initial))
-	return sessions.Middleware(mux), keys, func() { life.Stop(); st.Close() }, nil
+	return sessions.Middleware(mux), keys, func() { life.Stop(); local.Close(); st.Close() }, nil
 }
 
 // noteFirstRun は、ログインが要る形で起動したときに、まだ使い始められない様子を知らせる(0020 の決定事項 2・4)。
@@ -146,7 +151,7 @@ func who(login bool) ui.Who {
 		if !ok {
 			return ui.Caller{}, errNotLoggedIn
 		}
-		return ui.Caller{ID: u.ID, Admin: u.Admin, Local: api.IsLocal(r)}, nil
+		return ui.Caller{ID: u.ID, Name: u.Name, Admin: u.Admin, Local: api.IsLocal(r)}, nil
 	}
 }
 

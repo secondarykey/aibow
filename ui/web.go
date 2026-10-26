@@ -10,8 +10,12 @@ package ui
 //	                      (Wails がメソッドの名前と引数の配列を送る)   返事は戻り値の JSON。error なら 500 と {"error": {"message"}}
 //	Go からの知らせ       Wails のイベント(chat・models)              GET /aibow/ui/events(SSE。event: chat / data: ChatEvent の JSON)
 //	停止                  Promise の cancel() → ctx がキャンセル       fetch を止める(AbortController)→ つながりが切れて r.Context() が終わる
+//	ツールの確認          confirm のイベント → ConfirmTool             SSE の chat(confirm)→ POST /aibow/ui/call/ConfirmTool(0024 の 12-1a)
 //
-// 呼べるメソッドは、ブラウザで使うものだけ(browserMethods)。ツールは出さない(0016 の 7)。
+// 確認のカードは、送信の長い呼び出しが返る前に届き、その答えは別の呼び出しで返す。会話の仕組みは答えが来るまでループを止めて待つ
+// (Wails の中で済んでいたことを、知らせ(SSE)と呼び出し(HTTP)に分けただけ)。送信の呼び出しが切れたら(タブを閉じた)停止と同じ。
+//
+// 呼べるメソッドは、ブラウザで使うものだけ(browserMethods)。ツールの扱いの既定を変えるものは出さない(0024 の決定事項 3)。
 // サーバーの PC の事情を変えるもの(pcMethods)は、管理者とサーバーの PC の上から開いた画面だけが呼べる(0016 の 6・0018 の決定事項 8)。
 // 呼び出しは reflect で Service のメソッドを名前から探す(Wails のバインディングも、実行のときは同じことをしている)。
 //
@@ -40,7 +44,9 @@ import (
 
 // browserMethods は、ブラウザから呼べる Service のメソッド。
 //
-// 出さないもの:基本設定の GPU の層数(モデルのタブのモデルごとの層の数で足りる)、ツールと MCP・確認の答え(ブラウザではツールを使わない。0016 の 7)。
+// 出さないもの:基本設定の GPU の層数(モデルのタブのモデルごとの層の数で足りる)。
+// ツールの扱いの既定を変えるもの(SetToolPolicy・SetGroupPolicy・ToolPrefs など)と、MCP のサーバーを起動して一覧を取るもの(LoadToolList)。
+// ブラウザの会話のツールはサーバーの PC で動き、その既定は管理者が決める(0024 の決定事項 3。管理者の画面は 12-1b)。
 // ServerHost も断るが、口そのものにも出さない(断るだけだと、ブラウザの画面がそれを呼ぶ作りになっても気づけないため)。
 var browserMethods = []string{
 	// モデルと設定
@@ -55,6 +61,9 @@ var browserMethods = []string{
 	"SetConversationShare", "SharedConversations", "UserConversations", "UserNames", "ReadConversation", "CopyShared",
 	// 送信(生成が終わるまで返らない長い呼び出し。経過は SSE の chat で送る)
 	"Send", "Regenerate", "Resend", "Compact", "StopSummary",
+	// 会話のツール(0024 の 12-1a)。この会話で使うか(会話の設定)と、実行前の確認への答え。
+	// 確認のカードは SSE の chat(confirm)で届き、答えは ConfirmTool で返す。つなぎ直したら PendingConfirm で取り直す
+	"ToolStates", "MCPServers", "ConfirmTool", "PendingConfirm",
 }
 
 // pcMethods は、サーバーの PC の事情を変えるメソッド(モデルのタブ。0015 の 8-4)。管理者とサーバーの PC の上から開いた画面だけが呼べる

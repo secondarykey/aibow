@@ -223,8 +223,16 @@ func (cs *Conversations) load(ctx context.Context, id uuid.UUID) (Conversation, 
 	if err != nil {
 		return c, ms, err
 	}
-	c.Settings = withProfile(c.Settings.normalized(), p)
+	c.Settings = cs.forUse(withProfile(c.Settings.normalized(), p))
 	return c, ms, nil
+}
+
+// forUse は、使うときの設定の仕上げ。作業フォルダを使わない形(IgnoreWorkDir)なら、作業フォルダを空にする。
+func (cs *Conversations) forUse(s ConversationSettings) ConversationSettings {
+	if cs.noWorkDir {
+		s.WorkDir = ""
+	}
+	return s
 }
 
 // groupOfTool は、ツールの名前からグループ(組み込みなら空、MCP ならサーバーの名前)を引く。

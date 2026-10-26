@@ -125,6 +125,9 @@ type Conversations struct {
 	// pending は答えを待っている確認。待っていなければ nil。生成は同時に1つなので、確認も同時に1つだけ
 	confirmMu sync.Mutex
 	pending   *pendingConfirm
+
+	// noWorkDir は、会話に保存した作業フォルダを使わないか(IgnoreWorkDir)
+	noWorkDir bool
 }
 
 // pendingConfirm は答えを待っている確認1つ。
@@ -132,7 +135,18 @@ type pendingConfirm struct {
 	conv   uuid.UUID
 	id     string
 	tool   string // 確認しているツールの名前(これから先の扱いを会話の上書きに書くとき使う)
+	req    ConfirmRequest
 	answer chan Confirmation
+}
+
+// IgnoreWorkDir は、会話に保存した作業フォルダを使わないようにする(aibow-server の中のブラウザの会話。0024 の決定事項 17)。
+//
+// 作業フォルダはアプリの PC のパスで、その PC の人が画面のダイアログで選ぶもの。ブラウザの会話でツールを使うとき、
+// 保存した値をそのまま使うと、ブラウザの人が画面の口から書いたパス(サーバー越しのアプリで作った会話なら、その PC のパス)で、
+// サーバーの PC のファイルのツールとコマンドが出てしまう。なので、使うときの設定(load・List)では空にし、作る会話には書かせない。
+// 設定を変えるときは保存してある値を残す(サーバー越しのアプリから開いたときは、今までどおりその PC のフォルダで使える)。
+func (cs *Conversations) IgnoreWorkDir() {
+	cs.noWorkDir = true
 }
 
 // limits は会話の上限と返事の上限。WorkspaceSettings のうち、会話の仕組みが使う2つ。
@@ -368,7 +382,7 @@ func (cs *Conversations) List(ctx context.Context) ([]Conversation, error) {
 			}
 			profiles[id] = p
 		}
-		list[i].Settings = withProfile(list[i].Settings.normalized(), p)
+		list[i].Settings = cs.forUse(withProfile(list[i].Settings.normalized(), p))
 	}
 	return list, nil
 }
@@ -455,6 +469,9 @@ func (cs *Conversations) CreateIn(ctx context.Context, profileID uuid.UUID, sett
 		s = settings.normalized()
 	}
 	s.profile = nil
+	if cs.noWorkDir {
+		s.WorkDir = ""
+	}
 	// 会話の上限・返事の上限も会話の値として持つ(画面が渡さなかったら既定の値)
 	if s, err = cs.withLimits(ctx, s); err != nil {
 		return Conversation{}, err
@@ -527,6 +544,9 @@ func (cs *Conversations) UpdateSettings(ctx context.Context, id uuid.UUID, s Con
 	}
 	s = keepStored(s, stored, p)
 	s.profile = nil
+	if cs.noWorkDir {
+		s.WorkDir = stored.WorkDir // 決めも消しもしない(画面には空で見せているため)
+	}
 	c.Settings = s
 	return cs.store.UpdateConversation(ctx, c)
 }

@@ -344,7 +344,7 @@ func (cs *Conversations) confirm(ctx context.Context, conv uuid.UUID, c format.T
 		return nil, err
 	}
 	req := ConfirmRequest{ID: uuid.NewV7().String(), Call: c, Preview: pv}
-	p := &pendingConfirm{conv: conv, id: req.ID, tool: c.Name, answer: make(chan Confirmation, 1)}
+	p := &pendingConfirm{conv: conv, id: req.ID, tool: c.Name, req: req, answer: make(chan Confirmation, 1)}
 	cs.confirmMu.Lock()
 	cs.pending = p
 	cs.confirmMu.Unlock()
@@ -363,6 +363,23 @@ func (cs *Conversations) confirm(ctx context.Context, conv uuid.UUID, c format.T
 	case <-ctx.Done():
 		return nil, errors.New("停止されたため実行していません")
 	}
+}
+
+// Pending は、会話 conv で答えを待っている確認(待っていなければ nil)。
+// 画面は confirm イベントでカードを出すが、ブラウザでは知らせ(SSE)が切れている間のイベントが届かない。
+// つなぎ直したときにこれで取り直し、カードを出し直す(0024 の決定事項 15)。
+// ほかの人の会話の確認は見せない(会話が ctx の利用者のものかを、保存先で確かめる)。
+func (cs *Conversations) Pending(ctx context.Context, conv uuid.UUID) (*ConfirmRequest, error) {
+	if _, _, err := cs.store.Conversation(ctx, conv); err != nil {
+		return nil, err
+	}
+	cs.confirmMu.Lock()
+	defer cs.confirmMu.Unlock()
+	if p := cs.pending; p != nil && p.conv == conv {
+		req := p.req
+		return &req, nil
+	}
+	return nil, nil
 }
 
 // Confirm は、確認を待っているツールに答える(画面の「実行する」「拒否」)。この1回だけの答え。
@@ -660,7 +677,7 @@ func (cs *Conversations) ConversationToolStates(ctx context.Context, id uuid.UUI
 		}
 	}
 	set.profile = p
-	return cs.ToolStates(set), nil
+	return cs.ToolStates(cs.forUse(set)), nil
 }
 
 // usableServers は、会話で選んだ MCP のサーバーのうち、プロファイルで使えないものでも、PC の既定でサーバーごと「使わない」にしたものでもないもの。
