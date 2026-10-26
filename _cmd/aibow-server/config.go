@@ -27,6 +27,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/secondarykey/aibow"
 	"github.com/secondarykey/aibow/mcp/client"
@@ -68,6 +69,9 @@ type configFile struct {
 	// MCPServers は、ブラウザの会話で使う MCP のサーバー(0024 の決定事項 7・23)。形はアプリの settings.json の mcpServers と同じ。
 	// サーバーの PC で動き、全員で1つを使う(決定事項 9)。最初に使われたときに起動する(決定事項 20)
 	MCPServers map[string]client.ServerConfig `json:"mcpServers"`
+	// Folders は資料のフォルダ(名前 → 絶対パス。0024 の 12-2)。管理者が配るプロファイルで1つ選ぶと、そのプロファイルの会話の作業フォルダになる。
+	// ブラウザには名前だけを見せる。git は管理者がサーバーで手で行う(aibow は触れない。決定事項 6)
+	Folders map[string]string `json:"folders"`
 }
 
 // config は、強さの順で決めた設定。
@@ -86,8 +90,9 @@ type config struct {
 	Host            string
 	TLSCert, TLSKey string
 
-	// MCPServers は、ブラウザの会話で使う MCP のサーバー(設定ファイルにだけ書ける。0024)
+	// MCPServers は、ブラウザの会話で使う MCP のサーバー、Folders は資料のフォルダ(どちらも設定ファイルにだけ書ける。0024)
 	MCPServers map[string]client.ServerConfig
+	Folders    map[string]string
 
 	// File は読んだ設定ファイル(無ければ空)。StatePath は aibow-server が書くファイル(server-models.json)、
 	// DBPath はブラウザの会話の DB(server.db)、ToolsPath はツールの扱いの既定(server-tools.json)。どれも設定ファイルの隣
@@ -148,7 +153,7 @@ func resolve(fs *flag.FlagSet, f *flags, env *envReader) (config, []string, erro
 
 	dir := filepath.Dir(path)
 	c := config{StatePath: filepath.Join(dir, stateFileName), DBPath: filepath.Join(dir, dbFileName), ToolsPath: filepath.Join(dir, toolsFileName),
-		MCPServers: file.MCPServers}
+		MCPServers: file.MCPServers, Folders: file.Folders}
 	if found {
 		c.File = path
 	}
@@ -248,7 +253,27 @@ func loadConfigFile(path string) (file configFile, found bool, err error) {
 	if err := aibow.CheckMCPServers(path, file.MCPServers); err != nil {
 		return configFile{}, false, err
 	}
+	if err := checkFolders(path, file.Folders); err != nil {
+		return configFile{}, false, err
+	}
 	return file, true, nil
+}
+
+// checkFolders は、設定ファイル path の folders を確かめる。名前が空でなく、パスが絶対パスで、フォルダがあること。
+// 起動のときに分かるようにする(書き間違えたフォルダを、会話で読もうとしたときに初めて知るのでは遅いため)。
+func checkFolders(path string, folders map[string]string) error {
+	for name, dir := range folders {
+		if strings.TrimSpace(name) == "" {
+			return fmt.Errorf("設定ファイル %s の folders に、名前が空のフォルダがあります", path)
+		}
+		if !filepath.IsAbs(dir) {
+			return fmt.Errorf("設定ファイル %s の folders の %s は、絶対パスで書いてください: %s", path, name, dir)
+		}
+		if st, err := os.Stat(dir); err != nil || !st.IsDir() {
+			return fmt.Errorf("設定ファイル %s の folders の %s のフォルダがありません: %s", path, name, dir)
+		}
+	}
+	return nil
 }
 
 // jsonErrorLine は、JSON の読み間違いの場所を「N 行目」にする(手で書くファイルなので。形はアプリの settings.json と同じ)。

@@ -187,3 +187,25 @@ func TestConfigMCPServers(t *testing.T) {
 		t.Errorf("書き間違えたサーバーは、名前の分かるエラーのはず: %v", err)
 	}
 }
+
+// server.json の folders は、名前と絶対パスで、フォルダがあること(0024 の決定事項 29)
+func TestConfigFolders(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, configFileName)
+	docs := filepath.ToSlash(filepath.Join(dir, "docs"))
+	os.Mkdir(filepath.Join(dir, "docs"), 0o755)
+	os.WriteFile(path, []byte(`{"folders": {"docs": "`+docs+`"}}`), 0o644)
+	if file, _, err := loadConfigFile(path); err != nil || file.Folders["docs"] != docs {
+		t.Errorf("folders: %+v, %v", file.Folders, err)
+	}
+	for _, c := range []struct{ json, want string }{
+		{`{"folders": {"docs": "docs"}}`, "絶対パス"},
+		{`{"folders": {"docs": "` + docs + `/nothing"}}`, "フォルダがありません"},
+		{`{"folders": {" ": "` + docs + `"}}`, "名前が空"},
+	} {
+		os.WriteFile(path, []byte(c.json), 0o644)
+		if _, _, err := loadConfigFile(path); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: %v", c.json, err)
+		}
+	}
+}

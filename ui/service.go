@@ -26,6 +26,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -97,7 +98,20 @@ type Options struct {
 	//   - 会話に保存した作業フォルダを使わない(サーバーの PC のフォルダに触れさせない。決定事項 17)
 	//   - 確認を待つのは confirmLimit まで(席を持ったまま待つので、ほかの人と Cline をずっと待たせない。決定事項 16)
 	//   - 利用者は会話の設定で「確認しない」を足せない(足せるのは確認のカードから。決定事項 3・18)
+	//   - 作業フォルダの代わりに、配るプロファイルで選んだ資料のフォルダ(Folders)を使う。コマンドのツールは出さない(12-2。決定事項 5)
 	Browser bool
+	// Folders は aibow-server の資料のフォルダ(server.json の folders。名前 → 絶対パス。Browser のときだけ使う。0024 の 12-2)
+	Folders map[string]string
+}
+
+// noCommand は、組み込みのツールからコマンドのツール(run_command)を外す係(aibow.LocalTools)。
+// ブラウザの会話の資料のフォルダでは、読む・書くだけを出す(コマンドは隔離が要るので 12-3。0024 の決定事項 5)。
+// モデルに見せないので、呼ばれても「ツールはありません」になる。
+type noCommand struct{ aibow.LocalTools }
+
+func (n noCommand) Tools(workDir string) []tool.Tool {
+	// 写してから外す(Local はつないだサーバーのツールの一覧を覚えていて、同じスライスを返すため)
+	return slices.DeleteFunc(slices.Clone(n.LocalTools.Tools(workDir)), func(t tool.Tool) bool { return t.Def().Name == "run_command" })
 }
 
 type Service struct {
@@ -137,8 +151,9 @@ type Service struct {
 	// seat は生成の順番待ちの席(nil なら待たない)
 	seat Seat
 
-	// browser は、aibow-server の中のブラウザの会話か(Options.Browser)
+	// browser は、aibow-server の中のブラウザの会話か(Options.Browser)。folders はその資料のフォルダの名前(名前の順)
 	browser bool
+	folders []string
 	// waits は、確認を待っている送信を打ち切るタイマー(確認の ID → タイマー。ブラウザだけ)。答えたら止める
 	waitMu sync.Mutex
 	waits  map[string]*time.Timer
@@ -156,7 +171,7 @@ func New(o Options) (*Service, Lifecycle) {
 	s := &Service{
 		host: o.Host, app: o.App, initial: o.Initial, notices: o.Notices, startupErr: o.StartupErr, notify: o.Notify, seat: o.Seat,
 		quit: quit, cancelQuit: cancel, mcp: o.MCP, prefs: o.Prefs, version: o.Version,
-		browser: o.Browser, waits: map[string]*time.Timer{},
+		browser: o.Browser, waits: map[string]*time.Timer{}, folders: slices.Sorted(maps.Keys(o.Folders)),
 	}
 	if d, ok := o.Host.(*DirectHost); ok {
 		d.s = s // 直接の形は、GPU の層数をアプリの DB(Service が持つ設定)に覚える
@@ -171,7 +186,12 @@ func New(o Options) (*Service, Lifecycle) {
 			s.convs.SetLocalTools(o.Local)
 		}
 		if o.Browser {
-			s.convs.IgnoreWorkDir() // 作業フォルダが無いので、組み込みのツールは時刻と計算だけになる
+			// 会話に保存した作業フォルダは使わず、配るプロファイルで選んだ資料のフォルダだけを使う(無ければ組み込みのツールは時刻と計算だけ)
+			s.convs.IgnoreWorkDir()
+			s.convs.SetFolders(o.Folders)
+			if o.Local != nil {
+				s.convs.SetLocalTools(noCommand{o.Local})
+			}
 		}
 		if o.MCP != nil { // nil の *Manager を interface に入れると nil に見えなくなるので、確かめてから渡す
 			s.convs.SetRemoteTools(o.MCP)
@@ -557,6 +577,9 @@ func (s *Service) CreateProfile(ctx context.Context, name string, values aibow.P
 	if s.startupErr != nil {
 		return aibow.Profile{}, s.startupErr
 	}
+	if err := s.checkFolder(ctx, "", rules.Folder); err != nil {
+		return aibow.Profile{}, err
+	}
 	p, err := s.convs.CreateProfile(ctx, name, values, rules)
 	if err == nil {
 		log.Noticef("プロファイル「%s」を作りました", p.Name)
@@ -570,10 +593,20 @@ func (s *Service) UpdateProfile(ctx context.Context, p aibow.Profile) error {
 	if s.startupErr != nil {
 		return s.startupErr
 	}
-	if old, err := s.store.Profile(ctx, p.ID); err == nil && old.Share != aibow.ShareNone {
+	old, err := s.store.Profile(ctx, p.ID)
+	if err != nil {
+		return err
+	}
+	if old.Share != aibow.ShareNone {
 		if err := s.usableModel(p.Values.Model); err != nil {
 			return err
 		}
+	}
+	if err := s.checkFolder(ctx, old.Rules.Folder, p.Rules.Folder); err != nil {
+		return err
+	}
+	if p.Rules.Folder != old.Rules.Folder {
+		log.Noticef("プロファイル「%s」の資料のフォルダ: %s(%s が変えた)", p.Name, cmp.Or(p.Rules.Folder, "なし"), whoOf(ctx))
 	}
 	if err := s.convs.UpdateProfile(ctx, p); err != nil {
 		return err
@@ -777,13 +810,14 @@ func (s *Service) Version() string {
 
 // MCPServers は、会話ごとに使うものを選ぶ MCP のサーバーの一覧(settings.json に書いたもの全部)。書いてなければ空。
 // 設定の画面の「ツール」のチェックは「新しい会話で最初から選ぶか」だけなので、チェックを外したものもここに出す。
-// ブラウザでは aibow-server の server.json に書いたもの。${workdir} を使うサーバーは出さない(資料のフォルダは 12-2。0024 の決定事項 24)。
+// ブラウザでは aibow-server の server.json に書いたもの。${workdir} を使うサーバーは、資料のフォルダが無ければ出さない
+// (資料のフォルダのある会話でだけ起動する。0024 の決定事項 8・24)。
 func (s *Service) MCPServers() []client.ServerInfo {
 	if s.mcp == nil {
 		return []client.ServerInfo{}
 	}
 	l := s.mcp.Infos()
-	if s.browser {
+	if s.browser && len(s.folders) == 0 {
 		l = slices.DeleteFunc(l, func(i client.ServerInfo) bool { return i.UsesWorkDir })
 	}
 	return l
@@ -798,11 +832,13 @@ func (s *Service) AllMCPServers() []client.ServerInfo {
 }
 
 // BuiltinTools は組み込みのツール(aibow の中で動くツール)の一覧(設定の画面の「ツール」に出す)。
-// ブラウザでは、作業フォルダを使わないツール(時刻・計算)だけ(0024 の決定事項 17)。
+// ブラウザでは、コマンドのツールを出さない。資料のフォルダが無ければ、作業フォルダを使わないツール(時刻・計算)だけ(0024 の決定事項 5・17)。
 func (s *Service) BuiltinTools() []aibow.KnownTool {
 	l := aibow.BuiltinTools()
 	if s.browser {
-		l = slices.DeleteFunc(l, func(k aibow.KnownTool) bool { return tool.Find(tool.Builtin(), k.Name) == nil })
+		l = slices.DeleteFunc(l, func(k aibow.KnownTool) bool {
+			return k.Name == "run_command" || len(s.folders) == 0 && tool.Find(tool.Builtin(), k.Name) == nil
+		})
 	}
 	return l
 }
@@ -842,8 +878,8 @@ func (s *Service) ToolStates(ctx context.Context, id uuid.UUID, settings aibow.C
 }
 
 // forBrowser は、ブラウザに出すツールの一覧から、使えないものを外す。
-// ブラウザの会話は作業フォルダを持たないので、作業フォルダのツール(ファイル・コマンド)は「作業フォルダが要る」とも見せない(0024 の決定事項 17)。
-// ${workdir} を使う MCP のサーバーも出さない(決定事項 24)。
+// コマンドのツールは出さない(0024 の決定事項 5)。資料のフォルダが1つも無ければ、作業フォルダのツールは「作業フォルダが要る」とも見せない(決定事項 17)。
+// 出さない MCP のサーバー(MCPServers が外したもの)も外す。
 func (s *Service) forBrowser(groups []aibow.ToolGroupState) []aibow.ToolGroupState {
 	if !s.browser {
 		return groups
@@ -853,9 +889,32 @@ func (s *Service) forBrowser(groups []aibow.ToolGroupState) []aibow.ToolGroupSta
 		return g.Server != "" && !slices.ContainsFunc(servers, func(i client.ServerInfo) bool { return i.Name == g.Server })
 	})
 	for i := range groups {
-		groups[i].Tools = slices.DeleteFunc(groups[i].Tools, func(t aibow.ToolState) bool { return t.NeedsWorkDir })
+		groups[i].Tools = slices.DeleteFunc(groups[i].Tools, func(t aibow.ToolState) bool {
+			return t.Name == "run_command" || t.NeedsWorkDir && len(s.folders) == 0
+		})
 	}
 	return groups
+}
+
+// Folders は aibow-server の資料のフォルダの名前(名前の順。パスは返さない)。配るプロファイルで選ぶ(0024 の 12-2)。
+// 名前は誰でも見られる(どのフォルダを使えるかは、配られたプロファイルで決まる)。アプリの中で動かすときは空。
+func (s *Service) Folders() []string {
+	return slices.Clone(s.folders)
+}
+
+// checkFolder は、プロファイルの資料のフォルダを old から folder に変えてよいか(0024 の決定事項 31)。
+// 選べるのは aibow-server の管理者(とサーバーの PC の上から開いた画面)だけで、server.json にあるフォルダだけ。変えないなら確かめない。
+func (s *Service) checkFolder(ctx context.Context, old, folder string) error {
+	if folder == old || folder == "" {
+		return nil
+	}
+	if !s.browser || !managesPC(ctx) {
+		return errors.New("資料のフォルダを選べるのは、aibow-server の管理者だけです")
+	}
+	if !slices.Contains(s.folders, folder) {
+		return fmt.Errorf("資料のフォルダ %s はありません(server.json の folders に書いたもの: %s)", folder, strings.Join(s.folders, "・"))
+	}
+	return nil
 }
 
 // ToolPrefs は、ツールの扱いの PC の既定(tools.json)と、サーバーを起動したときに見えたツールの一覧。
@@ -1027,6 +1086,8 @@ type ConversationDetail struct {
 	// Profile は、この会話のプロファイル(名前・値・決まり。0014)。画面は、固定した項目を押せなくして理由を添えるのに使う。
 	// プロファイルを持たない会話なら null
 	Profile *aibow.Profile `json:"profile"`
+	// Folder は、この会話で使える aibow-server の資料のフォルダの名前(パスは出さない。無ければ空。0024 の決定事項 26)
+	Folder string `json:"folder,omitempty"`
 }
 
 // Conversation は会話1つと、その発言を古い順に返す。
@@ -1051,7 +1112,8 @@ func (s *Service) Conversation(ctx context.Context, id uuid.UUID) (ConversationD
 	if err != nil {
 		return ConversationDetail{}, err
 	}
-	return ConversationDetail{Conversation: c, Messages: ms, Compactions: comps, Generating: g != nil && *g == id, Usage: u, Profile: p}, nil
+	return ConversationDetail{Conversation: c, Messages: ms, Compactions: comps, Generating: g != nil && *g == id, Usage: u, Profile: p,
+		Folder: s.convs.FolderName(c.Settings)}, nil
 }
 
 // Usage は、会話がモデルに渡す文字列で、会話の上限をどれだけ使っているか(メーター)を返す。
@@ -1339,9 +1401,26 @@ func (s *Service) run(ctx context.Context, id uuid.UUID, f func(ctx context.Cont
 			}
 		case "tool_result":
 			logTool(ev.Message, who)
+			s.logWrite(ev.Message, who)
 		}
 		emit(ev)
 	})
+}
+
+// logWrite は、ブラウザの会話が資料のフォルダに書いたことを、誰が・どの会話で・どのファイルに書いたかと一緒に Notice で残す(0024 の決定事項 34)。
+// 同じファイルを2人が書くことがあるので、あとから追えるように。
+func (s *Service) logWrite(m *aibow.StoredMessage, who string) {
+	r := m.ToolResult
+	if !s.browser || r == nil || r.Error || r.Call.Name != "write_file" && r.Call.Name != "edit_file" || r.Confirm != nil && !r.Confirm.Approved {
+		return
+	}
+	path := ""
+	for _, a := range r.Call.Args {
+		if a.Name == "path" {
+			path = a.Value
+		}
+	}
+	log.Noticef("資料のフォルダに書きました: %s %s(%s の会話 %s)", r.Call.Name, path, who, m.ConversationID)
 }
 
 // whoOf は、ログに出す「誰の会話か」(ブラウザの会話なら利用者の名前と会話。0024 の決定事項 11)。

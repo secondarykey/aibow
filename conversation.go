@@ -128,6 +128,8 @@ type Conversations struct {
 
 	// noWorkDir は、会話に保存した作業フォルダを使わないか(IgnoreWorkDir)
 	noWorkDir bool
+	// folders は aibow-server の資料のフォルダ(名前 → 絶対パス。SetFolders)
+	folders map[string]string
 }
 
 // pendingConfirm は答えを待っている確認1つ。
@@ -853,7 +855,8 @@ func (cs *Conversations) systemPrompt(set ConversationSettings) string {
 // 使うツールに合わせて書く:時刻・計算のほかにツールが無ければ書かない(作業フォルダを使うツールが無い)。
 // シェルと cd の注意は、run_command を使うときだけ書く(使わないツールのことを書かない)。
 func (cs *Conversations) environment(set ConversationSettings) string {
-	if set.WorkDir == "" {
+	dir := cs.workDir(set)
+	if dir == "" {
 		return ""
 	}
 	tools := cs.toolsFor(set)
@@ -867,7 +870,14 @@ func (cs *Conversations) environment(set ConversationSettings) string {
 	command := tool.Find(tools, "run_command") != nil
 	var b strings.Builder
 	b.WriteString("# Environment\n")
-	b.WriteString("Working directory: " + set.WorkDir + "\n")
+	// 資料のフォルダ(aibow-server)は、サーバーの PC のパスを見せず、名前だけを書く(パスはツールの中だけで使う。0024 の決定事項 32)
+	name := filepath.Base(dir)
+	if folder := cs.FolderName(set); folder != "" {
+		name = folder
+		b.WriteString("Working directory: \"" + folder + "\" (a shared folder on the server)\n")
+	} else {
+		b.WriteString("Working directory: " + dir + "\n")
+	}
 	b.WriteString("OS: " + runtime.GOOS + "\n")
 	if command {
 		b.WriteString("Shell for run_command: " + tool.ShellNote + "\n")
@@ -878,7 +888,7 @@ func (cs *Conversations) environment(set ConversationSettings) string {
 	if command {
 		b.WriteString("Commands already run inside the working directory, so do not cd into it. ")
 	}
-	b.WriteString("\"" + filepath.Base(set.WorkDir) + "\" refers to the working directory itself.")
+	b.WriteString("\"" + name + "\" refers to the working directory itself.")
 	return b.String()
 }
 

@@ -67,6 +67,8 @@ var browserMethods = []string{
 	"ToolStates", "MCPServers", "ConfirmTool", "PendingConfirm",
 	// ツールの扱いの既定(設定の画面の「ツール」。0024 の 12-1b)。誰でも見られる(変えるのは adminToolMethods)
 	"ToolPrefs", "ToolDefaults", "BuiltinTools",
+	// 資料のフォルダの名前(配るプロファイルで選ぶ。0024 の 12-2)
+	"Folders",
 }
 
 // pcMethods は、サーバーの PC の事情を変えるメソッド(モデルのタブ。0015 の 8-4)。管理者とサーバーの PC の上から開いた画面だけが呼べる

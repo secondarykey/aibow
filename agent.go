@@ -650,7 +650,7 @@ func (cs *Conversations) toolsFor(set ConversationSettings) []tool.Tool {
 	if cs.remote == nil {
 		return tools
 	}
-	for _, t := range cs.remote.Tools(set.WorkDir, cs.usableServers(set)) {
+	for _, t := range cs.remote.Tools(cs.workDir(set), cs.usableServers(set)) {
 		if cs.toolPolicy(set, t) == ToolOff {
 			continue
 		}
@@ -840,13 +840,14 @@ func (cs *Conversations) SetLocalTools(l LocalTools) {
 // localTools は、aibow の中で動くツール(組み込みと、作業フォルダのツール)。使うかどうかは見ない(toolsFor が見る)。
 // 作業フォルダを決めた会話だけ、そのフォルダの中を扱うツールを足す(作業フォルダは会話ごとなので、ここで作る)。
 func (cs *Conversations) localTools(set ConversationSettings) []tool.Tool {
+	dir := cs.workDir(set)
 	if cs.local != nil {
-		return cs.local.Tools(set.WorkDir)
+		return cs.local.Tools(dir)
 	}
-	if set.WorkDir == "" {
+	if dir == "" {
 		return cs.tools
 	}
-	return append(append(slices.Clip(cs.tools), tool.Files(set.WorkDir)...), tool.RunCommand(set.WorkDir))
+	return append(append(slices.Clip(cs.tools), tool.Files(dir)...), tool.RunCommand(dir))
 }
 
 // RemoteTools は、aibow の外のプログラムが実行するツールの置き場(MCP のサーバー。本物は mcp/client の Manager)。
@@ -908,7 +909,7 @@ func (cs *Conversations) startRemote(ctx context.Context, conv Conversation, emi
 	if cs.remote == nil {
 		return
 	}
-	started, errs := cs.remote.Start(ctx, set.WorkDir, cs.usableServers(set))
+	started, errs := cs.remote.Start(ctx, cs.workDir(set), cs.usableServers(set))
 	for _, err := range errs {
 		log.Warn(err.Error())
 		emit(ChatEvent{ConversationID: conv.ID, Type: "notice", Text: err.Error() + "(このサーバーのツールは使わずに続けます)"})
@@ -923,7 +924,7 @@ func (cs *Conversations) startRemote(ctx context.Context, conv Conversation, emi
 // 設定の画面で、サーバーを起動していなくてもツールの一覧を出して、使う / 使わないを決められるようにするため。
 func (cs *Conversations) rememberTools(set ConversationSettings, started []string) {
 	for _, server := range started {
-		if err := cs.prefs.setKnown(server, knownTools(cs.remote.Tools(set.WorkDir, []string{server}))); err != nil {
+		if err := cs.prefs.setKnown(server, knownTools(cs.remote.Tools(cs.workDir(set), []string{server}))); err != nil {
 			log.Warnf("MCP のサーバー %s のツールの一覧を覚えられません: %v", server, err)
 		}
 	}
@@ -934,7 +935,7 @@ func (cs *Conversations) rememberTools(set ConversationSettings, started []strin
 func (cs *Conversations) logRemoteTools(set ConversationSettings) {
 	local, all := cs.localTools(set), cs.toolsFor(set)
 	var skipped []string
-	for _, t := range cs.remote.Tools(set.WorkDir, cs.usableServers(set)) {
+	for _, t := range cs.remote.Tools(cs.workDir(set), cs.usableServers(set)) {
 		if tool.Find(local, t.Def().Name) != nil {
 			skipped = append(skipped, t.Def().Name)
 		}

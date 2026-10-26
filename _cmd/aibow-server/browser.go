@@ -76,8 +76,12 @@ func startBrowser(c config, initial aibow.AppSettings, eng *engine.Engine, mm *m
 	svc, life := ui.New(ui.Options{
 		Host:  ui.NewServerHost(eng, mm, nCtx, url),
 		Store: st, App: app, Version: appVersion(),
-		Notify: events, Seat: seat, Local: local, MCP: mcpm, Prefs: prefs, Browser: true,
+		Notify: events, Seat: seat, Local: local, MCP: mcpm, Prefs: prefs, Browser: true, Folders: c.Folders,
 	})
+	if len(c.Folders) > 0 {
+		log.Noticef("資料のフォルダ: %s(server.json の folders。管理者が配るプロファイルで選ぶと、その会話で読み書きできます)",
+			strings.Join(slices.Sorted(maps.Keys(c.Folders)), ", "))
+	}
 	life.Start() // 起動のときのモデルは main が読み込んだので、ここでは読み込まない(Initial を渡していない)
 
 	sessions := auth.NewSessions(st)

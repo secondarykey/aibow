@@ -601,6 +601,7 @@ func (cs *Conversations) CopyProfile(ctx context.Context, id uuid.UUID) (Profile
 	}
 	rules := p.Rules
 	rules.Fixed = slices.Clone(rules.Fixed)
+	rules.Folder = "" // 資料のフォルダは配っているプロファイルだけのもの(0024 の決定事項 31)
 	return cs.CreateProfile(ctx, name, p.Values, rules)
 }
 

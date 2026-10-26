@@ -40,6 +40,9 @@ type ProfileRules struct {
 	Fixed []string `json:"fixed,omitempty"`
 	// Off は使えないもの。PC の既定(tools.json)や会話の上書きより先に見る
 	Off ProfileOff `json:"off,omitzero"`
+	// Folder は、aibow-server の資料のフォルダの名前(server.json の folders。0024 の 12-2)。
+	// 配っているプロファイルで、その人にまだ配られているときだけ効く(Profile.GrantedFolder)。決まりなので、変えると今ある会話にもすぐ効く
+	Folder string `json:"folder,omitempty"`
 }
 
 // ProfileOff は、プロファイルで使えないツール。
@@ -228,11 +231,52 @@ func (cs *Conversations) load(ctx context.Context, id uuid.UUID) (Conversation, 
 }
 
 // forUse は、使うときの設定の仕上げ。作業フォルダを使わない形(IgnoreWorkDir)なら、作業フォルダを空にする。
+// 資料のフォルダ(SetFolders)のパスも、ここでは入れない(画面に返す設定にパスを載せないため)。ツールを作るときに workDir で引く。
 func (cs *Conversations) forUse(s ConversationSettings) ConversationSettings {
 	if cs.noWorkDir {
 		s.WorkDir = ""
 	}
 	return s
+}
+
+// GrantedFolder は、このプロファイルで使える資料のフォルダの名前(使えなければ空)。
+// 配っていて(Share)、ctx の利用者にまだ配られている(Withdrawn でない)ときだけ(0024 の決定事項 31)。
+// 配っていないプロファイル(写したものなど)に名前が書いてあっても使わない。誰が使えるかは、配る相手で決まるため。
+func (p *Profile) GrantedFolder() string {
+	if p == nil || p.Share == ShareNone || p.Withdrawn {
+		return ""
+	}
+	return p.Rules.Folder
+}
+
+// SetFolders は、aibow-server の資料のフォルダ(名前 → 絶対パス)を決める(ブラウザの会話。0024 の 12-2)。起動のときに1回。
+func (cs *Conversations) SetFolders(folders map[string]string) {
+	cs.folders = folders
+}
+
+// folderOf は、会話の設定 set(プロファイルの決まりを当てたもの)で使える資料のフォルダの名前とパス。無ければ空。
+func (cs *Conversations) folderOf(set ConversationSettings) (name, path string) {
+	name = set.profile.GrantedFolder()
+	if p, ok := cs.folders[name]; ok && name != "" {
+		return name, p
+	}
+	return "", ""
+}
+
+// FolderName は、会話の設定 set で使える資料のフォルダの名前(画面に出す。パスは出さない)。
+func (cs *Conversations) FolderName(set ConversationSettings) string {
+	name, _ := cs.folderOf(set)
+	return name
+}
+
+// workDir は、ツールを作るときの作業フォルダ。アプリでは会話に保存した作業フォルダ、
+// aibow-server のブラウザの会話では、プロファイルで配られた資料のフォルダ(無ければ空)。
+func (cs *Conversations) workDir(set ConversationSettings) string {
+	if cs.noWorkDir {
+		_, p := cs.folderOf(set)
+		return p
+	}
+	return set.WorkDir
 }
 
 // groupOfTool は、ツールの名前からグループ(組み込みなら空、MCP ならサーバーの名前)を引く。
