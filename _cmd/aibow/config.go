@@ -141,12 +141,14 @@ func loadConfig() (appConfig, error) {
 			env.errs = append(env.errs, fmt.Errorf("%s は 1 以上で指定してください: %d", n.key, n.v))
 		}
 	}
-	// aibow-server につなぐときは llama.cpp を読み込まないので、lib が無くてもよい
+	// aibow-server につなぐときは llama.cpp を読み込まないので、lib が無くてもよい。
+	// 初めての PC で画面からつなぐときは、ここで起動に失敗してから設定の画面の「サーバー」のタブでつなぐ(タブは起動に失敗しても使える。0019)
 	if _, err := os.Stat(c.engine.LibPath); err != nil && c.serverURL == "" {
 		// 相対パスのままだと「どこを探したのか」が分からないので、絶対パスで出す
 		env.errs = append(env.errs, fmt.Errorf("llama.cpp のフォルダが見つかりません: %s\n"+
 			"(相対パスはカレントフォルダが基準です。_cmd/aibow で起動するか、AIBOW_LIB で場所を指定してください。"+
-			"取得方法は README.md の「llama.cpp の取得」を参照)", absPath(c.engine.LibPath)))
+			"取得方法は README.md の「llama.cpp の取得」を参照。"+
+			"aibow-server につないで使うなら llama.cpp は要りません。設定の画面の「サーバー」のタブでつなぎ、起動し直してください)", absPath(c.engine.LibPath)))
 	}
 	if c.dbPath == "" {
 		env.errs = append(env.errs, errors.New("会話を保存する場所が決められません。AIBOW_DB で DB ファイルの場所を指定してください"))

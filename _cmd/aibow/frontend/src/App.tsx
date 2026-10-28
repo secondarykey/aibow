@@ -473,6 +473,8 @@ export default function App() {
         onApplyLimits={applyLimits}
         onError={addError}
         appDisabled={busy !== "idle"}
+        // 起動に失敗したとき(lib が無いなど)も、aibow-server にはつなげるようにする(つなぐなら lib は要らない)
+        connectDisabled={busy === "generating" || busy === "loading"}
         onDisplayChange={app.setDisplay}
         onToolsChanged={() => {
           reloadMcp();

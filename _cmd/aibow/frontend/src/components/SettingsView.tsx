@@ -35,6 +35,8 @@ interface Props {
   onApplyLimits(history: number, reply: number, save: (patch: Partial<ConversationSettings>) => void): void;
   onError(text: string): void;
   appDisabled: boolean; // 生成中・読み込み中は変えられない(エンジンが1つのため)
+  // 「サーバー」のタブだけは、起動に失敗していても操作できる(lib の無い PC から初めてつなぐため。0019)。生成中・読み込み中だけ止める
+  connectDisabled: boolean;
   onDisplayChange(d: DisplaySettings): void; // 画面の設定を変える(生成に関わらないので、生成中でも変えられる)
   onToolsChanged(): void; // ツールを使う / 使わないを変えた(メーターと、会話で選べる MCP のサーバーを読み直す)
   onReadConversation(id: string): void; // 管理者がほかの人の会話を読むだけで開く(0018 の 11-2)
@@ -54,7 +56,7 @@ const TABS: { id: Tab; label: string; title: string }[] = [
   { id: "users", label: "利用者", title: "aibow-server の利用者(作る・パスワードと API キーの作り直し・消す)" },
 ];
 
-export function SettingsView({ onClose, errors, app, models, modelState, servers, onProfilesChanged, onApplyLimits, onError, appDisabled, onDisplayChange, onToolsChanged, onReadConversation }: Props) {
+export function SettingsView({ onClose, errors, app, models, modelState, servers, onProfilesChanged, onApplyLimits, onError, appDisabled, connectDisabled, onDisplayChange, onToolsChanged, onReadConversation }: Props) {
   // 開くたびに「基本設定」から(開いている間だけ覚える)
   const [tab, setTab] = useState<Tab>("basic");
   return (
@@ -96,7 +98,7 @@ export function SettingsView({ onClose, errors, app, models, modelState, servers
 
         {tab === "tools" && <ServerTools servers={servers} manage={modelState.manage} onChanged={onToolsChanged} />}
 
-        {tab === "server" && <ServerSettings disabled={appDisabled} onError={onError} />}
+        {tab === "server" && <ServerSettings disabled={connectDisabled} onError={onError} />}
 
         {tab === "conversation" && (
           <>
