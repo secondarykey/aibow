@@ -356,6 +356,6 @@ aibow-server user admin <名前>(コマンドだけ)→ server.db の users.admi
 - **トークン**:期限は作ってから 10 日で固定(ブラウザのセッションと違って延ばさない)。PC ごとに1本(利用者 + PC の名前)で、同じ PC でログインし直すと前のものは消える。server.db の `app_tokens` には SHA-256 だけ。
   パスワードを作り直すと、ブラウザのセッションと一緒に消える
 - **使える口**:API キーと同じ(`KeysRequired` の口の全部と `/aibow/auth/key`)。期限が切れたら 401 で `code` が `token_expired`(アプリはもう一度ログインするよう出す)
-- **証明書の指紋**:HTTPS で起動したときと `cert` のコマンドで、証明書の SHA-256 の指紋(`AB:CD:…`。`auth.Fingerprint`)を出す。画面のアプリは初めてつなぐときに同じ形で出し、人が比べて信頼する(`api/client` の `ProbeServer`・`PinCert`)
+- **証明書のフィンガープリント**:HTTPS で起動したときと `cert` のコマンドで、証明書の SHA-256 のフィンガープリント(`AB:CD:…`。`auth.Fingerprint`)を出す。画面のアプリは初めてつなぐときに同じ形で出し、人が比べて信頼する(`api/client` の `ProbeServer`・`PinCert`)
 
 - `GET /favicon.ico` は、画面の係が黙って 404 を返す(ブラウザが自分で取りに来るので、OpenAI 互換の口に落として「キーが無い」の警告を出さないように)

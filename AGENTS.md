@@ -55,7 +55,7 @@ OpenAI 互換のクライアント(Cline など)⇄ HTTP(S)(既定は 127.0.0.1�
 | `mcp/client/` | MCP のクライアント(`client` パッケージ。SDK のパッケージ名 `mcp` と重ならないよう `mcp/` の下に置く。サーバーは `mcp/server/` に並べる)。`settings.json` の MCP のサーバーを起動し、そのツールを `tool.Tool` として見せる。aibow の中で `mcp/server` を動かし、組み込みのツールを MCP 越しに渡す(`Local`)。`tool` と `mcp/server` を import し、ルートの `aibow` は import しない |
 | `mcp/server/` | MCP のサーバー(`server` パッケージ。ステップ5)。`tool` のツールを MCP のツールとして出す。書き換えるツールはサーバーからユーザーに確かめる(MRTR)。`tool` と SDK だけを使い、ルートの `aibow` は import しない |
 | `api/` | OpenAI 互換の API(`api` パッケージ。ステップ6)。`engine` で生成だけを使い、ルートの `aibow`(会話の仕組み)は import しない。HTTP は標準の `net/http`。ステップ8で aibow 専用の口と欄(モデルの一覧・読み込み・トークン数など)を足した。生成の順番待ちの席 `Seat` はブラウザの会話(`ui`)と分け合う(ステップ9) |
-| `auth/` | aibow-server の利用者とログイン(`auth` パッケージ。ステップ10の 10-1)。パスワードのハッシュ(`crypto/pbkdf2`)・cookie のセッション・ログインの口(`/aibow/auth/`)・アプリ用のトークン(0019)・パスワードを決めるリンク(0022)・証明書の指紋。認証だけを受け持ち、ルートの `aibow` は import しない。保存は `store`(server.db) |
+| `auth/` | aibow-server の利用者とログイン(`auth` パッケージ。ステップ10の 10-1)。パスワードのハッシュ(`crypto/pbkdf2`)・cookie のセッション・ログインの口(`/aibow/auth/`)・アプリ用のトークン(0019)・パスワードを決めるリンク(0022)・証明書のフィンガープリント。認証だけを受け持ち、ルートの `aibow` は import しない。保存は `store`(server.db) |
 | `api/client/` | aibow-server につなぐクライアント(`client` パッケージ。ステップ8)。会話の仕組みの `Generator` と `ModelLoader` の HTTP 版。ルートの `aibow` は import しない |
 | `ui/` | 画面向けの処理(`ui` パッケージ。ステップ9の 9-0 で `_cmd/aibow` から切り出した)。画面から呼ぶメソッド(`Service`。モデル・会話・設定・送信)と、モデルを扱う係(直接 `DirectHost`・aibow-server 越し `RemoteHost`)。ルートの `aibow` を使い、Wails を import しない。デスクトップのアプリは `ChatService` に埋め込んで Wails に渡す。ブラウザ向けには aibow-server が使う:aibow-server の engine でモデルを扱う係(`ServerHost`)と、画面用の HTTP の口(`Handler`。`/aibow/ui/call/{メソッド}` と SSE の `/aibow/ui/events`)。9-1。仕組みは [_docs/api.md](_docs/api.md) の「画面用の口」 |
 | `web/` | 画面のビルド結果(`web` パッケージ。ステップ9の 9-2)。vite が `_cmd/aibow/frontend` から `web/dist/app` に書き、デスクトップのアプリと aibow-server の両方が `web.Files()` で埋め込む(写さない)。ビルドしていなければ `web/dist/index.html`(ビルドの仕方だけのページ) |
@@ -134,6 +134,7 @@ OpenAI 互換のクライアント(Cline など)⇄ HTTP(S)(既定は 127.0.0.1�
 - 新しい概念(例: KV キャッシュ、tool_call、MCP のトランスポート)を導入するときは、短い説明を添える
 - ユーザーの環境: Windows、NVIDIA GPU(VRAM 8GB)、メモリ 64GB。シェルは bash(Windows 上の Git Bash など。PowerShell の `$env:` 構文は使えない)。パスは `/d/Go/Projects/aibow` の形で書く
 - 主に使うモデルは Qwen3.5(4B / 9B)。ユーザーは Ollama でのモデル管理に慣れている
+- **用語は、ユーザーが分かる言い方にする**。英語の技術用語を無理に和訳しない(例:証明書の fingerprint は「指紋」ではなく「フィンガープリント」。日本語の「指紋」は人の指紋にしか読めない。2026-10-26、ユーザーの指示)。画面・ログ・ドキュメントのどれも同じ
 
 ## 確認方法
 
