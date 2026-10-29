@@ -77,6 +77,7 @@ aibow 全体の進み具合(入口)。ルールと全体の構成は `AGENTS.md`
 | ⬜ | MCP の OAuth(ログインが要る url の MCP のサーバー) | [検討メモ](_docs/backlog.md) |
 | ✅ | 会話の個別設定(会話の設定の画面) | [0009-conversation-settings.md](_docs/features/0009-conversation-settings.md) |
 | ⬜ | 今の組の中の compact(古いツールの結果を省略して続ける) | [検討メモ](_docs/backlog.md) |
+| ⬜ | 会話の作業フォルダを PC ごとにする(aibow-server につなぐと、ほかの PC で開いた会話に前の PC のパスが残る) | [検討メモ](_docs/backlog.md) |
 | ⬜ | Web で調べる(fetch・検索の MCP のサーバー) | [検討メモ](_docs/backlog.md) |
 | ⬜ | コーディングエージェントとして洗練する(最後のほうでやる) | [検討メモ](_docs/backlog.md) |
 | ✅ | aibow-server がモデルを読み直している間の一覧 | [0016-browser.md](_docs/features/0016-browser.md) の 9-3 |
