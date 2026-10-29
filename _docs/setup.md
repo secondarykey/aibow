@@ -1,6 +1,8 @@
 # 準備と起動
 
-aibow をビルドして起動するまでの手順です。Windows + NVIDIA GPU を前提にしています。
+aibow をビルドして使い始めるまでの手順です。Windows + NVIDIA GPU を前提にしています。
+短い手順は [README](../README.md) にあります。ここではその詳しい説明と、うまく動かないときのことを書きます。
+コードを変えながら動かす(開発モード)・自分の PC にインストールする・worktree から起動する、は [DEVELOPMENT.md](../DEVELOPMENT.md) にあります。
 
 ## 準備(最初の1回だけ)
 
@@ -8,12 +10,9 @@ bash(Git Bash など)で、アプリのフォルダ `_cmd/aibow` に移動して
 llama.cpp の DLL(`lib\`)とモデル(`models\`)は、モデルを動かすこのアプリの持ち物なので、アプリのフォルダに置きます。
 
 ```bash
-cd /d/Go/Projects/aibow/_cmd/aibow
+cd aibow/_cmd/aibow
 ```
 以降のコマンドは、すべてこのフォルダで実行します。
-
-以前の版(ブラウザ版)でリポジトリのルートに `lib\` と `models\` を置いていた場合は、ダウンロードし直さなくても、
-ルートの `lib\` と `models\` をフォルダごと `_cmd\aibow\` へ移せば準備の 3・4 は済みます。
 
 ### 1. 道具の確認
 
@@ -39,37 +38,25 @@ wails3 doctor
 ```
 Wails でビルドするのに必要なもの(Windows なら WebView2 など)がそろっているかを確認します。
 
-### 2. 依存ライブラリの取得
-
-```bash
-go mod tidy
-```
-`_cmd/aibow/go.mod` に書いてあるライブラリ(Wails と yzma など)をダウンロードし、改ざん検知用のチェックサムを `go.sum` に書き出します。
-
-```bash
-cd frontend && npm install && cd ..
-```
-画面で使うパッケージ(React、Vite、Wails の JavaScript 用ランタイム、アイコンの react-icons、Markdown を HTML にする marked、コードの色付けの highlight.js、図の mermaid など)を `frontend/node_modules/` にダウンロードします。
-`wails3 dev` / `wails3 build` は `node_modules` が無いときだけ自動で `npm install` するので、パッケージを増減したときは手で実行します。
-
-### 3. llama.cpp の取得
+### 2. llama.cpp の取得
 
 ```bash
 go run github.com/hybridgroup/yzma@v1.29.1 install --lib lib --processor cuda
 ```
-yzma に付属しているインストーラーを、インストールせずにその場で1回だけ実行します。aibow のビルドとは無関係の、準備用の道具です。
+yzma(aibow が llama.cpp を呼ぶのに使うライブラリ)に付属しているインストーラーを、インストールせずにその場で1回だけ実行します。aibow のビルドとは無関係の、準備用の道具です。
 
 - `go run パッケージ@バージョン` … 指定したプログラムをダウンロードしてビルドし、そのまま実行する
 - `install` … llama.cpp のビルド済み DLL を GitHub からダウンロードする
 - `--lib lib` … 置き場所。相対パスはコマンドを実行したフォルダが基準なので、`_cmd\aibow\lib\` にできる
-- `--processor cuda` … NVIDIA GPU 用のビルドを選ぶ。CUDA の実行に必要な DLL(cudart)も一緒に入る
+- `--processor cuda` … NVIDIA GPU 用のビルドを選ぶ。CUDA の実行に必要な DLL(cudart)も一緒に入る。GPU が無ければ `cpu`(遅くなる)
 
 `go run パッケージ@バージョン` は今いるフォルダの `go.mod` / `go.work` を見ないので、`_cmd/aibow` で実行しても問題ありません。
 バージョン(`@v1.29.1`)は、ルートの `go.mod` に書いてある yzma のバージョンと合わせてください。yzma と llama.cpp は組み合わせが決まっています。
 
 GitHub の llama.cpp のリリースページから zip を手で落として `_cmd\aibow\lib\` に展開しても同じです。
+aibow-server につないで使うだけの PC には要りません(下の「aibow-server を使い始める」)。
 
-### 4. モデルの用意
+### 3. モデルの用意
 
 次のどちらでも構いません。両方あれば、両方とも画面の一覧に出ます。
 
@@ -80,6 +67,7 @@ ollama pull qwen3.5:4b
 ```
 Ollama がモデルをダウンロードして保存します。すでに pull 済みなら何もしなくて構いません。
 aibow は Ollama の保存フォルダ(既定は `C:\Users\<ユーザー>\.ollama\models`、環境変数 `OLLAMA_MODELS` があればそちら)を見に行きます。
+Ollama は起動していなくて構いません(保存したファイルを aibow が直接読みます)。
 
 注意: Ollama のモデルの中には、Ollama 独自の形式になっていて llama.cpp では読めないものがあります。
 読めなかった場合は画面にエラーが出て、元のモデルに戻ります。その場合は B の方法で GGUF を用意してください。
@@ -91,134 +79,66 @@ GGUF は llama.cpp 用のモデルファイルの形式です。ダウンロー�
 https://huggingface.co/bartowski/Qwen_Qwen3.5-4B-GGUF/resolve/main/Qwen_Qwen3.5-4B-Q4_K_M.gguf
 
 `Q4_K_M` は「重みを4ビット程度に圧縮したもの」という意味で、元のサイズの約1/4になり、VRAM 8GB に余裕で収まります。
+ほかのフォルダに置いたモデルは、設定の画面の「モデル」のタブで置き場所を足すと一覧に出ます。
 
-## 起動
-
-```bash
-cd /d/Go/Projects/aibow/_cmd/aibow
-```
-アプリのフォルダに移動します。`lib\` と `models\` はカレントフォルダから探すので、必ずここで起動します。
-
-```bash
-wails3 dev
-```
-開発モードで起動します。中では次のことが順に行われます。
-
-- Go のコードからバインディング(`frontend/bindings/`)を作り直す
-- Go をビルドする(`bin/aibow.exe`)
-- 画面の開発サーバー(Vite)を起動する。画面のコードを保存すると、ウィンドウにすぐ反映される
-- アプリを起動する。`_cmd/aibow` の Go のコードを保存すると、ビルドし直して起動し直す
-
-リポジトリのルートの `aibow` パッケージや `engine/` などは見張っていないので、そちらを変えたときは `Ctrl+C` で止めて起動し直してください。
-初回は Go のライブラリのダウンロードとビルドがあるので、ウィンドウが出るまでしばらくかかります。
-
-起動すると、ターミナルに次のようなログが出ます(Wails 自身のログも混ざります)。各行の頭には日時とレベル(`2026-10-14T16:00:00+09:00 [INFO  ]`)が付きますが、下では省いています。
-
-```
-会話の保存先: C:\Users\<ユーザー>\AppData\Roaming\aibow\aibow.db
-新しい会話の既定: 会話の上限 8192 + 返事の上限 8192 = 作業領域 16384 トークン
-計算装置: CUDA0 [GPU] <GPU の名前>(VRAM 空き ○ / ○ GB)
-計算装置: CPU [CPU] <CPU の名前>
-モデルの置き場所: D:\Go\Projects\aibow\_cmd\aibow\models / Ollama: C:\Users\<ユーザー>\.ollama\models
-  ollama   qwen3.5:4b                               ○ GB
-  ollama   qwen3.5:9b                               ○ GB
-aibow 起動
-モデルを読み込み中: qwen3.5:4b (...)
-読み込み完了 (○ 秒): <モデルの種類> / ○B パラメータ / ○ GB / ○ 層 / GPU に載せる層: 999 / 作業領域: 16384 トークン
-```
-
-ウィンドウが開きます。モデルはウィンドウが出てから裏で読み込むので、読み終わるまでは送信できません。
-止めるときはウィンドウを閉じます(VRAM も解放され、`wails3 dev` も終わります)。生成中に閉じても、生成を止めてから終了します。
-
-うまく動かないとき:
-
-- ウィンドウに「起動できません: llama.cpp のフォルダが見つかりません: …」と出る場合は、表示されたフォルダに `lib\` がありません。
-  `_cmd/aibow` で起動しているか、`AIBOW_LIB` の指定が正しいかを確認してください。環境変数の値が不正なときも、同じようにウィンドウに理由が出ます。
-  aibow-server につないで使う PC なら `lib\` は要りません。この表示のまま設定の画面の「サーバー」のタブでつなぎ、起動し直します([usage.md](usage.md) の「画面のアプリを aibow-server につなぐ」)。
-- `計算装置` に GPU が出てこない場合は、GPU 用ではない llama.cpp が入っているか、ドライバーが古い可能性があります(準備の3の `--processor cuda` を確認)。
-- Ollama のモデルが一覧に出てこない場合は、ログの `Ollama:` の場所が正しいか確認してください。違う場所に保存しているなら、環境変数 `OLLAMA_MODELS` で指定します。
-
-### 実行ファイルを作る
+## ビルドと起動
 
 ```bash
 wails3 build
 ```
-画面をビルドして埋め込み、アイコン付きの実行ファイル `bin\aibow.exe` を作ります。コンソールは出ません。
-画面のビルド結果はリポジトリのルートの `web/dist/app` にでき、aibow-server(ブラウザから使うとき)にも同じものが入ります。aibow-server は、このあとでビルドします([usage.md](usage.md) の「ブラウザから使う」)。
+画面(React)をビルドして埋め込み、アイコン付きの実行ファイル `bin\aibow.exe` を作ります。
+画面のパッケージ(`frontend/node_modules/`)が無ければ、先に自動で `npm install` します。初回は Go と npm のダウンロードがあるので時間がかかります。
 
 ```bash
-wails3 task run
+./bin/aibow.exe
 ```
-`bin\aibow.exe` を、`_cmd/aibow` をカレントフォルダにして起動します。`bin\aibow.exe` をエクスプローラーからダブルクリックすると
-カレントフォルダが `bin\` になり、`lib\` が見つかりません。その場合は、起動できない理由がウィンドウに表示されます
-(`AIBOW_LIB` / `AIBOW_MODELS_DIR` を絶対パスで設定しておけば、どこから起動しても動きます)。
-`bin\aibow.exe` はコンソールを持たないので、ログはファイル `%APPDATA%\aibow\logs\aibow_<日付>.log` に書きます(起動した版・使ったモデル・注意・エラーなど、常に残したいもの(NOTICE 以上)だけ。生成ごとの統計などは `wails3 dev` のターミナルで見ます。日ごとに分かれ、10 日分を残して古いものは起動時に消します。アプリが異常終了したときは、同じフォルダの `aibow_crash_<日時>.log` に内容が残り、次の起動で画面に知らせます。場所は `AIBOW_LOG_DIR` で変えられます)。
-起動できないなど、うまく動かないときはこのファイルを見てください。`wails3 dev` で起動したときは、ファイルには書かずターミナルに出します。
+起動します(`wails3 task run` でも同じ)。ウィンドウが出たら、入力欄の下でモデルを選んで話しかけます。
+モデルはウィンドウが出てから裏で読み込むので、読み終わるまでは送信できません。止めるときはウィンドウを閉じます(VRAM も解放されます)。
 
-### 自分の PC にインストールする(local:deploy)
+- `lib\` と `models\` は**カレントフォルダから**探します。`_cmd/aibow` で起動してください。
+  `bin\aibow.exe` をエクスプローラーからダブルクリックするとカレントフォルダが `bin\` になり、`lib\` が見つかりません(起動できない理由がウィンドウに出ます)。
+  どこからでも起動したいときは、`AIBOW_LIB` / `AIBOW_MODELS_DIR` を絶対パスで設定しておきます(下の「環境変数」)
+- 会話・設定は `%APPDATA%\aibow\` に置きます(`aibow.db`・`settings.json` など。何をどこに置くかは [usage.md](usage.md) の「環境変数の効き方」)
+- `bin\aibow.exe` はコンソールを持たないので、ログはファイル `%APPDATA%\aibow\logs\aibow_<日付>.log` に書きます(起動した版・使ったモデル・注意・エラーなど、常に残したいもの(NOTICE 以上)だけ。日ごとに分かれ、10 日分を残して古いものは起動時に消します。場所は `AIBOW_LOG_DIR` で変えられます)。
+  アプリが異常終了したときは、同じフォルダの `aibow_crash_<日時>.log` に内容が残り、次の起動で画面に知らせます。起動できないなど、うまく動かないときはこのファイルを見てください
 
-普段使いの場所へ、バージョン管理込みでインストールします。
-インストール先などのローカルの設定をリポジトリに残さないよう、`local:deploy` は各自の `_cmd/aibow/Taskfile.local.yml` に書きます。
-このファイルは Git に入れません(`.gitignore` 済み)。`Taskfile.yml` が optional で読み込むので、無い環境でも他のタスクはそのまま動きます。
+画面のビルド結果はリポジトリのルートの `web/dist/app` にでき、aibow-server(ブラウザから使うとき)にも同じものが入ります。
 
-```bash
-wails3 task local:deploy
-```
-`_cmd/aibow` で実行します。`Taskfile.local.yml` の `local:deploy` は、次のことを順に行う作りにしています。
+### 環境変数(セットアップに関わるもの)
 
-1. 起動中の aibow を終了する(起動中の exe は上書きできないため)
-2. 前回インストールしたバージョンのままなら、patch を1つ上げる(0.1.0 → 0.1.1)
-3. `version` の値を、`build/config.yml`・`frontend/package.json`・`frontend/package-lock.json`・exe に焼き込むバージョン情報(`build/windows/info.json` など)に反映する
-   (`go run _cmd/version.go` → `npm install --package-lock-only` → `wails3 update build-assets -name aibow -binaryname aibow`)
-4. `wails3 build`
-5. 3 で変わったファイルだけをコミットする(作業中の他の変更は巻き込まない)
-6. コミットに `v0.1.1` のようなタグを打つ(push はしない)。どのコミットをインストールしたかが分かる
-7. `bin\aibow.exe` と `lib\` をインストール先へコピーする(`lib\` は変わったファイルだけ)
+llama.cpp とモデルは、既定ではカレントフォルダの `lib\`・`models\` を探します。ほかの場所に置いたときや、ほかのフォルダから起動するときは、環境変数で場所を指します。
 
-インストール先の `aibow.exe` を起動すると、隣の `lib\` を使います。モデルは Ollama のものが使えます。
-GGUF を自分で置く場合は、インストール先に `models\` を作って置くか、`AIBOW_MODELS_DIR` で指定します。
+| 環境変数 | 既定 | 内容 |
+|---|---|---|
+| `AIBOW_LIB` | `lib` | llama.cpp の DLL のフォルダ |
+| `AIBOW_MODELS_DIR` | `models` | GGUF を置くフォルダ |
+| `OLLAMA_MODELS` | `%USERPROFILE%\.ollama\models` | Ollama の保存フォルダ(Ollama 自身と同じ変数) |
+| `AIBOW_MODEL` | 最後に使ったモデル | 起動のときに読み込むモデル(例: `ollama:qwen3.5:4b`) |
+| `AIBOW_GPU_LAYERS` | `999`(全部) | GPU に載せる層の数。VRAM に入らないときに減らす |
+| `AIBOW_DB`・`AIBOW_LOG_DIR` | `%APPDATA%\aibow\` の下 | 会話の DB とログの場所(試すときは一時フォルダにすると、ふだんの会話と混ざらない) |
+| `AIBOW_SERVER_URL` | なし | 画面のアプリを aibow-server につなぐ(画面の「サーバー」のタブでもつなげる) |
 
-```bash
-go run _cmd/version.go -bump
-```
-patch は自動で上がりますが、minor / major を上げたいときは、**リポジトリのルートで**これを実行してから `local:deploy` します。
-上げ方を選ぶと、`version`・`build/config.yml`・`frontend/package.json` が書き換わります。
+- **読むのは起動のときだけ**です。変えたら起動し直します
+- **画面で変えられる設定**(GPU の層数・会話の上限など)の環境変数は、まだ画面で変えていないときの初期値です。画面で一度変えると、画面の値が優先されます
+- **aibow-server のつなぎ先**は、`settings.json` の `serverUrl` > `AIBOW_SERVER_URL` > 画面で決めたもの、の順に強く、手で書いてあれば画面では変えられません
 
-`Taskfile.local.yml` の変数(インストール先など)を一時的に変えたいときは、`KEY=値` で渡します(`wails3 task` は `--` の後ろの引数を受け取れないため)。
+全部の環境変数と効き方は [usage.md](usage.md) の「環境変数の効き方」と表にあります。
 
-```bash
-wails3 task local:deploy DEPLOY_DEST="D:/tmp/aibow"
-```
+### うまく動かないとき
 
-### 起動時に落ちた場合
-
-調査の記録は [known-issues.md](known-issues.md) にあります。
-
-`GGML_ASSERT(...) failed` と出て落ちたことが一度ありましたが、同じ条件で10回起動し直しても再現しませんでした(原因は未特定)。
-もう一度起きたら、llama.cpp 自身のログを出して起動し、落ちる直前のログと、そのとき動いていた他のアプリ(Ollama、ゲームなど)を記録してください。
-
-```bash
-AIBOW_LLAMA_LOG=1 wails3 dev 2>&1 | tee aibow.log
-```
-`2>&1` でエラー出力も含めて、`tee` で画面に出しつつ `aibow.log` にも保存します。
-
-### worktree などから起動する
-
-Git の worktree など、別の場所にあるコードから起動するときは、`lib\` と `models\` は Git に入っていないので、本体の場所を指定します。
-worktree に `lib\` / `models\` を入れ直す必要はありません。
-
-```bash
-AIBOW_LIB=/d/Go/Projects/aibow/_cmd/aibow/lib AIBOW_MODELS_DIR=/d/Go/Projects/aibow/_cmd/aibow/models wails3 dev
-```
-
-本体の `lib\` / `models\` へのジャンクション(フォルダの別名)は作らないでください。
-worktree を消すツールによっては、ジャンクションの先(本体の `lib\` / `models\`)の中身まで消してしまいます。
-`frontend/node_modules/` も Git に入っていないので、worktree の `_cmd/aibow/frontend` で `npm install` します。
+- ウィンドウに「起動できません: llama.cpp のフォルダが見つかりません: …」と出る場合は、表示されたフォルダに `lib\` がありません。
+  `_cmd/aibow` で起動しているか、`AIBOW_LIB` の指定が正しいかを確認してください。環境変数の値が不正なときも、同じようにウィンドウに理由が出ます。
+  aibow-server につないで使う PC なら `lib\` は要りません。この表示のまま設定の画面の「サーバー」のタブでつなぎ、起動し直します([usage.md](usage.md) の「画面のアプリを aibow-server につなぐ」)。
+- ログの `計算装置` に GPU が出てこない場合は、GPU 用ではない llama.cpp が入っているか、ドライバーが古い可能性があります(準備の2の `--processor cuda` を確認)。
+- Ollama のモデルが一覧に出てこない場合は、ログの `Ollama:` の場所が正しいか確認してください。違う場所に保存しているなら、環境変数 `OLLAMA_MODELS` で指定します。
+- Linux で起動すると `bwrap: setting up uid map: Permission denied` と出て落ちる場合は、画面に使う WebKitGTK が隔離(sandbox)を作れていません
+  (Ubuntu 23.10 以降は、AppArmor で一般の利用者が名前空間を作るのを制限している)。`WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1` を付けて起動すると動きます(2026-10-29 に確かめた)。
+- 起動時に落ちる(`GGML_ASSERT(...) failed` など)場合は、[known-issues.md](known-issues.md) の記録と、[DEVELOPMENT.md](../DEVELOPMENT.md) の「落ちたときの調べ方」を見てください。
 
 ## aibow-server を使い始める(ステップ10・11)
 
 aibow-server は、リポジトリのフォルダで `go run ./_cmd/dev build` で作ります(画面をビルドしてから exe を作る。`go build` だけだと古い画面が入る)。
-開発で動かすときは `go run ./_cmd/dev server`(画面は vite の開発用サーバー `http://127.0.0.1:9246/` から配る)。要るのは Go と Node.js で、wails3 は要りません。詳しくは [usage.md](usage.md) の「aibow-server」にあります。
+要るのは Go と Node.js で、wails3 は要りません。起動の引数と設定ファイルは [usage.md](usage.md) の「aibow-server」にあります。
 
 初めて起動した aibow-server の利用者は `local` の1人だけで(パスワードは空)、**管理者は一人もいません。既定の admin も作りません**
 (決まったパスワードの管理者がいると、変え忘れたまま外に出したときに誰でも入れてしまうため。最初の管理者は、サーバーの PC でコマンドを打てる人が決める)。
@@ -235,6 +155,7 @@ aibow-server は**既定でログインが要る**ので(0020)、最初にサー
 - 自分のパスワードは、設定の画面の「基本設定」の「パスワード」で変える
 - 管理者がいなくても動く(サーバーの PC からはモデルなどをいつでも変えられ、利用者はコマンドで扱える)
 - 1人で自分の PC だけで使うなら、`server.json` に `"login": false`(または `-login=false`)を書くとログインなしになる(利用者は `local` だけ。127.0.0.1 の外で待ち受けるときは効かない)
+- 画面のアプリがアプリの中でモデルを動かしている間は、aibow-server を同時に動かさない(VRAM にモデルを2つ載せられないため)
 - ブラウザの会話で Web のツール(MCP のサーバー)や資料のフォルダを使うときは、`server.json` の `mcpServers`・`folders` に書く(任意。ステップ12。
   書き方と、管理者が決めること・気をつけることは [usage.md](usage.md) の「ブラウザの会話のツール」「資料のフォルダ」)
 
@@ -246,7 +167,7 @@ aibow-server を同じ網のほかの PC から使うときの準備です。手
 2. `server.json` に `"host": "0.0.0.0"` と `tlsCert`・`tlsKey` を書いて起動する(外で待ち受けると、ログインが必ず要る。起動のときのログにも証明書のフィンガープリントが出る)
 3. 利用者を作る:上の「aibow-server を使い始める」と同じ(管理者は、コマンドかブラウザの「利用者」のタブで、ほかの人を作る)
 4. 使う人に、招待のリンク(1 時間)と証明書のフィンガープリントを渡す。本人はリンクを開いてパスワードを決める
-   - 画面のアプリ:設定の画面の「サーバー」のタブでアドレスを入れ、出てきたフィンガープリントが渡されたものと同じなら信頼して、名前と決めたパスワードでログインする(0019。API キーと証明書のファイルは要らない)
+   - 画面のアプリ:設定の画面の「サーバー」のタブでアドレスを入れ、出てきたフィンガープリントが渡されたものと同じなら信頼して、名前と決めたパスワードでログインする(0019。API キーと証明書のファイルは要らない。つなぐだけの PC には `lib\`・`models\` は要らない)
    - Cline など(OpenAI 互換のクライアント):API キー(`aibow-server user key <名前>`。このときだけ表示する)と、証明書のファイル(`server-cert.pem`。秘密鍵は渡さない)も渡す
    - 画面のアプリを `settings.json` に手で書いてつなぐときも、`serverKey` に API キー、`serverCert` に証明書のファイルを書く
 

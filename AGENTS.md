@@ -67,6 +67,7 @@ OpenAI 互換のクライアント(Cline など)⇄ HTTP(S)(既定は 127.0.0.1�
 | `_cmd/dev/` | aibow-server を開発で動かす(`go run ./_cmd/dev server`。画面を vite の開発用サーバーから配り、aibow-server を `go run` で動かす)・exe を作る(`build`。画面をビルドしてから `go build`)スクリプト(0021)。画面のビルドを忘れて古い画面が埋め込まれる、をなくす。ルートのモジュールに入れている |
 | `_cmd/aibow-mcp/` | MCP のサーバーの exe(標準入出力)。引数を読んで `mcp/server` を起動するだけ。ルートのモジュールに入れている(Wails を使わないため) |
 | `_docs/` | 仕組みごとの説明(下の表)と、機能の仕様(`_docs/features/`)。利用者向けの手順は `setup.md`(準備と起動)・`usage.md`(使い方と設定)・`structure.md`(構成とファイル) |
+| `README.md` / `DEVELOPMENT.md` | 使ってみる人の入口(ビルドして使う・aibow-server を始める)/ 開発する人の入口(しくみ・開発モード・確かめ方・local:deploy・ロードマップ) |
 | `TODO.md` | 全体の進み具合とロードマップ(入口。行は「状態・一言・仕様へのリンク」だけ。0025) |
 | `_docs/backlog.md` | ロードマップの外の、まだ仕様の無い検討メモ(TODO.md の行の中身) |
 
@@ -86,7 +87,7 @@ OpenAI 互換のクライアント(Cline など)⇄ HTTP(S)(既定は 127.0.0.1�
 | 画面(配置・会話の一覧・発言と返事の操作・フォーカス・スクロール・ウィンドウの移動とリサイズ・IME) | [_docs/ui.md](_docs/ui.md) |
 | 返事の表示(Markdown・コードの色付け・mermaid の図と書き出し) | [_docs/rendering.md](_docs/rendering.md) |
 | バージョン・ローカルデプロイ | [_docs/deploy.md](_docs/deploy.md) |
-| 利用者向けの説明(README・準備と起動・使い方と設定・ファイル構成)を直す | README は使ってみたい人が最初に読む入口。**セットアップに絡むこと(要るもの・起動の仕方・初めて起動したときの状態(既定の利用者や管理者がいるか)・最初にやること)は必ず README に書く**(2026-10-26、ユーザーの指示)。そのうえで短く保ち、詳しい説明は [_docs/setup.md](_docs/setup.md)・[_docs/usage.md](_docs/usage.md)・[_docs/structure.md](_docs/structure.md) に書く。セットアップが変わる機能を足したら README も直す |
+| 利用者向けの説明(README・準備と起動・使い方と設定・ファイル構成)・開発する人向けの説明(DEVELOPMENT.md)を直す | README は使ってみたい人が最初に読む入口。**使ってみるのが先で、開発の話(`wails3 dev`・worktree・確かめ方・local:deploy・しくみ・ロードマップ)は README と setup.md に書かず [DEVELOPMENT.md](DEVELOPMENT.md) に書く**(気に入ったら開発へ進む、の順。配布用の exe が無いので、`wails3 build` でビルドして使うところまでは README に書く。2026-10-29、ユーザーの指示)。**セットアップに絡むこと(要るもの・起動の仕方・初めて起動したときの状態(既定の利用者や管理者がいるか)・最初にやること)は必ず README に書く**(2026-10-26、ユーザーの指示)。そのうえで短く保ち、詳しい説明は [_docs/setup.md](_docs/setup.md)・[_docs/usage.md](_docs/usage.md)・[_docs/structure.md](_docs/structure.md) に書く。セットアップが変わる機能を足したら README も直す |
 | アプリを起動して動作を確かめる(共通の手順と確認する項目) | [_docs/testing.md](_docs/testing.md) |
 | ユーザーの Windows 環境(worktree)で起動して確かめる | [_docs/env-windows.md](_docs/env-windows.md) |
 | クラウドセッション(GUI の無い Linux)で起動して確かめる | [_docs/env-cloud.md](_docs/env-cloud.md) |
@@ -143,6 +144,7 @@ OpenAI 互換のクライアント(Cline など)⇄ HTTP(S)(既定は 127.0.0.1�
 ```bash
 gofmt -l .                       # 整形が必要なファイルを表示(何も出なければ OK。_cmd も含む)
 go test ./...                    # 書式(公式テンプレートとの一致)、思考とツール呼び出しの振り分け、ツール、エージェントループ、Ollama の目録、会話の仕組み、compact、設定の引き継ぎ、SQLite(マイグレーション)のテスト(モデル不要)
+(cd _cmd/aibow && go test .)     # 画面のアプリのテスト(起動のときの設定・aibow-server のつなぎ先。別モジュールなので ./... に入らない)
 (cd _cmd/aibow && wails3 build)  # バインディング生成 → 画面の型チェックとビルド(tsc + vite)→ Go のビルド
 go vet ./... ./_cmd/aibow ./_cmd/aibow-mcp ./_cmd/aibow-server  # よくある間違いを静的チェック(./... は _cmd を含まないので並べる)
 ```

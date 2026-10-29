@@ -1,159 +1,108 @@
 # aibow
 
-ローカル LLM を**自分のプログラムの中で直接動かす**、学習用のチャットアプリです。
-LLM サーバーに頼らず、モデルの読み込みから1トークンずつの生成、会話の管理、ツール呼び出しまでを Go で自作しながら、
-「チャット AI の中で何が起きているか」を1段ずつ確かめていきます。
-「ローカル LLM でバイブコーディングできるエージェント」と「MCP(クライアントとサーバー)」まで作り、今は組織で使える形に進めています。
+ローカル LLM を**自分のプログラムの中で直接動かす**チャットアプリです。
+Ollama などの LLM サーバーを立てずに、アプリの中で llama.cpp を動かして会話します。ファイルを読み書きするコーディングエージェントや、MCP にも対応しています。
+
+仕組みを学ぶために作っている学習用のプロジェクトです。中身や作り方に興味が出たら [DEVELOPMENT.md](DEVELOPMENT.md) へどうぞ。
 
 ## できること
 
-- **llama.cpp をプロセスの中で直接動かすチャット**: Ollama などの外部の LLM サーバーは使いません(Ollama で `ollama pull` したモデルのファイルは、そのまま読めます)。思考の表示・会話の保存・長い会話の compact
-- **ミニコーディングエージェント**: ツール呼び出し・作業フォルダのファイルの読み書き・コマンドの実行(実行前に確認)
+- **llama.cpp をプロセスの中で直接動かすチャット**: Ollama で `ollama pull` したモデルのファイルを、そのまま読めます(Ollama は起動していなくてよい)。思考の表示・会話の保存・長い会話の compact
+- **ミニコーディングエージェント**: 作業フォルダのファイルの読み書き・コマンドの実行(実行前に確認)
 - **MCP**: 既製の MCP サーバーのツールを使えるほか、aibow のツールを MCP サーバー(`aibow-mcp`)として Claude Code などから使えます
-- **aibow-server**: aibow のモデルを OpenAI 互換の API として出し、Cline などからも使えます。画面のアプリの生成を aibow-server に任せることもできます
-- **ブラウザからも使える**: aibow-server がアプリと同じ画面を配るので、アプリを入れなくてもブラウザで会話できます(ブラウザではツールを使いません)
-- **利用者と共有**: aibow-server にログインを付けると、会話が人ごとに分かれ、ほかの PC からも使えます。管理者は利用者と使えるモデルを管理し、会話やプロファイルを共有できます
+- **aibow-server**: aibow のモデルを OpenAI 互換の API として出し、Cline などからも使えます。ブラウザから同じ画面で会話することも、ほかの PC のアプリから使うこともできます
+- **利用者と共有**: aibow-server にログインを付けると、会話が人ごとに分かれます。管理者は利用者と使えるモデルを管理し、会話やプロファイルを共有できます
 - **中身が見える**: モデルに渡した文字列・トークン数・KV キャッシュの再利用数・生成速度などを、画面とログで確かめられます
 
-## しくみ
+## 使ってみる
 
-```
-ウィンドウ(React)⇄ Wails v3 ⇄ aibow(Go)⇄ yzma ⇄ llama.cpp(DLL)⇄ GPU
-                                  ⇅  ⇅                 ↑
-                  会話の保存(SQLite)  ⇅    GGUF のモデル / Ollama が保存したモデル
-                                     ⇅
-                  MCP サーバー(子プロセスとして起動する / URL でつなぐ)
+配布用の実行ファイルはまだ無いので、手元でビルドして使います。Windows + NVIDIA GPU を前提にしています。
 
-生成を aibow-server に任せるとき: aibow ⇄ HTTP ⇄ aibow-server ⇄ llama.cpp ⇄ GPU
-Cline など ⇄ HTTP(OpenAI 互換)⇄ aibow-server
-ブラウザ ⇄ HTTP(画面と会話)⇄ aibow-server(会話は aibow-server が保存する)
-```
+### 要るもの
 
-- **言語**: Go(C コンパイラ不要。`CGO_ENABLED=0` でビルドできる)
-- **LLM**: [llama.cpp](https://github.com/ggml-org/llama.cpp) を [yzma](https://github.com/hybridgroup/yzma) で Go から直接呼ぶ。主に使うモデルは Qwen3.5(4B / 9B)
-- **画面**: [Wails v3](https://v3.wails.io/) のデスクトップアプリ(React + TypeScript)
-- **保存**: SQLite([modernc.org/sqlite](https://pkg.go.dev/modernc.org/sqlite))
-- **MCP**: 公式の [Go SDK](https://github.com/modelcontextprotocol/go-sdk)
-- チャットテンプレートやエージェントループなど、学習の対象になる仕組みはライブラリに任せず自分で書いています
-
-## 動かしてみる
-
-Windows + NVIDIA GPU を前提にしています。Go 1.27 以上・Node.js 20.19 以上・Wails の CLI(`wails3`)が必要です。
+- [Go](https://go.dev/) 1.27 以上(古くても、要る版を Go が自動で取ってきます)
+- [Node.js](https://nodejs.org/) 20.19 以上(画面のビルドに使う)
+- [Git](https://git-scm.com/)(コマンドは Git Bash で打つ前提で書いています)
+- Wails の CLI(画面のアプリのビルドに使う):
 
 ```bash
-cd _cmd/aibow
+go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.26
+```
+
+### 1. 取ってくる
+
+```bash
+git clone https://github.com/secondarykey/aibow.git
+cd aibow/_cmd/aibow
+```
+以降のコマンドは、アプリのフォルダ `_cmd/aibow` で打ちます。llama.cpp(`lib\`)とモデル(`models\`)もこのフォルダに置きます。
+
+### 2. llama.cpp の取得
+
+```bash
 go run github.com/hybridgroup/yzma@v1.29.1 install --lib lib --processor cuda
 ```
-llama.cpp の DLL を `lib\` にダウンロードします(最初の1回だけ)。モデルは `ollama pull qwen3.5:4b` で用意するか、GGUF を `models\` に置きます。
+llama.cpp の DLL を `lib\` にダウンロードします(最初の1回だけ)。NVIDIA GPU が無い PC では `--processor cpu` にします(遅くなります)。
+aibow-server につないで使うだけの PC には要りません(下の「aibow-server を使う」)。
+
+### 3. モデルの用意
+
+どちらか(両方でもよい)。主に Qwen3.5(4B / 9B)で確かめています。
+
+- Ollama で取ってくる:`ollama pull qwen3.5:4b`(Ollama が保存したファイルを aibow が直接読みます)
+- GGUF を置く:`models\` に `.gguf` のファイルを置く(例: [Qwen3.5 4B の Q4_K_M](https://huggingface.co/bartowski/Qwen_Qwen3.5-4B-GGUF/resolve/main/Qwen_Qwen3.5-4B-Q4_K_M.gguf)。約3GB)
+
+### 4. ビルドして起動する
 
 ```bash
-wails3 dev
+wails3 build
+./bin/aibow.exe
 ```
-アプリを開発モードで起動します。詳しい手順・うまく動かないとき・実行ファイルの作り方は [_docs/setup.md](_docs/setup.md) にあります。
+画面をビルドして埋め込んだ `bin\aibow.exe` を作り、起動します(初回はダウンロードとビルドに時間がかかります)。
+ウィンドウが出たら、入力欄の下でモデルを選んで話しかけます。会話と設定は `%APPDATA%\aibow\` に保存されます。
 
-### 環境変数(セットアップに関わるもの)
+- `lib\` と `models\` は**カレントフォルダから**探すので、`_cmd/aibow` で起動します。エクスプローラーからダブルクリックするときは、環境変数 `AIBOW_LIB`・`AIBOW_MODELS_DIR` に絶対パスを書いておきます
+- 起動できないときは、理由がウィンドウに出ます。ログは `%APPDATA%\aibow\logs\` にあります
 
-llama.cpp とモデルは、既定ではカレントフォルダの `lib\`・`models\` を探します。ほかの場所に置いたときや、別のフォルダ(worktree など)から起動するときは、環境変数で場所を指します。
+手順の詳しい説明・うまく動かないとき・環境変数は [_docs/setup.md](_docs/setup.md)、画面の使い方と設定は [_docs/usage.md](_docs/usage.md) にあります。
 
-| 環境変数 | 既定 | 内容 |
-|---|---|---|
-| `AIBOW_LIB` | `lib` | llama.cpp の DLL のフォルダ |
-| `AIBOW_MODELS_DIR` | `models` | GGUF を置くフォルダ |
-| `OLLAMA_MODELS` | `%USERPROFILE%\.ollama\models` | Ollama の保存フォルダ(Ollama 自身と同じ変数) |
-| `AIBOW_MODEL` | 最後に使ったモデル | 起動のときに読み込むモデル(例: `ollama:qwen3.5:4b`) |
-| `AIBOW_GPU_LAYERS` | `999`(全部) | GPU に載せる層の数。VRAM に入らないときに減らす |
-| `AIBOW_DB`・`AIBOW_LOG_DIR` | `%APPDATA%\aibow\` の下 | 会話の DB とログの場所(試すときは一時フォルダにすると、ふだんの会話と混ざらない) |
-| `AIBOW_SERVER_URL` | なし | 画面のアプリを aibow-server につなぐ(画面の「サーバー」のタブでもつなげる) |
+## aibow-server を使う(ブラウザ・ほかの PC・Cline から)
 
-```bash
-AIBOW_LIB=/d/aibow/lib AIBOW_MODELS_DIR=/d/aibow/models wails3 dev
-```
-
-- **読むのは起動のときだけ**です。変えたら起動し直します
-- **画面で変えられる設定**(GPU の層数・会話の上限など)の環境変数は、まだ画面で変えていないときの初期値です。画面で一度変えると、画面の値が優先されます
-- **aibow-server のつなぎ先**は、`settings.json` の `serverUrl` > `AIBOW_SERVER_URL` > 画面で決めたもの、の順に強く、手で書いてあれば画面では変えられません
-- **aibow-server** は、起動の引数 > 設定ファイル `server.json` > 環境変数、の順に強くなります。アプリと同じ名前の環境変数(`AIBOW_LIB`・`AIBOW_MODELS_DIR` など)を読みます
-
-全部の環境変数と効き方は [_docs/usage.md](_docs/usage.md) の「環境変数の効き方」と表にあります。
-
-### aibow-server を動かす(ブラウザ・Cline・ほかの PC から使うとき)
-
-画面のアプリとは別の exe です。ブラウザに配る画面(`_cmd/aibow/frontend`)を exe に埋め込むので、**画面のビルドと一緒にする入り口を使います**
-(`go build` だけで作ると、前にビルドした古い画面が入ります)。どちらもリポジトリのフォルダで実行し、要るのは Go と Node.js です(wails3 は要りません)。
-
-開発で動かすときは、画面を vite の開発用サーバーから配り、aibow-server を `go run` で動かします(画面のソースを保存すると、ブラウザにすぐ出ます)。
-ブラウザは `http://127.0.0.1:9246/` を開きます。後ろに aibow-server の引数を付けられます。
-
-```bash
-go run ./_cmd/dev server
-```
-
-exe を作るときは、画面をビルドしてから aibow-server.exe を作ります。
+aibow-server は、モデルを動かして、ブラウザ・ほかの PC のアプリ・Cline などに使わせる別の exe です。リポジトリのフォルダ(`aibow`)で作ります。
 
 ```bash
 go run ./_cmd/dev build
 ./aibow-server.exe -lib _cmd/aibow/lib -models _cmd/aibow/models
 ```
-既定では `127.0.0.1:8089` だけで待ち受け、**ログインが要ります**。ブラウザで `http://127.0.0.1:8089/` を開いてログインすると、アプリと同じ画面で会話できます。
+画面をビルドしてから `aibow-server.exe` を作り、起動します(Go と Node.js だけで作れます)。既定では `127.0.0.1:8089` だけで待ち受けます。
 画面のアプリがアプリの中でモデルを動かしている間は、同時に動かさないでください(VRAM にモデルを2つ載せられないため)。
 
-**初めて起動したときの利用者**:`local` の1人だけで(パスワードなし)、**管理者はいません。既定の admin(決まったパスワードの管理者)も作りません**。
-決まったパスワードの管理者がいると、変え忘れたまま外に出したときに誰でも入れてしまうので、最初の管理者はサーバーの PC でコマンドを打てる人が決めます。
-そのままではログインできる人がいないので、最初にサーバーの PC で管理者を作ります(aibow-server を動かしたままでも打てます)。
-管理者がいない間は、起動のときのログとブラウザのログインの画面に、このことが出ます。
+**初めて起動したときの状態**:利用者は `local` の1人だけで(パスワードなし)、**管理者はいません。決まったパスワードの admin も作りません**
+(変え忘れたまま外に出したときに誰でも入れてしまうため)。aibow-server は**既定でログインが要る**ので、そのままではログインできる人がいません。
+最初にサーバーの PC で管理者を作ります(aibow-server を動かしたままでも打てます)。
 
 ```bash
 ./aibow-server.exe user add alice
 ./aibow-server.exe user admin alice
 ```
-`user add` は、**本人がパスワードを決めるリンク**(`http://127.0.0.1:8089/#reset=…`。1 時間・一度だけ)を表示します。ブラウザで開いて、パスワード(12 文字以上)を決めるとそのままログインします。
-aibow-server はパスワードを作りません(管理者も知らないパスワードになります)。
+`user add` は、本人がパスワードを決めるリンク(`http://127.0.0.1:8089/#reset=…`。1 時間・一度だけ)を出します。ブラウザで開いてパスワード(12 文字以上)を決めると、そのままログインして会話できます。
+管理者は、設定の画面の「利用者」のタブで、ほかの人を作って招待のリンクを渡せます。
 
-- 管理者でログインすると、設定の画面の「利用者」のタブで、ほかの人を作って招待のリンクを出せます
-- 自分のパスワードは、設定の画面の「基本設定」の「パスワード」で変えます
-- パスワードを忘れて入れなくなったら、サーバーの PC で `./aibow-server.exe user passwd alice` を打つと、決め直すリンクが出ます
-
-1人で自分の PC だけで使うなら、`-login=false`(`server.json` の `"login": false`)でログインなしにもできます(利用者は `local` だけ。127.0.0.1 の外で待ち受けるときは、書いてもログインが要ります)。
-
-- **画面のアプリからつなぐ**:アプリの設定の画面の「サーバー」のタブで、aibow-server が起動のときに出すつなぎ先を入れ、ログインします(API キーは要りません)。
+- **画面のアプリからつなぐ**:アプリの設定の画面の「サーバー」のタブで、aibow-server が起動のときに出すつなぎ先を入れ、ログインします。
   つなぐだけの PC には `lib\`・`models\` は要りません(初めは「起動できません」と出ますが、そのまま「サーバー」のタブでつないで起動し直します)
-- **ほかの PC から使う**:証明書を作り(`aibow-server cert <アドレス>`)、`-host 0.0.0.0` で起動します。外で待ち受けるとログインが必ず要ります。手順は [_docs/setup.md](_docs/setup.md) の「ほかの PC から使えるようにする」
-- **Cline など**:Base URL は `http://127.0.0.1:8089/v1`。API キー(`aibow-server user key <名前>`)が要ります(ログインなしにしたときだけ要らない)
+- **ほかの PC から使う**:証明書を作り(`aibow-server cert <アドレス>`)、`-host 0.0.0.0` で起動します。外で待ち受けるとログインが必ず要ります
+- **Cline など**:Base URL は `http://127.0.0.1:8089/v1`。API キー(`aibow-server user key <名前>`)が要ります
+- 1人で自分の PC だけで使うなら、`-login=false` でログインなしにもできます(127.0.0.1 の外で待ち受けるときは効きません)
 
-## ロードマップ
-
-ロードマップ1(ローカル LLM のエージェントと MCP を自作して学ぶ)
-
-| ステップ | 作るもの |
-|---|---|
-| 1. チャット ✅ | llama.cpp を直接動かすチャット |
-| 2. 会話の保存・compact・ツール呼び出し ✅ | 会話の管理と、エージェントループ |
-| 3. ミニコーディングエージェント ✅ | ファイル読み書き・コマンド実行のツール(実行前に確認) |
-| 4. MCP クライアント ✅ | 既製の MCP サーバーにつないで、そのツールを使う |
-| 5. MCP サーバー自作 ✅ | aibow のツールを MCP サーバーとして出す |
-| 6. 既製ツールとの比較 ✅ | OpenAI 互換 API の口を作り、Cline などからつなぐ |
-
-ロードマップ2(組織で使えるようにする)
-
-| ステップ | 作るもの |
-|---|---|
-| 7. 設定のプロファイル ✅ | 設定に名前を付けて切り替える |
-| 8. aibow-server 越しの生成 ✅ | 画面のアプリの生成を aibow-server に任せる |
-| 9. ブラウザからも使う ✅ | aibow-server が同じ画面をブラウザに配る |
-| 10. 利用者とログイン ✅ | 会話をサーバーに置き、ほかの PC からも使う |
-| 11. 共有 ✅ | 管理者・会話の公開範囲・共有の作業 |
-
-進み具合の詳細は [TODO.md](TODO.md) にあります。
+手順の続き(ほかの PC から使う準備・パスワードを忘れたとき)は [_docs/setup.md](_docs/setup.md)、設定ファイルと細かい使い方は [_docs/usage.md](_docs/usage.md) の「aibow-server」にあります。
 
 ## ドキュメント
 
 | 読むもの | 内容 |
 |---|---|
-| [_docs/setup.md](_docs/setup.md) | 準備と起動(llama.cpp とモデルの用意、起動、実行ファイル、インストール、aibow-server をログインありで始める・ほかの PC から使う) |
-| [_docs/usage.md](_docs/usage.md) | 画面の使い方、設定と環境変数、各ステップで観察してほしいこと |
-| [_docs/structure.md](_docs/structure.md) | 全体の構成とファイルの役割 |
-| [_docs/](_docs/) | 仕組みごとの説明(エンジン・会話・compact・ツール・画面など)と、機能の仕様(`features/`) |
-| [AGENTS.md](AGENTS.md) | このリポジトリで作業する AI エージェント向けの指示(方針・技術の決まりごと) |
+| [_docs/setup.md](_docs/setup.md) | 準備と起動の詳しい手順・うまく動かないとき・aibow-server を始める・ほかの PC から使う |
+| [_docs/usage.md](_docs/usage.md) | 画面の使い方、設定と環境変数、aibow-server・MCP・ツールの使い方 |
+| [DEVELOPMENT.md](DEVELOPMENT.md) | 開発する人向け:しくみ・開発モードで動かす・確かめ方・ロードマップ・仕組みごとの説明への案内 |
 
 ## ライセンス
 
