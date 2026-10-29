@@ -44,7 +44,7 @@ import { ChatService, isBrowser, me, onReconnect, onWindowFocus } from "./backen
 import type { ServerInfo } from "../bindings/github.com/secondarykey/aibow/mcp/client";
 import type { ConversationRef, ConversationSettings, SharedRead } from "../bindings/github.com/secondarykey/aibow";
 import { ImeFocusRelay } from "./imeFocus";
-import { errorMessage } from "./errors";
+import { errorMessage, isUnreachable } from "./errors";
 import { setTheme } from "./theme";
 import { FIX, fixedTitle, grantedFolder, lockOf, locked } from "./profileRules";
 import { NARROW_QUERY, useMediaQuery } from "./mediaQuery";
@@ -130,10 +130,30 @@ export default function App() {
         return false;
       });
       if (!ok) return; // 起動に失敗している。理由は useModels が出している
-      if (initErr) addError(`会話を読み込めません: ${errorMessage(initErr)}`);
-      await app.reload().catch(err => addError(`設定を読み込めません: ${errorMessage(err)}`));
+      // aibow-server につながらないときは、useModels がカードを1回出している。会話と設定も同じ理由で読めないので、
+      // 同じ理由のカードを重ねて出さない(つながったら読み直す。下の effect)
+      const report = (what: string, err: unknown) => {
+        if (models.serverDown() && isUnreachable(err)) return;
+        addError(`${what}: ${errorMessage(err)}`);
+      };
+      if (initErr) report("会話を読み込めません", initErr);
+      await app.reload().catch(err => report("設定を読み込めません", err));
     })();
-  }, [convs.init, models.reload, app.reload, addError]);
+  }, [convs.init, models.reload, models.serverDown, app.reload, addError]);
+
+  // aibow-server につながったら(起動したときに止まっていた・途中で止まった)、読めなかった設定と会話の一覧を読み直す
+  const serverError = models.serverError;
+  const wasDown = useRef(false);
+  useEffect(() => {
+    if (serverError) {
+      wasDown.current = true;
+      return;
+    }
+    if (!wasDown.current) return;
+    wasDown.current = false;
+    app.reload().catch(err => addError(`設定を読み込めません: ${errorMessage(err)}`));
+    convs.reloadList().catch(err => addError(`会話を読み込めません: ${errorMessage(err)}`));
+  }, [serverError, app.reload, convs.reloadList, addError]);
 
   // 会話で選べる MCP のサーバー(settings.json に書いたもの全部)。起動したときと、ツールの扱い(確認しない)を変えたときに読む
   const [mcpServers, setMcpServers] = useState<ServerInfo[]>([]);

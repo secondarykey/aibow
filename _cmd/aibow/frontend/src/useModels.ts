@@ -38,6 +38,9 @@ export interface Models {
   unload(): Promise<void>;                   // 読み込み中のモデルを降ろす(VRAM を空ける)
   setLayers(id: string, n: number): Promise<void>; // モデルの GPU の層数を変える(読み込み中のモデルなら読み直す)
   reload(): Promise<boolean>; // 一覧を取り直す。起動に失敗していたら false
+  // aibow-server につながらないことをカードで伝えたままか。serverError(state)と違い、呼んだときの値を返す
+  // (reload を待った直後に、同じ理由のエラーを重ねて出さないかを決めるため)
+  serverDown(): boolean;
 }
 
 // formatWarning は、書式(チャットテンプレート)に対応していない種類のモデルのときのお知らせ。対応していれば null
@@ -200,5 +203,7 @@ export function useModels(n: Notifier, t: Pick<Transcript, "addError">, setBusy:
     setBusy("idle");
   }, [current, models, reload, notify, dismissKey, addError, setBusy]);
 
-  return { models, allModels, current, gpu, loading, server, serverError, startupError, manage, gpuLayers, lastModel, switchModel, unload, setLayers, reload };
+  const isServerDown = useCallback(() => serverDown.current, []);
+
+  return { models, allModels, current, gpu, loading, server, serverError, startupError, manage, gpuLayers, lastModel, switchModel, unload, setLayers, reload, serverDown: isServerDown };
 }
