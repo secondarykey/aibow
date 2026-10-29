@@ -96,11 +96,18 @@ export default function App() {
 
   const transcript = useTranscript();
   const toasts = useToasts();
-  const { addError } = transcript;
   const models = useModels(toasts, transcript, setBusy);
+  // 起動に失敗したあと(lib が無いなど)は、Go のメソッドがどれも同じ理由で断る。タブを移る・ウィンドウに戻るたびに
+  // 同じエラーが積み上がって設定の画面のタブが下に押し出されるので、その理由を含むエラーは出さない(理由は useModels が「起動できません」で1回だけ出す)
+  const { startupError } = models;
+  const addTranscriptError = transcript.addError;
+  const addError = useCallback((text: string, caution?: boolean) => {
+    if (startupError && text.includes(startupError)) return;
+    addTranscriptError(text, caution);
+  }, [addTranscriptError, startupError]);
   const convs = useConversations(addError);
-  const chat = useChat(transcript, setBusy, convs, toasts, models.reload);
-  const app = useAppSettings(transcript);
+  const chat = useChat({ ...transcript, addError }, setBusy, convs, toasts, models.reload);
+  const app = useAppSettings({ addError });
   // 画面の明るさ: Go から届いた設定・設定の画面で選んだ値を効かせる(届くまでは前回の写し。theme.ts)
   const theme = app.settings?.display.theme;
   useEffect(() => {
