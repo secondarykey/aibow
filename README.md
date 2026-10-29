@@ -10,20 +10,16 @@ Ollama などの LLM サーバーを立てずに、アプリの中で llama.cpp 
 - **llama.cpp をプロセスの中で直接動かすチャット**: Ollama で `ollama pull` したモデルのファイルを、そのまま読めます(Ollama は起動していなくてよい)。思考の表示・会話の保存・長い会話の compact
 - **ミニコーディングエージェント**: 作業フォルダのファイルの読み書き・コマンドの実行(実行前に確認)
 - **MCP**: 既製の MCP サーバーのツールを使えるほか、aibow のツールを MCP サーバー(`aibow-mcp`)として Claude Code などから使えます
-- **aibow-server**: aibow のモデルを OpenAI 互換の API として出し、Cline などからも使えます。ブラウザから同じ画面で会話することも、ほかの PC のアプリから使うこともできます
-- **利用者と共有**: aibow-server にログインを付けると、会話が人ごとに分かれます。管理者は利用者と使えるモデルを管理し、会話やプロファイルを共有できます
+- **組織で使う(aibow-server)**: 1台の GPU の PC でモデルを動かし、ほかの PC のアプリ・ブラウザ・Cline など(OpenAI 互換の API)から使えます。
+  ログインと利用者・会話やプロファイルの共有・管理者による使えるモデルの管理もできます
 - **中身が見える**: モデルに渡した文字列・トークン数・KV キャッシュの再利用数・生成速度などを、画面とログで確かめられます
 
 ## 使ってみる
 
-配布用の実行ファイルはまだ無いので、手元でビルドして使います。Windows + NVIDIA GPU を前提にしています。
+いちばん小さい形(この PC の中でモデルを動かすデスクトップのアプリ)で動かします。
+配布用の実行ファイルはまだ無いので、手元でビルドします。Windows + NVIDIA GPU を前提にしています。
 
-### 要るもの
-
-- [Go](https://go.dev/) 1.27 以上(古くても、要る版を Go が自動で取ってきます)
-- [Node.js](https://nodejs.org/) 20.19 以上(画面のビルドに使う)
-- [Git](https://git-scm.com/)(コマンドは Git Bash で打つ前提で書いています)
-- Wails の CLI(画面のアプリのビルドに使う):
+要るもの:[Go](https://go.dev/) 1.27 以上・[Node.js](https://nodejs.org/) 20.19 以上・[Git](https://git-scm.com/)(コマンドは Git Bash で打つ前提)と、Wails の CLI。
 
 ```bash
 go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.26
@@ -35,31 +31,21 @@ go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.26
 git clone https://github.com/secondarykey/aibow.git
 cd aibow/_cmd/aibow
 ```
-以降のコマンドは、アプリのフォルダ `_cmd/aibow` で打ちます。llama.cpp(`lib\`)とモデル(`models\`)もこのフォルダに置きます。
+以降は、アプリのフォルダ `_cmd/aibow` で打ちます。
 
 ### 2. llama.cpp の取得
 
 ```bash
 go run github.com/hybridgroup/yzma@v1.29.1 install --lib lib --processor cuda
 ```
-llama.cpp の DLL を `lib\` にダウンロードします(最初の1回だけ)。NVIDIA GPU が無い PC では `--processor cpu` にします(遅くなります)。
-Go さえあれば、aibow のソースが無くてもどのフォルダでも打てます(`--lib` に置き場所を渡します)。
-aibow-server につないで使うだけの PC には要りません(下の「aibow-server を使う」)。
+llama.cpp の DLL を `lib\` にダウンロードします(最初の1回だけ。GPU が無ければ `--processor cpu`)。Go があれば、aibow のソースが無いフォルダでも打てます。
 
-**版**:llama.cpp は、aibow が使う yzma の版に合ったものを入れます。今は **yzma v1.29.1 → llama.cpp v0.6.0(llama.cpp のビルド b11429)** です。
-違う版だと読み込めないことがあります(上のコマンドは、この版を入れます)。aibow が yzma を上げたら入れ直します(版の組み合わせは [_docs/engine.md](_docs/engine.md) の「llama.cpp と yzma」)。
-
-**Go が無いとき**:llama.cpp のリリースページ(タグ [b11429](https://github.com/ggml-org/llama.cpp/releases/tag/b11429))から次の2つを落とし、どちらも `lib\` に展開しても同じです。
-
-- `llama-b11429-bin-win-cuda-13.4-x64.zip`(llama.cpp の本体。GPU が無ければ代わりに `llama-b11429-bin-win-cpu-x64.zip` だけ)
-- `cudart-llama-bin-win-cuda-13.4-x64.zip`(CUDA の実行に要る DLL)
+- **版**:今は **yzma v1.29.1 → llama.cpp v0.6.0(ビルド b11429)** の組み合わせです。違う版だと読み込めないことがあります(上のコマンドはこの版を入れます)
+- **Go が無いとき**:llama.cpp のリリース [b11429](https://github.com/ggml-org/llama.cpp/releases/tag/b11429) から `llama-b11429-bin-win-cuda-13.4-x64.zip` と `cudart-llama-bin-win-cuda-13.4-x64.zip` を落とし、どちらも `lib\` に展開します
 
 ### 3. モデルの用意
 
-どちらか(両方でもよい)。主に Qwen3.5(4B / 9B)で確かめています。
-
-- Ollama で取ってくる:`ollama pull qwen3.5:4b`(Ollama が保存したファイルを aibow が直接読みます)
-- GGUF を置く:`models\` に `.gguf` のファイルを置く(例: [Qwen3.5 4B の Q4_K_M](https://huggingface.co/bartowski/Qwen_Qwen3.5-4B-GGUF/resolve/main/Qwen_Qwen3.5-4B-Q4_K_M.gguf)。約3GB)
+`ollama pull qwen3.5:4b` で取るか、GGUF のファイル(例: [Qwen3.5 4B の Q4_K_M](https://huggingface.co/bartowski/Qwen_Qwen3.5-4B-GGUF/resolve/main/Qwen_Qwen3.5-4B-Q4_K_M.gguf)。約3GB)を `models\` に置きます。
 
 ### 4. ビルドして起動する
 
@@ -67,51 +53,17 @@ aibow-server につないで使うだけの PC には要りません(下の「ai
 wails3 build
 ./bin/aibow.exe
 ```
-画面をビルドして埋め込んだ `bin\aibow.exe` を作り、起動します(初回はダウンロードとビルドに時間がかかります)。
-ウィンドウが出たら、入力欄の下でモデルを選んで話しかけます。会話と設定は `%APPDATA%\aibow\` に保存されます。
+ウィンドウが出たら、入力欄の下でモデルを選んで話しかけます。`lib\` と `models\` はカレントフォルダから探すので、`_cmd/aibow` で起動します。
+起動できないときは、理由がウィンドウに出ます。
 
-- `lib\` と `models\` は**カレントフォルダから**探すので、`_cmd/aibow` で起動します。エクスプローラーからダブルクリックするときは、環境変数 `AIBOW_LIB`・`AIBOW_MODELS_DIR` に絶対パスを書いておきます
-- 起動できないときは、理由がウィンドウに出ます。ログは `%APPDATA%\aibow\logs\` にあります
+## もっと使う
 
-手順の詳しい説明・うまく動かないとき・環境変数は [_docs/setup.md](_docs/setup.md)、画面の使い方と設定は [_docs/usage.md](_docs/usage.md) にあります。
-
-## aibow-server を使う(ブラウザ・ほかの PC・Cline から)
-
-aibow-server は、モデルを動かして、ブラウザ・ほかの PC のアプリ・Cline などに使わせる別の exe です。リポジトリのフォルダ(`aibow`)で作ります。
-
-```bash
-go run ./_cmd/dev build
-./aibow-server.exe -lib _cmd/aibow/lib -models _cmd/aibow/models
-```
-画面をビルドしてから `aibow-server.exe` を作り、起動します(Go と Node.js だけで作れます)。既定では `127.0.0.1:8089` だけで待ち受けます。
-画面のアプリがアプリの中でモデルを動かしている間は、同時に動かさないでください(VRAM にモデルを2つ載せられないため)。
-
-**初めて起動したときの状態**:利用者は `local` の1人だけで(パスワードなし)、**管理者はいません。決まったパスワードの admin も作りません**
-(変え忘れたまま外に出したときに誰でも入れてしまうため)。aibow-server は**既定でログインが要る**ので、そのままではログインできる人がいません。
-最初にサーバーの PC で管理者を作ります(aibow-server を動かしたままでも打てます)。
-
-```bash
-./aibow-server.exe user add alice
-./aibow-server.exe user admin alice
-```
-`user add` は、本人がパスワードを決めるリンク(`http://127.0.0.1:8089/#reset=…`。1 時間・一度だけ)を出します。ブラウザで開いてパスワード(12 文字以上)を決めると、そのままログインして会話できます。
-管理者は、設定の画面の「利用者」のタブで、ほかの人を作って招待のリンクを渡せます。
-
-- **画面のアプリからつなぐ**:アプリの設定の画面の「サーバー」のタブで、aibow-server が起動のときに出すつなぎ先を入れ、ログインします。
-  つなぐだけの PC には `lib\`・`models\` は要りません(初めは「起動できません」と出ますが、そのまま「サーバー」のタブでつないで起動し直します)
-- **ほかの PC から使う**:証明書を作り(`aibow-server cert <アドレス>`)、`-host 0.0.0.0` で起動します。外で待ち受けるとログインが必ず要ります
-- **Cline など**:Base URL は `http://127.0.0.1:8089/v1`。API キー(`aibow-server user key <名前>`)が要ります
-- 1人で自分の PC だけで使うなら、`-login=false` でログインなしにもできます(127.0.0.1 の外で待ち受けるときは効きません)
-
-手順の続き(ほかの PC から使う準備・パスワードを忘れたとき)は [_docs/setup.md](_docs/setup.md)、設定ファイルと細かい使い方は [_docs/usage.md](_docs/usage.md) の「aibow-server」にあります。
-
-## ドキュメント
-
-| 読むもの | 内容 |
+| やりたいこと | 読むもの |
 |---|---|
-| [_docs/setup.md](_docs/setup.md) | 準備と起動の詳しい手順・うまく動かないとき・aibow-server を始める・ほかの PC から使う |
-| [_docs/usage.md](_docs/usage.md) | 画面の使い方、設定と環境変数、aibow-server・MCP・ツールの使い方 |
-| [DEVELOPMENT.md](DEVELOPMENT.md) | 開発する人向け:しくみ・開発モードで動かす・確かめ方・ロードマップ・仕組みごとの説明への案内 |
+| うまく動かない・環境変数で場所を変える | [_docs/setup.md](_docs/setup.md) |
+| 画面の使い方・設定・ツールと MCP | [_docs/usage.md](_docs/usage.md) |
+| aibow-server で組織で使う(ブラウザ・ほかの PC・利用者の管理・HTTPS) | [_docs/setup.md](_docs/setup.md) の「aibow-server を使い始める」。初めて起動したときは管理者がいないので、まずこの手順で作ります |
+| 中身を知りたい・自分でビルドを変えたい | [DEVELOPMENT.md](DEVELOPMENT.md) |
 
 ## ライセンス
 

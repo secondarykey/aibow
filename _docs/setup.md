@@ -142,8 +142,18 @@ llama.cpp とモデルは、既定ではカレントフォルダの `lib\`・`mo
 
 ## aibow-server を使い始める(ステップ10・11)
 
-aibow-server は、リポジトリのフォルダで `go run ./_cmd/dev build` で作ります(画面をビルドしてから exe を作る。`go build` だけだと古い画面が入る)。
-要るのは Go と Node.js で、wails3 は要りません。起動の引数と設定ファイルは [usage.md](usage.md) の「aibow-server」にあります。
+aibow-server は、モデルを動かして、ブラウザ・ほかの PC のアプリ・Cline などに使わせる別の exe です。リポジトリのフォルダ(`aibow`)で作って起動します。
+
+```bash
+go run ./_cmd/dev build
+./aibow-server.exe -lib _cmd/aibow/lib -models _cmd/aibow/models
+```
+画面をビルドしてから `aibow-server.exe` を作ります(`go build` だけだと古い画面が入る)。要るのは Go と Node.js で、wails3 は要りません。
+既定では `127.0.0.1:8089` だけで待ち受けます。起動の引数と設定ファイル(`server.json`)は [usage.md](usage.md) の「aibow-server」にあります。
+
+- ブラウザ:`http://127.0.0.1:8089/` を開いてログインすると、アプリと同じ画面で会話できる
+- 画面のアプリ:設定の画面の「サーバー」のタブでつなぎ先を入れてログインする(つなぐだけの PC には `lib\`・`models\` は要らない。[usage.md](usage.md) の「画面のアプリを aibow-server につなぐ」)
+- Cline など:Base URL は `http://127.0.0.1:8089/v1`。API キー(`aibow-server user key <名前>`)が要る([usage.md](usage.md) の「Cline からつなぐ」)
 
 初めて起動した aibow-server の利用者は `local` の1人だけで(パスワードは空)、**管理者は一人もいません。既定の admin も作りません**
 (決まったパスワードの管理者がいると、変え忘れたまま外に出したときに誰でも入れてしまうため。最初の管理者は、サーバーの PC でコマンドを打てる人が決める)。
