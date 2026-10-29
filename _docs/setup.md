@@ -50,10 +50,15 @@ yzma(aibow が llama.cpp を呼ぶのに使うライブラリ)に付属してい
 - `--lib lib` … 置き場所。相対パスはコマンドを実行したフォルダが基準なので、`_cmd\aibow\lib\` にできる
 - `--processor cuda` … NVIDIA GPU 用のビルドを選ぶ。CUDA の実行に必要な DLL(cudart)も一緒に入る。GPU が無ければ `cpu`(遅くなる)
 
-`go run パッケージ@バージョン` は今いるフォルダの `go.mod` / `go.work` を見ないので、`_cmd/aibow` で実行しても問題ありません。
+`go run パッケージ@バージョン` は今いるフォルダの `go.mod` / `go.work` を見ないので、`_cmd/aibow` で実行しても問題ありません(aibow のソースが無いフォルダでも動きます)。
 バージョン(`@v1.29.1`)は、ルートの `go.mod` に書いてある yzma のバージョンと合わせてください。yzma と llama.cpp は組み合わせが決まっています。
+今は yzma v1.29.1 → llama.cpp v0.6.0(llama.cpp のビルド b11429)で、`--version` を付けなければ yzma がこの版を入れます([engine.md](engine.md) の「llama.cpp と yzma」)。
 
-GitHub の llama.cpp のリリースページから zip を手で落として `_cmd\aibow\lib\` に展開しても同じです。
+Go が無いときは、llama.cpp のリリースページ(https://github.com/ggml-org/llama.cpp/releases/tag/b11429)から zip を手で落として `_cmd\aibow\lib\` に展開しても同じです。
+yzma が NVIDIA GPU 用に落とすのは次の2つです(GPU が無ければ `llama-b11429-bin-win-cpu-x64.zip` だけ)。
+
+- `llama-b11429-bin-win-cuda-13.4-x64.zip` … llama.cpp の本体
+- `cudart-llama-bin-win-cuda-13.4-x64.zip` … CUDA の実行に要る DLL(cudart・cublas)
 aibow-server につないで使うだけの PC には要りません(下の「aibow-server を使い始める」)。
 
 ### 3. モデルの用意

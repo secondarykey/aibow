@@ -43,7 +43,16 @@ cd aibow/_cmd/aibow
 go run github.com/hybridgroup/yzma@v1.29.1 install --lib lib --processor cuda
 ```
 llama.cpp の DLL を `lib\` にダウンロードします(最初の1回だけ)。NVIDIA GPU が無い PC では `--processor cpu` にします(遅くなります)。
+Go さえあれば、aibow のソースが無くてもどのフォルダでも打てます(`--lib` に置き場所を渡します)。
 aibow-server につないで使うだけの PC には要りません(下の「aibow-server を使う」)。
+
+**版**:llama.cpp は、aibow が使う yzma の版に合ったものを入れます。今は **yzma v1.29.1 → llama.cpp v0.6.0(llama.cpp のビルド b11429)** です。
+違う版だと読み込めないことがあります(上のコマンドは、この版を入れます)。aibow が yzma を上げたら入れ直します(版の組み合わせは [_docs/engine.md](_docs/engine.md) の「llama.cpp と yzma」)。
+
+**Go が無いとき**:llama.cpp のリリースページ(タグ [b11429](https://github.com/ggml-org/llama.cpp/releases/tag/b11429))から次の2つを落とし、どちらも `lib\` に展開しても同じです。
+
+- `llama-b11429-bin-win-cuda-13.4-x64.zip`(llama.cpp の本体。GPU が無ければ代わりに `llama-b11429-bin-win-cpu-x64.zip` だけ)
+- `cudart-llama-bin-win-cuda-13.4-x64.zip`(CUDA の実行に要る DLL)
 
 ### 3. モデルの用意
 
