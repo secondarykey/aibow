@@ -144,16 +144,27 @@ func loadConfig() (appConfig, error) {
 	// aibow-server につなぐときは llama.cpp を読み込まないので、lib が無くてもよい。
 	// 初めての PC で画面からつなぐときは、ここで起動に失敗してから設定の画面の「サーバー」のタブでつなぐ(タブは起動に失敗しても使える。0019)
 	if _, err := os.Stat(c.engine.LibPath); err != nil && c.serverURL == "" {
-		// 相対パスのままだと「どこを探したのか」が分からないので、絶対パスで出す
-		env.errs = append(env.errs, fmt.Errorf("llama.cpp のフォルダが見つかりません: %s\n"+
-			"(相対パスはカレントフォルダが基準です。_cmd/aibow で起動するか、AIBOW_LIB で場所を指定してください。"+
-			"取得方法は README.md の「llama.cpp の取得」を参照。"+
-			"aibow-server につないで使うなら llama.cpp は要りません。設定の画面の「サーバー」のタブでつなぎ、起動し直してください)", absPath(c.engine.LibPath)))
+		env.errs = append(env.errs, c.libMissing())
 	}
 	if c.dbPath == "" {
 		env.errs = append(env.errs, errors.New("会話を保存する場所が決められません。AIBOW_DB で DB ファイルの場所を指定してください"))
 	}
 	return c, errors.Join(env.errs...)
+}
+
+// libMissing は、lib が無く、つなぐ先も無いので起動できないときのエラー。
+// 信頼したつなぎ先(connection.json の known)があれば、aibow-server を使うつもりでまだログインしていない(信頼だけした・ログアウトした)だけなので、
+// llama.cpp の話ではなくログインを促す(2026-10-29、ユーザーの指摘)。相対パスのままだと「どこを探したのか」が分からないので、絶対パスで出す
+func (c appConfig) libMissing() error {
+	lib := absPath(c.engine.LibPath)
+	if k := c.conn.Trusted(); k.URL != "" {
+		return fmt.Errorf("aibow-server(%s)にはまだログインしていません。設定の画面の「サーバー」のタブで「確かめる」からログインし、起動し直してください"+
+			"(アプリの中で動かすなら、llama.cpp のフォルダ %s が要ります)", k.URL, lib)
+	}
+	return fmt.Errorf("llama.cpp のフォルダが見つかりません: %s\n"+
+		"(相対パスはカレントフォルダが基準です。_cmd/aibow で起動するか、AIBOW_LIB で場所を指定してください。"+
+		"取得方法は README.md の「llama.cpp の取得」を参照。"+
+		"aibow-server につないで使うなら llama.cpp は要りません。設定の画面の「サーバー」のタブでつなぎ、起動し直してください)", lib)
 }
 
 // つなぎ先をどこで決めたか(appConfig.serverSource)。
