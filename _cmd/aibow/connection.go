@@ -3,9 +3,9 @@ package main
 // connection.go: 画面から aibow-server につなぐ・ログインする・アプリの中で動かす形に戻す(0019)。
 //
 //	ServerConnection … 今の形(アプリの中で動かす / aibow-server に誰としてつないでいるか)と、つなぎ先をどこで決めたか
-//	CheckServer      … つなぎ先を確かめる(つながるか・ログインが要るか・証明書の指紋)
+//	CheckServer      … つなぎ先を確かめる(つながるか・ログインが要るか・証明書の指紋)。信頼できたら、信頼したつなぎ先として connection.json に覚える
 //	ConnectServer    … ログインしてアプリ用のトークンをもらい、connection.json に書く
-//	DisconnectServer … トークンを aibow-server で消し、connection.json を消す(アプリの中で動かす形に戻す)
+//	DisconnectServer … トークンを aibow-server で消し、つなぐ先を connection.json から消す(アプリの中で動かす形に戻す。信頼したつなぎ先は残す)
 //
 // 切り替えると生成の口(engine か api/client)も会話の保存先(aibow.db か server.db)も丸ごと替わるので、起動したまま替えず、
 // 保存して、起動し直すと切り替わる(起動の流れ main.go は今のまま使える)。アプリは自分で起動し直さない(2026-10-26、ユーザーと決め直した。決定事項 1)。
@@ -38,7 +38,7 @@ type connection struct {
 
 	// 保存したもの(起動し直すと効く)。起動し直す前に、もう一度つなぎ直す・戻すこともあるので、今動いている形とは分けて持つ
 	mu      sync.Mutex
-	saved   aibow.ConnectionFile // 今の connection.json の中身(消したら空)
+	saved   aibow.ConnectionFile // 今の connection.json の中身(消したら空。信頼したつなぎ先 Known だけのこともある)
 	key     string               // saved のトークン(ログアウトのときに aibow-server で消すため)
 	pending string               // 保存したが、まだ効いていない形("server"・"direct"。無ければ空)
 }
@@ -72,6 +72,9 @@ type ServerConnection struct {
 	// Pending は、保存したがまだ効いていない形("server"・"direct"。起動し直すと切り替わる)。PendingURL はそのつなぎ先
 	Pending    string `json:"pending"`
 	PendingURL string `json:"pendingUrl"`
+	// KnownURL・KnownUser は、信頼した最後のつなぎ先と、そこに最後にログインした名前(タブの入力欄に入れておく。つないでいなくても残る)
+	KnownURL  string `json:"knownUrl"`
+	KnownUser string `json:"knownUser"`
 }
 
 // ServerConnection は今の形を返す。
@@ -83,6 +86,8 @@ func (s *ChatService) ServerConnection() ServerConnection {
 	}
 	c.mu.Lock()
 	v.Pending, v.PendingURL = c.pending, c.saved.ServerURL
+	known := c.saved.Trusted()
+	v.KnownURL, v.KnownUser = known.URL, known.User
 	c.mu.Unlock()
 	switch c.source {
 	case serverSettings:
@@ -100,17 +105,53 @@ func (s *ChatService) ServerConnection() ServerConnection {
 
 // CheckServer は、つなぎ先 url を確かめる(つながるか・ログインが要るか・証明書)。fingerprint は、人が画面で確かめて信頼した指紋(まだなら空)。
 // 自己署名の証明書で、まだ信頼していなければ、指紋だけを返す(trusted が false。画面が指紋を見せ、人が確かめる)。
+// 信頼できたら、信頼したつなぎ先として覚える(ログインせずに閉じても、次は信頼し直さずに続けられるように。次の起動でつなぐ先にはしない)。
 func (s *ChatService) CheckServer(url, fingerprint string) (apiclient.Probe, error) {
-	if err := s.conn.editable(); err != nil {
+	c := s.conn
+	if err := c.editable(); err != nil {
 		return apiclient.Probe{}, err
 	}
-	s.conn.mu.Lock()
-	saved := s.conn.saved
-	s.conn.mu.Unlock()
-	if fingerprint == "" && sameServer(url, saved.ServerURL) {
-		fingerprint = saved.Fingerprint // 前に信頼した指紋(つなぎ直すとき)
+	c.mu.Lock()
+	known := c.saved.Trusted()
+	c.mu.Unlock()
+	if fingerprint == "" && sameServer(url, known.URL) {
+		fingerprint = known.Fingerprint // 前に信頼した指紋(つなぎ直すとき・信頼だけして閉じたとき・ログアウトしたあと)
 	}
-	return apiclient.ProbeServer(context.Background(), url, fingerprint)
+	p, err := apiclient.ProbeServer(context.Background(), url, fingerprint)
+	if err == nil && p.Trusted {
+		c.remember(p)
+	}
+	return p, err
+}
+
+// remember は、信頼できたつなぎ先を connection.json の Known に覚える。書けなくても確かめた結果は返す(覚えないだけ)。
+func (c *connection) remember(p apiclient.Probe) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	old := c.saved.Trusted()
+	k := aibow.KnownServer{URL: p.URL, Fingerprint: pinnedFingerprint(p)}
+	if sameServer(old.URL, k.URL) {
+		k.User = old.User // 同じサーバーなら、最後にログインした名前を残す
+	}
+	if c.saved.Known != nil && *c.saved.Known == k {
+		return
+	}
+	f := c.saved
+	f.Known = &k
+	if err := f.Save(c.path); err != nil {
+		log.Warnf("信頼したつなぎ先を覚えられませんでした(つなぐときは、もう一度確かめます): %v", err)
+		return
+	}
+	c.saved = f
+	log.Noticef("信頼したつなぎ先を覚えました: %s(%s)", k.URL, absPath(c.path))
+}
+
+// pinnedFingerprint は、覚える証明書の指紋。自己署名の証明書のときだけ(OS が信頼している証明書・HTTP なら空)。
+func pinnedFingerprint(p apiclient.Probe) string {
+	if p.HTTPS && !p.SystemTrusted {
+		return p.Fingerprint
+	}
+	return ""
 }
 
 // ConnectRequest は ConnectServer に渡すもの。
@@ -137,16 +178,14 @@ func (s *ChatService) ConnectServer(req ConnectRequest) error {
 	if !p.Trusted {
 		return fmt.Errorf("aibow-server の証明書の指紋(%s)を確かめてから、つないでください", p.Fingerprint)
 	}
-	f := aibow.ConnectionFile{ServerURL: p.URL}
-	if p.HTTPS && !p.SystemTrusted {
-		f.Fingerprint = p.Fingerprint
-	}
+	f := aibow.ConnectionFile{ServerURL: p.URL, Fingerprint: pinnedFingerprint(p)}
 	token := ""
 	if p.Login {
 		if token, err = login(&f, req); err != nil {
 			return err
 		}
 	}
+	f.Known = &aibow.KnownServer{URL: f.ServerURL, Fingerprint: f.Fingerprint, User: f.User}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	// ほかの aibow-server につなぎ替えるときは、前のトークンを消しておく(同じサーバーなら、同じ PC の前のトークンは今ので置き換わった)
@@ -181,7 +220,8 @@ func login(f *aibow.ConnectionFile, req ConnectRequest) (string, error) {
 	return got.Token, f.SetToken(got.Token)
 }
 
-// DisconnectServer はアプリの中で動かす形に戻すように決める:トークンを aibow-server で消し(つながらなければ手元だけ)、connection.json を消す。
+// DisconnectServer はアプリの中で動かす形に戻すように決める:トークンを aibow-server で消し(つながらなければ手元だけ)、
+// つなぐ先とトークンを connection.json から消す。信頼したつなぎ先(Known)は残す(次につなぐときに、信頼し直さずにログインから続けられるように)。
 // 起動し直すと切り替わる。
 func (s *ChatService) DisconnectServer() error {
 	c := s.conn
@@ -191,14 +231,20 @@ func (s *ChatService) DisconnectServer() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.revoke()
-	if err := aibow.RemoveConnectionFile(c.path); err != nil {
+	var f aibow.ConnectionFile
+	if k := c.saved.Trusted(); k.URL != "" {
+		f.Known = &k
+		if err := f.Save(c.path); err != nil {
+			return err
+		}
+	} else if err := aibow.RemoveConnectionFile(c.path); err != nil {
 		return err
 	}
-	c.saved, c.key, c.pending = aibow.ConnectionFile{}, "", "direct"
+	c.saved, c.key, c.pending = f, "", "direct"
 	if c.url == "" {
 		c.pending = "" // 今もアプリの中で動いている(起動し直す前につないだのを取りやめた)ので、起動し直さなくてよい
 	}
-	log.Noticef("アプリの中で動かす形に戻すように決めました(%s を消しました)。起動し直すと切り替わります", absPath(c.path))
+	log.Noticef("アプリの中で動かす形に戻すように決めました(%s からつなぐ先とトークンを消し、信頼したつなぎ先は残しました)。起動し直すと切り替わります", absPath(c.path))
 	return nil
 }
 

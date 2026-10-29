@@ -5,6 +5,9 @@
 //	つなぎ先を打つ → 確かめる(CheckServer)── 自己署名の証明書なら、指紋を見せて人が確かめる(信頼したら、もう一度確かめる)
 //	              → ログインが要れば名前とパスワード → つなぐ(ConnectServer)── 保存して、起動し直すと切り替わる
 //
+// 信頼できたつなぎ先は、つながなくても Go が覚える(connection.json の known)。タブを開き直したとき・ログアウトしたあとは、
+// そのつなぎ先と名前を入れておくので、「確かめる」で信頼し直さずにログインへ進める(2026-10-29、ユーザーと決めた)。
+//
 // アプリは自分で起動し直さない(2026-10-26、ユーザーと決め直した)。起動し直すまでは前の形のまま動くので、
 // 「起動し直すと切り替わります」を、起動し直すまで出し続ける(Go の ServerConnection の pending。タブを開き直しても出る)。
 //
@@ -29,10 +32,14 @@ export function ServerSettings({ disabled, onError }: { disabled: boolean; onErr
   useEffect(() => {
     ChatService.ServerConnection().then(c => {
       setConn(c);
-      // 画面でつないだときは、つなぎ直しやすいよう今の値を入れておく(期限が切れたときにログインし直すため)
+      // 画面でつないだときは、つなぎ直しやすいよう今の値を入れておく(期限が切れたときにログインし直すため)。
+      // つないでいなくても、信頼したつなぎ先が残っていれば入れておく(信頼だけして閉じた・ログアウトした。「確かめる」で信頼し直さずにログインへ進める)
       if (c.source === "screen") {
         setUrl(c.url);
         setName(c.user);
+      } else if (!c.source && c.knownUrl) {
+        setUrl(c.knownUrl);
+        setName(c.knownUser);
       }
     }, err => onError(errorMessage(err)));
   }, [onError]);

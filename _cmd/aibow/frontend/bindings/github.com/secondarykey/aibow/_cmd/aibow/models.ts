@@ -65,4 +65,10 @@ export interface ServerConnection {
      */
     "pending": string;
     "pendingUrl": string;
+
+    /**
+     * KnownURL・KnownUser は、信頼した最後のつなぎ先と、そこに最後にログインした名前(タブの入力欄に入れておく。つないでいなくても残る)
+     */
+    "knownUrl": string;
+    "knownUser": string;
 }

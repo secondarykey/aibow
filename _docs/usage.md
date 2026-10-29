@@ -315,6 +315,8 @@ curl http://127.0.0.1:8089/v1/chat/completions -H "Content-Type: application/jso
   トークンは作ってから **10 日**で切れます(使っても延びません)。切れたら同じタブでもう一度ログインします。トークンは PC ごとに1本で、ほかの PC のログインは切れません
 - つなぐと保存され、**aibow を起動し直すと**、生成と会話の保存が aibow-server になります(アプリは自分では起動し直しません。起動し直すまでは「起動し直すと切り替わります」と出て、前の形のまま動きます)。
   「ログアウトして戻す」で、トークンを消してアプリの中で動かす形に戻ります(これも起動し直すと切り替わります)
+- 確かめて信頼したつなぎ先は、ログインせずに設定の画面を閉じても、ログアウトしても覚えています。次に「サーバー」のタブを開くと、つなぎ先と最後にログインした名前が入っていて、
+  「確かめる」を押せばフィンガープリントを信頼し直さずにログインへ進めます(覚えるのは最後の1つだけ。つなぐかどうかとは別で、覚えているだけでは起動したときにつなぎに行きません)
 - 覚えるのは `%APPDATA%\aibow\connection.json`(`AIBOW_CONNECTION`)。トークンは Windows の DPAPI で包むので、ファイルをほかの PC やほかの Windows の利用者に写しても使えません
 
 **手で書く**(今までの形):`settings.json` か環境変数に書きます。**手で書いてあれば、画面で決めたつなぎ先より強く**、「サーバー」のタブでは表示だけになります。
@@ -598,7 +600,7 @@ aibow-server user add bob
 | `AIBOW_SETTINGS` | `%APPDATA%\aibow\settings.json` | 設定ファイル(手で書く設定。MCP のサーバーの `mcpServers` と、aibow-server のつなぎ先 `serverUrl`)。無ければ MCP を使わない |
 | `AIBOW_SERVER_KEY` | なし | aibow-server の API キー(`aibow-server user key <名前>` で作ったもの)。つなぎ先を `settings.json` の `serverUrl` か `AIBOW_SERVER_URL` に手で書いて、ログインが要る aibow-server につなぐときだけ使う。設定の画面の「サーバー」でログインしたときは要らない(アプリ用のトークンを使う。0019)。settings.json の `serverKey` が優先 |
 | `AIBOW_SERVER_CERT` | なし | aibow-server の証明書のファイル(自己署名の証明書で HTTPS にしているとき)。`AIBOW_SERVER_KEY` と同じく、つなぎ先を手で書いたときだけ使う(画面でつないだときは、確かめたフィンガープリントで信頼する)。settings.json の `serverCert` が優先 |
-| `AIBOW_CONNECTION` | `%APPDATA%\aibow\connection.json` | 設定の画面の「サーバー」で決めた aibow-server のつなぎ先・信頼した証明書のフィンガープリント・アプリ用のトークン(DPAPI で包む)。aibow が書く。`serverUrl`・`AIBOW_SERVER_URL` を手で書いてあれば使わない |
+| `AIBOW_CONNECTION` | `%APPDATA%\aibow\connection.json` | 設定の画面の「サーバー」で決めた aibow-server のつなぎ先・信頼した証明書のフィンガープリント・アプリ用のトークン(DPAPI で包む)と、信頼した最後のつなぎ先(`known`。ログアウトしても残す)。aibow が書く。`serverUrl`・`AIBOW_SERVER_URL` を手で書いてあれば使わない |
 | `AIBOW_SERVER_URL` | なし | 生成を頼む aibow-server のつなぎ先(例: `http://127.0.0.1:8089`)。書けばアプリは llama.cpp を読み込まない。settings.json の `serverUrl` が優先(「画面のアプリを aibow-server につなぐ」) |
 | `AIBOW_LOG_DIR` | `%APPDATA%\aibow\logs` | ログファイル(`aibow_<日付>.log`。日ごと)を書くフォルダ。exe は Notice 以上(起動した版・使ったモデル・変えた設定・注意・エラーなど)だけを書き、起動時に古いファイルを消して今日を含めて 10 日分を残す。異常終了したときは同じフォルダの `aibow_crash_<日時>.log` に内容が残る(次の起動で画面に知らせる)。MCP のサーバー `aibow-mcp` も同じフォルダの `aibow-mcp_<日付>.log` に、OpenAI 互換 API の `aibow-server` は `aibow-server_<日付>.log` に書く(どちらも Info 以上・10 日分)。フォルダが無ければ作る。`wails3 build` で作った exe は既定でここに書く。`wails3 dev` はターミナルに出し、ここの `aibow-dev_<日付>.log` にも書く(Info 以上・10 日分。exe のログと混ざらないよう名前を分けている) |
 | `AIBOW_TOOLS` | `%APPDATA%\aibow\tools.json` | ツールの扱いの、この PC の既定(設定の画面で変えたものを aibow が書く) |

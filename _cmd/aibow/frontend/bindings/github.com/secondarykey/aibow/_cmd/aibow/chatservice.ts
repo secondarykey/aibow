@@ -76,6 +76,7 @@ export function BuiltinTools(): $CancellablePromise<aibow$0.KnownTool[] | null> 
 /**
  * CheckServer は、つなぎ先 url を確かめる(つながるか・ログインが要るか・証明書)。fingerprint は、人が画面で確かめて信頼した指紋(まだなら空)。
  * 自己署名の証明書で、まだ信頼していなければ、指紋だけを返す(trusted が false。画面が指紋を見せ、人が確かめる)。
+ * 信頼できたら、信頼したつなぎ先として覚える(ログインせずに閉じても、次は信頼し直さずに続けられるように。次の起動でつなぐ先にはしない)。
  */
 export function CheckServer(url: string, fingerprint: string): $CancellablePromise<client$1.Probe> {
     return $Call.ByID(3612261202, url, fingerprint);
@@ -172,7 +173,8 @@ export function DeleteProfile(id: uuid$0.UUID): $CancellablePromise<void> {
 }
 
 /**
- * DisconnectServer はアプリの中で動かす形に戻すように決める:トークンを aibow-server で消し(つながらなければ手元だけ)、connection.json を消す。
+ * DisconnectServer はアプリの中で動かす形に戻すように決める:トークンを aibow-server で消し(つながらなければ手元だけ)、
+ * つなぐ先とトークンを connection.json から消す。信頼したつなぎ先(Known)は残す(次につなぐときに、信頼し直さずにログインから続けられるように)。
  * 起動し直すと切り替わる。
  */
 export function DisconnectServer(): $CancellablePromise<void> {

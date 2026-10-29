@@ -38,6 +38,28 @@ type ConnectionFile struct {
 	Protection string `json:"protection,omitempty"`
 	// ExpiresAt はトークンの期限(作ってから 10 日。画面に出す)
 	ExpiresAt time.Time `json:"expiresAt,omitzero"`
+
+	// Known は、画面で確かめて信頼した最後のつなぎ先。上の ServerURL(次の起動でつなぐ先)とは別に持つ。
+	// 信頼だけしてログインせずに閉じたとき・ログアウトしたときも残し、次は信頼し直さずにログインから続けられるようにする
+	// (SSH の known_hosts と同じく、信頼した記録はつなぐのをやめても要る。2026-10-29、ユーザーと決めた)。覚えるのは1つだけ(決定事項 8)
+	Known *KnownServer `json:"known,omitempty"`
+}
+
+// KnownServer は、信頼したつなぎ先(ConnectionFile.Known)。秘密は入れない(フィンガープリントは秘密ではない)。
+type KnownServer struct {
+	URL string `json:"url"`
+	// Fingerprint は信頼した証明書の指紋(自己署名の証明書のとき。OS が信頼している証明書・HTTP なら空)
+	Fingerprint string `json:"fingerprint,omitempty"`
+	// User は最後にログインした名前(タブに入れておくだけ)
+	User string `json:"user,omitempty"`
+}
+
+// Trusted は、覚えている信頼したつなぎ先(無ければ空)。Known の無い前の版のファイルなら、つないでいる先を使う。
+func (c ConnectionFile) Trusted() KnownServer {
+	if c.Known != nil {
+		return *c.Known
+	}
+	return KnownServer{URL: c.ServerURL, Fingerprint: c.Fingerprint, User: c.User}
 }
 
 // LoadConnectionFile は connection.json を読む。無ければ空(アプリの中で動かす)。
@@ -55,6 +77,11 @@ func LoadConnectionFile(path string) (ConnectionFile, error) {
 	}
 	if err := CheckServerURL(c.ServerURL); err != nil {
 		return ConnectionFile{}, fmt.Errorf("つなぎ先のファイル %s の serverUrl: %w", path, err)
+	}
+	if c.Known != nil {
+		if err := CheckServerURL(c.Known.URL); err != nil {
+			return ConnectionFile{}, fmt.Errorf("つなぎ先のファイル %s の known.url: %w", path, err)
+		}
 	}
 	return c, nil
 }
