@@ -1,0 +1,5 @@
+<|turn>system
+<|tool>declaration:get_current_time{description:<|"|>Get the current date, day of the week and time.<|"|>,parameters:{properties:{timezone:{description:<|"|>IANA time zone name such as Asia/Tokyo. Defaults to the PC's time zone.<|"|>,type:<|"|>STRING<|"|>}},type:<|"|>OBJECT<|"|>}}<tool|><|tool>declaration:calculate{description:<|"|>Evaluate an arithmetic expression with + - * / and parentheses (e.g. (1+2)*3 & 7/2 < 4).<|"|>,parameters:{properties:{expression:{description:<|"|>数式<|"|>,type:<|"|>STRING<|"|>}},required:[<|"|>expression<|"|>],type:<|"|>OBJECT<|"|>}}<tool|><turn|>
+<|turn>user
+今何時?<turn|>
+<|turn>model

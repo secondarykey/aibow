@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -212,8 +213,8 @@ func TestQwen35ParserBrokenCalls(t *testing.T) {
 	}
 }
 
-// templateCases は testdata/qwen35/cases.json。期待値(<name>.txt)は、同じ会話を公式テンプレートに
-// jinja2 で通して作ったもの(testdata/qwen35/gen_expected.py)。
+// templateCases は testdata/cases.json(書式をまたいで共通の会話)。期待値(<書式の名前>/<name>.txt)は、
+// 同じ会話を GGUF の中のテンプレートに jinja2 で通して作ったもの(testdata/gen_expected.py)。
 type templateCases struct {
 	Tools []struct {
 		Name        string          `json:"name"`
@@ -221,9 +222,10 @@ type templateCases struct {
 		Parameters  json.RawMessage `json:"parameters"`
 	} `json:"tools"`
 	Cases []struct {
-		Name     string `json:"name"`
-		Think    bool   `json:"think"`
-		Tools    bool   `json:"tools"`
+		Name     string   `json:"name"`
+		Formats  []string `json:"formats"` // 空なら全部の書式
+		Think    bool     `json:"think"`
+		Tools    []string `json:"tools"` // 知らせるツールの名前
 		Messages []struct {
 			Role      string `json:"role"`
 			Content   string `json:"content"`
@@ -238,7 +240,13 @@ type templateCases struct {
 
 // 公式テンプレート(Jinja)と、空白や改行の1文字まで同じ文字列になること
 func TestQwen35PromptMatchesTemplate(t *testing.T) {
-	b, err := os.ReadFile("testdata/qwen35/cases.json")
+	testPromptMatchesTemplate(t, "qwen35", qwen35{})
+}
+
+// testPromptMatchesTemplate は、testdata/cases.json の会話を書式 f で組み立て、testdata/<name>/ の期待値と比べる。
+// 期待値の引数の値は tool.Arg の形で書いてある(書式が型を見て書き直す)。
+func testPromptMatchesTemplate(t *testing.T, name string, f Format) {
+	b, err := os.ReadFile("testdata/cases.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,15 +254,16 @@ func TestQwen35PromptMatchesTemplate(t *testing.T) {
 	if err := json.Unmarshal(b, &spec); err != nil {
 		t.Fatal(err)
 	}
-	var tools []tool.Def
-	for _, td := range spec.Tools {
-		tools = append(tools, tool.Def{Name: td.Name, Description: td.Description, Parameters: td.Parameters})
-	}
 
 	for _, c := range spec.Cases {
+		if len(c.Formats) > 0 && !slices.Contains(c.Formats, name) {
+			continue
+		}
 		p := Prompt{Think: c.Think}
-		if c.Tools {
-			p.Tools = tools
+		for _, td := range spec.Tools {
+			if slices.Contains(c.Tools, td.Name) {
+				p.Tools = append(p.Tools, tool.Def{Name: td.Name, Description: td.Description, Parameters: td.Parameters})
+			}
 		}
 		for _, m := range c.Messages {
 			msg := Message{Role: m.Role, Content: m.Content, Thinking: m.Thinking}
@@ -268,11 +277,11 @@ func TestQwen35PromptMatchesTemplate(t *testing.T) {
 			p.Messages = append(p.Messages, msg)
 		}
 
-		want, err := os.ReadFile(filepath.Join("testdata", "qwen35", c.Name+".txt"))
+		want, err := os.ReadFile(filepath.Join("testdata", name, c.Name+".txt"))
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := (qwen35{}).BuildPrompt(p); got != string(want) {
+		if got := f.BuildPrompt(p); got != string(want) {
 			t.Errorf("%s: テンプレートと違います\n--- got\n%s\n--- want\n%s", c.Name, got, want)
 		}
 	}

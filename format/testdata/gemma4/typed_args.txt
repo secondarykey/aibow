@@ -1,0 +1,9 @@
+<|turn>system
+<|think|>
+<|tool>declaration:read_file{description:<|"|>Read a text file in the work folder.<|"|>,parameters:{properties:{all:{type:<|"|>['BOOLEAN', 'NULL']<|"|>},offset:{description:<|"|>First line to read (1-based).<|"|>,type:<|"|>INTEGER<|"|>},options:{properties:{},type:<|"|>OBJECT<|"|>},path:{description:<|"|>Path from the work folder.<|"|>,type:<|"|>STRING<|"|>},paths:{description:<|"|>More files to read.<|"|>,items:{type:<|"|>STRING<|"|>},type:<|"|>ARRAY<|"|>},ratio:{type:<|"|>NUMBER<|"|>}},required:[<|"|>path<|"|>],type:<|"|>OBJECT<|"|>}}<tool|><turn|>
+<|turn>user
+a.go を 12 行目から読んで<turn|>
+<|turn>model
+<|channel>thought
+読む
+<channel|><|tool_call>call:read_file{offset:12,options:{n:2,sort:<|"|>name<|"|>},path:<|"|>a.go<|"|>,paths:[<|"|>b.go<|"|>,<|"|>c.go<|"|>],ratio:0.5}<tool_call|><|tool_call>call:read_file{offset:<|"|> 5<|"|>,path:<|"|>d.go<|"|>}<tool_call|><|tool_response>response:read_file{value:<|"|>12	package a<|"|>}<tool_response|><|tool_response>response:read_file{value:<|"|>エラー: 引数 offset: 整数で書いてください(" 5")<|"|>}<tool_response|><|channel>thought

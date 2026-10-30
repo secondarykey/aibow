@@ -9,6 +9,11 @@
       "name": "calculate",
       "description": "Evaluate an arithmetic expression with + - * / and parentheses (e.g. (1+2)*3 & 7/2 < 4).",
       "parameters": {"type": "object", "properties": {"expression": {"type": "string", "description": "数式"}}, "required": ["expression"]}
+    },
+    {
+      "name": "read_file",
+      "description": "Read a text file in the work folder.",
+      "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "Path from the work folder."}, "offset": {"type": "integer", "description": "First line to read (1-based)."}, "paths": {"type": "array", "items": {"type": "string"}, "description": "More files to read."}, "ratio": {"type": "number"}, "options": {"type": "object"}, "all": {"type": ["boolean", "null"]}}, "required": ["path"]}
     }
   ],
   "cases": [
@@ -40,7 +45,7 @@
     {
       "name": "tools_first_turn",
       "think": true,
-      "tools": true,
+      "tools": ["get_current_time", "calculate"],
       "messages": [
         {"role": "system", "content": "あなたは親切なアシスタントです。"},
         {"role": "user", "content": "今何時?"}
@@ -49,7 +54,7 @@
     {
       "name": "tools_without_system",
       "think": false,
-      "tools": true,
+      "tools": ["get_current_time", "calculate"],
       "messages": [
         {"role": "user", "content": "今何時?"}
       ]
@@ -57,7 +62,7 @@
     {
       "name": "tool_loop_keeps_thinking",
       "think": true,
-      "tools": true,
+      "tools": ["get_current_time", "calculate"],
       "messages": [
         {"role": "system", "content": "S"},
         {"role": "user", "content": "1234 × 5678 は?"},
@@ -70,7 +75,7 @@
     {
       "name": "tool_loop_think_off",
       "think": false,
-      "tools": true,
+      "tools": ["get_current_time", "calculate"],
       "messages": [
         {"role": "user", "content": "今何時?"},
         {"role": "assistant", "content": "", "tool_calls": [
@@ -82,7 +87,7 @@
     {
       "name": "two_calls_then_next_question",
       "think": true,
-      "tools": true,
+      "tools": ["get_current_time", "calculate"],
       "messages": [
         {"role": "system", "content": "S"},
         {"role": "user", "content": "今日の日付と、365 / 7 を教えて"},
@@ -99,7 +104,7 @@
     {
       "name": "loop_after_answer_with_content",
       "think": true,
-      "tools": true,
+      "tools": ["get_current_time", "calculate"],
       "messages": [
         {"role": "user", "content": "1+1 と 2*3"},
         {"role": "assistant", "content": "まず1つ目。", "thinking": "順に", "tool_calls": [
@@ -110,6 +115,33 @@
           {"name": "calculate", "args": [["expression", "2*3"]]}
         ]},
         {"role": "tool", "content": "エラー: 引数 expression がありません"}
+      ]
+    },
+    {
+      "name": "typed_args",
+      "think": true,
+      "tools": ["read_file"],
+      "messages": [
+        {"role": "user", "content": "a.go を 12 行目から読んで"},
+        {"role": "assistant", "content": "", "thinking": "読む", "tool_calls": [
+          {"name": "read_file", "args": [["path", "a.go"], ["offset", "12"], ["paths", "[\"b.go\", \"c.go\"]"], ["ratio", "0.5"], ["options", "{\"sort\": \"name\", \"n\": 2}"]]},
+          {"name": "read_file", "args": [["path", "d.go"], ["offset", "\" 5\""]]}
+        ]},
+        {"role": "tool", "content": "12\tpackage a"},
+        {"role": "tool", "content": "エラー: 引数 offset: 整数で書いてください(\" 5\")"}
+      ]
+    },
+    {
+      "name": "typed_args_boolean",
+      "formats": ["gemma4"],
+      "think": false,
+      "tools": ["read_file"],
+      "messages": [
+        {"role": "user", "content": "全部読んで"},
+        {"role": "assistant", "content": "", "tool_calls": [
+          {"name": "read_file", "args": [["path", "a.go"], ["all", "true"]]}
+        ]},
+        {"role": "tool", "content": "package a"}
       ]
     }
   ]

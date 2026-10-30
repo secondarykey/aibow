@@ -1,0 +1,6 @@
+<|turn>system
+<|think|>
+あなたは親切なアシスタントです。<turn|>
+<|turn>user
+こんにちは<turn|>
+<|turn>model

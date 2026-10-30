@@ -1,0 +1,6 @@
+<|turn>system
+<|tool>declaration:read_file{description:<|"|>Read a text file in the work folder.<|"|>,parameters:{properties:{all:{type:<|"|>['BOOLEAN', 'NULL']<|"|>},offset:{description:<|"|>First line to read (1-based).<|"|>,type:<|"|>INTEGER<|"|>},options:{properties:{},type:<|"|>OBJECT<|"|>},path:{description:<|"|>Path from the work folder.<|"|>,type:<|"|>STRING<|"|>},paths:{description:<|"|>More files to read.<|"|>,items:{type:<|"|>STRING<|"|>},type:<|"|>ARRAY<|"|>},ratio:{type:<|"|>NUMBER<|"|>}},required:[<|"|>path<|"|>],type:<|"|>OBJECT<|"|>}}<tool|><turn|>
+<|turn>user
+全部読んで<turn|>
+<|turn>model
+<|tool_call>call:read_file{all:true,path:<|"|>a.go<|"|>}<tool_call|><|tool_response>response:read_file{value:<|"|>package a<|"|>}<tool_response|>

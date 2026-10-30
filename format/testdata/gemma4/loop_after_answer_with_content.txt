@@ -1,0 +1,11 @@
+<|turn>system
+<|think|>
+<|tool>declaration:get_current_time{description:<|"|>Get the current date, day of the week and time.<|"|>,parameters:{properties:{timezone:{description:<|"|>IANA time zone name such as Asia/Tokyo. Defaults to the PC's time zone.<|"|>,type:<|"|>STRING<|"|>}},type:<|"|>OBJECT<|"|>}}<tool|><|tool>declaration:calculate{description:<|"|>Evaluate an arithmetic expression with + - * / and parentheses (e.g. (1+2)*3 & 7/2 < 4).<|"|>,parameters:{properties:{expression:{description:<|"|>数式<|"|>,type:<|"|>STRING<|"|>}},required:[<|"|>expression<|"|>],type:<|"|>OBJECT<|"|>}}<tool|><turn|>
+<|turn>user
+1+1 と 2*3<turn|>
+<|turn>model
+<|channel>thought
+順に
+<channel|><|tool_call>call:calculate{expression:<|"|>1+1<|"|>}<tool_call|><|tool_response>response:calculate{value:<|"|>2<|"|>}<tool_response|>まず1つ目。<|channel>thought
+次
+<channel|><|tool_call>call:calculate{expression:<|"|>2*3<|"|>}<tool_call|><|tool_response>response:calculate{value:<|"|>エラー: 引数 expression がありません<|"|>}<tool_response|><|channel>thought

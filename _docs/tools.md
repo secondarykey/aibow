@@ -20,8 +20,8 @@
 | `internal/proc/` | 子プロセスまでまとめて止める仕組み(Windows はジョブオブジェクト、それ以外はプロセスグループ)。`run_command` と MCP のサーバーで使う(0006 で `tool` から移した) |
 | `tool/confirm.go` | 実行前に確認が要るツールの印(`Confirmable`)と、確認の画面に出す内容(`Preview`: パス・上書きか・差分)。差分は `github.com/pkg/diff` |
 | `agent.go` | エージェントループ(`runTurn`)とツールの実行(10 秒の上限・20 回の上限・停止・会話の上限に入らない結果・実行前の確認の待ち) |
-| `format/qwen35_test.go` | 書式のテスト。プロンプトは公式テンプレートを jinja2 で通した期待値と1文字まで比べる |
-| `format/testdata/qwen35/` | 書式のテストの会話(`cases.json`)と期待値(`*.txt`)、期待値を作るスクリプト(`gen_expected.py`) |
+| `format/qwen35_test.go` | 書式のテスト。プロンプトは公式テンプレートを jinja2 で通した期待値と1文字まで比べる(`testPromptMatchesTemplate`。書式によらない) |
+| `format/testdata/` | 書式のテストの会話(`cases.json`。書式をまたいで共通)と、期待値を作るスクリプト(`gen_expected.py`)。期待値は書式ごとのフォルダ(`qwen35/*.txt`・`gemma4/*.txt`) |
 | `tool/tool_test.go` / `tool/files_test.go` / `tool/write_test.go` / `agent_test.go` / `workdir_test.go` / `confirm_test.go` | ツール(外に出られないこと・読み方の切り方を含む)とループ・作業フォルダのテスト(偽物の生成器を使う。モデル不要) |
 | `format/format_test.go` | `ToolCall` の JSON が切り出す前と同じ平らな形か(保存済みの会話を読めるか)のテスト |
 
@@ -83,13 +83,23 @@ Conversations ← Output(思考・答え・ToolCall)            ← Engine ← F
 ### 期待値の作り方(テスト)
 
 プロンプトの組み立ては、公式テンプレートと空白・改行の1文字まで一致させる。
-期待値は GGUF の中のテンプレートを jinja2 で実際に通して作り、`format/testdata/qwen35/*.txt` に置いている。
+期待値は GGUF の中のテンプレートを jinja2 で実際に通して作り、`format/testdata/<書式の名前>/*.txt` に置いている。
+スクリプトは書式によらない1つで、書式の名前(GGUF の `general.architecture`)と GGUF のパスを渡す(0026 の段2)。
 
 ```bash
-python format/testdata/qwen35/gen_expected.py ~/.ollama/models/blobs/sha256-<qwen3.5 の GGUF>
+python format/testdata/gen_expected.py qwen35 ~/.ollama/models/blobs/sha256-<qwen3.5 の GGUF>
 ```
 
-- 会話は `format/testdata/qwen35/cases.json` に書き、Python と Go のテストが同じものを読む。ケースを足したら期待値を作り直す
+```bash
+python format/testdata/gen_expected.py gemma4 /d/Go/Projects/aibow/_cmd/aibow/models/gemma-4-E4B-it-Q4_K_M.gguf
+```
+
+- 会話は `format/testdata/cases.json` に書き、Python と Go のテストが同じものを読む。**ケースは書式をまたいで共通**にして、同じ会話を書式ごとに見比べられるようにする。
+  ある書式だけのケースは `"formats": ["gemma4"]`。ケースの `"tools"` には知らせるツールの名前を並べる。ケースを足したら、全部の書式の期待値を作り直す
+- 引数の値は `tool.Arg` の形で書く。スクリプトはツールの定義の型を見て Python の値にしてテンプレートに渡す(テンプレートが書式ごとの書き方で書く)
+- ツールの結果は、直前の返事の呼び出しと順番で組にして `tool_call_id` と `name` を付けて渡す(Gemma 4 は結果に名前を書く)
+- 違う種類の GGUF を渡したらエラーにする(書式の名前と `general.architecture` を比べる)
+- **bos**:書式は bos を文字で書かず、トークン化(`addSpecial`)に任せる。GGUF の `tokenizer.ggml.add_bos_token` が True(Gemma 4)なら、テンプレートが先頭に書いた bos を1つ外して期待値にする(Qwen3.5 は False で bos も無い)
 - `testdata/` は `.gitattributes` で改行コードを変換しない(1バイトまで比べるため)
 
 ## エージェントループ(agent.go)
