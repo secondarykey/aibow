@@ -30,8 +30,9 @@ import (
 	"github.com/secondarykey/aibow/tool"
 )
 
-// maxBody はリクエストの本文の上限。履歴の全部が毎回来るので大きめにする(作業領域 32K トークンでも数百 KB)
-const maxBody = 32 << 20
+// maxBody はリクエストの本文の上限。履歴の全部が毎回来るので大きめにする(作業領域 32K トークンでも数百 KB)。
+// 画像(image_url の data: URL。0030)は 1 枚 maxImageBytes まで、base64(4/3 倍)で 10 枚分の余裕を足す
+const maxBody = 32<<20 + 10*maxImageBytes*4/3
 
 // handleChat は POST /v1/chat/completions。
 func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
@@ -168,7 +169,7 @@ func (c call) result(out format.Output, st engine.GenerateStats) (calls []toolCa
 	calls, broken := toResponseCalls(out.ToolCalls, c.tools, c.aibow != nil)
 	content = out.Content
 	if c.aibow != nil {
-		extra = &aibowResult{StopReason: st.StopReason, BrokenToolCalls: broken}
+		extra = &aibowResult{StopReason: st.StopReason, BrokenToolCalls: broken, ImageTokens: st.ImageTokens, EncodeSec: st.EncodeSec}
 	} else if len(broken) > 0 {
 		// 書式が崩れた呼び出しは、答えの続きとして返す(0012 の形)
 		content = joinContent(out.Content, joinBroken(broken))
@@ -380,6 +381,17 @@ func logResult(c call, stream bool, st engine.GenerateStats, calls int, err erro
 	}
 	log.Infof("%s・%s・発言 %d 件・ツール %d 個 / 順番待ち %.2f 秒 / プロンプト %d トークン(KV キャッシュの再利用 %d)%.2f 秒 / 生成 %d トークン %.2f 秒(%.1f tok/s)/ 終了理由: %s / ツール呼び出し %d 件",
 		mode, c.model, c.msgs, len(c.tools), c.wait.Seconds(), st.PromptTokens, st.ReusedTokens, st.PromptSec, st.GenTokens, st.GenSec, speed, st.StopReason, calls)
+	// 画像(0030)。画像トークン数と、今回エンコードした秒数(KV キャッシュを使い回した画像は 0 秒)
+	if st.ImageTokens > 0 {
+		log.Infof("画像: %d トークン / エンコード %.2f 秒", st.ImageTokens, st.EncodeSec)
+	}
+	if st.ProjectorSec > 0 {
+		where := "GPU"
+		if st.ProjectorCPU {
+			where = "CPU(GPU に載らなかった)"
+		}
+		log.Noticef("画像を読む部品(mmproj)を %s に読み込みました(%.1f 秒)", where, st.ProjectorSec)
+	}
 }
 
 // ---- 書式とトークン数(aibow 専用の口。0015) -----------------------------------------------

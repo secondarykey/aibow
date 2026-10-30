@@ -827,3 +827,26 @@ func TestWebFiles(t *testing.T) {
 		t.Errorf("開き直した発言のファイル: %+v", d.Messages[0].Files)
 	}
 }
+
+// 画像(0030)もブラウザの口で運べる:CheckFile → Send で、画像は発言の画像の列になってエンジンに届く(書式が印を書く)
+func TestWebImage(t *testing.T) {
+	w := newTestWeb(t)
+	events := w.openEvents(t)
+	c := w.newConversation(t)
+	png := []byte("\x89PNG\r\n\x1a\n" + strings.Repeat("x", 100))
+	var fc aibow.FileCheck
+	w.mustCall(t, &fc, "CheckFile", c.ID, nil, "a.png", png, 0, 0)
+	if fc.File.Kind != aibow.FileImage || fc.File.Format != "image/png" {
+		t.Fatalf("確かめた結果: %+v", fc.File.Kind)
+	}
+	w.mustCall(t, nil, "Send", c.ID, "これは?", []aibow.File{fc.File})
+	until(t, events, "done")
+	if p := w.eng.prompts[len(w.eng.prompts)-1]; !strings.Contains(p, "<|im_start|>user\n<__media__>これは?<|im_end|>") {
+		t.Errorf("モデルに渡した文字列: %q", p)
+	}
+	var d ConversationDetail
+	w.mustCall(t, &d, "Conversation", c.ID)
+	if f := d.Messages[0].Files; len(f) != 1 || string(f[0].Data) != string(png) {
+		t.Errorf("開き直した発言の画像: %+v", f)
+	}
+}

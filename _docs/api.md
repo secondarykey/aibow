@@ -31,7 +31,11 @@ Cline など [ 会話の仕組み + 手 ] ⇄ HTTP(OpenAI 互換。127.0.0.1 だ
 ## 1回のリクエストの流れ(`api/chat.go`)
 
 1. JSON を読み、`toPrompt` で `format.Prompt` にする。読めない発言は 400
-   - `content` は文字列か、部品の配列(`[{"type": "text", "text": "…"}]`。Cline はこちら)。文字以外の部品(画像など)は 400
+   - `content` は文字列か、部品の配列(`[{"type": "text", "text": "…"}]`。Cline はこちら)。文字と画像(`image_url`)以外の部品は 400
+   - 画像(0030):`{"type": "image_url", "image_url": {"url": "data:image/png;base64,…"}}`。**`data:` の URL(base64)だけ**を受け、`http(s)://` の URL は取りに行かずに 400
+     (サーバーから PC の中やイントラに届いてしまうため。0030 の決定事項 16)。画像を付けられるのは user の発言だけ(system・ツールの結果の画像は 400)。1 枚 10 MB まで。
+     画像の ID は中身の SHA-256(会話の仕組みが付ける ID と同じ。同じ画像が届けば KV キャッシュで同じと分かる)。
+     部品のどこにあっても、画像は発言の文より前に置く(Qwen3.5 の書式が画像を先に書く)。画像を読めないモデル・書式なら生成でエラー(500)。本文の上限は画像の分を足して約 165 MB
    - `system` と `developer`(OpenAI の新しい名前)は先頭にだけ置ける。先頭に続けて複数あれば `\n\n` でつなぐ。途中にあれば 400(Qwen3.5 の公式テンプレートが途中の system をエラーにするため)
    - `assistant` の `reasoning_content` は思考(`Thinking`)に戻す。プロンプトに入れるかは書式が決める(ツールのループの途中の返事だけ)
    - `assistant` の `tool_calls` は書式の呼び出しに、`tool` の役の発言はツールの結果に戻す(下の「ツール呼び出し」)。`tools` は `tool.Def` にしてモデルに知らせる
@@ -139,12 +143,13 @@ data: [DONE]
 ```
 頼み   "aibow": {"return_prompt": true}                        ← 書けば aibow のクライアント。return_prompt でモデルに渡した文字列も返す
 返事   "timings": {"cache_n","prompt_n","prompt_ms","prompt_per_second","predicted_n","predicted_ms","predicted_per_second"}  ← いつも
-       "aibow": {"prompt","stop_reason","broken_tool_calls":[{"index","name","raw","error"}]}  ← aibow のクライアントだけ
+       "aibow": {"prompt","stop_reason","broken_tool_calls":[{"index","name","raw","error"}],"image_tokens","encode_sec"}  ← aibow のクライアントだけ
 履歴   assistant の "aibow": {"broken_tool_calls":[…]}         ← 返ってきたものをそのまま送り返す
 ```
 
 - `timings` は llama.cpp と同じ意味にした:`prompt_n` は今回読み込んだ(KV キャッシュを使い回せなかった)数、`cache_n` は使い回せた数。プロンプトのトークン数は足したもの
 - `stop_reason` はエンジンの細かい終了の理由(`eos`・`stop`・`length`・`context`・`cancel`)。`finish_reason` では `length` と `context` を見分けられないため
+- `image_tokens`・`encode_sec` は画像(0030)の記録(プロンプトのうち画像のトークン数・今回エンコードした秒数)。`timings` には画像の欄が無いので、aibow の欄で返す
 - `prompt` は長いので頼んだときだけ。ストリーミングなら生成の前に、`choices` が空で `aibow.prompt` だけの塊を1つ送る
 - `broken_tool_calls` の `index` は、読み取れた呼び出し(`tool_calls`)と合わせた全体の中の順番。aibow のクライアントは自分のループで「エラーとしてモデルに返して直させる」ので、答えに足さずに分けて返す。
   履歴で送り返すと、`index` の位置に混ぜ戻し、書式はモデルが書いたまま(`raw`)をプロンプトに入れる
@@ -177,6 +182,8 @@ data: [DONE]
   0026 より前は値をいつも JSON の文字列で送っていた。前の版のサーバー・クライアントと組み合わせても、書式を当てた文字列は同じになる。
   崩れた呼び出しは `aibow.broken_tool_calls` で順番つきで送り、サーバーがモデルの書いたまま(`raw`)を書式に戻す。
   `client_test.go` で、本物の `api.Server` を `httptest` で立て(生成だけ偽物)、サーバーが受け取った会話と、書式を当てた文字列が直接のときと同じになることを確かめている
+- 画像の付いた発言(0030)は、`content` を部品の配列にして送る:画像を `image_url` の `data:` の URL(`format.Image.Format` と base64)にして先に並べ、最後に文字の部品(`contentOf`)。
+  サーバーは中身の SHA-256 を画像の ID にするので、会話の仕組みが付けた ID(`File.Hash`)と同じになる。往復で会話も書式を当てた文字列も変わらないことを `TestRoundTripImages` で確かめている
 - `LoadModel` を呼ばずに生成するとき(会話のモデルが、最後に知った読み込み中のモデルと同じ)は、そのモデルを `model` で頼む。空で頼むとサーバーが今のモデルで答えるので、そのあとでほかの人が入れ替えていると、違うモデルで返事ができてしまうため
 - 停止ボタン(ctx を止める)はつながりを切る。サーバーはそれを見て生成を止める。クライアントは届いた分を `StopReason: cancel` で返す(エラーにしない。engine と同じ)
 - つながらないとき(起動していない・止めた)は `ErrUnreachable`(つなぎ先と「aibow-server を起動してください」を添える)。サーバーのエラーは `APIError`(`code` で見分けられる)

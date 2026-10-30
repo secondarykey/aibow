@@ -14,6 +14,7 @@ package client
 import (
 	"bufio"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -54,13 +55,39 @@ type aibowRequest struct {
 }
 
 type chatMessage struct {
-	Role             string        `json:"role"`
-	Content          string        `json:"content"`
+	Role string `json:"role"`
+	// Content は文字列。画像の付いた発言(0030)は部品の配列(contentPart。画像 → 文字)
+	Content          any           `json:"content"`
 	ReasoningContent string        `json:"reasoning_content,omitempty"`
 	ToolCalls        []toolCall    `json:"tool_calls,omitempty"`
 	ToolCallID       string        `json:"tool_call_id,omitempty"` // サーバーはこれでツールの名前を引く(Gemma 4 は結果に名前を書く)。崩れた呼び出しの結果には無い
 	Name             string        `json:"name,omitempty"`         // tool の発言の、ツールの名前(崩れた呼び出しの結果は id が無いので、名前で送る)
 	Aibow            *messageExtra `json:"aibow,omitempty"`
+}
+
+// contentPart は、画像の付いた発言の content の部品1つ(OpenAI の形)。
+type contentPart struct {
+	Type     string    `json:"type"`
+	Text     string    `json:"text,omitempty"`
+	ImageURL *imageURL `json:"image_url,omitempty"`
+}
+
+type imageURL struct {
+	URL string `json:"url"`
+}
+
+// contentOf は発言の content。画像があれば、画像を data: の URL(base64)にした部品を先に並べ、最後に文字の部品を置く
+// (0030 の決定事項 17。書式も画像を文字より前に書くので、並びをそろえる)。サーバーは中身の SHA-256 を画像の ID にするので、
+// 会話の仕組みが付けた ID(File.Hash)と同じになり、サーバーのエンジンの KV キャッシュでも同じ画像と分かる
+func contentOf(m format.Message) any {
+	if len(m.Images) == 0 {
+		return m.Content
+	}
+	parts := make([]contentPart, 0, len(m.Images)+1)
+	for _, img := range m.Images {
+		parts = append(parts, contentPart{Type: "image_url", ImageURL: &imageURL{URL: "data:" + img.Format + ";base64," + base64.StdEncoding.EncodeToString(img.Data)}})
+	}
+	return append(parts, contentPart{Type: "text", Text: m.Content})
 }
 
 type messageExtra struct {
@@ -95,11 +122,6 @@ type requestTool struct {
 
 // newChatRequest は会話を JSON の形にする(生成とトークン数で同じ形を使う。違うとトークン数がずれるため)。
 func newChatRequest(p format.Prompt) (chatRequest, error) {
-	// 画像の付いた発言(0030)を aibow-server に送るのは、まだ作っていない(段4で image_url の data: URL にする)。
-	// 黙って画像を捨てると、画像を見ないまま答えてしまうので断る(決定事項 12)
-	if format.HasImages(p) {
-		return chatRequest{}, engine.VisionError("aibow-server につないでいるときは、まだ画像を送れません(テキストのファイルは送れます)")
-	}
 	req := chatRequest{Messages: make([]chatMessage, 0, len(p.Messages))}
 	req.ChatTemplateKwargs.EnableThinking = p.Think
 	for _, d := range p.Tools {
@@ -115,7 +137,7 @@ func newChatRequest(p format.Prompt) (chatRequest, error) {
 	// (結果は崩れた呼び出しの分も順番に並ぶので、取らないと後ろの結果の id がずれる)
 	var pending []string
 	for i, m := range p.Messages {
-		cm := chatMessage{Role: m.Role, Content: m.Content, ReasoningContent: m.Thinking}
+		cm := chatMessage{Role: m.Role, Content: contentOf(m), ReasoningContent: m.Thinking}
 		switch m.Role {
 		case "assistant":
 			pending = pending[:0]
@@ -173,6 +195,8 @@ type chunk struct {
 		Prompt          string       `json:"prompt"`
 		StopReason      string       `json:"stop_reason"`
 		BrokenToolCalls []brokenCall `json:"broken_tool_calls"`
+		ImageTokens     int          `json:"image_tokens"` // 画像(0030)
+		EncodeSec       float64      `json:"encode_sec"`
 	} `json:"aibow"`
 	errorBody
 }
@@ -300,6 +324,10 @@ func (r *streamReader) push(ch chunk) {
 		r.stats = engine.GenerateStats{
 			PromptTokens: t.PromptN + t.CacheN, ReusedTokens: t.CacheN, PromptSec: t.PromptMS / 1000,
 			GenTokens: t.PredictedN, GenSec: t.PredictedMS / 1000,
+		}
+		// 画像の記録は aibow の欄にある(timings と同じ、終了の理由の塊に入っている)
+		if ch.Aibow != nil {
+			r.stats.ImageTokens, r.stats.EncodeSec = ch.Aibow.ImageTokens, ch.Aibow.EncodeSec
 		}
 	}
 	for _, c := range ch.Choices {

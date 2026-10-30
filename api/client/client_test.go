@@ -6,6 +6,8 @@ package client
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net"
@@ -456,5 +458,32 @@ func TestKey(t *testing.T) {
 	c.SetKey(" aibow_test ")
 	if _, err := c.Models(); err != nil || got != "Bearer aibow_test" {
 		t.Errorf("キーあり: %q %v", got, err)
+	}
+}
+
+// 画像の付いた会話(0030)も、会話 → JSON(image_url の data: URL)→ 会話 で変わらない。
+// サーバーは中身の SHA-256 を ID にするので、会話の仕組みが付けた ID(File.Hash)と同じになる(サーバーの KV キャッシュで同じ画像と分かる)
+func TestRoundTripImages(t *testing.T) {
+	g := &fakeGen{st: engine.GenerateStats{StopReason: "eos"}}
+	c, _ := newServer(t, g)
+	img := func(data string) format.Image {
+		sum := sha256.Sum256([]byte(data))
+		return format.Image{ID: hex.EncodeToString(sum[:]), Format: "image/png", Data: []byte(data)}
+	}
+	p := format.Prompt{Messages: []format.Message{
+		{Role: "user", Content: "  2枚の違いは?", Images: []format.Image{img("a"), img("b")}},
+		{Role: "assistant", Content: "色"},
+		{Role: "user", Content: "", Images: []format.Image{img("c")}},
+	}}
+	if _, _, err := c.Generate(context.Background(), p, engine.GenerateOptions{MaxTokens: 10},
+		func(string) {}, func(string) {}, func(string) {}); err != nil {
+		t.Fatal(err)
+	}
+	if a, b := jsonOf(g.prompts[0].Messages), jsonOf(p.Messages); a != b {
+		t.Errorf("会話が変わった:\n got  %s\n want %s", a, b)
+	}
+	f := format.For("qwen35")
+	if a, b := f.BuildPrompt(g.prompts[0]), f.BuildPrompt(p); a != b {
+		t.Errorf("書式を当てた文字列が変わった:\n got  %q\n want %q", a, b)
 	}
 }

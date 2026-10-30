@@ -66,7 +66,8 @@
   画面の吹き出しには中身を出さず、札(ファイル名・大きさ)だけ。保存した `Content` は打った文のまま
 - **画像は文字にしない**:発言の画像の列(`format.Message.Images`。`imagesOf`)としてエンジンに渡す。画像の ID は中身のハッシュ(`File.Hash`)で、エンジンが KV キャッシュに入っている画像と同じかをこれで比べる。
   書式が画像の場所に印を書き、エンジンが画像エンコーダー(mmproj)で画像トークンの埋め込みにして読ませる([engine.md](engine.md) の「画像を読む」)。
-  画像を読めないモデル・書式では、数えるところ(`CheckFile`・送る前の `checkFits`)でエンジンがエラーにする(発言を保存する前に止まる。`engine.ErrNoVision` で見分けられる。メーターは出さない)
+  画像を読めないモデル・書式では、数えるところ(`CheckFile`・送る前の `checkFits`)でエンジンがエラーにする(発言を保存する前に止まる。`engine.ErrNoVision` で見分けられる。メーターは出さない)。
+  aibow-server につないだアプリは、`api/client` が画像を `image_url` の `data:` の URL にして送る(段4。[api.md](api.md))
 - 読み込むときに Go が確かめる(`CheckFile`。画面は `ChatService.CheckFile`):画像かテキストかは中身で決める。先頭が画像の印(`imageFormat`。PNG・JPEG・GIF・BMP。
   BMP は印が2文字だけなので、ヘッダーのファイルの大きさも確かめて「BM」で始まるテキストと見分ける)なら画像。WebP は llama.cpp(stb_image)が読めないのでエラー。
   テキストの決まりは作業フォルダのツールの `readText` と同じ(NUL を含まず UTF-8 として読める)。
