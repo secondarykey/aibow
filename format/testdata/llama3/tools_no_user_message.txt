@@ -1,0 +1,48 @@
+<|start_header_id|>system<|end_header_id|>
+
+Environment: ipython
+Cutting Knowledge Date: December 2023
+Today Date: 30 Oct 2026
+
+You have access to the following functions. To call a function, please respond with JSON for a function call.Respond in the format {"name": function name, "parameters": dictionary of argument name and its value}.Do not use variables.
+
+{
+    "type": "function",
+    "function": {
+        "name": "get_current_time",
+        "description": "Get the current date, day of the week and time.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "timezone": {
+                    "type": "string",
+                    "description": "IANA time zone name such as Asia/Tokyo. Defaults to the PC's time zone."
+                }
+            },
+            "required": []
+        }
+    }
+}
+
+{
+    "type": "function",
+    "function": {
+        "name": "calculate",
+        "description": "Evaluate an arithmetic expression with + - * / and parentheses (e.g. (1+2)*3 & 7/2 < 4).",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "expression": {
+                    "type": "string",
+                    "description": "数式"
+                }
+            },
+            "required": [
+                "expression"
+            ]
+        }
+    }
+}
+
+S<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+

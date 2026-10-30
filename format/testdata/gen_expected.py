@@ -4,8 +4,15 @@
 
     例: python format/testdata/gen_expected.py qwen35 ~/.ollama/models/blobs/sha256-<qwen3.5 の GGUF>
         python format/testdata/gen_expected.py gemma4 _cmd/aibow/models/gemma-4-E4B-it-Q4_K_M.gguf
+        python format/testdata/gen_expected.py llama3 ~/.ollama/models/blobs/sha256-<llama3.2:3b の GGUF>
 
-- 書式の名前は GGUF の general.architecture(aibow が書式を選ぶ名前)。違う GGUF を渡したらエラーにする
+- 書式の名前ごとに、GGUF の general.architecture と、要るならテンプレートの印を FORMATS に書く(aibow の format.ForModel と同じ決まり)。
+  違う GGUF を渡したらエラーにする(llama の種類には Llama 3 の書式でないモデルもある。0027 の決定事項 2)
+- テンプレートが今日の日付を使う(strftime_now。Llama 3.2)ときは、日付を TODAY に決め打ちする(期待値が日によって変わらないように。
+  Go のテストも同じ日付を渡す)
+- Llama 3 は1回の返事に呼び出し1つで、呼び出しのある返事の答えの文を書かない。aibow はそういう返事を分けて渡す(0027 の決定事項 7・8)ので、
+  ここでも同じ形に分けてからテンプレートに渡す(split_for_llama3)。ユーザーの発言が無いままツールを渡すときは、テンプレートのもう一つの書き方
+  (ツールをシステムに書く。tools_in_user_message=false)にする(0027 の決定事項 5。ケースの "tools_in_system")
 - テンプレートは GGUF の tokenizer.chat_template から読む(Ollama のモデルなら ~/.ollama/models/blobs/ の中の、
   manifest で application/vnd.ollama.image.model になっているファイル)
 - 会話は cases.json から読み、1件ごとに <書式の名前>/<name>.txt を書く。Go のテストは同じ cases.json を読んで比べる。
@@ -15,13 +22,15 @@
 - 引数の値は aibow の tool.Arg の形(文字列の引数は中身、数・真偽・配列・オブジェクトの引数は JSON の文字。tool/arg.go)で書く。
   テンプレートには、ツールの定義の型を見て Python の値にして渡す(テンプレートは型のある値を書式ごとの書き方で書く)
 - ツールの結果(role tool)は、直前の返事の呼び出しと順番で組にし、tool_call_id と name を付けて渡す(Gemma 4 は結果に名前を書くため)
-- bos:aibow の書式は bos を文字で書かず、トークン化(llama.cpp の add_special)に任せる(GGUF の tokenizer.ggml.add_bos_token。
-  Gemma 4 は True、Qwen3.5 は False)。テンプレートが先頭に bos を書くときは、期待値からその1つを外す(0026 の決定事項 9)
+- bos:aibow の書式は bos を文字で書かず、トークン化(llama.cpp の add_special)に任せる(0026 の決定事項 25)。
+  テンプレートが先頭に bos を書くときは、期待値からその1つを外す(Gemma 4・Llama 3。Qwen3.5 は bos が無い。
+  llama3.2 の GGUF は tokenizer.ggml.add_bos_token を書いていないが、llama.cpp は1つ足す。0027 の段1で確かめた)
 - tojson は HuggingFace transformers と同じ形にする(区切りに空白・キーは書いた順・HTML のエスケープなし)。
   jinja2 に元からある tojson はキーを並べ替えて < > & をエスケープするので、モデルが学習で見た形と違う
 - 必要なもの: Python 3 と jinja2 3.1 以上(items フィルタを使う)。一度作ったら、テンプレートかケースが変わるまで作り直さなくてよい
 """
 
+import datetime
 import json
 import os
 import struct
@@ -118,6 +127,48 @@ def hf_messages(messages, tools):
     return out
 
 
+def split_for_llama3(messages):
+    """Llama 3 に渡す形に分ける(0027 の決定事項 7・8。aibow の format/llama3.go と同じ決まり)。
+
+    呼び出しのある返事は、答えの文があれば先に答えだけの返事にし、呼び出しは1つずつ「呼び出し → その結果」の組に並べ直す:
+        assistant(答え・呼び出し A・B)、tool(A の結果)、tool(B の結果)
+        → assistant(答え)、assistant(呼び出し A)、tool(A の結果)、assistant(呼び出し B)、tool(B の結果)
+    """
+    out = []
+    i = 0
+    while i < len(messages):
+        m = messages[i]
+        if m["role"] != "assistant" or not m.get("tool_calls"):
+            out.append(m)
+            i += 1
+            continue
+        results = []
+        j = i + 1
+        while j < len(messages) and messages[j]["role"] == "tool":
+            results.append(messages[j])
+            j += 1
+        if m["content"].strip():
+            out.append({"role": "assistant", "content": m["content"]})
+        for k, call in enumerate(m["tool_calls"]):
+            out.append({"role": "assistant", "content": "", "tool_calls": [call]})
+            if k < len(results):
+                out.append(results[k])
+        out.extend(results[len(m["tool_calls"]):])
+        i = j
+    return out
+
+
+# FORMATS は書式の名前 → (GGUF の種類, テンプレートの印)。aibow の format.ForModel の表と同じ(0027 の決定事項 2)
+FORMATS = {
+    "qwen35": ("qwen35", None),
+    "gemma4": ("gemma4", None),
+    "llama3": ("llama", "<|start_header_id|>"),
+}
+
+# TODAY は、テンプレートが今日の日付を使うとき(strftime_now)の日付。Go のテストも同じ日付を渡す
+TODAY = datetime.date(2026, 10, 30)
+
+
 def main():
     for s in (sys.stdout, sys.stderr):
         s.reconfigure(encoding="utf-8")  # Windows でも日本語のメッセージが化けないように
@@ -126,18 +177,24 @@ def main():
     fmt, gguf = sys.argv[1], sys.argv[2]
     meta = read_metadata(gguf, {"general.architecture", "tokenizer.chat_template", "tokenizer.ggml.add_bos_token",
                                 "tokenizer.ggml.bos_token_id", "tokenizer.ggml.tokens"})
-    if meta.get("general.architecture") != fmt:
-        sys.exit(f"GGUF の種類が {meta.get('general.architecture')} です({fmt} の GGUF を渡してください)")
+    if fmt not in FORMATS:
+        sys.exit(f"知らない書式の名前です: {fmt}(使えるのは {', '.join(FORMATS)})")
+    arch, mark = FORMATS[fmt]
+    if meta.get("general.architecture") != arch:
+        sys.exit(f"GGUF の種類が {meta.get('general.architecture')} です({fmt} は {arch} の GGUF を渡してください)")
     if "tokenizer.chat_template" not in meta:
         sys.exit("tokenizer.chat_template が見つかりません")
+    if mark and mark not in meta["tokenizer.chat_template"]:
+        sys.exit(f"この GGUF のテンプレートには {mark} がありません({fmt} の書式ではありません)")
     bos = ""
     if "tokenizer.ggml.bos_token_id" in meta:
         bos = meta["tokenizer.ggml.tokens"][meta["tokenizer.ggml.bos_token_id"]]
-    add_bos = meta.get("tokenizer.ggml.add_bos_token", False)
+    add_bos = meta.get("tokenizer.ggml.add_bos_token", "(書いていない)")
 
     env = ImmutableSandboxedEnvironment(trim_blocks=True, lstrip_blocks=True, extensions=[loopcontrols])
     env.filters["tojson"] = tojson
     env.globals["raise_exception"] = raise_exception
+    env.globals["strftime_now"] = lambda f: TODAY.strftime(f)
     template = env.from_string(meta["tokenizer.chat_template"])
 
     here = os.path.dirname(os.path.abspath(__file__))
@@ -151,17 +208,22 @@ def main():
             continue
         use = c.get("tools")
         tools = [t for t in spec["tools"] if use is True or (isinstance(use, list) and t["name"] in use)]
+        messages = hf_messages(c["messages"], tools)
+        extra = {}
+        if fmt == "llama3":
+            messages = split_for_llama3(messages)
+            if c.get("tools_in_system"):
+                extra["tools_in_user_message"] = False
         text = template.render(
-            messages=hf_messages(c["messages"], tools),
+            messages=messages,
             tools=[{"type": "function", "function": t} for t in tools] or None,
             add_generation_prompt=True,
             enable_thinking=c["think"],
             bos_token=bos,
+            **extra,
         )
-        if add_bos and bos:
+        if bos and text.startswith(bos):
             # bos はトークン化が足すので、書式は書かない。テンプレートが書いた1つを外す
-            if not text.startswith(bos):
-                sys.exit(f"{c['name']}: テンプレートが bos({bos})で始まっていません")
             text = text[len(bos):]
         with open(os.path.join(out_dir, c["name"] + ".txt"), "w", encoding="utf-8", newline="") as f:
             f.write(text)

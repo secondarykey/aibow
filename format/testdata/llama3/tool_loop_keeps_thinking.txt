@@ -1,0 +1,56 @@
+<|start_header_id|>system<|end_header_id|>
+
+Environment: ipython
+Cutting Knowledge Date: December 2023
+Today Date: 30 Oct 2026
+
+S<|eot_id|><|start_header_id|>user<|end_header_id|>
+
+Given the following functions, please respond with a JSON for a function call with its proper arguments that best answers the given prompt.
+
+Respond in the format {"name": function name, "parameters": dictionary of argument name and its value}.Do not use variables.
+
+{
+    "type": "function",
+    "function": {
+        "name": "get_current_time",
+        "description": "Get the current date, day of the week and time.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "timezone": {
+                    "type": "string",
+                    "description": "IANA time zone name such as Asia/Tokyo. Defaults to the PC's time zone."
+                }
+            },
+            "required": []
+        }
+    }
+}
+
+{
+    "type": "function",
+    "function": {
+        "name": "calculate",
+        "description": "Evaluate an arithmetic expression with + - * / and parentheses (e.g. (1+2)*3 & 7/2 < 4).",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "expression": {
+                    "type": "string",
+                    "description": "数式"
+                }
+            },
+            "required": [
+                "expression"
+            ]
+        }
+    }
+}
+
+1234 × 5678 は?<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+
+{"name": "calculate", "parameters": {"expression": "1234 * 5678"}}<|eot_id|><|start_header_id|>ipython<|end_header_id|>
+
+"7006652"<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+

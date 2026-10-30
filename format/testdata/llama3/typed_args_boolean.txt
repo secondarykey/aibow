@@ -1,0 +1,61 @@
+<|start_header_id|>system<|end_header_id|>
+
+Environment: ipython
+Cutting Knowledge Date: December 2023
+Today Date: 30 Oct 2026
+
+<|eot_id|><|start_header_id|>user<|end_header_id|>
+
+Given the following functions, please respond with a JSON for a function call with its proper arguments that best answers the given prompt.
+
+Respond in the format {"name": function name, "parameters": dictionary of argument name and its value}.Do not use variables.
+
+{
+    "type": "function",
+    "function": {
+        "name": "read_file",
+        "description": "Read a text file in the work folder.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Path from the work folder."
+                },
+                "offset": {
+                    "type": "integer",
+                    "description": "First line to read (1-based)."
+                },
+                "paths": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "description": "More files to read."
+                },
+                "ratio": {
+                    "type": "number"
+                },
+                "options": {
+                    "type": "object"
+                },
+                "all": {
+                    "type": [
+                        "boolean",
+                        "null"
+                    ]
+                }
+            },
+            "required": [
+                "path"
+            ]
+        }
+    }
+}
+
+全部読んで<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+
+{"name": "read_file", "parameters": {"path": "a.go", "all": true}}<|eot_id|><|start_header_id|>ipython<|end_header_id|>
+
+"package a"<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+

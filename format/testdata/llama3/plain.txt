@@ -1,0 +1,9 @@
+<|start_header_id|>system<|end_header_id|>
+
+Cutting Knowledge Date: December 2023
+Today Date: 30 Oct 2026
+
+あなたは親切なアシスタントです。<|eot_id|><|start_header_id|>user<|end_header_id|>
+
+こんにちは<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+

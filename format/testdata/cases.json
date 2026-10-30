@@ -132,6 +132,16 @@
       ]
     },
     {
+      "name": "tools_no_user_message",
+      "formats": ["llama3"],
+      "tools_in_system": true,
+      "think": false,
+      "tools": ["get_current_time", "calculate"],
+      "messages": [
+        {"role": "system", "content": "S"}
+      ]
+    },
+    {
       "name": "typed_args_boolean",
       "think": false,
       "tools": ["read_file"],
