@@ -1,0 +1,29 @@
+<|start_of_role|>system<|end_of_role|>You are a helpful assistant with access to the following tools. You may call one or more tools to assist with the user query.
+
+You are provided with function signatures within <tools></tools> XML tags:
+<tools>
+{"type": "function", "function": {"name": "get_current_time", "description": "Get the current date, day of the week and time.", "parameters": {"type": "object", "properties": {"timezone": {"type": "string", "description": "IANA time zone name such as Asia/Tokyo. Defaults to the PC's time zone."}}, "required": []}}}
+{"type": "function", "function": {"name": "calculate", "description": "Evaluate an arithmetic expression with + - * / and parentheses (e.g. (1+2)*3 & 7/2 < 4).", "parameters": {"type": "object", "properties": {"expression": {"type": "string", "description": "数式"}}, "required": ["expression"]}}}
+</tools>
+
+For each tool call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:
+<tool_call>
+{"name": <function-name>, "arguments": <args-json-object>}
+</tool_call>. If a tool does not exist in the provided list of tools, notify the user that you do not have the ability to fulfill the request.<|end_of_text|>
+<|start_of_role|>user<|end_of_role|>1+1 と 2*3<|end_of_text|>
+<|start_of_role|>assistant<|end_of_role|>まず1つ目。
+<tool_call>
+{"name": "calculate", "arguments": {"expression": "1+1"}}
+</tool_call><|end_of_text|>
+<|start_of_role|>user<|end_of_role|>
+<tool_response>
+2
+</tool_response><|end_of_text|>
+<|start_of_role|>assistant<|end_of_role|><tool_call>
+{"name": "calculate", "arguments": {"expression": "2*3"}}
+</tool_call><|end_of_text|>
+<|start_of_role|>user<|end_of_role|>
+<tool_response>
+エラー: 引数 expression がありません
+</tool_response><|end_of_text|>
+<|start_of_role|>assistant<|end_of_role|>

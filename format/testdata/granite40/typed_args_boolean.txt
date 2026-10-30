@@ -1,0 +1,20 @@
+<|start_of_role|>system<|end_of_role|>You are a helpful assistant with access to the following tools. You may call one or more tools to assist with the user query.
+
+You are provided with function signatures within <tools></tools> XML tags:
+<tools>
+{"type": "function", "function": {"name": "read_file", "description": "Read a text file in the work folder.", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "Path from the work folder."}, "offset": {"type": "integer", "description": "First line to read (1-based)."}, "paths": {"type": "array", "items": {"type": "string"}, "description": "More files to read."}, "ratio": {"type": "number"}, "options": {"type": "object"}, "all": {"type": ["boolean", "null"]}}, "required": ["path"]}}}
+</tools>
+
+For each tool call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:
+<tool_call>
+{"name": <function-name>, "arguments": <args-json-object>}
+</tool_call>. If a tool does not exist in the provided list of tools, notify the user that you do not have the ability to fulfill the request.<|end_of_text|>
+<|start_of_role|>user<|end_of_role|>全部読んで<|end_of_text|>
+<|start_of_role|>assistant<|end_of_role|><tool_call>
+{"name": "read_file", "arguments": {"path": "a.go", "all": true}}
+</tool_call><|end_of_text|>
+<|start_of_role|>user<|end_of_role|>
+<tool_response>
+package a
+</tool_response><|end_of_text|>
+<|start_of_role|>assistant<|end_of_role|>

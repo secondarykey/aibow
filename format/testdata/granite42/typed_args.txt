@@ -1,0 +1,77 @@
+<|im_start|>system
+# Tools
+
+You have access to the following functions:
+
+<tools>
+{"name": "read_file", "description": "Read a text file in the work folder.", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "Path from the work folder."}, "offset": {"type": "integer", "description": "First line to read (1-based)."}, "paths": {"type": "array", "items": {"type": "string"}, "description": "More files to read."}, "ratio": {"type": "number"}, "options": {"type": "object"}, "all": {"type": ["boolean", "null"]}}, "required": ["path"]}}
+</tools>
+
+If you choose to call a function ONLY reply in the following format with NO suffix:
+
+<tool_call>
+<function=example_function_name>
+<parameter=example_parameter_1>
+value_1
+</parameter>
+<parameter=example_parameter_2>
+This is the value for the second parameter
+that can span
+multiple lines
+</parameter>
+</function>
+</tool_call>
+
+<IMPORTANT>
+Reminder:
+- Function calls MUST follow the specified format: an inner <function=...></function> block must be nested within <tool_call></tool_call> XML tags
+- Required parameters MUST be specified
+- You may provide optional reasoning for your function call in natural language BEFORE the function call, but NOT after
+- If there is no function call available, answer the question like normal with your current knowledge and do not tell the user about function calls
+</IMPORTANT><|im_end|>
+<|im_start|>user
+a.go を 12 行目から読んで<|im_end|>
+<|im_start|>assistant
+<think>
+読む
+</think>
+<tool_call>
+<function=read_file>
+<parameter=path>
+a.go
+</parameter>
+<parameter=offset>
+12
+</parameter>
+<parameter=paths>
+["b.go", "c.go"]
+</parameter>
+<parameter=ratio>
+0.5
+</parameter>
+<parameter=options>
+{"sort": "name", "n": 2}
+</parameter>
+</function>
+</tool_call>
+<tool_call>
+<function=read_file>
+<parameter=path>
+d.go
+</parameter>
+<parameter=offset>
+ 5
+</parameter>
+</function>
+</tool_call>
+<|im_end|>
+<|im_start|>user
+<tool_response>
+12	package a
+</tool_response>
+<tool_response>
+エラー: 引数 offset: 整数で書いてください(" 5")
+</tool_response>
+<|im_end|>
+<|im_start|>assistant
+<think>

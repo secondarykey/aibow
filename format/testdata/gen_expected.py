@@ -1,10 +1,17 @@
 """GGUF の中のチャットテンプレートを jinja2 で実際に通し、format パッケージのテストの期待値を作る(書式によらない1つのスクリプト。0026)。
 
-    python format/testdata/gen_expected.py <書式の名前> <GGUF のパス>
+    python format/testdata/gen_expected.py <書式の名前> <GGUF のパス か テンプレートのファイル(.jinja)> [出力の名前]
 
     例: python format/testdata/gen_expected.py qwen35 ~/.ollama/models/blobs/sha256-<qwen3.5 の GGUF>
         python format/testdata/gen_expected.py gemma4 _cmd/aibow/models/gemma-4-E4B-it-Q4_K_M.gguf
         python format/testdata/gen_expected.py llama3 ~/.ollama/models/blobs/sha256-<llama3.2:3b の GGUF>
+        python format/testdata/gen_expected.py granite4 ~/.ollama/models/blobs/sha256-<granite4.1:3b の GGUF>
+        python format/testdata/gen_expected.py granite4 <granite-4.0-micro の chat_template.jinja> granite40
+        python format/testdata/gen_expected.py granite42 ~/.ollama/models/blobs/sha256-<granite4.2:3b の GGUF>
+
+- 出力の名前を書くと、<書式の名前>/ ではなく <出力の名前>/ に書く。同じ書式で版の違うテンプレート(Granite 4.0 と 4.1。0029 の決定事項 9)の期待値を分けて持つため
+- GGUF が手元に無い版は、Hugging Face のモデルの chat_template.jinja を渡す(種類と bos は確かめない。Granite 4.0 は
+  https://huggingface.co/ibm-granite/granite-4.0-micro の chat_template.jinja)
 
 - 書式の名前ごとに、GGUF の general.architecture と、要るならテンプレートの印を FORMATS に書く(aibow の format.ForModel と同じ決まり)。
   違う GGUF を渡したらエラーにする(llama の種類には Llama 3 の書式でないモデルもある。0027 の決定事項 2)
@@ -158,11 +165,14 @@ def split_for_llama3(messages):
     return out
 
 
-# FORMATS は書式の名前 → (GGUF の種類, テンプレートの印)。aibow の format.ForModel の表と同じ(0027 の決定事項 2)
+# FORMATS は書式の名前 → (GGUF の種類, テンプレートの印)。aibow の format.ForModel の表と同じ(0027 の決定事項 2)。
+# 印は、テンプレートにどれもあるときにその書式を選ぶ(Granite は 3.x・4.0/4.1・4.2 が同じ種類 granite で書式が違う。0029)
 FORMATS = {
-    "qwen35": ("qwen35", None),
-    "gemma4": ("gemma4", None),
-    "llama3": ("llama", "<|start_header_id|>"),
+    "qwen35": ("qwen35", ()),
+    "gemma4": ("gemma4", ()),
+    "llama3": ("llama", ("<|start_header_id|>",)),
+    "granite4": ("granite", ("<|start_of_role|>", "<tool_call>")),
+    "granite42": ("granite", ("<|im_start|>", "<function=")),
 }
 
 # TODAY は、テンプレートが今日の日付を使うとき(strftime_now)の日付。Go のテストも同じ日付を渡す
@@ -172,20 +182,27 @@ TODAY = datetime.date(2026, 10, 30)
 def main():
     for s in (sys.stdout, sys.stderr):
         s.reconfigure(encoding="utf-8")  # Windows でも日本語のメッセージが化けないように
-    if len(sys.argv) != 3:
+    if len(sys.argv) not in (3, 4):
         sys.exit(__doc__)
-    fmt, gguf = sys.argv[1], sys.argv[2]
-    meta = read_metadata(gguf, {"general.architecture", "tokenizer.chat_template", "tokenizer.ggml.add_bos_token",
-                                "tokenizer.ggml.bos_token_id", "tokenizer.ggml.tokens"})
+    fmt, src = sys.argv[1], sys.argv[2]
+    out_name = sys.argv[3] if len(sys.argv) == 4 else fmt
     if fmt not in FORMATS:
         sys.exit(f"知らない書式の名前です: {fmt}(使えるのは {', '.join(FORMATS)})")
-    arch, mark = FORMATS[fmt]
-    if meta.get("general.architecture") != arch:
-        sys.exit(f"GGUF の種類が {meta.get('general.architecture')} です({fmt} は {arch} の GGUF を渡してください)")
+    arch, marks = FORMATS[fmt]
+    if src.endswith(".jinja"):
+        # GGUF が手元に無い版のテンプレート(Hugging Face の chat_template.jinja)。種類と bos は確かめられない
+        with open(src, encoding="utf-8") as f:
+            meta = {"tokenizer.chat_template": f.read()}
+    else:
+        meta = read_metadata(src, {"general.architecture", "tokenizer.chat_template", "tokenizer.ggml.add_bos_token",
+                                   "tokenizer.ggml.bos_token_id", "tokenizer.ggml.tokens"})
+        if meta.get("general.architecture") != arch:
+            sys.exit(f"GGUF の種類が {meta.get('general.architecture')} です({fmt} は {arch} の GGUF を渡してください)")
     if "tokenizer.chat_template" not in meta:
         sys.exit("tokenizer.chat_template が見つかりません")
-    if mark and mark not in meta["tokenizer.chat_template"]:
-        sys.exit(f"この GGUF のテンプレートには {mark} がありません({fmt} の書式ではありません)")
+    for mark in marks:
+        if mark not in meta["tokenizer.chat_template"]:
+            sys.exit(f"このテンプレートには {mark} がありません({fmt} の書式ではありません)")
     bos = ""
     if "tokenizer.ggml.bos_token_id" in meta:
         bos = meta["tokenizer.ggml.tokens"][meta["tokenizer.ggml.bos_token_id"]]
@@ -200,7 +217,7 @@ def main():
     here = os.path.dirname(os.path.abspath(__file__))
     with open(os.path.join(here, "cases.json"), encoding="utf-8") as f:
         spec = json.load(f)
-    out_dir = os.path.join(here, fmt)
+    out_dir = os.path.join(here, out_name)
     os.makedirs(out_dir, exist_ok=True)
     print(f"{fmt}: bos {bos!r}(add_bos_token={add_bos})")
     for c in spec["cases"]:
@@ -227,7 +244,7 @@ def main():
             text = text[len(bos):]
         with open(os.path.join(out_dir, c["name"] + ".txt"), "w", encoding="utf-8", newline="") as f:
             f.write(text)
-        print("wrote", fmt + "/" + c["name"] + ".txt")
+        print("wrote", out_name + "/" + c["name"] + ".txt")
 
 
 if __name__ == "__main__":

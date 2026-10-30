@@ -1,0 +1,6 @@
+<|start_of_role|>system<|end_of_role|>  あなたは親切なアシスタントです。
+<|end_of_text|>
+<|start_of_role|>user<|end_of_role|>こんにちは
+
+<|end_of_text|>
+<|start_of_role|>assistant<|end_of_role|>
