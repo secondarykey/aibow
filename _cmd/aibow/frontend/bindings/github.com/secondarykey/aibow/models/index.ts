@@ -3,5 +3,6 @@
 
 export type {
     Entry,
-    Place
+    Place,
+    Sampling
 } from "./models.js";

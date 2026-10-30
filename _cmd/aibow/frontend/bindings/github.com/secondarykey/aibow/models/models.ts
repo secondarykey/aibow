@@ -42,6 +42,11 @@ export interface Entry {
     "arch"?: string;
 
     /**
+     * Sampling は GGUF が勧めるサンプリングの値(general.sampling.*。無ければ nil)。画面に出すだけで、生成には使わない(0026 の決定事項 37)
+     */
+    "sampling"?: Sampling | null;
+
+    /**
      * Disabled は、aibow-server の管理者が使えないようにしたモデルか(0018 の決定事項 13・17)。
      * 管理者に見せる一覧でだけ立つ(ほかの人の一覧には、使えないモデルは出さない)
      */
@@ -76,4 +81,13 @@ export interface Place {
      * Missing は、見つからない理由(見つかれば空)。足した置き場所が見つからないときは、そのモデルは一覧に出ない
      */
     "missing"?: string;
+}
+
+/**
+ * Sampling は GGUF が勧めるサンプリングの値(0026 の決定事項 37。画面に出すだけで、生成には使わない)。書いていない値は nil。
+ */
+export interface Sampling {
+    "temp"?: number | null;
+    "top_k"?: number | null;
+    "top_p"?: number | null;
 }

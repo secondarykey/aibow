@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -45,11 +47,38 @@ const (
 // ggufMaxString は、読む文字列の長さの上限(壊れたファイルで、巨大な長さを読んでメモリを確保しないため)
 const ggufMaxString = 1 << 20
 
+// Header は GGUF の先頭(メタデータの general.*)から読んだもの。重みは読まない。
+type Header struct {
+	Arch     string    // general.architecture(例: "qwen35"・"gemma4")
+	Sampling *Sampling // general.sampling.*(モデルを作った人が勧めるサンプリングの値。無ければ nil)
+}
+
+// Sampling は GGUF が勧めるサンプリングの値(0026 の決定事項 37。画面に出すだけで、生成には使わない)。書いていない値は nil。
+type Sampling struct {
+	Temp *float64 `json:"temp,omitempty"`
+	TopK *float64 `json:"top_k,omitempty"`
+	TopP *float64 `json:"top_p,omitempty"`
+}
+
 // Arch は GGUF ファイルの general.architecture(例: "qwen35"・"gemma4")を返す。重みは読まない。
 func Arch(path string) (string, error) {
-	f, err := os.Open(path)
+	h, err := ReadHeader(path)
 	if err != nil {
 		return "", err
+	}
+	if h.Arch == "" {
+		return "", fmt.Errorf("%s に general.architecture がありません", path)
+	}
+	return h.Arch, nil
+}
+
+// ReadHeader は GGUF の先頭の general.* を読む。general.* はメタデータの先頭にまとめて書かれる決まりなので、
+// それ以外のキー(語彙の大きな配列など)が出たところでやめる。
+func ReadHeader(path string) (Header, error) {
+	var h Header
+	f, err := os.Open(path)
+	if err != nil {
+		return h, err
 	}
 	defer f.Close()
 	r := bufio.NewReader(f)
@@ -61,31 +90,112 @@ func Arch(path string) (string, error) {
 		KVs     uint64
 	}
 	if err := binary.Read(r, binary.LittleEndian, &head); err != nil {
-		return "", fmt.Errorf("%s の GGUF の先頭を読めません: %w", path, err)
+		return h, fmt.Errorf("%s の GGUF の先頭を読めません: %w", path, err)
 	}
 	if string(head.Magic[:]) != "GGUF" {
-		return "", fmt.Errorf("%s は GGUF のファイルではありません", path)
+		return h, fmt.Errorf("%s は GGUF のファイルではありません", path)
 	}
 	if head.Version < 2 {
-		return "", fmt.Errorf("%s は古い GGUF(版 %d)です", path, head.Version)
+		return h, fmt.Errorf("%s は古い GGUF(版 %d)です", path, head.Version)
 	}
 	for range head.KVs {
 		key, err := readGGUFString(r)
 		if err != nil {
-			return "", fmt.Errorf("%s のメタデータを読めません: %w", path, err)
+			return h, fmt.Errorf("%s のメタデータを読めません: %w", path, err)
+		}
+		if !strings.HasPrefix(key, "general.") && h.Arch != "" {
+			return h, nil
 		}
 		var typ uint32
 		if err := binary.Read(r, binary.LittleEndian, &typ); err != nil {
-			return "", fmt.Errorf("%s のメタデータを読めません: %w", path, err)
+			return h, fmt.Errorf("%s のメタデータを読めません: %w", path, err)
 		}
-		if key == "general.architecture" && typ == ggufString {
-			return readGGUFString(r)
+		switch {
+		case key == "general.architecture" && typ == ggufString:
+			if h.Arch, err = readGGUFString(r); err != nil {
+				return h, err
+			}
+			continue
+		case strings.HasPrefix(key, "general.sampling."):
+			if v, ok, err := readGGUFNumber(r, typ); err != nil {
+				return h, err
+			} else if ok {
+				if h.Sampling == nil {
+					h.Sampling = &Sampling{}
+				}
+				switch strings.TrimPrefix(key, "general.sampling.") {
+				case "temp":
+					h.Sampling.Temp = &v
+				case "top_k":
+					h.Sampling.TopK = &v
+				case "top_p":
+					h.Sampling.TopP = &v
+				}
+				continue
+			}
 		}
 		if err := ggufSkip(r, typ); err != nil {
-			return "", fmt.Errorf("%s のメタデータ %s を読み飛ばせません: %w", path, key, err)
+			return h, fmt.Errorf("%s のメタデータ %s を読み飛ばせません: %w", path, key, err)
 		}
 	}
-	return "", fmt.Errorf("%s に general.architecture がありません", path)
+	return h, nil
+}
+
+// readGGUFNumber は数の型なら値を読んで ok を返す。数でなければ何も読まない(呼ぶ側が読み飛ばす)。
+func readGGUFNumber(r *bufio.Reader, typ uint32) (float64, bool, error) {
+	var v any
+	switch typ {
+	case ggufUint8:
+		v = new(uint8)
+	case ggufInt8:
+		v = new(int8)
+	case ggufUint16:
+		v = new(uint16)
+	case ggufInt16:
+		v = new(int16)
+	case ggufUint32:
+		v = new(uint32)
+	case ggufInt32:
+		v = new(int32)
+	case ggufFloat32:
+		v = new(float32)
+	case ggufUint64:
+		v = new(uint64)
+	case ggufInt64:
+		v = new(int64)
+	case ggufFloat64:
+		v = new(float64)
+	default:
+		return 0, false, nil
+	}
+	if err := binary.Read(r, binary.LittleEndian, v); err != nil {
+		return 0, false, err
+	}
+	var f float64
+	switch x := v.(type) {
+	case *uint8:
+		f = float64(*x)
+	case *int8:
+		f = float64(*x)
+	case *uint16:
+		f = float64(*x)
+	case *int16:
+		f = float64(*x)
+	case *uint32:
+		f = float64(*x)
+	case *int32:
+		f = float64(*x)
+	case *float32:
+		// float32 の 0.95 は float64 にすると 0.949999988… になるので、float32 の短い10進の表し方に戻す
+		f, _ = strconv.ParseFloat(strconv.FormatFloat(float64(*x), 'g', -1, 32), 64)
+	case *uint64:
+		f = float64(*x)
+	case *int64:
+		f = float64(*x)
+	case *float64:
+		f = *x
+	}
+	return f, true, nil
 }
 
 // readGGUFString は文字列を1つ読む。
@@ -156,28 +266,28 @@ func ggufSize(typ uint32) int {
 	return 0
 }
 
-// archCache は、ファイルごとの種類(一覧は画面がウィンドウに戻るたびに取り直すので、毎回ファイルを開かないように)。
+// headerCache は、ファイルごとの先頭(一覧は画面がウィンドウに戻るたびに取り直すので、毎回ファイルを開かないように)。
 // ファイルの大きさと更新の時刻が同じなら、同じファイルとみなす。
-var archCache sync.Map // パス → archCached
+var headerCache sync.Map // パス → headerCached
 
-type archCached struct {
+type headerCached struct {
 	size int64
 	mod  time.Time
-	arch string
+	h    Header
 }
 
-// cachedArch は Arch を覚えておいて返す。読めなければ空(一覧には出す。読み込むときに llama.cpp がエラーにする)。
-func cachedArch(path string) string {
+// cachedHeader は ReadHeader を覚えておいて返す。読めなければ空(一覧には出す。読み込むときに llama.cpp がエラーにする)。
+func cachedHeader(path string) Header {
 	st, err := os.Stat(path)
 	if err != nil {
-		return ""
+		return Header{}
 	}
-	if c, ok := archCache.Load(path); ok {
-		if c := c.(archCached); c.size == st.Size() && c.mod.Equal(st.ModTime()) {
-			return c.arch
+	if c, ok := headerCache.Load(path); ok {
+		if c := c.(headerCached); c.size == st.Size() && c.mod.Equal(st.ModTime()) {
+			return c.h
 		}
 	}
-	arch, _ := Arch(path)
-	archCache.Store(path, archCached{size: st.Size(), mod: st.ModTime(), arch: arch})
-	return arch
+	h, _ := ReadHeader(path)
+	headerCache.Store(path, headerCached{size: st.Size(), mod: st.ModTime(), h: h})
+	return h
 }

@@ -146,7 +146,7 @@ function ModelRow({ m, format, manage, onEnabled, loaded, layers, totalLayers, d
 }) {
   const [n, setN] = useState(layers);
   useEffect(() => setN(layers), [layers]);
-  const title = [m.id, m.place ? `置き場所: ${m.place}` : "", totalLayers ? `層の数: ${totalLayers}` : ""].filter(Boolean).join("\n");
+  const title = [m.id, m.place ? `置き場所: ${m.place}` : "", totalLayers ? `層の数: ${totalLayers}` : "", samplingText(m)].filter(Boolean).join("\n");
   return (
     <div className={"model-row" + (loaded ? " loaded" : "") + (m.disabled ? " model-disabled" : "")}>
       {manage && (
@@ -181,6 +181,18 @@ function ModelRow({ m, format, manage, onEnabled, loaded, layers, totalLayers, d
   );
 }
 
+// samplingText は GGUF が勧めるサンプリングの値(general.sampling.*)。表示だけで、生成には使わない(0026 の決定事項 37)
+function samplingText(m: ModelEntry): string {
+  const s = m.sampling;
+  if (!s) return "";
+  const parts = [
+    s.temp != null ? `temperature ${s.temp}` : "",
+    s.top_k != null ? `top_k ${s.top_k}` : "",
+    s.top_p != null ? `top_p ${s.top_p}` : "",
+  ].filter(Boolean);
+  return parts.length ? `GGUF が勧めるサンプリング: ${parts.join(" / ")}` : "";
+}
+
 // FormatCell はモデルの書式の名前(どの書式で動くかを一覧で見えるように。0026 の決定事項 17)。
 // 未対応の種類のモデルは、種類の名前と「未対応」を出す(読み込めても送信できない)
 function FormatCell({ m, format }: { m: ModelEntry; format?: string }) {
@@ -199,7 +211,7 @@ function RemoteModelTable({ models }: { models: Models }) {
       <span className="model-table-head num">大きさ</span>
       {models.models.map(m => (
         <div key={m.id} className={"model-row" + (current?.id === m.id ? " loaded" : "")}>
-          <span className="model-name" title={m.name}>
+          <span className="model-name" title={[m.name, samplingText(m)].filter(Boolean).join("\n")}>
             {current?.id === m.id && <LuCircleCheck className="model-loaded" aria-label="読み込み中" />}
             {m.name}
           </span>

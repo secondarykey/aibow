@@ -54,3 +54,41 @@ func TestArch(t *testing.T) {
 		t.Error("GGUF でないファイルはエラーのはず")
 	}
 }
+
+// GGUF が勧めるサンプリングの値(general.sampling.*)も読む。general.* の後ろ(語彙など)は読まない(0026 の決定事項 37)
+func TestReadHeaderSampling(t *testing.T) {
+	var b bytes.Buffer
+	w := func(v any) { binary.Write(&b, binary.LittleEndian, v) }
+	str := func(s string) { w(uint64(len(s))); b.WriteString(s) }
+	b.WriteString("GGUF")
+	w(uint32(3))
+	w(uint64(0))
+	w(uint64(5))
+	str("general.architecture")
+	w(uint32(ggufString))
+	str("gemma4")
+	str("general.sampling.temp")
+	w(uint32(ggufFloat32))
+	w(float32(1))
+	str("general.sampling.top_k")
+	w(uint32(ggufInt32))
+	w(int32(64))
+	str("tokenizer.ggml.model")
+	w(uint32(ggufString))
+	str("gemma4")
+	str("general.sampling.top_p") // general.* の後ろにあるものは読まない
+	w(uint32(ggufFloat32))
+	w(float32(0.95))
+
+	path := filepath.Join(t.TempDir(), "m.gguf")
+	if err := os.WriteFile(path, b.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	h, err := ReadHeader(path)
+	if err != nil || h.Arch != "gemma4" || h.Sampling == nil {
+		t.Fatalf("%+v %v", h, err)
+	}
+	if s := h.Sampling; s.Temp == nil || *s.Temp != 1 || s.TopK == nil || *s.TopK != 64 || s.TopP != nil {
+		t.Errorf("サンプリング: %+v", *s)
+	}
+}

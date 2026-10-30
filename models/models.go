@@ -37,6 +37,8 @@ type Entry struct {
 	// Arch はモデルの種類(GGUF の general.architecture。例: "qwen35"・"gemma4")。読めなければ空。
 	// 使う側が書式の名前に直して画面に出す(models は書式を知らない。0026 の決定事項 17)
 	Arch string `json:"arch,omitempty"`
+	// Sampling は GGUF が勧めるサンプリングの値(general.sampling.*。無ければ nil)。画面に出すだけで、生成には使わない(0026 の決定事項 37)
+	Sampling *Sampling `json:"sampling,omitempty"`
 	// Disabled は、aibow-server の管理者が使えないようにしたモデルか(0018 の決定事項 13・17)。
 	// 管理者に見せる一覧でだけ立つ(ほかの人の一覧には、使えないモデルは出さない)
 	Disabled bool `json:"disabled,omitempty"`
@@ -202,7 +204,8 @@ func (c Catalog) List() []Entry {
 	}
 	list, _ = dedup(list)
 	for i := range list {
-		list[i].Arch = cachedArch(list[i].Path)
+		h := cachedHeader(list[i].Path)
+		list[i].Arch, list[i].Sampling = h.Arch, h.Sampling
 	}
 	return list
 }
