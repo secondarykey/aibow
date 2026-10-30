@@ -47,7 +47,9 @@ func Open(path string) (*SQLite, error) {
 	//   foreign_keys(1) : REFERENCES を効かせる。SQLite は既定で無効なので、
 	//                     これが無いと ON DELETE CASCADE(会話を消すと発言も消える)が動かない
 	//   busy_timeout    : 別の接続が書き込み中なら、エラーにせず最大 5 秒待つ
-	db, err := sql.Open("sqlite", path+"?_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)")
+	//   secure_delete(1): 消した行の場所をゼロで上書きする。SQLite は既定では行を消しても場所に「空き」の印を付けるだけで、
+	//                     読み込んだ画像やファイル(0030)の中身が、上書きされるか VACUUM するまで DB ファイルの中に残るため
+	db, err := sql.Open("sqlite", path+"?_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)&_pragma=secure_delete(1)")
 	if err != nil {
 		return nil, fmt.Errorf("DB を開けません(%s): %w", path, err)
 	}

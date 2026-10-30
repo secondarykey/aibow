@@ -47,6 +47,10 @@
 - 持ち主:会話・発言・要約・プロファイル・人ごとの設定は、`ctx` の利用者(`aibow.UserOf`)の行だけを読み書きする。ほかの人の行は無いものとして扱う(`ErrNotFound` など)。
   利用者の無い `ctx` は `aibow.ErrNoUser` で断る。`OneUser` を呼んだ DB(デスクトップのアプリの aibow.db)だけは、`aibow.LocalUser` のものとして扱う。
   アプリ全体の設定(`app_settings`)は利用者によらない。仕組みは [_docs/conversations.md](../_docs/conversations.md) の「持ち主」
+- 接続の設定(`Open` の `_pragma`):`foreign_keys(1)`(`ON DELETE CASCADE` を効かせる)・`busy_timeout(5000)`・`secure_delete(1)`。
+  `secure_delete` は、消した行の場所をゼロで上書きする。SQLite の既定では、行を消しても場所に「空き」の印を付けるだけで、
+  中身が上書きされるか VACUUM するまで DB ファイルに残る(読み込んだ画像のバイト列が残ることを確かめた。0030)。
+  会話を消すと、発言・要約・読み込んだファイルの中身まで DB ファイルから消える(`TestDeleteConversationErasesFiles`)
 - ID(`uuid.NewV7()`)は TEXT で入れる。発言の順番は ID の並びで決める(順番用の列は持たない)
 - DB ファイルの場所はこのパッケージでは決めない。`_cmd/aibow/config.go` が `AIBOW_DB`(既定は `%APPDATA%\aibow\aibow.db`)から決めて `Open` に渡す
 - 試すときは `AIBOW_DB` を一時フォルダのファイルにする(ユーザーの DB に試しの会話を混ぜない)

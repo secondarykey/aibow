@@ -1,9 +1,11 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -711,5 +713,34 @@ func TestMessageFiles(t *testing.T) {
 	}
 	if n := count(); n != 0 {
 		t.Errorf("発言を消してもファイルが残った: %d", n)
+	}
+}
+
+// 会話を消すと、読み込んだ画像の行が消え(会話 → 発言 → ファイルの ON DELETE CASCADE)、中身のバイト列も DB ファイルに残らない(secure_delete。0030)
+func TestDeleteConversationErasesFiles(t *testing.T) {
+	s, path := openTemp(t)
+	c := newConv(t, s, time.Now())
+	marker := "SECRET-IMAGE-BYTES-0030"
+	img, err := aibow.ReadFile("a.png", []byte("\x89PNG\r\n\x1a\n"+strings.Repeat(marker, 2000)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AddMessage(ctx, aibow.StoredMessage{ID: uuid.NewV7(), ConversationID: c.ID, Role: "user", Files: []aibow.File{img}, CreatedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteConversation(ctx, c.ID); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err := s.db.QueryRow("SELECT COUNT(*) FROM files").Scan(&n); err != nil || n != 0 {
+		t.Errorf("ファイルの行が残った: %d %v", n, err)
+	}
+	s.Close()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if k := bytes.Count(raw, []byte(marker)); k != 0 {
+		t.Errorf("消した画像のバイト列が DB ファイルに %d か所残っている", k)
 	}
 }
