@@ -28,7 +28,12 @@ type folderWeb struct {
 
 func newFolderWeb(t *testing.T) *folderWeb {
 	t.Helper()
-	dir := t.TempDir()
+	// フォルダの名前は、ほかの値(時刻・ID)にたまたま出てこないものにする。パスを画面に見せていないかを、名前が返事に無いことで確かめるため
+	// (t.TempDir の名前は「001」などで、時刻の「39.001909」にたまたま入ってテストが落ちることがあった)
+	dir := filepath.Join(t.TempDir(), "aibow-shared-docs")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	os.WriteFile(filepath.Join(dir, "README.md"), []byte("# 仕様の置き場\n合言葉は「みかん」\n"), 0o644)
 	w := &folderWeb{testWeb: newTestWeb(t, func(o *Options) { o.Folders = map[string]string{"docs": dir} }), dir: dir}
 	now := time.Now()
