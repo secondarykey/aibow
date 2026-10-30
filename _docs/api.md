@@ -104,7 +104,7 @@ data: [DONE]
 
 | 口 | 本文 → 返事 | 順番待ち | 元にしたもの |
 |---|---|---|---|
-| `GET /models` | → `{"object":"list","data":[{"id","name","source","size_gb","origin","place","arch","status":{"value":"loaded"\|"loading"\|"unloaded"},"n_gpu_layers"}],"current":<読み込み中のモデルの情報 か null>,"loading":<入れ替えている先のモデルの ID。入れ替え中だけ>,"n_ctx","gpu"}` | 待たない | llama.cpp の router の `GET /models`(`status.value`) |
+| `GET /models` | → `{"object":"list","data":[{"id","name","source","size_gb","origin","place","arch","format","no_thinking","status":{"value":"loaded"\|"loading"\|"unloaded"},"n_gpu_layers"}],"current":<読み込み中のモデルの情報 か null>,"loading":<入れ替えている先のモデルの ID。入れ替え中だけ>,"n_ctx","gpu"}` | 待たない | llama.cpp の router の `GET /models`(`status.value`) |
 | `POST /models/load` | `{"model"}` → `{"success":true,"model":<読み込んだモデルの情報>}` | 待つ | llama.cpp の router の `POST /models/load` |
 | `POST /models/unload` | `{"model"}` → `{"success":true,"model":null}`(VRAM を空ける。8-4) | 待つ | llama.cpp の router の `POST /models/unload` |
 | `POST /apply-template` | チャットと同じ本文 → `{"prompt"}`(書式を当てた文字列) | 待たない | llama.cpp の `POST /apply-template` |
@@ -120,6 +120,7 @@ data: [DONE]
 - `/aibow/gpu-layers` の `model` を書かなければ読み込み中のモデル。読み込み中のモデルなら読み直し、読み直せたら覚える。読み込んでいないモデルは覚えるだけ(次に読み込むときから効く)。
   覚える場所はサーバーの PC の `server-models.json`(GPU の層数は「その PC の人が決めること」なので。アプリの DB の `model_gpu_layers` とは別)
 - 読み込み・読み直しは順番待ちの席の中で行う(生成と取り合わない)。数えるのと書式を当てるのは、生成中でもできる(`engine` の `vocabMu`)
+- `arch` は GGUF の種類、`format` はそのモデルを動かす書式の名前(対応していなければ省く)、`no_thinking` は思考しない書式か(Llama 3)。書式はサーバーが GGUF のチャットテンプレートも見て選ぶ(`api.FillFormat`。つないだ画面のアプリはテンプレートを持っていないので、この名前を使う。0027)
 - `origin` はモデルがどこから来たか(`models`(models フォルダ)・`ollama`・`added`(画面で足した置き場所。`place` にその置き場所))。同じファイルが2か所から見つかったら、先のほうだけを出す
 - `/models/unload` は、`model` が空か読み込み中のモデルなら降ろす。読み込んでいない別のモデルなら何もしない(aibow は1つしか読み込まないため)。
   降ろしたあとのチャットは、`model` のモデルを読み込んでから生成する(`model` を書いていなければ「モデルが読み込まれていません」)

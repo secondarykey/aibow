@@ -10,7 +10,8 @@
 | `format/format.go` | `format` パッケージ。書式の interface(`Format` / `OutputParser`)と、会話の仕組みとエンジンの間で受け渡す形(`Message` / `Prompt` / `Output` / `ToolCall`)。モデルの種類で書式を選ぶ表(`format.For`) |
 | `format/qwen35.go` | Qwen3.5 の書式。プロンプトの組み立て(ツールの説明・呼び出し・結果・ループ中の思考)と、出力の振り分け(思考・答え・`<tool_call>`) |
 | `format/gemma4.go` | Gemma 4 の書式(0026)。プロンプトの組み立て(思考の印・独自の書き方のツールの説明と呼び出し・model の発言の中のツールの結果)と、出力の振り分け(`<|channel>thought`・答え・`<|tool_call>`) |
-| `format/parts.go` | 2つの書式で使う部品(タグの書きかけを持っておく `partialSuffix` / `partialSuffixAny`・コードブロックの中か `insideCodeFence`・崩れた呼び出し `brokenCall`) |
+| `format/llama3.go` | Llama 3 の書式(0027)。プロンプトの組み立て(日付・最初の発言の頭のツールの説明・JSON の呼び出し・ipython の結果・呼び出しを1つずつに分ける)と、返事の全体が JSON なら呼び出しとして読む読み取り |
+| `format/parts.go` | 2つ以上の書式で使う部品(タグの書きかけを持っておく `partialSuffix` / `partialSuffixAny`・コードブロックの中か `insideCodeFence`・崩れた呼び出し `brokenCall`) |
 | `tool/tool.go` | `tool` パッケージ。ツールの interface(`Tool`)・定義(`Def`)・呼び出し(`Call`: 名前と引数だけ)・引数(`Arg`)。引数を JSON Schema と照らし合わせる `CheckArgs` |
 | `tool/arg.go` | 引数の値の持ち方(書式によらない形。下の「引数の値の持ち方」)と、書式・JSON との行き来(`ArgFromText` / `ArgText`・`ArgFromJSON` / `ArgJSON`・`ArgsFromJSON` / `ArgsJSON`・`ArgTypes`) |
 | `tool/time.go` / `tool/calc.go` | 組み込みのツール `get_current_time` / `calculate` |
@@ -22,7 +23,7 @@
 | `internal/proc/` | 子プロセスまでまとめて止める仕組み(Windows はジョブオブジェクト、それ以外はプロセスグループ)。`run_command` と MCP のサーバーで使う(0006 で `tool` から移した) |
 | `tool/confirm.go` | 実行前に確認が要るツールの印(`Confirmable`)と、確認の画面に出す内容(`Preview`: パス・上書きか・差分)。差分は `github.com/pkg/diff` |
 | `agent.go` | エージェントループ(`runTurn`)とツールの実行(10 秒の上限・20 回の上限・停止・会話の上限に入らない結果・実行前の確認の待ち) |
-| `format/qwen35_test.go` / `format/gemma4_test.go` | 書式のテスト。プロンプトは公式テンプレートを jinja2 で通した期待値と1文字まで比べる(`testPromptMatchesTemplate`。書式によらない。ツールの結果の名前が無いときも比べる) |
+| `format/qwen35_test.go` / `format/gemma4_test.go` / `format/llama3_test.go` | 書式のテスト。プロンプトは公式テンプレートを jinja2 で通した期待値と1文字まで比べる(`testPromptMatchesTemplate`。書式によらない。ツールの結果の名前が無いときも比べる) |
 | `format/testdata/` | 書式のテストの会話(`cases.json`。書式をまたいで共通)と、期待値を作るスクリプト(`gen_expected.py`)。期待値は書式ごとのフォルダ(`qwen35/*.txt`・`gemma4/*.txt`) |
 | `tool/tool_test.go` / `tool/files_test.go` / `tool/write_test.go` / `agent_test.go` / `workdir_test.go` / `confirm_test.go` | ツール(外に出られないこと・読み方の切り方を含む)とループ・作業フォルダのテスト(偽物の生成器を使う。モデル不要) |
 | `format/format_test.go` | `ToolCall` の JSON が切り出す前と同じ平らな形か(保存済みの会話を読めるか)のテスト |
@@ -38,9 +39,9 @@ Conversations ← Output(思考・答え・ToolCall)            ← Engine ← F
 ```
 
 - 会話の仕組み(`conversation.go` / `compact.go` / `agent.go`)は `<|im_start|>` や `<think>` や `<tool_call>` を一切扱わない
-- エンジンはモデルを読み込んだときに GGUF の `general.architecture` で書式を選ぶ(Qwen3.5 は `qwen35`、Gemma 4 は `gemma4`)。
+- エンジンはモデルを読み込んだときに GGUF の `general.architecture` と、要るならチャットテンプレートの印で書式を選ぶ(`format.ForModel`。Qwen3.5 は `qwen35`、Gemma 4 は `gemma4`、Llama 3 は `llama` でテンプレートに `<|start_header_id|>` があるもの。0027)。
   未対応の種類なら `ModelInfo.Format` が空で、生成とトークン数えがエラーになる(ログとトーストでも伝える。文には対応している書式の一覧を出す)
-- 実装は Qwen3.5 と Gemma 4(0026)。GGUF の中の Jinja を実行する汎用の実装は作らない(書式は自分で書く方針)
+- 実装は Qwen3.5・Gemma 4(0026)・Llama 3(0027)。GGUF の中の Jinja を実行する汎用の実装は作らない(書式は自分で書く方針)
 - `Format.NewParser` は `BuildPrompt` に渡したのと同じ `Prompt` を受け取る。ツールの定義(引数の型)と、プロンプトがどこで終わったか
   (Gemma 4 は、ツールの結果の後ろで思考 ON なら `<|channel>thought` まで書いてあるので、思考の途中から読み始める)を見るため
 - ツールの結果(role `tool`)は `Message.Name` に元の呼び出しの名前を持つ(会話の仕組みが `ToolResult.Call.Name` から入れる。Gemma 4 が結果に名前を書くため)。
@@ -76,6 +77,23 @@ Conversations ← Output(思考・答え・ToolCall)            ← Engine ← F
   `<|tool_response>` が出たら止める(公式の停止シーケンス。aibow が結果を続けて書く。決定事項 7)。思考の後ろの改行1つは思考に入れない(書き戻すと同じになる)
 - 呼び出しの値は JSON の値にしてから `tool.ArgFromJSON` で `tool.Arg` の形にする。配列・辞書は Python の `json.dumps` と同じ見た目(`["b.go", "c.go"]`)の JSON にするので、モデルを Qwen3.5 に替えてもテンプレートの `tojson` と同じ文字で書ける
 - 書式が崩れた呼び出し(閉じていない・`call:` が無い・文字列を囲んでいない・JSON で書いた など)は、`Raw` と `Error`(正しい書き方の例つき)を持たせる
+
+### Llama 3 の書式(0027)
+
+Ollama の `llama3.2:3b` の GGUF のテンプレート(Meta のもの。Unsloth の写しと1文字も違わない)を、aibow が渡す会話の形で通る部分だけ書き直した。
+
+- **書式の選び方**:種類が `llama` で、テンプレートに `<|start_header_id|>` があるときだけ(`format.ForModel`)。`llama` の種類には、Llama 3 の書式でないモデル(Hermes 3 の ChatML)もあるため。
+  テンプレートが `strftime_now` を使えば今日の日付(3.2)、使わなければ `26 Jul 2024`(3.1)をシステムの発言に書く
+- 会話の区切りは `<|start_header_id|>role<|end_header_id|>\n\n … <|eot_id|>`。システムの発言はいつも作り、`Cutting Knowledge Date: December 2023` と `Today Date: 日付` を書く(ツールがあれば先頭に `Environment: ipython`)。bos は書かない
+- **思考が無い**。思考の ON / OFF は無視する。思考しない書式は `NoThinking()` を持ち(`format.Thinks`)、一覧の `models.Entry` の `no_thinking` で画面に伝える。画面の「思考する」は押せなくなる
+- ツールの説明は、テンプレートの既定どおり**最初の発言の頭**に英語の指示文と、ツールごとに字下げ 4 の JSON(`pyJSONIndent`。Python の `json.dumps(indent=4)` の見た目)。
+  発言が無いとき(ツールの説明だけを数える)は、テンプレートのもう一つの書き方でシステムに書く
+- **呼び出しに印が無い**。返事の全体を `{"name": "名前", "parameters": {…}}` にして呼ぶ。1回の返事に呼び出しは1つ、呼び出しのある返事の答えの文は書かない。
+  aibow の会話はそうとは限らない(ほかのモデルの会話を引き継いだ)ので、答えの文は別の返事にし、呼び出しは「呼び出し → 結果」の組1つずつに並べ直す(`splitForLlama3`。0027 の決定事項 7・8)
+- **ツールの結果は ipython の役の発言**で、名前は書かない。テンプレートは結果の文字を JSON の文字列にして書く(`"7006652"`。Jinja では文字列も繰り返せるものなので tojson を通る)
+- 呼び出しの後ろは `<|eot_id|>`(発言の終わり。EOG)なので、書式が止める印は要らない
+- 読み取り:返事の頭(空白を除く)が `{` か `<|python_tag|>` なら画面に出さずに持ち、終わってから JSON として読む。`name` と、`parameters` か `arguments` があれば呼び出し(`;` で続く2つ目以降も読む)。
+  `"name"` を含むのに読めなければ崩れた呼び出し、それ以外(答えとして JSON を書いた)は答えとして出す
 
 ### 引数の値の持ち方(0026 の段1)
 
