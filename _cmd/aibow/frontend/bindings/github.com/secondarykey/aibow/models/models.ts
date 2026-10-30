@@ -48,6 +48,11 @@ export interface Entry {
     "format"?: string;
 
     /**
+     * NoThinking は、書式が思考しないモデルか(Llama 3。画面は「思考する」を押せなくする。0027 の決定事項 4)。Format と同じく使う側が入れる
+     */
+    "no_thinking"?: boolean;
+
+    /**
      * Sampling は GGUF が勧めるサンプリングの値(general.sampling.*。無ければ nil)。画面に出すだけで、生成には使わない(0026 の決定事項 37)
      */
     "sampling"?: Sampling | null;

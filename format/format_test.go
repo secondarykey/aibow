@@ -61,20 +61,20 @@ func TestUnsupportedIs(t *testing.T) {
 func TestForModelTemplateMark(t *testing.T) {
 	saved := formats
 	t.Cleanup(func() { formats = saved })
-	formats = append(slices.Clone(saved), formatEntry{arch: "llama", mark: "<|start_header_id|>", make: func() Format { return gemma4{} }})
+	formats = append(slices.Clone(saved), formatEntry{arch: "testllama", mark: "<|start_header_id|>", make: func(string) Format { return gemma4{} }})
 
-	if f := ForModel("llama", "{{ '<|start_header_id|>' + role }}"); f == nil {
+	if f := ForModel("testllama", "{{ '<|start_header_id|>' + role }}"); f == nil {
 		t.Error("印のあるテンプレートなら選ぶ")
 	}
 	for name, tmpl := range map[string]string{"ChatML(Hermes 3 など)": "{{ '<|im_start|>' + role }}", "テンプレートが無い": ""} {
-		if f := ForModel("llama", tmpl); f != nil {
+		if f := ForModel("testllama", tmpl); f != nil {
 			t.Errorf("%s: 選ばないはず(%s)", name, f.Name())
 		}
 	}
 	if f := ForModel("qwen35", ""); f == nil || f.Name() != "Qwen3.5" {
 		t.Error("印の要らない書式は、テンプレートによらず選ぶ")
 	}
-	if s := Supported(); !strings.Contains(s, "llama。テンプレートに <|start_header_id|> があるもの") {
+	if s := Supported(); !strings.Contains(s, "testllama。テンプレートに <|start_header_id|> があるもの") {
 		t.Errorf("対応している書式の文: %s", s)
 	}
 }

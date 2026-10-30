@@ -16,7 +16,7 @@ package format
 //
 // 会話の仕組み(ルートの aibow)は、<|im_start|> や <think> や <tool_call> のような書式の文字列を一切扱わない。
 // このパッケージは llama.cpp も会話の保存も知らない(使うのは tool だけ)。書式だけを取り出して試せる。
-// 今ある実装は Qwen3.5 用(qwen35.go)と Gemma 4 用(gemma4.go)。2つで使う部品は parts.go。
+// 今ある実装は Qwen3.5 用(qwen35.go)・Gemma 4 用(gemma4.go)・Llama 3 用(llama3.go)。2つ以上で使う部品は parts.go。
 
 import (
 	"errors"
@@ -110,20 +110,29 @@ type OutputParser interface {
 type formatEntry struct {
 	arch string
 	mark string // テンプレートの印(空なら種類だけで選ぶ)
-	make func() Format
+	// make は書式を作る。template は GGUF のチャットテンプレート(Llama 3 は、テンプレートが今日の日付を使うかで日付の書き方が変わる)
+	make func(template string) Format
 }
 
 // formats は書式の表。上から順に見て、最初に合ったものを使う。
 var formats = []formatEntry{
-	{arch: "qwen35", make: func() Format { return qwen35{} }},
-	{arch: "gemma4", make: func() Format { return gemma4{} }},
+	{arch: "qwen35", make: func(string) Format { return qwen35{} }},
+	{arch: "gemma4", make: func(string) Format { return gemma4{} }},
+	{arch: "llama", mark: "<|start_header_id|>", make: newLlama3},
+}
+
+// Thinks は、書式が思考に対応しているか。Llama 3 は思考しないので、思考の ON / OFF が効かない(画面は「思考する」を押せなくする。0027 の決定事項 4)。
+// 思考しない書式は NoThinking() bool を持つ(多くの書式は思考するので、持たない書式は思考するとみなす)。
+func Thinks(f Format) bool {
+	n, ok := f.(interface{ NoThinking() bool })
+	return !ok || !n.NoThinking()
 }
 
 // ForModel は、モデルの種類とチャットテンプレート(GGUF の tokenizer.chat_template)に合う書式を返す。未対応なら nil。
 func ForModel(arch, template string) Format {
 	for _, e := range formats {
 		if e.arch == arch && (e.mark == "" || strings.Contains(template, e.mark)) {
-			return e.make()
+			return e.make(template)
 		}
 	}
 	return nil
@@ -159,7 +168,7 @@ func Supported() string {
 		if e.mark != "" {
 			cond += "。テンプレートに " + e.mark + " があるもの"
 		}
-		names = append(names, e.make().Name()+"("+cond+")")
+		names = append(names, e.make("").Name()+"("+cond+")")
 	}
 	slices.Sort(names)
 	return strings.Join(names, "・")

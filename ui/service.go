@@ -303,7 +303,7 @@ func (s *Service) Models(ctx context.Context) ModelsResult {
 	r.Models, r.Current, r.GPU, r.GPULayers, r.Manage = l.models, l.current, l.gpu, l.layers, l.manage
 	// どの書式で動くかを一覧で見えるようにする(0026 の決定事項 17)。aibow-server から受け取った一覧には、サーバーが選んだ名前が入っている
 	for i := range r.Models {
-		r.Models[i].Format = api.FormatName(r.Models[i])
+		api.FillFormat(&r.Models[i])
 	}
 	r.LastModel = s.lastModel()
 	if name := s.loading.Load(); name != nil {

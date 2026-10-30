@@ -43,6 +43,8 @@ type Entry struct {
 	// Format は、このモデルを動かす書式の名前(Qwen3.5・Gemma 4 など。対応していなければ空)。models は書式を知らないので、
 	// ファイルを持っている側(画面向けの ui・aibow-server の api)が format.ForModel で選んで入れる(0026 の決定事項 17・0027 の決定事項 2)
 	Format string `json:"format,omitempty"`
+	// NoThinking は、書式が思考しないモデルか(Llama 3。画面は「思考する」を押せなくする。0027 の決定事項 4)。Format と同じく使う側が入れる
+	NoThinking bool `json:"no_thinking,omitempty"`
 	// Sampling は GGUF が勧めるサンプリングの値(general.sampling.*。無ければ nil)。画面に出すだけで、生成には使わない(0026 の決定事項 37)
 	Sampling *Sampling `json:"sampling,omitempty"`
 	// Disabled は、aibow-server の管理者が使えないようにしたモデルか(0018 の決定事項 13・17)。

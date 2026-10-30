@@ -114,7 +114,7 @@ func (s *Server) handleServerModels(w http.ResponseWriter, r *http.Request) {
 		case out.Loading == m.ID:
 			st = "loading"
 		}
-		m.Format = FormatName(m) // 書式はファイルを持っているサーバーが選ぶ(つないだ画面のアプリはテンプレートを持っていない。0027 の決定事項 2)
+		FillFormat(&m) // 書式はファイルを持っているサーバーが選ぶ(つないだ画面のアプリはテンプレートを持っていない。0027 の決定事項 2)
 		out.Data = append(out.Data, serverModel{Entry: m, Status: modelStatus{Value: st}, NGPULayers: s.models.GPULayers(m.ID)})
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -295,15 +295,14 @@ func (s *Server) modelObjects() []modelObject {
 	return data
 }
 
-// FormatName は、一覧のモデルを動かす書式の名前(対応していなければ空)。すでに入っていればそれ(aibow-server から受け取った一覧)、
-// 無ければ種類とチャットテンプレートで選ぶ(format.ForModel。0026 の決定事項 17・0027 の決定事項 2)。
-// 画面向けの ui も同じ決まりで選ぶので、ここに1つだけ置く。
-func FormatName(m models.Entry) string {
+// FillFormat は、一覧のモデルを動かす書式の名前(Format)と、思考しない書式か(NoThinking)を入れる。対応していなければ空のまま。
+// すでに名前が入っていればそのまま(aibow-server から受け取った一覧)、無ければ種類とチャットテンプレートで選ぶ
+// (format.ForModel。0026 の決定事項 17・0027 の決定事項 2・4)。画面向けの ui も同じ決まりで選ぶので、ここに1つだけ置く。
+func FillFormat(m *models.Entry) {
 	if m.Format != "" {
-		return m.Format
+		return
 	}
 	if f := format.ForModel(m.Arch, m.ChatTemplate); f != nil {
-		return f.Name()
+		m.Format, m.NoThinking = f.Name(), !format.Thinks(f)
 	}
-	return ""
 }

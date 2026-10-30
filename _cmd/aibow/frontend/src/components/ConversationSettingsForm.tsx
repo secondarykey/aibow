@@ -23,6 +23,9 @@ export function ConversationSettingsForm({ settings, models, lock, onChange }: {
   onChange(patch: Partial<ConversationSettings>): void;
 }) {
   const off = (item: string) => locked(lock, item);
+  // 会話のモデルが思考しない書式(Llama 3)なら、その書式の名前。思考の ON / OFF が効かないので押せなくする(0027 の決定事項 4)
+  const model = models.find(m => m.id === settings.model);
+  const noThink = model?.no_thinking ? model.format || "このモデル" : "";
   return (
     <>
       <ModelSelect value={settings.model} models={models} lock={lock} onChange={model => onChange({ model })} />
@@ -68,8 +71,8 @@ export function ConversationSettingsForm({ settings, models, lock, onChange }: {
       />
 
       <div className="check-row">
-        <label className="check">
-          <input type="checkbox" checked={settings.think} disabled={off(FIX.think)} onChange={e => onChange({ think: e.target.checked })} />
+        <label className="check" title={noThink ? `${noThink} の書式は思考しません(思考の ON / OFF は効きません)` : undefined}>
+          <input type="checkbox" checked={settings.think && !noThink} disabled={off(FIX.think) || !!noThink} onChange={e => onChange({ think: e.target.checked })} />
           思考する
         </label>
         <FixMark item={FIX.think} lock={lock} />
