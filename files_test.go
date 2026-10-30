@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"image"
+	"image/png"
 	"strings"
 	"testing"
 	"unicode/utf16"
@@ -156,7 +158,7 @@ func TestCheckFile(t *testing.T) {
 	c := mustCreate(t, cs)
 	setLimits(t, cs, &c, 200, 100) // fakeGen は1文字を1トークンと数える
 
-	got, err := cs.CheckFile(ctx, c.ID, nil, "a.txt", []byte("短い"), nil)
+	got, err := cs.CheckFile(ctx, c.ID, nil, "a.txt", []byte("短い"), 0, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,28 +168,28 @@ func TestCheckFile(t *testing.T) {
 		t.Errorf("トークン数 %d(期待: %d)%+v", got.Tokens, want, got.File)
 	}
 
-	_, err = cs.CheckFile(ctx, c.ID, nil, "big.txt", []byte(strings.Repeat("長", 300)), nil)
+	_, err = cs.CheckFile(ctx, c.ID, nil, "big.txt", []byte(strings.Repeat("長", 300)), 0, 0)
 	if err == nil || !strings.Contains(err.Error(), "トークンで、会話の上限(200 トークン)の残りは") {
 		t.Errorf("入らないファイル: %v", err)
 	}
 
 	// 付けるつもりのファイルも一緒に数える
 	half := []byte(strings.Repeat("半", 70))
-	first, err := cs.CheckFile(ctx, c.ID, nil, "1.txt", half, nil)
+	first, err := cs.CheckFile(ctx, c.ID, nil, "1.txt", half, 0, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := cs.CheckFile(ctx, c.ID, nil, "2.txt", half, []File{first.File}); err == nil {
+	if _, err := cs.CheckFile(ctx, c.ID, nil, "2.txt", half, 1, first.Tokens); err == nil {
 		t.Error("付けるつもりのファイルと合わせて入らなければ断る")
 	}
 
 	// 新しい会話の画面(ID がゼロ)は、画面の設定で数える
 	draft := testDefaults
 	draft.HistoryTokens = 50
-	if _, err := cs.CheckFile(ctx, uuid.UUID{}, &draft, "1.txt", half, nil); err == nil {
+	if _, err := cs.CheckFile(ctx, uuid.UUID{}, &draft, "1.txt", half, 0, 0); err == nil {
 		t.Error("新しい会話の画面の設定の上限で数える")
 	}
-	if _, err := cs.CheckFile(ctx, uuid.UUID{}, nil, "1.txt", half, nil); err != nil {
+	if _, err := cs.CheckFile(ctx, uuid.UUID{}, nil, "1.txt", half, 0, 0); err != nil {
 		t.Errorf("新しい会話の既定の上限なら入る: %v", err)
 	}
 }
@@ -201,5 +203,82 @@ func TestSummaryMessagesFiles(t *testing.T) {
 	body := msgs[1].Content
 	if !strings.Contains(body, "ユーザー: [ファイル: a.go] 読んで\n") || strings.Contains(body, "秘密の中身") {
 		t.Errorf("要約に渡す文:\n%s", body)
+	}
+}
+
+// pngBytes は小さな PNG(画像の判定と受け渡しのテスト用)
+func pngBytes(t *testing.T) []byte {
+	t.Helper()
+	var b bytes.Buffer
+	if err := png.Encode(&b, image.NewRGBA(image.Rect(0, 0, 4, 4))); err != nil {
+		t.Fatal(err)
+	}
+	return b.Bytes()
+}
+
+// 画像かどうかは中身の先頭の印で決める(決定事項 9)。WebP は llama.cpp が読めないのでエラー。BMP は大きさも確かめる(「BM」で始まるテキストと見分ける)
+func TestReadFileImages(t *testing.T) {
+	bmp := make([]byte, 60)
+	copy(bmp, "BM")
+	binary.LittleEndian.PutUint32(bmp[2:], 60)
+	for _, c := range []struct {
+		name, kind, format string
+		data               []byte
+	}{
+		{"a.png", FileImage, "image/png", pngBytes(t)},
+		{"a.jpg", FileImage, "image/jpeg", []byte{0xFF, 0xD8, 0xFF, 0xE0, 0, 0x10}},
+		{"a.gif", FileImage, "image/gif", []byte("GIF89a\x01\x00")},
+		{"a.bmp", FileImage, "image/bmp", bmp},
+		{"bm.txt", FileText, "utf-8", []byte("BMW の話")}, // BM で始まるテキスト
+	} {
+		f, err := ReadFile(c.name, c.data)
+		if err != nil || f.Kind != c.kind || f.Format != c.format {
+			t.Errorf("%s: %+v %v", c.name, f.Kind+" "+f.Format, err)
+		}
+	}
+	webp := append([]byte("RIFF\x00\x00\x00\x00WEBP"), make([]byte, 8)...)
+	if _, err := ReadFile("a.webp", webp); err == nil || !strings.Contains(err.Error(), "WebP は読めません") {
+		t.Errorf("WebP: %v", err)
+	}
+	big := append(pngBytes(t), make([]byte, ImageMaxBytes)...)
+	if _, err := ReadFile("big.png", big); err == nil || !strings.Contains(err.Error(), "画像は 1 枚 10 MB まで") {
+		t.Errorf("大きすぎる画像: %v", err)
+	}
+	// テキストの上限(1 MB)より大きくても、画像なら読める
+	if _, err := ReadFile("mid.png", append(pngBytes(t), make([]byte, 2<<20)...)); err != nil {
+		t.Errorf("2 MB の画像: %v", err)
+	}
+}
+
+// 画像は文字に展開せず、発言の画像の列としてモデルに渡す。ID は中身のハッシュ。要約には「[画像]」
+func TestSendWithImage(t *testing.T) {
+	g := &fakeGen{content: "猫です"}
+	cs, _ := newTestConversations(t, g)
+	c := mustCreate(t, cs)
+	img, err := ReadFile("cat.png", pngBytes(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	evs := collect(func(emit func(ChatEvent)) { cs.Send(context.Background(), c.ID, "これは何?", []File{img}, emit) })
+	if errs := errorsOf(evs); len(errs) != 0 {
+		t.Fatalf("エラー: %v", errs)
+	}
+	last := g.gotMessages[len(g.gotMessages)-1]
+	if last.Content != "これは何?" || len(last.Images) != 1 || last.Images[0].ID != img.Hash || !bytes.Equal(last.Images[0].Data, img.Data) {
+		t.Errorf("モデルに渡した発言: %q %+v", last.Content, len(last.Images))
+	}
+	_, ms, _ := cs.Get(ctx, c.ID)
+	if len(ms[0].Files) != 1 || ms[0].Files[0].Kind != FileImage {
+		t.Errorf("保存した発言: %+v", ms[0].Files)
+	}
+	if body := summaryMessages("", ms, 1000)[1].Content; !strings.Contains(body, "ユーザー: [画像] これは何?") {
+		t.Errorf("要約に渡す文:\n%s", body)
+	}
+
+	// 中身とハッシュが合わない画像は断る(ハッシュは KV キャッシュで同じ画像かを比べる ID になる)
+	bad := img
+	bad.Hash = "x"
+	if errs := errorsOf(collect(func(emit func(ChatEvent)) { cs.Send(context.Background(), c.ID, "?", []File{bad}, emit) })); len(errs) != 1 {
+		t.Errorf("ハッシュの合わない画像: %v", errs)
 	}
 }

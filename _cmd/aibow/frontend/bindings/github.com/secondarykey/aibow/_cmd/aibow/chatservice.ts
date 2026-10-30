@@ -76,14 +76,14 @@ export function BuiltinTools(): $CancellablePromise<aibow$0.KnownTool[] | null> 
 /**
  * CheckFile は、入力欄で読み込んだファイル(選ぶ・ドロップ・貼り付け)を確かめ、会話の上限に入るかを数える(0030)。
  * 画面は、返ってきたもの(札に出すトークン数と、Send に渡すファイル)を、送信するまで持っておく。
- * テキストでない・UTF-8 / UTF-16(BOM あり)でない・大きすぎる・会話の上限に入らないときはエラー(理由と数字を書く)。
+ * テキストでも画像でもない・UTF-8 / UTF-16(BOM あり)でない・大きすぎる・会話の上限に入らない・画像を読めないモデルのときはエラー(理由と数字を書く)。
  * 
  * id は送り先の会話(新しい会話の画面ではゼロ。そのときは新しい会話の画面の設定 draft で数える)。
- * pending は、この発言にもう付けているファイル(一緒に数えるため)。
+ * pending と pendingTokens は、この発言にもう付けているファイルの数とトークン数の合計(一緒に数えるため。中身は送らせない)。
  * data は、Wails でもブラウザでも JSON の base64 の文字列で届く([]byte の JSON の形)。
  */
-export function CheckFile(id: uuid$0.UUID, draft: aibow$0.ConversationSettings | null, name: string, data: string | null, pending: aibow$0.File[] | null): $CancellablePromise<aibow$0.FileCheck> {
-    return $Call.ByID(73545923, id, draft, name, data, pending);
+export function CheckFile(id: uuid$0.UUID, draft: aibow$0.ConversationSettings | null, name: string, data: string | null, pending: number, pendingTokens: number): $CancellablePromise<aibow$0.FileCheck> {
+    return $Call.ByID(73545923, id, draft, name, data, pending, pendingTokens);
 }
 
 /**

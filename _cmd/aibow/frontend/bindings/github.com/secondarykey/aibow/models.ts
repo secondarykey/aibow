@@ -149,6 +149,15 @@ export interface CompactStats {
     "stop_reason": string;
 
     /**
+     * 画像(0030)。ImageTokens は PromptTokens のうち画像の分、EncodeSec は今回エンコードした画像の秒数(使い回した画像は入らない)。
+     * ProjectorSec はこの回に mmproj を読み込んだ秒数(読み込んだ回だけ)、ProjectorCPU は GPU に載らず CPU に載せたか(その回だけ。画面のお知らせに使う)
+     */
+    "image_tokens"?: number;
+    "encode_sec"?: number;
+    "projector_sec"?: number;
+    "projector_cpu"?: boolean;
+
+    /**
      * 要約する前の、モデルに渡す文字列のトークン数
      */
     "before_tokens": number;
@@ -394,28 +403,28 @@ export interface File {
     "id": uuid$0.UUID;
 
     /**
-     * 種類。FileText(画像は段2で足す)
+     * 種類。FileText / FileImage
      */
     "kind": string;
 
     /**
-     * ファイル名(フォルダは含まない)。モデルにも見せる
+     * ファイル名(フォルダは含まない)。テキストはモデルにも見せる
      */
     "name": string;
 
     /**
      * Format は形式。テキストは、読んだときの文字コード(utf-8 / utf-8-bom / utf-16le / utf-16be)。
-     * Data はもう UTF-8 にしてあるので、記録のためだけに残す
+     * Data はもう UTF-8 にしてあるので、記録のためだけに残す。画像は MIME の形式(image/png など。画面の表示に使う)
      */
     "format": string;
 
     /**
-     * Data の SHA-256(16進)。画像の KV キャッシュの比べ方(段2)にも使う
+     * Hash は Data の SHA-256(16進)。画像は、エンジンが KV キャッシュに入っている画像と同じかを、これ(画像の ID)で比べる
      */
     "hash": string;
 
     /**
-     * 中身。テキストは UTF-8(BOM を外したもの)
+     * 中身。テキストは UTF-8(BOM を外したもの)。画像は読み込んだファイルのまま
      */
     "data": string | null;
 }
@@ -427,7 +436,7 @@ export interface FileCheck {
     "file": File;
 
     /**
-     * このファイルを足すと増えるトークン数(展開した見出しと囲みを含む)
+     * このファイルを足すと増えるトークン数(テキストは展開した見出しと囲みを含む。画像は画像トークン数)
      */
     "tokens": number;
 }
@@ -636,6 +645,15 @@ export interface ReplyStats {
      * eos / length / context / cancel / stop(書式が決めた位置で止めた)
      */
     "stop_reason": string;
+
+    /**
+     * 画像(0030)。ImageTokens は PromptTokens のうち画像の分、EncodeSec は今回エンコードした画像の秒数(使い回した画像は入らない)。
+     * ProjectorSec はこの回に mmproj を読み込んだ秒数(読み込んだ回だけ)、ProjectorCPU は GPU に載らず CPU に載せたか(その回だけ。画面のお知らせに使う)
+     */
+    "image_tokens"?: number;
+    "encode_sec"?: number;
+    "projector_sec"?: number;
+    "projector_cpu"?: boolean;
 
     /**
      * 送信から最初の文字が出るまでの秒数

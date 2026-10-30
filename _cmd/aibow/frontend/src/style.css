@@ -664,6 +664,16 @@ footer { border-top: 1px solid var(--border); background: var(--panel); padding:
   display: inline-flex; padding: 0 2px; border: none; background: transparent; color: var(--muted); font-size: 13px;
 }
 .file-chip .file-remove:hover { color: var(--text); }
+/* 画像の札(0030 の決定事項 25):高さ 120px ほどの小さな表示。押すと大きく見る */
+.file-chip.image { padding: 4px; align-items: flex-end; }
+.file-thumb { display: block; padding: 0; border: none; background: transparent; cursor: zoom-in; }
+.file-thumb img { display: block; height: 120px; max-width: 240px; object-fit: contain; border-radius: 6px; }
+/* 画像を大きく見る(画面いっぱいに重ねる。Esc か外を押すと閉じる) */
+.image-viewer {
+  position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, .75); cursor: zoom-out;
+}
+.image-viewer img { max-width: 95vw; max-height: 95vh; object-fit: contain; cursor: default; box-shadow: 0 4px 24px rgba(0, 0, 0, .4); }
 /* 作業フォルダ(入力欄の枠の上、左寄せ)。決めていないときはフォルダのアイコンだけ。
    決めたらフォルダの名前を枠付きで出し、右に外すボタン */
 .composer-top { max-width: 820px; margin: 0 auto 6px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }

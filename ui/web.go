@@ -151,8 +151,7 @@ var (
 // 最初の引数が context.Context なら、リクエストの context を渡す(つながりが切れたら止まる。Wails の停止と同じ意味。利用者も入っている)。
 func call(w http.ResponseWriter, r *http.Request, name string, m reflect.Value) {
 	var raw []json.RawMessage
-	// 本文の上限は、読み込んだファイル(0030。1 つ 1 MB・10 個まで)を base64 で運べる大きさにする(base64 は 4/3 倍)
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<20)).Decode(&raw); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, aibow.MessageMaxBytes)).Decode(&raw); err != nil {
 		writeError(w, http.StatusBadRequest, name+" の引数が読めません(本文は JSON の配列で書いてください): "+err.Error())
 		return
 	}

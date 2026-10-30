@@ -808,11 +808,11 @@ func TestWebFiles(t *testing.T) {
 	events := w.openEvents(t)
 	c := w.newConversation(t)
 	var fc aibow.FileCheck
-	w.mustCall(t, &fc, "CheckFile", c.ID, nil, "main.go", []byte("package main\n"), nil)
+	w.mustCall(t, &fc, "CheckFile", c.ID, nil, "main.go", []byte("package main\n"), 0, 0)
 	if fc.File.Name != "main.go" || fc.Tokens <= 0 {
 		t.Errorf("確かめた結果: %+v", fc)
 	}
-	if status, body := w.call(t, context.Background(), "CheckFile", c.ID, nil, "sjis.txt", []byte{0x82, 0xa0}, nil); status == http.StatusOK || !strings.Contains(string(body), "UTF-8 で保存し直してください") {
+	if status, body := w.call(t, context.Background(), "CheckFile", c.ID, nil, "sjis.txt", []byte{0x82, 0xa0}, 0, 0); status == http.StatusOK || !strings.Contains(string(body), "UTF-8 で保存し直してください") {
 		t.Errorf("読めないファイル: %d %s", status, body)
 	}
 

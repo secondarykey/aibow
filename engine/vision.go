@@ -31,6 +31,15 @@ const DefaultImageMaxTokens = 1024
 var ErrNoVision = errors.New("このモデルは画像を読めません(画像を読む部品 mmproj がありません。" +
 	"今は Ollama の qwen3.5 のように、目録に projector の層があるモデルだけ画像を読めます)")
 
+// VisionError は、画像を読めない理由のエラー(errors.Is(err, ErrNoVision) になる)。
+// 画像を読めない書式・aibow-server 越しなど、理由ごとに文を変えつつ、使う側(メーター)が「画像を読めないから数えられない」と見分けられるようにする。
+func VisionError(msg string) error { return visionError(msg) }
+
+type visionError string
+
+func (e visionError) Error() string        { return string(e) }
+func (e visionError) Is(target error) bool { return target == ErrNoVision }
+
 // projector は、読み込んだ mmproj。mu は読み込み・エンコード・トークン化をまとめて守る
 // (mtmd の関数はスレッドセーフではない。トークン数を数える CountTokens は生成と同時に呼ばれることがある)。
 type projector struct {
@@ -110,7 +119,7 @@ func (e *Engine) input(p format.Prompt, prompt string, placeholder bool) ([]chun
 		return []chunk{textChunk(e.tokenize(prompt))}, func() {}, nil
 	}
 	if !format.ReadsImages(e.format) {
-		return nil, nil, fmt.Errorf("書式 %s は画像に対応していません。画像を読めるのは Qwen3.5 だけです", e.format.Name())
+		return nil, nil, VisionError(fmt.Sprintf("書式 %s は画像に対応していません。画像を読めるのは Qwen3.5 だけです", e.format.Name()))
 	}
 	if n := strings.Count(prompt, format.ImageMarker); n != len(images) {
 		return nil, nil, fmt.Errorf("画像が %d 枚なのに、プロンプトの画像の印(%s)が %d 個あります。発言の文に %s と書かれていないか確かめてください",

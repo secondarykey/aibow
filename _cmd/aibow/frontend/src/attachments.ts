@@ -1,7 +1,7 @@
 // attachments.ts: 入力欄で読み込んだファイル(0030)。送信するまでここで持つ。
 //
-// 読み込み(選ぶ・ドロップ・貼り付け)のたびに Go の CheckFile で確かめる。Go がテキストかどうか・文字コード・
-// 会話の上限に入るかを決め、入らなければ理由と数字のエラーを返す(画面は札を足さずにエラーを出す)。
+// 読み込み(選ぶ・ドロップ・貼り付け)のたびに Go の CheckFile で確かめる。Go がテキストか画像か・文字コード・
+// 会話の上限に入るか・画像を読めるモデルかを決め、だめなら理由と数字のエラーを返す(画面は札を足さずにエラーを出す)。
 // 確かめたもの(FileCheck)は送信のときに Send に渡す。打っている文と同じく、会話を切り替えても持ったままにする
 // (送るときに Go がもう一度、会話の上限に入るかを確かめる)。
 import { useCallback, useRef, useState } from "react";
@@ -9,8 +9,9 @@ import type { ConversationSettings, FileCheck } from "../bindings/github.com/sec
 import { ChatService } from "./backend";
 import { errorMessage } from "./errors";
 
-// Go の aibow.FileMaxBytes と aibow.FilesPerSend と同じ。大きいファイルを base64 にして Go に送る前に断るため
-const FILE_MAX_BYTES = 1 << 20;
+// Go の aibow.ImageMaxBytes(画像の上限。テキストの上限 1 MB より大きい)と aibow.FilesPerSend と同じ。
+// 大きいファイルを base64 にして Go に送る前に断るため(テキストか画像かは Go が中身で決めるので、ここでは大きいほうの上限で断る)
+const MAX_BYTES = 10 << 20;
 const FILES_PER_SEND = 10;
 
 export interface Attachments {
@@ -37,13 +38,15 @@ export function useAttachments(target: () => { id: string; draft: ConversationSe
         onError(`1 つの発言に付けられるファイルは ${FILES_PER_SEND} 個までです`);
         return;
       }
-      if (f.size > FILE_MAX_BYTES) {
-        onError(`${f.name} は大きすぎるため読み込めません(1 つ ${FILE_MAX_BYTES >> 20} MB まで)。大きいファイルは作業フォルダに置き、read_file で範囲を指定して読ませてください`);
+      if (f.size > MAX_BYTES) {
+        onError(`${f.name} は大きすぎるため読み込めません(画像は 1 枚 ${MAX_BYTES >> 20} MB まで、テキストは 1 MB まで)`);
         continue;
       }
       try {
         const { id, draft } = target();
-        const c = await ChatService.CheckFile(id, draft, f.name, await readBase64(f), current.current.map(c => c.file));
+        // もう付けているファイルは、中身ではなく数とトークン数だけを渡す(画像は重いので、読み込むたびに送り直さない)
+        const pendingTokens = current.current.reduce((n, c) => n + c.tokens, 0);
+        const c = await ChatService.CheckFile(id, draft, f.name, await readBase64(f), current.current.length, pendingTokens);
         set([...current.current, c]);
       } catch (err) {
         onError(errorMessage(err));

@@ -1131,7 +1131,8 @@ func (s *Service) Usage(ctx context.Context, id uuid.UUID) (*aibow.Usage, error)
 	u, err := s.convs.Usage(ctx, id)
 	// モデルが無い(降ろした)・書式に未対応のモデルなら、数えられないのでメーターを出さない。
 	// エラーにすると会話を開くこと(Conversation)まで失敗し、開くたびにエラーのカードが積み重なるため(未対応なことは読み込んだときと送信したときに伝える)
-	if errors.Is(err, engine.ErrNoModel) || errors.Is(err, format.ErrUnsupported) {
+	// 画像の付いた会話を、画像を読めないモデルで開いたときも同じ(0030。送ったときに理由を伝える)
+	if errors.Is(err, engine.ErrNoModel) || errors.Is(err, format.ErrUnsupported) || errors.Is(err, engine.ErrNoVision) {
 		return nil, nil
 	}
 	if err != nil {
@@ -1259,16 +1260,16 @@ func (s *Service) Send(ctx context.Context, id uuid.UUID, text string, files []a
 
 // CheckFile は、入力欄で読み込んだファイル(選ぶ・ドロップ・貼り付け)を確かめ、会話の上限に入るかを数える(0030)。
 // 画面は、返ってきたもの(札に出すトークン数と、Send に渡すファイル)を、送信するまで持っておく。
-// テキストでない・UTF-8 / UTF-16(BOM あり)でない・大きすぎる・会話の上限に入らないときはエラー(理由と数字を書く)。
+// テキストでも画像でもない・UTF-8 / UTF-16(BOM あり)でない・大きすぎる・会話の上限に入らない・画像を読めないモデルのときはエラー(理由と数字を書く)。
 //
 // id は送り先の会話(新しい会話の画面ではゼロ。そのときは新しい会話の画面の設定 draft で数える)。
-// pending は、この発言にもう付けているファイル(一緒に数えるため)。
+// pending と pendingTokens は、この発言にもう付けているファイルの数とトークン数の合計(一緒に数えるため。中身は送らせない)。
 // data は、Wails でもブラウザでも JSON の base64 の文字列で届く([]byte の JSON の形)。
-func (s *Service) CheckFile(ctx context.Context, id uuid.UUID, draft *aibow.ConversationSettings, name string, data []byte, pending []aibow.File) (aibow.FileCheck, error) {
+func (s *Service) CheckFile(ctx context.Context, id uuid.UUID, draft *aibow.ConversationSettings, name string, data []byte, pending, pendingTokens int) (aibow.FileCheck, error) {
 	if s.startupErr != nil {
 		return aibow.FileCheck{}, s.startupErr
 	}
-	c, err := s.convs.CheckFile(ctx, id, draft, name, data, pending)
+	c, err := s.convs.CheckFile(ctx, id, draft, name, data, pending, pendingTokens)
 	if errors.Is(err, engine.ErrNoModel) {
 		return c, errors.New("モデルを読み込んでいないため、ファイルのトークン数を数えられません。モデルを読み込んでから、もう一度読み込んでください")
 	}
@@ -1423,6 +1424,17 @@ func (s *Service) run(ctx context.Context, id uuid.UUID, f func(ctx context.Cont
 				st := r.Stats
 				log.Infof("プロンプト %d トークン(再利用 %d)%.2f 秒 / 生成 %d トークン %.2f 秒(%.1f tok/s)/ 終了理由: %s / ツール呼び出し %d 件",
 					st.PromptTokens, st.ReusedTokens, st.PromptSec, st.GenTokens, st.GenSec, tokPerSec(st.GenerateStats), st.StopReason, len(r.ToolCalls))
+				// 画像(0030)。画像トークン数と、今回エンコードした秒数(KV キャッシュを使い回した画像は 0 秒)
+				if st.ImageTokens > 0 {
+					log.Infof("画像: %d トークン / エンコード %.2f 秒", st.ImageTokens, st.EncodeSec)
+				}
+				if st.ProjectorSec > 0 {
+					where := "GPU"
+					if st.ProjectorCPU {
+						where = "CPU(GPU に載らなかった)"
+					}
+					log.Noticef("画像を読む部品(mmproj)を %s に読み込みました(%.1f 秒)", where, st.ProjectorSec)
+				}
 			}
 		case "tool_result":
 			logTool(ev.Message, who)

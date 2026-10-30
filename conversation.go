@@ -823,6 +823,11 @@ func (cs *Conversations) generate(ctx context.Context, conv Conversation, messag
 		},
 		onText("thinking"), onText("content"),
 	)
+	if st.ProjectorCPU {
+		// 画像を読む部品(mmproj)が GPU に載らず CPU に載った(0030 の決定事項 23)。画像は読めるが、エンコードが 15〜30 倍遅くなる
+		emit(ChatEvent{ConversationID: conv.ID, Type: "notice",
+			Text: "画像を読む部品(mmproj)が GPU に載らなかったので、CPU に読み込みました。画像の読み込みに時間がかかります(GPU に載せる層の数を減らすと GPU に載ることがあります)"})
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -931,7 +936,7 @@ func promptMessages(system, summary string, history []StoredMessage) []format.Me
 	}
 	for _, m := range history {
 		// 読み込んだファイルは、発言の文の前に展開する(0030。書式はファイルのことを知らない)
-		fm := format.Message{Role: m.Role, Content: withFiles(m.Content, m.Files), Thinking: m.Thinking, ToolCalls: m.ToolCalls}
+		fm := format.Message{Role: m.Role, Content: withFiles(m.Content, m.Files), Images: imagesOf(m.Files), Thinking: m.Thinking, ToolCalls: m.ToolCalls}
 		if m.ToolResult != nil {
 			// ツールの結果には、元の呼び出しの名前を付ける(Gemma 4 は結果に名前を書く。0026 の決定事項 5)
 			fm.Name = m.ToolResult.Call.Name

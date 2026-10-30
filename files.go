@@ -4,7 +4,9 @@ package aibow
 //
 // テキストのファイルは、モデルから見ればただの文字。書式もエンジンも何も知らず、会話の仕組みが
 // プロンプトを作るとき(promptMessages)に、発言の頭へ「ファイル名 + 中身」を書き足すだけ。
-// 保存は発言とは別の表(store の files)にしておき、画面の吹き出しには札(ファイル名)だけを出す。
+// 画像は文字にできないので、発言の画像の列(format.Message.Images)としてエンジンに渡す。書式は画像の場所に印を書き、
+// エンジンが画像エンコーダー(mmproj)で画像トークンの埋め込みにして読ませる(engine の vision.go・chunks.go)。
+// 保存は発言とは別の表(store の files)にしておき、画面の吹き出しには札(ファイル名・画像は小さな表示)だけを出す。
 
 import (
 	"bytes"
@@ -19,37 +21,68 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 	"uuid"
+
+	"github.com/secondarykey/aibow/format"
 )
 
 // File は、発言に付けて読み込んだファイル1つ(0030)。
 type File struct {
 	ID   uuid.UUID `json:"id"`   // UUIDv7。発言の中の並びもこれで決まる
-	Kind string    `json:"kind"` // 種類。FileText(画像は段2で足す)
-	Name string    `json:"name"` // ファイル名(フォルダは含まない)。モデルにも見せる
+	Kind string    `json:"kind"` // 種類。FileText / FileImage
+	Name string    `json:"name"` // ファイル名(フォルダは含まない)。テキストはモデルにも見せる
 	// Format は形式。テキストは、読んだときの文字コード(utf-8 / utf-8-bom / utf-16le / utf-16be)。
-	// Data はもう UTF-8 にしてあるので、記録のためだけに残す
+	// Data はもう UTF-8 にしてあるので、記録のためだけに残す。画像は MIME の形式(image/png など。画面の表示に使う)
 	Format string `json:"format"`
-	Hash   string `json:"hash"` // Data の SHA-256(16進)。画像の KV キャッシュの比べ方(段2)にも使う
-	Data   []byte `json:"data"` // 中身。テキストは UTF-8(BOM を外したもの)
+	// Hash は Data の SHA-256(16進)。画像は、エンジンが KV キャッシュに入っている画像と同じかを、これ(画像の ID)で比べる
+	Hash string `json:"hash"`
+	Data []byte `json:"data"` // 中身。テキストは UTF-8(BOM を外したもの)。画像は読み込んだファイルのまま
 }
 
 // ファイルの種類(File.Kind)
 const (
-	FileText = "text"
+	FileText  = "text"
+	FileImage = "image"
 )
 
-// 読み込むファイルの上限(決定事項 18)。トークン数の確かめ(CheckFile)とは別に、DB と転送を守るための上限。
-// 1 MB のテキストは数十万トークンになり、どのみち会話の上限には入らない
+// 読み込むファイルの上限(決定事項 18・24)。トークン数の確かめ(CheckFile)とは別に、DB と転送を守るための上限。
+// 1 MB のテキストは数十万トークンになり、どのみち会話の上限には入らない。画像は大きくても、mtmd が画像1枚のトークン数の上限に縮める
+// (スマートフォンの写真の 3〜8 MB が入る大きさ)。1つの発言に付けられる数は、テキストと画像を合わせて数える
 const (
 	FileMaxBytes   = 1 << 20
+	ImageMaxBytes  = 10 << 20
 	FilesPerSend   = 10
 	fileMaxNameLen = 255
 )
 
+// MessageMaxBytes は、発言1件を HTTP で運ぶときの本文の上限(ブラウザの送信・aibow-server の保存の口)。
+// 読み込んだファイルを最大まで付けた発言(画像 10 MB × 10 個)を、JSON の base64(4/3 倍)で運べる大きさに、文などの分を足したもの。
+// 大きな画像を何枚も付けると、サーバーは JSON を読むあいだ、その数倍のメモリを使う
+const MessageMaxBytes = FilesPerSend*ImageMaxBytes*4/3 + 16<<20
+
+// imageFormat は、中身の先頭の印(マジックナンバー)で画像の形式を決める(決定事項 9。拡張子では決めない)。画像でなければ空。
+// 読めるのは llama.cpp(stb_image)が読める PNG・JPEG・GIF・BMP。WebP は stb_image が読めないので、画像だと分かるがエラーにする(webp=true)。
+func imageFormat(data []byte) (format string, webp bool) {
+	switch {
+	case bytes.HasPrefix(data, []byte("\x89PNG\r\n\x1a\n")):
+		return "image/png", false
+	case bytes.HasPrefix(data, []byte{0xFF, 0xD8, 0xFF}):
+		return "image/jpeg", false
+	case bytes.HasPrefix(data, []byte("GIF87a")), bytes.HasPrefix(data, []byte("GIF89a")):
+		return "image/gif", false
+	case len(data) >= 12 && string(data[:4]) == "RIFF" && string(data[8:12]) == "WEBP":
+		return "", true
+	case len(data) >= 6 && string(data[:2]) == "BM" && int(binary.LittleEndian.Uint32(data[2:6])) == len(data):
+		// BMP は印が2文字だけなので、「BM」で始まるテキストと見分けるため、ヘッダーに書かれたファイルの大きさも確かめる
+		return "image/bmp", false
+	}
+	return "", false
+}
+
 // ReadFile は、読み込んだファイルの中身を確かめて File にする(まだ保存はしない。ID は新しく振る)。
 //
-// テキストかどうかは拡張子ではなく中身で決める(決定事項 8)。決まりは作業フォルダのツール(tool/files.go の readText)と同じで、
-// NUL を含まず UTF-8 として読めること。それに加えて、BOM のある UTF-16 だけは読んで UTF-8 にする(決定事項 7)。
+// 画像かテキストかは拡張子ではなく中身で決める(決定事項 8・9)。先頭が画像の印なら画像、そうでなければテキストとして読む。
+// テキストの決まりは作業フォルダのツール(tool/files.go の readText)と同じで、NUL を含まず UTF-8 として読めること。
+// それに加えて、BOM のある UTF-16 だけは読んで UTF-8 にする(決定事項 7)。
 // Shift_JIS などは標準ライブラリで読めない(golang.org/x/text が要る)ので、UTF-8 で保存し直してもらう。
 func ReadFile(name string, data []byte) (File, error) {
 	name = strings.TrimSpace(name)
@@ -58,11 +91,22 @@ func ReadFile(name string, data []byte) (File, error) {
 		return File{}, errors.New("ファイル名がありません")
 	case len(name) > fileMaxNameLen:
 		return File{}, fmt.Errorf("ファイル名が長すぎます(%d バイトまで)", fileMaxNameLen)
-	case len(data) > FileMaxBytes:
-		return File{}, fmt.Errorf("%s は大きすぎるため読み込めません(%s。1 つ %d MB まで)。大きいファイルは作業フォルダに置き、read_file で範囲を指定して読ませてください",
-			name, sizeText(len(data)), FileMaxBytes>>20)
 	case len(data) == 0:
 		return File{}, fmt.Errorf("%s は空のファイルです", name)
+	}
+	if img, webp := imageFormat(data); img != "" || webp {
+		switch {
+		case webp:
+			return File{}, fmt.Errorf("%s は WebP の画像です。WebP は読めません。PNG か JPEG で保存し直してください", name)
+		case len(data) > ImageMaxBytes:
+			return File{}, fmt.Errorf("%s は大きすぎるため読み込めません(%s。画像は 1 枚 %d MB まで)", name, sizeText(len(data)), ImageMaxBytes>>20)
+		}
+		sum := sha256.Sum256(data)
+		return File{ID: uuid.NewV7(), Kind: FileImage, Name: name, Format: img, Hash: hex.EncodeToString(sum[:]), Data: data}, nil
+	}
+	if len(data) > FileMaxBytes {
+		return File{}, fmt.Errorf("%s は大きすぎるため読み込めません(%s。1 つ %d MB まで)。大きいファイルは作業フォルダに置き、read_file で範囲を指定して読ませてください",
+			name, sizeText(len(data)), FileMaxBytes>>20)
 	}
 	text, enc, err := decodeText(data)
 	if err != nil {
@@ -193,11 +237,26 @@ func fenceFor(body string) string {
 	return strings.Repeat("`", max(3, longest+1))
 }
 
+// imagesOf は、発言の画像を、エンジンに渡す形(format.Image)にする。ID は中身のハッシュ(KV キャッシュで同じ画像かを比べる)。
+func imagesOf(files []File) []format.Image {
+	var out []format.Image
+	for _, f := range files {
+		if f.Kind == FileImage {
+			out = append(out, format.Image{ID: f.Hash, Format: f.Format, Data: f.Data})
+		}
+	}
+	return out
+}
+
 // filesNote は、要約に渡すときにファイルの代わりに書く文(決定事項 4)。中身は渡さない(重いので。要約の役目は話の流れを残すこと)。
 func filesNote(files []File) string {
 	var parts []string
 	for _, f := range files {
-		parts = append(parts, "[ファイル: "+f.Name+"]")
+		if f.Kind == FileImage {
+			parts = append(parts, "[画像]")
+		} else {
+			parts = append(parts, "[ファイル: "+f.Name+"]")
+		}
 	}
 	return strings.Join(parts, " ")
 }
@@ -222,14 +281,28 @@ func checkFiles(files []File) error {
 		return fmt.Errorf("1 つの発言に付けられるファイルは %d 個までです(%d 個)", FilesPerSend, len(files))
 	}
 	for _, f := range files {
-		if f.Kind != FileText {
-			return fmt.Errorf("%s: 種類 %q のファイルはまだ読み込めません", f.Name, f.Kind)
-		}
-		if len(f.Data) > FileMaxBytes {
-			return fmt.Errorf("%s は大きすぎます(1 つ %d MB まで)", f.Name, FileMaxBytes>>20)
-		}
-		if err := checkUTF8(f.Data); err != nil {
-			return fmt.Errorf("%s: %w", f.Name, err)
+		switch f.Kind {
+		case FileText:
+			if len(f.Data) > FileMaxBytes {
+				return fmt.Errorf("%s は大きすぎます(1 つ %d MB まで)", f.Name, FileMaxBytes>>20)
+			}
+			if err := checkUTF8(f.Data); err != nil {
+				return fmt.Errorf("%s: %w", f.Name, err)
+			}
+		case FileImage:
+			if len(f.Data) > ImageMaxBytes {
+				return fmt.Errorf("%s は大きすぎます(画像は 1 枚 %d MB まで)", f.Name, ImageMaxBytes>>20)
+			}
+			if img, _ := imageFormat(f.Data); img == "" {
+				return fmt.Errorf("%s は画像として読めません(PNG・JPEG・GIF・BMP だけ読めます)", f.Name)
+			}
+			// ハッシュは画像の ID になる(KV キャッシュで比べる)。画面から来た値を信じず、中身から作り直す
+			sum := sha256.Sum256(f.Data)
+			if f.Hash != hex.EncodeToString(sum[:]) {
+				return fmt.Errorf("%s のハッシュが中身と合いません", f.Name)
+			}
+		default:
+			return fmt.Errorf("%s: 種類 %q のファイルは読み込めません", f.Name, f.Kind)
 		}
 	}
 	return nil
@@ -238,21 +311,24 @@ func checkFiles(files []File) error {
 // FileCheck は、読み込んだファイルを確かめた結果(画面の札に出す)。
 type FileCheck struct {
 	File   File `json:"file"`
-	Tokens int  `json:"tokens"` // このファイルを足すと増えるトークン数(展開した見出しと囲みを含む)
+	Tokens int  `json:"tokens"` // このファイルを足すと増えるトークン数(テキストは展開した見出しと囲みを含む。画像は画像トークン数)
 }
 
 // CheckFile は、読み込んだファイルを確かめて、会話の上限に入るかを数える(決定事項 6)。
 //
 // 入らなければ、黙って切らずに「○○ トークンで、残りは △△ です」のエラーにする(大きいものは作業フォルダの read_file へ案内する)。
-// 数えるのは、今の履歴 + 付けるつもりのファイル(pending)+ このファイルの発言を作ったとき、compact しても必ず渡す部分(turnTokens)。
+// 数えるのは、今の履歴 + このファイルだけの発言を作ったとき、compact しても必ず渡す部分(turnTokens)と、ファイルの無い発言との差。
+// それに、この発言にもう付けているファイルの数(pending)とトークン数(pendingTokens。前に CheckFile が返したものの合計)を足して上限と比べる。
+// もう付けているファイルの中身は受け取らない(画像は 1 枚 10 MB まであるので、読み込むたびに送り直させない)。
 // 文はまだ入力中なので数えない(送信のときに checkFits でもう一度確かめる)。
+// 画像を読めないモデル・書式なら、数えるところでエンジンがエラーにする(画像を付けない。決定事項 12)。
 // id がゼロなら、まだ作っていない新しい会話。新しい会話の画面で変えた設定 draft で数える(nil なら新しい会話の既定)。
-func (cs *Conversations) CheckFile(ctx context.Context, id uuid.UUID, draft *ConversationSettings, name string, data []byte, pending []File) (FileCheck, error) {
+func (cs *Conversations) CheckFile(ctx context.Context, id uuid.UUID, draft *ConversationSettings, name string, data []byte, pending, pendingTokens int) (FileCheck, error) {
 	f, err := ReadFile(name, data)
 	if err != nil {
 		return FileCheck{}, err
 	}
-	if len(pending) >= FilesPerSend {
+	if pending >= FilesPerSend {
 		return FileCheck{}, fmt.Errorf("1 つの発言に付けられるファイルは %d 個までです", FilesPerSend)
 	}
 	var set ConversationSettings
@@ -277,18 +353,22 @@ func (cs *Conversations) CheckFile(ctx context.Context, id uuid.UUID, draft *Con
 	user := func(files []File) []StoredMessage {
 		return append(slices.Clip(history), StoredMessage{Role: "user", Files: files})
 	}
-	before, err := cs.turnTokens(set, user(pending))
+	base, err := cs.turnTokens(set, user(nil))
 	if err != nil {
 		return FileCheck{}, err
 	}
-	after, err := cs.turnTokens(set, user(append(slices.Clip(pending), f)))
+	with, err := cs.turnTokens(set, user([]File{f}))
 	if err != nil {
 		return FileCheck{}, err
 	}
-	tokens := after - before
-	if after > limit {
-		return FileCheck{}, fmt.Errorf("%s は %d トークンで、会話の上限(%d トークン)の残りは %d トークンです。"+
-			"大きいファイルは作業フォルダに置き、read_file で範囲を指定して読ませてください", f.Name, tokens, limit, max(0, limit-before))
+	tokens := with - base
+	if used := base + pendingTokens; used+tokens > limit {
+		hint := "大きいファイルは作業フォルダに置き、read_file で範囲を指定して読ませてください"
+		if f.Kind == FileImage {
+			hint = "画像1枚のトークン数は AIBOW_IMAGE_MAX_TOKENS で小さくできます。会話の設定で会話の上限を増やすこともできます"
+		}
+		return FileCheck{}, fmt.Errorf("%s は %d トークンで、会話の上限(%d トークン)の残りは %d トークンです。%s",
+			f.Name, tokens, limit, max(0, limit-used), hint)
 	}
 	return FileCheck{File: f, Tokens: tokens}, nil
 }

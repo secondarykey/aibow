@@ -95,6 +95,11 @@ type requestTool struct {
 
 // newChatRequest は会話を JSON の形にする(生成とトークン数で同じ形を使う。違うとトークン数がずれるため)。
 func newChatRequest(p format.Prompt) (chatRequest, error) {
+	// 画像の付いた発言(0030)を aibow-server に送るのは、まだ作っていない(段4で image_url の data: URL にする)。
+	// 黙って画像を捨てると、画像を見ないまま答えてしまうので断る(決定事項 12)
+	if format.HasImages(p) {
+		return chatRequest{}, engine.VisionError("aibow-server につないでいるときは、まだ画像を送れません(テキストのファイルは送れます)")
+	}
 	req := chatRequest{Messages: make([]chatMessage, 0, len(p.Messages))}
 	req.ChatTemplateKwargs.EnableThinking = p.Think
 	for _, d := range p.Tools {

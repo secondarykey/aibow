@@ -59,4 +59,9 @@ export interface ModelInfo {
      * 読み込みにかかった秒数
      */
     "load_sec": number;
+
+    /**
+     * Vision は画像を読めるか(書式が画像に対応していて、画像を読む部品 mmproj がある。0030)。mmproj は最初に画像を送ったときに読み込む
+     */
+    "vision"?: boolean;
 }
