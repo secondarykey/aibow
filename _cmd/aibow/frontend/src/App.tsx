@@ -552,6 +552,7 @@ export default function App() {
             .catch(err => addError(errorMessage(err)));
         }}
         lastPrompt={chat.lastPrompt}
+        lastPromptFormat={chat.lastPromptFormat}
         servers={mcpServers}
         limitsDisabled={busy !== "idle"}
         onApplyLimits={(h, r) => applyLimits(h, r, convs.updateSettings)}

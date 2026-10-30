@@ -106,6 +106,7 @@ function ModelTable({ models, disabled, onError }: { models: Models; disabled: b
     <div className={"model-table" + (manage ? " manage" : "")}>
       {manage && <span className="model-table-head" title="使えないモデルは、ほかの人の一覧に出ず、頼まれても読み込まない">使える</span>}
       <span className="model-table-head">名前</span>
+      <span className="model-table-head" title="会話を1本の文字列にする書き方(チャットテンプレート)。モデルの種類で決まる">書式</span>
       <span className="model-table-head">出どころ</span>
       <span className="model-table-head num">大きさ</span>
       <span className="model-table-head" title="GPU に載せる層の数。モデルの層数以上なら全部 GPU。読み込み中のモデルなら、変えると読み直す">GPU の層</span>
@@ -114,6 +115,7 @@ function ModelTable({ models, disabled, onError }: { models: Models; disabled: b
         <ModelRow
           key={m.id}
           m={m}
+          format={models.formats[m.id]}
           manage={manage}
           onEnabled={enabled => setEnabled(m.id, enabled)}
           loaded={current?.id === m.id}
@@ -129,8 +131,9 @@ function ModelTable({ models, disabled, onError }: { models: Models; disabled: b
   );
 }
 
-function ModelRow({ m, manage, onEnabled, loaded, layers, totalLayers, disabled, onLoad, onUnload, onLayers }: {
+function ModelRow({ m, format, manage, onEnabled, loaded, layers, totalLayers, disabled, onLoad, onUnload, onLayers }: {
   m: ModelEntry;
+  format?: string; // 使う書式の名前(未対応の種類なら無い)
   manage: boolean; // 使えるかのスイッチを出す(aibow-server の管理者)
   onEnabled(enabled: boolean): void;
   loaded: boolean;
@@ -162,6 +165,7 @@ function ModelRow({ m, manage, onEnabled, loaded, layers, totalLayers, disabled,
         {loaded && <LuCircleCheck className="model-loaded" aria-label="読み込み中" />}
         {m.name}
       </span>
+      <FormatCell m={m} format={format} />
       <span><span className={`origin-chip origin-${m.origin}`}>{ORIGINS[m.origin] ?? m.origin}</span></span>
       <span className="num">{m.size_gb.toFixed(1)} GB</span>
       <span className="model-layers">
@@ -177,6 +181,13 @@ function ModelRow({ m, manage, onEnabled, loaded, layers, totalLayers, disabled,
   );
 }
 
+// FormatCell はモデルの書式の名前(どの書式で動くかを一覧で見えるように。0026 の決定事項 17)。
+// 未対応の種類のモデルは、種類の名前と「未対応」を出す(読み込めても送信できない)
+function FormatCell({ m, format }: { m: ModelEntry; format?: string }) {
+  if (format) return <span className="model-format" title={`種類: ${m.arch}`}>{format}</span>;
+  return <span className="model-format unsupported" title="この種類のモデルの書式には未対応です">{m.arch ? `未対応(${m.arch})` : "不明"}</span>;
+}
+
 // RemoteModelTable は aibow-server 越しの一覧(名前・大きさ・読み込み中か)。変える操作は無い
 function RemoteModelTable({ models }: { models: Models }) {
   const { current } = models;
@@ -184,6 +195,7 @@ function RemoteModelTable({ models }: { models: Models }) {
   return (
     <div className="model-table remote">
       <span className="model-table-head">名前</span>
+      <span className="model-table-head" title="会話を1本の文字列にする書き方(チャットテンプレート)。モデルの種類で決まる">書式</span>
       <span className="model-table-head num">大きさ</span>
       {models.models.map(m => (
         <div key={m.id} className={"model-row" + (current?.id === m.id ? " loaded" : "")}>
@@ -191,6 +203,7 @@ function RemoteModelTable({ models }: { models: Models }) {
             {current?.id === m.id && <LuCircleCheck className="model-loaded" aria-label="読み込み中" />}
             {m.name}
           </span>
+          <FormatCell m={m} format={models.formats[m.id]} />
           <span className="num">{m.size_gb.toFixed(1)} GB</span>
         </div>
       ))}

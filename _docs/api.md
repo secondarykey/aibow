@@ -104,7 +104,7 @@ data: [DONE]
 
 | 口 | 本文 → 返事 | 順番待ち | 元にしたもの |
 |---|---|---|---|
-| `GET /models` | → `{"object":"list","data":[{"id","name","source","size_gb","origin","place","status":{"value":"loaded"\|"loading"\|"unloaded"},"n_gpu_layers"}],"current":<読み込み中のモデルの情報 か null>,"loading":<入れ替えている先のモデルの ID。入れ替え中だけ>,"n_ctx","gpu"}` | 待たない | llama.cpp の router の `GET /models`(`status.value`) |
+| `GET /models` | → `{"object":"list","data":[{"id","name","source","size_gb","origin","place","arch","status":{"value":"loaded"\|"loading"\|"unloaded"},"n_gpu_layers"}],"current":<読み込み中のモデルの情報 か null>,"loading":<入れ替えている先のモデルの ID。入れ替え中だけ>,"n_ctx","gpu"}` | 待たない | llama.cpp の router の `GET /models`(`status.value`) |
 | `POST /models/load` | `{"model"}` → `{"success":true,"model":<読み込んだモデルの情報>}` | 待つ | llama.cpp の router の `POST /models/load` |
 | `POST /models/unload` | `{"model"}` → `{"success":true,"model":null}`(VRAM を空ける。8-4) | 待つ | llama.cpp の router の `POST /models/unload` |
 | `POST /apply-template` | チャットと同じ本文 → `{"prompt"}`(書式を当てた文字列) | 待たない | llama.cpp の `POST /apply-template` |

@@ -55,6 +55,7 @@ export interface Chat {
   confirmingId: string | null; // ツールの実行前の確認を待っている会話の ID(会話の一覧に「確認待ち」と出す)
   answer(reqId: string, approved: boolean, reason: string, remember: ToolPolicy): Promise<void>; // 確認に答える(「実行する」「拒否」と、これから先の扱い)
   lastPrompt: string;          // 開いている会話で、モデルに実際に渡した文字列
+  lastPromptFormat: string;    // その文字列を組み立てた書式の名前(Qwen3.5・Gemma 4。0026)
   send(text: string): Promise<boolean>; // 発言が保存されたら true(false なら送れていないので、入力欄に文を戻す)
   regenerate(): Promise<void>; // 最後の返事を作り直す(開いている会話。0011)
   resend(text: string): Promise<void>; // 最後の発言を直して送り直す(開いている会話。0011)
@@ -71,7 +72,7 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
   const [generatingId, setGeneratingId] = useState<string | null>(null);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   // モデルに渡した文字列は保存しないので、会話ごとにここで覚えておく(再起動すると消える)
-  const [prompts, setPrompts] = useState<Record<string, string>>({});
+  const [prompts, setPrompts] = useState<Record<string, { text: string; format: string }>>({});
 
   const live = useRef<Live | null>(null);
   const viewing = useRef<string | null>(null); // 表示している会話の ID
@@ -217,7 +218,7 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
           return;
         case "prompt":
           // prompt が届いた時点で、Go はユーザーの発言とタイトルを保存し終えている。一覧のタイトルを先に更新する
-          setPrompts(p => ({ ...p, [id]: ev.text ?? "" }));
+          setPrompts(p => ({ ...p, [id]: { text: ev.text ?? "", format: ev.format ?? "" } }));
           if (!l.processStart) l.processStart = performance.now();
           reloadList().catch(() => {});
           return;
@@ -401,7 +402,9 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
     }, err => addError(errorMessage(err)));
   }, [addError]);
 
-  const lastPrompt = current ? prompts[current.conversation.id] ?? "" : "";
+  const shown = current ? prompts[current.conversation.id] : undefined;
+  const lastPrompt = shown?.text ?? "";
+  const lastPromptFormat = shown?.format ?? "";
   // 確認に答える。答えは Go の待っているループに届き、実行(か拒否の結果)の tool_result が返ってくる。
   // remember はこのツールのこの会話でのこれから先の扱い(空 = この1回だけ、allow = この会話では今後聞かない、off = 今後許可しない。0010)。
   // Go が会話の上書きに書くので、先にまだ送っていない設定を送り(あとで丸ごと書き戻して、Go が書いた上書きを消さないように)、答えたら読み直す
@@ -444,5 +447,5 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
   const regenerate = useCallback(() => retry(false, "", id => ChatService.Regenerate(id)), [retry]);
   const resend = useCallback((text: string) => retry(true, text, id => ChatService.Resend(id, text)), [retry]);
 
-  return { generatingId, ended, confirmingId, answer, lastPrompt, send, regenerate, resend, compact, stop, resync };
+  return { generatingId, ended, confirmingId, answer, lastPrompt, lastPromptFormat, send, regenerate, resend, compact, stop, resync };
 }

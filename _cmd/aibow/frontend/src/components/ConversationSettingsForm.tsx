@@ -74,7 +74,7 @@ export function ConversationSettingsForm({ settings, models, lock, onChange }: {
         </label>
         <FixMark item={FIX.think} lock={lock} />
       </div>
-      <p className="hint">オフにすると、プロンプトの最後に空の思考 <code>&lt;think&gt;&lt;/think&gt;</code> を入れて、すぐ答えさせます。</p>
+      <p className="hint" title="Qwen3.5 は返事の書き出しに空の思考を入れ、Gemma 4 はシステムの発言の思考の印を外す(0026)">オフにすると、モデルの書式の印で思考を切り、すぐ答えさせます。</p>
     </>
   );
 }

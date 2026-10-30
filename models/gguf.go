@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sync"
+	"time"
 )
 
 // GGUF の値の型
@@ -152,4 +154,30 @@ func ggufSize(typ uint32) int {
 		return 8
 	}
 	return 0
+}
+
+// archCache は、ファイルごとの種類(一覧は画面がウィンドウに戻るたびに取り直すので、毎回ファイルを開かないように)。
+// ファイルの大きさと更新の時刻が同じなら、同じファイルとみなす。
+var archCache sync.Map // パス → archCached
+
+type archCached struct {
+	size int64
+	mod  time.Time
+	arch string
+}
+
+// cachedArch は Arch を覚えておいて返す。読めなければ空(一覧には出す。読み込むときに llama.cpp がエラーにする)。
+func cachedArch(path string) string {
+	st, err := os.Stat(path)
+	if err != nil {
+		return ""
+	}
+	if c, ok := archCache.Load(path); ok {
+		if c := c.(archCached); c.size == st.Size() && c.mod.Equal(st.ModTime()) {
+			return c.arch
+		}
+	}
+	arch, _ := Arch(path)
+	archCache.Store(path, archCached{size: st.Size(), mod: st.ModTime(), arch: arch})
+	return arch
 }

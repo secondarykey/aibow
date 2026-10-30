@@ -112,6 +112,12 @@ export interface ModelsResult {
     "gpu_layers": { [_ in string]?: number } | null;
 
     /**
+     * Formats はモデルの ID → 使う書式の名前(Qwen3.5・Gemma 4)。書式に未対応の種類のモデルは入れない(画面は種類と「未対応」を出す)。
+     * どの書式で動くかを一覧で見えるようにする(0026 の決定事項 17)。種類(Entry.Arch)はサーバーの一覧からも届くので、ここで名前に直す
+     */
+    "formats": { [_ in string]?: string } | null;
+
+    /**
      * LastModel は最後に読み込んだモデル。降ろしたあと(Current が null)も、モデルの選択にどれを降ろしたかを出すため(0015 の 29)
      */
     "last_model"?: string;

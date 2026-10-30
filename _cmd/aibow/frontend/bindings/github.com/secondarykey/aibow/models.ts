@@ -54,6 +54,11 @@ export interface ChatEvent {
     "conversation_id": uuid$0.UUID;
     "type": string;
     "text"?: string;
+
+    /**
+     * prompt のとき、その文字列を組み立てた書式の名前(Qwen3.5・Gemma 4)
+     */
+    "format"?: string;
     "error"?: string;
 
     /**

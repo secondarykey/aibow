@@ -29,6 +29,7 @@ interface Props {
   onSaveToProfile(): void;              // この会話の設定で、プロファイルの値を上書きする
   onSaveAsProfile(name: string): void;  // この会話の設定で、新しいプロファイルを作る
   lastPrompt: string;
+  lastPromptFormat: string; // その文字列を組み立てた書式の名前(0026 の決定事項 17)
   servers: ServerInfo[]; // settings.json の MCP のサーバー
   limitsDisabled: boolean; // 生成中・読み込み中は上限を変えられない(作業領域を作り直すため)
   onApplyLimits(history: number, reply: number): void;
@@ -76,7 +77,7 @@ function TitleField({ title, onRename }: { title: string; onRename(title: string
   );
 }
 
-export function ConversationSettingsView({ id, title, onRename, settings, models, errors, onClose, onChange, profile, folder, onSaveToProfile, onSaveAsProfile, lastPrompt, servers, limitsDisabled, onApplyLimits,
+export function ConversationSettingsView({ id, title, onRename, settings, models, errors, onClose, onChange, profile, folder, onSaveToProfile, onSaveAsProfile, lastPrompt, lastPromptFormat, servers, limitsDisabled, onApplyLimits,
   share, shareWith, onShare,
 }: Props) {
   const lock = lockOf(profile);
@@ -117,11 +118,11 @@ export function ConversationSettingsView({ id, title, onRename, settings, models
         <ConversationTools id={id} settings={settings} workDir={isBrowser ? folder : settings.work_dir} servers={servers} profile={profile} onChange={onChange} />
 
 
-        <h2 className="section">モデルに渡した文字列</h2>
+        <h2 className="section">モデルに渡した文字列{lastPromptFormat && <span className="prompt-format">(書式: {lastPromptFormat})</span>}</h2>
         <p className="hint">
-          モデルは会話を覚えていません。送信のたびに、これまでの会話をこの書式の1本の文字列にして読ませています
+          モデルは会話を覚えていません。送信のたびに、これまでの会話をモデルの書式の1本の文字列にして読ませています
           (会話の上限を超えたら、compact で収めたもの。要約があれば system の後ろに入ります)。
-          最後の <code>&lt;|im_start|&gt;assistant</code> の続きを書かせることで返事になります。
+          最後の「返事の書き出し」の続きを書かせることで返事になります。
         </p>
         <pre className="last-prompt">{lastPrompt || "(まだ送信していません)"}</pre>
       </div>

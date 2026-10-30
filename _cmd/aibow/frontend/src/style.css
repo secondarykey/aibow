@@ -470,6 +470,8 @@ nav.conversations.collapsed .settings.active { color: var(--accent); }
 .settings-view .msg.error { margin-bottom: 10px; }
 .settings-view h2 { font-size: 14px; margin: 8px 0 6px; display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .settings-view h2.section { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border); }
+/* 「モデルに渡した文字列」の見出しの後ろの書式の名前(0026) */
+.prompt-format { margin-left: 8px; color: var(--muted); font-size: 13px; font-weight: normal; }
 .settings-target {
   font-weight: normal; font-size: 12.5px; color: var(--muted); min-width: 0;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -552,15 +554,16 @@ nav.conversations.collapsed .settings.active { color: var(--accent); }
 .hint { color: var(--muted); font-size: 12px; line-height: 1.5; }
 
 /* 設定の画面の「モデル」のタブ(ModelSettings.tsx。0015 の 8-4)。
-   モデルの一覧は表の形にして列をそろえる(名前 / 出どころ / 大きさ / GPU の層 / 読み込む・降ろす)。行は subgrid でこの列を共有する */
+   モデルの一覧は表の形にして列をそろえる(名前 / 書式 / 出どころ / 大きさ / GPU の層 / 読み込む・降ろす)。行は subgrid でこの列を共有する */
 .model-table {
-  display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto auto; column-gap: 12px; align-items: center;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto auto auto; column-gap: 12px; align-items: center;
 }
 /* aibow-server の管理者には、先頭に「使える」のスイッチの列を足す(0018 の 11-0)。使えないモデルの行は薄くする */
-.model-table.manage { grid-template-columns: auto minmax(0, 1fr) auto auto auto auto; }
+.model-table.manage { grid-template-columns: auto minmax(0, 1fr) auto auto auto auto auto; }
 .model-row.model-disabled .model-name, .model-row.model-disabled .origin-chip, .model-row.model-disabled .num { opacity: 0.5; }
 /* aibow-server 越しは名前と大きさだけ(出どころ・層の数・読み込む / 降ろすは出さない) */
-.model-table.remote { grid-template-columns: minmax(0, 1fr) auto; }
+.model-table.remote { grid-template-columns: minmax(0, 1fr) auto auto; }
+.model-format.unsupported { opacity: 0.6; }
 .model-table-head { color: var(--muted); font-size: 12px; padding: 2px 0 4px; }
 .model-row {
   display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; align-items: center;

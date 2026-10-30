@@ -71,6 +71,7 @@ type ChatEvent struct {
 	ConversationID uuid.UUID        `json:"conversation_id"` // どの会話の送信か。画面は表示中の会話のものだけを出す
 	Type           string           `json:"type"`
 	Text           string           `json:"text,omitempty"`
+	Format         string           `json:"format,omitempty"` // prompt のとき、その文字列を組み立てた書式の名前(Qwen3.5・Gemma 4)
 	Error          string           `json:"error,omitempty"`
 	Caution        bool             `json:"caution,omitempty"` // error を注意として出すか(isCaution)
 	Reply          *StoredMessage   `json:"reply,omitempty"`
@@ -801,7 +802,13 @@ func (cs *Conversations) generate(ctx context.Context, conv Conversation, messag
 	}
 
 	out, st, err := cs.gen.Generate(ctx, cs.promptFor(set, messages), opt,
-		func(p string) { emit(ChatEvent{ConversationID: conv.ID, Type: "prompt", Text: p}) },
+		func(p string) {
+			ev := ChatEvent{ConversationID: conv.ID, Type: "prompt", Text: p}
+			if i := cs.gen.Info(); i != nil {
+				ev.Format = i.Format // どの書式で組み立てた文字列か(0026 の決定事項 17)
+			}
+			emit(ev)
+		},
 		onText("thinking"), onText("content"),
 	)
 	if err != nil {

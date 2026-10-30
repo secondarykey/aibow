@@ -36,6 +36,12 @@ export interface Entry {
     "place"?: string;
 
     /**
+     * Arch はモデルの種類(GGUF の general.architecture。例: "qwen35"・"gemma4")。読めなければ空。
+     * 使う側が書式の名前に直して画面に出す(models は書式を知らない。0026 の決定事項 17)
+     */
+    "arch"?: string;
+
+    /**
      * Disabled は、aibow-server の管理者が使えないようにしたモデルか(0018 の決定事項 13・17)。
      * 管理者に見せる一覧でだけ立つ(ほかの人の一覧には、使えないモデルは出さない)
      */
