@@ -10,7 +10,7 @@ LLM を動かす部分(`engine/`・`format/`・`models/` の3つのパッケー�
 | `engine/engine.go` | `engine` パッケージ。llama.cpp の呼び出し。モデルの読み込み・入れ替え、作業領域の作り直し、トークン数を数える(`CountTokens`)、KV キャッシュ再利用、decode、サンプリングの生成ループ |
 | `engine/stream.go` | UTF-8 の切れ目の処理(文字にならないバイトは U+FFFD) |
 | `models/models.go` | `models` パッケージ。モデルの一覧(`models\` の *.gguf と Ollama の保存フォルダ)。ID は `file:<ファイル名>` / `ollama:<名前>`(以前の `file:<パス>` は `IDOf` で読み替える。0018) |
-| `format/format.go` / `format/qwen35.go` / `format/gemma4.go` / `format/llama3.go` / `format/granite.go` / `format/parts.go` | `format` パッケージ。書式(チャットテンプレート。Qwen3.5・Gemma 4・Llama 3・Granite 4。`parts.go` は2つ以上で使う部品)。会話 → 文字列と、生成した文字列 → 思考・答え・ツール呼び出し。説明は [tools.md](tools.md) |
+| `format/format.go` / `format/qwen35.go` / `format/gemma4.go` / `format/llama3.go` / `format/granite.go` / `format/granite42.go` / `format/parts.go` | `format` パッケージ。書式(チャットテンプレート。Qwen3.5・Gemma 4・Llama 3・Granite 4・Granite 4.2。`parts.go` は2つ以上で使う部品)。会話 → 文字列と、生成した文字列 → 思考・答え・ツール呼び出し。説明は [tools.md](tools.md) |
 | `engine/stream_test.go` / `format/qwen35_test.go` / `format/gemma4_test.go` | UTF-8 の切れ目 / 書式(公式テンプレートとの一致・思考とツール呼び出しの振り分け)のテスト。モデル不要 |
 | `models/models_test.go` | Ollama の目録のテスト。モデル不要 |
 
@@ -48,18 +48,18 @@ LLM を動かす部分(`engine/`・`format/`・`models/` の3つのパッケー�
 
 ## チャットテンプレート
 
-- ライブラリ任せにせず、`format/qwen35.go`・`format/gemma4.go`・`format/llama3.go`・`format/granite.go` に自分で書く(書式を理解することが学習目的のため)
+- ライブラリ任せにせず、`format/qwen35.go`・`format/gemma4.go`・`format/llama3.go`・`format/granite.go`・`format/granite42.go` に自分で書く(書式を理解することが学習目的のため)
 - 書式は `Format` の interface で、エンジンがモデルの種類(GGUF の `general.architecture`)と、要るならチャットテンプレート(`llama.ModelChatTemplate`)の印で選ぶ
-  (`qwen35` → Qwen3.5、`gemma4` → Gemma 4、`llama` でテンプレートに `<|start_header_id|>` があるもの → Llama 3、`granite` でテンプレートに `<|start_of_role|>` と `<tool_call>` があるもの → Granite 4。`format.ForModel`。0027・0029)。
+  (`qwen35` → Qwen3.5、`gemma4` → Gemma 4、`llama` でテンプレートに `<|start_header_id|>` があるもの → Llama 3、`granite` でテンプレートに `<|start_of_role|>` と `<tool_call>` があるもの → Granite 4、`<|im_start|>` と `<function=` があるもの → Granite 4.2。`format.ForModel`。0027・0029)。
   `llama` の種類には Llama 3 の書式でないモデル(Hermes 3 の ChatML)もあり、`granite` の種類は版で書式がまったく違う(3.x・4.0/4.1・4.2)ので、種類の名前だけでは選ばない。一覧(`models`)も GGUF の `tokenizer.chat_template` を読んで同じ決まりで選ぶ(`api.FillFormat`)。会話の仕組みは書式を知らない。詳しくは [tools.md](tools.md)。
   対応していない種類のエラーは、対応している書式を一覧から出す(`format.Supported`。0026)
-- 思考の ON/OFF は書式ごとに違う:Qwen3.5 はプロンプト末尾を `<think>\n` にするか `<think>\n\n</think>\n\n` にするか、Gemma 4 はシステムの発言の先頭に `<|think|>` を書くか。Llama 3・Granite 4 は思考しない(ON / OFF は無視。画面は「思考する」を押せなくする)
+- 思考の ON/OFF は書式ごとに違う:Qwen3.5 はプロンプト末尾を `<think>\n` にするか `<think>\n\n</think>\n\n` にするか、Gemma 4 はシステムの発言の先頭に `<|think|>` を書くか、Granite 4.2 は返事の書き出しを `<think>` と改行にするか `<think></think>` にするか。Llama 3・Granite 4 は思考しない(ON / OFF は無視。画面は「思考する」を押せなくする)
 - **bos は書式が書かない**(0026 の決定事項 25)。トークン化は `addSpecial=true`(`Engine.tokenize`)なので、GGUF の `tokenizer.ggml.add_bos_token` が True なら llama.cpp が先頭に1つ足す。
   Gemma 4 は True(`<bos>`)で、テンプレートも先頭に `bos_token` を書くので、書式が文字で書くと2つになる。Qwen3.5 は False で bos のトークンも無い。
   Llama 3.2(Ollama の llama3.2:3b)は `add_bos_token` を書いていないが、llama.cpp は `<|begin_of_text|>` を1つ足す(0027 の段1で確かめた)。
   Granite 4.1 は False(bos は `<|end_of_text|>`)、4.2 は書いていない(bos は `<s>`)が、どちらも llama.cpp は足さず、テンプレートも書かない(0029 の段1で確かめた)。
   語彙だけを読んで(`ModelParams.VocabOnly`)Gemma 4 のプロンプトをトークン化し、bos が先頭の1つだけ・書式の印(`<|turn>`・`<|channel>`・`<|tool_call>`・`<|"|>` など)がどれも1トークンになることを確かめた(2026-10-30)
-- 生成した特別なトークンは文字として出す(`TokenToPiece` の special=true)ので、書式の読み取りには `</think>`・`<|channel>`・`<|tool_call>` などがそのまま届く。発言の終わり(Qwen3.5 は `<|im_end|>`、Gemma 4 は `<turn|>`、Granite 4 は `<|end_of_text|>`)は EOG のトークンなので、届いたところで生成を止める(文字にはしない)
+- 生成した特別なトークンは文字として出す(`TokenToPiece` の special=true)ので、書式の読み取りには `</think>`・`<|channel>`・`<|tool_call>` などがそのまま届く。発言の終わり(Qwen3.5 は `<|im_end|>`、Gemma 4 は `<turn|>`、Granite 4 は `<|end_of_text|>`、Granite 4.2 は `<|im_end|>`)は EOG のトークンなので、届いたところで生成を止める(文字にはしない)
 
 ## 生成とモデルの入れ替え
 

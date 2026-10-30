@@ -46,7 +46,7 @@ aibow を起動したまま `ollama pull` した場合は、aibow のウィン�
 
 ### 使えるモデル(書式)
 
-モデルは系統ごとに、会話を1本の文字列にする書き方(書式。チャットテンプレート)が違います。aibow が対応している書式は次の4つです。
+モデルは系統ごとに、会話を1本の文字列にする書き方(書式。チャットテンプレート)が違います。aibow が対応している書式は次の5つです。
 どの書式で動くかは、設定の画面の「モデル」のタブの「書式」の列で分かります(対応していない種類のモデルは「未対応(種類)」と出て、読み込めても送信できません)。
 
 | 書式 | モデルの種類(GGUF の `general.architecture`) | 試したモデル |
@@ -55,8 +55,9 @@ aibow を起動したまま `ollama pull` した場合は、aibow のウィン�
 | Gemma 4 | `gemma4` | `gemma-4-E4B-it-Q4_K_M.gguf`(Unsloth が量子化したもの。models フォルダに置く。約 4.6 GB) |
 | Llama 3 | `llama`(テンプレートが Llama 3 のもの) | Ollama の `llama3.2:3b`(約 2.0 GB)。思考しないので「思考する」は押せません。ツールを使う頼みごとは苦手です(`_docs/tuning.md`) |
 | Granite 4 | `granite`(テンプレートが Granite 4.0・4.1 のもの) | Ollama の `granite4.1:3b`(約 2.1 GB)。思考しないので「思考する」は押せません |
+| Granite 4.2 | `granite`(テンプレートが Granite 4.2 のもの) | Ollama の `granite4.2:3b`(約 2.2 GB) |
 
-`llama` の種類のモデルでも、Llama を元にした別の書式のモデル(Hermes 3 など)は「未対応」と出ます(GGUF のチャットテンプレートで見分けます)。`granite` の種類も、Granite 3.x と 4.2 は書式が違うので「未対応」と出ます。
+`llama` の種類のモデルでも、Llama を元にした別の書式のモデル(Hermes 3 など)は「未対応」と出ます(GGUF のチャットテンプレートで見分けます)。`granite` の種類も、書式の違う Granite 3.x は「未対応」と出ます。
 
 - 会話の途中でモデルを替えても続けられます。前の発言とツールの呼び出しは、新しいモデルの書式で書き直して渡します
 - モデルの名前に重ねると、GGUF が勧めるサンプリングの値(Gemma 4 は temperature 1 / top_k 64 / top_p 0.95)が出ます。表示だけで、会話の設定は変わりません
@@ -677,15 +678,15 @@ AIBOW_MODEL=ollama:qwen3.5:4b wails3 dev
 
 - **会話の設定の画面の「モデルに渡した文字列」**
   会話がモデルの書式の1本の文字列になっていて(見出しの後ろに書式の名前が出ます)、最後が返事の書き出しで終わっています。
-  Qwen3.5 なら `<|im_start|>user …<|im_end|>` の並びで最後が `<|im_start|>assistant`、Gemma 4 なら `<|turn>user … <turn|>` の並びで最後が `<|turn>model`、Llama 3 なら `<|start_header_id|>user<|end_header_id|> … <|eot_id|>` の並びで最後が assistant、Granite 4 なら `<|start_of_role|>user<|end_of_role|> … <|end_of_text|>` の並びで最後が assistant です。
+  Qwen3.5 なら `<|im_start|>user …<|im_end|>` の並びで最後が `<|im_start|>assistant`、Gemma 4 なら `<|turn>user … <turn|>` の並びで最後が `<|turn>model`、Llama 3 なら `<|start_header_id|>user<|end_header_id|> … <|eot_id|>` の並びで最後が assistant、Granite 4 なら `<|start_of_role|>user<|end_of_role|> … <|end_of_text|>` の並びで最後が assistant です(Granite 4.2 は Qwen3.5 と同じ並び)。
   モデルはこの「続き」を書いているだけです。送信のたびに会話全部が入っていることも分かります
   (会話の上限を超えて compact したあとは、要約が system の後ろに入り、古い発言が外れた形になります)。
   過去の返事の思考は保存されていて画面で開けますが、この文字列には入っていません(Qwen3.5・Gemma 4 の公式テンプレートと同じ)。
-  ツールの結果の置き場所は書式で違います(Qwen3.5・Granite 4 は user の発言の中、Gemma 4 は model の発言の中のまま、Llama 3 は ipython という役の発言)。
+  ツールの結果の置き場所は書式で違います(Qwen3.5・Granite 4・Granite 4.2 は user の発言の中、Gemma 4 は model の発言の中のまま、Llama 3 は ipython という役の発言)。
   ただし、ツールを呼んでいる途中の返事の思考だけは入ります(何のために呼んだかを覚えたまま続きを書かせるため)。
 - **「思考する」のオン/オフ**
   Qwen3.5 は、オフにすると文字列の最後に空の `<think></think>` が入ります。モデルは「考え終わった」と思い込んで、すぐ答え始めます。
-  Gemma 4 は、オンのときだけシステムの発言の先頭に `<|think|>` の印が入ります。Llama 3・Granite 4 は思考しないので、押せなくなります。
+  Gemma 4 は、オンのときだけシステムの発言の先頭に `<|think|>` の印が入ります。Granite 4.2 は、オフにすると最後に空の `<think></think>` が入ります。Llama 3・Granite 4 は思考しないので、押せなくなります。
 - **統計行**(回答の最後の「詳細」を押すと開く。ふだんは畳んである)
   `モデル名 ・ 初回応答 ○s ・ プロンプト ○ tok(再利用 ○)○s ・ 生成 ○ tok ・ ○ tok/s` の形式で出ます。
   プロンプトを読む速さと、1トークンずつ生成する速さが大きく違うことが分かります。

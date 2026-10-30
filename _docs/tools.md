@@ -12,6 +12,7 @@
 | `format/gemma4.go` | Gemma 4 の書式(0026)。プロンプトの組み立て(思考の印・独自の書き方のツールの説明と呼び出し・model の発言の中のツールの結果)と、出力の振り分け(`<|channel>thought`・答え・`<|tool_call>`) |
 | `format/llama3.go` | Llama 3 の書式(0027)。プロンプトの組み立て(日付・最初の発言の頭のツールの説明・JSON の呼び出し・ipython の結果・呼び出しを1つずつに分ける)と、返事の全体が JSON なら呼び出しとして読む読み取り |
 | `format/granite.go` | Granite 4(4.0・4.1)の書式(0029)。プロンプトの組み立て(ツールの説明・`<tool_call>` で囲んだ JSON の呼び出し・user の発言にまとめる結果・4.0 の既定のシステムの文)と、`<tool_call>` の中の JSON の読み取り |
+| `format/granite42.go` | Granite 4.2 の書式(0029 の段3)。ChatML の区切りと Qwen3.5 と同じツールの説明・呼び出しで、システムの発言をいつも作る・空の思考の印 `<think></think>`・前の返事の思考を空の印に置き換える。読み取りは Qwen3.5 と同じ部品 |
 | `format/parts.go` | 2つ以上の書式で使う部品(タグの書きかけを持っておく `partialSuffix` / `partialSuffixAny`・コードブロックの中か `insideCodeFence`・崩れた呼び出し `brokenCall`・行の頭の `<tool_call>` から後ろを呼び出しとして取っておく読み取り `toolCallParser`(Qwen3.5・Granite 4)・ツールの定義の1行の JSON `toolDefJSON`) |
 | `tool/tool.go` | `tool` パッケージ。ツールの interface(`Tool`)・定義(`Def`)・呼び出し(`Call`: 名前と引数だけ)・引数(`Arg`)。引数を JSON Schema と照らし合わせる `CheckArgs` |
 | `tool/arg.go` | 引数の値の持ち方(書式によらない形。下の「引数の値の持ち方」)と、書式・JSON との行き来(`ArgFromText` / `ArgText`・`ArgFromJSON` / `ArgJSON`・`ArgsFromJSON` / `ArgsJSON`・`ArgTypes`) |
@@ -24,8 +25,8 @@
 | `internal/proc/` | 子プロセスまでまとめて止める仕組み(Windows はジョブオブジェクト、それ以外はプロセスグループ)。`run_command` と MCP のサーバーで使う(0006 で `tool` から移した) |
 | `tool/confirm.go` | 実行前に確認が要るツールの印(`Confirmable`)と、確認の画面に出す内容(`Preview`: パス・上書きか・差分)。差分は `github.com/pkg/diff` |
 | `agent.go` | エージェントループ(`runTurn`)とツールの実行(10 秒の上限・20 回の上限・停止・会話の上限に入らない結果・実行前の確認の待ち) |
-| `format/qwen35_test.go` / `format/gemma4_test.go` / `format/llama3_test.go` / `format/granite_test.go` | 書式のテスト。プロンプトは公式テンプレートを jinja2 で通した期待値と1文字まで比べる(`testPromptMatchesTemplate`。書式によらない。ツールの結果の名前が無いときも比べる) |
-| `format/testdata/` | 書式のテストの会話(`cases.json`。書式をまたいで共通)と、期待値を作るスクリプト(`gen_expected.py`)。期待値は書式ごとのフォルダ(`qwen35/*.txt`・`gemma4/*.txt`・`llama3/*.txt`・`granite4/*.txt`。Granite 4.0 は `granite40/*.txt`) |
+| `format/qwen35_test.go` / `format/gemma4_test.go` / `format/llama3_test.go` / `format/granite_test.go` / `format/granite42_test.go` | 書式のテスト。プロンプトは公式テンプレートを jinja2 で通した期待値と1文字まで比べる(`testPromptMatchesTemplate`。書式によらない。ツールの結果の名前が無いときも比べる) |
+| `format/testdata/` | 書式のテストの会話(`cases.json`。書式をまたいで共通)と、期待値を作るスクリプト(`gen_expected.py`)。期待値は書式ごとのフォルダ(`qwen35/*.txt`・`gemma4/*.txt`・`llama3/*.txt`・`granite4/*.txt`・`granite42/*.txt`。Granite 4.0 は `granite40/*.txt`) |
 | `tool/tool_test.go` / `tool/files_test.go` / `tool/write_test.go` / `agent_test.go` / `workdir_test.go` / `confirm_test.go` | ツール(外に出られないこと・読み方の切り方を含む)とループ・作業フォルダのテスト(偽物の生成器を使う。モデル不要) |
 | `format/format_test.go` | `ToolCall` の JSON が切り出す前と同じ平らな形か(保存済みの会話を読めるか)のテスト |
 
@@ -40,9 +41,9 @@ Conversations ← Output(思考・答え・ToolCall)            ← Engine ← F
 ```
 
 - 会話の仕組み(`conversation.go` / `compact.go` / `agent.go`)は `<|im_start|>` や `<think>` や `<tool_call>` を一切扱わない
-- エンジンはモデルを読み込んだときに GGUF の `general.architecture` と、要るならチャットテンプレートの印で書式を選ぶ(`format.ForModel`。Qwen3.5 は `qwen35`、Gemma 4 は `gemma4`、Llama 3 は `llama` でテンプレートに `<|start_header_id|>` があるもの。0027。Granite 4 は `granite` でテンプレートに `<|start_of_role|>` と `<tool_call>` があるもの。0029)。
+- エンジンはモデルを読み込んだときに GGUF の `general.architecture` と、要るならチャットテンプレートの印で書式を選ぶ(`format.ForModel`。Qwen3.5 は `qwen35`、Gemma 4 は `gemma4`、Llama 3 は `llama` でテンプレートに `<|start_header_id|>` があるもの。0027。Granite 4 は `granite` でテンプレートに `<|start_of_role|>` と `<tool_call>` があるもの、Granite 4.2 は `granite` でテンプレートに `<|im_start|>` と `<function=` があるもの。0029)。
   未対応の種類なら `ModelInfo.Format` が空で、生成とトークン数えがエラーになる(ログとトーストでも伝える。文には対応している書式の一覧を出す)
-- 実装は Qwen3.5・Gemma 4(0026)・Llama 3(0027)・Granite 4(0029)。GGUF の中の Jinja を実行する汎用の実装は作らない(書式は自分で書く方針)
+- 実装は Qwen3.5・Gemma 4(0026)・Llama 3(0027)・Granite 4・Granite 4.2(0029)。GGUF の中の Jinja を実行する汎用の実装は作らない(書式は自分で書く方針)
 - `Format.NewParser` は `BuildPrompt` に渡したのと同じ `Prompt` を受け取る。ツールの定義(引数の型)と、プロンプトがどこで終わったか
   (Gemma 4 は、ツールの結果の後ろで思考 ON なら `<|channel>thought` まで書いてあるので、思考の途中から読み始める)を見るため
 - ツールの結果(role `tool`)は `Message.Name` に元の呼び出しの名前を持つ(会話の仕組みが `ToolResult.Call.Name` から入れる。Gemma 4 が結果に名前を書くため)。
@@ -101,7 +102,7 @@ Ollama の `llama3.2:3b` の GGUF のテンプレート(Meta のもの。Unsloth
 Ollama の `granite4.1:3b` の GGUF のテンプレート(Hugging Face の `ibm-granite/granite-4.1-3b` と1文字も違わない)を、aibow が渡す会話の形で通る部分だけ書き直した。
 
 - **書式の選び方**:種類が `granite` で、テンプレートに `<|start_of_role|>` と `<tool_call>` の両方があるときだけ(書式の表の印は2つ以上持てる)。
-  同じ `granite` の種類でも、3.x は呼び出しが `<|tool_call|>`、4.2 は区切りが ChatML で呼び出しが Qwen3.5 と同じ形なので選ばない。
+  同じ `granite` の種類でも、3.x は呼び出しが `<|tool_call|>` なので選ばない。4.2 は区切りが ChatML で呼び出しが Qwen3.5 と同じ形なので、別の書式(下の Granite 4.2)にした。
   テンプレートに既定のシステムの文(`You are a helpful assistant. Please ensure …`)があれば 4.0 で、システムの発言もツールも無いときにその文を書く(4.1 との違いはこれだけ)
 - 会話の区切りは `<|start_of_role|>role<|end_of_role|> … <|end_of_text|>\n`。bos は書かない(テンプレートも書かず、llama.cpp も足さない)
 - **思考が無い**(Llama 3 と同じく `NoThinking()`)
@@ -111,6 +112,17 @@ Ollama の `granite4.1:3b` の GGUF のテンプレート(Hugging Face の `ibm-
 - **答えの文も結果も、前後の空白を削らずにそのまま書く**(テンプレートが `trim` しない。Qwen3.5・Llama 3 は削る)
 - 読み取り:Qwen3.5 と同じく、答えの行の頭(コードブロックの外)の `<tool_call>` から後ろを呼び出しとして取っておき(`toolCallParser`)、中の JSON を読む。
   `<tool_response>` は発言の終わりのトークンではないので、モデルが結果を書き始めたら書式が止める
+
+### Granite 4.2 の書式(0029 の段3)
+
+Ollama の `granite4.2:3b` の GGUF のテンプレート(Hugging Face の `ibm-granite/granite-4.2-3b` と1文字も違わない)を書き直した。区切りは ChatML、ツールの説明の文と呼び出しの書き方(`<function=…><parameter=…>`)・引数の値の書き方(真偽は `True`)は Qwen3.5 と同じで、Qwen3.5 の部品を使う。Qwen3.5 との違いは次のとおり。
+
+- **システムの発言はいつも作る**(システムの文もツールも無ければ中身は空)。システムの文が先で、ツールの説明が後(Qwen3.5 は逆)。ツールの定義の行は `{"type": "function", …}` で包まない
+- **空の思考は `<think></think>`**(改行なし)。返事の書き出しは、思考 ON なら `<think>` と改行、OFF なら `<think></think>`
+- **最後のユーザーの発言より前の返事は、思考を `<think></think>` に置き換える**(テンプレートの `truncate_history_thinking`)。ループの途中の返事は思考を残し、思考の前後の空白は削らない
+- 呼び出しと結果の後ろに改行を置いてから `<|im_end|>` で閉じる。ツールの結果の中身も削らない
+- 読み取り:Qwen3.5 と同じ(`toolCallParser` と `parseQwen35Calls`)。思考の後ろの改行1つは思考に入れない(テンプレートは思考を削らずに書き戻すので、入れると改行が増え、KV キャッシュを使い回せなくなる。Gemma 4 と同じ)
+- テンプレートの `low_effort`(思考を短くする)は使わない
 
 ### 引数の値の持ち方(0026 の段1)
 

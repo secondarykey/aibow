@@ -26,13 +26,16 @@ func TestGranite4ChosenByTemplate(t *testing.T) {
 		t.Errorf("4.0 のテンプレート: %#v", f)
 	}
 	for name, tmpl := range map[string]string{
-		"3.x":         `{{- '<|start_of_role|>available_tools<|end_of_role|>' }}{{- '<|tool_call|>' }}`,
-		"4.2(ChatML)": `{{- '<|im_start|>system\n' }}{{- '<tool_call>\n<function=' }}`,
-		"テンプレートが無い":   "",
+		"3.x":       `{{- '<|start_of_role|>available_tools<|end_of_role|>' }}{{- '<|tool_call|>' }}`,
+		"テンプレートが無い": "",
 	} {
 		if f := ForModel("granite", tmpl); f != nil {
 			t.Errorf("%s: 選ばないはず(%s)", name, f.Name())
 		}
+	}
+	// 4.2 は別の書式(granite42.go)
+	if f, ok := ForModel("granite", `{{- '<|im_start|>system\n' }}{{- '<tool_call>\n<function=' }}`).(granite42); !ok {
+		t.Errorf("4.2(ChatML)は Granite 4.2 の書式: %#v", f)
 	}
 	if Thinks(granite4{}) {
 		t.Error("Granite 4 は思考しない書式")

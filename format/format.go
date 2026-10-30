@@ -16,7 +16,7 @@ package format
 //
 // 会話の仕組み(ルートの aibow)は、<|im_start|> や <think> や <tool_call> のような書式の文字列を一切扱わない。
 // このパッケージは llama.cpp も会話の保存も知らない(使うのは tool だけ)。書式だけを取り出して試せる。
-// 今ある実装は Qwen3.5 用(qwen35.go)・Gemma 4 用(gemma4.go)・Llama 3 用(llama3.go)・Granite 4 用(granite.go)。2つ以上で使う部品は parts.go。
+// 今ある実装は Qwen3.5 用(qwen35.go)・Gemma 4 用(gemma4.go)・Llama 3 用(llama3.go)・Granite 4 用(granite.go)・Granite 4.2 用(granite42.go)。2つ以上で使う部品は parts.go。
 
 import (
 	"errors"
@@ -120,6 +120,7 @@ var formats = []formatEntry{
 	{arch: "gemma4", make: func(string) Format { return gemma4{} }},
 	{arch: "llama", marks: []string{"<|start_header_id|>"}, make: newLlama3},
 	{arch: "granite", marks: []string{"<|start_of_role|>", "<tool_call>"}, make: newGranite4},
+	{arch: "granite", marks: []string{"<|im_start|>", "<function="}, make: func(string) Format { return granite42{} }},
 }
 
 // Thinks は、書式が思考に対応しているか。Llama 3 は思考しないので、思考の ON / OFF が効かない(画面は「思考する」を押せなくする。0027 の決定事項 4)。
