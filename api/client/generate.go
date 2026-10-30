@@ -5,7 +5,7 @@ package client
 // 会話 → JSON:
 //
 //	format.Message      → messages(思考は reasoning_content)
-//	読み取れた呼び出し → tool_calls(引数の値はいつも JSON の文字列にする。往復で1文字も変わらないように)
+//	読み取れた呼び出し → tool_calls(引数は tool.Arg の形から、ツールの定義の型を見て JSON にする。tool.ArgsJSON)
 //	崩れた呼び出し     → assistant の "aibow": {"broken_tool_calls"}(全体の中の順番つき。サーバーがモデルの書いたまま書式に戻す)
 //	tool.Def            → tools(parameters は書いた順のまま。書式はツールの説明を書いた順にプロンプトに入れるため)
 //
@@ -122,7 +122,7 @@ func newChatRequest(p format.Prompt) (chatRequest, error) {
 				}
 				var tc toolCall
 				tc.ID, tc.Type = fmt.Sprintf("call_%d_%d", i, j), "function"
-				tc.Function.Name, tc.Function.Arguments = c.Name, argumentsJSON(c.Args)
+				tc.Function.Name, tc.Function.Arguments = c.Name, tool.ArgsJSON(c.Args, tool.ArgTypesFor(p.Tools, c.Name))
 				cm.ToolCalls = append(cm.ToolCalls, tc)
 				pending = append(pending, tc.ID)
 			}
@@ -137,61 +137,6 @@ func newChatRequest(p format.Prompt) (chatRequest, error) {
 		req.Messages = append(req.Messages, cm)
 	}
 	return req, nil
-}
-
-// argumentsJSON は引数を arguments(JSON のオブジェクトの文字列)にする。書いた順のまま、値はいつも JSON の文字列にする。
-// サーバーは文字列の値を中身のまま書式に戻すので、モデルが書いた文字と1文字も変わらない(数や配列を JSON の値にすると、
-// 書き方の揺れ(空白・True)を直す余地が出てしまう)。
-func argumentsJSON(args []tool.Arg) string {
-	var b strings.Builder
-	b.WriteString("{")
-	for i, a := range args {
-		if i > 0 {
-			b.WriteString(",")
-		}
-		b.Write(jsonString(a.Name))
-		b.WriteString(":")
-		b.Write(jsonString(a.Value))
-	}
-	b.WriteString("}")
-	return b.String()
-}
-
-func jsonString(s string) []byte {
-	b, _ := json.Marshal(s) // 文字列の Marshal は失敗しない
-	return b
-}
-
-// argsFromJSON は arguments(JSON のオブジェクトの文字列)を、書いた順の引数にする。
-// 文字列の値は中身の文字列に、それ以外(数・真偽値・配列・オブジェクト・null)は JSON の文字のまま値にする。
-// サーバーの api パッケージの argsFromJSON と同じ決まり(サーバーは、モデルが書いた文字をそのまま JSON の値にして返すので、それに戻る)。
-func argsFromJSON(arguments string) ([]tool.Arg, error) {
-	args := []tool.Arg{}
-	if strings.TrimSpace(arguments) == "" {
-		return args, nil
-	}
-	dec := json.NewDecoder(strings.NewReader(arguments))
-	if t, err := dec.Token(); err != nil || t != json.Delim('{') {
-		return nil, fmt.Errorf("JSON のオブジェクトではありません: %q", arguments)
-	}
-	for dec.More() {
-		t, err := dec.Token()
-		if err != nil {
-			return nil, err
-		}
-		name, _ := t.(string)
-		var raw json.RawMessage
-		if err := dec.Decode(&raw); err != nil {
-			return nil, err
-		}
-		value := string(raw)
-		var s string
-		if json.Unmarshal(raw, &s) == nil {
-			value = s
-		}
-		args = append(args, tool.Arg{Name: name, Value: value})
-	}
-	return args, nil
 }
 
 // ---- 受け取る JSON ---------------------------------------------------------------------
@@ -259,6 +204,7 @@ func (c *Client) Generate(ctx context.Context, p format.Prompt, opt engine.Gener
 	defer res.Body.Close()
 
 	r := newStreamReader(onPrompt, onThinking, onContent)
+	r.tools = p.Tools
 	err = r.read(res.Body)
 	switch {
 	case ctx.Err() != nil:
@@ -282,6 +228,7 @@ func (c *Client) Generate(ctx context.Context, p format.Prompt, opt engine.Gener
 // streamReader はストリーミングの塊を集める。
 type streamReader struct {
 	onPrompt, onThinking, onContent func(string)
+	tools                           []tool.Def // 送ったツール(返ってきた arguments を、型を見て tool.Arg の形にする)
 
 	model             string
 	thinking, content strings.Builder
@@ -386,7 +333,7 @@ func (r *streamReader) result() (format.Output, engine.GenerateStats, error) {
 	var good []format.ToolCall
 	for _, i := range slices.Sorted(maps.Keys(r.calls)) {
 		tc := r.calls[i]
-		args, err := argsFromJSON(tc.Function.Arguments)
+		args, err := tool.ArgsFromJSON(tc.Function.Arguments, tool.ArgTypesFor(r.tools, tc.Function.Name))
 		if err != nil {
 			return format.Output{}, st, fmt.Errorf("ツール %s の呼び出しの arguments が読めません: %w", tc.Function.Name, err)
 		}

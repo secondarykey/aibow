@@ -77,8 +77,9 @@ type Format interface {
 	// BuildPrompt は会話を、モデルが学習時に見てきた書式の1本の文字列にする。
 	// 最後は「アシスタントの返事の書き出し」で終える(モデルはその続きを書く)
 	BuildPrompt(p Prompt) string
-	// NewParser は、生成した文字列を思考・答え・ツール呼び出しに振り分けるものを作る(生成1回ごとに1つ)
-	NewParser(think bool) OutputParser
+	// NewParser は、生成した文字列を思考・答え・ツール呼び出しに振り分けるものを作る(生成1回ごとに1つ)。
+	// tools はモデルに知らせたツール(呼び出しの引数を、定義の型を見て tool.Arg の形にするため)
+	NewParser(think bool, tools []tool.Def) OutputParser
 }
 
 // OutputParser は、生成中に少しずつ届く文字列を振り分ける。

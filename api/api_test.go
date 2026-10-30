@@ -288,11 +288,11 @@ func TestQueue(t *testing.T) {
 const toolsJSON = `"tools":[{"type":"function","function":{"name":"read_file","description":"Read a file",
 	"parameters":{"type":"object","properties":{"path":{"type":"string"},"n":{"type":"integer"},"flags":{"type":"array"},"ok":{"type":["boolean","null"]}},"required":["path"]}}}]`
 
-// モデルが書いた呼び出し(値は文字列)を返す偽物。1つは書式が崩れている
+// モデルが書いた呼び出し(値は tool.Arg の形。真偽の引数に書いた True は型に合わないので JSON の文字列)を返す偽物。1つは書式が崩れている
 func toolGen() *fakeGen {
 	return &fakeGen{nCtx: 100, tokens: 10, content: []string{"読みます"}, stop: "stop", calls: []format.ToolCall{
 		{Call: tool.Call{Name: "read_file", Args: []tool.Arg{
-			{Name: "path", Value: "a.go"}, {Name: "n", Value: "5"}, {Name: "flags", Value: `["x", "y"]`}, {Name: "ok", Value: "True"}, {Name: "memo", Value: "7"},
+			{Name: "path", Value: "a.go"}, {Name: "n", Value: "5"}, {Name: "flags", Value: `["x", "y"]`}, {Name: "ok", Value: `"True"`}, {Name: "memo", Value: "7"},
 		}}},
 		{Raw: "<tool_call>\n<function=read_file>", Error: "書式が崩れていて…"},
 	}}

@@ -161,8 +161,8 @@ func run(ctx context.Context, t tool.Tool, args tool.Args) (string, error) {
 // toArgs は MCP で届いた引数(JSON のオブジェクト)を tool.Args にする。
 //
 // 確かめるのは tool.CheckArgs に任せる(知らない引数・足りない引数・型の違いを、小さいモデルが直しやすい文で返す。組み込みと同じ文になる)。
-// CheckArgs は Qwen3.5 の書式に合わせて「値は文字列で届く」前提なので、JSON の値をいったん文字列に戻して渡す:
-// 文字列はそのまま、それ以外(数・真偽値・配列・オブジェクト)は JSON の書き方のまま。CheckArgs が JSON Schema の型を見て元に戻す。
+// CheckArgs は書式によらない tool.Arg の形で値を受け取るので、JSON の値を定義の型を見てその形にして渡す(tool.ArgFromJSON):
+// 文字列の引数は中身、それ以外(数・真偽値・配列・オブジェクト)は JSON の書き方のまま。CheckArgs が JSON Schema の型を見て Go の値にする。
 // 値は読み直さず、届いた JSON の書き方のまま渡す(数を float64 で読むと、大きな整数の桁が落ちたり 1e+06 の形になったりするため)
 func toArgs(def tool.Def, raw json.RawMessage) (tool.Args, error) {
 	values := map[string]json.RawMessage{}
@@ -177,17 +177,14 @@ func toArgs(def tool.Def, raw json.RawMessage) (tool.Args, error) {
 	}
 	slices.Sort(names) // いつも同じ順にする(エラーの文が毎回変わらないように)
 
+	types := tool.ArgTypes(def)
 	var args []tool.Arg
 	for _, name := range names {
 		v := values[name]
 		if strings.TrimSpace(string(v)) == "null" {
 			continue // null は「書かなかった」として扱う(省略できる引数に null を入れてくるクライアントがある)
 		}
-		var s string
-		if err := json.Unmarshal(v, &s); err != nil {
-			s = string(v) // 文字列ではない値は、JSON の書き方のまま
-		}
-		args = append(args, tool.Arg{Name: name, Value: s})
+		args = append(args, tool.Arg{Name: name, Value: tool.ArgFromJSON(types[name], v)})
 	}
 	return tool.CheckArgs(def, args)
 }

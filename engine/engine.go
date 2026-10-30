@@ -487,7 +487,7 @@ func (e *Engine) Generate(
 	defer llama.SamplerFree(sampler)
 
 	var u8 utf8Buffer
-	parser := e.format.NewParser(p.Think)
+	parser := e.format.NewParser(p.Think, p.Tools)
 	send := func(th, c string) {
 		if th != "" {
 			onThinking(th)

@@ -63,9 +63,9 @@ type Call struct {
 	Args []Arg  `json:"args"` // 書いた順(プロンプトに書き戻すときも同じ順にするため)
 }
 
-// Arg はモデルが書いた引数1つ。値は文字列のまま持つ(Qwen3.5 の書式は値を文字列で書くため)。
-// 数の引数は、実行する前に CheckArgs が JSON Schema の型を見て変換する。
-// 呼び出しを保存・プロンプトに書き戻すときは、モデルが書いたままの文字列を使う。
+// Arg はモデルが書いた引数1つ。値は書式によらない形で持つ(文字列の引数は中身、数・真偽・配列・オブジェクトの引数は JSON の文字。arg.go)。
+// 実行する前に CheckArgs が JSON Schema の型を見て Go の値に変換する。
+// 呼び出しを保存するときはこの形のまま。プロンプトに書き戻すときは、書式がこの形から自分の書き方に直す。
 type Arg struct {
 	Name  string `json:"name"`
 	Value string `json:"value"`
@@ -127,7 +127,8 @@ func Names(tools []Tool) string {
 // 足りない・知らない・重なった引数はエラー。小さいモデルは引数の名前を間違えやすいので、
 // 何が使えるかをエラーの文に入れて、次の呼び出しで直せるようにする。
 //
-// Qwen3.5 の書式では値がすべて文字列で届くので、文字列でない引数(数・真偽値・配列・オブジェクト)はここで変換する。
+// 文字列でない引数(数・真偽値・配列・オブジェクト)は、Arg.Value の JSON の文字をここで変換する。
+// モデルが型に合わない文字を書いていたとき(JSON の文字列で持っている)は、中身の文字を大目に見て変換する(" 5" → 5、True → true)。
 // ツールの側は、受け取った値の型を信じてよい。
 func CheckArgs(def Def, args []Arg) (Args, error) {
 	var schema struct {
@@ -154,7 +155,7 @@ func CheckArgs(def Def, args []Arg) (Args, error) {
 		if _, dup := out[a.Name]; dup {
 			return nil, fmt.Errorf("引数 %s が2回書かれています", a.Name)
 		}
-		v, err := convert(string(prop.Type), a.Value)
+		v, err := convert(string(prop.Type), ArgText(string(prop.Type), a.Value))
 		if err != nil {
 			return nil, fmt.Errorf("引数 %s: %w", a.Name, err)
 		}
@@ -192,10 +193,10 @@ func (t *schemaType) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// convert は文字列で届いた値を、JSON Schema の型に変換する。型を決めていない・文字列の引数はそのまま。
+// convert は値の文字を、JSON Schema の型に変換する。型を決めていない・文字列の引数はそのまま。
 //
-// 文字列でない値の書き方は、Qwen3.5 の公式テンプレートが会話の履歴に呼び出しを書き戻すときの書き方に合わせる
-// (モデルは学習でその形を見ているので、同じ形で書いてくる):
+// ふつうは JSON の文字(Arg.Value の形)が届く。大目に見る書き方は、Qwen3.5 の公式テンプレートが会話の履歴に呼び出しを書き戻すときの
+// 書き方に合わせる(モデルは学習でその形を見ているので、同じ形で書いてくる):
 //
 //	配列・オブジェクト … JSON(テンプレートの tojson)
 //	それ以外           … 文字列にしたもの(テンプレートは Python で動くので、真偽値は True / False になる)

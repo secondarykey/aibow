@@ -97,7 +97,7 @@ func (qwen35) BuildPrompt(p Prompt) string {
 				b.WriteString("<think>\n" + strings.TrimSpace(m.Thinking) + "\n</think>\n\n")
 			}
 			b.WriteString(content)
-			writeQwen35Calls(&b, m.ToolCalls, content != "")
+			writeQwen35Calls(&b, m.ToolCalls, content != "", p.Tools)
 			b.WriteString("<|im_end|>\n")
 		case "tool":
 			// ツールの結果は user の発言の形で返す。続けて複数あるときは、1つの user の中に並べる
@@ -155,6 +155,7 @@ func writeQwen35Tools(b *strings.Builder, tools []tool.Def) {
 }
 
 // writeQwen35Calls は返事の中のツール呼び出しを書く。afterContent は、呼び出しの前に答えの文があるか。
+// 引数の値は文字で書く(tool.ArgText。tools は値の型を見るためのツールの定義)。
 //
 //	答えの文
 //
@@ -167,7 +168,7 @@ func writeQwen35Tools(b *strings.Builder, tools []tool.Def) {
 //	</tool_call>
 //	<tool_call>
 //	…(2つ目)
-func writeQwen35Calls(b *strings.Builder, calls []ToolCall, afterContent bool) {
+func writeQwen35Calls(b *strings.Builder, calls []ToolCall, afterContent bool, tools []tool.Def) {
 	for i, c := range calls {
 		switch {
 		case i > 0:
@@ -182,8 +183,9 @@ func writeQwen35Calls(b *strings.Builder, calls []ToolCall, afterContent bool) {
 			continue
 		}
 		b.WriteString("<tool_call>\n<function=" + c.Name + ">\n")
+		types := tool.ArgTypesFor(tools, c.Name)
 		for _, a := range c.Args {
-			b.WriteString("<parameter=" + a.Name + ">\n" + a.Value + "\n</parameter>\n")
+			b.WriteString("<parameter=" + a.Name + ">\n" + tool.ArgText(types[a.Name], a.Value) + "\n</parameter>\n")
 		}
 		b.WriteString("</function>\n</tool_call>")
 	}
@@ -302,13 +304,14 @@ const (
 	qwen35Response  = "<tool_response>"
 )
 
-func (qwen35) NewParser(think bool) OutputParser {
-	return &qwen35Parser{split: newThinkSplitter(think)}
+func (qwen35) NewParser(think bool, tools []tool.Def) OutputParser {
+	return &qwen35Parser{split: newThinkSplitter(think), tools: tools}
 }
 
 // qwen35Parser は生成した文字列を思考・答え・呼び出しの部分に振り分け、全体も覚えておく(Result 用)。
 type qwen35Parser struct {
 	split             *thinkSplitter
+	tools             []tool.Def // 引数の値を tool.Arg の形にするときに、型を見る
 	thinking, content strings.Builder
 	held              string          // 答えのうち、"<tool_call>" の書きかけかもしれないので保留している文字列
 	calls             strings.Builder // "<tool_call>" から後ろ(呼び出しの部分)。空なら、まだ呼び出しは出ていない
@@ -396,14 +399,14 @@ func (q *qwen35Parser) Result() Output {
 	if q.calls.Len() > 0 {
 		// 呼び出しの前の空行は書式の区切りなので、答えからは落とす
 		out.Content = strings.TrimRightFunc(out.Content, unicode.IsSpace)
-		out.ToolCalls = parseQwen35Calls(q.calls.String())
+		out.ToolCalls = parseQwen35Calls(q.calls.String(), q.tools)
 	}
 	return out
 }
 
 // parseQwen35Calls は「呼び出しの部分」(<tool_call> から後ろ)から、呼び出しを全部読み取る。
 // 呼び出しの間や後ろに書かれた文は捨てる(テンプレートの指示で「呼び出しの後ろには何も書かない」ことになっている)。
-func parseQwen35Calls(s string) []ToolCall {
+func parseQwen35Calls(s string, tools []tool.Def) []ToolCall {
 	// モデルが自分で書き始めた結果は捨てる(Stop で止めたときに、書きかけで残っている)
 	if i := strings.Index(s, qwen35Response); i >= 0 {
 		s = s[:i]
@@ -422,7 +425,7 @@ func parseQwen35Calls(s string) []ToolCall {
 			return append(calls, brokenCall(raw, "", "</tool_call> で閉じていません"))
 		}
 		block := s[:end+len(qwen35CallEnd)]
-		calls = append(calls, parseQwen35Call(block))
+		calls = append(calls, parseQwen35Call(block, tools))
 		s = s[len(block):]
 	}
 }
@@ -441,7 +444,8 @@ const qwen35CallHelp = "正しい書式: <tool_call>\n<function=関数名>\n<par
 //	</tool_call>
 //
 // 値の前後の改行1つずつは書式の区切りなので落とす(値の中の改行や字下げは残す。ステップ3でファイルの中身を渡すため)。
-func parseQwen35Call(block string) ToolCall {
+// Qwen3.5 は値をいつも文字で書くので、ツールの定義の型を見て tool.Arg の形にする(tool.ArgFromText。0026 の決定事項 1)。
+func parseQwen35Call(block string, tools []tool.Def) ToolCall {
 	inner := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(block, qwen35CallStart), qwen35CallEnd))
 	if !strings.HasPrefix(inner, "<function=") {
 		return brokenCall(block, "", "<tool_call> の中が <function=関数名> で始まっていません")
@@ -457,6 +461,7 @@ func parseQwen35Call(block string) ToolCall {
 	}
 
 	call := ToolCall{Call: tool.Call{Name: name, Args: []tool.Arg{}}}
+	types := tool.ArgTypesFor(tools, name)
 	for {
 		body = strings.TrimLeftFunc(body, unicode.IsSpace)
 		if body == "" {
@@ -475,7 +480,7 @@ func parseQwen35Call(block string) ToolCall {
 			return brokenCall(block, name, "<parameter=引数名> が </parameter> で閉じていません")
 		}
 		value = strings.TrimSuffix(strings.TrimPrefix(value, "\n"), "\n")
-		call.Args = append(call.Args, tool.Arg{Name: arg, Value: value})
+		call.Args = append(call.Args, tool.Arg{Name: arg, Value: tool.ArgFromText(types[arg], value)})
 		body = rest
 	}
 }

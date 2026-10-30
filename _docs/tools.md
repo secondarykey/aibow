@@ -10,6 +10,7 @@
 | `format/format.go` | `format` パッケージ。書式の interface(`Format` / `OutputParser`)と、会話の仕組みとエンジンの間で受け渡す形(`Message` / `Prompt` / `Output` / `ToolCall`)。モデルの種類で書式を選ぶ表(`format.For`) |
 | `format/qwen35.go` | Qwen3.5 の書式。プロンプトの組み立て(ツールの説明・呼び出し・結果・ループ中の思考)と、出力の振り分け(思考・答え・`<tool_call>`) |
 | `tool/tool.go` | `tool` パッケージ。ツールの interface(`Tool`)・定義(`Def`)・呼び出し(`Call`: 名前と引数だけ)・引数(`Arg`)。引数を JSON Schema と照らし合わせる `CheckArgs` |
+| `tool/arg.go` | 引数の値の持ち方(書式によらない形。下の「引数の値の持ち方」)と、書式・JSON との行き来(`ArgFromText` / `ArgText`・`ArgFromJSON` / `ArgJSON`・`ArgsFromJSON` / `ArgsJSON`・`ArgTypes`) |
 | `tool/time.go` / `tool/calc.go` | 組み込みのツール `get_current_time` / `calculate` |
 | `tool/files.go` | 作業フォルダのツールの共通部分(`Files`・`os.Root` で開く・パスを作業フォルダからの相対にする) |
 | `tool/list.go` / `tool/read.go` | 作業フォルダのツール `list_files` / `read_file` |
@@ -50,6 +51,25 @@ Conversations ← Output(思考・答え・ToolCall)            ← Engine ← F
   「何のためにツールを呼んだか」を覚えたまま続きを書かせるため
 - 発言の中身は前後の空白を落とす(テンプレートの `|trim`)
 - 読み取れなかった呼び出しは、モデルが書いたまま(`ToolCall.Raw`)をプロンプトに戻す。結果の「エラー: …」と並べて、モデルが自分の間違いを見られるようにする
+- 呼び出しの引数の値はいつも文字で書く(`<parameter=n>\n5\n</parameter>`)。読むときも書くときも、ツールの定義の型を見て `tool.Arg` の形と行き来する(`tool.ArgFromText` / `tool.ArgText`。下の「引数の値の持ち方」)
+
+### 引数の値の持ち方(0026 の段1)
+
+書式によってモデルが値を書く形は違う(Qwen3.5 はいつも文字、OpenAI 互換の口は JSON、Gemma 4 は型のある独自の書き方)。
+会話に保存し、モデルを替えても前の呼び出しを新しい書式で書けるように、`tool.Arg.Value` は**書式によらない1つの形**にそろえている:
+
+| 引数の型(JSON Schema の `type`) | `Arg.Value` |
+|---|---|
+| `string`・型を決めていない(`anyOf` など)・ツールの定義が無い | 文字列の中身そのまま |
+| `integer`・`number`・`boolean`・`array`・`object` | JSON の文字(`5`・`true`・`["a", "b"]`) |
+
+- どちらの形かは値だけでは決まらず、ツールの定義の型で決まる。書式は読むときにこの形にし(`ArgFromText`・`ArgFromJSON`)、書くときにこの形から自分の書き方に直す(`ArgText`・`ArgJSON`)。
+  そのため `Format.NewParser` はモデルに知らせたツールの定義を受け取り、`BuildPrompt` は `Prompt.Tools` で型を見る
+- **型のある引数にモデルが型に合わない文字を書いたとき**(整数に ` 5` や `5.0`、真偽に `True`)は、書いた文字を JSON の文字列にして持つ(`" 5"`・`"True"`)。
+  直さずに持つので、同じ書式に書き戻すと1文字も変わらない(KV キャッシュを使い回せる)。`CheckArgs` は中身の文字を今までどおり大目に見て変換する(` 5` → 5、`True` → true)
+- 0026 より前に保存した会話は、型のある引数でもモデルが書いたままの文字(`True` など)を持っている。JSON の文字列でない値は書いたままの文字として扱うので、そのまま読めて、プロンプトも前と同じになる
+- Qwen3.5 の書式は、JSON の文字をそのまま書く(真偽は `true` のまま。公式テンプレートは Python の `True` で書くが、モデルが書いた文字に戻すことを優先して今までどおりにした)
+- 書くときにツールの定義が無い(使わないにしたツールの前の呼び出し・`tool_choice: "none"`)と型が分からないので、値をそのまま書く。型に合わない文字を書いていた値だけ、`"True"` のように引用符つきで書かれる(まれなので受け入れる)
 
 ### 出力の読み取り
 
@@ -115,10 +135,10 @@ tool ── 何も知らない
 - 型の名前はパッケージ名と重ねない(`tool.ToolDef` ではなく `tool.Def`。Go の慣習)。interface だけは `tool.Tool`(`context.Context` と同じく、ほかに良い名前が無いため)
 - `Tool` は定義(`Def`: 名前・説明・引数の JSON Schema)と実行(`Run`)を持つ。名前は英語の snake_case、説明も英語
 - 引数は `tool.CheckArgs` が JSON Schema の `properties` / `required` と照らし合わせる。間違いは「使える引数: …」付きのエラーで返す
-- Qwen3.5 の書式では値がすべて文字列で届くので、`CheckArgs` が JSON Schema の `type` を見て変換する(`integer` → int、`number` → float64、`boolean` → bool、`array` / `object` → JSON を読んだ値、ほかは文字列)。
-  書き方は、公式テンプレートが履歴に呼び出しを書き戻すときの形に合わせる(配列・オブジェクトは `tojson`、それ以外は文字列。テンプレートは Python で動くので真偽値は `True` / `False`。0006 で MCP のツールのために足した)。
+- `CheckArgs` は `tool.Arg` の形の値を、JSON Schema の `type` を見て変換する(`integer` → int、`number` → float64、`boolean` → bool、`array` / `object` → JSON を読んだ値、ほかは文字列)。
+  型に合わない文字(JSON の文字列で持っている)は、中身を大目に見て読む。書き方は、公式テンプレートが履歴に呼び出しを書き戻すときの形に合わせる(配列・オブジェクトは `tojson`、それ以外は文字列。テンプレートは Python で動くので真偽値は `True` / `False`。0006 で MCP のツールのために足した)。
   `type` が `["integer", "null"]` のような配列なら null でない最初の型、`anyOf` などで型を決めていなければ文字列のまま
-  `Run` は変換済みの `tool.Args`(`map[string]any`。`String` / `Int` で取り出す)を受け取る。保存とプロンプトへの書き戻しは、モデルが書いたままの文字列(`tool.Arg`)を使う
+  `Run` は変換済みの `tool.Args`(`map[string]any`。`String` / `Int` で取り出す)を受け取る。保存とプロンプトへの書き戻しは `tool.Arg`(上の「引数の値の持ち方」)を使う
 - ステップ3(ファイル操作)のツールも `tool.Tool` で足し、`Conversations.tools` に入れる。
   ステップ4の MCP のサーバーのツールも `tool.Tool`(`tool.Remote`)で、`Conversations.toolsFor` が組み込みのツールの後ろに並べる([mcp.md](mcp.md))
 - ツールを使うか・実行前に確認するかは、組み込みのツールも MCP のツールも `Conversations.toolPolicy` で決める(プロファイルで使えない → 会話の上書き → `tools.json` → 決まりの既定。[mcp.md](mcp.md) の「ツールの扱い」)。決まりの既定は今までどおり(書き換えるツールとコマンドは確認する、読むだけのツールは確認しない)

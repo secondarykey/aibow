@@ -156,6 +156,7 @@ func newServer(t *testing.T, g *fakeGen) (*Client, *fakeModels) {
 }
 
 // tricky は、往復で変わりやすいもの(数・配列・True・前後の空白・< と &・崩れた呼び出し・思考)を入れた会話。
+// 型のある引数に型に合わない文字(" 5"・True)を書いた値は、tool.Arg の形(JSON の文字列)で持つ(0026)。
 func tricky() format.Prompt {
 	params := json.RawMessage(`{"type": "object", "properties": {"path": {"type": "string", "description": "a < b && c"}, "n": {"type": "integer"}, "flags": {"type": "array"}, "ok": {"type": "boolean"}}, "required": ["path"]}`)
 	return format.Prompt{
@@ -165,7 +166,7 @@ func tricky() format.Prompt {
 			{Role: "system", Content: "あなたは aibow です。\n<rules>"},
 			{Role: "user", Content: "読んで"},
 			{Role: "assistant", Content: "", Thinking: "読もう", ToolCalls: []format.ToolCall{
-				{Call: tool.Call{Name: "read_file", Args: []tool.Arg{{Name: "path", Value: "a.go"}, {Name: "n", Value: " 5"}, {Name: "flags", Value: `["x", "y"]`}, {Name: "ok", Value: "True"}}}},
+				{Call: tool.Call{Name: "read_file", Args: []tool.Arg{{Name: "path", Value: "a.go"}, {Name: "n", Value: `" 5"`}, {Name: "flags", Value: `["x", "y"]`}, {Name: "ok", Value: `"True"`}}}},
 				{Call: tool.Call{Name: "read_file"}, Raw: "<tool_call>\n<function=read_file>", Error: "崩れています"},
 				{Call: tool.Call{Name: "read_file", Args: []tool.Arg{{Name: "path", Value: "b.go"}, {Name: "n", Value: "3"}}}},
 			}},
@@ -200,12 +201,23 @@ func TestRoundTripPrompt(t *testing.T) {
 	if o := g.opts[0]; o.Temperature != 0 || o.MaxTokens != 50 || o.PresencePenalty != 0 {
 		t.Errorf("生成の設定: %+v", o)
 	}
+
+	// 0026 より前に保存した会話(型のある引数でも、モデルが書いたままの文字 " 5"・True を持つ)も、書式を当てた文字列は変わらない
+	old := tricky()
+	old.Messages[2].ToolCalls[0].Args[1].Value, old.Messages[2].ToolCalls[0].Args[3].Value = " 5", "True"
+	if _, _, err := c.Generate(context.Background(), old, engine.GenerateOptions{},
+		func(string) {}, func(string) {}, func(string) {}); err != nil {
+		t.Fatal(err)
+	}
+	if a, b := f.BuildPrompt(g.prompts[1]), f.BuildPrompt(old); a != b {
+		t.Errorf("前の形の会話で、書式を当てた文字列が変わった:\n got  %q\n want %q", a, b)
+	}
 }
 
 // サーバーの返事 → 会話 で、生成の結果(崩れた呼び出しの位置も)と記録が engine と同じ形に戻る
 func TestRoundTripOutput(t *testing.T) {
 	out := format.Output{Thinking: "考え", Content: "読みます", ToolCalls: []format.ToolCall{
-		{Call: tool.Call{Name: "read_file", Args: []tool.Arg{{Name: "path", Value: "a.go"}, {Name: "n", Value: " 5"}, {Name: "ok", Value: "True"}, {Name: "flags", Value: `["x", "y"]`}}}},
+		{Call: tool.Call{Name: "read_file", Args: []tool.Arg{{Name: "path", Value: "a.go"}, {Name: "n", Value: `" 5"`}, {Name: "ok", Value: `"True"`}, {Name: "flags", Value: `["x", "y"]`}}}},
 		{Call: tool.Call{Name: "read_file"}, Raw: "<tool_call>\n<function=read_file>", Error: "崩れています"},
 		{Call: tool.Call{Name: "read_file", Args: []tool.Arg{{Name: "n", Value: "3"}}}},
 	}}

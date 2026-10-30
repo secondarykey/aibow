@@ -11,10 +11,15 @@ import (
 	"github.com/secondarykey/aibow/tool"
 )
 
-// parse は pieces を順に届いたものとして Qwen3.5 の読み取りに通す。
+// parse は pieces を順に届いたものとして Qwen3.5 の読み取りに通す(ツールの定義なし)。
 // 返すのは、生成中に画面へ出した思考と答え(streamed)と、終わったあとの結果(Result)。
 func parse(think bool, pieces ...string) (thinking, content string, out Output, stopped bool) {
-	p := (qwen35{}).NewParser(think)
+	return parseWith(nil, think, pieces...)
+}
+
+// parseWith は parse の、モデルに知らせたツールの定義があるとき(引数の値を定義の型を見て tool.Arg の形にする)。
+func parseWith(tools []tool.Def, think bool, pieces ...string) (thinking, content string, out Output, stopped bool) {
+	p := (qwen35{}).NewParser(think, tools)
 	for _, piece := range pieces {
 		th, c := p.Push(piece)
 		thinking += th
@@ -126,10 +131,43 @@ func TestQwen35CallsRoundTrip(t *testing.T) {
 		toolCall("write_file", "path", "a.go", "content", "package a\n\n\tfunc f() {}\n"),
 	}
 	var b strings.Builder
-	writeQwen35Calls(&b, calls, true)
+	writeQwen35Calls(&b, calls, true, nil)
 	_, _, out, _ := parse(false, "答え"+b.String())
 	if !reflect.DeepEqual(out.ToolCalls, calls) || out.Content != "答え" {
 		t.Errorf("読み戻した呼び出し: %+v / 答え %q", out.ToolCalls, out.Content)
+	}
+}
+
+// typedTool は、文字列でない引数を持つツールの定義(引数の値の持ち方を確かめる)。
+var typedTool = tool.Def{Name: "read_file", Parameters: []byte(`{"type": "object", "properties": {
+	"path": {"type": "string"}, "offset": {"type": "integer"}, "ok": {"type": "boolean"}, "paths": {"type": "array"}}}`)}
+
+// Qwen3.5 は値をいつも文字で書く。型のある引数は、型に合う文字ならそのまま JSON の値として持ち、
+// 合わない文字(" 5"・True・5.0)は書いた文字を JSON の文字列にして持つ。どちらも書き戻すと書いた文字に戻る(0026 の決定事項 1)
+func TestQwen35TypedArgs(t *testing.T) {
+	text := "<tool_call>\n<function=read_file>\n" +
+		"<parameter=path>\n5\n</parameter>\n" + // 文字列の引数は、数に見えても中身のまま
+		"<parameter=offset>\n12\n</parameter>\n" +
+		"<parameter=ok>\nTrue\n</parameter>\n" +
+		"<parameter=paths>\n[\"a.go\", \"b.go\"]\n</parameter>\n" +
+		"<parameter=offset>\n 5\n</parameter>\n" +
+		"</function>\n</tool_call>"
+	_, _, out, _ := parseWith([]tool.Def{typedTool}, false, text)
+	want := toolCall("read_file", "path", "5", "offset", "12", "ok", `"True"`, "paths", `["a.go", "b.go"]`, "offset", `" 5"`)
+	if len(out.ToolCalls) != 1 || !reflect.DeepEqual(out.ToolCalls[0], want) {
+		t.Fatalf("読み取った引数: %+v", out.ToolCalls)
+	}
+
+	var b strings.Builder
+	writeQwen35Calls(&b, out.ToolCalls, false, []tool.Def{typedTool})
+	if b.String() != text {
+		t.Errorf("書き戻すと書いた文字に戻る:\n%s", b.String())
+	}
+
+	// ツールの定義が無い(知らないツール)ときは、どの引数も文字列として持つ
+	_, _, out, _ = parse(false, text)
+	if got := out.ToolCalls[0].Args[2].Value; got != "True" {
+		t.Errorf("定義が無いときの値: %q", got)
 	}
 }
 

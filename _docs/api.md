@@ -64,13 +64,14 @@ API では `tools` を JSON Schema で渡し、`tool_calls` が JSON で返る�
 
 ```
 行き: tools              → tool.Def(parameters は書いた順のまま)
-      履歴の tool_calls   → format.ToolCall(arguments の値 → 文字列)
+      履歴の tool_calls   → format.ToolCall(arguments の値 → tool.Arg の形。tool.ArgsFromJSON)
       tool の役の発言    → format.Message{Role: "tool"}(書式が <tool_response> で包む)
-帰り: format.ToolCall    → tool_calls(文字列 → JSON の値。tools の JSON Schema の型を見る)。finish_reason は tool_calls
+帰り: format.ToolCall    → tool_calls(tool.Arg の形 → JSON の値。tools の JSON Schema の型を見る)。finish_reason は tool_calls
 ```
 
-- **引数の型**:Qwen3.5 の書式は値をいつも文字列で書く。返すときは、型が文字列でない引数で、モデルが書いた文字がその型の JSON として読めれば、その文字をそのまま JSON の値にする(`5`・`["x", "y"]`)。
-  戻ってきたときは、文字列の値は中身に、それ以外は JSON の文字のまま書式に戻す。キーの順番も保つ。**往復で1文字も変わらないので、ツールのループで KV キャッシュを前回の生成の分まで使い回せる**
+- **引数の型**:aibow の中の引数の値は、書式によらない形(文字列の引数は中身、数などの引数は JSON の文字。[tools.md](tools.md) の「引数の値の持ち方」)で持つ。
+  arguments の JSON とは、tools の JSON Schema の型を見て行き来するだけ(Qwen3.5 が整数の引数に書いた `5` は JSON の `5`、配列は `["x", "y"]`)。
+  モデルが型に合わない文字(` 5`・`True`)を書いた値は JSON の文字列で持っているので、そのまま文字列で返る。戻ってきたときも同じ形に戻り、キーの順番も保つ。**往復で1文字も変わらないので、ツールのループで KV キャッシュを前回の生成の分まで使い回せる**
 - 定義に合わない呼び出し(知らない名前・引数の間違い・型の合わない値)も、そのまま返す。クライアントのツールの検証でエラーになり、ツールの結果としてモデルに返るので、モデルが直せる。理由は Warn のログ
 - 書式が崩れて読み取れなかった呼び出しは、モデルが書いたままを答えの後ろに足して返す(Warn のログ)。aibow のクライアントには答えに足さず、`aibow.broken_tool_calls` で分けて返す(下)
 - `tool_call_id` は読まない(書式は呼び出しと結果の順番で対応させる)。`tool_choice` は `"none"` だけを見る(ほかは強制できないので `"auto"` と同じ)
@@ -170,7 +171,8 @@ data: [DONE]
 | `LoadModel` | `POST /models/load` | 会話のモデルを読み込ませ、これからの生成でその `model` を頼む |
 | `Models`・`SetGPULayers` | `GET /models`・`POST /aibow/gpu-layers` | 画面のモデルの一覧と GPU の層数(8-2 でつなぐ) |
 
-- **会話 → JSON → 会話 で1文字も変えない**:引数の値はいつも JSON の文字列で送る(サーバーは文字列を中身のまま書式に戻すので、数や `True`・前後の空白も変わらない)。
+- **会話 → JSON → 会話 で1文字も変えない**:引数の値は `tool.Arg` の形から、送るツールの定義の型を見て JSON にする(`tool.ArgsJSON`。サーバーも同じ型で `tool.ArgsFromJSON` で戻すので、数や `True`・前後の空白も変わらない)。
+  0026 より前は値をいつも JSON の文字列で送っていた。前の版のサーバー・クライアントと組み合わせても、書式を当てた文字列は同じになる。
   崩れた呼び出しは `aibow.broken_tool_calls` で順番つきで送り、サーバーがモデルの書いたまま(`raw`)を書式に戻す。
   `client_test.go` で、本物の `api.Server` を `httptest` で立て(生成だけ偽物)、サーバーが受け取った会話と、書式を当てた文字列が直接のときと同じになることを確かめている
 - `LoadModel` を呼ばずに生成するとき(会話のモデルが、最後に知った読み込み中のモデルと同じ)は、そのモデルを `model` で頼む。空で頼むとサーバーが今のモデルで答えるので、そのあとでほかの人が入れ替えていると、違うモデルで返事ができてしまうため

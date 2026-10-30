@@ -251,10 +251,10 @@ func TestTemplateAndCount(t *testing.T) {
 }
 
 // aibow のクライアントには、モデルに渡した文字列・細かい終了の理由・崩れた呼び出しを aibow 欄で分けて返す。
-// 引数は往復で変わらない形でだけ型の値にする(True・前後の空白は文字列のまま)
+// 引数は往復で変わらない形でだけ型の値にする(型に合わない True・前後の空白は、書いた文字の JSON の文字列のまま)
 func TestAibowFieldsNonStream(t *testing.T) {
 	g := toolGen()
-	g.calls = append(g.calls, format.ToolCall{Call: tool.Call{Name: "read_file", Args: []tool.Arg{{Name: "n", Value: " 5"}}}})
+	g.calls = append(g.calls, format.ToolCall{Call: tool.Call{Name: "read_file", Args: []tool.Arg{{Name: "n", Value: `" 5"`}}}})
 	ts := newTestServer(g)
 	defer ts.Close()
 

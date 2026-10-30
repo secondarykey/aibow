@@ -176,7 +176,7 @@ func toPrompt(req chatRequest, think bool) (format.Prompt, error) {
 		case "user":
 			msgs = append(msgs, format.Message{Role: "user", Content: text})
 		case "assistant":
-			calls, err := fromRequestCalls(m.ToolCalls)
+			calls, err := fromRequestCalls(m.ToolCalls, defs)
 			if err == nil && m.Aibow != nil {
 				calls, err = mergeBroken(calls, m.Aibow.BrokenToolCalls)
 			}

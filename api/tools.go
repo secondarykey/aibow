@@ -7,20 +7,20 @@ package api
 // (aibow がステップ 2-3 から自分でやってきたこと)。ここはその「JSON ⇄ 書式の形」の変換をする:
 //
 //	行き: tools               → tool.Def(書式がシステムプロンプトに書く)
-//	      履歴の tool_calls    → format.ToolCall(引数は JSON の値 → 文字列)
+//	      履歴の tool_calls    → format.ToolCall(引数は JSON → tool.Arg の形。tool.ArgsFromJSON)
 //	      tool の役の発言     → format.Message{Role: "tool"}
-//	帰り: format.ToolCall     → tool_calls(引数は文字列 → JSON の値。tools の JSON Schema の型を見る)
+//	帰り: format.ToolCall     → tool_calls(引数は tool.Arg の形 → JSON。tools の JSON Schema の型を見る)
 //
-// 引数の型の違い:Qwen3.5 の書式は値をいつも文字列で書く(<parameter=n>\n5\n</parameter>)。OpenAI の arguments は JSON(数は数)。
-// 文字列でない値は、モデルが書いた文字をそのまま JSON の値として arguments に入れ、戻ってきたときもその文字のまま書式に戻す。
-// こうすると往復で1文字も変わらないので、ツールの結果を足したリクエストで、前回の生成の分まで KV キャッシュを使い回せる
-// (書き戻したプロンプトがモデルの書いた文字と違うと、Qwen3.5 は途中から巻き戻せないので全部を読み直す)。
+// 引数の値は、aibow の中では書式によらない形(文字列の引数は中身、数などの引数は JSON の文字。tool/arg.go)で持つので、
+// arguments の JSON とは型を見て行き来するだけ。Qwen3.5 が数の引数に書いた "5" は、そのまま JSON の 5 になる。
+// モデルが型に合わない文字(" 5" や True)を書いたときは、tool.Arg は書いた文字を JSON の文字列で持っている。
+// aibow のクライアントにはそれをそのまま返し(戻ってきたときに、書いた文字のまま書式に戻るように。往復で1文字も変わらないと、
+// ツールの結果を足したリクエストで前回の生成の分まで KV キャッシュを使い回せる)、Cline などには型の値に直して返す。
 
 import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"strings"
 	"uuid"
 
@@ -88,60 +88,20 @@ func useTools(choice json.RawMessage) bool {
 	return true
 }
 
-// fromRequestCalls は履歴の assistant の tool_calls を、書式の形にする。
-func fromRequestCalls(calls []toolCall) ([]format.ToolCall, error) {
+// fromRequestCalls は履歴の assistant の tool_calls を、書式の形にする。defs はモデルに知らせるツール(引数の型を見る)。
+func fromRequestCalls(calls []toolCall, defs []tool.Def) ([]format.ToolCall, error) {
 	out := make([]format.ToolCall, 0, len(calls))
 	for i, c := range calls {
 		if c.Type != "" && c.Type != "function" {
 			return nil, fmt.Errorf("tool_calls[%d]: 種類 %q には対応していません(function だけです)", i, c.Type)
 		}
-		args, err := argsFromJSON(c.Function.Arguments)
+		args, err := tool.ArgsFromJSON(c.Function.Arguments, tool.ArgTypesFor(defs, c.Function.Name))
 		if err != nil {
 			return nil, fmt.Errorf("tool_calls[%d](%s)の arguments: %w", i, c.Function.Name, err)
 		}
 		out = append(out, format.ToolCall{Call: tool.Call{Name: c.Function.Name, Args: args}})
 	}
 	return out, nil
-}
-
-// argsFromJSON は arguments(JSON のオブジェクトの文字列)を、書いた順の引数にする。
-// 文字列の値は中身の文字列に、それ以外(数・真偽値・配列・オブジェクト・null)は JSON の文字のまま値にする。
-//
-// map に読むと順番がなくなる(プロンプトに書き戻す順が変わり、モデルが書いたものと違ってしまう)ので、
-// json.Decoder で1つずつ読む。
-func argsFromJSON(arguments string) ([]tool.Arg, error) {
-	args := []tool.Arg{}
-	if strings.TrimSpace(arguments) == "" {
-		return args, nil
-	}
-	dec := json.NewDecoder(strings.NewReader(arguments))
-	if t, err := dec.Token(); err != nil || t != json.Delim('{') {
-		return nil, fmt.Errorf("JSON のオブジェクトではありません: %q", arguments)
-	}
-	for dec.More() {
-		t, err := dec.Token()
-		if err != nil {
-			return nil, err
-		}
-		name, _ := t.(string) // オブジェクトの中のこの位置は、いつもキー(文字列)
-		var raw json.RawMessage
-		if err := dec.Decode(&raw); err != nil {
-			return nil, err
-		}
-		value := string(raw)
-		var s string
-		if json.Unmarshal(raw, &s) == nil {
-			value = s
-		}
-		args = append(args, tool.Arg{Name: name, Value: value})
-	}
-	if _, err := dec.Token(); err != nil { // 閉じの }
-		return nil, err
-	}
-	if _, err := dec.Token(); err != io.EOF {
-		return nil, fmt.Errorf("JSON のオブジェクトの後ろに余分なものがあります: %q", arguments)
-	}
-	return args, nil
 }
 
 // mergeBroken は、履歴の assistant の読み取れた呼び出し(tool_calls)に、書式が崩れた呼び出し(aibow 欄)を元の並びで混ぜる(0015)。
@@ -182,7 +142,7 @@ func mergeBroken(calls []format.ToolCall, broken []brokenCall) ([]format.ToolCal
 //     クライアントには崩れた形が見え、Cline などは「ツールを使っていない」とモデルに言い返して立て直させる。
 //     aibow のクライアントには aibow 欄で分けて返す(自分のループでエラーとしてモデルに返して直させるため。0015)
 //
-// exact は aibow のクライアントのとき。引数の値を、往復で1文字も変わらない形でだけ JSON の型の値にする(argumentsJSON)。
+// exact は aibow のクライアントのとき。モデルが型に合わない文字を書いた値を、直さずに返す(argumentsJSON)。
 func toResponseCalls(calls []format.ToolCall, defs []tool.Def, exact bool) (out []toolCall, broken []brokenCall) {
 	for i, c := range calls {
 		if c.Error != "" {
@@ -218,35 +178,29 @@ func joinBroken(broken []brokenCall) string {
 
 // argumentsJSON は引数を arguments(JSON のオブジェクトの文字列)にする。書いた順のまま並べる。
 //
-// 値の型は tools の JSON Schema を見て決める(tool.CheckArgs と同じ考え方)。文字列でない型で、モデルが書いた文字が
-// その型の JSON として読めるなら、書いた文字をそのまま値にする(往復で変わらないように)。読めなければ文字列のまま。
-//
-// exact なら、前後の空白を除いたり True を true に直したりしないと読めない値は、文字列のままにする。
-// aibow のクライアントは返ってきた値を書式に戻すので、1文字でも変わると KV キャッシュを使い回せなくなるため(0015 の 8)。
+// 値は tool.Arg の形から、tools の JSON Schema の型を見て JSON の値にする(tool.ArgJSON)。
+// exact でなければ、モデルが型に合わない文字を書いた値(JSON の文字列で持っている)も、前後の空白を除いたり True を true に
+// 直したりして読めるなら型の値にする(Cline などのツールの検証を通るように)。aibow のクライアントは返ってきた値を書式に戻すので、
+// 1文字でも変わると KV キャッシュを使い回せなくなるため、直さない(0015 の 8)。
 func argumentsJSON(args []tool.Arg, def *tool.Def, exact bool) string {
-	types := map[string]string{}
+	var types map[string]string
 	if def != nil {
-		types = propertyTypes(def.Parameters)
+		types = tool.ArgTypes(*def)
 	}
-	var b strings.Builder
-	b.WriteString("{")
+	if exact {
+		return tool.ArgsJSON(args, types)
+	}
+	fixed := make([]tool.Arg, len(args))
 	for i, a := range args {
-		if i > 0 {
-			b.WriteString(",")
-		}
-		b.Write(jsonString(a.Name))
-		b.WriteString(":")
-		if raw, ok := typedValue(types[a.Name], a.Value); ok && (!exact || raw == a.Value) {
-			b.WriteString(raw)
-		} else {
-			b.Write(jsonString(a.Value))
+		fixed[i] = a
+		if raw, ok := typedValue(types[a.Name], tool.ArgText(types[a.Name], a.Value)); ok {
+			fixed[i].Value = raw
 		}
 	}
-	b.WriteString("}")
-	return b.String()
+	return tool.ArgsJSON(fixed, types)
 }
 
-// typedValue は、文字列で書かれた値を typ の JSON の値として書けるなら、その文字を返す。
+// typedValue は、文字で書かれた値を typ の JSON の値として書けるなら、その文字を返す(大目に見る。tool.CheckArgs と同じ考え方)。
 func typedValue(typ, value string) (string, bool) {
 	v := strings.TrimSpace(value)
 	switch typ {
@@ -273,34 +227,6 @@ func typedValue(typ, value string) (string, bool) {
 	return "", false
 }
 
-// propertyTypes は JSON Schema の properties の、引数ごとの type を返す。
-// type が ["string", "null"] のような配列なら null でない最初の型(tool の schemaType と同じ扱い)。型を決めていない引数は入れない。
-func propertyTypes(params json.RawMessage) map[string]string {
-	var schema struct {
-		Properties map[string]struct {
-			Type json.RawMessage `json:"type"`
-		} `json:"properties"`
-	}
-	json.Unmarshal(params, &schema)
-	types := map[string]string{}
-	for name, p := range schema.Properties {
-		var one string
-		var many []string
-		switch {
-		case json.Unmarshal(p.Type, &one) == nil:
-			types[name] = one
-		case json.Unmarshal(p.Type, &many) == nil:
-			for _, m := range many {
-				if m != "null" {
-					types[name] = m
-					break
-				}
-			}
-		}
-	}
-	return types
-}
-
 func findDef(defs []tool.Def, name string) *tool.Def {
 	for i := range defs {
 		if defs[i].Name == name {
@@ -319,11 +245,6 @@ func defNames(defs []tool.Def) string {
 		names[i] = d.Name
 	}
 	return strings.Join(names, ", ")
-}
-
-func jsonString(s string) []byte {
-	b, _ := json.Marshal(s) // 文字列の Marshal は失敗しない
-	return b
 }
 
 func firstLine(s string) string {
