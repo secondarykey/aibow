@@ -86,7 +86,7 @@ aibow 全体の進み具合(入口)。ルールと全体の構成は `AGENTS.md`
 | ⬜ | MCP の OAuth(ログインが要る url の MCP のサーバー) | [検討メモ](_docs/backlog.md) |
 | ✅ | 会話の個別設定(会話の設定の画面) | [0009-conversation-settings.md](_docs/features/0009-conversation-settings.md) |
 | ⬜ | 今の組の中の compact(古いツールの結果を省略して続ける) | [検討メモ](_docs/backlog.md) |
-| ⬜ | 同じ呼び出しが成功のまま繰り返されるのを止める(0027 の llama3.2:3b で見つけた。今は同じ失敗の繰り返しだけ止まる) | 未作成 |
+| ✅ | 同じ呼び出しが成功のまま繰り返されるのを止める(続けて同じなら、ツールを外して答えさせる。モデルでの確かめはまだ) | [0028-repeated-calls.md](_docs/features/0028-repeated-calls.md) |
 | ⬜ | 会話の作業フォルダを PC ごとにする(aibow-server につなぐと、ほかの PC で開いた会話に前の PC のパスが残る) | [検討メモ](_docs/backlog.md) |
 | ⬜ | Web で調べる(fetch・検索の MCP のサーバー) | [検討メモ](_docs/backlog.md) |
 | ⬜ | コーディングエージェントとして洗練する(最後のほうでやる) | [検討メモ](_docs/backlog.md) |
