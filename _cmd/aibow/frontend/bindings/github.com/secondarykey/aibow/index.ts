@@ -17,6 +17,8 @@ export type {
     ConversationRef,
     ConversationSettings,
     DisplaySettings,
+    File,
+    FileCheck,
     KnownTool,
     NotDefault,
     Profile,

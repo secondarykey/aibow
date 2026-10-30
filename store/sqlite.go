@@ -259,6 +259,21 @@ CREATE TABLE password_links (
 	expires_at TEXT NOT NULL             -- 出してから 1 時間
 );
 `,
+	// 版 15: 読み込んだファイル(0030)。発言に付けたファイル(テキスト。段2で画像も同じ表に入れる)。
+	// 発言とは別の表にするのは、中身(バイト列)が重いので発言の行を軽く保つため。発言を消すと一緒に消える。
+	// 持ち主は発言(を通して会話)で決まるので列を持たない
+	`
+CREATE TABLE files (
+	id         TEXT PRIMARY KEY,  -- UUIDv7。発言の中の並びもこれで決まる
+	message_id TEXT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+	kind       TEXT NOT NULL,     -- 種類: text
+	name       TEXT NOT NULL,     -- ファイル名
+	format     TEXT NOT NULL,     -- 形式(テキストは読んだときの文字コード)
+	hash       TEXT NOT NULL,     -- data の SHA-256(16進)
+	data       BLOB NOT NULL      -- 中身(テキストは UTF-8 にしたもの)
+);
+CREATE INDEX files_by_message ON files(message_id, id);
+`,
 }
 
 func migrate(db *sql.DB) error {
@@ -732,7 +747,40 @@ func (s *SQLite) messages(ctx context.Context, conv uuid.UUID) ([]aibow.StoredMe
 		}
 		out = append(out, m)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	// 読み込んだファイルは、発言を読み終えてから読む(接続は1本なので、発言の rows を開いたまま別に読むと待ち続ける)
+	rows.Close()
+	return out, s.attachFiles(ctx, conv, out)
+}
+
+// attachFiles は、会話 conv の発言に、読み込んだファイル(0030)を付ける。
+func (s *SQLite) attachFiles(ctx context.Context, conv uuid.UUID, ms []aibow.StoredMessage) error {
+	rows, err := s.db.QueryContext(ctx, `SELECT f.id, f.message_id, f.kind, f.name, f.format, f.hash, f.data
+		FROM files f JOIN messages m ON m.id = f.message_id WHERE m.conversation_id = ? ORDER BY f.id`, conv.String())
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	at := map[string]int{}
+	for i, m := range ms {
+		at[m.ID.String()] = i
+	}
+	for rows.Next() {
+		var f aibow.File
+		var id, msg string
+		if err := rows.Scan(&id, &msg, &f.Kind, &f.Name, &f.Format, &f.Hash, &f.Data); err != nil {
+			return err
+		}
+		if f.ID, err = parseID(id); err != nil {
+			return err
+		}
+		if i, ok := at[msg]; ok {
+			ms[i].Files = append(ms[i].Files, f)
+		}
+	}
+	return rows.Err()
 }
 
 func (s *SQLite) AddMessage(ctx context.Context, m aibow.StoredMessage) error {
@@ -752,12 +800,27 @@ func (s *SQLite) AddMessage(ctx context.Context, m aibow.StoredMessage) error {
 	if err != nil {
 		return err
 	}
+	// 発言と読み込んだファイル(0030)は、1つのトランザクションで足す(ファイルだけが欠けた発言を残さない)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
 	// 会話がその人のものなときだけ足す(INSERT … SELECT … WHERE で、確かめるのと足すのを1つの文にする)
-	res, err := s.db.ExecContext(ctx, `INSERT INTO messages (id, conversation_id, role, content, thinking, model, stats, tool_calls, tool_result, excluded, created_at)
+	res, err := tx.ExecContext(ctx, `INSERT INTO messages (id, conversation_id, role, content, thinking, model, stats, tool_calls, tool_result, excluded, created_at)
 		SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE `+ownConversation,
 		m.ID.String(), m.ConversationID.String(), m.Role, m.Content, m.Thinking, m.Model, stats, calls, result, m.Excluded, formatTime(m.CreatedAt),
 		m.ConversationID.String(), owner)
-	return notFoundIfNone(res, err, aibow.ErrNotFound)
+	if err := notFoundIfNone(res, err, aibow.ErrNotFound); err != nil {
+		return err
+	}
+	for _, f := range m.Files {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO files (id, message_id, kind, name, format, hash, data) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			f.ID.String(), m.ID.String(), f.Kind, f.Name, f.Format, f.Hash, f.Data); err != nil {
+			return fmt.Errorf("読み込んだファイル %s を保存できません: %w", f.Name, err)
+		}
+	}
+	return tx.Commit()
 }
 
 // DeleteMessages は発言を消す。返事1つ(ツールの結果を含む)は何件かになるので、まとめて1つのトランザクションで消す。

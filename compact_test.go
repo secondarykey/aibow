@@ -130,7 +130,7 @@ func errorsOf(evs []ChatEvent) []string {
 // sendRaw は Send を呼び、エラーがあっても止めずにイベントを返す。
 func sendRaw(cs *Conversations, c Conversation, text string) []ChatEvent {
 	var evs []ChatEvent
-	cs.Send(context.Background(), c.ID, text, func(ev ChatEvent) { evs = append(evs, ev) })
+	cs.Send(context.Background(), c.ID, text, nil, func(ev ChatEvent) { evs = append(evs, ev) })
 	return evs
 }
 
@@ -381,7 +381,7 @@ func TestSummaryFailureFallsBackToTruncate(t *testing.T) {
 
 			g.replies = []fakeReply{tc.summary, {content: "返事"}}
 			var evs []ChatEvent
-			cs.Send(context.Background(), c.ID, "次の質問", func(ev ChatEvent) {
+			cs.Send(context.Background(), c.ID, "次の質問", nil, func(ev ChatEvent) {
 				evs = append(evs, ev)
 				if tc.stop && ev.Type == "summarizing" {
 					cs.StopSummary(ctx) // 要約だけが止まり、返事は生成される
@@ -500,7 +500,7 @@ func TestSendUnsupportedFormat(t *testing.T) {
 	c := mustCreate(t, cs)
 	cs.gen = unsupportedGen{g}
 	var evs []ChatEvent
-	cs.Send(context.Background(), c.ID, "こんにちは", func(ev ChatEvent) { evs = append(evs, ev) })
+	cs.Send(context.Background(), c.ID, "こんにちは", nil, func(ev ChatEvent) { evs = append(evs, ev) })
 	var errs []string
 	for _, ev := range evs {
 		if ev.Type == "user" {

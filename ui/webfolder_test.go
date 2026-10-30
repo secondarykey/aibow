@@ -73,7 +73,7 @@ func TestWebFolderRead(t *testing.T) {
 	}
 
 	w.eng.calls = [][]format.ToolCall{readCall("README.md")}
-	w.mustCall(t, nil, "Send", c.ID, "README を読んで")
+	w.mustCall(t, nil, "Send", c.ID, "README を読んで", nil)
 	until(t, events, "done")
 	if r := w.toolResult(t, c.ID); !strings.Contains(r.Content, "合言葉は「みかん」") {
 		t.Errorf("資料のフォルダを読めるはず: %q", r.Content)
@@ -167,7 +167,7 @@ func TestWebFolderAccess(t *testing.T) {
 	}
 	events := w.openEvents(t)
 	w.eng.calls = [][]format.ToolCall{readCall("README.md")}
-	w.mustCall(t, nil, "Send", c.ID, "README を読んで")
+	w.mustCall(t, nil, "Send", c.ID, "README を読んで", nil)
 	until(t, events, "done")
 	if r := w.toolResult(t, c.ID); !r.ToolResult.Error || strings.Contains(r.Content, "みかん") {
 		t.Errorf("配るのをやめたあとに読めた: %q", r.Content)

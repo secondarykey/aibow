@@ -23,8 +23,9 @@ import { Toasts, useToasts } from "./toast";
 import { useModels } from "./useModels";
 import { ServerContext } from "./serverContext";
 import type { Busy } from "./useModels";
-import { useConversations } from "./useConversations";
+import { NIL, useConversations } from "./useConversations";
 import { useChat } from "./useChat";
+import { useAttachments } from "./attachments";
 import { useAppSettings } from "./useAppSettings";
 import { ModelBar } from "./components/ModelBar";
 import { Meter } from "./components/Meter";
@@ -108,6 +109,12 @@ export default function App() {
   const convs = useConversations(addError);
   const chat = useChat({ ...transcript, addError }, setBusy, convs, toasts, models.reload);
   const app = useAppSettings({ addError });
+  // 入力欄で読み込んだファイル(0030)。送り先の会話(新しい会話の画面では、これから作る会話の設定)で、会話の上限に入るかを Go が数える
+  const attachTarget = useCallback(
+    () => ({ id: convs.current?.conversation.id ?? NIL, draft: convs.current ? null : convs.draft }),
+    [convs.current, convs.draft],
+  );
+  const attachments = useAttachments(attachTarget, addError);
   // 画面の明るさ: Go から届いた設定・設定の画面で選んだ値を効かせる(届くまでは前回の写し。theme.ts)
   const theme = app.settings?.display.theme;
   useEffect(() => {
@@ -279,9 +286,16 @@ export default function App() {
         home={home}
         focusKey={focusKey}
         onSend={async t => {
-          // 送れなかった(発言が保存されなかった)ら、打った文を入力欄に戻す。その間に打ち始めていたら、そちらを残す
-          if (!(await chat.send(t))) setText(cur => cur || t);
+          // 送れなかった(発言が保存されなかった)ら、打った文と読み込んだファイルを入力欄に戻す。その間に打ち始めていたら、そちらを残す
+          const files = attachments.take();
+          if (!(await chat.send(t, files))) {
+            setText(cur => cur || t);
+            attachments.restore(files);
+          }
         }}
+        files={attachments.files}
+        onAddFiles={fs => void attachments.add(fs)}
+        onRemoveFile={attachments.remove}
         top={settings && (
           // 入力欄の上: 作業フォルダと、この会話のツール(どちらも会話ごとの設定)。
           // ブラウザの会話は作業フォルダを選ばない(ツールはサーバーの PC で動くため。0024 の決定事項 17)。

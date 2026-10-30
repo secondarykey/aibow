@@ -12,6 +12,7 @@ import { ToolCard } from "./ToolCard";
 import { useStickToBottom } from "../stickToBottom";
 import { QUESTION_ATTR, usePinnedQuestion } from "../pinnedQuestion";
 import { useQuestionsOnly } from "../questionsOnly";
+import { FileChips } from "./FileChips";
 
 const FADED_TITLE = "この発言はモデルに渡していません(要約に入ったか、会話の上限に収めるために外しました)";
 const EXCLUDED_TITLE = "モデルに渡さないにしています";
@@ -96,6 +97,7 @@ export function ChatView({ items, firstId, conversationId, pinQuestion, readOnly
                 }
                 return (
                   <div key={it.id} className="user-turn">
+                    {it.files && <FileChips files={it.files.map(file => ({ file }))} />}
                     <div
                       className={"msg user" + faded(it.msgId) + (it.excluded ? " excluded" : "") + (questions.current === i ? " current" : "")}
                       title={questions.on ? "この質問へ飛ぶ" : fadedTitle(it.msgId, it.excluded)}

@@ -6,7 +6,7 @@ package ui
 // 何が起きているかを見比べられるように、形を Wails にそろえた:
 //
 //	                       デスクトップ(Wails)                       ブラウザ(この口)
-//	メソッドの呼び出し    ChatService.Send(id, text)                  POST /aibow/ui/call/Send   本文 ["<id>", "<text>"]
+//	メソッドの呼び出し    ChatService.Send(id, text, files)           POST /aibow/ui/call/Send   本文 ["<id>", "<text>", null]
 //	                      (Wails がメソッドの名前と引数の配列を送る)   返事は戻り値の JSON。error なら 500 と {"error": {"message"}}
 //	Go からの知らせ       Wails のイベント(chat・models)              GET /aibow/ui/events(SSE。event: chat / data: ChatEvent の JSON)
 //	停止                  Promise の cancel() → ctx がキャンセル       fetch を止める(AbortController)→ つながりが切れて r.Context() が終わる
@@ -62,6 +62,8 @@ var browserMethods = []string{
 	"SetConversationShare", "SharedConversations", "UserConversations", "UserNames", "ReadConversation", "CopyShared",
 	// 送信(生成が終わるまで返らない長い呼び出し。経過は SSE の chat で送る)
 	"Send", "Regenerate", "Resend", "Compact", "StopSummary",
+	// ファイルを読み込む(0030)。送信の前に、入力欄で読み込んだファイルを確かめて数える
+	"CheckFile",
 	// 会話のツール(0024 の 12-1a)。この会話で使うか(会話の設定)と、実行前の確認への答え。
 	// 確認のカードは SSE の chat(confirm)で届き、答えは ConfirmTool で返す。つなぎ直したら PendingConfirm で取り直す
 	"ToolStates", "MCPServers", "ConfirmTool", "PendingConfirm",
@@ -149,7 +151,8 @@ var (
 // 最初の引数が context.Context なら、リクエストの context を渡す(つながりが切れたら止まる。Wails の停止と同じ意味。利用者も入っている)。
 func call(w http.ResponseWriter, r *http.Request, name string, m reflect.Value) {
 	var raw []json.RawMessage
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<20)).Decode(&raw); err != nil {
+	// 本文の上限は、読み込んだファイル(0030。1 つ 1 MB・10 個まで)を base64 で運べる大きさにする(base64 は 4/3 倍)
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<20)).Decode(&raw); err != nil {
 		writeError(w, http.StatusBadRequest, name+" の引数が読めません(本文は JSON の配列で書いてください): "+err.Error())
 		return
 	}

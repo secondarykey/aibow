@@ -141,7 +141,7 @@ func newTestConversations(t *testing.T, g *fakeGen) (*Conversations, *memStore) 
 func send(t *testing.T, cs *Conversations, c Conversation, text string) []ChatEvent {
 	t.Helper()
 	var evs []ChatEvent
-	cs.Send(context.Background(), c.ID, text, func(ev ChatEvent) { evs = append(evs, ev) })
+	cs.Send(context.Background(), c.ID, text, nil, func(ev ChatEvent) { evs = append(evs, ev) })
 	if len(evs) == 0 || evs[len(evs)-1].Type != "done" {
 		t.Fatalf("最後のイベントが done ではありません: %+v", evs)
 	}
@@ -319,7 +319,7 @@ func TestOnlyOneGenerationAtATime(t *testing.T) {
 	started := make(chan struct{})
 	finished := make(chan struct{})
 	go func() {
-		cs.Send(context.Background(), a.ID, "長い質問", func(ev ChatEvent) {
+		cs.Send(context.Background(), a.ID, "長い質問", nil, func(ev ChatEvent) {
 			if ev.Type == "prompt" {
 				close(started)
 			}
@@ -337,7 +337,7 @@ func TestOnlyOneGenerationAtATime(t *testing.T) {
 	}
 	// 送信と、生成中の会話の削除はできない
 	var gotErr string
-	cs.Send(context.Background(), b.ID, "割り込み", func(ev ChatEvent) {
+	cs.Send(context.Background(), b.ID, "割り込み", nil, func(ev ChatEvent) {
 		if ev.Type == "error" {
 			gotErr = ev.Error
 		}
@@ -491,7 +491,7 @@ func TestChangesDuringGenerationAreKept(t *testing.T) {
 	started := make(chan struct{})
 	finished := make(chan struct{})
 	go func() {
-		cs.Send(context.Background(), c.ID, "質問", func(ev ChatEvent) {
+		cs.Send(context.Background(), c.ID, "質問", nil, func(ev ChatEvent) {
 			if ev.Type == "prompt" {
 				close(started)
 			}

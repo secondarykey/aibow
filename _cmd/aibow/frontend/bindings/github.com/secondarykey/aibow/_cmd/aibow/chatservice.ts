@@ -74,6 +74,19 @@ export function BuiltinTools(): $CancellablePromise<aibow$0.KnownTool[] | null> 
 }
 
 /**
+ * CheckFile は、入力欄で読み込んだファイル(選ぶ・ドロップ・貼り付け)を確かめ、会話の上限に入るかを数える(0030)。
+ * 画面は、返ってきたもの(札に出すトークン数と、Send に渡すファイル)を、送信するまで持っておく。
+ * テキストでない・UTF-8 / UTF-16(BOM あり)でない・大きすぎる・会話の上限に入らないときはエラー(理由と数字を書く)。
+ * 
+ * id は送り先の会話(新しい会話の画面ではゼロ。そのときは新しい会話の画面の設定 draft で数える)。
+ * pending は、この発言にもう付けているファイル(一緒に数えるため)。
+ * data は、Wails でもブラウザでも JSON の base64 の文字列で届く([]byte の JSON の形)。
+ */
+export function CheckFile(id: uuid$0.UUID, draft: aibow$0.ConversationSettings | null, name: string, data: string | null, pending: aibow$0.File[] | null): $CancellablePromise<aibow$0.FileCheck> {
+    return $Call.ByID(73545923, id, draft, name, data, pending);
+}
+
+/**
  * CheckServer は、つなぎ先 url を確かめる(つながるか・ログインが要るか・証明書)。fingerprint は、人が画面で確かめて信頼した指紋(まだなら空)。
  * 自己署名の証明書で、まだ信頼していなければ、指紋だけを返す(trusted が false。画面が指紋を見せ、人が確かめる)。
  * 信頼できたら、信頼したつなぎ先として覚える(ログインせずに閉じても、次は信頼し直さずに続けられるように。次の起動でつなぐ先にはしない)。
@@ -320,9 +333,11 @@ export function SaveToProfile(conv: uuid$0.UUID, profile: uuid$0.UUID): $Cancell
  * 
  * 画面で「停止」を押すと、JavaScript 側で Promise の cancel() が呼ばれ、
  * Wails がこの ctx をキャンセルする。エンジンはそれを見て生成を止める。
+ * 
+ * files は入力欄で読み込んだファイル(0030。CheckFile が返したもの)。無ければ空の配列か null。
  */
-export function Send(id: uuid$0.UUID, text: string): $CancellablePromise<void> {
-    return $Call.ByID(2164379061, id, text);
+export function Send(id: uuid$0.UUID, text: string, files: aibow$0.File[] | null): $CancellablePromise<void> {
+    return $Call.ByID(2164379061, id, text, files);
 }
 
 /**

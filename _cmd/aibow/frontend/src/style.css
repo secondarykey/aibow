@@ -641,6 +641,29 @@ footer { border-top: 1px solid var(--border); background: var(--panel); padding:
   background: var(--accent); color: #fff;
 }
 .composer .send:disabled { background: var(--border); color: var(--muted); opacity: 1; }
+/* ファイルを読み込むボタン(送信ボタンの左)と、ファイルを持って入力欄の上にいるときの枠(0030) */
+.composer .attach {
+  flex-shrink: 0; width: 32px; height: 32px; padding: 0; border: none; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center; font-size: 16px;
+  background: transparent; color: var(--muted);
+}
+.composer .attach:hover { color: var(--text); }
+.composer.dragging { border-color: var(--accent); border-style: dashed; }
+/* 読み込んだファイルの札(0030)。入力欄の枠の上と、発言の吹き出しの上 */
+.composer-files { max-width: 820px; margin: 0 auto 6px; }
+.file-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.user-turn .file-chips { justify-content: flex-end; margin-bottom: 4px; }
+.file-chip {
+  display: inline-flex; align-items: center; gap: 5px; max-width: 100%; padding: 3px 8px;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--bg); font-size: 12.5px;
+}
+.file-chip .icon { flex-shrink: 0; color: var(--muted); }
+.file-name { min-width: 0; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-size { flex-shrink: 0; color: var(--muted); }
+.file-chip .file-remove {
+  display: inline-flex; padding: 0 2px; border: none; background: transparent; color: var(--muted); font-size: 13px;
+}
+.file-chip .file-remove:hover { color: var(--text); }
 /* 作業フォルダ(入力欄の枠の上、左寄せ)。決めていないときはフォルダのアイコンだけ。
    決めたらフォルダの名前を枠付きで出し、右に外すボタン */
 .composer-top { max-width: 820px; margin: 0 auto 6px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }

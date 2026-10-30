@@ -33,7 +33,7 @@ func (w *testWeb) askCalc(t *testing.T, c aibow.Conversation) {
 func (w *testWeb) sendAsync(t *testing.T, ctx context.Context, id uuid.UUID, text string) <-chan int {
 	done := make(chan int, 1)
 	go func() {
-		status, _ := w.call(t, ctx, "Send", id, text)
+		status, _ := w.call(t, ctx, "Send", id, text, nil)
 		done <- status
 	}()
 	return done
@@ -300,7 +300,7 @@ func TestWebIgnoresWorkDir(t *testing.T) {
 		t.Errorf("保存してある作業フォルダは残すはず: %q", stored.Settings.WorkDir)
 	}
 
-	w.mustCall(t, nil, "Send", c.ID, "ファイルを見せて")
+	w.mustCall(t, nil, "Send", c.ID, "ファイルを見せて", nil)
 	until(t, events, "done")
 	last := len(w.eng.tools) - 1
 	if strings.Join(w.eng.tools[last], ",") != "calculate,get_current_time" {

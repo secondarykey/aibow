@@ -149,7 +149,7 @@ func TestWebAdminToolDefaults(t *testing.T) {
 	events := w.openEvents(t)
 	c := w.webConversation(t, nil)
 	w.eng.calls = [][]format.ToolCall{webCall("web__calculate", "2+3")}
-	w.mustCall(t, nil, "Send", c.ID, "計算して")
+	w.mustCall(t, nil, "Send", c.ID, "計算して", nil)
 	for _, e := range until(t, events, "done") {
 		if e.Type == "confirm" {
 			t.Errorf("管理者が確認しないにしたのに聞いた: %+v", e.Confirm)
@@ -182,7 +182,7 @@ func TestWebAdminBan(t *testing.T) {
 		}
 	}
 
-	w.mustCall(t, nil, "Send", c.ID, "計算して")
+	w.mustCall(t, nil, "Send", c.ID, "計算して", nil)
 	until(t, events, "done")
 	names := w.eng.tools[len(w.eng.tools)-1]
 	if slices.Contains(names, "calculate") || slices.ContainsFunc(names, func(n string) bool { return strings.HasPrefix(n, "web__") }) {

@@ -666,3 +666,50 @@ func TestConversationLocks(t *testing.T) {
 		t.Errorf("ほかの人の会話: %v", err)
 	}
 }
+
+// 読み込んだファイル(版 15。0030):発言と一緒に保存して読み、発言を消すと一緒に消える。ほかの人の会話の発言には付けられない
+func TestMessageFiles(t *testing.T) {
+	s, _ := openTemp(t)
+	c := newConv(t, s, time.Now())
+	a, err := aibow.ReadFile("a.go", []byte("package a\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := aibow.ReadFile("b.txt", []byte{0xEF, 0xBB, 0xBF, 'b'})
+	user := aibow.StoredMessage{ID: uuid.NewV7(), ConversationID: c.ID, Role: "user", Content: "読んで", Files: []aibow.File{a, b}, CreatedAt: time.Now()}
+	reply := aibow.StoredMessage{ID: uuid.NewV7(), ConversationID: c.ID, Role: "assistant", Content: "読みました", CreatedAt: time.Now()}
+	for _, m := range []aibow.StoredMessage{user, reply} {
+		if err := s.AddMessage(ctx, m); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, ms, err := s.Conversation(ctx, c.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(ms[0].Files, user.Files) || ms[1].Files != nil {
+		t.Errorf("読んだファイル: %+v / %+v", ms[0].Files, ms[1].Files)
+	}
+
+	// ほかの人の会話には足せない(ファイルの行も残らない)
+	other := aibow.WithUser(context.Background(), uuid.NewV7())
+	c2, _ := aibow.ReadFile("c.txt", []byte("c"))
+	if err := s.AddMessage(other, aibow.StoredMessage{ID: uuid.NewV7(), ConversationID: c.ID, Role: "user", Files: []aibow.File{c2}, CreatedAt: time.Now()}); !errors.Is(err, aibow.ErrNotFound) {
+		t.Errorf("ほかの人の会話に足せた: %v", err)
+	}
+	count := func() (n int) {
+		s.db.QueryRow("SELECT COUNT(*) FROM files").Scan(&n)
+		return n
+	}
+	if n := count(); n != 2 {
+		t.Errorf("ファイルの行: %d", n)
+	}
+
+	// 発言を消すと(作り直す・送り直す)一緒に消える
+	if err := s.DeleteMessages(ctx, []uuid.UUID{user.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if n := count(); n != 0 {
+		t.Errorf("発言を消してもファイルが残った: %d", n)
+	}
+}

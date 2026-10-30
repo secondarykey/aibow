@@ -248,7 +248,10 @@ type StoredMessage struct {
 	ToolCalls      []format.ToolCall `json:"tool_calls,omitempty"`  // その回のツール呼び出し(assistant のみ)
 	ToolResult     *ToolResult       `json:"tool_result,omitempty"` // どの呼び出しの結果か(tool のみ)
 	// Excluded は、ユーザーが選んで「モデルに渡さない」にした発言(0011)。画面には薄く残し、モデルに渡す履歴からは外す(Conversations.forModel)
-	Excluded  bool      `json:"excluded,omitempty"`
+	Excluded bool `json:"excluded,omitempty"`
+	// Files は、発言に付けて読み込んだファイル(user のみ。0030)。保存は発言とは別の表。
+	// モデルに渡すときに、テキストのファイルは発言の文の前に展開する(files.go の withFiles)
+	Files     []File    `json:"files,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 }
 

@@ -477,7 +477,7 @@ func TestWebSend(t *testing.T) {
 	if c.Settings.Model != "ollama:a" {
 		t.Errorf("新しい会話のモデルは読み込み中のモデルのはず: %q", c.Settings.Model)
 	}
-	w.mustCall(t, nil, "Send", c.ID, "こんにちは?")
+	w.mustCall(t, nil, "Send", c.ID, "こんにちは?", nil)
 	got := until(t, events, "done")
 	var content string
 	for _, e := range got {
@@ -508,7 +508,7 @@ func TestWebSendReloadsModel(t *testing.T) {
 	events := w.openEvents(t)
 	c := w.newConversation(t)
 	w.mm.Load(models.Entry{ID: "ollama:b"}) // ほかの人がモデルを入れ替えた
-	w.mustCall(t, nil, "Send", c.ID, "こんにちは?")
+	w.mustCall(t, nil, "Send", c.ID, "こんにちは?", nil)
 	got := until(t, events, "done")
 	if w.eng.Info().ID != "ollama:a" || !strings.Contains(strings.Join(types(got), ","), "model") {
 		t.Errorf("会話のモデルに読み直すはず: %s(届いたもの: %v)", w.eng.Info().ID, types(got))
@@ -534,7 +534,7 @@ func TestWebStop(t *testing.T) {
 		<-w.eng.started
 		cancel()
 	}()
-	w.call(t, ctx, "Send", c.ID, "長く書いて")
+	w.call(t, ctx, "Send", c.ID, "長く書いて", nil)
 	until(t, events, "done")
 
 	var d ConversationDetail
@@ -555,7 +555,7 @@ func TestWebSeat(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		w.mustCall(t, nil, "Send", c.ID, "こんにちは?")
+		w.mustCall(t, nil, "Send", c.ID, "こんにちは?", nil)
 	}()
 	got := until(t, events, "notice")
 	if n := got[len(got)-1]; !strings.Contains(n.Text, "待っています") {
@@ -603,7 +603,7 @@ func TestWebModelsWhileLoading(t *testing.T) {
 	w.eng.model, w.eng.loading = "ollama:b", ""
 	w.eng.mu.Unlock()
 	events := w.openEvents(t)
-	w.mustCall(t, nil, "Send", c.ID, "こんにちは?")
+	w.mustCall(t, nil, "Send", c.ID, "こんにちは?", nil)
 	until(t, events, "done")
 	if w.eng.Info().ID != "ollama:a" {
 		t.Errorf("会話のモデルに読み直すはず: %s", w.eng.Info().ID)
@@ -703,7 +703,7 @@ func TestWebSharedConversation(t *testing.T) {
 
 	w.user.Store(bob)
 	c := w.newConversation(t)
-	w.mustCall(t, nil, "Send", c.ID, "こんにちは?")
+	w.mustCall(t, nil, "Send", c.ID, "こんにちは?", nil)
 	if status, _ := w.call(t, context.Background(), "SetConversationShare", c.ID, aibow.ShareUsers, []string{}); status == http.StatusOK {
 		t.Error("相手を選ばずに指定した人にはできない")
 	}
@@ -721,7 +721,7 @@ func TestWebSharedConversation(t *testing.T) {
 		t.Errorf("読む: %+v", r)
 	}
 	// ほかの人の会話に送ってみる。Send は結果を SSE で返すので呼び出しは 200 で終わる。書き込めていないことは、最後に持ち主の会話で確かめる
-	w.call(t, context.Background(), "Send", c.ID, "書き込み")
+	w.call(t, context.Background(), "Send", c.ID, "書き込み", nil)
 	var cp aibow.Conversation
 	w.mustCall(t, &cp, "CopyShared", c.ID)
 	var mine []aibow.Conversation
@@ -787,7 +787,7 @@ func TestWebUsers(t *testing.T) {
 	theirs := w.openEvents(t)
 	w.user.Store(nil)
 	ours := w.openEvents(t)
-	w.mustCall(t, nil, "Send", mine.ID, "こんにちは?")
+	w.mustCall(t, nil, "Send", mine.ID, "こんにちは?", nil)
 	until(t, ours, "done")
 	select {
 	case m := <-theirs:
@@ -798,5 +798,32 @@ func TestWebUsers(t *testing.T) {
 	w.user.Store(&uuid.UUID{})
 	if status, body := w.call(t, context.Background(), "Conversations"); status != http.StatusUnauthorized || !strings.Contains(string(body), "ログインしてください") {
 		t.Errorf("利用者を決められなければ 401: %d %s", status, body)
+	}
+}
+
+// ファイルを読み込む(0030):ブラウザも、確かめる(CheckFile)→ 送る(Send)の2つの呼び出しで、中身は base64 の JSON で運ぶ。
+// 読めないファイルは理由を返し、送ったファイルはモデルに展開して渡り、会話を開き直しても付いている
+func TestWebFiles(t *testing.T) {
+	w := newTestWeb(t)
+	events := w.openEvents(t)
+	c := w.newConversation(t)
+	var fc aibow.FileCheck
+	w.mustCall(t, &fc, "CheckFile", c.ID, nil, "main.go", []byte("package main\n"), nil)
+	if fc.File.Name != "main.go" || fc.Tokens <= 0 {
+		t.Errorf("確かめた結果: %+v", fc)
+	}
+	if status, body := w.call(t, context.Background(), "CheckFile", c.ID, nil, "sjis.txt", []byte{0x82, 0xa0}, nil); status == http.StatusOK || !strings.Contains(string(body), "UTF-8 で保存し直してください") {
+		t.Errorf("読めないファイル: %d %s", status, body)
+	}
+
+	w.mustCall(t, nil, "Send", c.ID, "何をしていますか", []aibow.File{fc.File})
+	until(t, events, "done")
+	if p := w.eng.prompts[len(w.eng.prompts)-1]; !strings.Contains(p, "ファイル: main.go\n```\npackage main\n```\n\n何をしていますか") {
+		t.Errorf("モデルに渡した文字列: %q", p)
+	}
+	var d ConversationDetail
+	w.mustCall(t, &d, "Conversation", c.ID)
+	if len(d.Messages[0].Files) != 1 || string(d.Messages[0].Files[0].Data) != "package main\n" {
+		t.Errorf("開き直した発言のファイル: %+v", d.Messages[0].Files)
 	}
 }

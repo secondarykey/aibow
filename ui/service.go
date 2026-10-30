@@ -4,9 +4,9 @@
 // Wails では、登録した構造体の「大文字で始まるメソッド」を、画面の JavaScript から関数のように呼べる(中身は Wails が仲立ちする RPC)。
 // 埋め込んだ型のメソッドも ChatService のメソッドとして見える。
 //
-//	TypeScript: ChatService.Send(id, text)  ← wails3 generate bindings が frontend/bindings に作る関数
+//	TypeScript: ChatService.Send(id, text, files)  ← wails3 generate bindings が frontend/bindings に作る関数
 //	        ↓  Wails が引数を JSON にして Go に渡す
-//	Go:         (*ChatService).Send(ctx, id, text) = (*ui.Service).Send
+//	Go:         (*ChatService).Send(ctx, id, text, files) = (*ui.Service).Send
 //
 // メソッドのコメントと構造体の json タグは、バインディングの TypeScript の型とコメントにもなる。
 //
@@ -1249,10 +1249,30 @@ func (s *Service) noNewAllow(old, next map[string]aibow.ToolPolicy) error {
 //
 // 画面で「停止」を押すと、JavaScript 側で Promise の cancel() が呼ばれ、
 // Wails がこの ctx をキャンセルする。エンジンはそれを見て生成を止める。
-func (s *Service) Send(ctx context.Context, id uuid.UUID, text string) {
+//
+// files は入力欄で読み込んだファイル(0030。CheckFile が返したもの)。無ければ空の配列か null。
+func (s *Service) Send(ctx context.Context, id uuid.UUID, text string, files []aibow.File) {
 	s.run(ctx, id, func(ctx context.Context, emit func(aibow.ChatEvent)) {
-		s.convs.Send(ctx, id, text, emit)
+		s.convs.Send(ctx, id, text, files, emit)
 	})
+}
+
+// CheckFile は、入力欄で読み込んだファイル(選ぶ・ドロップ・貼り付け)を確かめ、会話の上限に入るかを数える(0030)。
+// 画面は、返ってきたもの(札に出すトークン数と、Send に渡すファイル)を、送信するまで持っておく。
+// テキストでない・UTF-8 / UTF-16(BOM あり)でない・大きすぎる・会話の上限に入らないときはエラー(理由と数字を書く)。
+//
+// id は送り先の会話(新しい会話の画面ではゼロ。そのときは新しい会話の画面の設定 draft で数える)。
+// pending は、この発言にもう付けているファイル(一緒に数えるため)。
+// data は、Wails でもブラウザでも JSON の base64 の文字列で届く([]byte の JSON の形)。
+func (s *Service) CheckFile(ctx context.Context, id uuid.UUID, draft *aibow.ConversationSettings, name string, data []byte, pending []aibow.File) (aibow.FileCheck, error) {
+	if s.startupErr != nil {
+		return aibow.FileCheck{}, s.startupErr
+	}
+	c, err := s.convs.CheckFile(ctx, id, draft, name, data, pending)
+	if errors.Is(err, engine.ErrNoModel) {
+		return c, errors.New("モデルを読み込んでいないため、ファイルのトークン数を数えられません。モデルを読み込んでから、もう一度読み込んでください")
+	}
+	return c, err
 }
 
 // Regenerate は最後の返事を作り直す(0011)。途中経過と終わり(done)は Send と同じく chat イベントで送る。

@@ -436,6 +436,7 @@ func (cs *Conversations) CopyShared(ctx context.Context, id uuid.UUID) (Conversa
 	for _, m := range src.Messages {
 		old := m.ID
 		m.ID, m.ConversationID = uuid.NewV7(), c.ID
+		m.Files = renewFiles(m.Files) // 読み込んだファイルも写す(0030 の決定事項 21。ID は表の主キーなので新しくする)
 		ids[old] = m.ID
 		if err := cs.store.AddMessage(ctx, m); err != nil {
 			return c, fmt.Errorf("会話の発言を写せません: %w", err)
@@ -608,22 +609,24 @@ func (cs *Conversations) Generating() *uuid.UUID {
 }
 
 // Send はユーザーの発言を保存し、返事を生成して保存する。
+// files は発言に付けて読み込んだファイル(0030。CheckFile で確かめたもの。無ければ nil)。
 // 途中経過は emit に ChatEvent で渡す。最後に必ず done を1回渡す。
 // ctx がキャンセルされると(画面の停止ボタン)、そこまでの返事を保存して終わる。
-func (cs *Conversations) Send(ctx context.Context, id uuid.UUID, text string, emit func(ChatEvent)) {
-	cs.turn(ctx, id, text, keepAll, emit)
+func (cs *Conversations) Send(ctx context.Context, id uuid.UUID, text string, files []File, emit func(ChatEvent)) {
+	cs.turn(ctx, id, text, files, keepAll, emit)
 }
 
 // Regenerate は、最後の返事を作り直す(0011)。最後のユーザーの発言の後ろ(返事とツールの結果)を消し、
 // 今のモデル・設定でもう一度返事を作る。ツールをオンにした・9B に切り替えた、など条件を変えてやり直すときのため。
 // 途中経過と終わりは Send と同じく emit で渡す。前の返事でツールが行ったこと(ファイルの書き換えなど)は元に戻らない。
 func (cs *Conversations) Regenerate(ctx context.Context, id uuid.UUID, emit func(ChatEvent)) {
-	cs.turn(ctx, id, "", dropReply, emit)
+	cs.turn(ctx, id, "", nil, dropReply, emit)
 }
 
 // Resend は、最後のユーザーの発言を text に直して送り直す(0011)。最後の発言とその返事を消してから送る。
+// 直すのは文だけで、元の発言に付いていたファイルは新しい発言に付け直す(0030 の決定事項 21。turn)。
 func (cs *Conversations) Resend(ctx context.Context, id uuid.UUID, text string, emit func(ChatEvent)) {
-	cs.turn(ctx, id, text, dropLastTurn, emit)
+	cs.turn(ctx, id, text, nil, dropLastTurn, emit)
 }
 
 // やり直しの種類(turn の drop)。保存された発言のうち、消して送り直す部分を決める
@@ -666,9 +669,9 @@ func lastUserIndex(history []StoredMessage) int {
 	return -1
 }
 
-// turn は Send / Regenerate / Resend の共通部分。drop で保存された発言から消す部分を決め、text が空でなければ新しい発言として送る。
+// turn は Send / Regenerate / Resend の共通部分。drop で保存された発言から消す部分を決め、text が空でなければ(ファイルだけでも)新しい発言として送る。
 // 消すのは、会話の上限に収まるかを確かめてから(送れないときに、前のやり取りだけが消えないように)。
-func (cs *Conversations) turn(ctx context.Context, id uuid.UUID, text string, drop dropFunc, emit func(ChatEvent)) {
+func (cs *Conversations) turn(ctx context.Context, id uuid.UUID, text string, files []File, drop dropFunc, emit func(ChatEvent)) {
 	var reply *StoredMessage
 	defer func() { emit(ChatEvent{ConversationID: id, Type: "done", Reply: reply}) }()
 	fail := func(err error) {
@@ -699,6 +702,15 @@ func (cs *Conversations) turn(ctx context.Context, id uuid.UUID, text string, dr
 		return
 	}
 	history := forModel(saved)
+	// 送り直すときは、消す発言(最後のユーザーの発言)に付いていたファイルを、新しい発言に付け直す(0030 の決定事項 21)。
+	// 消すと一緒にファイルの行も消えるので、新しい ID を振る
+	if text != "" && files == nil && len(dropped) > 0 && dropped[0].Role == "user" {
+		files = renewFiles(dropped[0].Files)
+	}
+	if err := checkFiles(files); err != nil {
+		fail(err)
+		return
+	}
 
 	// 0. 作業領域をこの会話の大きさにする(会話の上限 + 返事の上限。要約も返事も、この中で生成する)。
 	// この会話で使う MCP のサーバーが動いていなければ、起動する(そのツールも会話の上限に数えるので、確かめる前に)
@@ -717,8 +729,8 @@ func (cs *Conversations) turn(ctx context.Context, id uuid.UUID, text string, dr
 	// 1. 会話の上限に収められるかを確かめてから、(やり直しなら前の部分を消して)ユーザーの発言を保存する。
 	// タイトルがまだ無ければ(最初の発言なら)、その先頭をタイトルにする。作り直す(text が空)なら、最後の発言をそのまま使う
 	var user *StoredMessage
-	if text != "" {
-		user = &StoredMessage{ID: uuid.NewV7(), ConversationID: id, Role: "user", Content: text, CreatedAt: time.Now()}
+	if text != "" || len(files) > 0 {
+		user = &StoredMessage{ID: uuid.NewV7(), ConversationID: id, Role: "user", Content: text, Files: files, CreatedAt: time.Now()}
 		history = append(history, *user)
 	}
 	if err := cs.checkFits(conv.Settings, history); err != nil {
@@ -733,7 +745,7 @@ func (cs *Conversations) turn(ctx context.Context, id uuid.UUID, text string, dr
 		log.Infof("会話 %s のやり直し: 発言 %d 件を消しました", id, len(dropped))
 	}
 	if user != nil {
-		if err := cs.save(ctx, *user, titleFrom(text)); err != nil {
+		if err := cs.save(ctx, *user, titleFrom(userTitle(text, files))); err != nil {
 			fail(err)
 			return
 		}
@@ -918,7 +930,8 @@ func promptMessages(system, summary string, history []StoredMessage) []format.Me
 		out = append(out, format.Message{Role: "system", Content: s})
 	}
 	for _, m := range history {
-		fm := format.Message{Role: m.Role, Content: m.Content, Thinking: m.Thinking, ToolCalls: m.ToolCalls}
+		// 読み込んだファイルは、発言の文の前に展開する(0030。書式はファイルのことを知らない)
+		fm := format.Message{Role: m.Role, Content: withFiles(m.Content, m.Files), Thinking: m.Thinking, ToolCalls: m.ToolCalls}
 		if m.ToolResult != nil {
 			// ツールの結果には、元の呼び出しの名前を付ける(Gemma 4 は結果に名前を書く。0026 の決定事項 5)
 			fm.Name = m.ToolResult.Call.Name
@@ -945,6 +958,14 @@ func noAnswerNote(stopReason string) string {
 		return "(考えている途中で停止されたため、答えを出していません)"
 	}
 	return "(考えている途中で終わったため、答えを出せませんでした)"
+}
+
+// userTitle は、最初の発言からタイトルを作るときの元の文。ファイルだけを送ったときは、ファイル名にする(0030)。
+func userTitle(text string, files []File) string {
+	if strings.TrimSpace(text) != "" || len(files) == 0 {
+		return text
+	}
+	return files[0].Name
 }
 
 // titleMaxRunes は自動で付けるタイトルの長さ(文字数)。

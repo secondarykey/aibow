@@ -385,6 +385,54 @@ export interface DisplaySettings {
 }
 
 /**
+ * File は、発言に付けて読み込んだファイル1つ(0030)。
+ */
+export interface File {
+    /**
+     * UUIDv7。発言の中の並びもこれで決まる
+     */
+    "id": uuid$0.UUID;
+
+    /**
+     * 種類。FileText(画像は段2で足す)
+     */
+    "kind": string;
+
+    /**
+     * ファイル名(フォルダは含まない)。モデルにも見せる
+     */
+    "name": string;
+
+    /**
+     * Format は形式。テキストは、読んだときの文字コード(utf-8 / utf-8-bom / utf-16le / utf-16be)。
+     * Data はもう UTF-8 にしてあるので、記録のためだけに残す
+     */
+    "format": string;
+
+    /**
+     * Data の SHA-256(16進)。画像の KV キャッシュの比べ方(段2)にも使う
+     */
+    "hash": string;
+
+    /**
+     * 中身。テキストは UTF-8(BOM を外したもの)
+     */
+    "data": string | null;
+}
+
+/**
+ * FileCheck は、読み込んだファイルを確かめた結果(画面の札に出す)。
+ */
+export interface FileCheck {
+    "file": File;
+
+    /**
+     * このファイルを足すと増えるトークン数(展開した見出しと囲みを含む)
+     */
+    "tokens": number;
+}
+
+/**
  * KnownTool は、サーバーを起動したときに見えたツール1つ(画面の設定に一覧を出すため。ツールの扱いには使わない)。
  */
 export interface KnownTool {
@@ -681,6 +729,12 @@ export interface StoredMessage {
      * Excluded は、ユーザーが選んで「モデルに渡さない」にした発言(0011)。画面には薄く残し、モデルに渡す履歴からは外す(Conversations.forModel)
      */
     "excluded"?: boolean;
+
+    /**
+     * Files は、発言に付けて読み込んだファイル(user のみ。0030)。保存は発言とは別の表。
+     * モデルに渡すときに、テキストのファイルは発言の文の前に展開する(files.go の withFiles)
+     */
+    "files"?: File[] | null;
     "created_at": string;
 }
 

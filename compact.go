@@ -406,7 +406,12 @@ func summaryMessages(prev string, part []StoredMessage, maxTokens int) []format.
 	for _, m := range part {
 		switch m.Role {
 		case "user":
-			fmt.Fprintf(&b, "ユーザー: %s\n", m.Content)
+			// 読み込んだファイルは中身を渡さず「[ファイル: 名前]」にする(0030 の決定事項 4。重いうえ、要約に要るのは話の流れ)
+			if len(m.Files) > 0 {
+				fmt.Fprintf(&b, "ユーザー: %s %s\n", filesNote(m.Files), m.Content)
+			} else {
+				fmt.Fprintf(&b, "ユーザー: %s\n", m.Content)
+			}
 		case "assistant":
 			if m.Content != "" {
 				fmt.Fprintf(&b, "アシスタント: %s\n", m.Content)

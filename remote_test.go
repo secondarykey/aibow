@@ -221,7 +221,7 @@ func TestRemoteToolsStartError(t *testing.T) {
 	cs.SetRemoteTools(r)
 
 	var notices []string
-	cs.Send(context.Background(), c.ID, "やあ", func(ev ChatEvent) {
+	cs.Send(context.Background(), c.ID, "やあ", nil, func(ev ChatEvent) {
 		if ev.Type == "notice" {
 			notices = append(notices, ev.Text)
 		}
