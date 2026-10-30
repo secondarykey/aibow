@@ -86,6 +86,8 @@ https://huggingface.co/bartowski/Qwen_Qwen3.5-4B-GGUF/resolve/main/Qwen_Qwen3.5-
 `Q4_K_M` は「重みを4ビット程度に圧縮したもの」という意味で、元のサイズの約1/4になり、VRAM 8GB に余裕で収まります。
 ほかのフォルダに置いたモデルは、設定の画面の「モデル」のタブで置き場所を足すと一覧に出ます。
 
+aibow で会話できるのは、書式に対応しているモデルだけです(Qwen3.5・Gemma 4・Llama 3・Granite 4・Granite 4.2)。試したモデルと、モデルごとの注意は [usage.md](usage.md) の「使えるモデル(書式)」にあります。
+
 ## ビルドと起動
 
 ```bash

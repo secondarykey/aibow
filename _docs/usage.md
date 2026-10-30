@@ -54,8 +54,8 @@ aibow を起動したまま `ollama pull` した場合は、aibow のウィン�
 | Qwen3.5 | `qwen35` | Ollama の `qwen3.5:4b`・`qwen3.5:9b` |
 | Gemma 4 | `gemma4` | `gemma-4-E4B-it-Q4_K_M.gguf`(Unsloth が量子化したもの。models フォルダに置く。約 4.6 GB) |
 | Llama 3 | `llama`(テンプレートが Llama 3 のもの) | Ollama の `llama3.2:3b`(約 2.0 GB)。思考しないので「思考する」は押せません。ツールを使う頼みごとは苦手です(`_docs/tuning.md`) |
-| Granite 4 | `granite`(テンプレートが Granite 4.0・4.1 のもの) | Ollama の `granite4.1:3b`(約 2.1 GB)。思考しないので「思考する」は押せません |
-| Granite 4.2 | `granite`(テンプレートが Granite 4.2 のもの) | Ollama の `granite4.2:3b`(約 2.2 GB) |
+| Granite 4 | `granite`(テンプレートが Granite 4.0・4.1 のもの) | Ollama の `granite4.1:3b`(約 2.1 GB)。思考しないので「思考する」は押せません。3B でもツールを繰り返さず速く答えます。4.0 は書式のテストだけで、モデルでは試していません |
+| Granite 4.2 | `granite`(テンプレートが Granite 4.2 のもの) | Ollama の `granite4.2:3b`(約 2.2 GB)。思考がとても長いので、3B では「思考する」をオフにしたほうが速く、答えの質もほぼ同じです([tuning.md](tuning.md)) |
 
 `llama` の種類のモデルでも、Llama を元にした別の書式のモデル(Hermes 3 など)は「未対応」と出ます(GGUF のチャットテンプレートで見分けます)。`granite` の種類も、書式の違う Granite 3.x は「未対応」と出ます。
 

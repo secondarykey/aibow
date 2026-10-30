@@ -45,6 +45,8 @@ llama.cpp の DLL を `lib\` にダウンロードします(最初の1回だけ�
 
 `ollama pull qwen3.5:4b` で取るか、GGUF のファイル(例: [Qwen3.5 4B の Q4_K_M](https://huggingface.co/bartowski/Qwen_Qwen3.5-4B-GGUF/resolve/main/Qwen_Qwen3.5-4B-Q4_K_M.gguf)。約3GB)を `models\` に置きます。
 
+使えるのは、aibow が書式に対応しているモデルです(Qwen3.5・Gemma 4・Llama 3・Granite 4・Granite 4.2)。どのモデルで試したかは [_docs/usage.md](_docs/usage.md) の「使えるモデル(書式)」にあります。
+
 ### 4. ビルドして起動する
 
 ```bash

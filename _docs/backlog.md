@@ -11,7 +11,7 @@ TODO.md の「ロードマップの外でやりたいこと」のうち、仕様
 
 ほかのモデルの書式に対応する:チャットテンプレート(会話の区切り・思考・ツール呼び出しの書き方)はモデルの系統ごとに違う(Qwen3 と Qwen3.5 でもツール呼び出しの書式が違う)。0004 で書式を interface に切り出し、実装は Qwen3.5 だけにした。2つ目の系統(Gemma・Llama など)の実装を手で書いて違いを比べるか、GGUF の中の Jinja テンプレート(`tokenizer.chat_template`)を実行する汎用の実装を作るか(yzma は Jinja の部品を依存に持っている)。出力からツール呼び出しを取り出す部分は、汎用にしても系統ごとの処理が要る
 
-→ 2026-10-30、ユーザーと相談して、2つ目として Gemma 4 を手で書いた(汎用の Jinja は作らない)。経過と決めたことは [features/0026-formats.md](features/0026-formats.md)。3つ目(Llama 3 など)は TODO.md の「モデルの対応」の行
+→ 2026-10-30、ユーザーと相談して、2つ目として Gemma 4 を手で書いた(汎用の Jinja は作らない)。経過と決めたことは [features/0026-formats.md](features/0026-formats.md)。続けて Llama 3([features/0027-llama3.md](features/0027-llama3.md))・Granite 4 と Granite 4.2([features/0029-granite.md](features/0029-granite.md))も手で書いた。対応している書式の一覧は [usage.md](usage.md) の「使えるモデル(書式)」、残りの候補は TODO.md の「モデルの対応」の行
 
 ## 複数のモデルを同時に動かす
 

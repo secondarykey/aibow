@@ -57,7 +57,7 @@ aibow-server につないでいるときは、**モデルの一覧(名前・書�
 入力欄の下のモデルの選択も、aibow-server につないでいるときは出どころでまとめない
 
 - モデル: 表の形(名前・書式・出どころ・大きさ・GPU の層・読み込む / 降ろす)。列は subgrid でそろえる。読み込み中のモデルは丸の中のチェックと太字
-  - 書式は、そのモデルを動かす書式の名前(Qwen3.5・Gemma 4。`ModelsResult.formats`。0026 の決定事項 17)。種類(`models.Entry` の `arch`。GGUF の先頭から読む)を Go の `format.For` で名前に直す。書式に未対応の種類のモデルは「未対応(種類)」を薄く出す(読み込めても送信できない)
+  - 書式は、そのモデルを動かす書式の名前(Qwen3.5・Gemma 4・Llama 3・Granite 4・Granite 4.2。`models.Entry` の `format`。0026 の決定事項 17)。種類(`arch`。GGUF の先頭から読む)と GGUF のチャットテンプレートの印から、Go の `api.FillFormat`(`format.ForModel`)が名前を入れる(0027)。書式に未対応の種類のモデルは「未対応(種類)」を薄く出す(読み込めても送信できない)
   - 出どころは models フォルダ / Ollama / 足した場所(`models.Entry` の `origin`)。足した場所の枠だけ色を付ける
   - 「読み込む」は今のモデルと入れ替える(同時に読み込むのは1つ。0015 の 23。`SwitchModel`)。「降ろす」は VRAM を空ける(`UnloadModel`)
   - GPU の層は、変えると「適用」が出る(押すまで変えない。読み込み中のモデルなら読み直しになるため)。読み込んでいないモデルは覚えるだけ(`SetModelGPULayers`)。
