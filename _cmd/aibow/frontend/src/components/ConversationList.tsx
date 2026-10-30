@@ -131,16 +131,18 @@ export function ConversationList({
                 onClick={() => onOpen(c.id)}
                 onDoubleClick={() => onStartRename(c.id)}
               >
-                {mark && <span className={"dot " + mark} title={MARK_LABEL[mark]} />}
+                {mark && !generating && <span className={"dot " + mark} title={MARK_LABEL[mark]} />}
                 {title}
                 {c.share && <LuShare2 className="share-mark" title={c.share === "all" ? "全員に共有している" : "指定した人に共有している"} />}
               </button>
-              <button
-                className="delete"
-                title={generating ? "返事を生成中の会話は削除できません" : "削除"}
-                disabled={disabled || generating}
-                onClick={() => setConfirming(c.id)}
-              >×</button>
+              {generating && mark ? (
+                // 送信している間(生成中・確認待ち)は削除できないので、削除の場所に印を出す(2026-10-31、ユーザーの指示)
+                <span className="running-mark" title={MARK_LABEL[mark] + "(終わるまで削除できません)"}>
+                  <span className={"dot " + mark} />
+                </span>
+              ) : (
+                <button className="delete" title="削除" disabled={disabled} onClick={() => setConfirming(c.id)}>×</button>
+              )}
             </li>
           );
         })}
@@ -174,7 +176,8 @@ export function ConversationList({
   );
 }
 
-// Mark は会話の名前の左に出す印の種類(CSS の .dot.<種類>)。
+// Mark は会話の印の種類(CSS の .dot.<種類>)。送信している間(生成中・確認待ち)は行の右の削除の場所に、
+// 終わったあと(終わった・エラー)は名前の左に出す(終わったあとは削除できるので、削除と場所を分ける)。
 type Mark = "waiting" | "generating" | Ended;
 
 // MARK_ORDER は、畳んだ一覧のハンバーガーに1つだけ出すときに、どれを先に出すか(気にしてほしい順)

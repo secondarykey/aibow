@@ -425,6 +425,9 @@ nav.conversations.collapsed .settings.active { color: var(--accent); }
 }
 .conversation .delete { padding: 4px 8px; color: var(--muted); visibility: hidden; }
 .conversation:hover .delete, .conversation.current .delete { visibility: visible; }
+/* 送信している間の印は、削除(×)の場所にいつも出す(削除できない間なので、× の代わり) */
+.conversation .running-mark { display: inline-flex; align-items: center; justify-content: center; padding: 4px 8px; }
+.conversation .running-mark .dot { margin: 0; }
 .dot {
   display: inline-block; width: 10px; height: 10px; border-radius: 50%;
   background: var(--accent); margin: 0 2px 2px 0; vertical-align: middle;
