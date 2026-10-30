@@ -45,7 +45,7 @@ aibow 全体の進み具合(入口)。ルールと全体の構成は `AGENTS.md`
 |---|---|---|
 | ✅ | ほかのモデルの書式に対応する(Gemma 4。2026-10-30 に完了) | [0026-formats.md](_docs/features/0026-formats.md) |
 | ⬜ | Qwen の新しい版(Qwen3.6・3.8)が Qwen3.5 の書式で動くか確かめる(GGUF の種類の名前とテンプレートを見る。2026-10-30、Chat が出した) | 未作成 |
-| ⬜ | Llama 3 の書式(3.2 の 3B・3.1 の 8B。区切りは `<\|start_header_id\|>`、ツール呼び出しは JSON。Hermes 3 など Llama を元にしたモデルも多い。0026 の次の3つ目の候補) | 未作成 |
+| 🔧 | Llama 3 の書式(まず 3.2 の 3B。ツール呼び出しは JSON・思考なし・種類 llama はテンプレートの印で選ぶ) | [0027-llama3.md](_docs/features/0027-llama3.md) |
 | ⬜ | Granite 4 の書式(IBM の 3B・8B。関数呼び出し向けに学習。Apache 2.0) | 未作成 |
 | ⬜ | Mistral の書式(ministral-3・mistral 7B。`[INST]`・`[TOOL_CALLS]`。ministral-3 が 8GB に入るかは未確認) | 未作成 |
 | ⬜ | Phi-4-mini の書式(Microsoft の 3.8B) | 未作成 |
