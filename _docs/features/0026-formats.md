@@ -154,6 +154,17 @@ aibow のトークン化は `addSpecial=true`(`engine/engine.go` の `tokenize`)
 38. **比べ方**:同じ頼みごと(日本語の質問・計算・現在時刻・作業フォルダを読む・MCP のツール)を、aibow-server の会話の口(aibow 自身のエージェントループとツール)で両方のモデルに送る。思考 ON・同じプロファイルの設定。トークン数・速さ・かかった時間・ツールの使い方・答えを記録する
 39. 速さを比べるときは、ユーザーがほかのアプリを閉じて VRAM を空け、両方とも全部の層を GPU に載せる
 
+### 段5の経過(2026-10-30、Code。途中)
+
+- 済み:GGUF の推奨のサンプリングをモデルのタブ(名前の吹き出し)に出した(37)
+- 済み(CPU だけの aibow-server と aibow-mcp を MCP のサーバーにして確かめた):0026 より前の aibow-server で作った Qwen3.5 の会話(MCP の read_file を offset・limit つきで3回呼んだもの)を、今の aibow-server で開いて Qwen3.5 で続け、Gemma 4 に替えて続け、Qwen3.5 に戻して続けた。
+  Gemma 4 のプロンプトでは前の呼び出しが `{limit:2,offset:1,path:<|"|>notes.txt<|"|>}`(整数のまま)と結果の名前つきで書かれ、Qwen3.5 のプロンプトでは Gemma 4 の呼び出しが `<tool_call>` の形で書かれた。どちらにも相手の書式の印は残らない
+- 残り:
+  - 速さと答えの比べ(38・39。VRAM を空けてから)と `_docs/tuning.md`
+  - デスクトップのアプリ(直接・aibow-server 越し)で確かめる。`WEBVIEW2_USER_DATA_FOLDER` は効かなかった(WebView2 のデータフォルダが分かれない)ので、
+    `_docs/env-windows.md` のとおり一時ビルドで `WebviewUserDataPath` を一時フォルダにしてから起動する
+  - `_docs/usage.md`(使えるモデル)・`_docs/backlog.md`・完了の条件の見直しと ✅
+
 ## やらないこと(先回りしない)
 
 - GGUF の Jinja を動かす汎用の書式
