@@ -133,7 +133,6 @@
     },
     {
       "name": "typed_args_boolean",
-      "formats": ["gemma4"],
       "think": false,
       "tools": ["read_file"],
       "messages": [

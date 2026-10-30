@@ -58,7 +58,8 @@ type chatMessage struct {
 	Content          string        `json:"content"`
 	ReasoningContent string        `json:"reasoning_content,omitempty"`
 	ToolCalls        []toolCall    `json:"tool_calls,omitempty"`
-	ToolCallID       string        `json:"tool_call_id,omitempty"` // 書式は使わない(呼び出しと結果は順番で対応する)が、標準の形に合わせて書く
+	ToolCallID       string        `json:"tool_call_id,omitempty"` // サーバーはこれでツールの名前を引く(Gemma 4 は結果に名前を書く)。崩れた呼び出しの結果には無い
+	Name             string        `json:"name,omitempty"`         // tool の発言の、ツールの名前(崩れた呼び出しの結果は id が無いので、名前で送る)
 	Aibow            *messageExtra `json:"aibow,omitempty"`
 }
 
@@ -105,7 +106,9 @@ func newChatRequest(p format.Prompt) (chatRequest, error) {
 		}
 		req.Tools = append(req.Tools, t)
 	}
-	var pending []string // まだ結果の来ていない呼び出しの id(tool の発言に順番に付ける)
+	// まだ結果の来ていない呼び出しの id(tool の発言に順番に付ける)。崩れた呼び出しは id が無いので "" で場所だけ取る
+	// (結果は崩れた呼び出しの分も順番に並ぶので、取らないと後ろの結果の id がずれる)
+	var pending []string
 	for i, m := range p.Messages {
 		cm := chatMessage{Role: m.Role, Content: m.Content, ReasoningContent: m.Thinking}
 		switch m.Role {
@@ -118,6 +121,7 @@ func newChatRequest(p format.Prompt) (chatRequest, error) {
 						cm.Aibow = &messageExtra{}
 					}
 					cm.Aibow.BrokenToolCalls = append(cm.Aibow.BrokenToolCalls, brokenCall{Index: j, Name: c.Name, Raw: c.Raw, Error: c.Error})
+					pending = append(pending, "")
 					continue
 				}
 				var tc toolCall
@@ -127,6 +131,7 @@ func newChatRequest(p format.Prompt) (chatRequest, error) {
 				pending = append(pending, tc.ID)
 			}
 		case "tool":
+			cm.Name = m.Name
 			if len(pending) > 0 {
 				cm.ToolCallID, pending = pending[0], pending[1:]
 			}

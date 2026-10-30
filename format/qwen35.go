@@ -155,7 +155,7 @@ func writeQwen35Tools(b *strings.Builder, tools []tool.Def) {
 }
 
 // writeQwen35Calls は返事の中のツール呼び出しを書く。afterContent は、呼び出しの前に答えの文があるか。
-// 引数の値は文字で書く(tool.ArgText。tools は値の型を見るためのツールの定義)。
+// 引数の値は文字で書く(qwen35ArgText。tools は値の型を見るためのツールの定義)。
 //
 //	答えの文
 //
@@ -185,10 +185,40 @@ func writeQwen35Calls(b *strings.Builder, calls []ToolCall, afterContent bool, t
 		b.WriteString("<tool_call>\n<function=" + c.Name + ">\n")
 		types := tool.ArgTypesFor(tools, c.Name)
 		for _, a := range c.Args {
-			b.WriteString("<parameter=" + a.Name + ">\n" + tool.ArgText(types[a.Name], a.Value) + "\n</parameter>\n")
+			b.WriteString("<parameter=" + a.Name + ">\n" + qwen35ArgText(types[a.Name], a.Value) + "\n</parameter>\n")
 		}
 		b.WriteString("</function>\n</tool_call>")
 	}
+}
+
+// qwen35ArgText は、tool.Arg の形の値を、Qwen3.5 の書式で書く文字にする(0026 の決定事項 26)。
+//
+// 公式テンプレートは、配列・オブジェクトでない値を Python の str() で書くので、真偽は True / False、null は None になる
+// (数はそのまま。配列・オブジェクトは tojson なので、中の真偽は true のまま)。それ以外は tool.ArgText(文字で書く書式に共通の決まり)。
+func qwen35ArgText(typ, value string) string {
+	if typ != "" && typ != "string" {
+		switch value {
+		case "true":
+			return "True"
+		case "false":
+			return "False"
+		case "null":
+			return "None"
+		}
+	}
+	return tool.ArgText(typ, value)
+}
+
+// qwen35ArgFromText は qwen35ArgText の逆。モデルが書いた True / False(真偽の引数)・None(型のある引数)は、
+// テンプレートの書き方なので型に合う値として JSON の true / false / null で持つ(書き戻すと同じ文字に戻る)。それ以外は tool.ArgFromText。
+func qwen35ArgFromText(typ, text string) string {
+	switch {
+	case typ == "boolean" && (text == "True" || text == "False"):
+		return strings.ToLower(text)
+	case typ != "" && typ != "string" && text == "None" && tool.ArgFromText(typ, text) != text:
+		return "null"
+	}
+	return tool.ArgFromText(typ, text)
 }
 
 // jsonString は文字列を JSON の文字列にする。
@@ -304,8 +334,8 @@ const (
 	qwen35Response  = "<tool_response>"
 )
 
-func (qwen35) NewParser(think bool, tools []tool.Def) OutputParser {
-	return &qwen35Parser{split: newThinkSplitter(think), tools: tools}
+func (qwen35) NewParser(p Prompt) OutputParser {
+	return &qwen35Parser{split: newThinkSplitter(p.Think), tools: p.Tools}
 }
 
 // qwen35Parser は生成した文字列を思考・答え・呼び出しの部分に振り分け、全体も覚えておく(Result 用)。
@@ -369,19 +399,6 @@ func isCallPosition(before string) bool {
 	return !insideCodeFence(before)
 }
 
-// insideCodeFence は、text の終わりがコードブロック(``` か ~~~ の行で囲んだところ)の中かを返す。
-// 囲みの行(字下げ 3 文字まで)が出るたびに、中と外が入れ替わる。
-func insideCodeFence(text string) bool {
-	inside := false
-	for line := range strings.SplitSeq(text, "\n") {
-		t := strings.TrimLeft(line, " ")
-		if len(line)-len(t) <= 3 && (strings.HasPrefix(t, "```") || strings.HasPrefix(t, "~~~")) {
-			inside = !inside
-		}
-	}
-	return inside
-}
-
 func (q *qwen35Parser) keep(thinking, content string) (string, string) {
 	q.thinking.WriteString(thinking)
 	q.content.WriteString(content)
@@ -422,7 +439,7 @@ func parseQwen35Calls(s string, tools []tool.Def) []ToolCall {
 		if end < 0 {
 			// 閉じないまま終わった(返事の上限・停止など)
 			raw := strings.TrimRightFunc(s, unicode.IsSpace)
-			return append(calls, brokenCall(raw, "", "</tool_call> で閉じていません"))
+			return append(calls, qwen35Broken(raw, "", "</tool_call> で閉じていません"))
 		}
 		block := s[:end+len(qwen35CallEnd)]
 		calls = append(calls, parseQwen35Call(block, tools))
@@ -444,20 +461,20 @@ const qwen35CallHelp = "正しい書式: <tool_call>\n<function=関数名>\n<par
 //	</tool_call>
 //
 // 値の前後の改行1つずつは書式の区切りなので落とす(値の中の改行や字下げは残す。ステップ3でファイルの中身を渡すため)。
-// Qwen3.5 は値をいつも文字で書くので、ツールの定義の型を見て tool.Arg の形にする(tool.ArgFromText。0026 の決定事項 1)。
+// Qwen3.5 は値をいつも文字で書くので、ツールの定義の型を見て tool.Arg の形にする(qwen35ArgFromText。0026 の決定事項 1・26)。
 func parseQwen35Call(block string, tools []tool.Def) ToolCall {
 	inner := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(block, qwen35CallStart), qwen35CallEnd))
 	if !strings.HasPrefix(inner, "<function=") {
-		return brokenCall(block, "", "<tool_call> の中が <function=関数名> で始まっていません")
+		return qwen35Broken(block, "", "<tool_call> の中が <function=関数名> で始まっていません")
 	}
 	nameEnd := strings.Index(inner, ">")
 	name := strings.TrimSpace(inner[len("<function="):max(nameEnd, len("<function="))])
 	if nameEnd < 0 || name == "" {
-		return brokenCall(block, "", "<function=関数名> の関数名が読み取れません")
+		return qwen35Broken(block, "", "<function=関数名> の関数名が読み取れません")
 	}
 	body, ok := strings.CutSuffix(inner[nameEnd+1:], "</function>")
 	if !ok {
-		return brokenCall(block, name, "</function> で閉じていません")
+		return qwen35Broken(block, name, "</function> で閉じていません")
 	}
 
 	call := ToolCall{Call: tool.Call{Name: name, Args: []tool.Arg{}}}
@@ -468,26 +485,26 @@ func parseQwen35Call(block string, tools []tool.Def) ToolCall {
 			return call
 		}
 		if !strings.HasPrefix(body, "<parameter=") {
-			return brokenCall(block, name, "<function> の中に <parameter=引数名> 以外の文があります")
+			return qwen35Broken(block, name, "<function> の中に <parameter=引数名> 以外の文があります")
 		}
 		ne := strings.Index(body, ">")
 		if ne < 0 {
-			return brokenCall(block, name, "<parameter=引数名> の引数名が読み取れません")
+			return qwen35Broken(block, name, "<parameter=引数名> の引数名が読み取れません")
 		}
 		arg := strings.TrimSpace(body[len("<parameter="):ne])
 		value, rest, ok := strings.Cut(body[ne+1:], "</parameter>")
 		if arg == "" || !ok {
-			return brokenCall(block, name, "<parameter=引数名> が </parameter> で閉じていません")
+			return qwen35Broken(block, name, "<parameter=引数名> が </parameter> で閉じていません")
 		}
 		value = strings.TrimSuffix(strings.TrimPrefix(value, "\n"), "\n")
-		call.Args = append(call.Args, tool.Arg{Name: arg, Value: tool.ArgFromText(types[arg], value)})
+		call.Args = append(call.Args, tool.Arg{Name: arg, Value: qwen35ArgFromText(types[arg], value)})
 		body = rest
 	}
 }
 
-// brokenCall は読み取れなかった呼び出し。name は読み取れた関数名(読めなければ空)。
-func brokenCall(raw, name, reason string) ToolCall {
-	return ToolCall{Call: tool.Call{Name: name}, Raw: raw, Error: "書式が崩れていて呼び出しを読み取れません(" + reason + ")。\n" + qwen35CallHelp}
+// qwen35Broken は読み取れなかった呼び出し(parts.go の brokenCall に、Qwen3.5 の正しい書き方を添える)。
+func qwen35Broken(raw, name, reason string) ToolCall {
+	return brokenCall(raw, name, reason, qwen35CallHelp)
 }
 
 // ---- 思考と答えの切り分け -----------------------------------------------------------

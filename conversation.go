@@ -911,7 +911,12 @@ func promptMessages(system, summary string, history []StoredMessage) []format.Me
 		out = append(out, format.Message{Role: "system", Content: s})
 	}
 	for _, m := range history {
-		out = append(out, format.Message{Role: m.Role, Content: m.Content, Thinking: m.Thinking, ToolCalls: m.ToolCalls})
+		fm := format.Message{Role: m.Role, Content: m.Content, Thinking: m.Thinking, ToolCalls: m.ToolCalls}
+		if m.ToolResult != nil {
+			// ツールの結果には、元の呼び出しの名前を付ける(Gemma 4 は結果に名前を書く。0026 の決定事項 5)
+			fm.Name = m.ToolResult.Call.Name
+		}
+		out = append(out, fm)
 	}
 	return out
 }

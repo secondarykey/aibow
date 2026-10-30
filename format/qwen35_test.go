@@ -20,7 +20,7 @@ func parse(think bool, pieces ...string) (thinking, content string, out Output, 
 
 // parseWith は parse の、モデルに知らせたツールの定義があるとき(引数の値を定義の型を見て tool.Arg の形にする)。
 func parseWith(tools []tool.Def, think bool, pieces ...string) (thinking, content string, out Output, stopped bool) {
-	p := (qwen35{}).NewParser(think, tools)
+	p := (qwen35{}).NewParser(Prompt{Think: think, Tools: tools})
 	for _, piece := range pieces {
 		th, c := p.Push(piece)
 		thinking += th
@@ -144,7 +144,8 @@ var typedTool = tool.Def{Name: "read_file", Parameters: []byte(`{"type": "object
 	"path": {"type": "string"}, "offset": {"type": "integer"}, "ok": {"type": "boolean"}, "paths": {"type": "array"}}}`)}
 
 // Qwen3.5 は値をいつも文字で書く。型のある引数は、型に合う文字ならそのまま JSON の値として持ち、
-// 合わない文字(" 5"・True・5.0)は書いた文字を JSON の文字列にして持つ。どちらも書き戻すと書いた文字に戻る(0026 の決定事項 1)
+// 合わない文字(" 5"・5.0・yes)は書いた文字を JSON の文字列にして持つ。どちらも書き戻すと書いた文字に戻る(0026 の決定事項 1)。
+// 真偽の True / False はテンプレートの書き方なので、JSON の true / false として持つ(決定事項 26)
 func TestQwen35TypedArgs(t *testing.T) {
 	text := "<tool_call>\n<function=read_file>\n" +
 		"<parameter=path>\n5\n</parameter>\n" + // 文字列の引数は、数に見えても中身のまま
@@ -152,9 +153,10 @@ func TestQwen35TypedArgs(t *testing.T) {
 		"<parameter=ok>\nTrue\n</parameter>\n" +
 		"<parameter=paths>\n[\"a.go\", \"b.go\"]\n</parameter>\n" +
 		"<parameter=offset>\n 5\n</parameter>\n" +
+		"<parameter=ok>\nyes\n</parameter>\n" +
 		"</function>\n</tool_call>"
 	_, _, out, _ := parseWith([]tool.Def{typedTool}, false, text)
-	want := toolCall("read_file", "path", "5", "offset", "12", "ok", `"True"`, "paths", `["a.go", "b.go"]`, "offset", `" 5"`)
+	want := toolCall("read_file", "path", "5", "offset", "12", "ok", "true", "paths", `["a.go", "b.go"]`, "offset", `" 5"`, "ok", `"yes"`)
 	if len(out.ToolCalls) != 1 || !reflect.DeepEqual(out.ToolCalls[0], want) {
 		t.Fatalf("読み取った引数: %+v", out.ToolCalls)
 	}
@@ -163,6 +165,14 @@ func TestQwen35TypedArgs(t *testing.T) {
 	writeQwen35Calls(&b, out.ToolCalls, false, []tool.Def{typedTool})
 	if b.String() != text {
 		t.Errorf("書き戻すと書いた文字に戻る:\n%s", b.String())
+	}
+
+	// 小文字の true は JSON の true として読み、書き戻すとテンプレートどおり True になる(決定事項 26)
+	_, _, out, _ = parseWith([]tool.Def{typedTool}, false, "<tool_call>\n<function=read_file>\n<parameter=ok>\ntrue\n</parameter>\n</function>\n</tool_call>")
+	b.Reset()
+	writeQwen35Calls(&b, out.ToolCalls, false, []tool.Def{typedTool})
+	if out.ToolCalls[0].Args[0].Value != "true" || !strings.Contains(b.String(), "\nTrue\n") {
+		t.Errorf("小文字の true: %q / %s", out.ToolCalls[0].Args[0].Value, b.String())
 	}
 
 	// ツールの定義が無い(知らないツール)ときは、どの引数も文字列として持つ
@@ -265,6 +275,7 @@ func testPromptMatchesTemplate(t *testing.T, name string, f Format) {
 				p.Tools = append(p.Tools, tool.Def{Name: td.Name, Description: td.Description, Parameters: td.Parameters})
 			}
 		}
+		var pending []string // まだ結果の来ていない呼び出しの名前(ツールの結果の名前にする。会話の仕組みと同じ)
 		for _, m := range c.Messages {
 			msg := Message{Role: m.Role, Content: m.Content, Thinking: m.Thinking}
 			for _, tc := range m.ToolCalls {
@@ -273,6 +284,10 @@ func testPromptMatchesTemplate(t *testing.T, name string, f Format) {
 					call.Args = append(call.Args, tool.Arg{Name: a[0], Value: a[1]})
 				}
 				msg.ToolCalls = append(msg.ToolCalls, call)
+				pending = append(pending, tc.Name)
+			}
+			if m.Role == "tool" && len(pending) > 0 {
+				msg.Name, pending = pending[0], pending[1:]
 			}
 			p.Messages = append(p.Messages, msg)
 		}
@@ -283,6 +298,13 @@ func testPromptMatchesTemplate(t *testing.T, name string, f Format) {
 		}
 		if got := f.BuildPrompt(p); got != string(want) {
 			t.Errorf("%s: テンプレートと違います\n--- got\n%s\n--- want\n%s", c.Name, got, want)
+		}
+		// ツールの結果に名前が無くても(0026 より前の会話)、書式が呼び出しと順番で組にして同じになる
+		for i := range p.Messages {
+			p.Messages[i].Name = ""
+		}
+		if got := f.BuildPrompt(p); got != string(want) {
+			t.Errorf("%s: 結果の名前が無いとき、テンプレートと違います\n--- got\n%s\n--- want\n%s", c.Name, got, want)
 		}
 	}
 }

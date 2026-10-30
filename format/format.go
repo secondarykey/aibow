@@ -16,11 +16,13 @@ package format
 //
 // 会話の仕組み(ルートの aibow)は、<|im_start|> や <think> や <tool_call> のような書式の文字列を一切扱わない。
 // このパッケージは llama.cpp も会話の保存も知らない(使うのは tool だけ)。書式だけを取り出して試せる。
-// 今ある実装は Qwen3.5 用(qwen35.go)だけ。
+// 今ある実装は Qwen3.5 用(qwen35.go)と Gemma 4 用(gemma4.go)。2つで使う部品は parts.go。
 
 import (
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/secondarykey/aibow/tool"
@@ -30,12 +32,15 @@ import (
 //
 // Thinking と ToolCalls は assistant の返事だけが持つ。どれをプロンプトに入れるかは書式が決める
 // (Qwen3.5 は、最後のユーザーの発言より後の返事 = ツールのループの途中の返事だけ、思考も入れる)。
-// tool は Content にツールの結果を持つ。
+// tool は Content にツールの結果を持ち、Name にどのツールの結果か(元の呼び出しの名前)を持つ。
+// Qwen3.5 は結果に名前を書かない(呼び出しと結果は順番で対応する)が、Gemma 4 は結果に名前を書く(0026 の決定事項 5)。
+// 名前が無いとき(0026 より前の会話・名前を送らないクライアント)は、書式が直前の返事の呼び出しと順番で組にする。
 type Message struct {
 	Role      string     `json:"role"`
 	Content   string     `json:"content"`
 	Thinking  string     `json:"thinking,omitempty"`
 	ToolCalls []ToolCall `json:"tool_calls,omitempty"`
+	Name      string     `json:"name,omitempty"`
 }
 
 // Prompt はモデルに渡す内容を、書式を当てる前の「構造」のまま持つ。
@@ -78,8 +83,9 @@ type Format interface {
 	// 最後は「アシスタントの返事の書き出し」で終える(モデルはその続きを書く)
 	BuildPrompt(p Prompt) string
 	// NewParser は、生成した文字列を思考・答え・ツール呼び出しに振り分けるものを作る(生成1回ごとに1つ)。
-	// tools はモデルに知らせたツール(呼び出しの引数を、定義の型を見て tool.Arg の形にするため)
-	NewParser(think bool, tools []tool.Def) OutputParser
+	// p は BuildPrompt に渡したもの。ツールの定義(呼び出しの引数を、定義の型を見て tool.Arg の形にする)と、
+	// プロンプトがどこで終わったか(Gemma 4 は、ツールの結果の後ろでは思考の途中から書き始める)を見るため
+	NewParser(p Prompt) OutputParser
 }
 
 // OutputParser は、生成中に少しずつ届く文字列を振り分ける。
@@ -100,6 +106,7 @@ type OutputParser interface {
 // formats は、モデルの種類(GGUF の general.architecture)ごとの書式。
 var formats = map[string]func() Format{
 	"qwen35": func() Format { return qwen35{} },
+	"gemma4": func() Format { return gemma4{} },
 }
 
 // For はモデルの種類に合う書式を返す。未対応なら nil。
@@ -122,21 +129,17 @@ func Unsupported(arch string) error {
 type unsupportedError struct{ arch string }
 
 func (e unsupportedError) Error() string {
-	return fmt.Sprintf("このモデルの書式(種類: %s)には未対応です。対応しているのは Qwen3.5(qwen35)だけです。"+
-		"書式が合わないまま会話すると、モデルが会話の区切りを理解できずにおかしな返事になるため、生成しません", e.arch)
+	return fmt.Sprintf("このモデルの書式(種類: %s)には未対応です。対応しているのは %s です。"+
+		"書式が合わないまま会話すると、モデルが会話の区切りを理解できずにおかしな返事になるため、生成しません", e.arch, Supported())
+}
+
+// Supported は、対応している書式を「Gemma 4(gemma4)・Qwen3.5(qwen35)」の形で返す(未対応のエラーの文に使う。0026 の決定事項 14)。
+func Supported() string {
+	var names []string
+	for _, arch := range slices.Sorted(maps.Keys(formats)) {
+		names = append(names, formats[arch]().Name()+"("+arch+")")
+	}
+	return strings.Join(names, "・")
 }
 
 func (e unsupportedError) Is(target error) bool { return target == ErrUnsupported }
-
-// partialSuffix は、s の末尾が tag の先頭の何文字分と一致しているかを返す。
-// 例: partialSuffix("考えた</th", "</think>") == 4
-//
-// OutputParser が、タグの書きかけかもしれない末尾を持っておくのに使う。
-func partialSuffix(s, tag string) int {
-	for n := min(len(tag)-1, len(s)); n > 0; n-- {
-		if strings.HasSuffix(s, tag[:n]) {
-			return n
-		}
-	}
-	return 0
-}

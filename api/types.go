@@ -104,8 +104,11 @@ type chatMessage struct {
 
 	// ToolCalls は、前の返事のツール呼び出し(この API が返したもの)
 	ToolCalls []toolCall `json:"tool_calls"`
-	// ToolCallID は tool の役の発言が、どの呼び出しの結果か。Qwen3.5 の書式は id を使わず、呼び出しと結果の順番で対応させるので読まない
+	// ToolCallID は tool の役の発言が、どの呼び出しの結果か。書式は呼び出しと結果を順番で対応させるが、
+	// Gemma 4 は結果にツールの名前を書くので、直前の返事の tool_calls の id から名前を引く(0026 の決定事項 5)
 	ToolCallID string `json:"tool_call_id"`
+	// Name は tool の役の発言の、ツールの名前(aibow のクライアントが送る。崩れた呼び出しの結果には id が無いため)
+	Name string `json:"name"`
 
 	// Aibow は aibow のクライアントが足す欄(書式が崩れた呼び出し。次のプロンプトには、モデルが書いたままを入れるため)
 	Aibow *messageExtra `json:"aibow"`
@@ -162,6 +165,7 @@ func toPrompt(req chatRequest, think bool) (format.Prompt, error) {
 	}
 	var system []string
 	var msgs []format.Message
+	names := map[string]string{} // 直前の返事の呼び出しの id → ツールの名前
 	for i, m := range req.Messages {
 		text, err := m.text()
 		if err != nil {
@@ -184,8 +188,17 @@ func toPrompt(req chatRequest, think bool) (format.Prompt, error) {
 				return format.Prompt{}, fmt.Errorf("messages[%d]: %w", i, err)
 			}
 			msgs = append(msgs, format.Message{Role: "assistant", Content: text, Thinking: m.ReasoningContent, ToolCalls: calls})
+			clear(names)
+			for _, c := range m.ToolCalls {
+				names[c.ID] = c.Function.Name
+			}
 		case "tool":
-			msgs = append(msgs, format.Message{Role: "tool", Content: text})
+			// 名前は id から引く。引けなければ送られた名前、それも無ければ空(書式が呼び出しと順番で組にする)
+			name, ok := names[m.ToolCallID]
+			if !ok || m.ToolCallID == "" {
+				name = m.Name
+			}
+			msgs = append(msgs, format.Message{Role: "tool", Content: text, Name: name})
 		default:
 			return format.Prompt{}, fmt.Errorf("messages[%d]: 役 %q には対応していません(system・developer・user・assistant・tool)", i, m.Role)
 		}

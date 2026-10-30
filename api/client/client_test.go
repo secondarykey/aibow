@@ -167,12 +167,12 @@ func tricky() format.Prompt {
 			{Role: "user", Content: "読んで"},
 			{Role: "assistant", Content: "", Thinking: "読もう", ToolCalls: []format.ToolCall{
 				{Call: tool.Call{Name: "read_file", Args: []tool.Arg{{Name: "path", Value: "a.go"}, {Name: "n", Value: `" 5"`}, {Name: "flags", Value: `["x", "y"]`}, {Name: "ok", Value: `"True"`}}}},
-				{Call: tool.Call{Name: "read_file"}, Raw: "<tool_call>\n<function=read_file>", Error: "崩れています"},
+				{Call: tool.Call{Name: "calculate"}, Raw: "<tool_call>\n<function=calculate>", Error: "崩れています"},
 				{Call: tool.Call{Name: "read_file", Args: []tool.Arg{{Name: "path", Value: "b.go"}, {Name: "n", Value: "3"}}}},
 			}},
-			{Role: "tool", Content: "package a"},
-			{Role: "tool", Content: "エラー: 崩れています"},
-			{Role: "tool", Content: "package b"},
+			{Role: "tool", Content: "package a", Name: "read_file"},
+			{Role: "tool", Content: "エラー: 崩れています", Name: "calculate"},
+			{Role: "tool", Content: "package b", Name: "read_file"},
 			{Role: "assistant", Content: "読みました"},
 			{Role: "user", Content: "次"},
 		},
@@ -193,10 +193,14 @@ func TestRoundTripPrompt(t *testing.T) {
 	if a, b := jsonOf(got.Messages), jsonOf(p.Messages); a != b || got.Think != p.Think {
 		t.Errorf("会話が変わった:\n got  %s\n want %s", a, b)
 	}
-	f := format.For("qwen35")
-	if a, b := f.BuildPrompt(got), f.BuildPrompt(p); a != b {
-		t.Errorf("書式を当てた文字列が変わった:\n got  %q\n want %q", a, b)
+	// ツールの結果の名前(Gemma 4 が書く)も、崩れた呼び出しの後ろまで正しく戻る
+	for _, arch := range []string{"qwen35", "gemma4"} {
+		f := format.For(arch)
+		if a, b := f.BuildPrompt(got), f.BuildPrompt(p); a != b {
+			t.Errorf("%s: 書式を当てた文字列が変わった:\n got  %q\n want %q", arch, a, b)
+		}
 	}
+	f := format.For("qwen35")
 	// temperature 0 は greedy として渡る(書かないと既定の 0.7 になる)
 	if o := g.opts[0]; o.Temperature != 0 || o.MaxTokens != 50 || o.PresencePenalty != 0 {
 		t.Errorf("生成の設定: %+v", o)

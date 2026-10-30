@@ -9,6 +9,8 @@
 |---|---|
 | `format/format.go` | `format` パッケージ。書式の interface(`Format` / `OutputParser`)と、会話の仕組みとエンジンの間で受け渡す形(`Message` / `Prompt` / `Output` / `ToolCall`)。モデルの種類で書式を選ぶ表(`format.For`) |
 | `format/qwen35.go` | Qwen3.5 の書式。プロンプトの組み立て(ツールの説明・呼び出し・結果・ループ中の思考)と、出力の振り分け(思考・答え・`<tool_call>`) |
+| `format/gemma4.go` | Gemma 4 の書式(0026)。プロンプトの組み立て(思考の印・独自の書き方のツールの説明と呼び出し・model の発言の中のツールの結果)と、出力の振り分け(`<|channel>thought`・答え・`<|tool_call>`) |
+| `format/parts.go` | 2つの書式で使う部品(タグの書きかけを持っておく `partialSuffix` / `partialSuffixAny`・コードブロックの中か `insideCodeFence`・崩れた呼び出し `brokenCall`) |
 | `tool/tool.go` | `tool` パッケージ。ツールの interface(`Tool`)・定義(`Def`)・呼び出し(`Call`: 名前と引数だけ)・引数(`Arg`)。引数を JSON Schema と照らし合わせる `CheckArgs` |
 | `tool/arg.go` | 引数の値の持ち方(書式によらない形。下の「引数の値の持ち方」)と、書式・JSON との行き来(`ArgFromText` / `ArgText`・`ArgFromJSON` / `ArgJSON`・`ArgsFromJSON` / `ArgsJSON`・`ArgTypes`) |
 | `tool/time.go` / `tool/calc.go` | 組み込みのツール `get_current_time` / `calculate` |
@@ -20,7 +22,7 @@
 | `internal/proc/` | 子プロセスまでまとめて止める仕組み(Windows はジョブオブジェクト、それ以外はプロセスグループ)。`run_command` と MCP のサーバーで使う(0006 で `tool` から移した) |
 | `tool/confirm.go` | 実行前に確認が要るツールの印(`Confirmable`)と、確認の画面に出す内容(`Preview`: パス・上書きか・差分)。差分は `github.com/pkg/diff` |
 | `agent.go` | エージェントループ(`runTurn`)とツールの実行(10 秒の上限・20 回の上限・停止・会話の上限に入らない結果・実行前の確認の待ち) |
-| `format/qwen35_test.go` | 書式のテスト。プロンプトは公式テンプレートを jinja2 で通した期待値と1文字まで比べる(`testPromptMatchesTemplate`。書式によらない) |
+| `format/qwen35_test.go` / `format/gemma4_test.go` | 書式のテスト。プロンプトは公式テンプレートを jinja2 で通した期待値と1文字まで比べる(`testPromptMatchesTemplate`。書式によらない。ツールの結果の名前が無いときも比べる) |
 | `format/testdata/` | 書式のテストの会話(`cases.json`。書式をまたいで共通)と、期待値を作るスクリプト(`gen_expected.py`)。期待値は書式ごとのフォルダ(`qwen35/*.txt`・`gemma4/*.txt`) |
 | `tool/tool_test.go` / `tool/files_test.go` / `tool/write_test.go` / `agent_test.go` / `workdir_test.go` / `confirm_test.go` | ツール(外に出られないこと・読み方の切り方を含む)とループ・作業フォルダのテスト(偽物の生成器を使う。モデル不要) |
 | `format/format_test.go` | `ToolCall` の JSON が切り出す前と同じ平らな形か(保存済みの会話を読めるか)のテスト |
@@ -36,9 +38,13 @@ Conversations ← Output(思考・答え・ToolCall)            ← Engine ← F
 ```
 
 - 会話の仕組み(`conversation.go` / `compact.go` / `agent.go`)は `<|im_start|>` や `<think>` や `<tool_call>` を一切扱わない
-- エンジンはモデルを読み込んだときに GGUF の `general.architecture` で書式を選ぶ(Qwen3.5 は `qwen35`)。
-  未対応の種類なら `ModelInfo.Format` が空で、生成とトークン数えがエラーになる(ログとトーストでも伝える)
-- 実装は Qwen3.5 だけ。ほかの系統や、GGUF の中の Jinja を実行する汎用の実装は作っていない(TODO.md のロードマップの外)
+- エンジンはモデルを読み込んだときに GGUF の `general.architecture` で書式を選ぶ(Qwen3.5 は `qwen35`、Gemma 4 は `gemma4`)。
+  未対応の種類なら `ModelInfo.Format` が空で、生成とトークン数えがエラーになる(ログとトーストでも伝える。文には対応している書式の一覧を出す)
+- 実装は Qwen3.5 と Gemma 4(0026)。GGUF の中の Jinja を実行する汎用の実装は作らない(書式は自分で書く方針)
+- `Format.NewParser` は `BuildPrompt` に渡したのと同じ `Prompt` を受け取る。ツールの定義(引数の型)と、プロンプトがどこで終わったか
+  (Gemma 4 は、ツールの結果の後ろで思考 ON なら `<|channel>thought` まで書いてあるので、思考の途中から読み始める)を見るため
+- ツールの結果(role `tool`)は `Message.Name` に元の呼び出しの名前を持つ(会話の仕組みが `ToolResult.Call.Name` から入れる。Gemma 4 が結果に名前を書くため)。
+  名前が無いとき(0026 より前の会話)は、書式が直前の返事の呼び出しと順番で組にする
 - 生成の途中で書式が「止める」と言ったら止める(`OutputParser.Stop`)。終了理由は `stop`
 
 ### Qwen3.5 の書式
@@ -53,6 +59,24 @@ Conversations ← Output(思考・答え・ToolCall)            ← Engine ← F
 - 読み取れなかった呼び出しは、モデルが書いたまま(`ToolCall.Raw`)をプロンプトに戻す。結果の「エラー: …」と並べて、モデルが自分の間違いを見られるようにする
 - 呼び出しの引数の値はいつも文字で書く(`<parameter=n>\n5\n</parameter>`)。読むときも書くときも、ツールの定義の型を見て `tool.Arg` の形と行き来する(`tool.ArgFromText` / `tool.ArgText`。下の「引数の値の持ち方」)
 
+### Gemma 4 の書式(0026)
+
+手元の GGUF(Unsloth が量子化したもの)の `tokenizer.chat_template` を、aibow が渡す会話の形で通る部分だけ書き直した(Google の元のテンプレートとの違いは aibow の出力に出ない。0026 の「段2で分かったこと」)。
+
+- 会話の区切りは `<|turn>role\n … <turn|>\n`(役は system / user / **model**)。bos は書かない(トークン化が足す。[engine.md](engine.md))
+- 思考の ON は、システムの発言の先頭の `<|think|>\n`(ON ならシステムの発言が無くても作る)。思考は `<|channel>thought\n … \n<channel|>` で、前後の空白を落とさない。
+  最後のユーザーの発言より後の返事だけ思考を残す(Qwen3.5 と同じ)。思考を切ったときに空の思考を入れるかは `gemma4EmptyThought`(E4B では入れない。決定事項 8)
+- ツールの説明は `<|tool>declaration:名前{description:…,parameters:{…}}<tool|>` で、JSON ではない独自の書き方(文字列は `<|"|>…<|"|>`、キーは名前の順(大文字と小文字を区別しない dictsort)、型は大文字)。
+  テンプレートの癖も写す:`type` が配列なら Python のリストの見た目(`['BOOLEAN', 'NULL']`)、properties の無い object の引数は `properties:{}`、`type` の無い parameters は閉じの `}` が無い
+- 呼び出しは `<|tool_call>call:名前{キー:値,…}<tool_call|>`。キーは名前の順に並べ直し、値は型で書き分ける(文字列 `<|"|>…<|"|>`、数は Python の `str()`(`1e3` は `1000.0`。`pyNumber`)、真偽・null はそのまま、辞書のキーは囲まない)
+- **ツールの結果は model の発言の中のまま**、呼び出しのすぐ後に `<|tool_response>response:名前{value:<|"|>結果<|"|>}<tool_response|>`。結果の前後の空白は落とさない
+- **呼び出しのある返事の答えの文は、ツールの結果の後ろに置く**(テンプレートの順)。結果の後ろの返事は、同じ model の発言の続きとして区切りなしにつながる
+- 返事の書き出し:ふつうは `<|turn>model\n`。ツールの結果で終わったら新しい発言を始めず、思考 ON なら `<|channel>thought\n` まで書く
+- 読み取り:答えの中の `<|channel>`(思考の始まり)と `<|tool_call>`(呼び出しの始まり)を待つ。呼び出しは行の頭とは限らないので、行の頭の決まりは使わず、コードブロックの外かだけを見る(決定事項 10)。
+  `<|tool_response>` が出たら止める(公式の停止シーケンス。aibow が結果を続けて書く。決定事項 7)。思考の後ろの改行1つは思考に入れない(書き戻すと同じになる)
+- 呼び出しの値は JSON の値にしてから `tool.ArgFromJSON` で `tool.Arg` の形にする。配列・辞書は Python の `json.dumps` と同じ見た目(`["b.go", "c.go"]`)の JSON にするので、モデルを Qwen3.5 に替えてもテンプレートの `tojson` と同じ文字で書ける
+- 書式が崩れた呼び出し(閉じていない・`call:` が無い・文字列を囲んでいない・JSON で書いた など)は、`Raw` と `Error`(正しい書き方の例つき)を持たせる
+
 ### 引数の値の持ち方(0026 の段1)
 
 書式によってモデルが値を書く形は違う(Qwen3.5 はいつも文字、OpenAI 互換の口は JSON、Gemma 4 は型のある独自の書き方)。
@@ -65,10 +89,11 @@ Conversations ← Output(思考・答え・ToolCall)            ← Engine ← F
 
 - どちらの形かは値だけでは決まらず、ツールの定義の型で決まる。書式は読むときにこの形にし(`ArgFromText`・`ArgFromJSON`)、書くときにこの形から自分の書き方に直す(`ArgText`・`ArgJSON`)。
   そのため `Format.NewParser` はモデルに知らせたツールの定義を受け取り、`BuildPrompt` は `Prompt.Tools` で型を見る
-- **型のある引数にモデルが型に合わない文字を書いたとき**(整数に ` 5` や `5.0`、真偽に `True`)は、書いた文字を JSON の文字列にして持つ(`" 5"`・`"True"`)。
+- **型のある引数にモデルが型に合わない文字を書いたとき**(整数に ` 5` や `5.0`、真偽に `yes`)は、書いた文字を JSON の文字列にして持つ(`" 5"`・`"yes"`。Qwen3.5 の `True` はテンプレートの書き方なので true として読む)。
   直さずに持つので、同じ書式に書き戻すと1文字も変わらない(KV キャッシュを使い回せる)。`CheckArgs` は中身の文字を今までどおり大目に見て変換する(` 5` → 5、`True` → true)
 - 0026 より前に保存した会話は、型のある引数でもモデルが書いたままの文字(`True` など)を持っている。JSON の文字列でない値は書いたままの文字として扱うので、そのまま読めて、プロンプトも前と同じになる
-- Qwen3.5 の書式は、JSON の文字をそのまま書く(真偽は `true` のまま。公式テンプレートは Python の `True` で書くが、モデルが書いた文字に戻すことを優先して今までどおりにした。0026 の段3でテンプレートどおり `True` / `False` に変える。0026 の決定事項 26)
+- Qwen3.5 の書式は、テンプレートどおり真偽を `True` / `False`、null を `None` で書き、モデルが書いた `True` / `False` / `None` は JSON の true / false / null として読む
+  (`qwen35ArgText` / `qwen35ArgFromText`。0026 の決定事項 26。段1では `true` のまま書いていた)。モデルが小文字の `true` を書いたときは、書き戻すと `True` になる
 - 書くときにツールの定義が無い(使わないにしたツールの前の呼び出し・`tool_choice: "none"`)と型が分からないので、値をそのまま書く。型に合わない文字を書いていた値だけ、`"True"` のように引用符つきで書かれる(まれなので受け入れる)
 
 ### 出力の読み取り

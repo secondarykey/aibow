@@ -322,7 +322,7 @@ func TestToolCalls(t *testing.T) {
 	if a.Thinking != "読もう" || len(a.ToolCalls) != 1 || a.ToolCalls[0].Name != "read_file" || !slices.Equal(a.ToolCalls[0].Args, wantArgs) {
 		t.Errorf("履歴の呼び出しが違う: %+v", a)
 	}
-	if m := p.Messages[2]; m.Role != "tool" || m.Content != "package b" {
+	if m := p.Messages[2]; m.Role != "tool" || m.Content != "package b" || m.Name != "read_file" { // 名前は tool_call_id から引く(Gemma 4 が書く)
 		t.Errorf("ツールの結果が違う: %+v", m)
 	}
 

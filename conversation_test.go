@@ -778,3 +778,15 @@ func TestRegenerateErrors(t *testing.T) {
 		t.Errorf("作り直せなかったときは消さない: %d", len(after))
 	}
 }
+
+// ツールの結果には、元の呼び出しの名前を付けてモデルに渡す(Gemma 4 は結果に名前を書く。0026 の決定事項 5)
+func TestPromptMessagesNamesToolResults(t *testing.T) {
+	got := promptMessages("", "", []StoredMessage{
+		{Role: "user", Content: "q"},
+		{Role: "assistant", ToolCalls: []format.ToolCall{calc("1+1")}},
+		{Role: "tool", Content: "2", ToolResult: &ToolResult{Call: calc("1+1")}},
+	})
+	if len(got) != 3 || got[2].Name != "calculate" || got[0].Name != "" {
+		t.Errorf("渡す発言: %+v", got)
+	}
+}
