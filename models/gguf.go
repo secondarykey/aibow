@@ -47,10 +47,13 @@ const (
 // ggufMaxString は、読む文字列の長さの上限(壊れたファイルで、巨大な長さを読んでメモリを確保しないため)
 const ggufMaxString = 1 << 20
 
-// Header は GGUF の先頭(メタデータの general.*)から読んだもの。重みは読まない。
+// Header は GGUF の先頭(メタデータ)から読んだもの。重みは読まない。
 type Header struct {
 	Arch     string    // general.architecture(例: "qwen35"・"gemma4")
 	Sampling *Sampling // general.sampling.*(モデルを作った人が勧めるサンプリングの値。無ければ nil)
+	// ChatTemplate は tokenizer.chat_template(Jinja のチャットテンプレート。無ければ空)。
+	// 書式を選ぶのに使う(種類の名前だけでは決まらない書式がある。0027 の決定事項 2)
+	ChatTemplate string
 }
 
 // Sampling は GGUF が勧めるサンプリングの値(0026 の決定事項 37。画面に出すだけで、生成には使わない)。書いていない値は nil。
@@ -72,8 +75,8 @@ func Arch(path string) (string, error) {
 	return h.Arch, nil
 }
 
-// ReadHeader は GGUF の先頭の general.* を読む。general.* はメタデータの先頭にまとめて書かれる決まりなので、
-// それ以外のキー(語彙の大きな配列など)が出たところでやめる。
+// ReadHeader は GGUF のメタデータから、種類・勧めるサンプリングの値(general.*)・チャットテンプレートを読む。
+// テンプレートは語彙の大きな配列の後ろにあるので、配列は確保せずに読み飛ばす(ファイルごとに覚えておくので、読むのは1回。cachedHeader)。
 func ReadHeader(path string) (Header, error) {
 	var h Header
 	f, err := os.Open(path)
@@ -98,13 +101,14 @@ func ReadHeader(path string) (Header, error) {
 	if head.Version < 2 {
 		return h, fmt.Errorf("%s は古い GGUF(版 %d)です", path, head.Version)
 	}
+	pastGeneral := false // general.* の後ろまで来たか(サンプリングの値は general.* の中だけで読む)
 	for range head.KVs {
 		key, err := readGGUFString(r)
 		if err != nil {
 			return h, fmt.Errorf("%s のメタデータを読めません: %w", path, err)
 		}
 		if !strings.HasPrefix(key, "general.") && h.Arch != "" {
-			return h, nil
+			pastGeneral = true
 		}
 		var typ uint32
 		if err := binary.Read(r, binary.LittleEndian, &typ); err != nil {
@@ -116,7 +120,16 @@ func ReadHeader(path string) (Header, error) {
 				return h, err
 			}
 			continue
-		case strings.HasPrefix(key, "general.sampling."):
+		case key == "tokenizer.chat_template" && typ == ggufString:
+			// テンプレートは語彙の大きな配列の後ろにあるので、そこまで読み飛ばしてくる。見つかれば、あとは要らない
+			if h.ChatTemplate, err = readGGUFString(r); err != nil {
+				return h, err
+			}
+			if h.Arch != "" {
+				return h, nil
+			}
+			continue
+		case strings.HasPrefix(key, "general.sampling.") && !pastGeneral:
 			if v, ok, err := readGGUFNumber(r, typ); err != nil {
 				return h, err
 			} else if ok {

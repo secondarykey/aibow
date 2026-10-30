@@ -92,3 +92,36 @@ func TestReadHeaderSampling(t *testing.T) {
 		t.Errorf("サンプリング: %+v", *s)
 	}
 }
+
+// チャットテンプレートは語彙の配列の後ろにあるので、配列を読み飛ばして読む(0027 の決定事項 2。書式を選ぶのに使う)
+func TestReadHeaderChatTemplate(t *testing.T) {
+	var b bytes.Buffer
+	w := func(v any) { binary.Write(&b, binary.LittleEndian, v) }
+	str := func(s string) { w(uint64(len(s))); b.WriteString(s) }
+	b.WriteString("GGUF")
+	w(uint32(3))
+	w(uint64(0))
+	w(uint64(3))
+	str("general.architecture")
+	w(uint32(ggufString))
+	str("llama")
+	str("tokenizer.ggml.tokens")
+	w(uint32(ggufArray))
+	w(uint32(ggufString))
+	w(uint64(3))
+	str("<|begin_of_text|>")
+	str("a")
+	str("b")
+	str("tokenizer.chat_template")
+	w(uint32(ggufString))
+	str("{{- '<|start_header_id|>' + role }}")
+
+	path := filepath.Join(t.TempDir(), "m.gguf")
+	if err := os.WriteFile(path, b.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	h, err := ReadHeader(path)
+	if err != nil || h.Arch != "llama" || h.ChatTemplate != "{{- '<|start_header_id|>' + role }}" {
+		t.Errorf("%+v %v", h, err)
+	}
+}

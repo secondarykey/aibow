@@ -25,6 +25,7 @@ import (
 	"net/http"
 
 	"github.com/secondarykey/aibow/engine"
+	"github.com/secondarykey/aibow/format"
 	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/models"
 )
@@ -113,6 +114,7 @@ func (s *Server) handleServerModels(w http.ResponseWriter, r *http.Request) {
 		case out.Loading == m.ID:
 			st = "loading"
 		}
+		m.Format = FormatName(m) // 書式はファイルを持っているサーバーが選ぶ(つないだ画面のアプリはテンプレートを持っていない。0027 の決定事項 2)
 		out.Data = append(out.Data, serverModel{Entry: m, Status: modelStatus{Value: st}, NGPULayers: s.models.GPULayers(m.ID)})
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -291,4 +293,17 @@ func (s *Server) modelObjects() []modelObject {
 		data = append(data, modelObject{ID: info.ID, Object: "model", Created: created, OwnedBy: "aibow"})
 	}
 	return data
+}
+
+// FormatName は、一覧のモデルを動かす書式の名前(対応していなければ空)。すでに入っていればそれ(aibow-server から受け取った一覧)、
+// 無ければ種類とチャットテンプレートで選ぶ(format.ForModel。0026 の決定事項 17・0027 の決定事項 2)。
+// 画面向けの ui も同じ決まりで選ぶので、ここに1つだけ置く。
+func FormatName(m models.Entry) string {
+	if m.Format != "" {
+		return m.Format
+	}
+	if f := format.ForModel(m.Arch, m.ChatTemplate); f != nil {
+		return f.Name()
+	}
+	return ""
 }

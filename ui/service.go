@@ -36,6 +36,7 @@ import (
 	"uuid"
 
 	"github.com/secondarykey/aibow"
+	"github.com/secondarykey/aibow/api"
 	apiclient "github.com/secondarykey/aibow/api/client"
 	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/format"
@@ -269,9 +270,6 @@ type ModelsResult struct {
 
 	// GPULayers はモデルの ID → 読み込むときの GPU の層数(直接ならアプリの DB、aibow-server 越しならサーバーの PC に覚えた値。8-4)
 	GPULayers map[string]int `json:"gpu_layers"`
-	// Formats はモデルの ID → 使う書式の名前(Qwen3.5・Gemma 4)。書式に未対応の種類のモデルは入れない(画面は種類と「未対応」を出す)。
-	// どの書式で動くかを一覧で見えるようにする(0026 の決定事項 17)。種類(Entry.Arch)はサーバーの一覧からも届くので、ここで名前に直す
-	Formats map[string]string `json:"formats"`
 	// LastModel は最後に読み込んだモデル。降ろしたあと(Current が null)も、モデルの選択にどれを降ろしたかを出すため(0015 の 29)
 	LastModel string `json:"last_model,omitempty"`
 
@@ -303,11 +301,9 @@ func (s *Service) Models(ctx context.Context) ModelsResult {
 		log.Noticef("aibow-server につながりました: %s", s.host.server())
 	}
 	r.Models, r.Current, r.GPU, r.GPULayers, r.Manage = l.models, l.current, l.gpu, l.layers, l.manage
-	r.Formats = map[string]string{}
-	for _, m := range r.Models {
-		if f := format.For(m.Arch); f != nil {
-			r.Formats[m.ID] = f.Name()
-		}
+	// どの書式で動くかを一覧で見えるようにする(0026 の決定事項 17)。aibow-server から受け取った一覧には、サーバーが選んだ名前が入っている
+	for i := range r.Models {
+		r.Models[i].Format = api.FormatName(r.Models[i])
 	}
 	r.LastModel = s.lastModel()
 	if name := s.loading.Load(); name != nil {

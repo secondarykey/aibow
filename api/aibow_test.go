@@ -462,3 +462,22 @@ func TestPCSide(t *testing.T) {
 		}
 	}
 }
+
+// 一覧のモデルの書式の名前:受け取った名前があればそれ(つないだ画面のアプリ)、無ければ種類とテンプレートで選ぶ(0027 の決定事項 2)
+func TestFormatName(t *testing.T) {
+	cases := []struct {
+		m    models.Entry
+		want string
+	}{
+		{models.Entry{Arch: "qwen35"}, "Qwen3.5"},
+		{models.Entry{Arch: "gemma4", ChatTemplate: "{{ bos_token }}"}, "Gemma 4"},
+		{models.Entry{Arch: "llama", ChatTemplate: "{{ '<|im_start|>' }}"}, ""}, // Llama を元にした ChatML のモデル(Hermes 3 など)は未対応
+		{models.Entry{Format: "Gemma 4"}, "Gemma 4"},                            // aibow-server が選んだ名前
+		{models.Entry{}, ""},
+	}
+	for _, c := range cases {
+		if got := FormatName(c.m); got != c.want {
+			t.Errorf("FormatName(%+v) = %q, want %q", c.m, got, c.want)
+		}
+	}
+}

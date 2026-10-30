@@ -115,7 +115,7 @@ function ModelTable({ models, disabled, onError }: { models: Models; disabled: b
         <ModelRow
           key={m.id}
           m={m}
-          format={models.formats[m.id]}
+          format={m.format}
           manage={manage}
           onEnabled={enabled => setEnabled(m.id, enabled)}
           loaded={current?.id === m.id}
@@ -215,7 +215,7 @@ function RemoteModelTable({ models }: { models: Models }) {
             {current?.id === m.id && <LuCircleCheck className="model-loaded" aria-label="読み込み中" />}
             {m.name}
           </span>
-          <FormatCell m={m} format={models.formats[m.id]} />
+          <FormatCell m={m} format={m.format} />
           <span className="num">{m.size_gb.toFixed(1)} GB</span>
         </div>
       ))}

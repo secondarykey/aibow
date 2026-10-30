@@ -319,9 +319,10 @@ func (e *Engine) load(m models.Entry) (*ModelInfo, error) {
 	}
 
 	e.lctx = lctx
-	// 書式はモデルの種類で選ぶ。GGUF にはモデルの種類が general.architecture として書かれている
+	// 書式はモデルの種類で選ぶ。GGUF にはモデルの種類が general.architecture として書かれている。
+	// 種類の名前だけでは決まらない書式(llama)は、GGUF のチャットテンプレートの印も見る(0027 の決定事項 2)
 	arch, _ := llama.ModelMetaValStr(model, "general.architecture")
-	f := format.For(arch)
+	f := format.ForModel(arch, llama.ModelChatTemplate(model, ""))
 	e.vocabMu.Lock()
 	e.vocab = llama.ModelGetVocab(model)
 	e.format, e.arch = f, arch

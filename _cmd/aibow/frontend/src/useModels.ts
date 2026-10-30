@@ -33,7 +33,6 @@ export interface Models {
   // (ブラウザの管理者か、サーバーの PC の上から開いた画面。0018 の決定事項 8)。モデルのタブをアプリの中で動かすときと同じに出す
   manage: boolean;
   gpuLayers: { [id: string]: number | undefined }; // モデルの ID → 読み込むときの GPU の層数
-  formats: { [id: string]: string | undefined };   // モデルの ID → 使う書式の名前(未対応の種類のモデルは入らない。0026)
   lastModel: string;         // 最後に読み込んだモデル(降ろしたあとも、どれを降ろしたかを出すため)
   switchModel(id: string): Promise<boolean>; // 読み込めたら true
   unload(): Promise<void>;                   // 読み込み中のモデルを降ろす(VRAM を空ける)
@@ -63,7 +62,6 @@ export function useModels(n: Notifier, t: Pick<Transcript, "addError">, setBusy:
   const [startupError, setStartupError] = useState("");
   const [manage, setManage] = useState(false);
   const [gpuLayers, setGpuLayers] = useState<{ [id: string]: number | undefined }>({});
-  const [formats, setFormats] = useState<{ [id: string]: string | undefined }>({});
   const [lastModel, setLastModel] = useState("");
   const serverDown = useRef(false); // つながらないことをカードで伝えたか(取り直すたびに出さないため)
 
@@ -93,7 +91,6 @@ export function useModels(n: Notifier, t: Pick<Transcript, "addError">, setBusy:
     setGpu(d.gpu);
     setServer(d.server ?? "");
     setGpuLayers(d.gpu_layers ?? {});
-    setFormats(d.formats ?? {});
     setLastModel(d.last_model ?? "");
     // 起動時のお知らせ(使われなくなった環境変数など)。一覧は何度も取り直すので、最初の1回だけ出す
     if (!noticesShown.current) {
@@ -163,7 +160,6 @@ export function useModels(n: Notifier, t: Pick<Transcript, "addError">, setBusy:
     setModels(d.models ?? []);
     setCurrent(d.current);
     setGpuLayers(d.gpu_layers ?? {});
-    setFormats(d.formats ?? {});
     setLastModel(d.last_model ?? "");
     if (failed) {
       if (d.current) notify(`元のモデル ${d.current.name} に戻しました`, { key: "model" });
@@ -209,5 +205,5 @@ export function useModels(n: Notifier, t: Pick<Transcript, "addError">, setBusy:
 
   const isServerDown = useCallback(() => serverDown.current, []);
 
-  return { models, allModels, current, gpu, loading, server, serverError, startupError, manage, gpuLayers, formats, lastModel, switchModel, unload, setLayers, reload, serverDown: isServerDown };
+  return { models, allModels, current, gpu, loading, server, serverError, startupError, manage, gpuLayers, lastModel, switchModel, unload, setLayers, reload, serverDown: isServerDown };
 }

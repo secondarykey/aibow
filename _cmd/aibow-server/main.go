@@ -319,17 +319,17 @@ func firstModel(mm *modelManager, arg string) (models.Entry, error) {
 		log.Infof("モデル %s の書式(種類: %s)には未対応なので、起動のときのモデルにしません", m.Name, cmp.Or(arch, "読めない"))
 	}
 	if disabled {
-		return models.Entry{}, fmt.Errorf("書式に対応している使えるモデル(Qwen3.5)がありません。管理者が使えないようにしたモデルを使うなら、%s の disabled から ID を外してください", absPath(mm.state.path))
+		return models.Entry{}, fmt.Errorf("書式に対応している使えるモデル(%s)がありません。管理者が使えないようにしたモデルを使うなら、%s の disabled から ID を外してください", format.Supported(), absPath(mm.state.path))
 	}
-	return models.Entry{}, fmt.Errorf("書式に対応しているモデル(Qwen3.5)が見つかりません。-models(AIBOW_MODELS_DIR)のフォルダに Qwen3.5 の GGUF を置くか、ollama pull してください")
+	return models.Entry{}, fmt.Errorf("書式に対応しているモデル(%s)が見つかりません。-models(AIBOW_MODELS_DIR)のフォルダに GGUF を置くか、ollama pull してください", format.Supported())
 }
 
-// supported は、モデルの書式に aibow が対応しているか(GGUF の先頭から種類だけを読む)。arch は読めた種類(読めなければ空)。
+// supported は、モデルの書式に aibow が対応しているか(GGUF の先頭から種類とチャットテンプレートを読む)。arch は読めた種類(読めなければ空)。
 func supported(m models.Entry) (arch string, ok bool) {
-	arch, err := models.Arch(m.Path)
+	h, err := models.ReadHeader(m.Path)
 	if err != nil {
 		log.Warn(err.Error())
 		return "", false
 	}
-	return arch, format.For(arch) != nil
+	return h.Arch, format.ForModel(h.Arch, h.ChatTemplate) != nil
 }

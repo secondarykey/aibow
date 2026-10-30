@@ -37,6 +37,12 @@ type Entry struct {
 	// Arch はモデルの種類(GGUF の general.architecture。例: "qwen35"・"gemma4")。読めなければ空。
 	// 使う側が書式の名前に直して画面に出す(models は書式を知らない。0026 の決定事項 17)
 	Arch string `json:"arch,omitempty"`
+	// ChatTemplate は GGUF の tokenizer.chat_template。書式を選ぶのに使う(0027 の決定事項 2)。大きいので JSON には出さない
+	// (aibow-server につないだ画面のアプリは、サーバーが選んだ書式の名前 Format を使う)
+	ChatTemplate string `json:"-"`
+	// Format は、このモデルを動かす書式の名前(Qwen3.5・Gemma 4 など。対応していなければ空)。models は書式を知らないので、
+	// ファイルを持っている側(画面向けの ui・aibow-server の api)が format.ForModel で選んで入れる(0026 の決定事項 17・0027 の決定事項 2)
+	Format string `json:"format,omitempty"`
 	// Sampling は GGUF が勧めるサンプリングの値(general.sampling.*。無ければ nil)。画面に出すだけで、生成には使わない(0026 の決定事項 37)
 	Sampling *Sampling `json:"sampling,omitempty"`
 	// Disabled は、aibow-server の管理者が使えないようにしたモデルか(0018 の決定事項 13・17)。
@@ -205,7 +211,7 @@ func (c Catalog) List() []Entry {
 	list, _ = dedup(list)
 	for i := range list {
 		h := cachedHeader(list[i].Path)
-		list[i].Arch, list[i].Sampling = h.Arch, h.Sampling
+		list[i].Arch, list[i].Sampling, list[i].ChatTemplate = h.Arch, h.Sampling, h.ChatTemplate
 	}
 	return list
 }

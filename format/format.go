@@ -21,7 +21,6 @@ package format
 import (
 	"errors"
 	"fmt"
-	"maps"
 	"slices"
 	"strings"
 
@@ -103,18 +102,36 @@ type OutputParser interface {
 	Result() Output
 }
 
-// formats は、モデルの種類(GGUF の general.architecture)ごとの書式。
-var formats = map[string]func() Format{
-	"qwen35": func() Format { return qwen35{} },
-	"gemma4": func() Format { return gemma4{} },
+// formatEntry は書式の表の1行。モデルの種類(GGUF の general.architecture)と、要るならチャットテンプレートの印で選ぶ。
+//
+// 種類の名前だけでは書式が決まらないことがある:llama の種類のモデルには、Llama 3 の書式のもの(<|start_header_id|>)と、
+// Llama を元にした別の書式のもの(Hermes 3 は ChatML)がある(0027 の決定事項 2)。mark があれば、GGUF の tokenizer.chat_template に
+// その文字があるときだけ選ぶ。書式が合わないまま会話すると、モデルが会話の区切りを理解できないため、分からなければ選ばない(未対応)。
+type formatEntry struct {
+	arch string
+	mark string // テンプレートの印(空なら種類だけで選ぶ)
+	make func() Format
 }
 
-// For はモデルの種類に合う書式を返す。未対応なら nil。
-func For(arch string) Format {
-	if f, ok := formats[arch]; ok {
-		return f()
+// formats は書式の表。上から順に見て、最初に合ったものを使う。
+var formats = []formatEntry{
+	{arch: "qwen35", make: func() Format { return qwen35{} }},
+	{arch: "gemma4", make: func() Format { return gemma4{} }},
+}
+
+// ForModel は、モデルの種類とチャットテンプレート(GGUF の tokenizer.chat_template)に合う書式を返す。未対応なら nil。
+func ForModel(arch, template string) Format {
+	for _, e := range formats {
+		if e.arch == arch && (e.mark == "" || strings.Contains(template, e.mark)) {
+			return e.make()
+		}
 	}
 	return nil
+}
+
+// For は種類の名前だけで書式を返す(テンプレートの印が要る書式は選ばない)。未対応なら nil。
+func For(arch string) Format {
+	return ForModel(arch, "")
 }
 
 // ErrUnsupported は、書式に対応していない種類のモデルのエラー(errors.Is で見分ける)。
@@ -134,11 +151,17 @@ func (e unsupportedError) Error() string {
 }
 
 // Supported は、対応している書式を「Gemma 4(gemma4)・Qwen3.5(qwen35)」の形で返す(未対応のエラーの文に使う。0026 の決定事項 14)。
+// テンプレートの印で選ぶ書式は、その条件も書く(例: Llama 3(llama。テンプレートに <|start_header_id|> があるもの))。
 func Supported() string {
 	var names []string
-	for _, arch := range slices.Sorted(maps.Keys(formats)) {
-		names = append(names, formats[arch]().Name()+"("+arch+")")
+	for _, e := range formats {
+		cond := e.arch
+		if e.mark != "" {
+			cond += "。テンプレートに " + e.mark + " があるもの"
+		}
+		names = append(names, e.make().Name()+"("+cond+")")
 	}
+	slices.Sort(names)
 	return strings.Join(names, "・")
 }
 

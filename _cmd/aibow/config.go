@@ -254,11 +254,11 @@ func pickInitialModel(cfg appConfig, app aibow.AppSettings, list []models.Entry)
 	}
 	// models フォルダに未対応のモデル(gemma4 など)を置いただけで、それを読み込んで始まらないように、種類を GGUF の先頭だけ読んで確かめる
 	for _, m := range list {
-		arch, err := models.Arch(m.Path)
-		if err == nil && format.For(arch) != nil {
+		h, err := models.ReadHeader(m.Path)
+		if err == nil && format.ForModel(h.Arch, h.ChatTemplate) != nil {
 			return m, nil
 		}
-		log.Infof("モデル %s の書式(種類: %s)には未対応なので、起動のときのモデルにしません", m.Name, cmp.Or(arch, "読めない"))
+		log.Infof("モデル %s の書式(種類: %s)には未対応なので、起動のときのモデルにしません", m.Name, cmp.Or(h.Arch, "読めない"))
 	}
 	return list[0], nil // 対応しているモデルが無ければ先頭(画面のお知らせで未対応と伝わる)
 }
