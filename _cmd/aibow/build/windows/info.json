@@ -1,10 +1,10 @@
 {
 	"fixed": {
-		"file_version": "0.7.0"
+		"file_version": "0.7.1"
 	},
 	"info": {
 		"0409": {
-			"ProductVersion": "0.7.0",
+			"ProductVersion": "0.7.1",
 			"CompanyName": "secondarykey",
 			"FileDescription": "aibow",
 			"LegalCopyright": "(c) 2026, secondarykey",
