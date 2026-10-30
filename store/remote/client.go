@@ -94,6 +94,10 @@ func (c *Client) DeleteMessages(ctx context.Context, ids []uuid.UUID) error {
 	return c.call(ctx, "DeleteMessages", []any{ids})
 }
 
+func (c *Client) DiscardFile(ctx context.Context, id uuid.UUID) error {
+	return c.call(ctx, "DiscardFile", []any{id})
+}
+
 func (c *Client) AddCompaction(ctx context.Context, comp aibow.Compaction) error {
 	return c.call(ctx, "AddCompaction", []any{comp})
 }

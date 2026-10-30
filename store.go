@@ -45,6 +45,9 @@ type Store interface {
 	SetMessagesExcluded(ctx context.Context, ids []uuid.UUID, excluded bool) error
 	// DeleteMessages は発言を消す(最後の返事を作り直す・最後の発言を直して送り直す。0011)
 	DeleteMessages(ctx context.Context, ids []uuid.UUID) error
+	// DiscardFile は、発言に付けたファイルの中身を消し、捨てた印を付ける(名前と種類は残す。0030 の決定事項 27)。
+	// 自分の会話のファイルでなければ ErrNotFound
+	DiscardFile(ctx context.Context, id uuid.UUID) error
 
 	// AddCompaction は要約を1件保存する(compact の summary)。会話が無ければ ErrNotFound。
 	AddCompaction(ctx context.Context, c Compaction) error

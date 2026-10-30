@@ -77,6 +77,7 @@ export interface Transcript {
   remove(id: number): void;
   reset(items: NewItem[]): void; // 別の会話を開いたときに、表示を丸ごと入れ替える
   setExcluded(msgId: string, excluded: boolean): void; // 「モデルに渡さない」の印を付け替える(Go で変えたあと)
+  discardFile(fileId: string): void; // 送ったファイルを捨てた印を付ける(Go で捨てたあと。0030)
   // dropLastTurn は最後のユーザーの発言の後ろ(withUser なら発言も)を表示から外す(作り直す・送り直すの前。0011)
   dropLastTurn(withUser: boolean): void;
 }
@@ -118,6 +119,13 @@ export function useTranscript(): Transcript {
     setExcluded: useCallback((msgId, excluded) => {
       setItems(prev => prev.map(it => (
         (it.kind === "user" || it.kind === "assistant") && it.msgId === msgId ? { ...it, excluded } : it
+      )));
+    }, []),
+    discardFile: useCallback(fileId => {
+      setItems(prev => prev.map(it => (
+        it.kind === "user" && it.files?.some(f => f.id === fileId)
+          ? { ...it, files: it.files.map(f => (f.id === fileId ? { ...f, data: null, discarded: true } : f)) }
+          : it
       )));
     }, []),
     reset: useCallback(newItems => {

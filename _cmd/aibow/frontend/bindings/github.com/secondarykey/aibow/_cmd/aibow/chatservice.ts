@@ -186,6 +186,14 @@ export function DeleteProfile(id: uuid$0.UUID): $CancellablePromise<void> {
 }
 
 /**
+ * DiscardFile は、送った発言に付けたファイル(画像・テキスト)を捨てる(0030 の決定事項 26〜28)。中身は戻せない。
+ * 画面は、捨てたら札を「消去済み」にし、メーターを取り直す。
+ */
+export function DiscardFile(id: uuid$0.UUID, fileID: uuid$0.UUID): $CancellablePromise<void> {
+    return $Call.ByID(3031380289, id, fileID);
+}
+
+/**
  * DisconnectServer はアプリの中で動かす形に戻すように決める:トークンを aibow-server で消し(つながらなければ手元だけ)、
  * つなぐ先とトークンを connection.json から消す。信頼したつなぎ先(Known)は残す(次につなぐときに、信頼し直さずにログインから続けられるように)。
  * 起動し直すと切り替わる。

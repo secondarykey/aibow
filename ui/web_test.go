@@ -849,4 +849,12 @@ func TestWebImage(t *testing.T) {
 	if f := d.Messages[0].Files; len(f) != 1 || string(f[0].Data) != string(png) {
 		t.Errorf("開き直した発言の画像: %+v", f)
 	}
+
+	// 送った画像を捨てる(0030 の決定事項 26〜28)。中身が消え、捨てた印が付く
+	w.mustCall(t, nil, "DiscardFile", c.ID, fc.File.ID)
+	d = ConversationDetail{}
+	w.mustCall(t, &d, "Conversation", c.ID)
+	if f := d.Messages[0].Files; len(f) != 1 || !f[0].Discarded || f[0].Data != nil {
+		t.Errorf("捨てた画像: %+v", f)
+	}
 }

@@ -208,6 +208,23 @@ func (s *memStore) AddMessage(_ context.Context, m StoredMessage) error {
 	return nil
 }
 
+func (s *memStore) DiscardFile(_ context.Context, id uuid.UUID) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, m := range s.messages {
+		for j, f := range m.Files {
+			if f.ID == id {
+				// 呼んだ側に返した発言と同じ配列を書き換えないよう、写してから変える
+				files := slices.Clone(m.Files)
+				files[j].Data, files[j].Discarded = nil, true
+				s.messages[i].Files = files
+				return nil
+			}
+		}
+	}
+	return ErrNotFound
+}
+
 func (s *memStore) DeleteMessages(_ context.Context, ids []uuid.UUID) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

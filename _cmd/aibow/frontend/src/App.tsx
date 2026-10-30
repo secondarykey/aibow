@@ -616,6 +616,20 @@ export default function App() {
               );
             },
           }}
+          discard={{
+            disabled: unavailable || (chat.generatingId !== null && chat.generatingId === currentId),
+            // 送ったファイルを捨てる(0030 の決定事項 26〜28)。Go が中身を消し、札は「消去済み」にしてメーターを数え直す
+            onDiscard: fileId => {
+              if (!currentId) return;
+              ChatService.DiscardFile(currentId, fileId).then(
+                () => {
+                  transcript.discardFile(fileId);
+                  convs.refreshUsage().catch(err => addError(errorMessage(err)));
+                },
+                err => addError(errorMessage(err)),
+              );
+            },
+          }}
         />
         {input}
       </section>

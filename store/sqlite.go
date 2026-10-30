@@ -276,6 +276,10 @@ CREATE TABLE files (
 );
 CREATE INDEX files_by_message ON files(message_id, id);
 `,
+	// 版 16: 送ったファイルを捨てる(0030 の決定事項 26〜28)。捨てたら中身を空にし、印を付ける(名前と種類は残す)
+	`
+ALTER TABLE files ADD COLUMN discarded INTEGER NOT NULL DEFAULT 0;  -- 0 / 1
+`,
 }
 
 func migrate(db *sql.DB) error {
@@ -759,7 +763,7 @@ func (s *SQLite) messages(ctx context.Context, conv uuid.UUID) ([]aibow.StoredMe
 
 // attachFiles は、会話 conv の発言に、読み込んだファイル(0030)を付ける。
 func (s *SQLite) attachFiles(ctx context.Context, conv uuid.UUID, ms []aibow.StoredMessage) error {
-	rows, err := s.db.QueryContext(ctx, `SELECT f.id, f.message_id, f.kind, f.name, f.format, f.hash, f.data
+	rows, err := s.db.QueryContext(ctx, `SELECT f.id, f.message_id, f.kind, f.name, f.format, f.hash, f.data, f.discarded
 		FROM files f JOIN messages m ON m.id = f.message_id WHERE m.conversation_id = ? ORDER BY f.id`, conv.String())
 	if err != nil {
 		return err
@@ -772,8 +776,11 @@ func (s *SQLite) attachFiles(ctx context.Context, conv uuid.UUID, ms []aibow.Sto
 	for rows.Next() {
 		var f aibow.File
 		var id, msg string
-		if err := rows.Scan(&id, &msg, &f.Kind, &f.Name, &f.Format, &f.Hash, &f.Data); err != nil {
+		if err := rows.Scan(&id, &msg, &f.Kind, &f.Name, &f.Format, &f.Hash, &f.Data, &f.Discarded); err != nil {
 			return err
+		}
+		if len(f.Data) == 0 {
+			f.Data = nil // 捨てたファイル(空の BLOB)
 		}
 		if f.ID, err = parseID(id); err != nil {
 			return err
@@ -817,8 +824,12 @@ func (s *SQLite) AddMessage(ctx context.Context, m aibow.StoredMessage) error {
 		return err
 	}
 	for _, f := range m.Files {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO files (id, message_id, kind, name, format, hash, data) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-			f.ID.String(), m.ID.String(), f.Kind, f.Name, f.Format, f.Hash, f.Data); err != nil {
+		data := f.Data
+		if data == nil {
+			data = []byte{} // 捨てたファイル(送り直す・写すで付いていく)。列は NOT NULL なので、NULL ではなく空の BLOB にする
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO files (id, message_id, kind, name, format, hash, data, discarded) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			f.ID.String(), m.ID.String(), f.Kind, f.Name, f.Format, f.Hash, data, f.Discarded); err != nil {
 			return fmt.Errorf("読み込んだファイル %s を保存できません: %w", f.Name, err)
 		}
 	}
@@ -842,6 +853,18 @@ func (s *SQLite) DeleteMessages(ctx context.Context, ids []uuid.UUID) error {
 		}
 	}
 	return tx.Commit()
+}
+
+// DiscardFile は、ファイルの中身を空にして捨てた印を付ける(0030)。中身のあった場所は secure_delete でゼロに上書きされる。
+// 自分の会話のファイルだけ(発言を通して持ち主を確かめる)。
+func (s *SQLite) DiscardFile(ctx context.Context, id uuid.UUID) error {
+	owner, err := s.owner(ctx)
+	if err != nil {
+		return err
+	}
+	res, err := s.db.ExecContext(ctx, `UPDATE files SET data = x'', discarded = 1
+		WHERE id = ? AND message_id IN (SELECT id FROM messages WHERE `+ownMessage+`)`, id.String(), owner)
+	return notFoundIfNone(res, err, aibow.ErrNotFound)
 }
 
 // SetMessagesExcluded は発言の「モデルに渡さない」の印を変える。返事1つ(ツールの結果を含む)は何件かになるので、まとめて1つのトランザクションで書く。

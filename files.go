@@ -23,6 +23,7 @@ import (
 	"uuid"
 
 	"github.com/secondarykey/aibow/format"
+	"github.com/secondarykey/aibow/log"
 )
 
 // File は、発言に付けて読み込んだファイル1つ(0030)。
@@ -36,6 +37,9 @@ type File struct {
 	// Hash は Data の SHA-256(16進)。画像は、エンジンが KV キャッシュに入っている画像と同じかを、これ(画像の ID)で比べる
 	Hash string `json:"hash"`
 	Data []byte `json:"data"` // 中身。テキストは UTF-8(BOM を外したもの)。画像は読み込んだファイルのまま
+	// Discarded は、ユーザーが送ったあとに捨てたファイル(決定事項 26〜28)。中身(Data)は消してあり、名前と種類だけが残る。
+	// モデルには、発言の文の前に「[画像: 名前(消去済み)]」のような置き換えの文字で渡す
+	Discarded bool `json:"discarded,omitempty"`
 }
 
 // ファイルの種類(File.Kind)
@@ -204,6 +208,11 @@ func sizeText(n int) string {
 func withFiles(text string, files []File) string {
 	var b strings.Builder
 	for _, f := range files {
+		if f.Discarded {
+			// 捨てたファイルは、何があったかだけを書く(「この画像は?」のような発言だけが残ると、モデルが戸惑うため)
+			b.WriteString(discardedNote(f) + "\n")
+			continue
+		}
 		if f.Kind != FileText {
 			continue
 		}
@@ -218,8 +227,19 @@ func withFiles(text string, files []File) string {
 	if b.Len() == 0 {
 		return text
 	}
+	if s := b.String(); !strings.HasSuffix(s, "\n\n") {
+		b.WriteString("\n") // 置き換えの文字のあとも、発言の文との間を1行あける
+	}
 	b.WriteString(text)
 	return b.String()
+}
+
+// discardedNote は、捨てたファイルの代わりにモデルに渡す文字(決定事項 28)。
+func discardedNote(f File) string {
+	if f.Kind == FileImage {
+		return "[画像: " + f.Name + "(消去済み)]"
+	}
+	return "[ファイル: " + f.Name + "(消去済み)]"
 }
 
 // fenceFor は、中身を囲むコードブロックの囲み。中身にバッククォートが3つ以上続くところがあれば、それより1つ長くする
@@ -241,7 +261,7 @@ func fenceFor(body string) string {
 func imagesOf(files []File) []format.Image {
 	var out []format.Image
 	for _, f := range files {
-		if f.Kind == FileImage {
+		if f.Kind == FileImage && !f.Discarded {
 			out = append(out, format.Image{ID: f.Hash, Format: f.Format, Data: f.Data})
 		}
 	}
@@ -281,6 +301,13 @@ func checkFiles(files []File) error {
 		return fmt.Errorf("1 つの発言に付けられるファイルは %d 個までです(%d 個)", FilesPerSend, len(files))
 	}
 	for _, f := range files {
+		if f.Discarded {
+			// 捨てたファイル(送り直す・写すで付いていく)。中身は無い
+			if len(f.Data) > 0 {
+				return fmt.Errorf("%s は捨てたファイルなのに中身があります", f.Name)
+			}
+			continue
+		}
 		switch f.Kind {
 		case FileText:
 			if len(f.Data) > FileMaxBytes {
@@ -306,6 +333,35 @@ func checkFiles(files []File) error {
 		}
 	}
 	return nil
+}
+
+// DiscardFile は、会話 id の発言に付けたファイル fileID を捨てる(決定事項 26〜28)。中身を保存先から消し、名前と種類だけを残す。
+// 答えが出て要らなくなった画像・ファイルを、会話は残したまま消すため(自動では捨てない。残しておきたいこともあるので、人が選ぶ)。
+// 生成中の会話では捨てられない(ツールのループの中で、答えが出るまで画像が要る)。捨てた中身は戻せない。
+func (cs *Conversations) DiscardFile(ctx context.Context, id, fileID uuid.UUID) error {
+	if g := cs.generating.Load(); g != nil && *g == id {
+		return errors.New("返事を生成中の会話では、ファイルを捨てられません。終わってから捨ててください")
+	}
+	_, history, err := cs.store.Conversation(ctx, id)
+	if err != nil {
+		return err
+	}
+	for _, m := range history {
+		for _, f := range m.Files {
+			if f.ID != fileID {
+				continue
+			}
+			if f.Discarded {
+				return nil // もう捨ててある
+			}
+			if err := cs.store.DiscardFile(ctx, fileID); err != nil {
+				return fmt.Errorf("%s を捨てられません: %w", f.Name, err)
+			}
+			log.Infof("会話 %s のファイル %s(%s)を捨てました", id, f.Name, f.Kind)
+			return nil
+		}
+	}
+	return errors.New("ファイルが見つかりません(削除された可能性があります)")
 }
 
 // FileCheck は、読み込んだファイルを確かめた結果(画面の札に出す)。

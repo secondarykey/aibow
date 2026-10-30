@@ -62,8 +62,8 @@ var browserMethods = []string{
 	"SetConversationShare", "SharedConversations", "UserConversations", "UserNames", "ReadConversation", "CopyShared",
 	// 送信(生成が終わるまで返らない長い呼び出し。経過は SSE の chat で送る)
 	"Send", "Regenerate", "Resend", "Compact", "StopSummary",
-	// ファイルを読み込む(0030)。送信の前に、入力欄で読み込んだファイルを確かめて数える
-	"CheckFile",
+	// ファイルを読み込む(0030)。送信の前に、入力欄で読み込んだファイルを確かめて数える・送ったファイルを捨てる
+	"CheckFile", "DiscardFile",
 	// 会話のツール(0024 の 12-1a)。この会話で使うか(会話の設定)と、実行前の確認への答え。
 	// 確認のカードは SSE の chat(confirm)で届き、答えは ConfirmTool で返す。つなぎ直したら PendingConfirm で取り直す
 	"ToolStates", "MCPServers", "ConfirmTool", "PendingConfirm",

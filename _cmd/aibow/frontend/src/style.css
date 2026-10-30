@@ -668,6 +668,11 @@ footer { border-top: 1px solid var(--border); background: var(--panel); padding:
 .file-chip.image { padding: 4px; align-items: flex-end; }
 .file-thumb { display: block; padding: 0; border: none; background: transparent; cursor: zoom-in; }
 .file-thumb img { display: block; height: 120px; max-width: 240px; object-fit: contain; border-radius: 6px; }
+/* 捨てたファイルの札(0030 の決定事項 27)。名前と「消去済み」だけ。捨てるときの確かめのボタン */
+.file-chip.discarded { color: var(--muted); border-style: dashed; background: transparent; }
+.file-confirm { display: inline-flex; gap: 4px; margin-left: 2px; }
+.file-confirm button { font-size: 12px; padding: 1px 8px; white-space: nowrap; }
+.file-confirm button.danger { color: #fff; background: var(--error); border-color: var(--error); }
 /* 画像を大きく見る(画面いっぱいに重ねる。Esc か外を押すと閉じる) */
 .image-viewer {
   position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center;

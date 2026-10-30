@@ -1,8 +1,9 @@
-// 読み込んだファイルの札(0030 の決定事項 20・25)。入力欄の上(送る前。トークン数と、外す ×)と、発言の吹き出しの上(送ったあと)に出す。
+// 読み込んだファイルの札(0030 の決定事項 20・25・26)。入力欄の上(送る前。トークン数と、外す ×)と、発言の吹き出しの上(送ったあと)に出す。
 // テキストのファイルは中身を見せない(モデルには展開して渡すが、画面ではファイル名だけ)。
-// 画像は小さな表示(高さ 120px ほど)にし、押すと画面いっぱいに重ねて大きく見せる(Esc か外を押すと閉じる)
+// 画像は小さな表示(高さ 120px ほど)にし、押すと画面いっぱいに重ねて大きく見せる(Esc か外を押すと閉じる)。
+// 送ったあとの札は「捨てる」で中身を消せる(札の中で確かめてから。戻せない)。捨てた札は名前と「消去済み」だけになる
 import { useEffect, useState } from "react";
-import { LuFileText, LuX } from "react-icons/lu";
+import { LuFileText, LuImage, LuTrash2, LuX } from "react-icons/lu";
 import type { File as StoredFile } from "../../bindings/github.com/secondarykey/aibow";
 
 export interface Chip {
@@ -10,17 +11,42 @@ export interface Chip {
   tokens?: number; // 送る前だけ(このファイルで増えるトークン数)
 }
 
-export function FileChips({ files, onRemove }: { files: Chip[]; onRemove?(index: number): void }) {
+// onRemove は送る前の札を外す。onDiscard は送ったあとの札の中身を捨てる(読むだけの会話・生成中は渡さない)
+export function FileChips({ files, onRemove, onDiscard }: { files: Chip[]; onRemove?(index: number): void; onDiscard?(file: StoredFile): void }) {
   const [viewing, setViewing] = useState<StoredFile | null>(null);
+  const [confirming, setConfirming] = useState<string | null>(null); // 「捨てる」を確かめている札(ファイルの ID)
   if (!files.length) return null;
   return (
     <div className="file-chips">
       {files.map(({ file, tokens }, i) => {
+        if (file.discarded) {
+          return (
+            <span key={file.id} className="file-chip discarded" title={`${file.name}(消去済み)`}>
+              {file.kind === "image" ? <LuImage className="icon" /> : <LuFileText className="icon" />}
+              <span className="file-name">{file.name}</span>
+              <span className="file-size">消去済み</span>
+            </span>
+          );
+        }
         const size = sizeText(dataSize(file.data)) + (tokens !== undefined ? ` · ${tokens.toLocaleString()} tok` : "");
-        const remove = onRemove && (
-          <button type="button" className="file-remove" title="外す" onClick={() => onRemove(i)}>
-            <LuX />
-          </button>
+        const actions = confirming === file.id ? (
+          <span className="file-confirm">
+            <button type="button" className="danger" onClick={() => { setConfirming(null); onDiscard?.(file); }}>捨てる</button>
+            <button type="button" onClick={() => setConfirming(null)}>やめる</button>
+          </span>
+        ) : (
+          <>
+            {onRemove && (
+              <button type="button" className="file-remove" title="外す" onClick={() => onRemove(i)}>
+                <LuX />
+              </button>
+            )}
+            {onDiscard && (
+              <button type="button" className="file-remove" title="捨てる(中身を消す。モデルには名前だけを渡す)" onClick={() => setConfirming(file.id)}>
+                <LuTrash2 />
+              </button>
+            )}
+          </>
         );
         if (file.kind === "image") {
           return (
@@ -29,7 +55,7 @@ export function FileChips({ files, onRemove }: { files: Chip[]; onRemove?(index:
                 <img src={dataURL(file)} alt={file.name} />
               </button>
               {tokens !== undefined && <span className="file-size">{tokens.toLocaleString()} tok</span>}
-              {remove}
+              {actions}
             </span>
           );
         }
@@ -38,7 +64,7 @@ export function FileChips({ files, onRemove }: { files: Chip[]; onRemove?(index:
             <LuFileText className="icon" />
             <span className="file-name">{file.name}</span>
             <span className="file-size">{size}</span>
-            {remove}
+            {actions}
           </span>
         );
       })}

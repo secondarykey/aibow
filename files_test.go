@@ -10,6 +10,8 @@ import (
 	"testing"
 	"unicode/utf16"
 	"uuid"
+
+	"github.com/secondarykey/aibow/format"
 )
 
 // テキストかどうかと文字コードは中身で決める(0030 の決定事項 7・8)。UTF-8(BOM ありも)と BOM のある UTF-16 だけを読む
@@ -280,5 +282,50 @@ func TestSendWithImage(t *testing.T) {
 	bad.Hash = "x"
 	if errs := errorsOf(collect(func(emit func(ChatEvent)) { cs.Send(context.Background(), c.ID, "?", []File{bad}, emit) })); len(errs) != 1 {
 		t.Errorf("ハッシュの合わない画像: %v", errs)
+	}
+}
+
+// 送ったファイルを捨てる(決定事項 26〜28):捨てた画像はモデルに渡さず、発言の文の前に置き換えの文字を書く。送り直しても捨てたまま付いていく
+func TestDiscardFile(t *testing.T) {
+	g := &fakeGen{content: "答え"}
+	cs, _ := newTestConversations(t, g)
+	c := mustCreate(t, cs)
+	img, _ := ReadFile("cat.png", pngBytes(t))
+	memo, _ := ReadFile("memo.txt", []byte("合言葉"))
+	cs.Send(context.Background(), c.ID, "これは?", []File{img, memo}, func(ChatEvent) {})
+	userOf := func(ms []format.Message) format.Message {
+		for _, m := range ms {
+			if m.Role == "user" {
+				return m
+			}
+		}
+		return format.Message{}
+	}
+
+	// 画像だけ捨てて送り直す:捨てた画像は置き換えの文字になり、テキストのファイルは今までどおり展開する
+	if err := cs.DiscardFile(ctx, c.ID, img.ID); err != nil {
+		t.Fatal(err)
+	}
+	cs.Resend(context.Background(), c.ID, "直した", func(ChatEvent) {})
+	sent := userOf(g.gotMessages)
+	if len(sent.Images) != 0 || sent.Content != "[画像: cat.png(消去済み)]\nファイル: memo.txt\n```\n合言葉\n```\n\n直した" {
+		t.Errorf("画像を捨てたあとに渡した発言: %q(画像 %d 枚)", sent.Content, len(sent.Images))
+	}
+	_, ms, _ := cs.Get(ctx, c.ID)
+	files := ms[0].Files
+	if len(files) != 2 || !files[0].Discarded || files[0].Data != nil || files[1].Discarded {
+		t.Fatalf("送り直した発言のファイル: %+v", files)
+	}
+
+	// テキストのファイルも捨てて、次の発言を送る
+	if err := cs.DiscardFile(ctx, c.ID, files[1].ID); err != nil {
+		t.Fatal(err)
+	}
+	cs.Send(context.Background(), c.ID, "次", nil, func(ChatEvent) {})
+	if want := "[画像: cat.png(消去済み)]\n[ファイル: memo.txt(消去済み)]\n\n直した"; userOf(g.gotMessages).Content != want {
+		t.Errorf("両方捨てたあとに渡した発言: %q(期待: %q)", userOf(g.gotMessages).Content, want)
+	}
+	if err := cs.DiscardFile(ctx, c.ID, img.ID); err == nil {
+		t.Error("送り直す前の発言のファイルは、もう無いはず")
 	}
 }

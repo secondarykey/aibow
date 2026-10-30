@@ -1258,6 +1258,15 @@ func (s *Service) Send(ctx context.Context, id uuid.UUID, text string, files []a
 	})
 }
 
+// DiscardFile は、送った発言に付けたファイル(画像・テキスト)を捨てる(0030 の決定事項 26〜28)。中身は戻せない。
+// 画面は、捨てたら札を「消去済み」にし、メーターを取り直す。
+func (s *Service) DiscardFile(ctx context.Context, id, fileID uuid.UUID) error {
+	if s.startupErr != nil {
+		return s.startupErr
+	}
+	return s.convs.DiscardFile(ctx, id, fileID)
+}
+
 // CheckFile は、入力欄で読み込んだファイル(選ぶ・ドロップ・貼り付け)を確かめ、会話の上限に入るかを数える(0030)。
 // 画面は、返ってきたもの(札に出すトークン数と、Send に渡すファイル)を、送信するまで持っておく。
 // テキストでも画像でもない・UTF-8 / UTF-16(BOM あり)でない・大きすぎる・会話の上限に入らない・画像を読めないモデルのときはエラー(理由と数字を書く)。
