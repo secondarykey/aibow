@@ -61,7 +61,7 @@ func TestUnsupportedIs(t *testing.T) {
 func TestForModelTemplateMark(t *testing.T) {
 	saved := formats
 	t.Cleanup(func() { formats = saved })
-	formats = append(slices.Clone(saved), formatEntry{arch: "testllama", mark: "<|start_header_id|>", make: func(string) Format { return gemma4{} }})
+	formats = append(slices.Clone(saved), formatEntry{arch: "testllama", marks: []string{"<|start_header_id|>"}, make: func(string) Format { return gemma4{} }})
 
 	if f := ForModel("testllama", "{{ '<|start_header_id|>' + role }}"); f == nil {
 		t.Error("印のあるテンプレートなら選ぶ")

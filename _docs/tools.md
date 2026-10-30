@@ -11,7 +11,8 @@
 | `format/qwen35.go` | Qwen3.5 の書式。プロンプトの組み立て(ツールの説明・呼び出し・結果・ループ中の思考)と、出力の振り分け(思考・答え・`<tool_call>`) |
 | `format/gemma4.go` | Gemma 4 の書式(0026)。プロンプトの組み立て(思考の印・独自の書き方のツールの説明と呼び出し・model の発言の中のツールの結果)と、出力の振り分け(`<|channel>thought`・答え・`<|tool_call>`) |
 | `format/llama3.go` | Llama 3 の書式(0027)。プロンプトの組み立て(日付・最初の発言の頭のツールの説明・JSON の呼び出し・ipython の結果・呼び出しを1つずつに分ける)と、返事の全体が JSON なら呼び出しとして読む読み取り |
-| `format/parts.go` | 2つ以上の書式で使う部品(タグの書きかけを持っておく `partialSuffix` / `partialSuffixAny`・コードブロックの中か `insideCodeFence`・崩れた呼び出し `brokenCall`) |
+| `format/granite.go` | Granite 4(4.0・4.1)の書式(0029)。プロンプトの組み立て(ツールの説明・`<tool_call>` で囲んだ JSON の呼び出し・user の発言にまとめる結果・4.0 の既定のシステムの文)と、`<tool_call>` の中の JSON の読み取り |
+| `format/parts.go` | 2つ以上の書式で使う部品(タグの書きかけを持っておく `partialSuffix` / `partialSuffixAny`・コードブロックの中か `insideCodeFence`・崩れた呼び出し `brokenCall`・行の頭の `<tool_call>` から後ろを呼び出しとして取っておく読み取り `toolCallParser`(Qwen3.5・Granite 4)・ツールの定義の1行の JSON `toolDefJSON`) |
 | `tool/tool.go` | `tool` パッケージ。ツールの interface(`Tool`)・定義(`Def`)・呼び出し(`Call`: 名前と引数だけ)・引数(`Arg`)。引数を JSON Schema と照らし合わせる `CheckArgs` |
 | `tool/arg.go` | 引数の値の持ち方(書式によらない形。下の「引数の値の持ち方」)と、書式・JSON との行き来(`ArgFromText` / `ArgText`・`ArgFromJSON` / `ArgJSON`・`ArgsFromJSON` / `ArgsJSON`・`ArgTypes`) |
 | `tool/time.go` / `tool/calc.go` | 組み込みのツール `get_current_time` / `calculate` |
@@ -23,8 +24,8 @@
 | `internal/proc/` | 子プロセスまでまとめて止める仕組み(Windows はジョブオブジェクト、それ以外はプロセスグループ)。`run_command` と MCP のサーバーで使う(0006 で `tool` から移した) |
 | `tool/confirm.go` | 実行前に確認が要るツールの印(`Confirmable`)と、確認の画面に出す内容(`Preview`: パス・上書きか・差分)。差分は `github.com/pkg/diff` |
 | `agent.go` | エージェントループ(`runTurn`)とツールの実行(10 秒の上限・20 回の上限・停止・会話の上限に入らない結果・実行前の確認の待ち) |
-| `format/qwen35_test.go` / `format/gemma4_test.go` / `format/llama3_test.go` | 書式のテスト。プロンプトは公式テンプレートを jinja2 で通した期待値と1文字まで比べる(`testPromptMatchesTemplate`。書式によらない。ツールの結果の名前が無いときも比べる) |
-| `format/testdata/` | 書式のテストの会話(`cases.json`。書式をまたいで共通)と、期待値を作るスクリプト(`gen_expected.py`)。期待値は書式ごとのフォルダ(`qwen35/*.txt`・`gemma4/*.txt`) |
+| `format/qwen35_test.go` / `format/gemma4_test.go` / `format/llama3_test.go` / `format/granite_test.go` | 書式のテスト。プロンプトは公式テンプレートを jinja2 で通した期待値と1文字まで比べる(`testPromptMatchesTemplate`。書式によらない。ツールの結果の名前が無いときも比べる) |
+| `format/testdata/` | 書式のテストの会話(`cases.json`。書式をまたいで共通)と、期待値を作るスクリプト(`gen_expected.py`)。期待値は書式ごとのフォルダ(`qwen35/*.txt`・`gemma4/*.txt`・`llama3/*.txt`・`granite4/*.txt`。Granite 4.0 は `granite40/*.txt`) |
 | `tool/tool_test.go` / `tool/files_test.go` / `tool/write_test.go` / `agent_test.go` / `workdir_test.go` / `confirm_test.go` | ツール(外に出られないこと・読み方の切り方を含む)とループ・作業フォルダのテスト(偽物の生成器を使う。モデル不要) |
 | `format/format_test.go` | `ToolCall` の JSON が切り出す前と同じ平らな形か(保存済みの会話を読めるか)のテスト |
 
@@ -39,9 +40,9 @@ Conversations ← Output(思考・答え・ToolCall)            ← Engine ← F
 ```
 
 - 会話の仕組み(`conversation.go` / `compact.go` / `agent.go`)は `<|im_start|>` や `<think>` や `<tool_call>` を一切扱わない
-- エンジンはモデルを読み込んだときに GGUF の `general.architecture` と、要るならチャットテンプレートの印で書式を選ぶ(`format.ForModel`。Qwen3.5 は `qwen35`、Gemma 4 は `gemma4`、Llama 3 は `llama` でテンプレートに `<|start_header_id|>` があるもの。0027)。
+- エンジンはモデルを読み込んだときに GGUF の `general.architecture` と、要るならチャットテンプレートの印で書式を選ぶ(`format.ForModel`。Qwen3.5 は `qwen35`、Gemma 4 は `gemma4`、Llama 3 は `llama` でテンプレートに `<|start_header_id|>` があるもの。0027。Granite 4 は `granite` でテンプレートに `<|start_of_role|>` と `<tool_call>` があるもの。0029)。
   未対応の種類なら `ModelInfo.Format` が空で、生成とトークン数えがエラーになる(ログとトーストでも伝える。文には対応している書式の一覧を出す)
-- 実装は Qwen3.5・Gemma 4(0026)・Llama 3(0027)。GGUF の中の Jinja を実行する汎用の実装は作らない(書式は自分で書く方針)
+- 実装は Qwen3.5・Gemma 4(0026)・Llama 3(0027)・Granite 4(0029)。GGUF の中の Jinja を実行する汎用の実装は作らない(書式は自分で書く方針)
 - `Format.NewParser` は `BuildPrompt` に渡したのと同じ `Prompt` を受け取る。ツールの定義(引数の型)と、プロンプトがどこで終わったか
   (Gemma 4 は、ツールの結果の後ろで思考 ON なら `<|channel>thought` まで書いてあるので、思考の途中から読み始める)を見るため
 - ツールの結果(role `tool`)は `Message.Name` に元の呼び出しの名前を持つ(会話の仕組みが `ToolResult.Call.Name` から入れる。Gemma 4 が結果に名前を書くため)。
@@ -95,6 +96,22 @@ Ollama の `llama3.2:3b` の GGUF のテンプレート(Meta のもの。Unsloth
 - 読み取り:返事の頭(空白を除く)が `{` か `<|python_tag|>` なら画面に出さずに持ち、終わってから JSON として読む。`name` と、`parameters` か `arguments` があれば呼び出し(`;` で続く2つ目以降も読む)。
   `"name"` を含むのに読めなければ崩れた呼び出し、それ以外(答えとして JSON を書いた)は答えとして出す
 
+### Granite 4 の書式(0029)
+
+Ollama の `granite4.1:3b` の GGUF のテンプレート(Hugging Face の `ibm-granite/granite-4.1-3b` と1文字も違わない)を、aibow が渡す会話の形で通る部分だけ書き直した。
+
+- **書式の選び方**:種類が `granite` で、テンプレートに `<|start_of_role|>` と `<tool_call>` の両方があるときだけ(書式の表の印は2つ以上持てる)。
+  同じ `granite` の種類でも、3.x は呼び出しが `<|tool_call|>`、4.2 は区切りが ChatML で呼び出しが Qwen3.5 と同じ形なので選ばない。
+  テンプレートに既定のシステムの文(`You are a helpful assistant. Please ensure …`)があれば 4.0 で、システムの発言もツールも無いときにその文を書く(4.1 との違いはこれだけ)
+- 会話の区切りは `<|start_of_role|>role<|end_of_role|> … <|end_of_text|>\n`。bos は書かない(テンプレートも書かず、llama.cpp も足さない)
+- **思考が無い**(Llama 3 と同じく `NoThinking()`)
+- ツールの説明はシステムの発言の後ろ(システムの文があれば `\n\n` を挟む)に、英語の指示文と、ツールごとに1行の JSON(`{"type": "function", "function": …}`。Qwen3.5 と同じ形)
+- 呼び出しは答えの文の後ろに `\n` を挟んで `<tool_call>\n{"name": "名前", "arguments": {…}}\n</tool_call>`。2つ目からは `\n` で並べる。引数は書いた順で、真偽は JSON の `true`
+- ツールの結果は、続けて返ったものを1つの `user` の発言にまとめ、`\n<tool_response>\n結果\n</tool_response>` を並べる(Qwen3.5 と同じ)。名前は書かない
+- **答えの文も結果も、前後の空白を削らずにそのまま書く**(テンプレートが `trim` しない。Qwen3.5・Llama 3 は削る)
+- 読み取り:Qwen3.5 と同じく、答えの行の頭(コードブロックの外)の `<tool_call>` から後ろを呼び出しとして取っておき(`toolCallParser`)、中の JSON を読む。
+  `<tool_response>` は発言の終わりのトークンではないので、モデルが結果を書き始めたら書式が止める
+
 ### 引数の値の持ち方(0026 の段1)
 
 書式によってモデルが値を書く形は違う(Qwen3.5 はいつも文字、OpenAI 互換の口は JSON、Gemma 4 は型のある独自の書き方)。
@@ -137,11 +154,17 @@ python format/testdata/gen_expected.py qwen35 ~/.ollama/models/blobs/sha256-<qwe
 python format/testdata/gen_expected.py gemma4 /d/Go/Projects/aibow/_cmd/aibow/models/gemma-4-E4B-it-Q4_K_M.gguf
 ```
 
+GGUF が手元に無い版は、Hugging Face の `chat_template.jinja` を渡し、出力の名前を足す(Granite 4.0。0029)。
+
+```bash
+python format/testdata/gen_expected.py granite4 <granite-4.0-micro の chat_template.jinja> granite40
+```
+
 - 会話は `format/testdata/cases.json` に書き、Python と Go のテストが同じものを読む。**ケースは書式をまたいで共通**にして、同じ会話を書式ごとに見比べられるようにする。
   ある書式だけのケースは `"formats": ["gemma4"]`。ケースの `"tools"` には知らせるツールの名前を並べる。ケースを足したら、全部の書式の期待値を作り直す
 - 引数の値は `tool.Arg` の形で書く。スクリプトはツールの定義の型を見て Python の値にしてテンプレートに渡す(テンプレートが書式ごとの書き方で書く)
 - ツールの結果は、直前の返事の呼び出しと順番で組にして `tool_call_id` と `name` を付けて渡す(Gemma 4 は結果に名前を書く)
-- 違う種類の GGUF を渡したらエラーにする(書式の名前と `general.architecture` を比べる)
+- 違う種類の GGUF を渡したらエラーにする(書式の名前と `general.architecture`、要るならテンプレートの印を比べる。スクリプトの `FORMATS`)
 - **bos**:書式は bos を文字で書かず、トークン化(`addSpecial`)に任せる。GGUF の `tokenizer.ggml.add_bos_token` が True(Gemma 4)なら、テンプレートが先頭に書いた bos を1つ外して期待値にする(Qwen3.5 は False で bos も無い)
 - `testdata/` は `.gitattributes` で改行コードを変換しない(1バイトまで比べるため)
 

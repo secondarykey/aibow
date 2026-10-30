@@ -16,7 +16,7 @@ package format
 //
 // 会話の仕組み(ルートの aibow)は、<|im_start|> や <think> や <tool_call> のような書式の文字列を一切扱わない。
 // このパッケージは llama.cpp も会話の保存も知らない(使うのは tool だけ)。書式だけを取り出して試せる。
-// 今ある実装は Qwen3.5 用(qwen35.go)・Gemma 4 用(gemma4.go)・Llama 3 用(llama3.go)。2つ以上で使う部品は parts.go。
+// 今ある実装は Qwen3.5 用(qwen35.go)・Gemma 4 用(gemma4.go)・Llama 3 用(llama3.go)・Granite 4 用(granite.go)。2つ以上で使う部品は parts.go。
 
 import (
 	"errors"
@@ -105,11 +105,11 @@ type OutputParser interface {
 // formatEntry は書式の表の1行。モデルの種類(GGUF の general.architecture)と、要るならチャットテンプレートの印で選ぶ。
 //
 // 種類の名前だけでは書式が決まらないことがある:llama の種類のモデルには、Llama 3 の書式のもの(<|start_header_id|>)と、
-// Llama を元にした別の書式のもの(Hermes 3 は ChatML)がある(0027 の決定事項 2)。mark があれば、GGUF の tokenizer.chat_template に
-// その文字があるときだけ選ぶ。書式が合わないまま会話すると、モデルが会話の区切りを理解できないため、分からなければ選ばない(未対応)。
+// Llama を元にした別の書式のもの(Hermes 3 は ChatML)がある(0027 の決定事項 2)。granite の種類は、版で書式がまったく違う
+// (3.x・4.0/4.1・4.2。0029)。marks があれば、GGUF の tokenizer.chat_template にその文字がどれもあるときだけ選ぶ。書式が合わないまま会話すると、モデルが会話の区切りを理解できないため、分からなければ選ばない(未対応)。
 type formatEntry struct {
-	arch string
-	mark string // テンプレートの印(空なら種類だけで選ぶ)
+	arch  string
+	marks []string // テンプレートの印(空なら種類だけで選ぶ)
 	// make は書式を作る。template は GGUF のチャットテンプレート(Llama 3 は、テンプレートが今日の日付を使うかで日付の書き方が変わる)
 	make func(template string) Format
 }
@@ -118,7 +118,8 @@ type formatEntry struct {
 var formats = []formatEntry{
 	{arch: "qwen35", make: func(string) Format { return qwen35{} }},
 	{arch: "gemma4", make: func(string) Format { return gemma4{} }},
-	{arch: "llama", mark: "<|start_header_id|>", make: newLlama3},
+	{arch: "llama", marks: []string{"<|start_header_id|>"}, make: newLlama3},
+	{arch: "granite", marks: []string{"<|start_of_role|>", "<tool_call>"}, make: newGranite4},
 }
 
 // Thinks は、書式が思考に対応しているか。Llama 3 は思考しないので、思考の ON / OFF が効かない(画面は「思考する」を押せなくする。0027 の決定事項 4)。
@@ -131,11 +132,21 @@ func Thinks(f Format) bool {
 // ForModel は、モデルの種類とチャットテンプレート(GGUF の tokenizer.chat_template)に合う書式を返す。未対応なら nil。
 func ForModel(arch, template string) Format {
 	for _, e := range formats {
-		if e.arch == arch && (e.mark == "" || strings.Contains(template, e.mark)) {
+		if e.arch == arch && hasMarks(template, e.marks) {
 			return e.make(template)
 		}
 	}
 	return nil
+}
+
+// hasMarks は、テンプレートに印がどれもあるか。
+func hasMarks(template string, marks []string) bool {
+	for _, m := range marks {
+		if !strings.Contains(template, m) {
+			return false
+		}
+	}
+	return true
 }
 
 // For は種類の名前だけで書式を返す(テンプレートの印が要る書式は選ばない)。未対応なら nil。
@@ -165,8 +176,8 @@ func Supported() string {
 	var names []string
 	for _, e := range formats {
 		cond := e.arch
-		if e.mark != "" {
-			cond += "。テンプレートに " + e.mark + " があるもの"
+		if len(e.marks) > 0 {
+			cond += "。テンプレートに " + strings.Join(e.marks, " と ") + " があるもの"
 		}
 		names = append(names, e.make("").Name()+"("+cond+")")
 	}
