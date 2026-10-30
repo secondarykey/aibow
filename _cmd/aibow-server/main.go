@@ -112,6 +112,8 @@ func run(c config, notices []string, cfgErr error, env *envReader) error {
 		NCtx:      nCtx,
 		GPULayers: env.int("AIBOW_GPU_LAYERS", 999), // 999 = 全部 GPU に載せる
 		LlamaLog:  os.Getenv("AIBOW_LLAMA_LOG") == "1",
+		// 画像1枚のトークン数の上限(0030 の決定事項 22)
+		ImageMaxTokens: env.int("AIBOW_IMAGE_MAX_TOKENS", engine.DefaultImageMaxTokens),
 	}
 	catalog := models.Catalog{ModelsDir: c.ModelsDir, OllamaDir: models.OllamaDir()}
 	defaults := api.Defaults{

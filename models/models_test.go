@@ -172,3 +172,40 @@ func TestMissingWatch(t *testing.T) {
 		t.Errorf("また見つかったはず: %v", found)
 	}
 }
+
+// 目録に projector の層(画像を読む部品。0030)があれば、その blob の場所も持つ。無いモデル・blob の無い projector は空
+func TestOllamaProjector(t *testing.T) {
+	dir := t.TempDir()
+	write := func(rel, body string) {
+		p := filepath.Join(dir, filepath.FromSlash(rel))
+		os.MkdirAll(filepath.Dir(p), 0o755)
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("blobs/sha256-model", "gguf")
+	write("blobs/sha256-proj", "gguf")
+	write("manifests/registry.ollama.ai/library/qwen3.5/4b", `{"layers":[
+		{"mediaType":"application/vnd.ollama.image.projector","digest":"sha256:proj","size":10},
+		{"mediaType":"application/vnd.ollama.image.model","digest":"sha256:model","size":10}]}`)
+	write("manifests/registry.ollama.ai/library/text/x", `{"layers":[
+		{"mediaType":"application/vnd.ollama.image.model","digest":"sha256:model","size":10}]}`)
+	write("manifests/registry.ollama.ai/library/half/x", `{"layers":[
+		{"mediaType":"application/vnd.ollama.image.model","digest":"sha256:model","size":10},
+		{"mediaType":"application/vnd.ollama.image.projector","digest":"sha256:missing","size":10}]}`)
+
+	want := map[string]string{
+		"ollama:qwen3.5:4b": filepath.Join(dir, "blobs", "sha256-proj"),
+		"ollama:text:x":     "",
+		"ollama:half:x":     "",
+	}
+	got := listOllamaModels(dir)
+	if len(got) != len(want) {
+		t.Fatalf("%d 件: %+v", len(got), got)
+	}
+	for _, m := range got {
+		if m.Projector != want[m.ID] || m.Path != filepath.Join(dir, "blobs", "sha256-model") {
+			t.Errorf("%s: projector %q path %q", m.ID, m.Projector, m.Path)
+		}
+	}
+}

@@ -640,6 +640,7 @@ aibow-server user add bob
 | `AIBOW_SERVER_HOST` | `127.0.0.1` | `aibow-server` の待ち受けのアドレス(`0.0.0.0` で全部のネットワーク。外ではログインと API キーが要る)。引数の `-host`・設定ファイルの `host` が優先 |
 | `AIBOW_SERVER_TLS_CERT`・`AIBOW_SERVER_TLS_KEY` | なし | `aibow-server` の HTTPS の証明書と秘密鍵のファイル(`aibow-server cert` で作れる)。引数の `-tls-cert`・`-tls-key`・設定ファイルの `tlsCert`・`tlsKey` が優先 |
 | `AIBOW_SERVER_PORT` | `8089` | `aibow-server` の待ち受けのポート。引数の `-port`・設定ファイルの `port` が優先。以前の `AIBOW_API_PORT` は使わなくなった |
+| `AIBOW_IMAGE_MAX_TOKENS` | `1024` | 画像1枚のトークン数の上限(0030)。画像は 32 ピクセル四方で 1 トークンで、大きい画像はこの数に収まるよう縮める。画像を読む部品(mmproj)を読み込むときに効く(変えたらモデルを読み直す) |
 | `AIBOW_LLAMA_LOG` | なし | `1` にすると llama.cpp 自身の詳しいログ(どの層をどこに置いたか、読めない理由など)を出す。起動時に数千行出る |
 
 作業領域(コンテキスト長)は「会話の上限 + 返事の上限」から計算します(会話ごと。起動したときは新しい会話の既定の大きさで確保します)。増やすと長い会話ができますが、VRAM を使います(Qwen3.5 4B で 1 トークンあたり約 32KB)。

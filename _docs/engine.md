@@ -8,11 +8,14 @@ LLM を動かす部分(`engine/`・`format/`・`models/` の3つのパッケー�
 | ファイル | 役割 |
 |---|---|
 | `engine/engine.go` | `engine` パッケージ。llama.cpp の呼び出し。モデルの読み込み・入れ替え、作業領域の作り直し、トークン数を数える(`CountTokens`)、KV キャッシュ再利用、decode、サンプリングの生成ループ |
+| `engine/chunks.go` | プロンプトをチャンク(文字のトークン列・画像)の列として読ませる・KV キャッシュの記録と使い回し(0030)。下の「画像を読む」 |
+| `engine/vision.go` | 画像を読む部品(mmproj)の読み込みと解放、画像の付いたプロンプトを mtmd でチャンクの列にする(0030) |
 | `engine/stream.go` | UTF-8 の切れ目の処理(文字にならないバイトは U+FFFD) |
 | `models/models.go` | `models` パッケージ。モデルの一覧(`models\` の *.gguf と Ollama の保存フォルダ)。ID は `file:<ファイル名>` / `ollama:<名前>`(以前の `file:<パス>` は `IDOf` で読み替える。0018) |
 | `format/format.go` / `format/qwen35.go` / `format/gemma4.go` / `format/llama3.go` / `format/granite.go` / `format/granite42.go` / `format/parts.go` | `format` パッケージ。書式(チャットテンプレート。Qwen3.5・Gemma 4・Llama 3・Granite 4・Granite 4.2。`parts.go` は2つ以上で使う部品)。会話 → 文字列と、生成した文字列 → 思考・答え・ツール呼び出し。説明は [tools.md](tools.md) |
 | `engine/stream_test.go` / `format/qwen35_test.go` / `format/gemma4_test.go` | UTF-8 の切れ目 / 書式(公式テンプレートとの一致・思考とツール呼び出しの振り分け)のテスト。モデル不要 |
-| `models/models_test.go` | Ollama の目録のテスト。モデル不要 |
+| `models/models_test.go` | Ollama の目録(projector の層も)のテスト。モデル不要 |
+| `engine/chunks_test.go` | KV キャッシュの記録と次のプロンプトの共通の先頭(画像は ID で比べる)・マスの数と位置の数のテスト。モデル不要 |
 
 ## パッケージの分け方と依存の向き
 
@@ -45,6 +48,7 @@ LLM を動かす部分(`engine/`・`format/`・`models/` の3つのパッケー�
 - Ollama が `ollama pull` で保存したファイル(`manifests\` の目録と `blobs\` の GGUF)を aibow が直接読む。Ollama のサーバーや API は使わない
 - Ollama のモデルの一部は llama.cpp で読めない独自形式なので、読めない場合はエラーにして元のモデルに戻す
 - Ollama の保存先は Ollama と同じ環境変数 `OLLAMA_MODELS` で変えられる
+- 目録に `application/vnd.ollama.image.projector` の層があれば、その blob を画像を読む部品(mmproj)として `Entry.Projector` に持つ(qwen3.5:4b / 9b にある。中身は llama.cpp の普通の mmproj。0030 の段1)
 
 ## チャットテンプレート
 
@@ -78,6 +82,32 @@ LLM を動かす部分(`engine/`・`format/`・`models/` の3つのパッケー�
   作業領域の大きさの変更(`Engine.EnsureContextSize`。同じ大きさなら何もしない)はコンテキストだけを作り直し、モデルは読み直さない。
   会話ごとに大きさが違うので、会話の仕組みが送信の前に呼ぶ。画面で上限を「適用」したときも `ChatService.TryLimits` から呼び、VRAM に入るかを確かめる(0009)。
   作業領域(`n_ctx`)の決め方は [compact.md](compact.md)
+
+## 画像を読む(0030)
+
+仕様と測った数は [features/0030-read-files.md](features/0030-read-files.md)(段1・段2)。今は Qwen3.5(Ollama の qwen3.5)だけ。
+
+- **画像もトークンになる**:画像エンコーダー(mmproj。`clip.projector_type = qwen3vl_merger`)が画像を「画像トークンの埋め込み」にし、文字のトークンと同じ列でモデルが読む。
+  32 ピクセル四方で 1 トークン(1024×768 は 768 トークン)。1 枚の上限は `AIBOW_IMAGE_MAX_TOKENS`(既定 1,024。大きい画像は mtmd が縮める)。ツールではなくモデル自身の機能
+- 呼び出しは llama.cpp の mtmd(`mtmd.dll`。yzma の `pkg/mtmd`。cgo なし)。`engine.New` で読み、読めなくても文字の会話は止めない(画像を送ったときに理由を出す)
+- **mmproj は最初に画像を送ったとき(数えるときも)に読み込む**(画像を使わない人の VRAM を減らさない)。GPU に載せ、載らなければ CPU で読み直す(CPU だとエンコードが 15〜30 倍遅い)。
+  読み込んだ回の `GenerateStats` に `ProjectorSec`・`ProjectorCPU` を1回だけ出す。モデルを降ろす・替えるときに一緒に解放する(`unload` → `freeProjector`)
+- **書式は印だけを書く**:`format.Message.Images` の画像の場所に `<__media__>`(`format.ImageMarker`)を書く。Qwen3.5 は発言の中で画像を文字より前に置く。
+  前後の `<|vision_start|>`・`<|vision_end|>` は mtmd が足す。画像を書ける書式は `WritesImages()` を持ち(`format.ReadsImages`)、持たない書式・mmproj の無いモデルに画像を渡すとエラー(黙って捨てない)
+- **チャンクの列**(`chunks.go`):画像があるプロンプトは mtmd の `Tokenize` で「文字のトークン列 / 画像」のチャンクの列にする。画像の中身は llama.cpp が読む(PNG・JPEG など)。
+  画像の ID には会話の仕組みが入れた中身のハッシュを使う(`BitmapSetId`)。画像が無ければ今までどおり文字のトークン列1本
+- **画像は自分で読ませる**:`EncodeChunk` → `GetOutputEmbd`(トークン数 × `ModelNEmbdInp`)→ 埋め込みの batch(`Embd`)で 512 トークンずつ decode。
+  位置は M-RoPE なら1トークンに4つを列ごとに(`pos[i]`・`pos[n+i]`・`pos[2n+i]`・`pos[3n+i]` に t・y・x・z)並べる。llama.cpp の helper と logits が一致することを段1で確かめた。
+  yzma には「チャンク1つだけ読ませる」helper が無く、KV キャッシュを使い回して途中から読ませるため、helper(`HelperEvalChunks`)は使わない
+- **位置は自分で書く**:画像を読ませたあとの KV キャッシュの位置の最大は画像の始まりの位置のままで、llama.cpp の位置の自動(最大 + 1)だと画像の後ろの文字がずれる。
+  文字も `batch.Pos` に位置を書いて読ませる(`decode`。次の位置は記録の位置の合計 `nextPos`)
+- **マスと位置は別の数**:M-RoPE の画像は、マスはトークンの数(768)使うが、位置は縦横の大きいほう(32)しか進まない。作業領域が足りるか・`PromptTokens` はマスの数、
+  KV キャッシュを途中から捨てる(`MemorySeqRm`)のは位置で指定する
+- **KV キャッシュの記録はチャンクの列**(`Engine.cached`):次のプロンプトと先頭から比べ(`common`。文字はトークン、画像は ID)、同じところまでは読み直さない。
+  Qwen3.5 は途中まで巻き戻せないので、新しい発言を足すと今までどおり全部読み直しになるが、ツールのループの中では画像も使い回せる(段2:1,383 トークン中 1,360 を再利用・画像のエンコード 0 秒)
+- 数える(`CountTokens`)ときは、画像の中身を読まず大きさだけの Bitmap(placeholder)で画像トークン数を数える(mmproj は要る)。mtmd の関数はスレッドセーフでないので、
+  mmproj を使うところは `projector.mu` でまとめて守る(数えるのは生成と同時に呼ばれることがある)
+- 記録:`GenerateStats` の `ImageTokens`(プロンプトのうち画像の分)・`EncodeSec`(今回エンコードした秒数。使い回した画像は入らない)
 
 ## UTF-8 として正しくない文字列
 

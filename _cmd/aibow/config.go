@@ -103,6 +103,8 @@ func loadConfig() (appConfig, error) {
 		engine: engine.Config{
 			LibPath:  env.str("AIBOW_LIB", "lib"),
 			LlamaLog: os.Getenv("AIBOW_LLAMA_LOG") == "1",
+			// 画像1枚のトークン数の上限(0030 の決定事項 22)
+			ImageMaxTokens: env.int("AIBOW_IMAGE_MAX_TOKENS", engine.DefaultImageMaxTokens),
 		},
 		catalog: models.Catalog{
 			ModelsDir: env.str("AIBOW_MODELS_DIR", "models"),

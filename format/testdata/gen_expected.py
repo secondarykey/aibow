@@ -34,6 +34,8 @@
   llama3.2 の GGUF は tokenizer.ggml.add_bos_token を書いていないが、llama.cpp は1つ足す。0027 の段1で確かめた)
 - tojson は HuggingFace transformers と同じ形にする(区切りに空白・キーは書いた順・HTML のエスケープなし)。
   jinja2 に元からある tojson はキーを並べ替えて < > & をエスケープするので、モデルが学習で見た形と違う
+- 画像の付いた発言(0030)は、cases.json の発言に "images": 枚数 を書く。テンプレートには content を部品の配列(画像 → 文字)にして渡す。
+  Go のテストは、aibow の印(<__media__>)を公式テンプレートの書き方に置き換えてから比べる(前後の印はエンジンの mtmd が足すため)
 - 必要なもの: Python 3 と jinja2 3.1 以上(items フィルタを使う)。一度作ったら、テンプレートかケースが変わるまで作り直さなくてよい
 """
 
@@ -117,6 +119,9 @@ def hf_messages(messages, tools):
     pending = []  # まだ結果の来ていない呼び出し(id, 名前)
     for i, m in enumerate(messages):
         hm = {"role": m["role"], "content": m["content"]}
+        if m.get("images"):
+            # 画像の付いた発言(0030)。aibow は画像を文字より前に置く(決定事項 11)ので、部品も画像 → 文字の順に並べる
+            hm["content"] = [{"type": "image"}] * m["images"] + [{"type": "text", "text": m["content"]}]
         if m["role"] == "assistant":
             # aibow は思考を常に文字列で渡す(空でも)
             hm["reasoning_content"] = m.get("thinking", "")
