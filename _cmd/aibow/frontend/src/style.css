@@ -423,11 +423,19 @@ nav.conversations.collapsed .settings.active { color: var(--accent); }
   flex: 1; min-width: 0; text-align: left; padding: 7px 8px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.conversation .delete { padding: 4px 8px; color: var(--muted); visibility: hidden; }
+/* 行の右は、削除(×)と会話の印が同じ場所を使う。幅をそろえて、入れ替わっても名前の幅が動かないようにする */
+.conversation .delete, .conversation .running-mark {
+  flex-shrink: 0; width: 28px; padding: 4px 0; display: inline-flex; align-items: center; justify-content: center;
+}
+.conversation .delete { color: var(--muted); visibility: hidden; }
 .conversation:hover .delete, .conversation.current .delete { visibility: visible; }
-/* 送信している間の印は、削除(×)の場所にいつも出す(削除できない間なので、× の代わり) */
-.conversation .running-mark { display: inline-flex; align-items: center; justify-content: center; padding: 4px 8px; }
-.conversation .running-mark .dot { margin: 0; }
+.conversation .delete .dot, .conversation .running-mark .dot { margin: 0; }
+/* 送信している間の印は、いつも出す(削除できない間なので、× の代わり) */
+/* 終わったあとの印も、いつも出す。マウスを乗せたときだけ × に替える */
+.conversation .delete.has-mark { visibility: visible; }
+.conversation .delete.has-mark .x { display: none; }
+.conversation:hover .delete.has-mark .dot { display: none; }
+.conversation:hover .delete.has-mark .x { display: inline; }
 .dot {
   display: inline-block; width: 10px; height: 10px; border-radius: 50%;
   background: var(--accent); margin: 0 2px 2px 0; vertical-align: middle;
