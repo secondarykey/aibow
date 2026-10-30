@@ -174,8 +174,9 @@ func TestAgentReturnsErrorsToTheModel(t *testing.T) {
 // 実行は maxToolCalls 回まで。超えた分は実行せずにその旨を結果にして、止めて理由を出す
 func TestAgentStopsAtTheLimit(t *testing.T) {
 	g := &fakeGen{}
-	for range maxToolCalls + 5 {
-		g.replies = append(g.replies, fakeReply{toolCalls: []format.ToolCall{calc("1+1")}})
+	for i := range maxToolCalls + 5 {
+		// 引数を毎回変える(同じ呼び出しが続くと、上限の前に答えさせる手当てになる。0028)
+		g.replies = append(g.replies, fakeReply{toolCalls: []format.ToolCall{calc(fmt.Sprintf("%d+1", i))}})
 	}
 	cs, _, c := newToolConversation(t, g)
 	evs := sendRaw(cs, c, "ずっと計算して")
@@ -452,7 +453,8 @@ func TestAgentNoRoomForResult(t *testing.T) {
 	}
 }
 
-// 同じ呼び出しが同じエラーで2回続いたら、ツールの上限(20 回)を待たずに止め、理由と対処を出す(0025)
+// 同じ呼び出しが同じエラーで2回続いたら、ツールの上限(20 回)を待たずに止め、理由と対処を出す(0025)。
+// 同じ呼び出しが続いたときの「答えさせる」手当て(0028)より先に見る(0028 の決定事項 7)
 func TestAgentStopsOnRepeatedFailure(t *testing.T) {
 	missing := fakeTool{name: "missing", run: func(context.Context, tool.Args) (string, error) {
 		return "", errors.New("見つかりません")
@@ -473,6 +475,81 @@ func TestAgentStopsOnRepeatedFailure(t *testing.T) {
 	cs2, _, c2 := newToolConversation(t, g2, missing)
 	if errs := errorsOf(sendRaw(cs2, c2, "探して")); len(errs) != 0 || len(g2.calls) != 3 {
 		t.Errorf("引数を変えたら続くはず: エラー %v / 生成 %d 回", errs, len(g2.calls))
+	}
+}
+
+// 同じ呼び出し(名前と引数)が成功のまま続けて呼ばれたら、次の生成ではツールを見せず、最後に頼みを足して答えさせる(0028)
+func TestAgentAnswersAfterRepeatedCall(t *testing.T) {
+	g := &fakeGen{replies: []fakeReply{{toolCalls: []format.ToolCall{calc("1+1")}}, {toolCalls: []format.ToolCall{calc("1+1")}}, {content: "2 です"}}}
+	cs, _, c := newToolConversation(t, g)
+	if errs := errorsOf(sendRaw(cs, c, "計算して")); len(errs) != 0 {
+		t.Errorf("エラー: %v", errs)
+	}
+	_, ms, _ := cs.Get(ctx, c.ID)
+	// 2回目も実行して結果を渡す(0028 の決定事項 6)
+	if roles(ms) != "user,assistant,tool,assistant,tool,assistant" || ms[4].Content != "2" || ms[5].Content != "2 です" {
+		t.Fatalf("発言: %s / 結果 %q / 答え %q", roles(ms), ms[4].Content, ms[len(ms)-1].Content)
+	}
+	if len(g.calls) != 3 || len(g.calls[1].tools) == 0 || len(g.calls[2].tools) != 0 {
+		t.Errorf("3回目の生成だけツールを見せないはず: 生成 %d 回", len(g.calls))
+	}
+	if m := g.calls[2].messages; m[len(m)-1].Role != "user" || m[len(m)-1].Content != repeatedCalls.note("calculate") ||
+		!strings.Contains(m[len(m)-1].Content, "ツール calculate を同じ引数で続けて呼びました") {
+		t.Errorf("最後の生成の終わり: %+v", m[len(m)-1])
+	}
+	for _, m := range ms {
+		if strings.Contains(m.Content, "aibow からのお知らせ") {
+			t.Errorf("お知らせを保存している: %+v", m)
+		}
+	}
+	if c2, _, _ := cs.Get(ctx, c.ID); c2.Settings.BuiltinOff {
+		t.Error("会話の設定は変えないはず")
+	}
+
+	// 1つの返事の中で並べた呼び出しも順に数える
+	g2 := &fakeGen{replies: []fakeReply{{toolCalls: []format.ToolCall{calc("1+1"), calc("1+1")}}, {content: "2 です"}}}
+	cs2, _, c2 := newToolConversation(t, g2)
+	sendRaw(cs2, c2, "計算して")
+	if len(g2.calls) != 2 || len(g2.calls[1].tools) != 0 {
+		t.Errorf("並べた呼び出し: 生成 %d 回", len(g2.calls))
+	}
+
+	// それでもツールを呼んだら、実行せずに止める
+	g3 := &fakeGen{replies: []fakeReply{{toolCalls: []format.ToolCall{calc("1+1")}}, {toolCalls: []format.ToolCall{calc("1+1")}}, {toolCalls: []format.ToolCall{calc("1+1")}}}}
+	cs3, _, c3 := newToolConversation(t, g3)
+	if errs := errorsOf(sendRaw(cs3, c3, "計算して")); len(errs) != 1 || !strings.Contains(errs[0], "モデルがまたツールを呼んだため止めました") {
+		t.Errorf("エラー: %v", errs)
+	}
+	if _, ms3, _ := cs3.Get(ctx, c3.ID); roles(ms3) != "user,assistant,tool,assistant,tool,assistant" {
+		t.Errorf("3回目の呼び出しは実行しないはず: %s", roles(ms3))
+	}
+}
+
+// 間に別の呼び出しを挟む繰り返し・引数を変えた呼び出しは、続ける(直す → テストを動かす、の繰り返しのように正しいことがあるため。0028)
+func TestAgentKeepsGoingWhenCallsDiffer(t *testing.T) {
+	broken := format.ToolCall{Raw: "<tool_call>{", Error: "書式が崩れていて呼び出しを読み取れません"}
+	cases := map[string][][]format.ToolCall{
+		"間に別の呼び出し": {{calc("1+1")}, {toolCall("get_current_time")}, {calc("1+1")}},
+		"引数を変える":   {{calc("1+1")}, {calc("1+2")}, {calc("1+3")}},
+		"間に書式の崩れ":  {{calc("1+1")}, {broken}, {calc("1+1")}},
+	}
+	for name, rounds := range cases {
+		g := &fakeGen{}
+		for _, calls := range rounds {
+			g.replies = append(g.replies, fakeReply{toolCalls: calls})
+		}
+		g.replies = append(g.replies, fakeReply{content: "終わり"})
+		cs, _, c := newToolConversation(t, g)
+		errs := errorsOf(sendRaw(cs, c, "やって"))
+		if len(errs) != 0 || len(g.calls) != len(rounds)+1 {
+			t.Errorf("%s: エラー %v / 生成 %d 回", name, errs, len(g.calls))
+			continue
+		}
+		for i, call := range g.calls {
+			if len(call.tools) == 0 {
+				t.Errorf("%s: %d 回目の生成でツールが外れた", name, i+1)
+			}
+		}
 	}
 }
 

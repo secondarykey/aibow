@@ -75,8 +75,10 @@ func (cs *Conversations) runTurn(ctx context.Context, conv Conversation, history
 	calls := 0  // この送信でツールを実行した回数
 	broken := 0 // 呼び出しが全部読み取れなかった回が、いくつ続いているか
 	var failed repeatedFailure
-	// noRoom は、会話の上限の残りが無く、ツールの結果を渡せなかったか。次の生成はツールを見せず、ここまでに分かったことで答えさせる(0025 の決定事項 11)
-	noRoom := false
+	var repeated repeatedCall
+	// finish は、次の生成でツールを見せず、ここまでに分かったことで答えさせる理由(keepGoing なら普段どおり)。
+	// 会話の上限の残りが無い(0025 の決定事項 11)・同じ呼び出しが続いた(0028)
+	finish := keepGoing
 	for round := 1; ; round++ {
 		// 1. モデルに渡す内容を決める。2回目からは、ツールの結果を足しても収まるかを先に確かめる
 		if round > 1 {
@@ -95,10 +97,10 @@ func (cs *Conversations) runTurn(ctx context.Context, conv Conversation, history
 
 		// 2. 生成して保存する
 		messages := p.messages
-		if noRoom {
+		if finish != keepGoing {
 			// ツールを外すだけでは、小さいモデルは前の回の呼び出しをまねてまた呼ぶ(2026-10-26、12-4 の試し)。
-			// この回だけ、最後に「もう読めないので答えて」を足す(保存しない。次の送信のモデルには渡らない)
-			messages = append(slices.Clip(messages), format.Message{Role: "user", Content: noRoomNote})
+			// この回だけ、最後に「答えて」の頼みを足す(保存しない。次の送信のモデルには渡らない)
+			messages = append(slices.Clip(messages), format.Message{Role: "user", Content: finish.note(repeated.call)})
 		}
 		r, err := cs.generate(ctx, conv, messages, emit)
 		if err != nil || r == nil {
@@ -115,10 +117,9 @@ func (cs *Conversations) runTurn(ctx context.Context, conv Conversation, history
 		if len(r.ToolCalls) == 0 {
 			break
 		}
-		if noRoom {
-			// ツールを見せずに頼んだのに呼んだ(書式をまねした、など)。実行すると、また入らない結果になるだけなので止める
-			return last, errors.New("会話の上限の残りが無いので、ツールを使わずに答えるよう頼みましたが、モデルがツールを呼んだため止めました。" +
-				"会話の上限を上げるか、読む範囲やファイルを指定して頼み直してください")
+		if finish != keepGoing {
+			// ツールを見せずに頼んだのに呼んだ(書式をまねした、など)。実行しても、また同じことになるだけなので止める
+			return last, finish.refused(repeated.call)
 		}
 
 		// 4. 順に実行して、結果を保存する。上限を超えた分・止められた後の分は、実行せずにその旨を結果にする
@@ -143,10 +144,13 @@ func (cs *Conversations) runTurn(ctx context.Context, conv Conversation, history
 				if res, full, err = cs.fitResult(conv.Settings, history, res); err != nil {
 					return last, err
 				}
-				noRoom = noRoom || full
+				if full {
+					finish = noRoomLeft
+				}
 				if c.Error == "" { // 書式の崩れは maxBrokenRounds で止める
 					failed.note(c, res)
 				}
+				repeated.note(c)
 			}
 			if err := cs.save(ctx, res, ""); err != nil {
 				return last, err
@@ -166,9 +170,12 @@ func (cs *Conversations) runTurn(ctx context.Context, conv Conversation, history
 			log.Warn(err.Error())
 			return last, err
 		}
-		if noRoom && !conv.Settings.BuiltinOff {
+		if finish == keepGoing && repeated.twice {
+			finish = repeatedCalls // 同じ回に残りも無くなったら、そちらを使う(もう読めない、のほうが答えに要ることなので。0028 の決定事項 9)
+		}
+		if finish != keepGoing {
 			// この送信の残りだけ、ツールを使わない設定にする(保存はしない)。プロンプトからツールの説明も外れるので、その分も空く
-			log.Infof("会話 %s: 会話の上限の残りが無いので、次はツールを見せずに答えさせます", conv.ID)
+			log.Infof("会話 %s: %s、次はツールを見せずに答えさせます", conv.ID, finish.reason(repeated.call))
 			conv.Settings.BuiltinOff, conv.Settings.MCPServers = true, nil
 		}
 		if allBroken(r.ToolCalls) {
@@ -603,6 +610,49 @@ func cutResult(tool string, runes []rune, keep int) string {
 		text, len([]rune(text))*100/len(runes))
 }
 
+// answerNow は、次の生成でツールを見せず、ここまでに分かったことで答えさせる理由。
+// どれも「ツールを外し、最後に頼みを足す。それでも呼んだら止める」の同じ手当てで、違うのは頼みと止めたときの文だけ
+type answerNow int
+
+const (
+	keepGoing     answerNow = iota // 普段どおり(ツールを見せる)
+	noRoomLeft                     // 会話の上限の残りが無く、ツールの結果を渡せなかった(0025 の決定事項 11)
+	repeatedCalls                  // 同じ呼び出しが続いた(0028)
+)
+
+// note は、ツールを見せない生成の最後に足す頼み。call は続けて呼ばれたツールの名前。
+func (a answerNow) note(call string) string {
+	if a == repeatedCalls {
+		return fmt.Sprintf(repeatedNote, call)
+	}
+	return noRoomNote
+}
+
+// reason は、ログに出す理由。
+func (a answerNow) reason(call string) string {
+	if a == repeatedCalls {
+		return fmt.Sprintf("ツール %s が同じ引数で続けて呼ばれたので", call)
+	}
+	return "会話の上限の残りが無いので"
+}
+
+// refused は、ツールを見せずに頼んだのにモデルがツールを呼んだときに、止める理由と対処。
+func (a answerNow) refused(call string) error {
+	if a == repeatedCalls {
+		return fmt.Errorf("ツール %s を同じ引数で続けて呼んだので、ツールを使わずに答えるよう頼みましたが、モデルがまたツールを呼んだため止めました。"+
+			"何を答えてほしいかをはっきり書いて頼み直すか、ツールの扱いが得意なモデルで試してください", call)
+	}
+	return errors.New("会話の上限の残りが無いので、ツールを使わずに答えるよう頼みましたが、モデルがツールを呼んだため止めました。" +
+		"会話の上限を上げるか、読む範囲やファイルを指定して頼み直してください")
+}
+
+// repeatedNote は、同じ呼び出しが続いたあとの生成で、最後に足す頼み(0028 の決定事項 4)。%[1]s はツールの名前。
+// 結果はもう渡してあることをはっきり書く(小さいモデルは、結果を読まずに呼び直していることが多いため)
+const repeatedNote = "(aibow からのお知らせ)ツール %[1]s を同じ引数で続けて呼びました。その結果はもう上にあり、これ以上ツールは使えません。" +
+	"ここまでのツールの結果を使って、頼まれたことに答えてください。\n" +
+	"(Note from aibow) You called %[1]s again with the same arguments. Its result is already above, and you cannot call tools any more. " +
+	"Answer using the tool results so far."
+
 // noRoomNote は、会話の上限の残りが無くなったあとの生成で、最後に足す頼み(0025 の決定事項 12)。
 // 返事を書くのはモデルなので、何語で頼まれたかに合わせられるよう、短い日本語と英語の両方で書く
 const noRoomNote = "(aibow からのお知らせ)会話の上限に達したので、これ以上ファイルを読めず、ツールも使えません。" +
@@ -637,6 +687,28 @@ func (f *repeatedFailure) stop() error {
 	}
 	return fmt.Errorf("ツール %s を同じ引数で呼び、同じエラーが2回続いたため、止めました(%s)。"+
 		"会話の上限を上げるか、読む範囲やファイルを指定して頼み直してください", f.call, firstLine(strings.TrimPrefix(f.result, errorPrefix)))
+}
+
+// repeatedCall は、同じ呼び出し(名前と引数)が続けて呼ばれたかを見る(0028)。
+// 小さいモデル(llama3.2:3b など)は、成功した結果を渡しても答えずに同じ呼び出しを繰り返すことがある。
+// 結果は比べない(get_current_time の結果は秒が変わるので、結果まで比べると見つけられない)。
+// 続けて、だけを見るのは、「直す → テストを動かす → 直す → テストを動かす」のような、間に別の呼び出しを挟む正しい繰り返しを止めないため
+type repeatedCall struct {
+	last  string // 直前の呼び出し(読み取れなかった呼び出しのあとは空)
+	twice bool
+	call  string // 続けて呼ばれたツールの名前
+}
+
+func (r *repeatedCall) note(c format.ToolCall) {
+	if c.Error != "" { // 書式の崩れは「別の呼び出し」として数え直す(0028 の決定事項 8)
+		r.last = ""
+		return
+	}
+	key := fmt.Sprintf("%s %v", c.Name, c.Args)
+	if key == r.last && !r.twice {
+		r.twice, r.call = true, c.Name
+	}
+	r.last = key
 }
 
 // toolMessage はツールの結果の発言を作る。
