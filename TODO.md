@@ -66,7 +66,7 @@ aibow 全体の進み具合(入口)。ルールと全体の構成は `AGENTS.md`
 | ✅ | ツールの結果が会話の上限に入らないときの立て直し(入る分だけ切って渡す・同じ失敗の繰り返しで止める) | [0025-small-reads.md](_docs/features/0025-small-reads.md) |
 | ✅ | TODO.md を短い入口にする(2026-10-26。経過は仕様へ、検討メモは `_docs/backlog.md` へ移した) | [0025-small-reads.md](_docs/features/0025-small-reads.md) |
 | ✅ | モデルごとの GPU の層数を DB からファイルに移すか(決めて済んだ) | [0017-users.md](_docs/features/0017-users.md) |
-| 🔧 | 画面から aibow-server に切り替える | [0019-app-login.md](_docs/features/0019-app-login.md) |
+| ✅ | 画面から aibow-server に切り替える(2026-10-29 に完了) | [0019-app-login.md](_docs/features/0019-app-login.md) |
 | ✅ | aibow-server の既定をログイン必須にする | [0020-login-default.md](_docs/features/0020-login-default.md) |
 | ✅ | aibow-server の開発とビルドの入り口(`_cmd/dev`) | [0021-server-dev.md](_docs/features/0021-server-dev.md) |
 | ✅ | パスワードは本人が決める(リンクで決める) | [0022-password-links.md](_docs/features/0022-password-links.md) |
