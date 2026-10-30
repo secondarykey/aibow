@@ -46,7 +46,7 @@ aibow 全体の進み具合(入口)。ルールと全体の構成は `AGENTS.md`
 | ✅ | ほかのモデルの書式に対応する(Gemma 4。2026-10-30 に完了) | [0026-formats.md](_docs/features/0026-formats.md) |
 | ⬜ | Qwen の新しい版(Qwen3.6・3.8)が Qwen3.5 の書式で動くか確かめる(GGUF の種類の名前とテンプレートを見る。2026-10-30、Chat が出した) | 未作成 |
 | ✅ | Llama 3 の書式(3.2 の 3B。2026-10-30 に完了。llama3.2:3b はツールが苦手) | [0027-llama3.md](_docs/features/0027-llama3.md) |
-| 🔧 | Granite の書式(4.0・4.1 と 4.2。3B でもツールを繰り返さない。デスクトップのアプリでの確かめが残る) | [0029-granite.md](_docs/features/0029-granite.md) |
+| ✅ | Granite の書式(4.0・4.1 と 4.2。2026-10-30 に完了。3B でもツールを繰り返さない) | [0029-granite.md](_docs/features/0029-granite.md) |
 | ⬜ | Mistral の書式(ministral-3・mistral 7B。`[INST]`・`[TOOL_CALLS]`。ministral-3 が 8GB に入るかは未確認) | 未作成 |
 | ⬜ | Phi-4-mini の書式(Microsoft の 3.8B) | 未作成 |
 | ⬜ | gpt-oss の書式(OpenAI の harmony。思考と答えをチャンネルで分ける。20b は約 14GB で VRAM 8GB に入らない。メモリと分け合えば動くかは未確認) | 未作成 |
