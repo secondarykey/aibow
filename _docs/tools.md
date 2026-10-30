@@ -7,7 +7,7 @@
 
 | ファイル | 役割 |
 |---|---|
-| `format/format.go` | `format` パッケージ。書式の interface(`Format` / `OutputParser`)と、会話の仕組みとエンジンの間で受け渡す形(`Message` / `Prompt` / `Output` / `ToolCall`)。モデルの種類で書式を選ぶ表(`format.For`) |
+| `format/format.go` | `format` パッケージ。書式の interface(`Format` / `OutputParser`)と、会話の仕組みとエンジンの間で受け渡す形(`Message` / `Prompt` / `Output` / `ToolCall`・画像 `Image` と印 `ImageMarker`。0030)。モデルの種類で書式を選ぶ表(`format.For`) |
 | `format/qwen35.go` | Qwen3.5 の書式。プロンプトの組み立て(ツールの説明・呼び出し・結果・ループ中の思考)と、出力の振り分け(思考・答え・`<tool_call>`) |
 | `format/gemma4.go` | Gemma 4 の書式(0026)。プロンプトの組み立て(思考の印・独自の書き方のツールの説明と呼び出し・model の発言の中のツールの結果)と、出力の振り分け(`<|channel>thought`・答え・`<|tool_call>`) |
 | `format/llama3.go` | Llama 3 の書式(0027)。プロンプトの組み立て(日付・最初の発言の頭のツールの説明・JSON の呼び出し・ipython の結果・呼び出しを1つずつに分ける)と、返事の全体が JSON なら呼び出しとして読む読み取り |
@@ -44,6 +44,8 @@ Conversations ← Output(思考・答え・ToolCall)            ← Engine ← F
 - エンジンはモデルを読み込んだときに GGUF の `general.architecture` と、要るならチャットテンプレートの印で書式を選ぶ(`format.ForModel`。Qwen3.5 は `qwen35`、Gemma 4 は `gemma4`、Llama 3 は `llama` でテンプレートに `<|start_header_id|>` があるもの。0027。Granite 4 は `granite` でテンプレートに `<|start_of_role|>` と `<tool_call>` があるもの、Granite 4.2 は `granite` でテンプレートに `<|im_start|>` と `<function=` があるもの。0029)。
   未対応の種類なら `ModelInfo.Format` が空で、生成とトークン数えがエラーになる(ログとトーストでも伝える。文には対応している書式の一覧を出す)
 - 実装は Qwen3.5・Gemma 4(0026)・Llama 3(0027)・Granite 4・Granite 4.2(0029)。GGUF の中の Jinja を実行する汎用の実装は作らない(書式は自分で書く方針)
+- 画像(0030):書式は `Message.Images` の場所に印 `<__media__>` を書くだけで、画像の中身は見ない。画像を書ける書式は `WritesImages()` を持つ(今は Qwen3.5 だけ)。
+  仕組みは [engine.md](engine.md) の「画像を読む」
 - `Format.NewParser` は `BuildPrompt` に渡したのと同じ `Prompt` を受け取る。ツールの定義(引数の型)と、プロンプトがどこで終わったか
   (Gemma 4 は、ツールの結果の後ろで思考 ON なら `<|channel>thought` まで書いてあるので、思考の途中から読み始める)を見るため
 - ツールの結果(role `tool`)は `Message.Name` に元の呼び出しの名前を持つ(会話の仕組みが `ToolResult.Call.Name` から入れる。Gemma 4 が結果に名前を書くため)。

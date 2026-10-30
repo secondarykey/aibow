@@ -46,7 +46,7 @@ OpenAI 互換のクライアント(Cline など)⇄ HTTP(S)(既定は 127.0.0.1�
 
 | 場所 | 中身 |
 |---|---|
-| ルート(`aibow` パッケージ。モジュール名は `github.com/secondarykey/aibow`) | 会話の仕組み(会話・エージェントループ・compact・設定・保存の約束 `Store`・生成の約束 `Generator`・会話の持ち主を `ctx` で運ぶ `WithUser`。0017)。Wails を import しないライブラリ |
+| ルート(`aibow` パッケージ。モジュール名は `github.com/secondarykey/aibow`) | 会話の仕組み(会話・エージェントループ・compact・設定・保存の約束 `Store`・生成の約束 `Generator`・会話の持ち主を `ctx` で運ぶ `WithUser`。0017・読み込んだファイル `File`。0030)。Wails を import しないライブラリ |
 | `engine/` | llama.cpp で生成する部分(`engine` パッケージ。モデルの読み込み・生成・トークン数・KV キャッシュ・画像(mtmd。0030))。`format` と `models` を使い、会話の仕組みは知らない(生成だけを使えるように。0012 の 6-0) |
 | `format/` | 書式(`format` パッケージ。チャットテンプレートと、会話の仕組みとエンジンの間で受け渡す形 `Message` / `Prompt` / `Output` / `ToolCall`)。`tool` だけを使う |
 | `models/` | 使えるモデルの一覧(`models` パッケージ。GGUF と Ollama の目録と、画面で足した置き場所。ステップ8)と、GGUF の先頭からモデルの種類だけを読む `Arch`。何にも依存しない |
@@ -81,6 +81,8 @@ OpenAI 互換のクライアント(Cline など)⇄ HTTP(S)(既定は 127.0.0.1�
 | OpenAI 互換の API(`api`・`aibow-server`)・リクエストの変換・ツール呼び出しの変換(`tools` ⇄ `tool_calls`)・ストリーミング・思考の返し方・順番待ち | [_docs/api.md](_docs/api.md) |
 | 会話の履歴・会話ごとの設定(会話の上限・返事の上限も)・アプリの設定・保存の約束(`Store`)・モデルに渡さない発言・作り直す / 送り直す | [_docs/conversations.md](_docs/conversations.md) |
 | 会話の上限・compact(truncate / summary)・メーター | [_docs/compact.md](_docs/compact.md) |
+| ファイルを読み込む(テキストのファイル・画像を発言に付ける・展開・会話の上限に入るか) | [_docs/conversations.md](_docs/conversations.md) の「読み込んだファイル」・画面は [_docs/ui.md](_docs/ui.md) の「ファイルを読み込む」・仕様は [_docs/features/0030-read-files.md](_docs/features/0030-read-files.md) |
+| 画像を読む(mmproj・mtmd・画像トークン・チャンクと KV キャッシュ・M-RoPE の位置・OpenAI 互換の口の `image_url`) | [_docs/engine.md](_docs/engine.md) の「画像を読む」・[_docs/api.md](_docs/api.md) |
 | SQLite の実装・マイグレーション | [store/AGENTS.md](store/AGENTS.md) |
 | ログの出し方・出口(`Init`)・ライブラリとして使う人のログ(`SetLogger`)・異常終了の記録 | [log/AGENTS.md](log/AGENTS.md)(決めたこととやり残しは [_docs/features/0008-log.md](_docs/features/0008-log.md)) |
 | アプリの起動・`ChatService`・環境変数の読み込み・Go と画面のやり取り | [_cmd/aibow/AGENTS.md](_cmd/aibow/AGENTS.md) |

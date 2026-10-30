@@ -61,6 +61,8 @@ yzma が NVIDIA GPU 用に落とすのは次の2つです(GPU が無ければ `l
 - `cudart-llama-bin-win-cuda-13.4-x64.zip` … CUDA の実行に要る DLL(cudart・cublas)
 aibow-server につないで使うだけの PC には要りません(下の「aibow-server を使い始める」)。
 
+画像を読むのに使う `mtmd.dll` も llama.cpp の本体の zip に入っています(別に落とすものはありません。無くても文字の会話はできます)。
+
 ### 3. モデルの用意
 
 次のどちらでも構いません。両方あれば、両方とも画面の一覧に出ます。
