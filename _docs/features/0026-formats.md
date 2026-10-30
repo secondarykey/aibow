@@ -161,9 +161,12 @@ aibow のトークン化は `addSpecial=true`(`engine/engine.go` の `tokenize`)
   Gemma 4 のプロンプトでは前の呼び出しが `{limit:2,offset:1,path:<|"|>notes.txt<|"|>}`(整数のまま)と結果の名前つきで書かれ、Qwen3.5 のプロンプトでは Gemma 4 の呼び出しが `<tool_call>` の形で書かれた。どちらにも相手の書式の印は残らない
 - 残り:
   - 速さと答えの比べ(38・39。VRAM を空けてから)と `_docs/tuning.md`
-  - デスクトップのアプリ(直接・aibow-server 越し)で確かめる。`WEBVIEW2_USER_DATA_FOLDER` は効かなかった(WebView2 のデータフォルダが分かれない)ので、
-    `_docs/env-windows.md` のとおり一時ビルドで `WebviewUserDataPath` を一時フォルダにしてから起動する
-  - `_docs/usage.md`(使えるモデル)・`_docs/backlog.md`・完了の条件の見直しと ✅
+  - `_docs/tuning.md` と完了の条件の見直し・✅
+- 済み:デスクトップのアプリ(exe。CPU だけ)で、直接の形と aibow-server 越しの形の両方で、Gemma 4 に計算ツールを使わせて正しく答えた。
+  会話の設定の画面の見出しは「モデルに渡した文字列(書式: Gemma 4)」、モデルのタブの一覧に書式の列が出た。
+  `WEBVIEW2_USER_DATA_FOLDER` は効かなかった(Wails がデータフォルダを自分で決めるため)ので、`_docs/env-windows.md` のとおり一時ビルドで
+  `WebviewUserDataPath` と `--remote-debugging-port` を足し(コミットしない)、CDP で操作した
+- 済み:`_docs/usage.md`(使えるモデルと書式・Qwen3.5 だけの言い方)・`_docs/backlog.md`
 
 ## やらないこと(先回りしない)
 
