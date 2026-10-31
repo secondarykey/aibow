@@ -330,13 +330,11 @@ export default function App() {
         size={settings ? settings.history_tokens + settings.reply_tokens : undefined}
         selected={settings?.model || undefined}
         lockReason={lock && locked(lock, FIX.model) ? fixedTitle(lock) : undefined}
-        onSelect={id => {
-          // 選ぶのは「この会話のモデル」(新しい会話の画面では、これから作る会話のモデル)。選んだらすぐ読み込む(0014 の 3)
-          // 読み込めなかったときは、会話のモデルを変えない(元のモデルに戻っている)
-          models.switchModel(id).then(ok => {
-            if (ok && settings) convs.updateSettings({ model: id });
-          });
-        }}
+        // 選ぶのは「この会話のモデル」(新しい会話の画面では、これから作る会話のモデル。0014 の 3)。
+        // 選んでも読み込まず、会話のモデルを変えるだけ。読み込むのは送信(作り直す・今すぐ要約も)の前(Go の ensureModel)。
+        // aibow-server 越しでは、選んだときに読み込んでも送信までにほかの人に入れ替えられることがあり、どのみち読み直すため
+        // (0014 の「あとから決めたこと(2026-10-31)」)。それまでは枠の破線と吹き出しで見せる
+        onSelect={id => convs.updateSettings({ model: id })}
       >
         {convs.current && (
           // summary の会話では、メーターのトークン数を押すと今すぐ要約する(最近の発言は会話の上限の半分まで残す)

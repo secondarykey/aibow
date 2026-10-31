@@ -316,8 +316,9 @@ func (s *Service) Models(ctx context.Context) ModelsResult {
 // 失敗したときは元のモデルに戻っている(画面は Models を呼び直して確認する)。
 // Go で error を返すと、JavaScript 側では Promise が reject される。
 //
-// 読み込めるモデルは1つ(VRAM に1つしか載らない)。画面は入力欄の下でモデルを選んだとき、会話のモデルを変えてからこれを呼ぶ。
-// 会話を開いただけでは読み直さず、モデルの違う会話に送信するときに読み直す(Conversations.ensureWorkspace。0014 の 3)。
+// 読み込めるモデルは1つ(VRAM に1つしか載らない)。画面は設定の画面の「モデル」のタブの「読み込む」でこれを呼ぶ。
+// 入力欄の下でモデルを選んだときは呼ばない(会話のモデルを変えるだけ。0014 の「あとから決めたこと(2026-10-31)」)。
+// 会話を開いた・選んだだけでは読み直さず、モデルの違う会話に送信するときに読み直す(Conversations.ensureWorkspace。0014 の 3)。
 //
 // 順番待ちの席があれば(aibow-server の中)、席を取ってから読み込む(生成中のほかの人の作業領域を、途中で入れ替えないように)。
 func (s *Service) SwitchModel(ctx context.Context, id string) (*engine.ModelInfo, error) {

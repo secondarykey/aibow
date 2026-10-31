@@ -120,8 +120,11 @@ export function FixMark({ item, lock }: { item: string; lock?: Lock }) {
 }
 
 // ModelSelect は、会話のモデル(プロファイルの編集では、新しい会話のモデル)の選択(0014 の 3)。
-// ここでは値を変えるだけで、モデルは読み込まない(会話のモデルは、その会話で送信するときに読み込む)。
-// 入力欄の下のモデルの選択は、選んだらすぐ読み込む(今から使うものを選ぶ欄なので)。
+// ここでは値を変えるだけで、モデルは読み込まない(会話のモデルは、その会話で送信するときに読み込む。入力欄の下の選択も同じ)。
+//
+// 空(プロファイルでモデルを決めていない)のときは「会話を始めたときのモデル」と出す(0014 の「あとから決めたこと(2026-10-31)」)。
+// 空のプロファイルから作った会話は、作った時点で読み込んでいるモデルを会話のモデルとして写し、そのあとは固定される(ui の NewConversation)。
+// 「読み込んでいるモデル」と書くと、モデルを入れ替えるたびに追いかけるように読めるので、始めたときに決まることを文言とヒントで伝える
 function ModelSelect({ value, models, lock, onChange }: { value: string; models: ModelEntry[]; lock?: Lock; onChange(id: string): void }) {
   const groups = [
     { source: "file", label: "models フォルダ" },
@@ -131,9 +134,18 @@ function ModelSelect({ value, models, lock, onChange }: { value: string; models:
   const outside = value !== "" && !models.some(m => m.id === value);
   return (
     <>
-      <FieldLabel htmlFor="model" item={FIX.model} lock={lock} title="この設定で使うモデル。変えても、ここでは読み込まない(送信するときに読み込む)">モデル</FieldLabel>
+      <FieldLabel
+        htmlFor="model"
+        item={FIX.model}
+        lock={lock}
+        title={value === ""
+          ? "この設定で使うモデル。決めていなければ、会話を作った時点で読み込んでいるモデルをその会話のモデルにする。変えても、ここでは読み込まない(送信するときに読み込む)"
+          : "この設定で使うモデル。変えても、ここでは読み込まない(送信するときに読み込む)"}
+      >
+        モデル
+      </FieldLabel>
       <select id="model" value={value} disabled={locked(lock, FIX.model)} onChange={e => onChange(e.target.value)}>
-        {value === "" && <option value="">決めていない(読み込んでいるモデル)</option>}
+        {value === "" && <option value="">会話を始めたときのモデル</option>}
         {groups.map(g => {
           const items = models.filter(m => m.source === g.source);
           if (!items.length) return null;
@@ -145,6 +157,7 @@ function ModelSelect({ value, models, lock, onChange }: { value: string; models:
         })}
         {outside && <option value={value}>{`${value}(見つかりません)`}</option>}
       </select>
+      {value === "" && <p className="hint">新しい会話は、作った時点で読み込んでいるモデルを使い、その会話ではそのまま使い続けます。</p>}
     </>
   );
 }
