@@ -80,6 +80,7 @@ aibow 全体の進み具合(入口)。ルールと全体の構成は `AGENTS.md`
 | ✅ | aibow-server の開発とビルドの入り口(`_cmd/dev`) | [0021-server-dev.md](_docs/features/0021-server-dev.md) |
 | ✅ | パスワードは本人が決める(リンクで決める) | [0022-password-links.md](_docs/features/0022-password-links.md) |
 | ⬜ | aibow-server の中央の制御(ステップ11に入れたものの残りの候補) | [検討メモ](_docs/backlog.md) |
+| ⬜ | 共有の再検討(ステップ11の共有を、アプリからの閲覧・プロジェクトの概念・利用者同士の会話も含めて考え直す。2026-10-30、ユーザーの要望) | [検討メモ](_docs/backlog.md)・[0018-sharing.md](_docs/features/0018-sharing.md) |
 | ✅ | 選んだやり取りを捨てる(吹き出しごとに「モデルに渡さない」・作り直す・送り直す) | [0011-exclude-messages.md](_docs/features/0011-exclude-messages.md) |
 | ✅ | MCP のツールの信頼(「確認しない」と確認のカードの選択肢) | [0010-tool-trust.md](_docs/features/0010-tool-trust.md) |
 | ⬜ | ツールの信頼の続き(0010 のやり残し) | [0010-tool-trust.md](_docs/features/0010-tool-trust.md) の「3段目以降」 |
