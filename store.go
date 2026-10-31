@@ -118,6 +118,9 @@ type ConversationRef struct {
 	Title     string    `json:"title"`
 	OwnerName string    `json:"owner_name"`
 	UpdatedAt time.Time `json:"updated_at"`
+	// Share はその会話の共有の範囲(0031 の決定事項 17)。共有された会話の一覧では、ShareUsers なら自分あて(指定した人に入っている)、
+	// ShareAll なら全員に共有されたもの。画面はこれで「自分に共有」と「全員に共有」に分ける
+	Share string `json:"share,omitempty"`
 }
 
 // SharedRead は、ほかの人の会話を読んだもの(読むだけ。0018 の 11-2)。

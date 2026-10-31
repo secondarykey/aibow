@@ -91,6 +91,13 @@ func TestAdminUsers(t *testing.T) {
 	if code != http.StatusOK || made["name"] != "carol" || made["token"] == "" || strings.Contains(body, "password") {
 		t.Fatalf("作る: %d %s", code, body)
 	}
+	// 招待中の人には、まだ使っていないリンクの期限が付く(0031 の決定事項 14)
+	_, body = do(alice, "GET", "/aibow/admin/users", "")
+	list = nil
+	json.Unmarshal([]byte(body), &list)
+	if c := list[len(list)-1]; c.Name != "carol" || c.Password || c.LinkExpiresAt == nil || c.Conversations != 0 {
+		t.Errorf("招待中の人: %s", body)
+	}
 	if _, _, err := sessions.UseLink(ctx, made["token"], "carol-password"); err != nil {
 		t.Errorf("返したリンクでパスワードを決められない: %v", err)
 	}

@@ -15,6 +15,7 @@ package main
 // 管理者の印を付ける / 外すのはコマンドだけ(0018 の決定事項 6。画面からは決めない)。
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"mime"
@@ -35,25 +36,20 @@ type adminUser struct {
 	Key       bool      `json:"key"`      // API キーがあるか
 	Local     bool      `json:"local"`    // ログインなしの形の利用者(消せない)
 	CreatedAt time.Time `json:"created_at"`
+	// Conversations はその人の会話の数(利用者のタブの「会話」の列と、消すときの確かめ。0031 の決定事項 14・15)
+	Conversations int `json:"conversations"`
+	// LinkExpiresAt は、まだ使っていないパスワードを決めるリンクの期限(無ければ省く)。招待中の人のリンクが切れていたら、画面が出し直しを出す
+	LinkExpiresAt *time.Time `json:"link_expires_at,omitempty"`
 }
 
 // adminHandler は /aibow/admin/ の下の口。initial は新しい人のプロファイル「既定」を作るときの値(コマンドと同じ)。
 func adminHandler(st *store.SQLite, initial aibow.AppSettings) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /aibow/admin/users", func(w http.ResponseWriter, r *http.Request) {
-		list, err := st.Users(r.Context())
+		out, err := adminUsers(r.Context(), st)
 		if err != nil {
 			writeAdminError(w, http.StatusInternalServerError, err)
 			return
-		}
-		out := make([]adminUser, 0, len(list))
-		for _, u := range list {
-			has, err := st.HasAPIKey(r.Context(), u.ID)
-			if err != nil {
-				writeAdminError(w, http.StatusInternalServerError, err)
-				return
-			}
-			out = append(out, adminUser{Name: u.Name, Admin: u.Admin, Password: u.Password != "", Key: has, Local: u.ID == aibow.LocalUser, CreatedAt: u.CreatedAt})
 		}
 		writeAdminJSON(w, out)
 	})
@@ -119,6 +115,36 @@ func adminHandler(st *store.SQLite, initial aibow.AppSettings) http.Handler {
 		writeAdminError(w, http.StatusNotFound, errors.New("このパスはありません: "+r.Method+" "+r.URL.Path))
 	})
 	return onlyAdmin(mux)
+}
+
+// adminUsers は利用者の一覧(作った順。並べ替えと絞り込みは画面がする。0031 の決定事項 13・14)。
+func adminUsers(ctx context.Context, st *store.SQLite) ([]adminUser, error) {
+	list, err := st.Users(ctx)
+	if err != nil {
+		return nil, err
+	}
+	counts, err := st.ConversationCounts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	links, err := st.PasswordLinkExpiries(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]adminUser, 0, len(list))
+	for _, u := range list {
+		has, err := st.HasAPIKey(ctx, u.ID)
+		if err != nil {
+			return nil, err
+		}
+		a := adminUser{Name: u.Name, Admin: u.Admin, Password: u.Password != "", Key: has, Local: u.ID == aibow.LocalUser, CreatedAt: u.CreatedAt,
+			Conversations: counts[u.ID]}
+		if t, ok := links[u.ID]; ok {
+			a.LinkExpiresAt = &t
+		}
+		out = append(out, a)
+	}
+	return out, nil
 }
 
 // onlyAdmin は、ブラウザでログインした管理者の呼び出しだけを通す。ログインしていなければ 401、管理者でなければ 403。

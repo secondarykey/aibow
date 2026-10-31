@@ -151,8 +151,8 @@ func TestConversationShare(t *testing.T) {
 	if err := s.SetConversationShare(bob, c.ID, aibow.ShareUsers, []string{"carol"}); err != nil {
 		t.Fatal(err)
 	}
-	if list, _ := s.SharedConversations(carol); len(list) != 1 || list[0].ID != c.ID || list[0].OwnerName != "bob" {
-		t.Errorf("共有された会話の一覧: %+v", list)
+	if list, _ := s.SharedConversations(carol); len(list) != 1 || list[0].ID != c.ID || list[0].OwnerName != "bob" || list[0].Share != aibow.ShareUsers {
+		t.Errorf("共有された会話の一覧(自分あて): %+v", list)
 	}
 	if list, _ := s.SharedConversations(dan); len(list) != 0 {
 		t.Errorf("相手でない人の一覧に出る: %+v", list)
@@ -189,8 +189,19 @@ func TestConversationShare(t *testing.T) {
 	if names, _ := s.UserNames(carol); len(names) != 4 {
 		t.Errorf("利用者の名前(local を除く): %v", names)
 	}
-	// 持ち主を消すと、共有した会話も消える(決定事項 26)
+	// 利用者のタブの「会話」の列(0031)
 	b, _ := s.UserByName(context.Background(), "bob")
+	if counts, err := s.ConversationCounts(context.Background()); err != nil || counts[b.ID] != 1 || len(counts) != 1 {
+		t.Errorf("会話の数: %v %v", counts, err)
+	}
+	// 全員に共有したものは「全員に共有」に分かれる(0031 の決定事項 17)
+	if err := s.SetConversationShare(bob, c.ID, aibow.ShareAll, nil); err != nil {
+		t.Fatal(err)
+	}
+	if list, _ := s.SharedConversations(dan); len(list) != 1 || list[0].Share != aibow.ShareAll {
+		t.Errorf("共有された会話の一覧(全員): %+v", list)
+	}
+	// 持ち主を消すと、共有した会話も消える(決定事項 26)
 	if err := s.DeleteUser(context.Background(), b.ID); err != nil {
 		t.Fatal(err)
 	}

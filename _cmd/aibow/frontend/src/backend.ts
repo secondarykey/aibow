@@ -73,6 +73,8 @@ export interface AdminUser {
   key: boolean;
   local: boolean; // ログインなしの形の利用者(消せない)
   created_at: string;
+  conversations: number;     // その人の会話の数(0031)
+  link_expires_at?: string;  // まだ使っていないパスワードを決めるリンクの期限(招待中の人のリンクが切れたかを出す)
 }
 
 // Link は、本人がパスワードを決めるリンクの合言葉と期限(0022)。URL は画面が作る(開いているアドレス + /#reset=<合言葉>)

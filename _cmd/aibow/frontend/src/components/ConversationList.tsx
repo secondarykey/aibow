@@ -15,7 +15,7 @@
 // 一覧を畳んでいるときは、いちばん気にしてほしい印(確認待ち → エラー → 生成中 → 終わった)をハンバーガーに出す
 //
 // 共有(0018 の 11-2):共有した会話は名前の右に共有のアイコン。ほかの人に共有された会話は、一覧の下の「共有された会話」の欄
-// (開閉できる・持ち主の名前付き。押すと読むだけで開く)。ログインが要る aibow-server につないでいるときは、
+// (開閉できる・持ち主の名前付き。押すと読むだけで開く。「自分に共有」と「全員に共有」に分け、持ち主とタイトルで絞る。0031 の決定事項 17)。ログインが要る aibow-server につないでいるときは、
 // 一番下の名前の横に「管理者が読めます」を常に出す(決定事項 23。畳んだときは目のアイコンだけ)
 import { useEffect, useRef, useState } from "react";
 import { ChatService, logout, me } from "../backend";
@@ -160,18 +160,7 @@ export function ConversationList({
           <button className="shared-head" onClick={() => setSharedOpen(o => !o)} aria-expanded={sharedOpen}>
             {sharedOpen ? <LuChevronDown /> : <LuChevronRight />} 共有された会話
           </button>
-          {sharedOpen && (
-            <ul>
-              {shared.map(c => (
-                <li key={c.id} className={"conversation" + (c.id === readingId ? " current" : "")}>
-                  <button className="title" title={`${c.title || "新しい会話"}(${c.owner_name} の会話。読むだけ)`} onClick={() => onOpenShared(c.id)}>
-                    {c.title || "新しい会話"}
-                    <span className="shared-owner">{c.owner_name}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
+          {sharedOpen && <SharedList shared={shared} readingId={readingId} onOpenShared={onOpenShared} />}
         </div>
       )}
       {me.login && <div className="admin-notice row" title={ADMIN_NOTICE}><LuEye /> 管理者が読めます</div>}
@@ -181,6 +170,55 @@ export function ConversationList({
         <button className={"icon-btn " + settingsCls} title="設定" onClick={onToggleSettings}><LuSettings /></button>
       </div>
     </nav>
+  );
+}
+
+// SHARED_PAGE は、共有された会話を一度に出す数(0031 の決定事項 17)
+const SHARED_PAGE = 20;
+
+// SharedList は、ほかの人に共有された会話。「自分に共有」(指定した人・グループで共有されたもの)を上、「全員に共有」を下に分け、
+// 持ち主で絞る・タイトルで探す(0031 の決定事項 17)。それぞれ新しい 20 件から出し、「もっと見る」で足す
+function SharedList({ shared, readingId, onOpenShared }: { shared: ConversationRef[]; readingId: string | null; onOpenShared(id: string): void }) {
+  const [query, setQuery] = useState("");
+  const [owner, setOwner] = useState("");
+  const owners = [...new Set(shared.map(c => c.owner_name))].sort((a, b) => a.localeCompare(b));
+  const q = query.trim().toLowerCase();
+  const match = (c: ConversationRef) => (owner === "" || c.owner_name === owner) && (q === "" || (c.title || "新しい会話").toLowerCase().includes(q));
+  const toMe = shared.filter(c => c.share === "users" && match(c));
+  const toAll = shared.filter(c => c.share !== "users" && match(c));
+  return (
+    <>
+      <div className="shared-filter">
+        <input type="text" value={query} placeholder="タイトルで探す…" aria-label="共有された会話をタイトルで探す" onChange={e => setQuery(e.target.value)} />
+        <select value={owner} aria-label="持ち主で絞る" onChange={e => setOwner(e.target.value)}>
+          <option value="">全員</option>
+          {owners.map(o => <option key={o} value={o}>{o}</option>)}
+        </select>
+      </div>
+      <SharedGroup label="自分に共有" list={toMe} readingId={readingId} onOpenShared={onOpenShared} />
+      <SharedGroup label="全員に共有" list={toAll} readingId={readingId} onOpenShared={onOpenShared} />
+    </>
+  );
+}
+
+function SharedGroup({ label, list, readingId, onOpenShared }: { label: string; list: ConversationRef[]; readingId: string | null; onOpenShared(id: string): void }) {
+  const [limit, setLimit] = useState(SHARED_PAGE);
+  if (list.length === 0) return null;
+  return (
+    <>
+      <div className="shared-sub">{label}({list.length})</div>
+      <ul>
+        {list.slice(0, limit).map(c => (
+          <li key={c.id} className={"conversation" + (c.id === readingId ? " current" : "")}>
+            <button className="title" title={`${c.title || "新しい会話"}(${c.owner_name} の会話。読むだけ)`} onClick={() => onOpenShared(c.id)}>
+              {c.title || "新しい会話"}
+              <span className="shared-owner">{c.owner_name}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      {list.length > limit && <button className="shared-more" onClick={() => setLimit(l => l + SHARED_PAGE)}>もっと見る(残り {list.length - limit} 件)</button>}
+    </>
   );
 }
 

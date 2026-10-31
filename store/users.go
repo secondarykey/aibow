@@ -268,3 +268,53 @@ func (s *SQLite) DeleteAppToken(ctx context.Context, id string) error {
 	_, err := s.db.ExecContext(ctx, "DELETE FROM app_tokens WHERE id = ?", id)
 	return err
 }
+
+// ---- 管理者の一覧に足すもの(0031) ----------------------------------------------------------
+
+// ConversationCounts は、利用者ごとの会話の数(管理者の利用者のタブの「会話」の列。0031 の決定事項 14)。会話の無い人は入らない。
+func (s *SQLite) ConversationCounts(ctx context.Context) (map[uuid.UUID]int, error) {
+	rows, err := s.db.QueryContext(ctx, "SELECT owner, COUNT(*) FROM conversations GROUP BY owner")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[uuid.UUID]int{}
+	for rows.Next() {
+		var owner string
+		var n int
+		if err := rows.Scan(&owner, &n); err != nil {
+			return nil, err
+		}
+		id, err := parseID(owner)
+		if err != nil {
+			return nil, err
+		}
+		out[id] = n
+	}
+	return out, rows.Err()
+}
+
+// PasswordLinkExpiries は、パスワードを決めるリンクを持っている人と、その期限(招待中の人のリンクが切れたかを出すため。0031 の決定事項 14)。
+// 使ったリンクは消えるので、ここにあるのはまだ使っていないリンクだけ(期限が過ぎたものも入る)。
+func (s *SQLite) PasswordLinkExpiries(ctx context.Context) (map[uuid.UUID]time.Time, error) {
+	rows, err := s.db.QueryContext(ctx, "SELECT user_id, expires_at FROM password_links")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[uuid.UUID]time.Time{}
+	for rows.Next() {
+		var user, expires string
+		if err := rows.Scan(&user, &expires); err != nil {
+			return nil, err
+		}
+		id, err := parseID(user)
+		if err != nil {
+			return nil, err
+		}
+		if out[id], err = parseTime(expires); err != nil {
+			return nil, err
+		}
+	}
+	return out, rows.Err()
+}

@@ -602,15 +602,43 @@ nav.conversations.collapsed .settings.active { color: var(--accent); }
 .place-add { display: flex; gap: 6px; margin-top: 8px; }
 .settings-view .place-add input[type=text] { flex: 1; width: auto; min-width: 0; }
 .place-add button { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
-/* 設定の画面の「利用者」のタブ(UserSettings.tsx。0018 の 11-0)。行は .model-row の subgrid を使う(名前 / 作った日 / 操作) */
-.user-table { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; column-gap: 12px; align-items: center; }
-.user-admin { color: var(--accent); flex-shrink: 0; }
-.user-key { color: var(--muted); flex-shrink: 0; }
+/* 設定の画面の「利用者」のタブ(UserSettings.tsx。0018 の 11-0・0031)。一覧(行は .model-row の subgrid)+ 行を押すと下に詳細 */
+.user-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 8px; }
+.user-toolbar .spacer { flex: 1; }
+.settings-view .user-toolbar input.user-search { width: 200px; }
+.user-create { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.segmented { display: inline-flex; }
+.segmented button { font-size: 12px; padding: 3px 8px; border-radius: 0; margin-left: -1px; white-space: nowrap; }
+.segmented button:first-child { border-radius: 6px 0 0 6px; margin-left: 0; }
+.segmented button:last-child { border-radius: 0 6px 6px 0; }
+.segmented button.current { background: var(--accent); color: #fff; border-color: var(--accent); position: relative; }
+.user-table { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; column-gap: 12px; align-items: center; }
+.user-sort { display: inline-flex; align-items: center; gap: 2px; border: none; background: transparent; text-align: left; cursor: pointer; }
+.user-sort.num { justify-content: flex-end; }
+.user-sort.current { color: var(--text); }
+.user-row { width: 100%; border: none; border-top: 1px solid var(--border); border-radius: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.user-row:hover { background: rgba(127, 127, 127, .08); }
+.user-row.current { background: rgba(127, 127, 127, .15); }
+.user-states { display: flex; gap: 4px; flex-wrap: wrap; }
 .user-date { color: var(--muted); font-size: 12px; }
-.user-actions { display: flex; align-items: center; gap: 4px; justify-content: flex-end; }
-.user-actions button { font-size: 12px; padding: 2px 8px; white-space: nowrap; }
-.user-actions .confirm-text { color: var(--error); font-size: 12px; margin-right: 4px; }
-.user-actions button.danger { color: #fff; background: var(--error); border-color: var(--error); }
+.user-detail { margin-top: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; }
+.user-detail-head { display: flex; align-items: center; gap: 8px; }
+.user-detail-head h2.section { margin: 0; }
+.user-detail-head .spacer { flex: 1; }
+.user-field { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
+.user-field-label { width: 6em; flex-shrink: 0; color: var(--muted); font-size: 13px; }
+.user-field-value { font-size: 13px; }
+.user-field-value.expired { color: var(--error); }
+.user-field button { font-size: 12px; padding: 2px 8px; }
+.user-field .confirm-text { color: var(--error); font-size: 12px; }
+.user-field button.danger, .user-remove button.danger { color: #fff; background: var(--error); border-color: var(--error); }
+.user-sub { margin: 14px 0 4px; font-size: 13px; color: var(--muted); font-weight: normal; }
+.more { align-self: flex-start; margin-top: 4px; font-size: 12px; padding: 2px 8px; }
+.user-remove { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--border); }
+.user-remove .confirm-text { color: var(--error); font-size: 13px; margin: 0 0 6px; }
+.user-remove-row { display: flex; gap: 6px; }
+.settings-view .user-remove-row input[type=text] { width: 200px; }
+button.danger-outline { color: var(--error); border-color: var(--error); background: transparent; }
 /* 作ったパスワード・API キー。今だけ出す(閉じたらもう見られない) */
 .secret-box {
   display: flex; align-items: center; gap: 8px; margin: 0 0 10px; padding: 8px 10px;
@@ -831,6 +859,14 @@ footer { border-top: 1px solid var(--border); background: var(--panel); padding:
 .shared-list { border-top: 1px solid var(--border); padding-top: 4px; max-height: 40%; overflow-y: auto; }
 .shared-head { display: flex; align-items: center; gap: 4px; width: 100%; padding: 4px 10px; border: none; background: transparent; color: var(--muted); font-size: 12px; text-align: left; }
 .shared-owner { margin-left: 6px; color: var(--muted); font-size: 11px; }
+.shared-filter { display: flex; gap: 4px; padding: 2px 8px 4px; }
+.shared-filter input, .shared-filter select {
+  min-width: 0; font: inherit; font-size: 12px; padding: 2px 6px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);
+}
+.shared-filter input { flex: 1; }
+.shared-filter select { max-width: 40%; }
+.shared-sub { padding: 4px 12px 0; color: var(--muted); font-size: 11px; }
+.shared-more { margin: 2px 12px 4px; font-size: 11px; padding: 1px 8px; }
 .admin-notice { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: var(--muted); white-space: nowrap; cursor: help; }
 .admin-notice.icon { justify-content: center; padding: 6px 0; }
 .admin-notice.row { padding: 4px 12px 0; border-top: 1px solid var(--border); }
@@ -868,9 +904,6 @@ footer { border-top: 1px solid var(--border); background: var(--panel); padding:
 .pick-item { display: flex; align-items: center; gap: 6px; width: 100%; padding: 4px 10px; border: none; border-radius: 0; background: transparent; color: inherit; text-align: left; font-size: 13px; }
 .pick-item.active { background: rgba(127, 127, 127, .15); }
 .pick-item .icon { flex-shrink: 0; color: var(--accent); }
-.user-name { padding: 0; border: none; background: transparent; color: inherit; font: inherit; cursor: pointer; text-decoration: underline dotted; }
-.user-name:disabled { cursor: default; text-decoration: none; }
-.user-name.current { color: var(--accent); }
 .user-convs { display: flex; flex-direction: column; }
 .user-conv { display: flex; justify-content: space-between; gap: 8px; padding: 5px 0; border: none; border-top: 1px solid var(--border); background: transparent; color: inherit; text-align: left; }
 .user-conv:hover { color: var(--accent); }

@@ -495,7 +495,7 @@ func (s *SQLite) SetConversationShare(ctx context.Context, id uuid.UUID, share s
 
 // conversationRefs は、ほかの人の会話の一覧(持ち主の名前付き)を where の条件で読む。
 func (s *SQLite) conversationRefs(ctx context.Context, where string, args ...any) ([]aibow.ConversationRef, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT conversations.id, conversations.title, COALESCE(u.name, ''), conversations.updated_at
+	rows, err := s.db.QueryContext(ctx, `SELECT conversations.id, conversations.title, COALESCE(u.name, ''), conversations.updated_at, conversations.share
 		FROM conversations LEFT JOIN users u ON u.id = conversations.owner WHERE `+where+` ORDER BY conversations.updated_at DESC, conversations.id DESC`, args...)
 	if err != nil {
 		return nil, err
@@ -505,7 +505,7 @@ func (s *SQLite) conversationRefs(ctx context.Context, where string, args ...any
 	for rows.Next() {
 		var r aibow.ConversationRef
 		var id, updated string
-		if err := rows.Scan(&id, &r.Title, &r.OwnerName, &updated); err != nil {
+		if err := rows.Scan(&id, &r.Title, &r.OwnerName, &updated, &r.Share); err != nil {
 			return nil, err
 		}
 		if r.ID, err = parseID(id); err != nil {
