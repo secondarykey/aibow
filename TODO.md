@@ -82,7 +82,7 @@ aibow 全体の進み具合(入口)。ルールと全体の構成は `AGENTS.md`
 | ✅ | パスワードは本人が決める(リンクで決める) | [0022-password-links.md](_docs/features/0022-password-links.md) |
 | ⬜ | aibow-server の中央の制御(ステップ11に入れたものの残りの候補) | [検討メモ](_docs/backlog.md) |
 | ✅ | 利用者まわりの画面(人を選ぶ部品・利用者の一覧・表示名・最後に使った日・グループとグループ長。2026-11-01 に完了。アプリ(serverUrl)の画面では確かめていない) | [0031-users-ui.md](_docs/features/0031-users-ui.md) |
-| ⬜ | 管理の画面(サーバー管理者の作業を、自分の設定から分ける。下書き。未決事項を決めてから) | [0032-admin-screen.md](_docs/features/0032-admin-screen.md) |
+| ⬜ | 管理の画面(サーバー管理者の作業を、自分の設定から分ける。3段) | [0032-admin-screen.md](_docs/features/0032-admin-screen.md) |
 | ⬜ | 利用者をまとめて作る(インポート。0031 で後回しにした) | [検討メモ](_docs/backlog.md) |
 | ⬜ | 共有の再検討(ステップ11の共有を、アプリからの閲覧・プロジェクトの概念・利用者同士の会話も含めて考え直す。2026-10-30、ユーザーの要望) | [検討メモ](_docs/backlog.md)・[0018-sharing.md](_docs/features/0018-sharing.md) |
 | ✅ | 選んだやり取りを捨てる(吹き出しごとに「モデルに渡さない」・作り直す・送り直す) | [0011-exclude-messages.md](_docs/features/0011-exclude-messages.md) |
