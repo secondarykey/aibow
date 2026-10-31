@@ -128,8 +128,8 @@ func (c *Client) ReadConversation(ctx context.Context, id uuid.UUID) (out aibow.
 	return out, err
 }
 
-func (c *Client) UserNames(ctx context.Context) (out []string, err error) {
-	err = c.call(ctx, "UserNames", nil, &out)
+func (c *Client) Directory(ctx context.Context) (out aibow.Directory, err error) {
+	err = c.call(ctx, "Directory", nil, &out)
 	return out, err
 }
 

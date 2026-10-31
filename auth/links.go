@@ -141,6 +141,7 @@ func (s *Sessions) setPassword(ctx context.Context, u User, password string) err
 // newSession はセッションを作って合言葉を返す(ログインと同じ)。
 func (s *Sessions) newSession(ctx context.Context, u User) (string, error) {
 	now := s.now()
+	markUsed(ctx, s.store, &u, now) // ログインも「使った」に数える(0031 の決定事項 21)
 	token := newToken()
 	if err := s.store.CreateSession(ctx, Session{ID: tokenID(token), UserID: u.ID, CreatedAt: now, ExpiresAt: now.Add(SessionTTL)}); err != nil {
 		return "", err

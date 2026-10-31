@@ -42,6 +42,7 @@ import { FolderBar, WorkDirBar } from "./components/WorkDirBar";
 import { ToolBar } from "./components/ToolBar";
 import { LuSettings } from "react-icons/lu";
 import { ChatService, isBrowser, me, onReconnect, onWindowFocus } from "./backend";
+import { showName } from "./directory";
 import type { ServerInfo } from "../bindings/github.com/secondarykey/aibow/mcp/client";
 import type { ConversationRef, ConversationSettings, SharedRead } from "../bindings/github.com/secondarykey/aibow";
 import { ImeFocusRelay } from "./imeFocus";
@@ -424,7 +425,7 @@ export default function App() {
     ChatService.CopyShared(reading.conversation.id)
       .then(c => {
         setReading(null);
-        toasts.notify(`${reading.owner_name} の会話を写しました`);
+        toasts.notify(`${showName(reading.owner_name, reading.owner_display, true)} の会話を写しました`);
         return convs.reloadList().then(() => convs.open(c.id));
       })
       .then(focusInput, err => addError(errorMessage(err)));

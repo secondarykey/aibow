@@ -186,6 +186,13 @@ export function DeleteProfile(id: uuid$0.UUID): $CancellablePromise<void> {
 }
 
 /**
+ * Directory は、共有の相手に選べる人(名前と表示名。0031)。全員を一度に返し、画面で絞る。
+ */
+export function Directory(): $CancellablePromise<aibow$0.Directory> {
+    return $Call.ByID(4032022530);
+}
+
+/**
  * DiscardFile は、送った発言に付けたファイル(画像・テキスト)を捨てる(0030 の決定事項 26〜28)。中身は戻せない。
  * 画面は、捨てたら札を「消去済み」にし、メーターを取り直す。
  */
@@ -548,13 +555,6 @@ export function Usage(id: uuid$0.UUID): $CancellablePromise<aibow$0.Usage | null
  */
 export function UserConversations(name: string): $CancellablePromise<aibow$0.ConversationRef[] | null> {
     return $Call.ByID(519364284, name);
-}
-
-/**
- * UserNames は、共有の相手に選べる利用者の名前。
- */
-export function UserNames(): $CancellablePromise<string[] | null> {
-    return $Call.ByID(4174638800);
 }
 
 /**

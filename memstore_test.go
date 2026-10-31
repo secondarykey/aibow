@@ -87,7 +87,7 @@ func (s *memStore) SharedConversations(context.Context) ([]ConversationRef, erro
 func (s *memStore) UserConversations(context.Context, string) ([]ConversationRef, error) {
 	return nil, ErrNotAdmin
 }
-func (s *memStore) UserNames(context.Context) ([]string, error) { return nil, nil }
+func (s *memStore) Directory(context.Context) (Directory, error) { return Directory{}, nil }
 
 // ReadConversation は、memStore の会話をほかの人の会話として読む(写すテストのため)
 func (s *memStore) ReadConversation(ctx context.Context, id uuid.UUID) (SharedRead, error) {

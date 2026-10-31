@@ -1,8 +1,8 @@
 // 設定の画面の「利用者」のタブ(0018 の決定事項 7。11-0。0031 で一覧 + 詳細にした)。ブラウザの管理者だけに出す。
 //
-//	[名前で探す…] [すべて | 招待中 | 管理者 | API キーあり]   [+ 利用者を作る]
-//	名前              状態      作った日      会話           … 見出しを押すと並べ替え。行を押すと一覧の下に詳細(0031 の決定事項 14・35)
-//	▼ 詳細: パスワードのリンク・API キー・その人の会話(新しい順 20 件 + もっと見る)・消す
+//	[名前で探す…] [すべて | 招待中 | 管理者 | API キーあり | 30日使っていない]   [+ 利用者を作る]
+//	名前                 状態      最後に使った日   作った日      会話   … 見出しを押すと並べ替え。行を押すと一覧の下に詳細(0031 の決定事項 14・35)
+//	▼ 詳細: 表示名・パスワードのリンク・API キー・その人の会話(新しい順 20 件 + もっと見る)・消す
 //
 // 一覧は一度に取って画面で探す・絞る・並べ替える(サーバーで探す口は作らない。0031 の決定事項 13)。
 // 作る・パスワードと API キーの作り直し・消すは、aibow-server の user コマンドと同じ処理(_cmd/aibow-server の admin.go)。
@@ -16,6 +16,7 @@ import { LuArrowDown, LuArrowUp, LuPlus, LuX } from "react-icons/lu";
 import { admin, ChatService, linkURL, me, type AdminUser, type Link } from "../backend";
 import type { ConversationRef } from "../../bindings/github.com/secondarykey/aibow";
 import { errorMessage } from "../errors";
+import { showName } from "../directory";
 import { CopyButton } from "./CopyButton";
 
 // Secret は、一度だけ出すリンクか API キー
@@ -36,16 +37,39 @@ function timeOf(at: string): string {
 }
 
 // 絞り込み
-type Filter = "all" | "invited" | "admin" | "key";
+type Filter = "all" | "invited" | "admin" | "key" | "idle";
 const FILTERS: { id: Filter; label: string; title: string; match(u: AdminUser): boolean }[] = [
   { id: "all", label: "すべて", title: "全員", match: () => true },
   { id: "invited", label: "招待中", title: "本人がリンクでパスワードを決めていない人(ログインできない)", match: u => invited(u) },
   { id: "admin", label: "管理者", title: "管理者の印のある人", match: u => u.admin },
   { id: "key", label: "API キーあり", title: "API キーを持っている人", match: u => u.key },
+  { id: "idle", label: "30日使っていない", title: "最後に使ってから 30 日以上たった人(一度も使っていない人は、作ってから 30 日以上たった人)", match: u => idleDays(u) >= 30 },
 ];
 
+const DAY = 24 * 60 * 60 * 1000;
+
+// idleDays は、最後に使ってから(一度も使っていなければ作ってから)の日数
+function idleDays(u: AdminUser): number {
+  return Math.floor((Date.now() - new Date(u.last_used_at ?? u.created_at).getTime()) / DAY);
+}
+
+// usedLabel は、最後に使った日の見せ方(今日・昨日・n 日前・日付。一度も使っていなければ「-」。0031 の決定事項 22)
+function usedLabel(at: string | undefined): string {
+  if (!at) return "-";
+  const d = new Date(at);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const day = new Date(d);
+  day.setHours(0, 0, 0, 0);
+  const n = Math.round((today.getTime() - day.getTime()) / DAY);
+  if (n <= 0) return "今日";
+  if (n === 1) return "昨日";
+  if (n < 30) return `${n} 日前`;
+  return at.slice(0, 10);
+}
+
 // 並べ替え
-type SortKey = "name" | "state" | "created" | "conversations";
+type SortKey = "name" | "state" | "used" | "created" | "conversations";
 interface Sort { key: SortKey; desc: boolean }
 
 const invited = (u: AdminUser) => !u.password && !u.local;
@@ -62,11 +86,15 @@ function states(u: AdminUser): string[] {
 function compare(a: AdminUser, b: AdminUser, key: SortKey): number {
   switch (key) {
     case "state": return states(a).join().localeCompare(states(b).join()) || a.name.localeCompare(b.name);
+    case "used": return (a.last_used_at ?? "").localeCompare(b.last_used_at ?? "");
     case "created": return a.created_at.localeCompare(b.created_at);
     case "conversations": return a.conversations - b.conversations;
   }
-  return a.name.localeCompare(b.name);
+  return label(a).localeCompare(label(b));
 }
+
+// label は一覧の名前(「表示名(ログインの名前)」。0031 の決定事項 18)
+const label = (u: AdminUser) => showName(u.name, u.display_name);
 
 export function UserSettings({ onError, onRead }: { onError(text: string): void; onRead(id: string): void }) {
   const [users, setUsers] = useState<AdminUser[]>([]);
@@ -108,7 +136,7 @@ export function UserSettings({ onError, onRead }: { onError(text: string): void;
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
     const match = FILTERS.find(f => f.id === filter)!.match;
-    const list = users.filter(u => match(u) && (q === "" || u.name.toLowerCase().includes(q)));
+    const list = users.filter(u => match(u) && (q === "" || u.name.toLowerCase().includes(q) || (u.display_name ?? "").toLowerCase().includes(q)));
     list.sort((a, b) => compare(a, b, sort.key) * (sort.desc ? -1 : 1));
     return list;
   }, [users, query, filter, sort]);
@@ -145,6 +173,7 @@ export function UserSettings({ onError, onRead }: { onError(text: string): void;
       <div className="user-table">
         {head("name", "名前")}
         {head("state", "状態")}
+        {head("used", "最後に使った日")}
         {head("created", "作った日")}
         {head("conversations", "会話", "num")}
         {shown.map(u => (
@@ -155,8 +184,9 @@ export function UserSettings({ onError, onRead }: { onError(text: string): void;
             aria-expanded={u.name === selected}
             onClick={() => setSelected(s => (s === u.name ? null : u.name))}
           >
-            <span className="model-name">{u.name}</span>
+            <span className="model-name">{label(u)}</span>
             <span className="user-states">{states(u).map(s => <span key={s} className="origin-chip">{s}</span>)}</span>
+            <span className="user-date" title={u.last_used_at ? new Date(u.last_used_at).toLocaleString() : "一度も使っていない"}>{usedLabel(u.last_used_at)}</span>
             <span className="user-date">{u.created_at.slice(0, 10)}</span>
             <span className="num">{u.conversations}</span>
           </button>
@@ -170,6 +200,10 @@ export function UserSettings({ onError, onRead }: { onError(text: string): void;
           onClose={() => setSelected(null)}
           onRead={onRead}
           onError={onError}
+          onDisplayName={display => run(async () => {
+            await admin.setDisplayName(user.name, display);
+            return null;
+          })}
           onResetLink={label => run(async () => linkSecret(label, await admin.resetPassword(user.name)))}
           onRenewKey={() => run(async () => {
             const r = await admin.renewKey(user.name);
@@ -191,11 +225,12 @@ export function UserSettings({ onError, onRead }: { onError(text: string): void;
 const PAGE = 20;
 
 // UserDetail は、一覧で押した人の詳細(一覧の下に出す。0031 の決定事項 14・35)
-function UserDetail({ user, onClose, onRead, onError, onResetLink, onRenewKey, onRemove }: {
+function UserDetail({ user, onClose, onRead, onError, onDisplayName, onResetLink, onRenewKey, onRemove }: {
   user: AdminUser;
   onClose(): void;
   onRead(id: string): void;
   onError(text: string): void;
+  onDisplayName(display: string): Promise<boolean>;
   onResetLink(label: string): Promise<boolean>;
   onRenewKey(): Promise<boolean>;
   onRemove(): Promise<boolean>;
@@ -213,11 +248,18 @@ function UserDetail({ user, onClose, onRead, onError, onResetLink, onRenewKey, o
   return (
     <section className="user-detail">
       <div className="user-detail-head">
-        <h2 className="section">{user.name}</h2>
+        <h2 className="section">{label(user)}</h2>
         <span className="user-states">{states(user).map(s => <span key={s} className="origin-chip">{s}</span>)}</span>
         <span className="spacer" />
         <button className="place-remove" onClick={onClose} title="閉じる" aria-label="閉じる"><LuX /></button>
       </div>
+
+      {!user.local && (
+        <div className="user-field">
+          <span className="user-field-label">表示名</span>
+          <DisplayNameInput value={user.display_name ?? ""} placeholder={user.name} onSave={onDisplayName} />
+        </div>
+      )}
 
       {!user.local && !self && (
         <div className="user-field">
@@ -298,6 +340,36 @@ function RemoveConfirm({ user, onRemove, onCancel }: { user: AdminUser; onRemove
         <button onClick={onCancel}>やめる</button>
       </div>
     </div>
+  );
+}
+
+// DisplayNameInput は表示名の入力欄(0031 の決定事項 19・39)。打っている間は保存せず、Enter か欄を離れたときに保存する。
+// Esc で元に戻す。空にすると無し(ログインの名前を出す)。決まり(64 文字・制御文字なし)は Go が確かめる
+export function DisplayNameInput({ value, placeholder, onSave }: { value: string; placeholder: string; onSave(display: string): Promise<boolean> | void }) {
+  const [text, setText] = useState(value);
+  useEffect(() => setText(value), [value]);
+  const save = () => {
+    if (text.trim() !== value) onSave(text.trim());
+  };
+  return (
+    <input
+      type="text"
+      className="display-name"
+      value={text}
+      maxLength={64}
+      placeholder={placeholder}
+      title="人に見せる名前(64 文字まで)。空ならログインの名前を出す"
+      onChange={e => setText(e.target.value)}
+      onBlur={save}
+      onKeyDown={e => {
+        if (e.nativeEvent.isComposing) return; // 変換の確定の Enter では保存しない
+        if (e.key === "Enter") e.currentTarget.blur();
+        if (e.key === "Escape") {
+          e.stopPropagation();
+          setText(value);
+        }
+      }}
+    />
   );
 }
 

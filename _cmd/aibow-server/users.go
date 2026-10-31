@@ -9,6 +9,7 @@ package main
 //	aibow-server [-config 設定ファイル] user key <名前>      … API キーを作って表示する(1人1本。作り直すと前のキーは使えなくなる。10-2)
 //	aibow-server [-config 設定ファイル] user admin <名前>    … 管理者にする(0018 の 11-0)
 //	aibow-server [-config 設定ファイル] user unadmin <名前>  … 管理者から外す
+//	aibow-server [-config 設定ファイル] user display <名前> [表示名] … 表示名を決める(表示名を省くと無しにする。0031)
 //
 // 管理者を決めるのはこのコマンドだけ(画面からは決めない。0018 の決定事項 6)。サーバーの PC でこのコマンドを打てる人が、いちばん上の管理者。
 // 管理者が一人もいなくなっても止めない(127.0.0.1 からはいつも PC の事情を変えられ、このコマンドでいつでも戻せるため。0018 の決定事項 16)。
@@ -47,7 +48,8 @@ const userUsage = `使い方:
   aibow-server [-config 設定ファイル] user remove <名前>
   aibow-server [-config 設定ファイル] user key <名前>
   aibow-server [-config 設定ファイル] user admin <名前>
-  aibow-server [-config 設定ファイル] user unadmin <名前>`
+  aibow-server [-config 設定ファイル] user unadmin <名前>
+  aibow-server [-config 設定ファイル] user display <名前> [表示名]`
 
 // runUser は user のコマンドを実行する。args は user のあと。
 func runUser(c config, env *envReader, args []string) error {
@@ -58,6 +60,10 @@ func runUser(c config, env *envReader, args []string) error {
 	want := 1
 	if cmd == "list" {
 		want = 0
+	}
+	// display は表示名を省ける(省くと無しにする)。空白を含む表示名は引用符で囲む
+	if cmd == "display" && len(rest) == 2 {
+		want = 2
 	}
 	if len(rest) != want {
 		return fmt.Errorf("引数の数が違います\n%s", userUsage)
@@ -84,6 +90,8 @@ func runUser(c config, env *envReader, args []string) error {
 		return setAdmin(ctx, st, rest[0], true)
 	case "unadmin":
 		return setAdmin(ctx, st, rest[0], false)
+	case "display":
+		return setDisplayName(ctx, st, rest[0], strings.Join(rest[1:], ""), "")
 	}
 	return fmt.Errorf("知らないコマンドです: user %s\n%s", cmd, userUsage)
 }
@@ -110,7 +118,15 @@ func listUsers(ctx context.Context, st *store.SQLite) error {
 		if u.ID == aibow.LocalUser {
 			note += "・ログインなしの形の利用者"
 		}
-		fmt.Printf("%s\t%s%s\t作った日時 %s\n", u.Name, pw, note, u.CreatedAt.Format("2006-01-02 15:04"))
+		name := u.Name
+		if u.DisplayName != "" {
+			name = fmt.Sprintf("%s(%s)", u.Name, u.DisplayName)
+		}
+		used := "使っていない"
+		if !u.LastUsedAt.IsZero() {
+			used = u.LastUsedAt.Format("2006-01-02")
+		}
+		fmt.Printf("%s\t%s%s\t作った日時 %s\t最後に使った日 %s\n", name, pw, note, u.CreatedAt.Format("2006-01-02 15:04"), used)
 	}
 	return nil
 }
@@ -262,6 +278,24 @@ func setAdmin(ctx context.Context, st *store.SQLite, name string, admin bool) er
 		log.Warn("管理者が一人もいなくなりました。サーバーの PC の事情(モデル・層の数・置き場所)は 127.0.0.1 からだけ変えられます。" +
 			"戻すときは aibow-server user admin <名前> を実行してください")
 	}
+	return nil
+}
+
+// setDisplayName は表示名を決める(コマンドと管理者の画面。0031 の決定事項 19)。空なら無し(ログインの名前を出す)。
+// ログはログインの名前で書く(表示名は変わるため。決定事項 20)。
+func setDisplayName(ctx context.Context, st *store.SQLite, name, display, by string) error {
+	display, err := auth.CheckDisplayName(display)
+	if err != nil {
+		return err
+	}
+	u, err := st.UserByName(ctx, name)
+	if err != nil {
+		return fmt.Errorf("利用者 %s: %w", name, err)
+	}
+	if err := st.SetDisplayName(ctx, u.ID, display, time.Now()); err != nil {
+		return err
+	}
+	log.Noticef("利用者 %s の表示名を %q にしました%s", name, display, by)
 	return nil
 }
 

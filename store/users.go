@@ -18,17 +18,23 @@ import (
 
 var _ auth.Store = (*SQLite)(nil)
 
-const userColumns = "id, name, password, admin, created_at, updated_at"
+const userColumns = "id, name, password, admin, created_at, updated_at, display_name, last_used_at"
 
 func scanUser(r rowScanner) (auth.User, error) {
 	var u auth.User
-	var id, created, updated string
-	if err := r.Scan(&id, &u.Name, &u.Password, &u.Admin, &created, &updated); err != nil {
+	var id, created, updated, used string
+	if err := r.Scan(&id, &u.Name, &u.Password, &u.Admin, &created, &updated, &u.DisplayName, &used); err != nil {
 		return u, err
 	}
 	var err error
 	if u.ID, err = parseID(id); err != nil {
 		return u, err
+	}
+	// 一度も使っていなければ空(ゼロの時刻のまま)
+	if used != "" {
+		if u.LastUsedAt, err = parseTime(used); err != nil {
+			return u, err
+		}
 	}
 	if u.CreatedAt, err = parseTime(created); err != nil {
 		return u, err
@@ -38,8 +44,12 @@ func scanUser(r rowScanner) (auth.User, error) {
 }
 
 func (s *SQLite) CreateUser(ctx context.Context, u auth.User) error {
-	_, err := s.db.ExecContext(ctx, "INSERT INTO users ("+userColumns+") VALUES (?, ?, ?, ?, ?, ?)",
-		u.ID.String(), u.Name, u.Password, u.Admin, formatTime(u.CreatedAt), formatTime(u.UpdatedAt))
+	used := ""
+	if !u.LastUsedAt.IsZero() {
+		used = formatTime(u.LastUsedAt)
+	}
+	_, err := s.db.ExecContext(ctx, "INSERT INTO users ("+userColumns+") VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+		u.ID.String(), u.Name, u.Password, u.Admin, formatTime(u.CreatedAt), formatTime(u.UpdatedAt), u.DisplayName, used)
 	// 名前は UNIQUE。SQLite のエラーの文で見分ける(ドライバーの型を使うと、このパッケージの外にドライバーの事情が漏れるため)
 	if err != nil && strings.Contains(err.Error(), "UNIQUE constraint failed: users.name") {
 		return auth.ErrUserExists
@@ -87,6 +97,16 @@ func (s *SQLite) SetPassword(ctx context.Context, id uuid.UUID, hash string, at 
 
 func (s *SQLite) SetAdmin(ctx context.Context, id uuid.UUID, admin bool, at time.Time) error {
 	res, err := s.db.ExecContext(ctx, "UPDATE users SET admin = ?, updated_at = ? WHERE id = ?", admin, formatTime(at), id.String())
+	return notFoundIfNone(res, err, auth.ErrUserNotFound)
+}
+
+func (s *SQLite) SetDisplayName(ctx context.Context, id uuid.UUID, name string, at time.Time) error {
+	res, err := s.db.ExecContext(ctx, "UPDATE users SET display_name = ?, updated_at = ? WHERE id = ?", name, formatTime(at), id.String())
+	return notFoundIfNone(res, err, auth.ErrUserNotFound)
+}
+
+func (s *SQLite) SetLastUsed(ctx context.Context, id uuid.UUID, at time.Time) error {
+	res, err := s.db.ExecContext(ctx, "UPDATE users SET last_used_at = ? WHERE id = ?", formatTime(at), id.String())
 	return notFoundIfNone(res, err, auth.ErrUserNotFound)
 }
 

@@ -6,6 +6,7 @@ package main
 //	POST   /aibow/admin/users                  本文 {"name"}。作って {"name", "token", "expiresAt"} を返す(招待のリンクの合言葉。0022)
 //	POST   /aibow/admin/users/{name}/password  今のパスワードを使えなくし、{"name", "token", "expiresAt"} を返す(再設定のリンク。その人のログインは切れる)。自分には使えない
 //	POST   /aibow/admin/users/{name}/key       API キーを作り直して {"name", "key"} を返す(前のキーは使えなくなる)
+//	POST   /aibow/admin/users/{name}/display   本文 {"display_name"}。表示名を変える(空なら無し。0031)
 //	DELETE /aibow/admin/users/{name}           利用者と、その人の会話・プロファイル・設定を消す
 //
 // 呼べるのは、ブラウザでログインした管理者だけ(cookie のセッション。auth.Middleware がリクエストの ctx に入れた人)。
@@ -36,6 +37,10 @@ type adminUser struct {
 	Key       bool      `json:"key"`      // API キーがあるか
 	Local     bool      `json:"local"`    // ログインなしの形の利用者(消せない)
 	CreatedAt time.Time `json:"created_at"`
+	// DisplayName は表示名(0031。空ならログインの名前を出す)
+	DisplayName string `json:"display_name,omitempty"`
+	// LastUsedAt は最後に使った時刻(1日に1回だけ書く。一度も使っていなければ省く。0031 の決定事項 21・22)
+	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
 	// Conversations はその人の会話の数(利用者のタブの「会話」の列と、消すときの確かめ。0031 の決定事項 14・15)
 	Conversations int `json:"conversations"`
 	// LinkExpiresAt は、まだ使っていないパスワードを決めるリンクの期限(無ければ省く)。招待中の人のリンクが切れていたら、画面が出し直しを出す
@@ -94,6 +99,23 @@ func adminHandler(st *store.SQLite, initial aibow.AppSettings) http.Handler {
 		}
 		writeAdminJSON(w, map[string]string{"name": name, "key": key})
 	})
+	mux.HandleFunc("POST /aibow/admin/users/{name}/display", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			DisplayName string `json:"display_name"`
+		}
+		if !readAdminJSON(w, r, &req) {
+			return
+		}
+		if _, err := auth.CheckDisplayName(req.DisplayName); err != nil {
+			writeAdminError(w, http.StatusBadRequest, err)
+			return
+		}
+		if err := setDisplayName(r.Context(), st, r.PathValue("name"), req.DisplayName, by(r)); err != nil {
+			writeAdminError(w, statusOf(err), err)
+			return
+		}
+		writeAdminJSON(w, struct{}{})
+	})
 	mux.HandleFunc("DELETE /aibow/admin/users/{name}", func(w http.ResponseWriter, r *http.Request) {
 		name := r.PathValue("name")
 		// 自分は消せない(画面から自分を消すと、そのまま管理者が使えなくなるため。消すならほかの管理者かコマンドで)
@@ -138,7 +160,10 @@ func adminUsers(ctx context.Context, st *store.SQLite) ([]adminUser, error) {
 			return nil, err
 		}
 		a := adminUser{Name: u.Name, Admin: u.Admin, Password: u.Password != "", Key: has, Local: u.ID == aibow.LocalUser, CreatedAt: u.CreatedAt,
-			Conversations: counts[u.ID]}
+			DisplayName: u.DisplayName, Conversations: counts[u.ID]}
+		if !u.LastUsedAt.IsZero() {
+			a.LastUsedAt = &u.LastUsedAt
+		}
 		if t, ok := links[u.ID]; ok {
 			a.LinkExpiresAt = &t
 		}

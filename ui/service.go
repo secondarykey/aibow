@@ -1043,12 +1043,12 @@ func (s *Service) UserConversations(ctx context.Context, name string) ([]aibow.C
 	return s.store.UserConversations(ctx, name)
 }
 
-// UserNames は、共有の相手に選べる利用者の名前。
-func (s *Service) UserNames(ctx context.Context) ([]string, error) {
+// Directory は、共有の相手に選べる人(名前と表示名。0031)。全員を一度に返し、画面で絞る。
+func (s *Service) Directory(ctx context.Context) (aibow.Directory, error) {
 	if s.startupErr != nil {
-		return nil, s.startupErr
+		return aibow.Directory{}, s.startupErr
 	}
-	return s.store.UserNames(ctx)
+	return s.store.Directory(ctx)
 }
 
 // ReadConversation は、ほかの人の会話を読むだけで開く。管理者として読んだ(共有されていない)ときは、

@@ -289,6 +289,11 @@ export interface ConversationRef {
     "id": uuid$0.UUID;
     "title": string;
     "owner_name": string;
+
+    /**
+     * OwnerDisplay は持ち主の表示名(0031。空ならログインの名前を出す)
+     */
+    "owner_display"?: string;
     "updated_at": string;
 
     /**
@@ -381,6 +386,13 @@ export interface ConversationSettings {
      * 画面(会話の設定の画面の「ツール」)で変えるのは、使う(on)/ 使わない(off)だけ
      */
     "tool_policies"?: { [_ in string]?: ToolPolicy } | null;
+}
+
+/**
+ * Directory は、共有の相手に選べる人(0031 の決定事項 13。全員を一度に渡し、画面で絞る)
+ */
+export interface Directory {
+    "users": UserRef[] | null;
 }
 
 /**
@@ -693,6 +705,11 @@ export interface SharedRead {
     "owner_name": string;
 
     /**
+     * 持ち主の表示名(0031)
+     */
+    "owner_display"?: string;
+
+    /**
      * ByAdmin は、共有されていないが管理者として読んだ(読んだことをログに残す。決定事項 1)
      */
     "by_admin": boolean;
@@ -932,6 +949,14 @@ export interface Usage {
      * 発言が無ければ null。
      */
     "first_id": uuid$0.UUID | null;
+}
+
+/**
+ * UserRef は、共有の相手に選べる利用者1人(0031)。DisplayName は表示名(空ならログインの名前を出す)
+ */
+export interface UserRef {
+    "name": string;
+    "display_name"?: string;
 }
 
 /**

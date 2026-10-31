@@ -17,7 +17,8 @@ import { ModelSettings } from "./ModelSettings";
 import { UserSettings } from "./UserSettings";
 import { ServerSettings } from "./ServerSettings";
 import { ServerTools } from "./ServerTools";
-import { changePassword, isBrowser, me } from "../backend";
+import { changePassword, isBrowser, me, setDisplayName } from "../backend";
+import { DisplayNameInput } from "./UserSettings";
 import { errorMessage } from "../errors";
 import type { Models } from "../useModels";
 // Go の models パッケージ。"…/aibow/models" と書くと aibow パッケージの models.ts が選ばれるので、index まで書く
@@ -87,7 +88,8 @@ export function SettingsView({ onClose, errors, app, models, modelState, servers
           <>
             <h2 title="画面の見せ方。生成には関わらない">画面</h2>
             {app && <DisplaySettingsForm display={app.display} onChange={onDisplayChange} />}
-            {/* 自分のパスワードを変える(ブラウザでログインしているときだけ。0022) */}
+            {/* 自分の表示名(0031)とパスワード(0022)を変える(ブラウザでログインしているときだけ) */}
+            {isBrowser && me.login && me.name !== "" && <OwnDisplayName onError={onError} />}
             {isBrowser && me.login && me.name !== "" && <PasswordForm />}
           </>
         )}
@@ -117,6 +119,23 @@ export function SettingsView({ onClose, errors, app, models, modelState, servers
         )}
       </div>
     </section>
+  );
+}
+
+// OwnDisplayName は、ログインしている本人が表示名を変える(0031 の決定事項 19)。共有の相手・共有された会話・利用者のタブに出る
+function OwnDisplayName({ onError }: { onError(text: string): void }) {
+  const [value, setValue] = useState(me.display_name ?? "");
+  return (
+    <>
+      <h2 className="section" title="共有の相手を選ぶとき・共有された会話の持ち主として、ほかの人に見える名前。空ならログインの名前">表示名</h2>
+      <DisplayNameInput
+        value={value}
+        placeholder={me.name}
+        onSave={display => {
+          setDisplayName(display).then(m => setValue(m.display_name ?? ""), err => onError(errorMessage(err)));
+        }}
+      />
+    </>
   );
 }
 

@@ -280,6 +280,12 @@ CREATE INDEX files_by_message ON files(message_id, id);
 	`
 ALTER TABLE files ADD COLUMN discarded INTEGER NOT NULL DEFAULT 0;  -- 0 / 1
 `,
+	// 版 17: 表示名と最後に使った時刻(0031 の段3)。表示名は人に見せる名前(空ならログインの名前を出す)。
+	// 最後に使った時刻は、前に書いてから1日以上たったときだけ書く(auth の used.go)。空は一度も使っていない
+	`
+ALTER TABLE users ADD COLUMN display_name TEXT NOT NULL DEFAULT '';
+ALTER TABLE users ADD COLUMN last_used_at TEXT NOT NULL DEFAULT '';
+`,
 }
 
 func migrate(db *sql.DB) error {
@@ -495,7 +501,7 @@ func (s *SQLite) SetConversationShare(ctx context.Context, id uuid.UUID, share s
 
 // conversationRefs は、ほかの人の会話の一覧(持ち主の名前付き)を where の条件で読む。
 func (s *SQLite) conversationRefs(ctx context.Context, where string, args ...any) ([]aibow.ConversationRef, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT conversations.id, conversations.title, COALESCE(u.name, ''), conversations.updated_at, conversations.share
+	rows, err := s.db.QueryContext(ctx, `SELECT conversations.id, conversations.title, COALESCE(u.name, ''), COALESCE(u.display_name, ''), conversations.updated_at, conversations.share
 		FROM conversations LEFT JOIN users u ON u.id = conversations.owner WHERE `+where+` ORDER BY conversations.updated_at DESC, conversations.id DESC`, args...)
 	if err != nil {
 		return nil, err
@@ -505,7 +511,7 @@ func (s *SQLite) conversationRefs(ctx context.Context, where string, args ...any
 	for rows.Next() {
 		var r aibow.ConversationRef
 		var id, updated string
-		if err := rows.Scan(&id, &r.Title, &r.OwnerName, &updated, &r.Share); err != nil {
+		if err := rows.Scan(&id, &r.Title, &r.OwnerName, &r.OwnerDisplay, &updated, &r.Share); err != nil {
 			return nil, err
 		}
 		if r.ID, err = parseID(id); err != nil {
@@ -547,9 +553,9 @@ func (s *SQLite) ReadConversation(ctx context.Context, id uuid.UUID) (aibow.Shar
 	var r aibow.SharedRead
 	var owner string
 	var shared bool
-	err = s.db.QueryRowContext(ctx, "SELECT conversations.owner, COALESCE(u.name, ''), "+conversationShared+
+	err = s.db.QueryRowContext(ctx, "SELECT conversations.owner, COALESCE(u.name, ''), COALESCE(u.display_name, ''), "+conversationShared+
 		" FROM conversations LEFT JOIN users u ON u.id = conversations.owner WHERE conversations.id = :id",
-		sql.Named("me", me), sql.Named("id", id.String())).Scan(&owner, &r.OwnerName, &shared)
+		sql.Named("me", me), sql.Named("id", id.String())).Scan(&owner, &r.OwnerName, &r.OwnerDisplay, &shared)
 	if errors.Is(err, sql.ErrNoRows) {
 		return r, aibow.ErrNotFound
 	}
@@ -577,24 +583,24 @@ func (s *SQLite) ReadConversation(ctx context.Context, id uuid.UUID) (aibow.Shar
 	return r, nil
 }
 
-func (s *SQLite) UserNames(ctx context.Context) ([]string, error) {
+func (s *SQLite) Directory(ctx context.Context) (aibow.Directory, error) {
+	d := aibow.Directory{Users: []aibow.UserRef{}}
 	if _, err := s.owner(ctx); err != nil {
-		return nil, err
+		return d, err
 	}
-	rows, err := s.db.QueryContext(ctx, "SELECT name FROM users WHERE id <> ? ORDER BY name", aibow.LocalUser.String())
+	rows, err := s.db.QueryContext(ctx, "SELECT name, display_name FROM users WHERE id <> ? ORDER BY name", aibow.LocalUser.String())
 	if err != nil {
-		return nil, err
+		return d, err
 	}
 	defer rows.Close()
-	out := []string{}
 	for rows.Next() {
-		var n string
-		if err := rows.Scan(&n); err != nil {
-			return nil, err
+		var u aibow.UserRef
+		if err := rows.Scan(&u.Name, &u.DisplayName); err != nil {
+			return d, err
 		}
-		out = append(out, n)
+		d.Users = append(d.Users, u)
 	}
-	return out, rows.Err()
+	return d, rows.Err()
 }
 
 func (s *SQLite) CreateConversation(ctx context.Context, c aibow.Conversation) error {

@@ -7,6 +7,7 @@ import { useMemo } from "react";
 import { LuCopy, LuEye, LuShare2 } from "react-icons/lu";
 import type { SharedRead } from "../../bindings/github.com/secondarykey/aibow";
 import { messageItems, type Item } from "../transcript";
+import { showName } from "../directory";
 import { ChatView } from "./ChatView";
 
 const noop = () => {};
@@ -16,7 +17,7 @@ export function ReadView({ read, pinQuestion, onCopy }: { read: SharedRead; pinQ
     () => messageItems(read.messages ?? [], read.compactions ?? []).map((it, i) => ({ ...it, id: i }) as Item),
     [read],
   );
-  const owner = read.owner_name;
+  const owner = showName(read.owner_name, read.owner_display);
   return (
     <section className="center">
       <div className={"read-banner" + (read.by_admin ? " admin" : "")}>

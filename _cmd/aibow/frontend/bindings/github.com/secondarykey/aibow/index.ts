@@ -16,6 +16,7 @@ export type {
     Conversation,
     ConversationRef,
     ConversationSettings,
+    Directory,
     DisplaySettings,
     File,
     FileCheck,
@@ -34,5 +35,6 @@ export type {
     ToolResult,
     ToolState,
     Usage,
+    UserRef,
     WorkspaceSettings
 } from "./models.js";

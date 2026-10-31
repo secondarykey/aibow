@@ -33,18 +33,23 @@ export interface Directory {
 export function useDirectory(): Directory {
   const [dir, setDir] = useState<Directory>({ people: [], groups: [] });
   useEffect(() => {
-    ChatService.UserNames().then(
-      list => setDir({ people: (list ?? []).map(name => ({ name, display: "" })), groups: [] }),
+    ChatService.Directory().then(
+      d => setDir({ people: (d.users ?? []).map(u => ({ name: u.name, display: u.display_name ?? "" })), groups: [] }),
       () => setDir({ people: [], groups: [] }),
     );
   }, []);
   return dir;
 }
 
-// personLabel は人の見せ方。広いところは「表示名(ログインの名前)」、狭いところ(short)は表示名だけ(決定事項 18)
+// showName は人の見せ方。広いところは「表示名(ログインの名前)」、狭いところ(short)は表示名だけ。表示名が無ければログインの名前(決定事項 18)
+export function showName(name: string, display: string | undefined, short = false): string {
+  if (!display) return name;
+  return short ? display : `${display}(${name})`;
+}
+
+// personLabel は、一覧の人の見せ方(showName と同じ)
 export function personLabel(p: Person | undefined, name: string, short = false): string {
-  if (!p || !p.display) return name;
-  return short ? p.display : `${p.display}(${name})`;
+  return showName(name, p?.display, short);
 }
 
 // targetLabel は選んだ相手の短い見せ方(チップ・確かめの文)

@@ -58,7 +58,11 @@ func (k *Keys) User(ctx context.Context, key string) (User, error) {
 	if errors.Is(err, ErrUserNotFound) {
 		return User{}, ErrBadKey
 	}
-	return u, err
+	if err != nil {
+		return User{}, err
+	}
+	markUsed(ctx, k.store, &u, k.now())
+	return u, nil
 }
 
 // RequireKey は、Authorization: Bearer <API キー> を確かめ、持ち主をリクエストの ctx に入れてから next に渡す(UserFrom で読める)。
@@ -107,6 +111,6 @@ func (k *Keys) MeHandler(required bool) http.Handler {
 	}
 	return k.RequireKey(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		u, _ := UserFrom(r.Context())
-		writeJSON(w, http.StatusOK, Me{Login: true, Name: u.Name, Admin: u.Admin})
+		writeJSON(w, http.StatusOK, meOf(u))
 	}))
 }

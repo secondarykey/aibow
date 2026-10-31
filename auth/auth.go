@@ -25,9 +25,14 @@ type User struct {
 	// Password はパスワードのハッシュ(HashPassword の形)。空ならログインできない(パスワードをまだ作っていない)
 	Password string `json:"-"`
 	// Admin は管理者か(0018 の 11-0)。管理者は、127.0.0.1 の外からもサーバーの PC の事情(モデル・層の数・置き場所)を変えられ、利用者を管理できる
-	Admin     bool      `json:"admin"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	Admin bool `json:"admin"`
+	// DisplayName は人に見せる名前(0031 の決定事項 2・18)。空ならログインの名前を出す。ログには書かない(変わるため。決定事項 20)
+	DisplayName string `json:"display_name,omitempty"`
+	// LastUsedAt は最後に使った時刻(ログイン・セッション・API キー・アプリ用のトークン。0031 の決定事項 21)。ゼロなら一度も使っていない。
+	// 使うたびではなく、前に書いてから1日以上たったときだけ書く(used.go)
+	LastUsedAt time.Time `json:"last_used_at"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
 }
 
 // Session はログインしている間の印1つ。
@@ -74,6 +79,10 @@ type Store interface {
 	DeleteUser(ctx context.Context, id uuid.UUID) error
 	// SetAdmin は管理者の印を付ける / 外す。いなければ ErrUserNotFound
 	SetAdmin(ctx context.Context, id uuid.UUID, admin bool, at time.Time) error
+	// SetDisplayName は表示名を変える(CheckDisplayName を通したもの。空なら無し)。いなければ ErrUserNotFound
+	SetDisplayName(ctx context.Context, id uuid.UUID, name string, at time.Time) error
+	// SetLastUsed は最後に使った時刻を書く(updated_at は変えない。設定を変えたのではないため)。いなければ ErrUserNotFound
+	SetLastUsed(ctx context.Context, id uuid.UUID, at time.Time) error
 
 	CreateSession(ctx context.Context, s Session) error
 	// Session はセッション1つ。無ければ ErrNoSession(期限は見ない。見るのは Sessions)

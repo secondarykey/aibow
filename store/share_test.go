@@ -186,8 +186,8 @@ func TestConversationShare(t *testing.T) {
 	if got, _, _ := s.Conversation(bob, c.ID); got.Share != aibow.ShareUsers || len(got.ShareWith) != 1 || got.ShareWith[0] != "carol" {
 		t.Errorf("持ち主に見える共有: %+v", got)
 	}
-	if names, _ := s.UserNames(carol); len(names) != 4 {
-		t.Errorf("利用者の名前(local を除く): %v", names)
+	if d, _ := s.Directory(carol); len(d.Users) != 4 {
+		t.Errorf("利用者の名前(local を除く): %v", d)
 	}
 	// 利用者のタブの「会話」の列(0031)
 	b, _ := s.UserByName(context.Background(), "bob")

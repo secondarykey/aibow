@@ -19,6 +19,7 @@
 // 一番下の名前の横に「管理者が読めます」を常に出す(決定事項 23。畳んだときは目のアイコンだけ)
 import { useEffect, useRef, useState } from "react";
 import { ChatService, logout, me } from "../backend";
+import { showName } from "../directory";
 import type { KeyboardEvent } from "react";
 import { LuChevronDown, LuChevronRight, LuEye, LuMenu, LuPlus, LuSettings, LuShare2, LuUser } from "react-icons/lu";
 import { useMenuDismiss } from "./SplitButton";
@@ -181,7 +182,8 @@ const SHARED_PAGE = 20;
 function SharedList({ shared, readingId, onOpenShared }: { shared: ConversationRef[]; readingId: string | null; onOpenShared(id: string): void }) {
   const [query, setQuery] = useState("");
   const [owner, setOwner] = useState("");
-  const owners = [...new Set(shared.map(c => c.owner_name))].sort((a, b) => a.localeCompare(b));
+  // 持ち主はログインの名前で分け、見せるのは「表示名(ログインの名前)」
+  const owners = [...new Map(shared.map(c => [c.owner_name, showName(c.owner_name, c.owner_display)])).entries()].sort((a, b) => a[1].localeCompare(b[1]));
   const q = query.trim().toLowerCase();
   const match = (c: ConversationRef) => (owner === "" || c.owner_name === owner) && (q === "" || (c.title || "新しい会話").toLowerCase().includes(q));
   const toMe = shared.filter(c => c.share === "users" && match(c));
@@ -192,7 +194,7 @@ function SharedList({ shared, readingId, onOpenShared }: { shared: ConversationR
         <input type="text" value={query} placeholder="タイトルで探す…" aria-label="共有された会話をタイトルで探す" onChange={e => setQuery(e.target.value)} />
         <select value={owner} aria-label="持ち主で絞る" onChange={e => setOwner(e.target.value)}>
           <option value="">全員</option>
-          {owners.map(o => <option key={o} value={o}>{o}</option>)}
+          {owners.map(([name, label]) => <option key={name} value={name}>{label}</option>)}
         </select>
       </div>
       <SharedGroup label="自分に共有" list={toMe} readingId={readingId} onOpenShared={onOpenShared} />
@@ -210,9 +212,9 @@ function SharedGroup({ label, list, readingId, onOpenShared }: { label: string; 
       <ul>
         {list.slice(0, limit).map(c => (
           <li key={c.id} className={"conversation" + (c.id === readingId ? " current" : "")}>
-            <button className="title" title={`${c.title || "新しい会話"}(${c.owner_name} の会話。読むだけ)`} onClick={() => onOpenShared(c.id)}>
+            <button className="title" title={`${c.title || "新しい会話"}(${showName(c.owner_name, c.owner_display)} の会話。読むだけ)`} onClick={() => onOpenShared(c.id)}>
               {c.title || "新しい会話"}
-              <span className="shared-owner">{c.owner_name}</span>
+              <span className="shared-owner">{showName(c.owner_name, c.owner_display, true)}</span>
             </button>
           </li>
         ))}
@@ -267,7 +269,7 @@ function UserMenu() {
   if (me.viaKey) {
     return (
       <div className="user-menu">
-        <span className="user-btn" title={`API キーで ${me.name} としてつないでいます`}><LuUser /><span>{me.name}</span></span>
+        <span className="user-btn" title={`API キーで ${me.name} としてつないでいます`}><LuUser /><span>{showName(me.name, me.display_name, true)}</span></span>
       </div>
     );
   }
@@ -280,8 +282,8 @@ function UserMenu() {
   };
   return (
     <div className="user-menu" ref={box}>
-      <button className="user-btn" title={`${me.name} としてログインしています`} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(o => !o)}>
-        <LuUser /><span>{me.name}</span>
+      <button className="user-btn" title={`${showName(me.name, me.display_name)} としてログインしています`} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(o => !o)}>
+        <LuUser /><span>{showName(me.name, me.display_name, true)}</span>
       </button>
       {open && (
         <div className="split-menu up" role="menu">

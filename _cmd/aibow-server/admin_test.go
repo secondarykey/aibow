@@ -98,6 +98,20 @@ func TestAdminUsers(t *testing.T) {
 	if c := list[len(list)-1]; c.Name != "carol" || c.Password || c.LinkExpiresAt == nil || c.Conversations != 0 {
 		t.Errorf("招待中の人: %s", body)
 	}
+	// 表示名(0031)。制御文字は断る
+	if code, body := do(alice, "POST", "/aibow/admin/users/carol/display", `{"display_name":" 佐藤 花子 "}`); code != http.StatusOK {
+		t.Errorf("表示名: %d %s", code, body)
+	}
+	if code, _ := do(alice, "POST", "/aibow/admin/users/carol/display", `{"display_name":"a
+b"}`); code != http.StatusBadRequest {
+		t.Errorf("制御文字の表示名: %d", code)
+	}
+	if code, _ := do(alice, "POST", "/aibow/admin/users/nobody/display", `{"display_name":"x"}`); code != http.StatusNotFound {
+		t.Errorf("いない人の表示名: %d", code)
+	}
+	if u, _ := st.UserByName(ctx, "carol"); u.DisplayName != "佐藤 花子" {
+		t.Errorf("表示名が入らない: %+v", u)
+	}
 	if _, _, err := sessions.UseLink(ctx, made["token"], "carol-password"); err != nil {
 		t.Errorf("返したリンクでパスワードを決められない: %v", err)
 	}

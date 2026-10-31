@@ -74,8 +74,8 @@ type Store interface {
 	UserConversations(ctx context.Context, name string) ([]ConversationRef, error)
 	// ReadConversation は、ほかの人の会話を読む(共有されているか、管理者)。読めなければ ErrNotFound(あることも見せない)
 	ReadConversation(ctx context.Context, id uuid.UUID) (SharedRead, error)
-	// UserNames は、利用者の名前の一覧(共有の相手を選ぶため。ログインした人なら誰でも。ログインなしの形の利用者は入れない)
-	UserNames(ctx context.Context) ([]string, error)
+	// Directory は、共有の相手に選べる人(名前と表示名。0031)。ログインした人なら誰でも。ログインなしの形の利用者は入れない
+	Directory(ctx context.Context) (Directory, error)
 
 	// SetProfileShare は、プロファイルを配る範囲と相手(名前)を変える(0018 の 11-1)。管理者でなければ ErrNotAdmin。
 	//
@@ -117,10 +117,23 @@ type ConversationRef struct {
 	ID        uuid.UUID `json:"id"`
 	Title     string    `json:"title"`
 	OwnerName string    `json:"owner_name"`
-	UpdatedAt time.Time `json:"updated_at"`
+	// OwnerDisplay は持ち主の表示名(0031。空ならログインの名前を出す)
+	OwnerDisplay string    `json:"owner_display,omitempty"`
+	UpdatedAt    time.Time `json:"updated_at"`
 	// Share はその会話の共有の範囲(0031 の決定事項 17)。共有された会話の一覧では、ShareUsers なら自分あて(指定した人に入っている)、
 	// ShareAll なら全員に共有されたもの。画面はこれで「自分に共有」と「全員に共有」に分ける
 	Share string `json:"share,omitempty"`
+}
+
+// UserRef は、共有の相手に選べる利用者1人(0031)。DisplayName は表示名(空ならログインの名前を出す)
+type UserRef struct {
+	Name        string `json:"name"`
+	DisplayName string `json:"display_name,omitempty"`
+}
+
+// Directory は、共有の相手に選べる人(0031 の決定事項 13。全員を一度に渡し、画面で絞る)
+type Directory struct {
+	Users []UserRef `json:"users"`
 }
 
 // SharedRead は、ほかの人の会話を読んだもの(読むだけ。0018 の 11-2)。
@@ -129,6 +142,7 @@ type SharedRead struct {
 	Messages     []StoredMessage `json:"messages"`
 	Compactions  []Compaction    `json:"compactions"`
 	OwnerName    string          `json:"owner_name"`
+	OwnerDisplay string          `json:"owner_display,omitempty"` // 持ち主の表示名(0031)
 	// ByAdmin は、共有されていないが管理者として読んだ(読んだことをログに残す。決定事項 1)
 	ByAdmin bool `json:"by_admin"`
 	// ReaderName は読んだ人(ctx の利用者)の名前(ログに書くため)
