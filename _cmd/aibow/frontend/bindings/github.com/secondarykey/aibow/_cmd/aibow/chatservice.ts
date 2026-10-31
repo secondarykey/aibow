@@ -523,6 +523,14 @@ export function SetToolPolicy(name: string, policy: aibow$0.ToolPolicy): $Cancel
 }
 
 /**
+ * ShareCopy は、プロファイルを写して、そのまま配る(管理の画面の「写して配る」。0032 の段3)。管理者だけ(保存先が確かめる)。
+ * 配るプロファイルのモデルは、使えるモデルから(0018 の決定事項 13。SetProfileShare と同じ)。
+ */
+export function ShareCopy(id: uuid$0.UUID, share: string, $with: string[] | null, groups: string[] | null): $CancellablePromise<aibow$0.Profile> {
+    return $Call.ByID(3279875687, id, share, $with, groups);
+}
+
+/**
  * SharedConversations は、自分に共有されたほかの人の会話の一覧(会話の一覧の下の「共有された会話」)。
  */
 export function SharedConversations(): $CancellablePromise<aibow$0.ConversationRef[] | null> {

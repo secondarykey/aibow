@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -748,6 +749,66 @@ func TestWebSharedConversation(t *testing.T) {
 	w.mustCall(t, &detail, "Conversation", c.ID)
 	if len(detail.Messages) != 2 || detail.Conversation.Share != aibow.ShareUsers {
 		t.Errorf("ほかの人が書き込めてしまった・共有の印が無い: %d %+v", len(detail.Messages), detail.Conversation)
+	}
+}
+
+// 写して配る(管理の画面。0032 の段3):写すと配るを1回で行い、名前は元と同じ・資料のフォルダは写さない。
+// 配れなかったら(管理者でない)写したものは残さない
+func TestWebShareCopy(t *testing.T) {
+	w := newTestWeb(t)
+	now := time.Now()
+	add := func(name string, admin bool) *uuid.UUID {
+		u := auth.User{ID: uuid.NewV7(), Name: name, Admin: admin, CreatedAt: now, UpdatedAt: now}
+		if err := w.st.CreateUser(context.Background(), u); err != nil {
+			t.Fatal(err)
+		}
+		return &u.ID
+	}
+	alice, bob := add("alice", true), add("bob", false)
+	count := func() int {
+		t.Helper()
+		var list []aibow.ProfileInfo
+		w.mustCall(t, &list, "Profiles")
+		return len(list)
+	}
+
+	w.user.Store(bob)
+	var own aibow.Profile
+	w.mustCall(t, &own, "CreateProfile", "営業用", aibow.ProfileValues{HistoryTokens: 4096, ReplyTokens: 1024}, aibow.ProfileRules{})
+	before := count()
+	if status, _ := w.call(t, context.Background(), "ShareCopy", own.ID, aibow.ShareAll, []string{}, []string{}); status == http.StatusOK {
+		t.Error("管理者でない人が写して配れる")
+	}
+	if n := count(); n != before {
+		t.Errorf("配れなかった写しが残っている: %d → %d", before, n)
+	}
+
+	w.user.Store(alice)
+	var src aibow.Profile
+	w.mustCall(t, &src, "CreateProfile", "調べもの", aibow.ProfileValues{HistoryTokens: 4096, ReplyTokens: 1024}, aibow.ProfileRules{Fixed: []string{"system"}})
+	if status, _ := w.call(t, context.Background(), "ShareCopy", src.ID, aibow.ShareNone, []string{}, []string{}); status == http.StatusOK {
+		t.Error("配る範囲を選ばずに写して配れる")
+	}
+	var p aibow.Profile
+	w.mustCall(t, &p, "ShareCopy", src.ID, aibow.ShareUsers, []string{"bob"}, []string{})
+	if p.ID == src.ID || p.Name != "調べもの" || p.Share != aibow.ShareUsers || len(p.Rules.Fixed) != 1 || p.Rules.Folder != "" {
+		t.Errorf("写して配ったもの: %+v", p)
+	}
+	if status, _ := w.call(t, context.Background(), "ShareCopy", src.ID, aibow.ShareAll, []string{}, []string{}); status == http.StatusOK {
+		t.Error("配ったもの同士で同じ名前になる")
+	}
+	// 元は自分のプロファイルのまま残る
+	var mine []aibow.ProfileInfo
+	w.mustCall(t, &mine, "Profiles")
+	if i := slices.IndexFunc(mine, func(i aibow.ProfileInfo) bool { return i.Profile.ID == src.ID }); i < 0 || mine[i].Profile.Share != aibow.ShareNone {
+		t.Errorf("元のプロファイルが配られた・消えた: %+v", mine)
+	}
+
+	w.user.Store(bob)
+	var list []aibow.ProfileInfo
+	w.mustCall(t, &list, "Profiles")
+	if !slices.ContainsFunc(list, func(i aibow.ProfileInfo) bool { return i.Profile.ID == p.ID && i.Profile.ReadOnly }) {
+		t.Errorf("配った相手に見えない: %+v", list)
 	}
 }
 

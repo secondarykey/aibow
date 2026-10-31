@@ -566,6 +566,8 @@ export default function App() {
           reloadMcp();
           convs.refreshUsage().catch(err => addError(errorMessage(err)));
         }}
+        onApplyLimits={applyLimits}
+        onProfilesChanged={onProfilesChanged}
       />
     );
   } else if (reading) {

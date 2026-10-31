@@ -660,6 +660,32 @@ func (s *Service) SetProfileShare(ctx context.Context, id uuid.UUID, share strin
 	return nil
 }
 
+// ShareCopy は、プロファイルを写して、そのまま配る(管理の画面の「写して配る」。0032 の段3)。管理者だけ(保存先が確かめる)。
+// 配るプロファイルのモデルは、使えるモデルから(0018 の決定事項 13。SetProfileShare と同じ)。
+func (s *Service) ShareCopy(ctx context.Context, id uuid.UUID, share string, with, groups []string) (aibow.Profile, error) {
+	if s.startupErr != nil {
+		return aibow.Profile{}, s.startupErr
+	}
+	src, err := s.store.Profile(ctx, id)
+	if err != nil {
+		return aibow.Profile{}, err
+	}
+	if err := s.usableModel(src.Values.Model); err != nil {
+		return aibow.Profile{}, err
+	}
+	p, err := s.convs.ShareCopy(ctx, id, share, with, groups)
+	if err != nil {
+		return p, err
+	}
+	switch share {
+	case aibow.ShareAll:
+		log.Noticef("プロファイル「%s」を写して、全員に配りました(%s)", p.Name, whoOf(ctx))
+	default:
+		log.Noticef("プロファイル「%s」を写して、%s に配りました(%s)", p.Name, targets(with, groups), whoOf(ctx))
+	}
+	return p, nil
+}
+
 // CopyProfile は、プロファイル(配られたものなど)を写して自分のプロファイルを作る(値と決まりも。0018 の決定事項 19)。
 func (s *Service) CopyProfile(ctx context.Context, id uuid.UUID) (aibow.Profile, error) {
 	if s.startupErr != nil {
