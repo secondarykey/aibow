@@ -782,11 +782,6 @@ footer { border-top: 1px solid var(--border); background: var(--panel); padding:
 /* 配る(0018 の 11-1)。配っている印は色付きの枠、配った人の名前は薄く */
 .share-tag { border-color: var(--accent); color: var(--accent); }
 .profile-owner { flex-shrink: 0; font-size: 11px; color: var(--muted); }
-.profile-share { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
-.profile-share label[for] { margin: 0; }
-.profile-share select { width: auto; }
-.share-users { display: flex; flex-wrap: wrap; gap: 4px 12px; }
-.share-users .check { margin: 0; }
 .profile-received { display: flex; align-items: baseline; gap: 8px; }
 .profile-received-name { font-weight: 600; }
 .profile-readonly { border: none; padding: 0; margin: 0; min-width: 0; }
@@ -843,10 +838,36 @@ footer { border-top: 1px solid var(--border); background: var(--panel); padding:
 .read-banner.admin { color: var(--warn); }
 .read-footer { display: flex; justify-content: center; }
 .read-footer button { display: inline-flex; align-items: center; gap: 6px; }
-.conv-share { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
-.conv-share label[for] { margin: 0; }
-.conv-share select { width: auto; }
-.share-confirm { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; width: 100%; font-size: 13px; padding: 6px 8px; border: 1px solid var(--warn); border-radius: 6px; }
+/* 人を選ぶ部品(SharePicker.tsx。0031)。会話の共有とプロファイルの配るで同じもの */
+.share-picker { margin-top: 10px; }
+.share-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.share-line label[for] { margin: 0; }
+.share-line select { width: auto; }
+.share-now { color: var(--muted); font-size: 13px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.share-edit { font-size: 12px; padding: 2px 8px; }
+.share-editor { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.share-confirm { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 13px; padding: 6px 8px; border: 1px solid var(--warn); border-radius: 6px; }
+.share-actions { display: flex; gap: 6px; }
+.pick-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.pick-chip {
+  display: inline-flex; align-items: center; gap: 3px; max-width: 100%; padding: 1px 2px 1px 8px;
+  border: 1px solid var(--border); border-radius: 999px; background: var(--bg); font-size: 12.5px;
+}
+.pick-chip.group { border-color: var(--accent); }
+.pick-chip .icon { flex-shrink: 0; color: var(--accent); }
+.pick-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pick-remove { display: inline-flex; padding: 1px 3px; border: none; border-radius: 999px; background: transparent; color: var(--muted); }
+.pick-remove:hover { color: var(--text); }
+.pick-search { position: relative; max-width: 360px; }
+.settings-view .pick-search input[type=text] { width: 100%; }
+.pick-list {
+  position: absolute; z-index: 20; left: 0; right: 0; top: 100%; margin: 2px 0 0; padding: 4px 0; list-style: none;
+  max-height: 240px; overflow-y: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 4px 12px rgba(0, 0, 0, .15);
+}
+.pick-section { padding: 4px 10px 2px; color: var(--muted); font-size: 11px; }
+.pick-item { display: flex; align-items: center; gap: 6px; width: 100%; padding: 4px 10px; border: none; border-radius: 0; background: transparent; color: inherit; text-align: left; font-size: 13px; }
+.pick-item.active { background: rgba(127, 127, 127, .15); }
+.pick-item .icon { flex-shrink: 0; color: var(--accent); }
 .user-name { padding: 0; border: none; background: transparent; color: inherit; font: inherit; cursor: pointer; text-decoration: underline dotted; }
 .user-name:disabled { cursor: default; text-decoration: none; }
 .user-name.current { color: var(--accent); }

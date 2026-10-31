@@ -12,7 +12,9 @@ import type { Entry as ModelEntry } from "../../bindings/github.com/secondarykey
 import { ConversationSettingsForm, LimitsForm } from "./ConversationSettingsForm";
 import { lockOf } from "../profileRules";
 import { ConversationTools } from "./ConversationTools";
-import { ChatService, isBrowser, me } from "../backend";
+import { isBrowser, me } from "../backend";
+import { useDirectory } from "../directory";
+import { CONVERSATION_WORDS, SharePicker } from "./SharePicker";
 import { CopyButton } from "./CopyButton";
 
 interface Props {
@@ -130,55 +132,24 @@ export function ConversationSettingsView({ id, title, onRename, settings, models
   );
 }
 
-// ShareField は会話の共有(0018 の決定事項 24)。非公開から共有にするときは、ツールの結果も見えることを確かめる(決定事項 12)。
+// ShareField は会話の共有(0018 の決定事項 24)。範囲と相手は人を選ぶ部品で選び、確定してから保存する(0031 の決定事項 6〜13)。
+// 非公開から共有にするときは、ツールの結果も見えることを確かめの文に出す(0018 の決定事項 12)。
 function ShareField({ share, shareWith, onShare }: { share: string; shareWith: string[]; onShare(share: string, users: string[]): void }) {
-  const [names, setNames] = useState<string[]>([]);
-  const [pending, setPending] = useState<{ share: string; users: string[] } | null>(null); // 確かめている変更
-  useEffect(() => {
-    ChatService.UserNames().then(list => setNames((list ?? []).filter(n => n !== me.name)), () => setNames([]));
-  }, []);
-  // 非公開から共有にするときだけ確かめる(相手を足す・減らすときは聞かない)
-  const change = (next: string, users: string[]) => {
-    if (share === "" && next !== "") setPending({ share: next, users });
-    else onShare(next, users);
-  };
-  const toggle = (name: string) => {
-    const next = shareWith.includes(name) ? shareWith.filter(n => n !== name) : [...shareWith, name];
-    onShare(next.length ? "users" : "", next);
-  };
+  const dir = useDirectory();
   return (
-    <div className="conv-share">
-      <label htmlFor="conv-share" title="共有した会話は、相手の一覧の「共有された会話」に出て、読むだけで開ける。相手は写して続けられる">共有</label>
-      <select
-        id="conv-share"
-        value={pending?.share ?? share}
-        onChange={e => {
-          const v = e.target.value;
-          change(v, v === "users" ? (shareWith.length ? shareWith : names.slice(0, 1)) : []);
-        }}
-      >
-        <option value="">非公開</option>
-        <option value="all">全員</option>
-        <option value="users" disabled={names.length === 0}>指定した人</option>
-      </select>
-      {pending && (
-        <div className="share-confirm">
-          <span>共有すると、この会話のツールの結果(ファイルの中身・コマンドの出力)も相手に見えます。</span>
-          <button type="button" className="primary" onClick={() => { onShare(pending.share, pending.users); setPending(null); }}>共有する</button>
-          <button type="button" onClick={() => setPending(null)}>やめる</button>
-        </div>
-      )}
-      {!pending && share === "users" && (
-        <div className="share-users">
-          {names.map(n => (
-            <label key={n} className="check">
-              <input type="checkbox" checked={shareWith.includes(n)} onChange={() => toggle(n)} />
-              {n}
-            </label>
-          ))}
-        </div>
-      )}
-    </div>
+    <SharePicker
+      id="conv-share"
+      label="共有"
+      labelTitle="共有した会話は、相手の一覧の「共有された会話」に出て、読むだけで開ける。相手は写して続けられる"
+      words={CONVERSATION_WORDS}
+      share={share}
+      users={shareWith}
+      groups={[]}
+      dir={dir}
+      self={me.name}
+      notes={next => (share === "" && next.share !== "" ? ["共有すると、この会話のツールの結果(ファイルの中身・コマンドの出力)も相手に見えます。"] : [])}
+      onCommit={(next, users) => onShare(next, users)}
+    />
   );
 }
 

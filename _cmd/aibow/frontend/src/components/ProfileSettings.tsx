@@ -13,7 +13,9 @@
 //   - 配られたものも「最初に選ぶ」にできる(配られなくなったら、Go が自分のプロファイルに戻す)
 import { useCallback, useEffect, useRef, useState } from "react";
 import { LuCopy, LuPlus } from "react-icons/lu";
-import { admin, ChatService, isBrowser, me } from "../backend";
+import { ChatService, isBrowser, me } from "../backend";
+import { useDirectory } from "../directory";
+import { PROFILE_WORDS, SharePicker } from "./SharePicker";
 import type { ConversationSettings, Profile, ProfileInfo } from "../../bindings/github.com/secondarykey/aibow";
 import type { ServerInfo } from "../../bindings/github.com/secondarykey/aibow/mcp/client";
 // Go の models パッケージ。"…/aibow/models" と書くと aibow パッケージの models.ts が選ばれるので、index まで書く
@@ -268,7 +270,7 @@ function ProfileEditor({ profile, info, models, servers, disabled, onChange, onA
           消す
         </button>
       </div>
-      {isBrowser && me.admin && <ShareForm profile={profile} onShare={onShare} onError={onError} />}
+      {isBrowser && me.admin && <ShareForm profile={profile} onShare={onShare} />}
       {isBrowser && <FolderField profile={profile} onChange={onChange} onError={onError} />}
 
       <ConversationSettingsForm settings={settings} models={models} lock={lock} onChange={setValues} />
@@ -327,48 +329,22 @@ function ShareTag({ profile }: { profile: Profile }) {
   return <span className="tool-tag share-tag" title={title}>{text}</span>;
 }
 
-// ShareForm は、管理者がプロファイルを配る範囲と相手を選ぶ欄(0018 の決定事項 22)。選んだらすぐ変える。
-function ShareForm({ profile, onShare, onError }: { profile: Profile; onShare(share: string, users: string[]): void; onError(text: string): void }) {
-  const [names, setNames] = useState<string[]>([]);
-  useEffect(() => {
-    admin.users()
-      .then(list => setNames(list.filter(u => u.name !== me.name && !u.local).map(u => u.name)))
-      .catch(err => onError(errorMessage(err)));
-  }, [onError]);
-  const share = profile.share ?? "";
-  const chosen = profile.share_with ?? [];
-  const toggle = (name: string) => {
-    const next = chosen.includes(name) ? chosen.filter(n => n !== name) : [...chosen, name];
-    if (next.length === 0) onShare("", []);
-    else onShare("users", next);
-  };
+// ShareForm は、管理者がプロファイルを配る範囲と相手を選ぶ欄(0018 の決定事項 22)。会話の共有と同じ人を選ぶ部品で選び、確定してから変える(0031 の決定事項 6〜13)。
+function ShareForm({ profile, onShare }: { profile: Profile; onShare(share: string, users: string[]): void }) {
+  const dir = useDirectory();
   return (
-    <div className="profile-share">
-      <label htmlFor="profile-share" title="配ったプロファイルは、受け取った人の新しい会話で選べる。値と決まりは受け取った人には変えられず、ほかの管理者は変えられる">配る</label>
-      <select
-        id="profile-share"
-        value={share}
-        onChange={e => {
-          const v = e.target.value;
-          if (v === "users") onShare("users", chosen.length ? chosen : names.slice(0, 1));
-          else onShare(v, []);
-        }}
-      >
-        <option value="">配らない</option>
-        <option value="all">全員</option>
-        <option value="users" disabled={names.length === 0}>指定した人</option>
-      </select>
-      {share === "users" && (
-        <div className="share-users">
-          {names.map(n => (
-            <label key={n} className="check">
-              <input type="checkbox" checked={chosen.includes(n)} onChange={() => toggle(n)} />
-              {n}
-            </label>
-          ))}
-        </div>
-      )}
-    </div>
+    <SharePicker
+      id="profile-share"
+      label="配る"
+      labelTitle="配ったプロファイルは、受け取った人の新しい会話で選べる。値と決まりは受け取った人には変えられず、ほかの管理者は変えられる"
+      words={PROFILE_WORDS}
+      share={profile.share ?? ""}
+      users={profile.share_with ?? []}
+      groups={[]}
+      dir={dir}
+      self={me.name}
+      onCommit={(next, users) => onShare(next, users)}
+    />
   );
 }
 
