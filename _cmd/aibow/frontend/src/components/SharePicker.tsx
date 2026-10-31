@@ -170,7 +170,9 @@ function ShareEditor({ draft, share, current, dir, self, words, notes, onChange,
   else if (next.share === "users") will = words.willUsers(listLabels(targets, dir));
   else if (next.share === "all") will = words.willAll;
   else will = words.willNone;
-  const sentences = changed && !blocked ? [will, ...(notes?.(next) ?? [])].filter(Boolean) : [];
+  // グループに共有するときは、相手がこれから変わりうることを出す(0031 の決定事項 33)
+  const groupNote = next.share === "users" && targets.some(t => t.kind === "group") ? "グループの長と管理者は、メンバーを変えられます。" : "";
+  const sentences = changed && !blocked ? [will, groupNote, ...(notes?.(next) ?? [])].filter(Boolean) : [];
 
   const button = next.share === "users" ? words.commitUsers(n) : next.share === "all" ? words.commitAll : words.commitNone;
   return (

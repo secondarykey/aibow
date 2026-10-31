@@ -280,6 +280,11 @@ export interface Conversation {
      */
     "share"?: string;
     "share_with"?: string[] | null;
+
+    /**
+     * ShareGroups は相手のグループの名前(0031。ShareWith と同じく会話1つを読んだときだけ入る)
+     */
+    "share_groups"?: string[] | null;
 }
 
 /**
@@ -389,10 +394,11 @@ export interface ConversationSettings {
 }
 
 /**
- * Directory は、共有の相手に選べる人(0031 の決定事項 13。全員を一度に渡し、画面で絞る)
+ * Directory は、共有の相手に選べる人とグループ(0031 の決定事項 13・29。全員を一度に渡し、画面で絞る)
  */
 export interface Directory {
     "users": UserRef[] | null;
+    "groups": Group[] | null;
 }
 
 /**
@@ -466,6 +472,32 @@ export interface FileCheck {
 }
 
 /**
+ * Group はグループ1つ(0031 の段4)。管理者が作り、利用者を入れる。1人が複数のグループに入れる。グループの中にグループは入れない。
+ * 共有の相手にグループを選ぶと、そのときのメンバーではなく「グループ」として覚える(あとから入った人にも見え、抜けた人には見えなくなる。決定事項 26)
+ */
+export interface Group {
+    "id": uuid$0.UUID;
+    "name": string;
+
+    /**
+     * メンバーのログインの名前(名前の順)
+     */
+    "members": string[] | null;
+
+    /**
+     * 長(メンバーの中から管理者が決める。決定事項 30)
+     */
+    "leaders": string[] | null;
+
+    /**
+     * Conversations・Profiles は、このグループに共有されている会話・配られているプロファイルの数
+     * (グループを消すとき・長が人を足すときの確かめの文。決定事項 28・33)
+     */
+    "conversations": number;
+    "profiles": number;
+}
+
+/**
  * KnownTool は、サーバーを起動したときに見えたツール1つ(画面の設定に一覧を出すため。ツールの扱いには使わない)。
  */
 export interface KnownTool {
@@ -517,6 +549,11 @@ export interface Profile {
      */
     "share"?: string;
     "share_with"?: string[] | null;
+
+    /**
+     * ShareGroups は配る相手のグループの名前(0031。ShareWith と同じく変えられる人にだけ入る)
+     */
+    "share_groups"?: string[] | null;
 
     /**
      * 次の3つは、保存先が読むときに入れる(保存しない)。

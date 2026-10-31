@@ -109,8 +109,8 @@ func (c *Client) Compactions(ctx context.Context, conv uuid.UUID) (out []aibow.C
 
 // ---- 会話の共有(0018 の 11-2) ---------------------------------------------------------------
 
-func (c *Client) SetConversationShare(ctx context.Context, id uuid.UUID, share string, with []string) error {
-	return c.call(ctx, "SetConversationShare", []any{id, share, with})
+func (c *Client) SetConversationShare(ctx context.Context, id uuid.UUID, share string, with, groups []string) error {
+	return c.call(ctx, "SetConversationShare", []any{id, share, with, groups})
 }
 
 func (c *Client) SharedConversations(ctx context.Context) (out []aibow.ConversationRef, err error) {
@@ -157,8 +157,29 @@ func (c *Client) DeleteProfile(ctx context.Context, id uuid.UUID) error {
 	return c.call(ctx, "DeleteProfile", []any{id})
 }
 
-func (c *Client) SetProfileShare(ctx context.Context, id uuid.UUID, share string, with []string) error {
-	return c.call(ctx, "SetProfileShare", []any{id, share, with})
+func (c *Client) SetProfileShare(ctx context.Context, id uuid.UUID, share string, with, groups []string) error {
+	return c.call(ctx, "SetProfileShare", []any{id, share, with, groups})
+}
+
+func (c *Client) CreateGroup(ctx context.Context, name string) (out aibow.Group, err error) {
+	err = c.call(ctx, "CreateGroup", []any{name}, &out)
+	return
+}
+
+func (c *Client) RenameGroup(ctx context.Context, id uuid.UUID, name string) error {
+	return c.call(ctx, "RenameGroup", []any{id, name})
+}
+
+func (c *Client) DeleteGroup(ctx context.Context, id uuid.UUID) error {
+	return c.call(ctx, "DeleteGroup", []any{id})
+}
+
+func (c *Client) SetGroupMember(ctx context.Context, id uuid.UUID, user string, member bool) error {
+	return c.call(ctx, "SetGroupMember", []any{id, user, member})
+}
+
+func (c *Client) SetGroupLeader(ctx context.Context, id uuid.UUID, user string, leader bool) error {
+	return c.call(ctx, "SetGroupLeader", []any{id, user, leader})
 }
 
 // ---- 設定 -------------------------------------------------------------------------------

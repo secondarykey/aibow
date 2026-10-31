@@ -614,6 +614,18 @@ nav.conversations.collapsed .settings.active { color: var(--accent); }
 .segmented button.current { background: var(--accent); color: #fff; border-color: var(--accent); position: relative; }
 .user-table { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto auto; column-gap: 12px; align-items: center; }
 .settings-view .user-field input.display-name { width: 240px; }
+.segmented.user-view { margin-bottom: 8px; }
+/* グループ(GroupSettings.tsx。0031 の段4)。一覧は利用者の一覧と同じ形(名前 / 長 / 人数 / 共有) */
+.group-table { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; column-gap: 12px; align-items: center; margin-top: 8px; }
+.group-members { display: flex; flex-direction: column; gap: 6px; }
+.user-groups { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.user-groups select { width: auto; font-size: 12px; padding: 2px 4px; }
+.pick-chip.leader { border-color: var(--warn); }
+.pick-leader { display: inline-flex; padding: 1px 2px; border: none; background: transparent; color: var(--muted); opacity: .4; }
+.pick-leader.on { color: var(--warn); opacity: 1; }
+.pick-leader:hover { opacity: 1; }
+.pick-chip.leader .icon { color: var(--warn); }
+.share-confirm button.danger { color: #fff; background: var(--error); border-color: var(--error); }
 .user-sort { display: inline-flex; align-items: center; gap: 2px; border: none; background: transparent; text-align: left; cursor: pointer; }
 .user-sort.num { justify-content: flex-end; }
 .user-sort.current { color: var(--text); }

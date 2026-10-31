@@ -2,7 +2,7 @@
 //
 // 全員を一度に取って画面で絞る(サーバーで探す口は作らない。0031 の決定事項 13。100人なら足りる)。
 // 「最近選んだ相手」は画面の手元(localStorage)に覚える(DB は変えない。決定事項 12・38)。
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ChatService } from "./backend";
 import { loadStored, saveStored } from "./stored";
 
@@ -18,10 +18,14 @@ export interface Target {
   name: string;
 }
 
-// Group は共有の相手に選べるグループ(members はログインの名前)
+// Group は共有の相手に選べるグループ(members・leaders はログインの名前。0031 の段4)
 export interface Group {
+  id: string;
   name: string;
   members: string[];
+  leaders: string[];
+  conversations: number; // このグループに共有されている会話の数(確かめの文)
+  profiles: number;      // このグループに配られているプロファイルの数
 }
 
 export interface Directory {
@@ -29,16 +33,22 @@ export interface Directory {
   groups: Group[];
 }
 
-// useDirectory は、共有の相手に選べる人とグループ。開いたときに1回だけ取る
-export function useDirectory(): Directory {
+// useDirectory は、共有の相手に選べる人とグループ。開いたときに取り、reload で取り直す(グループのメンバーを変えたあとなど)
+export function useDirectory(): [Directory, () => void] {
   const [dir, setDir] = useState<Directory>({ people: [], groups: [] });
-  useEffect(() => {
+  const reload = useCallback(() => {
     ChatService.Directory().then(
-      d => setDir({ people: (d.users ?? []).map(u => ({ name: u.name, display: u.display_name ?? "" })), groups: [] }),
+      d => setDir({
+        people: (d.users ?? []).map(u => ({ name: u.name, display: u.display_name ?? "" })),
+        groups: (d.groups ?? []).map(g => ({
+          id: g.id, name: g.name, members: g.members ?? [], leaders: g.leaders ?? [], conversations: g.conversations, profiles: g.profiles,
+        })),
+      }),
       () => setDir({ people: [], groups: [] }),
     );
   }, []);
-  return dir;
+  useEffect(() => { reload(); }, [reload]);
+  return [dir, reload];
 }
 
 // showName は人の見せ方。広いところは「表示名(ログインの名前)」、狭いところ(short)は表示名だけ。表示名が無ければログインの名前(決定事項 18)

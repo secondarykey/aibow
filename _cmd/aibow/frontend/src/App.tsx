@@ -571,9 +571,10 @@ export default function App() {
         onApplyLimits={(h, r) => applyLimits(h, r, convs.updateSettings)}
         share={convs.current.conversation.share ?? ""}
         shareWith={convs.current.conversation.share_with ?? []}
-        onShare={(share, users) => {
+        shareGroups={convs.current.conversation.share_groups ?? []}
+        onShare={(share, users, groups) => {
           const id = convs.current!.conversation.id;
-          ChatService.SetConversationShare(id, share, users)
+          ChatService.SetConversationShare(id, share, users, groups)
             .then(() => Promise.all([convs.open(id), convs.reloadList()])) // 共有の印(この画面と一覧)を読み直す
             .catch(err => addError(errorMessage(err)));
         }}

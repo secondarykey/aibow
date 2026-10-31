@@ -50,7 +50,7 @@ func newFolderWeb(t *testing.T) *folderWeb {
 	w.admin.Store(true)
 	w.mustCall(t, &w.profile, "CreateProfile", "仕様の相談", aibow.ProfileValues{Model: "ollama:a", HistoryTokens: 8192, ReplyTokens: 8192},
 		aibow.ProfileRules{Folder: "docs"})
-	w.mustCall(t, nil, "SetProfileShare", w.profile.ID, aibow.ShareUsers, []string{"bob"})
+	w.mustCall(t, nil, "SetProfileShare", w.profile.ID, aibow.ShareUsers, []string{"bob"}, []string{})
 	w.admin.Store(false)
 	return w
 }
@@ -162,7 +162,7 @@ func TestWebFolderAccess(t *testing.T) {
 	// 配るのをやめたら、今ある会話でもフォルダを使えない(決まりなので、すぐ効く)
 	w.user.Store(w.alice)
 	w.admin.Store(true)
-	w.mustCall(t, nil, "SetProfileShare", w.profile.ID, aibow.ShareNone, []string{})
+	w.mustCall(t, nil, "SetProfileShare", w.profile.ID, aibow.ShareNone, []string{}, []string{})
 	w.admin.Store(false)
 	w.user.Store(w.bob)
 	var d ConversationDetail

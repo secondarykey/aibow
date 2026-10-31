@@ -20,6 +20,7 @@ export type {
     DisplaySettings,
     File,
     FileCheck,
+    Group,
     KnownTool,
     NotDefault,
     Profile,

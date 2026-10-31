@@ -42,6 +42,8 @@ var errorCodes = []struct {
 	{aibow.ErrProfileInUse, "profile_in_use", http.StatusConflict},
 	{aibow.ErrProfileReadOnly, "profile_read_only", http.StatusForbidden},
 	{aibow.ErrNotAdmin, "not_admin", http.StatusForbidden},
+	{aibow.ErrNotGroupLeader, "not_group_leader", http.StatusForbidden},
+	{aibow.ErrGroupExists, "group_exists", http.StatusConflict},
 	{aibow.ErrBusy, "busy", http.StatusConflict},
 	{aibow.ErrNoUser, "no_user", http.StatusUnauthorized},
 }

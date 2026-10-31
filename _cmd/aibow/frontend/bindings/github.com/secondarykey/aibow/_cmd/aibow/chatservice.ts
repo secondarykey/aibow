@@ -165,6 +165,13 @@ export function CopyShared(id: uuid$0.UUID): $CancellablePromise<aibow$0.Convers
 }
 
 /**
+ * CreateGroup はグループを作る(管理者だけ)。
+ */
+export function CreateGroup(name: string): $CancellablePromise<aibow$0.Group> {
+    return $Call.ByID(3179978986, name);
+}
+
+/**
  * CreateProfile は、新しいプロファイルを作る(設定の画面の「新しいプロファイル」)。
  */
 export function CreateProfile(name: string, values: aibow$0.ProfileValues, rules: aibow$0.ProfileRules): $CancellablePromise<aibow$0.Profile> {
@@ -179,6 +186,13 @@ export function DeleteConversation(id: uuid$0.UUID): $CancellablePromise<void> {
 }
 
 /**
+ * DeleteGroup はグループを消す(管理者だけ)。そのグループへの共有と配るも消える。
+ */
+export function DeleteGroup(id: uuid$0.UUID): $CancellablePromise<void> {
+    return $Call.ByID(1950614787, id);
+}
+
+/**
  * DeleteProfile は、使っている会話が無いプロファイルを消す。
  */
 export function DeleteProfile(id: uuid$0.UUID): $CancellablePromise<void> {
@@ -186,7 +200,7 @@ export function DeleteProfile(id: uuid$0.UUID): $CancellablePromise<void> {
 }
 
 /**
- * Directory は、共有の相手に選べる人(名前と表示名。0031)。全員を一度に返し、画面で絞る。
+ * Directory は、共有の相手に選べる人(名前と表示名)とグループ(0031)。全員を一度に返し、画面で絞る。
  */
 export function Directory(): $CancellablePromise<aibow$0.Directory> {
     return $Call.ByID(4032022530);
@@ -318,6 +332,13 @@ export function RenameConversation(id: uuid$0.UUID, title: string): $Cancellable
 }
 
 /**
+ * RenameGroup はグループの名前を変える(管理者だけ)。
+ */
+export function RenameGroup(id: uuid$0.UUID, name: string): $CancellablePromise<void> {
+    return $Call.ByID(1183955888, id, name);
+}
+
+/**
  * Resend は最後の発言を text に直して送り直す(0011)。途中経過と終わり(done)は Send と同じく chat イベントで送る。
  */
 export function Resend(id: uuid$0.UUID, text: string): $CancellablePromise<void> {
@@ -363,10 +384,10 @@ export function ServerConnection(): $CancellablePromise<$models.ServerConnection
 }
 
 /**
- * SetConversationShare は、自分の会話の共有の範囲(""・all・users)と相手(利用者の名前)を変える。
+ * SetConversationShare は、自分の会話の共有の範囲(""・all・users)と相手(利用者の名前とグループの名前。0031)を変える。
  */
-export function SetConversationShare(id: uuid$0.UUID, share: string, $with: string[] | null): $CancellablePromise<void> {
-    return $Call.ByID(1343982337, id, share, $with);
+export function SetConversationShare(id: uuid$0.UUID, share: string, $with: string[] | null, groups: string[] | null): $CancellablePromise<void> {
+    return $Call.ByID(1343982337, id, share, $with, groups);
 }
 
 /**
@@ -403,6 +424,20 @@ export function SetGPULayers(n: number): $CancellablePromise<engine$0.ModelInfo 
 }
 
 /**
+ * SetGroupLeader は、メンバーを長にする / 外す(管理者だけ)。
+ */
+export function SetGroupLeader(id: uuid$0.UUID, user: string, leader: boolean): $CancellablePromise<void> {
+    return $Call.ByID(2478322473, id, user, leader);
+}
+
+/**
+ * SetGroupMember は、グループに利用者を足す / 外す(管理者か、そのグループの長)。
+ */
+export function SetGroupMember(id: uuid$0.UUID, user: string, member: boolean): $CancellablePromise<void> {
+    return $Call.ByID(2605923530, id, user, member);
+}
+
+/**
  * SetGroupPolicy は、グループ(空なら組み込み、そうでなければ MCP のサーバー)の全部のツールの確認の扱いの PC の既定を変える
  * (確認する ask / 確認しない allow / 決めていない 空。tools.json に書く)。
  * ブラウザでは aibow-server の管理者だけが変えられ(server-tools.json に書く)、使わない(off。禁止)も決められる(0024 の決定事項 21・22)。
@@ -435,10 +470,10 @@ export function SetProfileArchived(id: uuid$0.UUID, archived: boolean): $Cancell
 }
 
 /**
- * SetProfileShare は、プロファイルを配る範囲(""・all・users)と相手(利用者の名前)を変える(0018 の 11-1)。管理者だけ。
+ * SetProfileShare は、プロファイルを配る範囲(""・all・users)と相手(利用者の名前とグループの名前。0031)を変える(0018 の 11-1)。管理者だけ。
  */
-export function SetProfileShare(id: uuid$0.UUID, share: string, $with: string[] | null): $CancellablePromise<void> {
-    return $Call.ByID(2853156393, id, share, $with);
+export function SetProfileShare(id: uuid$0.UUID, share: string, $with: string[] | null, groups: string[] | null): $CancellablePromise<void> {
+    return $Call.ByID(2853156393, id, share, $with, groups);
 }
 
 /**

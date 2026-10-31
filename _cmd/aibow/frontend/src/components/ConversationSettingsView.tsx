@@ -37,7 +37,8 @@ interface Props {
   onApplyLimits(history: number, reply: number): void;
   share: string;            // 共有の範囲(0018 の 11-2。"" 非公開 / all / users)
   shareWith: string[];      // 共有の相手(名前)
-  onShare(share: string, users: string[]): void;
+  shareGroups: string[];    // 共有の相手のグループ(名前。0031)
+  onShare(share: string, users: string[], groups: string[]): void;
 }
 
 // TitleField は会話の名前の入力欄。打っている間は保存せず、Enter か欄を離れたときに保存する(一覧の名前の変更と同じ)。
@@ -80,7 +81,7 @@ function TitleField({ title, onRename }: { title: string; onRename(title: string
 }
 
 export function ConversationSettingsView({ id, title, onRename, settings, models, errors, onClose, onChange, profile, folder, onSaveToProfile, onSaveAsProfile, lastPrompt, lastPromptFormat, servers, limitsDisabled, onApplyLimits,
-  share, shareWith, onShare,
+  share, shareWith, shareGroups, onShare,
 }: Props) {
   const lock = lockOf(profile);
   return (
@@ -110,7 +111,7 @@ export function ConversationSettingsView({ id, title, onRename, settings, models
             <div className="conv-profile">{folder || "(なし)"}</div>
           </>
         )}
-        {me.login && <ShareField share={share} shareWith={shareWith} onShare={onShare} />}
+        {me.login && <ShareField share={share} shareWith={shareWith} shareGroups={shareGroups} onShare={onShare} />}
 
         <ConversationSettingsForm settings={settings} models={models} lock={lock} onChange={onChange} />
         <LimitsForm history={settings.history_tokens} reply={settings.reply_tokens} disabled={limitsDisabled} lock={lock} onApply={onApplyLimits} />
@@ -134,8 +135,8 @@ export function ConversationSettingsView({ id, title, onRename, settings, models
 
 // ShareField は会話の共有(0018 の決定事項 24)。範囲と相手は人を選ぶ部品で選び、確定してから保存する(0031 の決定事項 6〜13)。
 // 非公開から共有にするときは、ツールの結果も見えることを確かめの文に出す(0018 の決定事項 12)。
-function ShareField({ share, shareWith, onShare }: { share: string; shareWith: string[]; onShare(share: string, users: string[]): void }) {
-  const dir = useDirectory();
+function ShareField({ share, shareWith, shareGroups, onShare }: { share: string; shareWith: string[]; shareGroups: string[]; onShare(share: string, users: string[], groups: string[]): void }) {
+  const [dir] = useDirectory();
   return (
     <SharePicker
       id="conv-share"
@@ -144,11 +145,11 @@ function ShareField({ share, shareWith, onShare }: { share: string; shareWith: s
       words={CONVERSATION_WORDS}
       share={share}
       users={shareWith}
-      groups={[]}
+      groups={shareGroups}
       dir={dir}
       self={me.name}
       notes={next => (share === "" && next.share !== "" ? ["共有すると、この会話のツールの結果(ファイルの中身・コマンドの出力)も相手に見えます。"] : [])}
-      onCommit={(next, users) => onShare(next, users)}
+      onCommit={onShare}
     />
   );
 }

@@ -632,8 +632,8 @@ func (s *Service) usableModel(id string) error {
 	return nil
 }
 
-// SetProfileShare は、プロファイルを配る範囲(""・all・users)と相手(利用者の名前)を変える(0018 の 11-1)。管理者だけ。
-func (s *Service) SetProfileShare(ctx context.Context, id uuid.UUID, share string, with []string) error {
+// SetProfileShare は、プロファイルを配る範囲(""・all・users)と相手(利用者の名前とグループの名前。0031)を変える(0018 の 11-1)。管理者だけ。
+func (s *Service) SetProfileShare(ctx context.Context, id uuid.UUID, share string, with, groups []string) error {
 	if s.startupErr != nil {
 		return s.startupErr
 	}
@@ -646,7 +646,7 @@ func (s *Service) SetProfileShare(ctx context.Context, id uuid.UUID, share strin
 			return err
 		}
 	}
-	if err := s.convs.SetProfileShare(ctx, id, share, with); err != nil {
+	if err := s.convs.SetProfileShare(ctx, id, share, with, groups); err != nil {
 		return err
 	}
 	switch share {
@@ -655,7 +655,7 @@ func (s *Service) SetProfileShare(ctx context.Context, id uuid.UUID, share strin
 	case aibow.ShareAll:
 		log.Noticef("プロファイル「%s」を全員に配りました", p.Name)
 	default:
-		log.Noticef("プロファイル「%s」を %s に配りました", p.Name, strings.Join(with, "・"))
+		log.Noticef("プロファイル「%s」を %s に配りました", p.Name, targets(with, groups))
 	}
 	return nil
 }
@@ -1005,15 +1005,15 @@ func (s *Service) Conversations(ctx context.Context) ([]aibow.Conversation, erro
 //
 // ほかの人の会話は読むだけ(保存先の ReadConversation)。続けたいときは写して自分の会話にする(CopyShared)。
 
-// SetConversationShare は、自分の会話の共有の範囲(""・all・users)と相手(利用者の名前)を変える。
-func (s *Service) SetConversationShare(ctx context.Context, id uuid.UUID, share string, with []string) error {
+// SetConversationShare は、自分の会話の共有の範囲(""・all・users)と相手(利用者の名前とグループの名前。0031)を変える。
+func (s *Service) SetConversationShare(ctx context.Context, id uuid.UUID, share string, with, groups []string) error {
 	if s.startupErr != nil {
 		return s.startupErr
 	}
-	if share == aibow.ShareUsers && len(with) == 0 {
+	if share == aibow.ShareUsers && len(with) == 0 && len(groups) == 0 {
 		return errors.New("共有の相手を1人以上選んでください")
 	}
-	if err := s.store.SetConversationShare(ctx, id, share, with); err != nil {
+	if err := s.store.SetConversationShare(ctx, id, share, with, groups); err != nil {
 		return err
 	}
 	switch share {
@@ -1022,7 +1022,7 @@ func (s *Service) SetConversationShare(ctx context.Context, id uuid.UUID, share 
 	case aibow.ShareAll:
 		log.Noticef("会話 %s を全員に共有しました", id)
 	default:
-		log.Noticef("会話 %s を %s に共有しました", id, strings.Join(with, "・"))
+		log.Noticef("会話 %s を %s に共有しました", id, targets(with, groups))
 	}
 	return nil
 }
@@ -1043,12 +1043,110 @@ func (s *Service) UserConversations(ctx context.Context, name string) ([]aibow.C
 	return s.store.UserConversations(ctx, name)
 }
 
-// Directory は、共有の相手に選べる人(名前と表示名。0031)。全員を一度に返し、画面で絞る。
+// targets は、ログに書く共有の相手(人はログインの名前。表示名は変わるので使わない。0031 の決定事項 20)
+func targets(with, groups []string) string {
+	all := slices.Clone(with)
+	for _, g := range groups {
+		all = append(all, g+" グループ")
+	}
+	return strings.Join(all, "・")
+}
+
+// Directory は、共有の相手に選べる人(名前と表示名)とグループ(0031)。全員を一度に返し、画面で絞る。
 func (s *Service) Directory(ctx context.Context) (aibow.Directory, error) {
 	if s.startupErr != nil {
 		return aibow.Directory{}, s.startupErr
 	}
 	return s.store.Directory(ctx)
+}
+
+// ---- グループ(0031 の段4) ---------------------------------------------------------------------
+//
+// 誰が何を変えられるかは保存先が1か所で決める(管理者だけ / 管理者かそのグループの長)。ここはログを残すだけ。
+// メンバーを変えると、そのグループに共有された会話・配られたプロファイルが見える人も変わるので、
+// 誰が・どのグループに・誰を足した / 外したかを Notice に残す(管理者が読んだ記録と同じ考え方。決定事項 33)。
+
+// CreateGroup はグループを作る(管理者だけ)。
+func (s *Service) CreateGroup(ctx context.Context, name string) (aibow.Group, error) {
+	if s.startupErr != nil {
+		return aibow.Group{}, s.startupErr
+	}
+	g, err := s.store.CreateGroup(ctx, name)
+	if err != nil {
+		return g, err
+	}
+	log.Noticef("グループ「%s」を作りました(%s)", g.Name, whoOf(ctx))
+	return g, nil
+}
+
+// RenameGroup はグループの名前を変える(管理者だけ)。
+func (s *Service) RenameGroup(ctx context.Context, id uuid.UUID, name string) error {
+	if s.startupErr != nil {
+		return s.startupErr
+	}
+	if err := s.store.RenameGroup(ctx, id, name); err != nil {
+		return err
+	}
+	log.Noticef("グループ %s の名前を「%s」にしました(%s)", id, strings.TrimSpace(name), whoOf(ctx))
+	return nil
+}
+
+// DeleteGroup はグループを消す(管理者だけ)。そのグループへの共有と配るも消える。
+func (s *Service) DeleteGroup(ctx context.Context, id uuid.UUID) error {
+	if s.startupErr != nil {
+		return s.startupErr
+	}
+	name := s.groupName(ctx, id)
+	if err := s.store.DeleteGroup(ctx, id); err != nil {
+		return err
+	}
+	log.Noticef("グループ「%s」を消しました(%s。このグループへの共有と配るも消えました)", name, whoOf(ctx))
+	return nil
+}
+
+// SetGroupMember は、グループに利用者を足す / 外す(管理者か、そのグループの長)。
+func (s *Service) SetGroupMember(ctx context.Context, id uuid.UUID, user string, member bool) error {
+	if s.startupErr != nil {
+		return s.startupErr
+	}
+	if err := s.store.SetGroupMember(ctx, id, user, member); err != nil {
+		return err
+	}
+	if member {
+		log.Noticef("%s がグループ「%s」に %s を足しました", whoOf(ctx), s.groupName(ctx, id), user)
+	} else {
+		log.Noticef("%s がグループ「%s」から %s を外しました", whoOf(ctx), s.groupName(ctx, id), user)
+	}
+	return nil
+}
+
+// SetGroupLeader は、メンバーを長にする / 外す(管理者だけ)。
+func (s *Service) SetGroupLeader(ctx context.Context, id uuid.UUID, user string, leader bool) error {
+	if s.startupErr != nil {
+		return s.startupErr
+	}
+	if err := s.store.SetGroupLeader(ctx, id, user, leader); err != nil {
+		return err
+	}
+	if leader {
+		log.Noticef("%s がグループ「%s」の長に %s を決めました", whoOf(ctx), s.groupName(ctx, id), user)
+	} else {
+		log.Noticef("%s がグループ「%s」の長から %s を外しました", whoOf(ctx), s.groupName(ctx, id), user)
+	}
+	return nil
+}
+
+// groupName は、ログに書くグループの名前(読めなければ ID)。
+func (s *Service) groupName(ctx context.Context, id uuid.UUID) string {
+	d, err := s.store.Directory(ctx)
+	if err == nil {
+		for _, g := range d.Groups {
+			if g.ID == id {
+				return g.Name
+			}
+		}
+	}
+	return id.String()
 }
 
 // ReadConversation は、ほかの人の会話を読むだけで開く。管理者として読んだ(共有されていない)ときは、

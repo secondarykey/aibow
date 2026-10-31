@@ -13,6 +13,7 @@ import (
 
 	"github.com/secondarykey/aibow"
 	apiclient "github.com/secondarykey/aibow/api/client"
+	"github.com/secondarykey/aibow/auth"
 	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/store"
 )
@@ -80,6 +81,52 @@ func TestErrors(t *testing.T) {
 	}
 	if err := c.LockConversation(ctx, conv.ID, "app", now.Add(time.Minute)); !errors.Is(err, aibow.ErrBusy) {
 		t.Errorf("ほかの画面で生成中: %v", err)
+	}
+}
+
+// グループ(0031)も保存の口から同じ線で使える。管理者でない・長でないエラーは手元と同じエラーに戻る
+func TestGroupsOverHTTP(t *testing.T) {
+	c, st, user := newRemote(t)
+	ctx := context.Background()
+	now := time.Now()
+	add := func(name string, admin bool) uuid.UUID {
+		u := auth.User{ID: uuid.NewV7(), Name: name, Admin: admin, CreatedAt: now, UpdatedAt: now}
+		if err := st.CreateUser(ctx, u); err != nil {
+			t.Fatal(err)
+		}
+		return u.ID
+	}
+	alice, bob, carol := add("alice", true), add("bob", false), add("carol", false)
+
+	*user = bob
+	if _, err := c.CreateGroup(ctx, "営業"); !errors.Is(err, aibow.ErrNotAdmin) {
+		t.Errorf("管理者でない人: %v", err)
+	}
+	*user = alice
+	g, err := c.CreateGroup(ctx, "営業")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.CreateGroup(ctx, "営業"); !errors.Is(err, aibow.ErrGroupExists) {
+		t.Errorf("同じ名前: %v", err)
+	}
+	if err := c.SetGroupMember(ctx, g.ID, "carol", true); err != nil {
+		t.Fatal(err)
+	}
+	*user = bob
+	if err := c.SetGroupMember(ctx, g.ID, "bob", true); !errors.Is(err, aibow.ErrNotGroupLeader) {
+		t.Errorf("長でない人: %v", err)
+	}
+	conv := aibow.Conversation{ID: uuid.NewV7(), Title: "見積もり", CreatedAt: now, UpdatedAt: now}
+	if err := c.CreateConversation(ctx, conv); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.SetConversationShare(ctx, conv.ID, aibow.ShareUsers, nil, []string{"営業"}); err != nil {
+		t.Fatal(err)
+	}
+	*user = carol
+	if refs, err := c.SharedConversations(ctx); err != nil || len(refs) != 1 || refs[0].ID != conv.ID {
+		t.Errorf("グループのメンバーに見える: %+v %v", refs, err)
 	}
 }
 

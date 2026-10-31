@@ -19,6 +19,8 @@ import { ServerSettings } from "./ServerSettings";
 import { ServerTools } from "./ServerTools";
 import { changePassword, isBrowser, me, setDisplayName } from "../backend";
 import { DisplayNameInput } from "./UserSettings";
+import { LeaderGroups } from "./GroupSettings";
+import { useDirectory } from "../directory";
 import { errorMessage } from "../errors";
 import type { Models } from "../useModels";
 // Go の models パッケージ。"…/aibow/models" と書くと aibow パッケージの models.ts が選ばれるので、index まで書く
@@ -43,7 +45,7 @@ interface Props {
   onReadConversation(id: string): void; // 管理者がほかの人の会話を読むだけで開く(0018 の 11-2)
 }
 
-type Tab = "basic" | "model" | "conversation" | "tools" | "server" | "users";
+type Tab = "basic" | "model" | "conversation" | "tools" | "server" | "users" | "groups";
 
 const TABS: { id: Tab; label: string; title: string }[] = [
   { id: "basic", label: "基本設定", title: "会話によらず、この PC で1つだけのもの(画面)" },
@@ -55,11 +57,16 @@ const TABS: { id: Tab; label: string; title: string }[] = [
   { id: "server", label: "サーバー", title: "aibow-server につなぐ・ログインする・アプリの中で動かす形に戻す" },
   // 利用者の管理は、ブラウザでログインした管理者だけ(0018 の決定事項 7)
   { id: "users", label: "利用者", title: "aibow-server の利用者(作る・パスワードと API キーの作り直し・消す)" },
+  // グループの長だけ(管理者でない人。管理者は「利用者」のタブで扱う。0031 の決定事項 32・37)
+  { id: "groups", label: "グループ", title: "自分が長のグループ(メンバーを足す・外す)" },
 ];
 
 export function SettingsView({ onClose, errors, app, models, modelState, servers, onProfilesChanged, onApplyLimits, onError, appDisabled, connectDisabled, onDisplayChange, onToolsChanged, onReadConversation }: Props) {
   // 開くたびに「基本設定」から(開いている間だけ覚える)
   const [tab, setTab] = useState<Tab>("basic");
+  // グループの長かは、共有の相手の一覧(グループの長も入っている)で決める。ブラウザでログインしているときだけ
+  const [dir, reloadDir] = useDirectory();
+  const leader = isBrowser && me.login && !me.admin && dir.groups.some(g => g.leaders.includes(me.name));
   return (
     <section className="settings-view">
       <div className="settings-inner">
@@ -70,7 +77,7 @@ export function SettingsView({ onClose, errors, app, models, modelState, servers
         {errors.map(e => <div key={e.id} className="msg error">{e.text}</div>)}
 
         <div className="settings-tabs" role="tablist">
-          {TABS.filter(t => (t.id !== "users" || (isBrowser && me.admin)) && (t.id !== "server" || !isBrowser) && (t.id !== "tools" || isBrowser)).map(t => (
+          {TABS.filter(t => (t.id !== "users" || (isBrowser && me.admin)) && (t.id !== "groups" || leader) && (t.id !== "server" || !isBrowser) && (t.id !== "tools" || isBrowser)).map(t => (
             <button
               key={t.id}
               role="tab"
@@ -97,6 +104,8 @@ export function SettingsView({ onClose, errors, app, models, modelState, servers
         {tab === "model" && <ModelSettings models={modelState} disabled={appDisabled} onError={onError} />}
 
         {tab === "users" && <UserSettings onError={onError} onRead={onReadConversation} />}
+
+        {tab === "groups" && <LeaderGroups dir={dir} reload={reloadDir} onError={onError} />}
 
         {tab === "tools" && <ServerTools servers={servers} manage={modelState.manage} onChanged={onToolsChanged} />}
 

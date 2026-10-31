@@ -160,7 +160,7 @@ export function ProfileSettings({ models, servers, disabled, onApplyLimits, onEr
           })
           .catch(err => onError(errorMessage(err)));
       }}
-      onShare={(share, users) => act(() => ChatService.SetProfileShare(edit.id, share, users), edit.id)}
+      onShare={(share, users, groups) => act(() => ChatService.SetProfileShare(edit.id, share, users, groups), edit.id)}
       onError={onError}
     />
   );
@@ -199,7 +199,7 @@ function ProfileEditor({ profile, info, models, servers, disabled, onChange, onA
   onArchive(archived: boolean): void;
   onDelete(): void;
   onCopy(): void;                                  // 写して自分のプロファイルにする(配られたもの)
-  onShare(share: string, users: string[]): void;   // 配る範囲と相手を変える(管理者)
+  onShare(share: string, users: string[], groups: string[]): void; // 配る範囲と相手(人とグループ)を変える(管理者)
   onError(text: string): void;
 }) {
   if (profile.read_only) return <ReceivedProfile profile={profile} info={info} models={models} onSetDefault={onSetDefault} onCopy={onCopy} />;
@@ -330,8 +330,8 @@ function ShareTag({ profile }: { profile: Profile }) {
 }
 
 // ShareForm は、管理者がプロファイルを配る範囲と相手を選ぶ欄(0018 の決定事項 22)。会話の共有と同じ人を選ぶ部品で選び、確定してから変える(0031 の決定事項 6〜13)。
-function ShareForm({ profile, onShare }: { profile: Profile; onShare(share: string, users: string[]): void }) {
-  const dir = useDirectory();
+function ShareForm({ profile, onShare }: { profile: Profile; onShare(share: string, users: string[], groups: string[]): void }) {
+  const [dir] = useDirectory();
   return (
     <SharePicker
       id="profile-share"
@@ -340,10 +340,10 @@ function ShareForm({ profile, onShare }: { profile: Profile; onShare(share: stri
       words={PROFILE_WORDS}
       share={profile.share ?? ""}
       users={profile.share_with ?? []}
-      groups={[]}
+      groups={profile.share_groups ?? []}
       dir={dir}
       self={me.name}
-      onCommit={(next, users) => onShare(next, users)}
+      onCommit={onShare}
     />
   );
 }

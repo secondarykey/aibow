@@ -32,8 +32,14 @@ var ErrProfileNotFound = errors.New("プロファイルが見つかりません(
 // ErrProfileReadOnly は、変えられないプロファイル(配られたもの)を変えようとしたときのエラー(0018 の決定事項 9)。
 var ErrProfileReadOnly = errors.New("配られたプロファイルは変えられません。変えたいときは、写して自分のプロファイルにしてください")
 
+// ErrNotGroupLeader は、管理者でもそのグループの長でもない人が、グループのメンバーを変えようとしたときのエラー(0031 の決定事項 31)。
+var ErrNotGroupLeader = errors.New("グループのメンバーを変えられるのは、管理者とそのグループの長だけです")
+
+// ErrGroupExists は、同じ名前のグループがもうあるときのエラー(0031)。
+var ErrGroupExists = errors.New("その名前のグループはもうあります")
+
 // ErrNotAdmin は、管理者でない人が管理者だけの操作(プロファイルを配る・人の会話の一覧)をしたときのエラー(0018 の決定事項 3・25)。
-var ErrNotAdmin = errors.New("管理者だけができる操作です(プロファイルを配る・ほかの人の会話の一覧を見る)。管理者は aibow-server user admin <名前> で決めます")
+var ErrNotAdmin = errors.New("管理者だけができる操作です(プロファイルを配る・ほかの人の会話の一覧を見る・グループを作る)。管理者は aibow-server user admin <名前> で決めます")
 
 // 配る範囲(Profile.Share。0018 の 11-1)
 const (
@@ -57,6 +63,8 @@ type Profile struct {
 	// ShareWith は変えられる人(管理者)にだけ入る(受け取った人には、ほかに誰が受け取ったかを見せない)
 	Share     string   `json:"share,omitempty"`
 	ShareWith []string `json:"share_with,omitempty"`
+	// ShareGroups は配る相手のグループの名前(0031。ShareWith と同じく変えられる人にだけ入る)
+	ShareGroups []string `json:"share_groups,omitempty"`
 	// 次の3つは、保存先が読むときに入れる(保存しない)。
 	// Owner は作った人(持ち主)、OwnerName はその名前(配ったときに覚えた名前。作った人を消しても残る)。
 	// ReadOnly は ctx の利用者が変えられない(配られたもの。管理者でない人と、管理者から外れた人)。
@@ -605,14 +613,14 @@ func (cs *Conversations) CopyProfile(ctx context.Context, id uuid.UUID) (Profile
 	return cs.CreateProfile(ctx, name, p.Values, rules)
 }
 
-// SetProfileShare は、プロファイルを配る範囲と相手(利用者の名前)を変える(0018 の 11-1)。管理者だけ(保存先が確かめる)。
+// SetProfileShare は、プロファイルを配る範囲と相手(利用者の名前とグループの名前。0031)を変える(0018 の 11-1)。管理者だけ(保存先が確かめる)。
 // 配るときは、配られたもの同士で名前が重ならないかを確かめる。
-func (cs *Conversations) SetProfileShare(ctx context.Context, id uuid.UUID, share string, with []string) error {
+func (cs *Conversations) SetProfileShare(ctx context.Context, id uuid.UUID, share string, with, groups []string) error {
 	p, err := cs.store.Profile(ctx, id)
 	if err != nil {
 		return err
 	}
-	if share == ShareUsers && len(with) == 0 {
+	if share == ShareUsers && len(with) == 0 && len(groups) == 0 {
 		return errors.New("配る相手を1人以上選んでください")
 	}
 	p.Share = share
@@ -621,7 +629,7 @@ func (cs *Conversations) SetProfileShare(ctx context.Context, id uuid.UUID, shar
 	}
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
-	return cs.store.SetProfileShare(ctx, id, share, with)
+	return cs.store.SetProfileShare(ctx, id, share, with, groups)
 }
 
 // SaveAsProfile は、会話 conv の今の設定の値で、新しいプロファイル name を作る(決まりは無し)。

@@ -639,11 +639,11 @@ func TestWebSharedProfile(t *testing.T) {
 	w.mustCall(t, &p, "CreateProfile", "調べもの",
 		aibow.ProfileValues{Model: "ollama:a", HistoryTokens: 4096, ReplyTokens: 1024}, aibow.ProfileRules{Fixed: []string{"system"}})
 	w.mm.disabled = map[string]bool{"ollama:a": true}
-	if status, body := w.call(t, context.Background(), "SetProfileShare", p.ID, aibow.ShareAll, []string{}); status == http.StatusOK || !strings.Contains(string(body), "使えるモデル") {
+	if status, body := w.call(t, context.Background(), "SetProfileShare", p.ID, aibow.ShareAll, []string{}, []string{}); status == http.StatusOK || !strings.Contains(string(body), "使えるモデル") {
 		t.Errorf("使えないモデルのプロファイルは配れない: %d %s", status, body)
 	}
 	w.mm.disabled = nil
-	w.mustCall(t, nil, "SetProfileShare", p.ID, aibow.ShareUsers, []string{"bob"})
+	w.mustCall(t, nil, "SetProfileShare", p.ID, aibow.ShareUsers, []string{"bob"}, []string{})
 
 	w.user.Store(bob)
 	var list []aibow.ProfileInfo
@@ -654,7 +654,7 @@ func TestWebSharedProfile(t *testing.T) {
 	if status, body := w.call(t, context.Background(), "UpdateProfile", list[0].Profile); status == http.StatusOK || !strings.Contains(string(body), "写して") {
 		t.Errorf("受け取った人は変えられない: %d %s", status, body)
 	}
-	if status, _ := w.call(t, context.Background(), "SetProfileShare", p.ID, aibow.ShareAll, []string{}); status == http.StatusOK {
+	if status, _ := w.call(t, context.Background(), "SetProfileShare", p.ID, aibow.ShareAll, []string{}, []string{}); status == http.StatusOK {
 		t.Error("管理者でない人は配れない")
 	}
 	var cp aibow.Profile
@@ -669,7 +669,7 @@ func TestWebSharedProfile(t *testing.T) {
 	}
 
 	w.user.Store(alice)
-	w.mustCall(t, nil, "SetProfileShare", p.ID, aibow.ShareNone, []string{})
+	w.mustCall(t, nil, "SetProfileShare", p.ID, aibow.ShareNone, []string{}, []string{})
 	w.user.Store(bob)
 	w.mustCall(t, &list, "Profiles")
 	if len(list) != 1 || list[0].Profile.ID != cp.ID {
@@ -704,10 +704,10 @@ func TestWebSharedConversation(t *testing.T) {
 	w.user.Store(bob)
 	c := w.newConversation(t)
 	w.mustCall(t, nil, "Send", c.ID, "こんにちは?", nil)
-	if status, _ := w.call(t, context.Background(), "SetConversationShare", c.ID, aibow.ShareUsers, []string{}); status == http.StatusOK {
+	if status, _ := w.call(t, context.Background(), "SetConversationShare", c.ID, aibow.ShareUsers, []string{}, []string{}); status == http.StatusOK {
 		t.Error("相手を選ばずに指定した人にはできない")
 	}
-	w.mustCall(t, nil, "SetConversationShare", c.ID, aibow.ShareUsers, []string{"carol"})
+	w.mustCall(t, nil, "SetConversationShare", c.ID, aibow.ShareUsers, []string{"carol"}, []string{})
 
 	w.user.Store(carol)
 	var refs []aibow.ConversationRef
@@ -748,6 +748,73 @@ func TestWebSharedConversation(t *testing.T) {
 	w.mustCall(t, &detail, "Conversation", c.ID)
 	if len(detail.Messages) != 2 || detail.Conversation.Share != aibow.ShareUsers {
 		t.Errorf("ほかの人が書き込めてしまった・共有の印が無い: %d %+v", len(detail.Messages), detail.Conversation)
+	}
+}
+
+// グループ(0031 の段4)を画面用の口から。グループに共有した会話は、あとから入った人にも見え、抜けた人には見えなくなる。
+// メンバーを変えられるのは管理者とそのグループの長だけ(判定は保存先。画面用の口からも同じ線)
+func TestWebGroups(t *testing.T) {
+	w := newTestWeb(t)
+	now := time.Now()
+	add := func(name string, admin bool) *uuid.UUID {
+		u := auth.User{ID: uuid.NewV7(), Name: name, Admin: admin, CreatedAt: now, UpdatedAt: now}
+		if err := w.st.CreateUser(context.Background(), u); err != nil {
+			t.Fatal(err)
+		}
+		uctx := aibow.WithUser(context.Background(), u.ID)
+		app, _, _ := aibow.LoadAppSettings(uctx, w.st, InitialAppSettings(InitialValues{GPULayers: 999, PresencePenalty: 1.5, HistoryTokens: 8192, ReplyTokens: 8192}))
+		if _, err := aibow.NewConversations(w.st, nil, app).PrepareProfiles(uctx); err != nil {
+			t.Fatal(err)
+		}
+		return &u.ID
+	}
+	alice, bob, carol, dan := add("alice", true), add("bob", false), add("carol", false), add("dan", false)
+
+	w.user.Store(bob)
+	if status, _ := w.call(t, context.Background(), "CreateGroup", "営業"); status == http.StatusOK {
+		t.Error("管理者でない人がグループを作れる")
+	}
+	w.user.Store(alice)
+	var g aibow.Group
+	w.mustCall(t, &g, "CreateGroup", "営業")
+	w.mustCall(t, nil, "SetGroupMember", g.ID, "carol", true)
+	w.mustCall(t, nil, "SetGroupLeader", g.ID, "carol", true)
+
+	w.user.Store(bob)
+	c := w.newConversation(t)
+	w.mustCall(t, nil, "SetConversationShare", c.ID, aibow.ShareUsers, []string{}, []string{"営業"})
+	shared := func(who *uuid.UUID) bool {
+		t.Helper()
+		w.user.Store(who)
+		var refs []aibow.ConversationRef
+		w.mustCall(t, &refs, "SharedConversations")
+		return len(refs) == 1 && refs[0].ID == c.ID && refs[0].Share == aibow.ShareUsers
+	}
+	if !shared(carol) || shared(dan) {
+		t.Fatal("グループのメンバーだけに見える")
+	}
+	// 長(carol)が dan を足すと dan に見え、外すと見えなくなる
+	w.user.Store(carol)
+	w.mustCall(t, nil, "SetGroupMember", g.ID, "dan", true)
+	if !shared(dan) {
+		t.Error("あとから入った人に見えない")
+	}
+	w.user.Store(dan)
+	if status, _ := w.call(t, context.Background(), "SetGroupMember", g.ID, "bob", true); status == http.StatusOK {
+		t.Error("長でないメンバーがメンバーを変えられる")
+	}
+	if status, _ := w.call(t, context.Background(), "SetGroupLeader", g.ID, "dan", true); status == http.StatusOK {
+		t.Error("長でない人が長を決められる")
+	}
+	w.user.Store(carol)
+	w.mustCall(t, nil, "SetGroupMember", g.ID, "dan", false)
+	if shared(dan) {
+		t.Error("抜けた人に見える")
+	}
+	var d aibow.Directory
+	w.mustCall(t, &d, "Directory")
+	if len(d.Groups) != 1 || d.Groups[0].Conversations != 1 || len(d.Groups[0].Leaders) != 1 {
+		t.Errorf("グループの一覧: %+v", d.Groups)
 	}
 }
 

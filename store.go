@@ -66,24 +66,38 @@ type Store interface {
 	// ---- 会話の共有(0018 の 11-2)。ほかの人の会話は、ここの読むだけのメソッドでだけ読める
 	// (上の会話のメソッドは、今までどおり自分の会話だけを読み書きする。書き込めないことを、メソッドの分け方で守る)。
 	//
-	// SetConversationShare は、自分の会話の共有の範囲と相手(名前)を変える。自分の会話でなければ ErrNotFound
-	SetConversationShare(ctx context.Context, id uuid.UUID, share string, with []string) error
+	// SetConversationShare は、自分の会話の共有の範囲と相手(人の名前 with・グループの名前 groups。0031)を変える。自分の会話でなければ ErrNotFound
+	SetConversationShare(ctx context.Context, id uuid.UUID, share string, with, groups []string) error
 	// SharedConversations は、自分に共有された(全員か自分が相手の)ほかの人の会話の一覧(更新の新しい順)
 	SharedConversations(ctx context.Context) ([]ConversationRef, error)
 	// UserConversations は、利用者 name の会話の一覧(管理者だけ。ほかは ErrNotAdmin)
 	UserConversations(ctx context.Context, name string) ([]ConversationRef, error)
 	// ReadConversation は、ほかの人の会話を読む(共有されているか、管理者)。読めなければ ErrNotFound(あることも見せない)
 	ReadConversation(ctx context.Context, id uuid.UUID) (SharedRead, error)
-	// Directory は、共有の相手に選べる人(名前と表示名。0031)。ログインした人なら誰でも。ログインなしの形の利用者は入れない
+	// Directory は、共有の相手に選べる人(名前と表示名)とグループ(メンバーと長。0031)。ログインした人なら誰でも。ログインなしの形の利用者は入れない
 	Directory(ctx context.Context) (Directory, error)
 
-	// SetProfileShare は、プロファイルを配る範囲と相手(名前)を変える(0018 の 11-1)。管理者でなければ ErrNotAdmin。
+	// ---- グループ(0031 の段4)。作る・名前を変える・消す・長を決めるは管理者だけ(ほかは ErrNotAdmin)。
+	// メンバーを足す・外すは、管理者か、そのグループの長(ほかは ErrNotGroupLeader)。判定は保存先の1か所(SQLite なら groupEditable)。
+	//
+	// CreateGroup はグループを作る。同じ名前があれば ErrGroupExists
+	CreateGroup(ctx context.Context, name string) (Group, error)
+	// RenameGroup はグループの名前を変える。無ければ ErrNotFound、同じ名前があれば ErrGroupExists
+	RenameGroup(ctx context.Context, id uuid.UUID, name string) error
+	// DeleteGroup はグループを消す。そのグループへの共有と配るも消え、相手がだれもいなくなった会話・プロファイルは非公開(配らない)になる(決定事項 28)
+	DeleteGroup(ctx context.Context, id uuid.UUID) error
+	// SetGroupMember は利用者 user(名前)をグループに足す / 外す。外すと長でもなくなる(決定事項 30)
+	SetGroupMember(ctx context.Context, id uuid.UUID, user string, member bool) error
+	// SetGroupLeader はメンバー user を長にする / 外す。メンバーでなければエラー
+	SetGroupLeader(ctx context.Context, id uuid.UUID, user string, leader bool) error
+
+	// SetProfileShare は、プロファイルを配る範囲と相手(人の名前 with・グループの名前 groups)を変える(0018 の 11-1・0031)。管理者でなければ ErrNotAdmin。
 	//
 	// 誰に何が見えて、誰が変えられるかは、保存先が1か所で決める(SQLite なら WHERE の条件。0018 の「学ぶこと」の認可):
 	//   - 読める:自分のもの・全員に配られたもの・自分に配られたもの・(管理者なら)配られたもの全部。
 	//     Profile(id) だけは、自分がそのプロファイルから作った会話があれば、配られなくなっても読める(Withdrawn。決まりを引き続けるため)
 	//   - 変えられる:自分の配っていないもの・(管理者なら)配られたもの。ほかは ErrProfileReadOnly
-	SetProfileShare(ctx context.Context, id uuid.UUID, share string, with []string) error
+	SetProfileShare(ctx context.Context, id uuid.UUID, share string, with, groups []string) error
 
 	// AppSetting はアプリ全体の設定(利用者によらないもの)を1つ読む。まだ保存されていなければ ok=false。
 	AppSetting(ctx context.Context, key string) (value string, ok bool, err error)
@@ -110,6 +124,8 @@ type Conversation struct {
 	// ShareWith は相手の名前(会話1つを読んだときだけ入る)。変えるのは SetConversationShare(UpdateConversation では変わらない)
 	Share     string   `json:"share,omitempty"`
 	ShareWith []string `json:"share_with,omitempty"`
+	// ShareGroups は相手のグループの名前(0031。ShareWith と同じく会話1つを読んだときだけ入る)
+	ShareGroups []string `json:"share_groups,omitempty"`
 }
 
 // ConversationRef は、ほかの人の会話の一覧の1件(共有された会話・管理者が見る人の会話。0018 の 11-2)。中身は ReadConversation で読む。
@@ -131,9 +147,23 @@ type UserRef struct {
 	DisplayName string `json:"display_name,omitempty"`
 }
 
-// Directory は、共有の相手に選べる人(0031 の決定事項 13。全員を一度に渡し、画面で絞る)
+// Directory は、共有の相手に選べる人とグループ(0031 の決定事項 13・29。全員を一度に渡し、画面で絞る)
 type Directory struct {
-	Users []UserRef `json:"users"`
+	Users  []UserRef `json:"users"`
+	Groups []Group   `json:"groups"`
+}
+
+// Group はグループ1つ(0031 の段4)。管理者が作り、利用者を入れる。1人が複数のグループに入れる。グループの中にグループは入れない。
+// 共有の相手にグループを選ぶと、そのときのメンバーではなく「グループ」として覚える(あとから入った人にも見え、抜けた人には見えなくなる。決定事項 26)
+type Group struct {
+	ID      uuid.UUID `json:"id"`
+	Name    string    `json:"name"`
+	Members []string  `json:"members"` // メンバーのログインの名前(名前の順)
+	Leaders []string  `json:"leaders"` // 長(メンバーの中から管理者が決める。決定事項 30)
+	// Conversations・Profiles は、このグループに共有されている会話・配られているプロファイルの数
+	// (グループを消すとき・長が人を足すときの確かめの文。決定事項 28・33)
+	Conversations int `json:"conversations"`
+	Profiles      int `json:"profiles"`
 }
 
 // SharedRead は、ほかの人の会話を読んだもの(読むだけ。0018 の 11-2)。

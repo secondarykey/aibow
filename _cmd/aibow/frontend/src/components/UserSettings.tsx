@@ -1,8 +1,9 @@
 // 設定の画面の「利用者」のタブ(0018 の決定事項 7。11-0。0031 で一覧 + 詳細にした)。ブラウザの管理者だけに出す。
 //
+//	[ 人 | グループ ]                                                    … 人の一覧とグループの一覧を切り替える(0031 の決定事項 24・35。グループは GroupSettings.tsx)
 //	[名前で探す…] [すべて | 招待中 | 管理者 | API キーあり | 30日使っていない]   [+ 利用者を作る]
 //	名前                 状態      最後に使った日   作った日      会話   … 見出しを押すと並べ替え。行を押すと一覧の下に詳細(0031 の決定事項 14・35)
-//	▼ 詳細: 表示名・パスワードのリンク・API キー・その人の会話(新しい順 20 件 + もっと見る)・消す
+//	▼ 詳細: 表示名・グループ・パスワードのリンク・API キー・その人の会話(新しい順 20 件 + もっと見る)・消す
 //
 // 一覧は一度に取って画面で探す・絞る・並べ替える(サーバーで探す口は作らない。0031 の決定事項 13)。
 // 作る・パスワードと API キーの作り直し・消すは、aibow-server の user コマンドと同じ処理(_cmd/aibow-server の admin.go)。
@@ -16,7 +17,8 @@ import { LuArrowDown, LuArrowUp, LuPlus, LuX } from "react-icons/lu";
 import { admin, ChatService, linkURL, me, type AdminUser, type Link } from "../backend";
 import type { ConversationRef } from "../../bindings/github.com/secondarykey/aibow";
 import { errorMessage } from "../errors";
-import { showName } from "../directory";
+import { showName, useDirectory, type Directory } from "../directory";
+import { GroupAdmin, UserGroups } from "./GroupSettings";
 import { CopyButton } from "./CopyButton";
 
 // Secret は、一度だけ出すリンクか API キー
@@ -97,6 +99,33 @@ function compare(a: AdminUser, b: AdminUser, key: SortKey): number {
 const label = (u: AdminUser) => showName(u.name, u.display_name);
 
 export function UserSettings({ onError, onRead }: { onError(text: string): void; onRead(id: string): void }) {
+  const [view, setView] = useState<"users" | "groups">("users");
+  const [dir, reloadDir] = useDirectory();
+  const viewTabs = (
+    <div className="segmented user-view" role="group">
+      <button type="button" className={view === "users" ? "current" : ""} aria-pressed={view === "users"} onClick={() => setView("users")}>人</button>
+      <button type="button" className={view === "groups" ? "current" : ""} aria-pressed={view === "groups"} onClick={() => setView("groups")}>グループ</button>
+    </div>
+  );
+  if (view === "groups") {
+    return (
+      <>
+        <h2 title="グループは共有の相手に選べる。長はメンバーを足す・外せる">利用者</h2>
+        {viewTabs}
+        <GroupAdmin dir={dir} reload={reloadDir} onError={onError} />
+      </>
+    );
+  }
+  return <UserList dir={dir} reloadDir={reloadDir} viewTabs={viewTabs} onError={onError} onRead={onRead} />;
+}
+
+function UserList({ dir, reloadDir, viewTabs, onError, onRead }: {
+  dir: Directory;
+  reloadDir(): void;
+  viewTabs: React.ReactNode;
+  onError(text: string): void;
+  onRead(id: string): void;
+}) {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
@@ -156,6 +185,7 @@ export function UserSettings({ onError, onRead }: { onError(text: string): void;
   return (
     <>
       <h2 title="管理者の印は、aibow-server の PC で aibow-server user admin / unadmin で付け外しする">利用者</h2>
+      {viewTabs}
       {secret && <SecretBox secret={secret} onClose={() => setSecret(null)} />}
       <div className="user-toolbar">
         <input type="text" className="user-search" value={query} placeholder="名前で探す…" onChange={e => setQuery(e.target.value)} />
@@ -197,11 +227,14 @@ export function UserSettings({ onError, onRead }: { onError(text: string): void;
         <UserDetail
           key={user.name}
           user={user}
+          dir={dir}
+          onGroupsChanged={reloadDir}
           onClose={() => setSelected(null)}
           onRead={onRead}
           onError={onError}
           onDisplayName={display => run(async () => {
             await admin.setDisplayName(user.name, display);
+            reloadDir();
             return null;
           })}
           onResetLink={label => run(async () => linkSecret(label, await admin.resetPassword(user.name)))}
@@ -225,8 +258,10 @@ export function UserSettings({ onError, onRead }: { onError(text: string): void;
 const PAGE = 20;
 
 // UserDetail は、一覧で押した人の詳細(一覧の下に出す。0031 の決定事項 14・35)
-function UserDetail({ user, onClose, onRead, onError, onDisplayName, onResetLink, onRenewKey, onRemove }: {
+function UserDetail({ user, dir, onGroupsChanged, onClose, onRead, onError, onDisplayName, onResetLink, onRenewKey, onRemove }: {
   user: AdminUser;
+  dir: Directory;
+  onGroupsChanged(): void;
   onClose(): void;
   onRead(id: string): void;
   onError(text: string): void;
@@ -258,6 +293,13 @@ function UserDetail({ user, onClose, onRead, onError, onDisplayName, onResetLink
         <div className="user-field">
           <span className="user-field-label">表示名</span>
           <DisplayNameInput value={user.display_name ?? ""} placeholder={user.name} onSave={onDisplayName} />
+        </div>
+      )}
+
+      {!user.local && (
+        <div className="user-field">
+          <span className="user-field-label">グループ</span>
+          <UserGroups user={user.name} dir={dir} onChanged={onGroupsChanged} onError={onError} />
         </div>
       )}
 
