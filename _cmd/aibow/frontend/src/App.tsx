@@ -35,7 +35,7 @@ import { Splitter, useListWidth } from "./components/Splitter";
 import { ChatView } from "./components/ChatView";
 import { NewChat } from "./components/NewChat";
 import { SettingsView, type Tab as SettingsTab } from "./components/SettingsView";
-import { AdminView } from "./components/AdminView";
+import { AdminView, canAdmin } from "./components/AdminView";
 import { ConversationSettingsView } from "./components/ConversationSettingsView";
 import { ReadView } from "./components/ReadView";
 import { Composer } from "./components/Composer";
@@ -553,7 +553,21 @@ export default function App() {
       />
     );
   } else if (adminOpen) {
-    content = <AdminView errors={viewErrors} onClose={() => setAdminOpen(false)} onError={addError} onReadConversation={onOpenShared} />;
+    content = (
+      <AdminView
+        errors={viewErrors}
+        onClose={() => setAdminOpen(false)}
+        onError={addError}
+        onReadConversation={onOpenShared}
+        models={models}
+        servers={mcpServers}
+        appDisabled={busy !== "idle"}
+        onToolsChanged={() => {
+          reloadMcp();
+          convs.refreshUsage().catch(err => addError(errorMessage(err)));
+        }}
+      />
+    );
   } else if (reading) {
     content = <ReadView read={reading} pinQuestion={app.settings?.display.pin_question ?? false} onCopy={copyReading} />;
   } else if (showConvSettings && convs.current) {
@@ -684,6 +698,7 @@ export default function App() {
     settingsOpen,
     onToggleSettings: toggleSettings,
     adminOpen,
+    canAdmin: canAdmin(models.manage),
     onToggleAdmin: toggleAdmin,
     onOpenAccount: openAccount,
     onToggleOpen: () => {

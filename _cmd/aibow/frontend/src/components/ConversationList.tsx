@@ -23,7 +23,6 @@ import { canLogout, signedIn, signOut } from "./AccountSettings";
 import { showName } from "../directory";
 import type { KeyboardEvent } from "react";
 import { LuChevronDown, LuChevronRight, LuEye, LuMenu, LuPlus, LuSettings, LuShare2, LuShield, LuUser } from "react-icons/lu";
-import { canAdmin } from "./AdminView";
 import { useMenuDismiss } from "./SplitButton";
 import { toggleMaximiseOnDoubleClick } from "./TitleBar";
 import type { Conversation, ConversationRef } from "../../bindings/github.com/secondarykey/aibow";
@@ -47,6 +46,7 @@ interface Props {
   onToggleSettings(): void;
   onOpenAccount(): void; // 設定の画面を「アカウント」のタブで開く(左下の名前のメニュー)
   adminOpen: boolean;    // 管理の画面を開いているか(0032)
+  canAdmin: boolean;     // 管理の画面の盾を出すか(管理者か、サーバーの PC の上から開いたブラウザ)
   onToggleAdmin(): void; // 歯車の隣の盾で、管理の画面を開く / 閉じる
   open: boolean; // 一覧を開いているか
   onToggleOpen(): void;
@@ -58,7 +58,7 @@ interface Props {
 
 export function ConversationList({
   list, currentId, generatingId, waitingId, ended, disabled, onOpen, onNew, onDelete, onRename, renamingId, onStartRename, onEndRename,
-  settingsOpen, onToggleSettings, onOpenAccount, adminOpen, onToggleAdmin, open, onToggleOpen, width, shared, readingId, onOpenShared,
+  settingsOpen, onToggleSettings, onOpenAccount, adminOpen, canAdmin, onToggleAdmin, open, onToggleOpen, width, shared, readingId, onOpenShared,
 }: Props) {
   const [sharedOpen, setSharedOpen] = useState(true);
   // 削除の確認を出している会話。消すと戻せないので、もう一度押してもらう
@@ -82,8 +82,8 @@ export function ConversationList({
   );
   const settingsCls = settingsOpen ? "settings active" : "settings";
   // 管理の画面の入口(盾)。管理できる人にだけ、歯車の隣に出す(0032 の決定事項 5)
-  const adminBtn = canAdmin() && (
-    <button className={"icon-btn admin" + (adminOpen ? " active" : "")} title="管理(利用者・グループ)" onClick={onToggleAdmin}><LuShield /></button>
+  const adminBtn = canAdmin && (
+    <button className={"icon-btn admin" + (adminOpen ? " active" : "")} title="管理" onClick={onToggleAdmin}><LuShield /></button>
   );
 
   if (!open) {

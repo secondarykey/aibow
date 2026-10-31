@@ -5,34 +5,52 @@
 // 画面を分けても、断るのは Go の口(管理者の口 /aibow/admin/・グループのメソッド・store の条件)。画面は出し分けるだけ(0032 の「学ぶこと」)。
 //
 //	利用者・グループ … ログインした管理者だけ(0032 の決定事項 4)
-//	(段2 でモデル・ツール、段3 で配るプロファイルを移す)
+//	モデル          … サーバーの PC の事情(読み込む / 降ろす・GPU の層数・置き場所・使える。0015 の 8-4・0018 の決定事項 8)
+//	ツール          … ブラウザの会話のツールの扱いの、aibow-server 全体の既定(0024 の決定事項 21)
+//	(段3 で配るプロファイルを移す)
 import { useState } from "react";
 import { LuArrowLeft } from "react-icons/lu";
+import type { ServerInfo } from "../../bindings/github.com/secondarykey/aibow/mcp/client";
 import { isBrowser, me } from "../backend";
 import { useDirectory } from "../directory";
+import type { Models } from "../useModels";
 import { UserSettings } from "./UserSettings";
 import { GroupAdmin } from "./GroupSettings";
+import { ModelSettings } from "./ModelSettings";
+import { ServerTools } from "./ServerTools";
 
-type Tab = "users" | "groups";
+type Tab = "users" | "groups" | "models" | "tools";
 
-const TABS: { id: Tab; label: string; title: string }[] = [
-  { id: "users", label: "利用者", title: "aibow-server の利用者(作る・パスワードのリンクと API キー・表示名・消す・その人の会話)" },
-  { id: "groups", label: "グループ", title: "グループ(作る・名前・メンバーと長・消す)。共有の相手に選べる" },
+const TABS: { id: Tab; label: string; title: string; admin: boolean }[] = [
+  { id: "users", label: "利用者", title: "aibow-server の利用者(作る・パスワードのリンクと API キー・表示名・消す・その人の会話)", admin: true },
+  { id: "groups", label: "グループ", title: "グループ(作る・名前・メンバーと長・消す)。共有の相手に選べる", admin: true },
+  { id: "models", label: "モデル", title: "サーバーの PC のモデル(読み込む / 降ろす・GPU の層数・置き場所・使える)", admin: false },
+  { id: "tools", label: "ツール", title: "ブラウザの会話のツールの扱い(使わない・確認する・確認しない)。aibow-server 全体の既定", admin: false },
 ];
 
-// canAdmin は、管理の画面を出すか(歯車の隣の盾を出すか)。
-// 段1 では中身が利用者とグループだけなので、ブラウザでログインした管理者だけ(段2 でサーバーの PC から開いた画面にも広げる。0032 の決定事項 4)
-export function canAdmin(): boolean {
-  return isBrowser && me.login && !!me.admin;
+// canAdmin は、管理の画面を出すか(歯車の隣の盾を出すか)。ブラウザで、管理者か、サーバーの PC の上から開いた画面(manage。Go の Caller.ManagesPC)。
+// 0032 の決定事項 4。アプリ(serverUrl)からは開かない(決定事項 9)
+export function canAdmin(manage: boolean): boolean {
+  return isBrowser && manage;
 }
 
-export function AdminView({ onClose, errors, onError, onReadConversation }: {
+// adminUser は、ログインした管理者か(利用者とグループのタブを出すか。ログインの要らない形には利用者がいない)
+function adminUser(): boolean {
+  return me.login && !!me.admin;
+}
+
+export function AdminView({ onClose, errors, onError, onReadConversation, models, servers, appDisabled, onToolsChanged }: {
   onClose(): void;                        // 会話に戻る
   errors: { id: number; text: string }[]; // 管理の画面を開いてから出たエラー
   onError(text: string): void;
   onReadConversation(id: string): void;   // 利用者の会話を読むだけで開く(読んだことはログに残る。0018 の決定事項 25)
+  models: Models;                         // モデルの一覧・読み込む / 降ろす・層の数(モデルのタブ)
+  servers: ServerInfo[];                  // server.json の MCP のサーバー(ツールのタブ)
+  appDisabled: boolean;                   // 生成中・読み込み中は、読み込む / 降ろす・層の数を変えられない
+  onToolsChanged(): void;                 // ツールの扱いを変えた(メーターと、会話で選べる MCP のサーバーを読み直す)
 }) {
-  const [tab, setTab] = useState<Tab>("users");
+  const tabs = TABS.filter(t => !t.admin || adminUser());
+  const [tab, setTab] = useState<Tab>(tabs[0]?.id ?? "models");
   const [dir, reloadDir] = useDirectory(); // 利用者の詳細のグループと、グループのタブで分け合う
   return (
     <section className="settings-view">
@@ -44,7 +62,7 @@ export function AdminView({ onClose, errors, onError, onReadConversation }: {
         {errors.map(e => <div key={e.id} className="msg error">{e.text}</div>)}
 
         <div className="settings-tabs" role="tablist">
-          {TABS.map(t => (
+          {tabs.map(t => (
             <button
               key={t.id}
               role="tab"
@@ -65,6 +83,8 @@ export function AdminView({ onClose, errors, onError, onReadConversation }: {
             <GroupAdmin dir={dir} reload={reloadDir} onError={onError} />
           </>
         )}
+        {tab === "models" && <ModelSettings models={models} disabled={appDisabled} onError={onError} />}
+        {tab === "tools" && <ServerTools servers={servers} manage={models.manage} onChanged={onToolsChanged} />}
       </div>
     </section>
   );
