@@ -18,7 +18,8 @@
 // (開閉できる・持ち主の名前付き。押すと読むだけで開く。「自分に共有」と「全員に共有」に分け、持ち主とタイトルで絞る。0031 の決定事項 17)。ログインが要る aibow-server につないでいるときは、
 // 一番下の名前の横に「管理者が読めます」を常に出す(決定事項 23。畳んだときは目のアイコンだけ)
 import { useEffect, useRef, useState } from "react";
-import { ChatService, logout, me } from "../backend";
+import { ChatService, me } from "../backend";
+import { canLogout, signedIn, signOut } from "./AccountSettings";
 import { showName } from "../directory";
 import type { KeyboardEvent } from "react";
 import { LuChevronDown, LuChevronRight, LuEye, LuMenu, LuPlus, LuSettings, LuShare2, LuUser } from "react-icons/lu";
@@ -43,6 +44,7 @@ interface Props {
   onEndRename(): void;
   settingsOpen: boolean;
   onToggleSettings(): void;
+  onOpenAccount(): void; // 設定の画面を「アカウント」のタブで開く(左下の名前のメニュー)
   open: boolean; // 一覧を開いているか
   onToggleOpen(): void;
   width: number; // 開いているときの幅(px)。一覧の右の仕切り(Splitter)で変えられる
@@ -53,7 +55,7 @@ interface Props {
 
 export function ConversationList({
   list, currentId, generatingId, waitingId, ended, disabled, onOpen, onNew, onDelete, onRename, renamingId, onStartRename, onEndRename,
-  settingsOpen, onToggleSettings, open, onToggleOpen, width, shared, readingId, onOpenShared,
+  settingsOpen, onToggleSettings, onOpenAccount, open, onToggleOpen, width, shared, readingId, onOpenShared,
 }: Props) {
   const [sharedOpen, setSharedOpen] = useState(true);
   // 削除の確認を出している会話。消すと戻せないので、もう一度押してもらう
@@ -167,7 +169,7 @@ export function ConversationList({
       {me.login && <div className="admin-notice row" title={ADMIN_NOTICE}><LuEye /> 管理者が読めます</div>}
       <div className="footer">
         <AppName />
-        <UserMenu />
+        <UserMenu onOpenAccount={onOpenAccount} />
         <button className={"icon-btn " + settingsCls} title="設定" onClick={onToggleSettings}><LuSettings /></button>
       </div>
     </nav>
@@ -258,28 +260,15 @@ function AppName() {
   return <span className="app-name">AIBow{version && <span className="app-version">{version}</span>}</span>;
 }
 
-// UserMenu は、ログインしている人の名前。押すと「ログアウト」を出す(ブラウザでログインが要るときだけ。0017 の 10-1)。
-// ログアウトしたら画面を読み直す(ログインの画面になる)。
-// デスクトップのアプリが aibow-server に API キーでつないでいるときは、名前だけを出す(ログアウトは無い。0017 の 10-4)。
-function UserMenu() {
+// UserMenu は、ログインしている人の名前(表示名)。押すと上に「アカウント」(設定の画面の「アカウント」のタブ)と「ログアウト」を出す。
+// ブラウザでも、画面のアプリが aibow-server にログインしてつないでいるときも同じ形(0031 の決定事項 44・46)。
+// ログアウトしたら読み直し、ログインの画面になる。settings.json に手で書いた API キーでつないでいるときは、ログアウトを出さない。
+// ログインが要らない形・アプリの中で動かすときは出さない。
+function UserMenu({ onOpenAccount }: { onOpenAccount(): void }) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   useMenuDismiss(open, () => setOpen(false), box);
-  if (!me.login || me.name === "") return null;
-  if (me.viaKey) {
-    return (
-      <div className="user-menu">
-        <span className="user-btn" title={`API キーで ${me.name} としてつないでいます`}><LuUser /><span>{showName(me.name, me.display_name, true)}</span></span>
-      </div>
-    );
-  }
-
-  const signOut = async () => {
-    setOpen(false);
-    // 失敗しても読み直す(cookie が残っていれば、読み直した画面がそのまま使える。消えていればログインの画面になる)
-    await logout().catch(() => undefined);
-    location.reload();
-  };
+  if (!signedIn()) return null;
   return (
     <div className="user-menu" ref={box}>
       <button className="user-btn" title={`${showName(me.name, me.display_name)} としてログインしています`} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(o => !o)}>
@@ -287,7 +276,8 @@ function UserMenu() {
       </button>
       {open && (
         <div className="split-menu up" role="menu">
-          <button role="menuitem" onClick={signOut}>ログアウト</button>
+          <button role="menuitem" onClick={() => { setOpen(false); onOpenAccount(); }}>アカウント</button>
+          {canLogout() && <button role="menuitem" onClick={() => { setOpen(false); signOut(); }}>ログアウト</button>}
         </div>
       )}
     </div>

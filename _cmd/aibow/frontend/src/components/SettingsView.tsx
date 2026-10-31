@@ -17,11 +17,10 @@ import { ModelSettings } from "./ModelSettings";
 import { UserSettings } from "./UserSettings";
 import { ServerSettings } from "./ServerSettings";
 import { ServerTools } from "./ServerTools";
-import { changePassword, isBrowser, me, setDisplayName, setEmail } from "../backend";
-import { DisplayNameInput, EmailInput } from "./UserSettings";
+import { isBrowser, me } from "../backend";
+import { AccountSettings, signedIn } from "./AccountSettings";
 import { LeaderGroups } from "./GroupSettings";
 import { useDirectory } from "../directory";
-import { errorMessage } from "../errors";
 import type { Models } from "../useModels";
 // Go の models パッケージ。"…/aibow/models" と書くと aibow パッケージの models.ts が選ばれるので、index まで書く
 import type { Entry as ModelEntry } from "../../bindings/github.com/secondarykey/aibow/models/index";
@@ -43,9 +42,10 @@ interface Props {
   onDisplayChange(d: DisplaySettings): void; // 画面の設定を変える(生成に関わらないので、生成中でも変えられる)
   onToolsChanged(): void; // ツールを使う / 使わないを変えた(メーターと、会話で選べる MCP のサーバーを読み直す)
   onReadConversation(id: string): void; // 管理者がほかの人の会話を読むだけで開く(0018 の 11-2)
+  initialTab?: Tab; // 開いたときのタブ(左下の名前のメニューの「アカウント」から開くときは account)
 }
 
-type Tab = "basic" | "model" | "conversation" | "tools" | "server" | "users" | "groups";
+export type Tab = "basic" | "model" | "conversation" | "tools" | "server" | "users" | "groups" | "account";
 
 const TABS: { id: Tab; label: string; title: string }[] = [
   { id: "basic", label: "基本設定", title: "会話によらず、この PC で1つだけのもの(画面)" },
@@ -59,11 +59,13 @@ const TABS: { id: Tab; label: string; title: string }[] = [
   { id: "users", label: "利用者", title: "aibow-server の利用者(作る・パスワードと API キーの作り直し・消す)" },
   // グループの長だけ(管理者でない人。管理者は「利用者」のタブで扱う。0031 の決定事項 32・37)
   { id: "groups", label: "グループ", title: "自分が長のグループ(メンバーを足す・外す)" },
+  // ログインしているとき(ブラウザ・アプリが aibow-server にログインしてつないでいるとき)。自分の名前・表示名・メールアドレス・パスワード・ログアウト(0031 の決定事項 44)
+  { id: "account", label: "アカウント", title: "自分の表示名・メールアドレス・パスワード・ログアウト" },
 ];
 
-export function SettingsView({ onClose, errors, app, models, modelState, servers, onProfilesChanged, onApplyLimits, onError, appDisabled, connectDisabled, onDisplayChange, onToolsChanged, onReadConversation }: Props) {
-  // 開くたびに「基本設定」から(開いている間だけ覚える)
-  const [tab, setTab] = useState<Tab>("basic");
+export function SettingsView({ onClose, errors, app, models, modelState, servers, onProfilesChanged, onApplyLimits, onError, appDisabled, connectDisabled, onDisplayChange, onToolsChanged, onReadConversation, initialTab }: Props) {
+  // 開くたびに「基本設定」から(開いている間だけ覚える)。左下の名前のメニューから開いたときは「アカウント」
+  const [tab, setTab] = useState<Tab>(initialTab ?? "basic");
   // グループの長かは、共有の相手の一覧(グループの長も入っている)で決める。ブラウザでログインしているときだけ
   const [dir, reloadDir] = useDirectory();
   const leader = isBrowser && me.login && !me.admin && dir.groups.some(g => g.leaders.includes(me.name));
@@ -77,7 +79,7 @@ export function SettingsView({ onClose, errors, app, models, modelState, servers
         {errors.map(e => <div key={e.id} className="msg error">{e.text}</div>)}
 
         <div className="settings-tabs" role="tablist">
-          {TABS.filter(t => (t.id !== "users" || (isBrowser && me.admin)) && (t.id !== "groups" || leader) && (t.id !== "server" || !isBrowser) && (t.id !== "tools" || isBrowser)).map(t => (
+          {TABS.filter(t => (t.id !== "users" || (isBrowser && me.admin)) && (t.id !== "groups" || leader) && (t.id !== "account" || signedIn()) && (t.id !== "server" || !isBrowser) && (t.id !== "tools" || isBrowser)).map(t => (
             <button
               key={t.id}
               role="tab"
@@ -95,10 +97,6 @@ export function SettingsView({ onClose, errors, app, models, modelState, servers
           <>
             <h2 title="画面の見せ方。生成には関わらない">画面</h2>
             {app && <DisplaySettingsForm display={app.display} onChange={onDisplayChange} />}
-            {/* 自分の表示名(0031)とパスワード(0022)を変える(ブラウザでログインしているときだけ) */}
-            {isBrowser && me.login && me.name !== "" && <OwnDisplayName onError={onError} />}
-            {isBrowser && me.login && me.name !== "" && <OwnEmail onError={onError} />}
-            {isBrowser && me.login && me.name !== "" && <PasswordForm />}
           </>
         )}
 
@@ -107,6 +105,8 @@ export function SettingsView({ onClose, errors, app, models, modelState, servers
         {tab === "users" && <UserSettings onError={onError} onRead={onReadConversation} />}
 
         {tab === "groups" && <LeaderGroups dir={dir} reload={reloadDir} onError={onError} />}
+
+        {tab === "account" && <AccountSettings onError={onError} />}
 
         {tab === "tools" && <ServerTools servers={servers} manage={modelState.manage} onChanged={onToolsChanged} />}
 
@@ -129,80 +129,6 @@ export function SettingsView({ onClose, errors, app, models, modelState, servers
         )}
       </div>
     </section>
-  );
-}
-
-// OwnDisplayName は、ログインしている本人が表示名を変える(0031 の決定事項 19)。共有の相手・共有された会話・利用者のタブに出る
-function OwnDisplayName({ onError }: { onError(text: string): void }) {
-  const [value, setValue] = useState(me.display_name ?? "");
-  return (
-    <>
-      <h2 className="section" title="共有の相手を選ぶとき・共有された会話の持ち主として、ほかの人に見える名前。空ならログインの名前">表示名</h2>
-      <DisplayNameInput
-        value={value}
-        placeholder={me.name}
-        onSave={display => {
-          setDisplayName(display).then(m => setValue(m.display_name ?? ""), err => onError(errorMessage(err)));
-        }}
-      />
-    </>
-  );
-}
-
-// OwnEmail は、ログインしている本人がメールアドレスを変える(0031 の決定事項 41)。管理者と本人にだけ見える
-function OwnEmail({ onError }: { onError(text: string): void }) {
-  const [value, setValue] = useState(me.email ?? "");
-  return (
-    <>
-      <h2 className="section" title="管理者と自分にだけ見える。今は持つだけで、メールは送らない">メールアドレス</h2>
-      <EmailInput
-        value={value}
-        onSave={email => setEmail(email).then(m => { setValue(m.email ?? ""); return true; }, err => { onError(errorMessage(err)); return false; })}
-      />
-    </>
-  );
-}
-
-// PasswordForm は、ログインしている本人がパスワードを変える(0022 の決定事項 4)。変えたら、ほかのログイン中の画面とアプリは切れる。
-// 間違いはフォームの下に出す(設定の画面のエラーの欄に積むと、変えられたあとも残って紛らわしいため)
-function PasswordForm() {
-  const [current, setCurrent] = useState("");
-  const [next, setNext] = useState("");
-  const [again, setAgain] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [done, setDone] = useState(false);
-  const [error, setError] = useState("");
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-    if (next !== again) {
-      setError("2つの新しいパスワードが違います");
-      return;
-    }
-    setBusy(true);
-    try {
-      await changePassword(current, next);
-      setCurrent(""); setNext(""); setAgain("");
-      setDone(true);
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <form className="password-form" onSubmit={submit}>
-      <h2 className="section" title="変えると、ほかのログイン中の画面とアプリはログインし直しになる(この画面はそのまま)">パスワード</h2>
-      <label htmlFor="pw-current">今のパスワード</label>
-      <input id="pw-current" type="password" autoComplete="current-password" value={current} onChange={e => { setCurrent(e.target.value); setDone(false); }} />
-      <label htmlFor="pw-next">新しいパスワード(12 文字以上)</label>
-      <input id="pw-next" type="password" autoComplete="new-password" value={next} onChange={e => { setNext(e.target.value); setDone(false); }} />
-      <label htmlFor="pw-again">新しいパスワード(もう一度)</label>
-      <input id="pw-again" type="password" autoComplete="new-password" value={again} onChange={e => { setAgain(e.target.value); setDone(false); }} />
-      <button type="submit" className="apply" disabled={busy || !current || !next || !again}>パスワードを変える</button>
-      {error && <p className="login-error" role="alert">{error}</p>}
-      {done && <p className="hint">パスワードを変えました</p>}
-    </form>
   );
 }
 

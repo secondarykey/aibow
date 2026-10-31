@@ -54,7 +54,7 @@ func TestConnectionKeepsKnownServer(t *testing.T) {
 		t.Fatalf("つないだとき: %+v", f)
 	}
 
-	// ログアウトして戻す:つなぐ先は消え、信頼したつなぎ先は残る
+	// アプリの中で動かす形に戻す:つなぐ先は消え、信頼したつなぎ先は残る
 	if err := s.DisconnectServer(); err != nil {
 		t.Fatal(err)
 	}

@@ -215,9 +215,9 @@ aibow-server の管理者は、プロファイルを全員か指定した人に�
 ## 表示名と最後に使った日(0031 の段3)
 
 - **表示名**(`auth.User.DisplayName`・`users.display_name`):人に見せる名前。空ならログインの名前。見せるときは「表示名(ログインの名前)」、狭いところは表示名だけ(`directory.ts` の `showName`)。
-  決まりは `auth.CheckDisplayName`(前後の空白を削る・改行などの制御文字は断る・64 文字まで)。管理者(利用者のタブ・`user display`)と本人(基本設定。`POST /aibow/auth/display`)が変える。ログはログインの名前で書く
+  決まりは `auth.CheckDisplayName`(前後の空白を削る・改行などの制御文字は断る・64 文字まで)。管理者(利用者のタブ・`user display`)と本人(「アカウント」のタブ。`POST /aibow/auth/display`)が変える。ログはログインの名前で書く
 - **メールアドレス**(`auth.User.Email`・`users.email`。0031 の決定事項 40〜43):今は持つだけで、メールを送る・メールでログインするなどの使い道は無い。
-  管理者(利用者のタブ・`user email`)と本人(基本設定。`POST /aibow/auth/email`)が決め、管理者と本人にだけ見せる(`Directory` には入れない)。
+  管理者(利用者のタブ・`user email`)と本人(「アカウント」のタブ。`POST /aibow/auth/email`)が決め、管理者と本人にだけ見せる(`Directory` には入れない)。
   空でなければ1人1つ(大文字小文字は同じとみなす)。形は `auth.CheckEmail`(`net/mail` で名前の付かないアドレスとして読める・空白なし・254 文字まで)だけ確かめる。ログにはアドレスを書かない
 - **最後に使った時刻**(`auth.User.LastUsedAt`・`users.last_used_at`):ログイン・セッション・API キー・アプリ用のトークンのどれで使っても書くが、
   **前に書いてから1日以上たったときだけ**書く(`auth/used.go` の `markUsed`。セッションの期限を延ばす `extendEvery` と同じ考え方で、使うたびに DB へ書かない)

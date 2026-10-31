@@ -101,6 +101,7 @@ func main() {
 	var server *apiclient.Client // aibow-server につなぐとき(serverUrl)。生成も保存も、ここに頼む(0017 の 10-3)
 	if err == nil && cfg.serverURL != "" {
 		server, err = newServerClient(cfg)
+		conn.client = server
 	}
 	if err == nil {
 		var closeStore func()

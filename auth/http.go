@@ -9,7 +9,8 @@ package auth
 //	POST /aibow/auth/token/revoke  Authorization: Bearer <トークン> のトークンを消す(アプリのログアウト)
 //	POST /aibow/auth/link/check    本文 {"token"}。パスワードを決めるリンクの持ち主の名前(0022)。使えなければ 400
 //	POST /aibow/auth/link          本文 {"token", "password"}。リンクでパスワードを決め、そのままログインする(cookie を渡す)
-//	POST /aibow/auth/password      本文 {"current", "password"}。ログインしている本人がパスワードを変える(新しい cookie を渡す)
+//	POST /aibow/auth/password      本文 {"current", "password"}。ログインしている本人がパスワードを変える(新しい cookie を渡す。
+//	                               画面のアプリがアプリ用のトークンで呼んだときは、cookie の代わりに新しいトークン(AppLogin)を返す。0031)
 //	POST /aibow/auth/display       本文 {"display_name"}。ログインしている本人が表示名を変える(0031。空なら無し)
 //	POST /aibow/auth/email         本文 {"email"}。ログインしている本人がメールアドレスを変える(0031。空なら無し。重なれば 409)
 //
@@ -267,6 +268,23 @@ func Handler(s *Sessions, required bool) http.Handler {
 		addr := remote(r)
 		if left := lim.wait(addr); left > 0 {
 			writeError(w, http.StatusTooManyRequests, fmt.Sprintf("パスワードを続けて間違えたので、しばらく受け付けません。%d 分ほど待ってください", int(left.Minutes())+1))
+			return
+		}
+		// 画面のアプリ(Bearer。Keys.WithBearer)から呼んだときは、cookie を渡さず、新しいアプリ用のトークンを返す
+		if key := bearerOf(r.Context()); key != "" {
+			got, err := s.ChangePasswordByKey(r.Context(), u, req.Current, req.Password, key)
+			if errors.Is(err, ErrWrongPassword) {
+				lim.fail(addr)
+				log.Warnf("パスワードを変えられませんでした(今のパスワードが違う): %s(%s。アプリから)", u.Name, addr)
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			if linkError(w, err) {
+				return
+			}
+			lim.ok(addr)
+			log.Noticef("パスワードを変えました: %s(%s。アプリから。ほかのログイン中の画面とアプリはログインし直しになります)", u.Name, addr)
+			writeJSON(w, http.StatusOK, got)
 			return
 		}
 		session, err := s.ChangePassword(r.Context(), u, req.Current, req.Password)

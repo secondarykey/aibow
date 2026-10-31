@@ -1,6 +1,7 @@
 // ログインの画面(ブラウザで、aibow-server がログインを要る設定のとき。0017 の 10-1)。
 // 画面の中央に、名前・パスワード・ログインのボタンだけを置く(2026-10-23、ユーザーと決めた)。
-// デスクトップのアプリと、ログインが要らない形の aibow-server では出さない(LoginGate がそのまま中身を描く)。
+// デスクトップのアプリも、画面で aibow-server につないだのにログインしていなければ出す(ログアウトした・期限が切れた。0031 の決定事項 44)。
+// ログインが要らない形の aibow-server・アプリの中で動かすときは出さない(LoginGate がそのまま中身を描く)。
 // ログインできる管理者がまだいなければ(初めての起動など)、サーバーの PC で管理者を作るよう出す(0020 の決定事項 2)。
 // 招待・再設定のリンク(URL の #reset=<合言葉>。0022)で開いたときは、ログインの代わりにパスワードを決める画面を出す。
 import { useEffect, useState } from "react";
@@ -87,7 +88,7 @@ function SetPassword({ token, onDone, onCancel }: { token: string; onDone(): voi
 }
 
 function Login({ onDone }: { onDone(): void }) {
-  const [name, setName] = useState("");
+  const [name, setName] = useState(me.lastUser ?? ""); // アプリは最後にログインした名前を入れておく(ブラウザは空)
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);

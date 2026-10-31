@@ -87,8 +87,9 @@ func startBrowser(c config, initial aibow.AppSettings, eng *engine.Engine, mm *m
 	sessions := auth.NewSessions(st)
 	mux := http.NewServeMux()
 	mux.Handle("/aibow/ui/", ui.Handler(svc, events, who(c.Login)))
-	mux.Handle("/aibow/auth/", auth.Handler(sessions, c.Login))
 	keys := auth.NewKeys(st)
+	// 本人が自分の表示名・メールアドレス・パスワードを変える口は、画面のアプリからもアプリ用のトークンで呼べる(0031 の決定事項 45)
+	mux.Handle("/aibow/auth/", keys.WithBearer(auth.Handler(sessions, c.Login)))
 	// 保存の口は、API キーが要る形ならキーの持ち主、要らない形(127.0.0.1 だけでログインなし)ならログインなしの形の利用者
 	var storeH http.Handler = remote.Handler(st, func(*http.Request) (uuid.UUID, error) { return aibow.LocalUser, nil })
 	if c.KeysRequired() {

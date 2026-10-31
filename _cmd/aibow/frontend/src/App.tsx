@@ -34,7 +34,7 @@ import { ConversationList } from "./components/ConversationList";
 import { Splitter, useListWidth } from "./components/Splitter";
 import { ChatView } from "./components/ChatView";
 import { NewChat } from "./components/NewChat";
-import { SettingsView } from "./components/SettingsView";
+import { SettingsView, type Tab as SettingsTab } from "./components/SettingsView";
 import { ConversationSettingsView } from "./components/ConversationSettingsView";
 import { ReadView } from "./components/ReadView";
 import { Composer } from "./components/Composer";
@@ -62,6 +62,8 @@ export default function App() {
   const [busy, setBusy] = useState<Busy>("idle");
   // 設定の画面を開いているか。開いている間は、チャット(か新しい会話の画面)の代わりに設定を出す
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // 設定の画面を開いたときのタブ(左下の名前のメニューの「アカウント」から開くと account。開き直すたびに作り直すので key も持つ)
+  const [settingsTab, setSettingsTab] = useState<{ tab: SettingsTab; n: number }>({ tab: "basic", n: 0 });
   // 会話の設定の画面を開いているか。開いている会話の設定を出す
   const [convSettingsOpen, setConvSettingsOpen] = useState(false);
   // 設定の画面(か会話の設定の画面)を開いたときの、表示の最後の id。これより後に出たエラー(設定の適用の失敗など)はその画面にも出す
@@ -384,7 +386,16 @@ export default function App() {
     closeOverlay();
     if (!settingsOpen) markSettingsFrom();
     setConvSettingsOpen(false); // 会話の設定の画面からは、設定の画面に切り替える
+    setSettingsTab(t => ({ tab: "basic", n: t.n + 1 }));
     setSettingsOpen(o => !o);
+  };
+  // 左下の名前のメニューの「アカウント」: 設定の画面を「アカウント」のタブで開く(開いていても切り替える。0031 の決定事項 46)
+  const openAccount = () => {
+    closeOverlay();
+    if (!settingsOpen) markSettingsFrom();
+    setConvSettingsOpen(false);
+    setSettingsTab(t => ({ tab: "account", n: t.n + 1 }));
+    setSettingsOpen(true);
   };
   // メーターの右の歯車: 開いている会話の設定の画面を開く(閉じるのは「会話に戻る」など。開いている間は入力欄ごと隠れる)
   const openConvSettings = () => {
@@ -503,6 +514,8 @@ export default function App() {
   if (settingsOpen) {
     content = (
       <SettingsView
+        key={settingsTab.n}
+        initialTab={settingsTab.tab}
         errors={viewErrors}
         onClose={() => setSettingsOpen(false)}
         app={app.settings}
@@ -652,6 +665,7 @@ export default function App() {
     onEndRename: endRename,
     settingsOpen,
     onToggleSettings: toggleSettings,
+    onOpenAccount: openAccount,
     onToggleOpen: () => {
       // 自分で開け閉めしたときだけ覚える(狭くなって自動で閉じた・F2 のために開いた、は覚えない)。
       // 狭いときに重ねて出す一覧は、そのときだけのものなので覚えない

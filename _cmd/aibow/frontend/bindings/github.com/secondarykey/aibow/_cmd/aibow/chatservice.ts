@@ -32,11 +32,10 @@ import * as uuid$0 from "../../../../../uuid/models.js";
 import * as $models from "./models.js";
 
 /**
- * Account は、aibow-server に誰としてつないでいるか(画面の一覧の下に名前を出す)。
- * アプリはログインの画面を持たず、settings.json の serverKey(API キー)で利用者が決まるので、その持ち主を aibow-server に聞く。
- * アプリの中で動かしているときは、利用者は1人なので Login が false。
+ * Account は今のアカウント。ログインし直す必要があれば NeedLogin(エラーにしない。画面がログインの画面を出すため)。
+ * ui.Service の Account(名前だけ)を、この形で置き換える。
  */
-export function Account(): $CancellablePromise<ui$0.Account> {
+export function Account(): $CancellablePromise<$models.AccountInfo> {
     return $Call.ByID(4020571366);
 }
 
@@ -71,6 +70,14 @@ export function AppSettings(): $CancellablePromise<aibow$0.AppSettings> {
  */
 export function BuiltinTools(): $CancellablePromise<aibow$0.KnownTool[] | null> {
     return $Call.ByID(704771653);
+}
+
+/**
+ * ChangeMyPassword は、自分のパスワードを変える。ほかのログイン中の画面とアプリはログインし直しになるが、
+ * このアプリは aibow-server が返した新しいトークンに替えて、つながったままにする(ブラウザが新しい cookie をもらうのと同じ)。
+ */
+export function ChangeMyPassword(current: string, password: string): $CancellablePromise<void> {
+    return $Call.ByID(2113828472, current, password);
 }
 
 /**
@@ -237,6 +244,22 @@ export function Folders(): $CancellablePromise<string[] | null> {
  */
 export function LoadToolList(server: string): $CancellablePromise<void> {
     return $Call.ByID(4133085097, server);
+}
+
+/**
+ * Login は、画面でつないだ aibow-server に、名前とパスワードでログインし直す(ログアウトしたあと・期限が切れたあと)。
+ * アプリ用のトークンをもらって、今動いているクライアントのキーを替え、connection.json に書く(起動し直さない)。
+ */
+export function Login(name: string, password: string): $CancellablePromise<$models.AccountInfo> {
+    return $Call.ByID(1301374160, name, password);
+}
+
+/**
+ * Logout は、aibow-server からログアウトする:トークンを aibow-server で消し、connection.json からも消す。
+ * つなぎ先は残すので、そのままログインの画面になり、次に起動したときもログインから始まる(ブラウザと同じ)。
+ */
+export function Logout(): $CancellablePromise<void> {
+    return $Call.ByID(2662670453);
 }
 
 /**
@@ -460,6 +483,20 @@ export function SetModelEnabled(id: string, enabled: boolean): $CancellablePromi
  */
 export function SetModelGPULayers(id: string, n: number): $CancellablePromise<engine$0.ModelInfo | null> {
     return $Call.ByID(3535036022, id, n);
+}
+
+/**
+ * SetMyDisplayName は、自分の表示名を変える(空なら無し)。
+ */
+export function SetMyDisplayName(name: string): $CancellablePromise<$models.AccountInfo> {
+    return $Call.ByID(1832668012, name);
+}
+
+/**
+ * SetMyEmail は、自分のメールアドレスを変える(空なら無し)。
+ */
+export function SetMyEmail(email: string): $CancellablePromise<$models.AccountInfo> {
+    return $Call.ByID(536370613, email);
 }
 
 /**

@@ -371,6 +371,11 @@ aibow-server user admin <名前>(コマンドだけ)→ server.db の users.admi
 | `POST /aibow/auth/token` | 本文 `{"name", "password", "device"}`(JSON だけ。device は PC の名前)。合っていれば `{"token", "name", "admin", "expiresAt"}`、違えば 401。間違いの回数はブラウザのログインと一緒に数える(5回で 15 分)。ログインの要らない形では 400 |
 | `POST /aibow/auth/token/revoke` | `Authorization: Bearer <トークン>` のトークンを消す(アプリのログアウト)。無くても 200 |
 
+- **本人のアカウントの口をアプリからも**(0031 の決定事項 45):`/aibow/auth/` は `auth.Keys.WithBearer` を通すので、cookie でログインしていない呼び出しに
+  `Authorization: Bearer <アプリ用のトークンか API キー>` があれば、その持ち主として `POST /aibow/auth/display`・`email`・`password` を呼べる。
+  パスワードを変える口は、アプリ用のトークンで呼ぶと cookie の代わりに同じ PC の名前の新しいトークン(`{"token", "name", "admin", "expiresAt"}`)を返す(前のトークンは、ほかのものと一緒に消える)。
+  API キーで呼んだときは `token` が空(キーは消えない)
+
 - **トークン**:期限は作ってから 10 日で固定(ブラウザのセッションと違って延ばさない)。PC ごとに1本(利用者 + PC の名前)で、同じ PC でログインし直すと前のものは消える。server.db の `app_tokens` には SHA-256 だけ。
   パスワードを作り直すと、ブラウザのセッションと一緒に消える
 - **使える口**:API キーと同じ(`KeysRequired` の口の全部と `/aibow/auth/key`)。期限が切れたら 401 で `code` が `token_expired`(アプリはもう一度ログインするよう出す)

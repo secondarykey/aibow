@@ -34,17 +34,18 @@ export interface Backend {
   onModelLoaded(f: () => void): () => void;       // 起動時のモデルの読み込みが終わった(Go の ui.ModelsEventName)
   onWindowFocus(f: () => void): () => void;       // ウィンドウがアクティブに戻った(IME の対策。imeFocus.tsx)
   onReconnect(f: () => void): () => void;         // 知らせのつながりが切れて、つなぎ直した(ブラウザだけ。デスクトップでは来ない)
-  // ログイン(ブラウザだけ。0017 の 10-1)。デスクトップは画面でログインしない(aibow-server につないでいれば、API キーの持ち主を返す)
+  // ログイン(0017 の 10-1)。デスクトップは、aibow-server につないでいれば API キーかアプリ用のトークンの持ち主を返し、
+  // 画面でつないだのにログインしていなければ(ログアウトした・期限が切れた)ログインの画面を出す(0031 の決定事項 44)
   session(): Promise<Me>;                         // ログインが要るか・ログインしている人(Go の auth.Me)
   login(name: string, password: string): Promise<Me>; // 違えば reject(message が理由の文)
   logout(): Promise<void>;
   onUnauthorized(f: () => void): () => void;      // 呼び出しが「ログインしてください」(401)で断られた(ログインの期限が切れた)
-  // パスワードは本人が決める(ブラウザだけ。0022)。合言葉は URL の #reset= の後ろ
+  // パスワードは本人が決める(0022)。リンクはブラウザだけ(合言葉は URL の #reset= の後ろ)。変えるのはアプリからも(0031)
   linkUser(token: string): Promise<string>;       // パスワードを決めるリンクの持ち主の名前。使えなければ reject
   applyLink(token: string, password: string): Promise<Me>; // リンクでパスワードを決めて、そのままログインする
   changePassword(current: string, password: string): Promise<void>; // ログインしている本人がパスワードを変える
-  setDisplayName(name: string): Promise<Me>;      // ログインしている本人が表示名を変える(ブラウザだけ。0031)
-  setEmail(email: string): Promise<Me>;           // ログインしている本人がメールアドレスを変える(ブラウザだけ。0031)
+  setDisplayName(name: string): Promise<Me>;      // ログインしている本人が表示名を変える(0031)
+  setEmail(email: string): Promise<Me>;           // ログインしている本人がメールアドレスを変える(0031)
   admin: AdminAPI;                                // 利用者の管理(ブラウザの管理者だけ。0018 の 11-0。デスクトップでは断る)
   copyText(text: string): Promise<void>;
   openURL(url: string): Promise<void>;            // リンクを開く(デスクトップは OS のブラウザ、ブラウザは新しいタブ)
@@ -67,6 +68,10 @@ export interface Me {
   setup?: boolean; // ログインが要るのに、ログインできる管理者がまだいない(初めての起動など。0020)。ログインの画面に作り方を出す
   display_name?: string; // 表示名(0031。空ならログインの名前を出す)
   email?: string;        // 本人のメールアドレス(0031。本人にだけ返る)
+  // canLogout は、アプリが画面でログインしてつないでいるか(ログアウトできる。手で書いた API キーではできない)。ブラウザは使わない
+  canLogout?: boolean;
+  // lastUser は、アプリがログインし直すときにログインの画面に入れておく名前(最後にログインした名前)
+  lastUser?: string;
 }
 
 // AdminUser は、利用者の管理の一覧の1人(Go の _cmd/aibow-server の adminUser)。パスワードと API キーは、あるかだけ

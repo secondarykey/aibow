@@ -41,6 +41,10 @@ type connection struct {
 	saved   aibow.ConnectionFile // 今の connection.json の中身(消したら空。信頼したつなぎ先 Known だけのこともある)
 	key     string               // saved のトークン(ログアウトのときに aibow-server で消すため)
 	pending string               // 保存したが、まだ効いていない形("server"・"direct"。無ければ空)
+
+	// client は、今動いている aibow-server のクライアント(つないでいなければ nil)。生成も保存もこれを使うので、
+	// キーを替えれば起動し直さずにログインし直せる(account.go。0031 の決定事項 44)
+	client *apiclient.Client
 }
 
 func newConnection(cfg appConfig) *connection {
