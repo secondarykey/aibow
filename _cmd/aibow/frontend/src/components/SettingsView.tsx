@@ -14,7 +14,6 @@ import type { AppSettings, ConversationSettings, DisplaySettings } from "../../b
 import type { ServerInfo } from "../../bindings/github.com/secondarykey/aibow/mcp/client";
 import { ProfileSettings } from "./ProfileSettings";
 import { ModelSettings } from "./ModelSettings";
-import { UserSettings } from "./UserSettings";
 import { ServerSettings } from "./ServerSettings";
 import { ServerTools } from "./ServerTools";
 import { isBrowser, me } from "../backend";
@@ -41,11 +40,10 @@ interface Props {
   connectDisabled: boolean;
   onDisplayChange(d: DisplaySettings): void; // 画面の設定を変える(生成に関わらないので、生成中でも変えられる)
   onToolsChanged(): void; // ツールを使う / 使わないを変えた(メーターと、会話で選べる MCP のサーバーを読み直す)
-  onReadConversation(id: string): void; // 管理者がほかの人の会話を読むだけで開く(0018 の 11-2)
   initialTab?: Tab; // 開いたときのタブ(左下の名前のメニューの「アカウント」から開くときは account)
 }
 
-export type Tab = "basic" | "model" | "conversation" | "tools" | "server" | "users" | "groups" | "account";
+export type Tab = "basic" | "model" | "conversation" | "tools" | "server" | "groups" | "account";
 
 const TABS: { id: Tab; label: string; title: string }[] = [
   { id: "basic", label: "基本設定", title: "会話によらず、この PC で1つだけのもの(画面)" },
@@ -55,15 +53,13 @@ const TABS: { id: Tab; label: string; title: string }[] = [
   { id: "tools", label: "ツール", title: "ブラウザの会話のツールの扱い(使わない・確認する・確認しない)。aibow-server 全体の既定" },
   // aibow-server につなぐ・戻すは、デスクトップのアプリだけ(0019。ブラウザは aibow-server そのものの画面)
   { id: "server", label: "サーバー", title: "aibow-server につなぐ・ログインする・アプリの中で動かす形に戻す" },
-  // 利用者の管理は、ブラウザでログインした管理者だけ(0018 の決定事項 7)
-  { id: "users", label: "利用者", title: "aibow-server の利用者(作る・パスワードと API キーの作り直し・消す)" },
   // グループの長だけ(管理者でない人。管理者は「利用者」のタブで扱う。0031 の決定事項 32・37)
   { id: "groups", label: "グループ", title: "自分が長のグループ(メンバーを足す・外す)" },
   // ログインしているとき(ブラウザ・アプリが aibow-server にログインしてつないでいるとき)。自分の名前・表示名・メールアドレス・パスワード・ログアウト(0031 の決定事項 44)
   { id: "account", label: "アカウント", title: "自分の表示名・メールアドレス・パスワード・ログアウト" },
 ];
 
-export function SettingsView({ onClose, errors, app, models, modelState, servers, onProfilesChanged, onApplyLimits, onError, appDisabled, connectDisabled, onDisplayChange, onToolsChanged, onReadConversation, initialTab }: Props) {
+export function SettingsView({ onClose, errors, app, models, modelState, servers, onProfilesChanged, onApplyLimits, onError, appDisabled, connectDisabled, onDisplayChange, onToolsChanged, initialTab }: Props) {
   // 開くたびに「基本設定」から(開いている間だけ覚える)。左下の名前のメニューから開いたときは「アカウント」
   const [tab, setTab] = useState<Tab>(initialTab ?? "basic");
   // グループの長かは、共有の相手の一覧(グループの長も入っている)で決める。ブラウザでログインしているときだけ
@@ -79,7 +75,7 @@ export function SettingsView({ onClose, errors, app, models, modelState, servers
         {errors.map(e => <div key={e.id} className="msg error">{e.text}</div>)}
 
         <div className="settings-tabs" role="tablist">
-          {TABS.filter(t => (t.id !== "users" || (isBrowser && me.admin)) && (t.id !== "groups" || leader) && (t.id !== "account" || signedIn()) && (t.id !== "server" || !isBrowser) && (t.id !== "tools" || isBrowser)).map(t => (
+          {TABS.filter(t => (t.id !== "groups" || leader) && (t.id !== "account" || signedIn()) && (t.id !== "server" || !isBrowser) && (t.id !== "tools" || isBrowser)).map(t => (
             <button
               key={t.id}
               role="tab"
@@ -101,8 +97,6 @@ export function SettingsView({ onClose, errors, app, models, modelState, servers
         )}
 
         {tab === "model" && <ModelSettings models={modelState} disabled={appDisabled} onError={onError} />}
-
-        {tab === "users" && <UserSettings onError={onError} onRead={onReadConversation} />}
 
         {tab === "groups" && <LeaderGroups dir={dir} reload={reloadDir} onError={onError} />}
 

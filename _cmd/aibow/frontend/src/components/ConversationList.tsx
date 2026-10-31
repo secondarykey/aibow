@@ -1,7 +1,7 @@
 // 左側: 会話の一覧(更新の新しい順)。新規作成・切り替え・名前の変更・削除。
 // 名前の変更はダブルクリックか F2(F2 は App.tsx が受けて renamingId を決める)。
 // 会話の設定の歯車は、一覧を畳んでいても開けるよう、入力欄の下(メーターの右)に置く(App.tsx)。
-// 下にアプリの名前とバージョン、右に設定の画面の開閉ボタン(アイコンだけ)。
+// 下にアプリの名前とバージョン、右に設定の画面の開閉ボタン(アイコンだけ)。管理できる人には、その左に管理の画面の盾(0032)。
 // ウィンドウの上から下までの列。上のハンバーガーで一覧を畳める。畳んだときもアイコンだけの細い列を残し、
 // ハンバーガー・新規・設定はそこに集める。上の空いているところはタイトルバーと同じくドラッグでウィンドウを動かせる。
 // 「+ 新規」は一覧の一番上の行に置く(スクロールしても隠れないよう、一覧の外に固定する)。
@@ -22,7 +22,8 @@ import { ChatService, me } from "../backend";
 import { canLogout, signedIn, signOut } from "./AccountSettings";
 import { showName } from "../directory";
 import type { KeyboardEvent } from "react";
-import { LuChevronDown, LuChevronRight, LuEye, LuMenu, LuPlus, LuSettings, LuShare2, LuUser } from "react-icons/lu";
+import { LuChevronDown, LuChevronRight, LuEye, LuMenu, LuPlus, LuSettings, LuShare2, LuShield, LuUser } from "react-icons/lu";
+import { canAdmin } from "./AdminView";
 import { useMenuDismiss } from "./SplitButton";
 import { toggleMaximiseOnDoubleClick } from "./TitleBar";
 import type { Conversation, ConversationRef } from "../../bindings/github.com/secondarykey/aibow";
@@ -45,6 +46,8 @@ interface Props {
   settingsOpen: boolean;
   onToggleSettings(): void;
   onOpenAccount(): void; // 設定の画面を「アカウント」のタブで開く(左下の名前のメニュー)
+  adminOpen: boolean;    // 管理の画面を開いているか(0032)
+  onToggleAdmin(): void; // 歯車の隣の盾で、管理の画面を開く / 閉じる
   open: boolean; // 一覧を開いているか
   onToggleOpen(): void;
   width: number; // 開いているときの幅(px)。一覧の右の仕切り(Splitter)で変えられる
@@ -55,7 +58,7 @@ interface Props {
 
 export function ConversationList({
   list, currentId, generatingId, waitingId, ended, disabled, onOpen, onNew, onDelete, onRename, renamingId, onStartRename, onEndRename,
-  settingsOpen, onToggleSettings, onOpenAccount, open, onToggleOpen, width, shared, readingId, onOpenShared,
+  settingsOpen, onToggleSettings, onOpenAccount, adminOpen, onToggleAdmin, open, onToggleOpen, width, shared, readingId, onOpenShared,
 }: Props) {
   const [sharedOpen, setSharedOpen] = useState(true);
   // 削除の確認を出している会話。消すと戻せないので、もう一度押してもらう
@@ -78,6 +81,10 @@ export function ConversationList({
     </button>
   );
   const settingsCls = settingsOpen ? "settings active" : "settings";
+  // 管理の画面の入口(盾)。管理できる人にだけ、歯車の隣に出す(0032 の決定事項 5)
+  const adminBtn = canAdmin() && (
+    <button className={"icon-btn admin" + (adminOpen ? " active" : "")} title="管理(利用者・グループ)" onClick={onToggleAdmin}><LuShield /></button>
+  );
 
   if (!open) {
     return (
@@ -86,6 +93,7 @@ export function ConversationList({
         <button className="icon-btn" title="新しい会話" disabled={disabled} onClick={onNew}><LuPlus /></button>
         <span className="spacer" />
         {me.login && <span className="admin-notice icon" title={ADMIN_NOTICE}><LuEye /></span>}
+        {adminBtn}
         <button className={"icon-btn " + settingsCls} title="設定" onClick={onToggleSettings}><LuSettings /></button>
       </nav>
     );
@@ -170,6 +178,7 @@ export function ConversationList({
       <div className="footer">
         <AppName />
         <UserMenu onOpenAccount={onOpenAccount} />
+        {adminBtn}
         <button className={"icon-btn " + settingsCls} title="設定" onClick={onToggleSettings}><LuSettings /></button>
       </div>
     </nav>

@@ -1,6 +1,6 @@
-// 設定の画面の「利用者」のタブ(0018 の決定事項 7。11-0。0031 で一覧 + 詳細にした)。ブラウザの管理者だけに出す。
+// 管理の画面の「利用者」のタブ(0018 の決定事項 7。11-0。0031 で一覧 + 詳細にした。0032 で設定の画面から管理の画面に移した)。ブラウザの管理者だけに出す。
 //
-//	[ 人 | グループ ]                                                    … 人の一覧とグループの一覧を切り替える(0031 の決定事項 24・35。グループは GroupSettings.tsx)
+// グループは管理の画面の「グループ」のタブ(GroupSettings.tsx の GroupAdmin。0031 では、このタブの中の [人 | グループ] の切り替えだった)。
 //	[名前で探す…] [すべて | 招待中 | 管理者 | API キーあり | 30日使っていない]   [+ 利用者を作る]
 //	名前                 状態      最後に使った日   作った日      会話   … 見出しを押すと並べ替え。行を押すと一覧の下に詳細(0031 の決定事項 14・35)
 //	▼ 詳細: 表示名・メールアドレス・グループ・パスワードのリンク・API キー・その人の会話(新しい順 20 件 + もっと見る)・消す
@@ -17,8 +17,8 @@ import { LuArrowDown, LuArrowUp, LuPlus, LuX } from "react-icons/lu";
 import { admin, ChatService, linkURL, me, type AdminUser, type Link } from "../backend";
 import type { ConversationRef } from "../../bindings/github.com/secondarykey/aibow";
 import { errorMessage } from "../errors";
-import { showName, useDirectory, type Directory } from "../directory";
-import { GroupAdmin, UserGroups } from "./GroupSettings";
+import { showName, type Directory } from "../directory";
+import { UserGroups } from "./GroupSettings";
 import { CopyButton } from "./CopyButton";
 
 // Secret は、一度だけ出すリンクか API キー
@@ -98,31 +98,9 @@ function compare(a: AdminUser, b: AdminUser, key: SortKey): number {
 // label は一覧の名前(「表示名(ログインの名前)」。0031 の決定事項 18)
 const label = (u: AdminUser) => showName(u.name, u.display_name);
 
-export function UserSettings({ onError, onRead }: { onError(text: string): void; onRead(id: string): void }) {
-  const [view, setView] = useState<"users" | "groups">("users");
-  const [dir, reloadDir] = useDirectory();
-  const viewTabs = (
-    <div className="segmented user-view" role="group">
-      <button type="button" className={view === "users" ? "current" : ""} aria-pressed={view === "users"} onClick={() => setView("users")}>人</button>
-      <button type="button" className={view === "groups" ? "current" : ""} aria-pressed={view === "groups"} onClick={() => setView("groups")}>グループ</button>
-    </div>
-  );
-  if (view === "groups") {
-    return (
-      <>
-        <h2 title="グループは共有の相手に選べる。長はメンバーを足す・外せる">利用者</h2>
-        {viewTabs}
-        <GroupAdmin dir={dir} reload={reloadDir} onError={onError} />
-      </>
-    );
-  }
-  return <UserList dir={dir} reloadDir={reloadDir} viewTabs={viewTabs} onError={onError} onRead={onRead} />;
-}
-
-function UserList({ dir, reloadDir, viewTabs, onError, onRead }: {
-  dir: Directory;
+export function UserSettings({ dir, reloadDir, onError, onRead }: {
+  dir: Directory;          // 共有の相手の一覧(利用者の詳細のグループ。管理の画面がグループのタブと分け合う)
   reloadDir(): void;
-  viewTabs: React.ReactNode;
   onError(text: string): void;
   onRead(id: string): void;
 }) {
@@ -185,7 +163,6 @@ function UserList({ dir, reloadDir, viewTabs, onError, onRead }: {
   return (
     <>
       <h2 title="管理者の印は、aibow-server の PC で aibow-server user admin / unadmin で付け外しする">利用者</h2>
-      {viewTabs}
       {secret && <SecretBox secret={secret} onClose={() => setSecret(null)} />}
       <div className="user-toolbar">
         <input type="text" className="user-search" value={query} placeholder="名前で探す…" onChange={e => setQuery(e.target.value)} />

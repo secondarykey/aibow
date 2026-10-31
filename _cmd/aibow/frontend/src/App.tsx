@@ -35,6 +35,7 @@ import { Splitter, useListWidth } from "./components/Splitter";
 import { ChatView } from "./components/ChatView";
 import { NewChat } from "./components/NewChat";
 import { SettingsView, type Tab as SettingsTab } from "./components/SettingsView";
+import { AdminView } from "./components/AdminView";
 import { ConversationSettingsView } from "./components/ConversationSettingsView";
 import { ReadView } from "./components/ReadView";
 import { Composer } from "./components/Composer";
@@ -61,7 +62,14 @@ export default function App() {
   // 生成とモデルの読み込みは同時にできない(Go 側のコンテキストが1つしかないため)
   const [busy, setBusy] = useState<Busy>("idle");
   // 設定の画面を開いているか。開いている間は、チャット(か新しい会話の画面)の代わりに設定を出す
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpenState] = useState(false);
+  // 管理の画面(0032)。設定の画面と同じ場所に出す別の画面で、同時には開かない
+  const [adminOpen, setAdminOpen] = useState(false);
+  // setSettingsOpen は設定の画面を開く / 閉じる。管理の画面は閉じる(会話を選ぶ・「+ 新規」などは、どちらの画面も閉じる。同時には開かない)
+  const setSettingsOpen = (open: boolean) => {
+    setSettingsOpenState(open);
+    setAdminOpen(false);
+  };
   // 設定の画面を開いたときのタブ(左下の名前のメニューの「アカウント」から開くと account。開き直すたびに作り直すので key も持つ)
   const [settingsTab, setSettingsTab] = useState<{ tab: SettingsTab; n: number }>({ tab: "basic", n: 0 });
   // 会話の設定の画面を開いているか。開いている会話の設定を出す
@@ -360,7 +368,7 @@ export default function App() {
   // タイトルバーに出す名前は一覧から取る(名前の変更や最初の送信で付いたタイトルが、すぐ反映されるように)
   const convTitle = convs.list.find(c => c.id === currentId)?.title || "新しい会話";
   const showConvSettings = convSettingsOpen && convs.current !== null;
-  const title = settingsOpen ? "設定" : showConvSettings ? "会話の設定" : convTitle;
+  const title = settingsOpen ? "設定" : adminOpen ? "管理" : showConvSettings ? "会話の設定" : convTitle;
 
   // ブラウザのタブの題名は、開いている会話の名前(タブが並んでも見分けられるように。0016 の 9-3)。
   // デスクトップのウィンドウの名前は Go が決める(タスクバーに出る。main.go)ので変えない
@@ -386,8 +394,17 @@ export default function App() {
     closeOverlay();
     if (!settingsOpen) markSettingsFrom();
     setConvSettingsOpen(false); // 会話の設定の画面からは、設定の画面に切り替える
+    setAdminOpen(false);        // 管理の画面からも、設定の画面に切り替える
     setSettingsTab(t => ({ tab: "basic", n: t.n + 1 }));
-    setSettingsOpen(o => !o);
+    setSettingsOpenState(o => !o);
+  };
+  // 歯車の隣の盾: 管理の画面を開く / 閉じる(0032 の決定事項 5)
+  const toggleAdmin = () => {
+    closeOverlay();
+    if (!adminOpen) markSettingsFrom();
+    setConvSettingsOpen(false);
+    setSettingsOpenState(false);
+    setAdminOpen(o => !o);
   };
   // 左下の名前のメニューの「アカウント」: 設定の画面を「アカウント」のタブで開く(開いていても切り替える。0031 の決定事項 46)
   const openAccount = () => {
@@ -533,9 +550,10 @@ export default function App() {
           reloadMcp();
           convs.refreshUsage().catch(err => addError(errorMessage(err)));
         }}
-        onReadConversation={onOpenShared}
       />
     );
+  } else if (adminOpen) {
+    content = <AdminView errors={viewErrors} onClose={() => setAdminOpen(false)} onError={addError} onReadConversation={onOpenShared} />;
   } else if (reading) {
     content = <ReadView read={reading} pinQuestion={app.settings?.display.pin_question ?? false} onCopy={copyReading} />;
   } else if (showConvSettings && convs.current) {
@@ -665,6 +683,8 @@ export default function App() {
     onEndRename: endRename,
     settingsOpen,
     onToggleSettings: toggleSettings,
+    adminOpen,
+    onToggleAdmin: toggleAdmin,
     onOpenAccount: openAccount,
     onToggleOpen: () => {
       // 自分で開け閉めしたときだけ覚える(狭くなって自動で閉じた・F2 のために開いた、は覚えない)。

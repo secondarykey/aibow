@@ -415,6 +415,11 @@ button.user-btn:hover { background: var(--bg); color: var(--text); }
 .split-menu.up { top: auto; bottom: 100%; left: 0; right: auto; margin: 0 0 2px; }
 nav.conversations .settings.active { background: var(--bg); border-color: var(--accent); }
 nav.conversations.collapsed .settings.active { color: var(--accent); }
+/* 管理の画面の盾(0032)。歯車の左に並べ、歯車の代わりに右へ寄せる */
+nav.conversations .footer .admin { margin-left: auto; }
+nav.conversations .footer .admin + .settings { margin-left: 0; }
+nav.conversations .admin.active { background: var(--bg); border-color: var(--accent); }
+nav.conversations.collapsed .admin.active { color: var(--accent); }
 .conversation { display: flex; align-items: center; border-radius: 6px; margin-bottom: 2px; }
 .conversation:hover, .conversation.current { background: var(--bg); }
 .conversation.current .title { font-weight: 600; }
