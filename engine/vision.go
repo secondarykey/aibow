@@ -28,8 +28,8 @@ import (
 const DefaultImageMaxTokens = 1024
 
 // ErrNoVision は、画像を読む部品(mmproj)の無いモデルに画像を渡したときのエラー(黙って画像を捨てない。決定事項 12)。
-var ErrNoVision = errors.New("このモデルは画像を読めません(画像を読む部品 mmproj がありません。" +
-	"今は Ollama の qwen3.5 のように、目録に projector の層があるモデルだけ画像を読めます)")
+// 読めるモデルの名前は書かない(対応するモデルは増えていくので、名前を挙げるとすぐ古くなる。2026-10-31、ユーザーの指示)
+var ErrNoVision = errors.New("今のモデルは画像に対応していません(画像を読む部品 mmproj がありません)。画像に対応したモデルに切り替えてください")
 
 // VisionError は、画像を読めない理由のエラー(errors.Is(err, ErrNoVision) になる)。
 // 画像を読めない書式・aibow-server 越しなど、理由ごとに文を変えつつ、使う側(メーター)が「画像を読めないから数えられない」と見分けられるようにする。
@@ -119,7 +119,7 @@ func (e *Engine) input(p format.Prompt, prompt string, placeholder bool) ([]chun
 		return []chunk{textChunk(e.tokenize(prompt))}, func() {}, nil
 	}
 	if !format.ReadsImages(e.format) {
-		return nil, nil, VisionError(fmt.Sprintf("書式 %s は画像に対応していません。画像を読めるのは Qwen3.5 だけです", e.format.Name()))
+		return nil, nil, VisionError(fmt.Sprintf("今のモデルは画像に対応していません(書式 %s)。画像に対応したモデルに切り替えてください", e.format.Name()))
 	}
 	if n := strings.Count(prompt, format.ImageMarker); n != len(images) {
 		return nil, nil, fmt.Errorf("画像が %d 枚なのに、プロンプトの画像の印(%s)が %d 個あります。発言の文に %s と書かれていないか確かめてください",

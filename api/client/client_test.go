@@ -379,7 +379,7 @@ func TestModelErrors(t *testing.T) {
 	for _, tc := range []struct{ err, is error }{
 		{engine.ErrNoModel, engine.ErrNoModel},
 		{format.Unsupported("gemma4"), format.ErrUnsupported},
-		{engine.VisionError("書式 Gemma 4 は画像に対応していません。画像を読めるのは Qwen3.5 だけです"), engine.ErrNoVision},
+		{engine.VisionError("今のモデルは画像に対応していません(書式 Gemma 4)。画像に対応したモデルに切り替えてください"), engine.ErrNoVision},
 		{engine.ErrNoVision, engine.ErrNoVision},
 	} {
 		c, _ := newServer(t, &fakeGen{err: tc.err})

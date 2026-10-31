@@ -299,3 +299,6 @@ Code が決めたこと(上から自然に決まること):
   aibow-server の `/aibow/count-tokens` はこのエラーに `error.code` を付けておらず、`api/client` が見分けられないただのエラーになって、会話を開くこと(`Conversation`)ごと失敗していた
 - 直したこと:`error.code` に `no_vision` を足し(`api/chat.go` の `modelErrorCode`)、`api/client` の `APIError.Unwrap` で `engine.ErrNoVision` に戻す。
   会話は開き、メーターは出さない。送ったときは今までどおり「画像に対応していません」で止まる。テストは `api/client` の `TestModelErrors` に足した
+- 続けてユーザーの指示で、画像を読めないときの文からモデルの名前を外した(「画像を読めるのは Qwen3.5 だけです」は、対応するモデルが増えるとすぐ嘘になる。実際に Qwen3.8 で読めている)。
+  文は「今のモデルは画像に対応していません(書式 Gemma 4)。画像に対応したモデルに切り替えてください」(書式が画像を書かないとき)と、
+  「今のモデルは画像に対応していません(画像を読む部品 mmproj がありません)。画像に対応したモデルに切り替えてください」(`ErrNoVision`。mmproj が無いとき)
