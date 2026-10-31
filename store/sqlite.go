@@ -316,6 +316,12 @@ CREATE TABLE profile_group_shares (
 );
 CREATE INDEX profile_group_shares_by_group ON profile_group_shares(group_id);
 `,
+	// 版 19: メールアドレス(0031 の決定事項 40〜43)。今は持つだけ。空でなければ1人1つ(大文字小文字は同じとみなすので lower() の索引)。
+	// 部分索引(WHERE email <> '')にするのは、空(付けていない)の人が何人いても重なりにしないため
+	`
+ALTER TABLE users ADD COLUMN email TEXT NOT NULL DEFAULT '';
+CREATE UNIQUE INDEX users_email ON users(lower(email)) WHERE email <> '';
+`,
 }
 
 func migrate(db *sql.DB) error {

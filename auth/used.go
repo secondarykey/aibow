@@ -1,10 +1,11 @@
 package auth
 
-// used.go: 最後に使った時刻と表示名(0031)。
+// used.go: 最後に使った時刻・表示名・メールアドレス(0031)。
 
 import (
 	"context"
 	"errors"
+	"net/mail"
 	"strings"
 	"time"
 	"unicode"
@@ -45,4 +46,27 @@ func CheckDisplayName(name string) (string, error) {
 		return "", errors.New("表示名に改行やタブなどの制御文字は使えません")
 	}
 	return name, nil
+}
+
+// MaxEmail はメールアドレスの長さの上限(文字数。SMTP の決まりの 254)
+const MaxEmail = 254
+
+// CheckEmail はメールアドレスの決まり(0031 の決定事項 43)。前後の空白を削ったものを返す。空はよい(付けない)。
+// 形は最低限だけ確かめる(net/mail で名前の付かないアドレスとして読めて、空白と制御文字が無い)。本当に届くかは確かめない
+func CheckEmail(email string) (string, error) {
+	email = strings.TrimSpace(email)
+	if email == "" {
+		return "", nil
+	}
+	if utf8.RuneCountInString(email) > MaxEmail {
+		return "", errors.New("メールアドレスは 254 文字までです")
+	}
+	if strings.IndexFunc(email, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) >= 0 {
+		return "", errors.New("メールアドレスに空白や改行は使えません")
+	}
+	// 「佐藤 <sato@example.com>」のような名前付きの形は断る(アドレスだけを持つ)
+	if a, err := mail.ParseAddress(email); err != nil || a.Address != email {
+		return "", errors.New("メールアドレスの形ではありません(例: sato@example.com)")
+	}
+	return email, nil
 }

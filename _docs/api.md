@@ -317,8 +317,8 @@ aibow-server user admin <名前>(コマンドだけ)→ server.db の users.admi
 - **管理者の口**(`_cmd/aibow-server/admin.go`。ブラウザでログインした管理者だけ。ほかは 401 / 403):
   `GET /aibow/admin/users`(一覧。パスワードと API キーは、あるかだけ)・`POST /aibow/admin/users`(本文 `{"name"}`。返事にパスワード)・
   `POST /aibow/admin/users/{名前}/password`・`POST /aibow/admin/users/{名前}/key`(返事に新しいパスワード / キー。一度だけ)・`DELETE /aibow/admin/users/{名前}`(自分と `local` は消せない)・
-  `POST /aibow/admin/users/{名前}/display`(本文 `{"display_name"}`。表示名。空なら無し。0031)。
-  一覧の1人には、表示名 `display_name`・最後に使った時刻 `last_used_at`(一度も使っていなければ無い)・会話の数 `conversations`・まだ使っていないリンクの期限 `link_expires_at` も入る(0031。並べ替えと絞り込みは画面がする)。
+  `POST /aibow/admin/users/{名前}/display`(本文 `{"display_name"}`。表示名。空なら無し。0031)・`POST /aibow/admin/users/{名前}/email`(本文 `{"email"}`。空なら無し。重なれば 409)。
+  一覧の1人には、表示名 `display_name`・メールアドレス `email`・最後に使った時刻 `last_used_at`(一度も使っていなければ無い)・会話の数 `conversations`・まだ使っていないリンクの期限 `link_expires_at` も入る(0031。並べ替えと絞り込みは画面がする)。
   処理は user コマンドと同じ関数(`createUser`・`renewPassword`・`renewKey`・`deleteUser`)。返事は `Cache-Control: no-store`
 - **モデルの ID**:GGUF は `file:<ファイル名>`(以前は `file:<パス>`。サーバーの PC のパスが `/v1/models` や共有した会話に出ないように。0018 の決定事項 15)。
   同じ名前のファイルは先の置き場所だけを出し、後ろは Warn のログ(`models.Catalog.Hidden`)。以前の形の ID は `models.IDOf` で読み替える

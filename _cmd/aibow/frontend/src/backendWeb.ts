@@ -120,6 +120,7 @@ const admin: AdminAPI = {
   resetPassword: name => adminCall("POST", `users/${encodeURIComponent(name)}/password`),
   renewKey: name => adminCall("POST", `users/${encodeURIComponent(name)}/key`),
   setDisplayName: async (name, display) => { await adminCall("POST", `users/${encodeURIComponent(name)}/display`, { display_name: display }); },
+  setEmail: async (name, email) => { await adminCall("POST", `users/${encodeURIComponent(name)}/email`, { email }); },
   remove: async name => { await adminCall("DELETE", `users/${encodeURIComponent(name)}`); },
 };
 
@@ -148,6 +149,7 @@ export const backend: Backend = {
   applyLink: (token, password) => auth("POST", "link", { token, password }),
   changePassword: async (current, password) => { await auth("POST", "password", { current, password }); },
   setDisplayName: name => auth("POST", "display", { display_name: name }),
+  setEmail: email => auth("POST", "email", { email }),
   onUnauthorized: f => {
     unauthorized.add(f);
     return () => unauthorized.delete(f);

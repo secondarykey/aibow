@@ -17,8 +17,8 @@ import { ModelSettings } from "./ModelSettings";
 import { UserSettings } from "./UserSettings";
 import { ServerSettings } from "./ServerSettings";
 import { ServerTools } from "./ServerTools";
-import { changePassword, isBrowser, me, setDisplayName } from "../backend";
-import { DisplayNameInput } from "./UserSettings";
+import { changePassword, isBrowser, me, setDisplayName, setEmail } from "../backend";
+import { DisplayNameInput, EmailInput } from "./UserSettings";
 import { LeaderGroups } from "./GroupSettings";
 import { useDirectory } from "../directory";
 import { errorMessage } from "../errors";
@@ -97,6 +97,7 @@ export function SettingsView({ onClose, errors, app, models, modelState, servers
             {app && <DisplaySettingsForm display={app.display} onChange={onDisplayChange} />}
             {/* 自分の表示名(0031)とパスワード(0022)を変える(ブラウザでログインしているときだけ) */}
             {isBrowser && me.login && me.name !== "" && <OwnDisplayName onError={onError} />}
+            {isBrowser && me.login && me.name !== "" && <OwnEmail onError={onError} />}
             {isBrowser && me.login && me.name !== "" && <PasswordForm />}
           </>
         )}
@@ -143,6 +144,20 @@ function OwnDisplayName({ onError }: { onError(text: string): void }) {
         onSave={display => {
           setDisplayName(display).then(m => setValue(m.display_name ?? ""), err => onError(errorMessage(err)));
         }}
+      />
+    </>
+  );
+}
+
+// OwnEmail は、ログインしている本人がメールアドレスを変える(0031 の決定事項 41)。管理者と本人にだけ見える
+function OwnEmail({ onError }: { onError(text: string): void }) {
+  const [value, setValue] = useState(me.email ?? "");
+  return (
+    <>
+      <h2 className="section" title="管理者と自分にだけ見える。今は持つだけで、メールは送らない">メールアドレス</h2>
+      <EmailInput
+        value={value}
+        onSave={email => setEmail(email).then(m => { setValue(m.email ?? ""); return true; }, err => { onError(errorMessage(err)); return false; })}
       />
     </>
   );

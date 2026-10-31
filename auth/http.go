@@ -11,6 +11,7 @@ package auth
 //	POST /aibow/auth/link          本文 {"token", "password"}。リンクでパスワードを決め、そのままログインする(cookie を渡す)
 //	POST /aibow/auth/password      本文 {"current", "password"}。ログインしている本人がパスワードを変える(新しい cookie を渡す)
 //	POST /aibow/auth/display       本文 {"display_name"}。ログインしている本人が表示名を変える(0031。空なら無し)
+//	POST /aibow/auth/email         本文 {"email"}。ログインしている本人がメールアドレスを変える(0031。空なら無し。重なれば 409)
 //
 // cookie は次の性質を付ける(どれも、ほかの人に合言葉を使われないため):
 //
@@ -84,11 +85,13 @@ type Me struct {
 	Setup bool `json:"setup,omitempty"`
 	// DisplayName は表示名(0031。空ならログインの名前を出す)
 	DisplayName string `json:"display_name,omitempty"`
+	// Email は本人のメールアドレス(0031。Me は本人にだけ返すので、ほかの人には見えない)
+	Email string `json:"email,omitempty"`
 }
 
 // meOf は、ログインしている人の Me。
 func meOf(u User) Me {
-	return Me{Login: true, Name: u.Name, Admin: u.Admin, DisplayName: u.DisplayName}
+	return Me{Login: true, Name: u.Name, Admin: u.Admin, DisplayName: u.DisplayName, Email: u.Email}
 }
 
 // Handler は /aibow/auth/ の下の口を返す。required はログインが要るか(aibow-server の設定)。
@@ -305,6 +308,38 @@ func Handler(s *Sessions, required bool) http.Handler {
 		}
 		log.Noticef("表示名を変えました: %s(%q)", u.Name, name)
 		u.DisplayName = name
+		writeJSON(w, http.StatusOK, meOf(u))
+	})
+	mux.HandleFunc("POST /aibow/auth/email", func(w http.ResponseWriter, r *http.Request) {
+		u, ok := UserFrom(r.Context())
+		if !required || !ok {
+			writeError(w, http.StatusUnauthorized, "ログインしてください")
+			return
+		}
+		var req struct {
+			Email string `json:"email"`
+		}
+		if !readJSON(w, r, &req) {
+			return
+		}
+		email, err := CheckEmail(req.Email)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		err = s.store.SetEmail(r.Context(), u.ID, email, s.now())
+		if errors.Is(err, ErrEmailExists) {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
+		if err != nil {
+			log.Errorf("メールアドレスを変えられません: %v", err)
+			writeError(w, http.StatusInternalServerError, "メールアドレスを変えられません: "+err.Error())
+			return
+		}
+		// アドレスそのものはログに書かない(個人の連絡先なので)
+		log.Noticef("メールアドレスを変えました: %s", u.Name)
+		u.Email = email
 		writeJSON(w, http.StatusOK, meOf(u))
 	})
 	mux.HandleFunc("/aibow/auth/", func(w http.ResponseWriter, r *http.Request) {

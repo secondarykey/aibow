@@ -44,6 +44,7 @@ export interface Backend {
   applyLink(token: string, password: string): Promise<Me>; // リンクでパスワードを決めて、そのままログインする
   changePassword(current: string, password: string): Promise<void>; // ログインしている本人がパスワードを変える
   setDisplayName(name: string): Promise<Me>;      // ログインしている本人が表示名を変える(ブラウザだけ。0031)
+  setEmail(email: string): Promise<Me>;           // ログインしている本人がメールアドレスを変える(ブラウザだけ。0031)
   admin: AdminAPI;                                // 利用者の管理(ブラウザの管理者だけ。0018 の 11-0。デスクトップでは断る)
   copyText(text: string): Promise<void>;
   openURL(url: string): Promise<void>;            // リンクを開く(デスクトップは OS のブラウザ、ブラウザは新しいタブ)
@@ -65,6 +66,7 @@ export interface Me {
   admin?: boolean; // 管理者か(0018 の 11-0)。ブラウザの設定の画面に「利用者」のタブを出す
   setup?: boolean; // ログインが要るのに、ログインできる管理者がまだいない(初めての起動など。0020)。ログインの画面に作り方を出す
   display_name?: string; // 表示名(0031。空ならログインの名前を出す)
+  email?: string;        // 本人のメールアドレス(0031。本人にだけ返る)
 }
 
 // AdminUser は、利用者の管理の一覧の1人(Go の _cmd/aibow-server の adminUser)。パスワードと API キーは、あるかだけ
@@ -76,6 +78,7 @@ export interface AdminUser {
   local: boolean; // ログインなしの形の利用者(消せない)
   created_at: string;
   display_name?: string;     // 表示名(0031。空ならログインの名前を出す)
+  email?: string;            // メールアドレス(0031。管理者と本人にだけ見せる)
   last_used_at?: string;     // 最後に使った時刻(1日に1回だけ書く。一度も使っていなければ無い)
   conversations: number;     // その人の会話の数(0031)
   link_expires_at?: string;  // まだ使っていないパスワードを決めるリンクの期限(招待中の人のリンクが切れたかを出す)
@@ -95,6 +98,7 @@ export interface AdminAPI {
   resetPassword(name: string): Promise<Link>;   // 今のパスワードを使えなくして、再設定のリンク
   renewKey(name: string): Promise<{ name: string; key: string }>;
   setDisplayName(name: string, display: string): Promise<void>; // 表示名を変える(空なら無し。0031)
+  setEmail(name: string, email: string): Promise<void>;         // メールアドレスを変える(空なら無し。0031)
   remove(name: string): Promise<void>;
 }
 
@@ -174,6 +178,11 @@ export async function setDisplayName(name: string): Promise<Me> {
   return me;
 }
 
+export async function setEmail(email: string): Promise<Me> {
+  me = await b.setEmail(email);
+  return me;
+}
+
 // linkURL は、リンクの合言葉を URL にする(管理者が開いている画面のアドレス。0022 の決定事項 11)
 export function linkURL(token: string): string {
   return `${location.origin}/#reset=${token}`;
@@ -185,6 +194,7 @@ export const admin: AdminAPI = {
   resetPassword: name => b.admin.resetPassword(name),
   renewKey: name => b.admin.renewKey(name),
   setDisplayName: (name, display) => b.admin.setDisplayName(name, display),
+  setEmail: (name, email) => b.admin.setEmail(name, email),
   remove: name => b.admin.remove(name),
 };
 

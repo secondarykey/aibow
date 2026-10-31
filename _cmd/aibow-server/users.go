@@ -10,6 +10,7 @@ package main
 //	aibow-server [-config 設定ファイル] user admin <名前>    … 管理者にする(0018 の 11-0)
 //	aibow-server [-config 設定ファイル] user unadmin <名前>  … 管理者から外す
 //	aibow-server [-config 設定ファイル] user display <名前> [表示名] … 表示名を決める(表示名を省くと無しにする。0031)
+//	aibow-server [-config 設定ファイル] user email <名前> [アドレス]  … メールアドレスを決める(アドレスを省くと無しにする。0031)
 //
 // 管理者を決めるのはこのコマンドだけ(画面からは決めない。0018 の決定事項 6)。サーバーの PC でこのコマンドを打てる人が、いちばん上の管理者。
 // 管理者が一人もいなくなっても止めない(127.0.0.1 からはいつも PC の事情を変えられ、このコマンドでいつでも戻せるため。0018 の決定事項 16)。
@@ -49,7 +50,8 @@ const userUsage = `使い方:
   aibow-server [-config 設定ファイル] user key <名前>
   aibow-server [-config 設定ファイル] user admin <名前>
   aibow-server [-config 設定ファイル] user unadmin <名前>
-  aibow-server [-config 設定ファイル] user display <名前> [表示名]`
+  aibow-server [-config 設定ファイル] user display <名前> [表示名]
+  aibow-server [-config 設定ファイル] user email <名前> [アドレス]`
 
 // runUser は user のコマンドを実行する。args は user のあと。
 func runUser(c config, env *envReader, args []string) error {
@@ -62,7 +64,7 @@ func runUser(c config, env *envReader, args []string) error {
 		want = 0
 	}
 	// display は表示名を省ける(省くと無しにする)。空白を含む表示名は引用符で囲む
-	if cmd == "display" && len(rest) == 2 {
+	if (cmd == "display" || cmd == "email") && len(rest) == 2 {
 		want = 2
 	}
 	if len(rest) != want {
@@ -92,6 +94,8 @@ func runUser(c config, env *envReader, args []string) error {
 		return setAdmin(ctx, st, rest[0], false)
 	case "display":
 		return setDisplayName(ctx, st, rest[0], strings.Join(rest[1:], ""), "")
+	case "email":
+		return setEmail(ctx, st, rest[0], strings.Join(rest[1:], ""), "")
 	}
 	return fmt.Errorf("知らないコマンドです: user %s\n%s", cmd, userUsage)
 }
@@ -117,6 +121,9 @@ func listUsers(ctx context.Context, st *store.SQLite) error {
 		}
 		if u.ID == aibow.LocalUser {
 			note += "・ログインなしの形の利用者"
+		}
+		if u.Email != "" {
+			note += "・" + u.Email
 		}
 		name := u.Name
 		if u.DisplayName != "" {
@@ -296,6 +303,28 @@ func setDisplayName(ctx context.Context, st *store.SQLite, name, display, by str
 		return err
 	}
 	log.Noticef("利用者 %s の表示名を %q にしました%s", name, display, by)
+	return nil
+}
+
+// setEmail はメールアドレスを決める(コマンドと管理者の画面。0031 の決定事項 40〜43)。空なら無し。
+// アドレスそのものはログに書かない(個人の連絡先なので。名前だけ)。
+func setEmail(ctx context.Context, st *store.SQLite, name, email, by string) error {
+	email, err := auth.CheckEmail(email)
+	if err != nil {
+		return err
+	}
+	u, err := st.UserByName(ctx, name)
+	if err != nil {
+		return fmt.Errorf("利用者 %s: %w", name, err)
+	}
+	if err := st.SetEmail(ctx, u.ID, email, time.Now()); err != nil {
+		return err
+	}
+	if email == "" {
+		log.Noticef("利用者 %s のメールアドレスを無しにしました%s", name, by)
+	} else {
+		log.Noticef("利用者 %s のメールアドレスを決めました%s", name, by)
+	}
 	return nil
 }
 

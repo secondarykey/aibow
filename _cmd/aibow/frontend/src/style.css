@@ -613,7 +613,7 @@ nav.conversations.collapsed .settings.active { color: var(--accent); }
 .segmented button:last-child { border-radius: 0 6px 6px 0; }
 .segmented button.current { background: var(--accent); color: #fff; border-color: var(--accent); position: relative; }
 .user-table { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto auto; column-gap: 12px; align-items: center; }
-.settings-view .user-field input.display-name { width: 240px; }
+.settings-view input.display-name { width: 240px; }
 .segmented.user-view { margin-bottom: 8px; }
 /* グループ(GroupSettings.tsx。0031 の段4)。一覧は利用者の一覧と同じ形(名前 / 長 / 人数 / 共有) */
 .group-table { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; column-gap: 12px; align-items: center; margin-top: 8px; }

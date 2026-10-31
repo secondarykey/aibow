@@ -3,7 +3,7 @@
 //	[ 人 | グループ ]                                                    … 人の一覧とグループの一覧を切り替える(0031 の決定事項 24・35。グループは GroupSettings.tsx)
 //	[名前で探す…] [すべて | 招待中 | 管理者 | API キーあり | 30日使っていない]   [+ 利用者を作る]
 //	名前                 状態      最後に使った日   作った日      会話   … 見出しを押すと並べ替え。行を押すと一覧の下に詳細(0031 の決定事項 14・35)
-//	▼ 詳細: 表示名・グループ・パスワードのリンク・API キー・その人の会話(新しい順 20 件 + もっと見る)・消す
+//	▼ 詳細: 表示名・メールアドレス・グループ・パスワードのリンク・API キー・その人の会話(新しい順 20 件 + もっと見る)・消す
 //
 // 一覧は一度に取って画面で探す・絞る・並べ替える(サーバーで探す口は作らない。0031 の決定事項 13)。
 // 作る・パスワードと API キーの作り直し・消すは、aibow-server の user コマンドと同じ処理(_cmd/aibow-server の admin.go)。
@@ -165,7 +165,7 @@ function UserList({ dir, reloadDir, viewTabs, onError, onRead }: {
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
     const match = FILTERS.find(f => f.id === filter)!.match;
-    const list = users.filter(u => match(u) && (q === "" || u.name.toLowerCase().includes(q) || (u.display_name ?? "").toLowerCase().includes(q)));
+    const list = users.filter(u => match(u) && (q === "" || [u.name, u.display_name ?? "", u.email ?? ""].some(k => k.toLowerCase().includes(q))));
     list.sort((a, b) => compare(a, b, sort.key) * (sort.desc ? -1 : 1));
     return list;
   }, [users, query, filter, sort]);
@@ -237,6 +237,10 @@ function UserList({ dir, reloadDir, viewTabs, onError, onRead }: {
             reloadDir();
             return null;
           })}
+          onEmail={email => run(async () => {
+            await admin.setEmail(user.name, email);
+            return null;
+          })}
           onResetLink={label => run(async () => linkSecret(label, await admin.resetPassword(user.name)))}
           onRenewKey={() => run(async () => {
             const r = await admin.renewKey(user.name);
@@ -258,7 +262,7 @@ function UserList({ dir, reloadDir, viewTabs, onError, onRead }: {
 const PAGE = 20;
 
 // UserDetail は、一覧で押した人の詳細(一覧の下に出す。0031 の決定事項 14・35)
-function UserDetail({ user, dir, onGroupsChanged, onClose, onRead, onError, onDisplayName, onResetLink, onRenewKey, onRemove }: {
+function UserDetail({ user, dir, onGroupsChanged, onClose, onRead, onError, onDisplayName, onEmail, onResetLink, onRenewKey, onRemove }: {
   user: AdminUser;
   dir: Directory;
   onGroupsChanged(): void;
@@ -266,6 +270,7 @@ function UserDetail({ user, dir, onGroupsChanged, onClose, onRead, onError, onDi
   onRead(id: string): void;
   onError(text: string): void;
   onDisplayName(display: string): Promise<boolean>;
+  onEmail(email: string): Promise<boolean>;
   onResetLink(label: string): Promise<boolean>;
   onRenewKey(): Promise<boolean>;
   onRemove(): Promise<boolean>;
@@ -293,6 +298,13 @@ function UserDetail({ user, dir, onGroupsChanged, onClose, onRead, onError, onDi
         <div className="user-field">
           <span className="user-field-label">表示名</span>
           <DisplayNameInput value={user.display_name ?? ""} placeholder={user.name} onSave={onDisplayName} />
+        </div>
+      )}
+
+      {!user.local && (
+        <div className="user-field">
+          <span className="user-field-label">メール</span>
+          <EmailInput value={user.email ?? ""} onSave={onEmail} />
         </div>
       )}
 
@@ -405,6 +417,38 @@ export function DisplayNameInput({ value, placeholder, onSave }: { value: string
       onBlur={save}
       onKeyDown={e => {
         if (e.nativeEvent.isComposing) return; // 変換の確定の Enter では保存しない
+        if (e.key === "Enter") e.currentTarget.blur();
+        if (e.key === "Escape") {
+          e.stopPropagation();
+          setText(value);
+        }
+      }}
+    />
+  );
+}
+
+// EmailInput はメールアドレスの入力欄(0031 の決定事項 40〜43)。表示名の欄と同じく、Enter か欄を離れたときに保存し、Esc で元に戻す。
+// 空にすると無し。形と重なりは Go が確かめる(断られたら元の値に戻す)
+export function EmailInput({ value, onSave }: { value: string; onSave(email: string): Promise<boolean> | Promise<void> | void }) {
+  const [text, setText] = useState(value);
+  useEffect(() => setText(value), [value]);
+  const save = async () => {
+    if (text.trim() === value) return;
+    const ok = await onSave(text.trim());
+    if (ok === false) setText(value);
+  };
+  return (
+    <input
+      type="email"
+      className="display-name"
+      value={text}
+      maxLength={254}
+      placeholder="sato@example.com"
+      title="管理者と本人にだけ見える。今は持つだけで、メールは送らない"
+      onChange={e => setText(e.target.value)}
+      onBlur={save}
+      onKeyDown={e => {
+        if (e.nativeEvent.isComposing) return;
         if (e.key === "Enter") e.currentTarget.blur();
         if (e.key === "Escape") {
           e.stopPropagation();

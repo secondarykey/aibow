@@ -44,6 +44,8 @@
   - 版 17: `users` に表示名 `display_name`(空ならログインの名前を出す)と最後に使った時刻 `last_used_at`(空は一度も使っていない。前に書いてから1日以上たったときだけ書く)。0031 の段3
   - 版 18: グループ(0031 の段4)。`user_groups`(名前は UNIQUE。`groups` は SQLite の窓関数の GROUPS と重なるので避けた)・`user_group_members`(グループ + 利用者 + 長の印 `leader`)・
     会話とプロファイルの「指定したグループ」の表 `conversation_group_shares`・`profile_group_shares`。どれもグループか相手を消すと一緒に消える。グループの読み書きは `groups.go`
+  - 版 19: `users` にメールアドレス `email`(0031 の決定事項 40〜43。今は持つだけ)。空でなければ1人1つ:索引 `users_email` は `lower(email)` の UNIQUE で、
+    `WHERE email <> ''` の部分索引(付けていない人が何人いても重ならない)。重なりは `auth.ErrEmailExists`
 - 会話の共有:ほかの人の会話を読むのは `ReadConversation` だけ(条件 `conversationShared` と管理者か)。書くメソッドは持ち主の行だけなので、共有された人も管理者も書き込めない。
   自分の会話を読むときは `share`(と1つ読むときは `ShareWith`)を入れる
 - プロファイルの読み書き:見える・変えられるの判定は `sqlite.go` の `profileVisible`・`profileUsed`・`profileEditable`(名前付きの引数 `:me`・`:admin`)の1か所だけ。

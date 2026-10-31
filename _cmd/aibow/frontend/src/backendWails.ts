@@ -43,6 +43,7 @@ export const backend: Backend = {
   changePassword: passwordInBrowser,
   // 表示名を本人が変えるのもブラウザで行う(パスワードと同じ。0031)
   setDisplayName: async () => { throw new Error("表示名を変えるのは、aibow-server の画面をブラウザで開いて行います"); },
+  setEmail: async () => { throw new Error("メールアドレスを変えるのは、aibow-server の画面をブラウザで開いて行います"); },
   onUnauthorized: () => () => {},
   // 利用者の管理はブラウザの管理者だけ(0018 の 11-0)。デスクトップには「利用者」のタブを出さないので、呼ばれない
   admin: {
@@ -51,6 +52,7 @@ export const backend: Backend = {
     resetPassword: notInApp,
     renewKey: notInApp,
     setDisplayName: notInApp,
+    setEmail: notInApp,
     remove: notInApp,
   },
 

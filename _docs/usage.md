@@ -252,6 +252,7 @@ go run ./_cmd/dev server
 aibow-server [-model モデル] [-ctx 作業領域の大きさ] [-port ポート] [-host アドレス] [-tls-cert 証明書 -tls-key 秘密鍵] [-lib llama.cpp のフォルダ] [-models GGUF のフォルダ] [-config 設定ファイル] [-login=false] [-debug]
 aibow-server [-config 設定ファイル] user list|add|passwd|remove|key|admin|unadmin [名前]
 aibow-server [-config 設定ファイル] user display <名前> [表示名]
+aibow-server [-config 設定ファイル] user email <名前> [アドレス]
 aibow-server [-config 設定ファイル] cert <ホスト名か IP アドレス>...
 ```
 
@@ -519,6 +520,8 @@ aibow-server user add bob
 - `user list`:利用者の一覧(表示名・最後に使った日も出ます)
 - `user display <名前> [表示名]`:表示名(人に見せる名前。例「佐藤 花子(営業)」)を決めます。表示名を省くと無しにします(ログインの名前を出します)。空白を含むときは引用符で囲みます。
   64 文字までで、改行などは使えません。本人もブラウザの設定の画面の「基本設定」で変えられます
+- `user email <名前> [アドレス]`:メールアドレスを決めます(省くと無しにします)。今は持つだけで、メールは送りません。管理者と本人にだけ見え、ほかの利用者と同じアドレスは付けられません。
+  本人もブラウザの設定の画面の「基本設定」で変えられます
 - `user admin <名前>` / `user unadmin <名前>`:管理者にする / 外す(ステップ11)。管理者を決めるのはこのコマンドだけです。一人もいなくても動きます(サーバーの PC からはいつも何でもできます)
 - 設定ファイルを `-config` で指しているときは、コマンドにも同じ `-config` を付けます(`server.db` がその隣にあるため)
 - `local`(ログインなしの形の利用者)はパスワードが無いのでログインできません。ログインが要る形でも今までの会話を使うときは、`aibow-server user passwd local` で出たリンクでパスワードを決めます
