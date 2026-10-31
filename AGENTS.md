@@ -33,7 +33,7 @@ OpenAI 互換のクライアント(Cline など)⇄ HTTP(S)(既定は 127.0.0.1�
 利用者(ステップ10):aibow-server の server.db に利用者・セッション・API キー(aibow/auth)。会話・プロファイル・表示の設定は持ち主で分かれ、誰のものかは ctx で運ぶ(aibow.WithUser)。
   既定でログインと API キーが要る(0020。login: false で 127.0.0.1 だけならログインなし(利用者 local))。-host で外に出すと、書いた値によらず要る([_docs/usage.md](_docs/usage.md) の「ほかの PC から使う」)
 共有(ステップ11):管理者(コマンドで決める)は利用者の管理・使えるモデル・サーバーの PC の事情を変えられ、ほかの人の会話を読むだけで読める(ログに残る)。
-  会話は全員か指定した人に共有でき(読むだけ。続けるときは写す)、管理者はプロファイルを配れる。誰に見えて誰が変えられるかは store の SQL の条件の1か所([_docs/conversations.md](_docs/conversations.md))
+  会話は全員か指定した人・グループ(0031)に共有でき(読むだけ。続けるときは写す)、管理者はプロファイルを配れる。誰に見えて誰が変えられるかは store の SQL の条件の1か所([_docs/conversations.md](_docs/conversations.md))
 ```
 
 - **Ollama などの外部 LLM サーバーは使わない**。aibow のプロセスの中で llama.cpp を直接動かす。

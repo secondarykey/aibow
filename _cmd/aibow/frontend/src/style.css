@@ -636,7 +636,7 @@ nav.conversations.collapsed .settings.active { color: var(--accent); }
 .user-date { color: var(--muted); font-size: 12px; }
 .user-detail { margin-top: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; }
 .user-detail-head { display: flex; align-items: center; gap: 8px; }
-.user-detail-head h2.section { margin: 0; }
+.user-detail-head h2.section { margin: 0; padding-top: 0; border-top: none; }
 .user-detail-head .spacer { flex: 1; }
 .user-field { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
 .user-field-label { width: 6em; flex-shrink: 0; color: var(--muted); font-size: 13px; }

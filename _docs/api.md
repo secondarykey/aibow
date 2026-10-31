@@ -316,7 +316,9 @@ aibow-server user admin <名前>(コマンドだけ)→ server.db の users.admi
   `Caller.ManagesPC()`(管理者か、サーバーの PC の上から)でなければ 403 で断り、`ServerHost` も同じことを確かめる(口の作りを間違えても漏れないように)
 - **管理者の口**(`_cmd/aibow-server/admin.go`。ブラウザでログインした管理者だけ。ほかは 401 / 403):
   `GET /aibow/admin/users`(一覧。パスワードと API キーは、あるかだけ)・`POST /aibow/admin/users`(本文 `{"name"}`。返事にパスワード)・
-  `POST /aibow/admin/users/{名前}/password`・`POST /aibow/admin/users/{名前}/key`(返事に新しいパスワード / キー。一度だけ)・`DELETE /aibow/admin/users/{名前}`(自分と `local` は消せない)。
+  `POST /aibow/admin/users/{名前}/password`・`POST /aibow/admin/users/{名前}/key`(返事に新しいパスワード / キー。一度だけ)・`DELETE /aibow/admin/users/{名前}`(自分と `local` は消せない)・
+  `POST /aibow/admin/users/{名前}/display`(本文 `{"display_name"}`。表示名。空なら無し。0031)。
+  一覧の1人には、表示名 `display_name`・最後に使った時刻 `last_used_at`(一度も使っていなければ無い)・会話の数 `conversations`・まだ使っていないリンクの期限 `link_expires_at` も入る(0031。並べ替えと絞り込みは画面がする)。
   処理は user コマンドと同じ関数(`createUser`・`renewPassword`・`renewKey`・`deleteUser`)。返事は `Cache-Control: no-store`
 - **モデルの ID**:GGUF は `file:<ファイル名>`(以前は `file:<パス>`。サーバーの PC のパスが `/v1/models` や共有した会話に出ないように。0018 の決定事項 15)。
   同じ名前のファイルは先の置き場所だけを出し、後ろは Warn のログ(`models.Catalog.Hidden`)。以前の形の ID は `models.IDOf` で読み替える
@@ -329,7 +331,10 @@ aibow-server user admin <名前>(コマンドだけ)→ server.db の users.admi
 
 ## 会話の共有と管理者が読む(ステップ11の 11-2。0018)
 
-- 画面用の口に `SetConversationShare`・`SharedConversations`・`UserConversations`・`UserNames`・`ReadConversation`・`CopyShared` を足した(`browserMethods`)。
+- 画面用の口に `SetConversationShare`・`SharedConversations`・`UserConversations`・`Directory`(以前の `UserNames`。0031)・`ReadConversation`・`CopyShared` を足した(`browserMethods`)。
+  `SetConversationShare` と `SetProfileShare` の引数は(ID・範囲・人の名前・グループの名前)。
+  グループ(0031)の `CreateGroup`・`RenameGroup`・`DeleteGroup`・`SetGroupMember`・`SetGroupLeader` も画面用の口と保存の口に出る(管理者か・そのグループの長かは保存先が確かめる。
+  保存の口では `ErrNotGroupLeader` が `not_group_leader`(403)、`ErrGroupExists` が `group_exists`(409)になって手元の同じエラーに戻る)
   誰が読めるかは保存先(`store`)が決め、管理者かも保存先が利用者の表で確かめる(`UserConversations` は管理者だけ)
 - 保存の口(`/aibow/store/`)にも、`aibow.Store` に足した同じメソッドが出る(`store/remote` の `Client`)。画面のアプリ(serverUrl)でも、共有された会話を読む・写す・自分の会話を共有するができる
 - 管理者が共有されていない会話を読むと、`ui.Service.ReadConversation` が Notice のログに残す(誰が・誰の・どの会話を)

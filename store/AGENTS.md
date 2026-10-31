@@ -7,6 +7,7 @@
 |---|---|
 | `sqlite.go` | `Store` の SQLite 実装(`modernc.org/sqlite`)。マイグレーションもここ |
 | `users.go` | 利用者とセッションの保存(`auth.Store` の実装。aibow-server の server.db だけで使う) |
+| `groups.go` | グループとグループの長(0031)。誰が変えられるかの条件 `groupEditable` もここ |
 | `remote/` | 会話の保存を HTTP 越しに使う(`remote` パッケージ。0017 の 10-3)。aibow-server の保存の口(`Handler`。`/aibow/store/{メソッド}`)と、アプリの側の `aibow.Store` の HTTP 版(`Client`) |
 | `sqlite_test.go` | 一時フォルダの DB を使ったテスト(マイグレーション・持ち主で分かれることを含む) |
 
@@ -40,6 +41,9 @@
     持ち主は発言を通して決まるので列を持たない。発言と同じトランザクションで足し(`AddMessage`)、発言を読んだあとにまとめて読む(`attachFiles`。接続が1本なので、発言の rows を閉じてから)
   - 版 16: `files` に捨てた印 `discarded`(0 / 1。0030 の決定事項 26〜28)。捨てると中身を空の BLOB にする(`DiscardFile`。secure_delete で元の中身はゼロに上書きされる)。
     捨てたファイルを足すとき(送り直す・写す)も空の BLOB で入れる(列が NOT NULL のため)
+  - 版 17: `users` に表示名 `display_name`(空ならログインの名前を出す)と最後に使った時刻 `last_used_at`(空は一度も使っていない。前に書いてから1日以上たったときだけ書く)。0031 の段3
+  - 版 18: グループ(0031 の段4)。`user_groups`(名前は UNIQUE。`groups` は SQLite の窓関数の GROUPS と重なるので避けた)・`user_group_members`(グループ + 利用者 + 長の印 `leader`)・
+    会話とプロファイルの「指定したグループ」の表 `conversation_group_shares`・`profile_group_shares`。どれもグループか相手を消すと一緒に消える。グループの読み書きは `groups.go`
 - 会話の共有:ほかの人の会話を読むのは `ReadConversation` だけ(条件 `conversationShared` と管理者か)。書くメソッドは持ち主の行だけなので、共有された人も管理者も書き込めない。
   自分の会話を読むときは `share`(と1つ読むときは `ShareWith`)を入れる
 - プロファイルの読み書き:見える・変えられるの判定は `sqlite.go` の `profileVisible`・`profileUsed`・`profileEditable`(名前付きの引数 `:me`・`:admin`)の1か所だけ。
