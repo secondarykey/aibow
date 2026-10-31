@@ -78,7 +78,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	// 作業領域に入るかを、生成の前に確かめる。返事の分の空きまでは求めない(足りなくなったら、そこで止めて finish_reason を length にする)
 	n, err := s.gen.CountTokens(p)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "server_error", "", err.Error())
+		writeError(w, http.StatusInternalServerError, "server_error", modelErrorCode(err), err.Error())
 		return
 	}
 	if nCtx := int(info.NCtx); n >= nCtx {
@@ -443,6 +443,9 @@ func (s *Server) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 const (
 	codeModelNotLoaded    = "model_not_loaded"   // engine.ErrNoModel(降ろした・まだ読み込んでいない)
 	codeUnsupportedFormat = "unsupported_format" // format.ErrUnsupported(書式に未対応の種類のモデル)
+	// engine.ErrNoVision(画像の付いた会話を、画像を読めないモデル・書式で数えた。0030)。
+	// これが無いと、画像の付いた会話を画像を読めないモデルで開いたとき、アプリは会話を開くこと自体に失敗する
+	codeNoVision = "no_vision"
 )
 
 func modelErrorCode(err error) string {
@@ -451,6 +454,8 @@ func modelErrorCode(err error) string {
 		return codeModelNotLoaded
 	case errors.Is(err, format.ErrUnsupported):
 		return codeUnsupportedFormat
+	case errors.Is(err, engine.ErrNoVision):
+		return codeNoVision
 	}
 	return ""
 }

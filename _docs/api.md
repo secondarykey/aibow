@@ -132,8 +132,10 @@ data: [DONE]
   足した置き場所は `server-models.json` の `places` に覚え、手で書く `server.json` は書き換えない(0015 の 22)。models フォルダと Ollama の保存先は外せない(表示だけ)。
   足した置き場所が見つからなくなったら一覧から外し、見つからなくなったときに1回だけ Warn のログを出す。覚えたものからは消さない(つなぎ直せば戻る。0015 の 28)。
   置き場所を足す・外すのは作業領域を使わないので、順番を待たない
-- `/aibow/count-tokens`・`/apply-template` がモデルの状態で失敗したときは、`error.code` に `model_not_loaded`(降ろした・まだ読み込んでいない)か `unsupported_format`(書式に未対応の種類のモデル)を入れる。
-  `api/client` はこれを `engine.ErrNoModel`・`format.ErrUnsupported` に戻すので、画面のアプリは直接でも HTTP 越しでも同じに「メーターを出さない」にできる(会話を開くのは止めない)
+- `/aibow/count-tokens`・`/apply-template` がモデルの状態で失敗したときは、`error.code` に `model_not_loaded`(降ろした・まだ読み込んでいない)か `unsupported_format`(書式に未対応の種類のモデル)か
+  `no_vision`(画像の付いたプロンプトを、画像を読めないモデル・書式で数えた。0030)を入れる。
+  `api/client` はこれを `engine.ErrNoModel`・`format.ErrUnsupported`・`engine.ErrNoVision` に戻すので、画面のアプリは直接でも HTTP 越しでも同じに「メーターを出さない」にできる(会話を開くのは止めない)。
+  `/v1/chat/completions` の前の数えるところで失敗したときも同じ code を入れる
 - 画面のアプリ(`api/client` を使う側)は、`/models/unload`・`/aibow/gpu-layers`・`/aibow/places/*` を使わない。`/aibow/settings` も作業領域しか画面に渡さない(2026-10-22、ユーザーと決めた。0015 の 21)。
   これらはサーバーの PC の事情を変える口で、サーバーの PC の人が curl などで呼ぶもの。誰が呼んでよいか(管理者だけにする)はステップ10で決める
 - `/aibow/settings` は表示だけのサーバーの設定(作業領域・ポート・llama.cpp の場所・最初のモデル・設定ファイルの場所)。変えるのは `server.json` と起動し直し(0015 の 21)

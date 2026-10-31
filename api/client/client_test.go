@@ -374,11 +374,13 @@ func TestUnloadAndPlaces(t *testing.T) {
 	}
 }
 
-// モデルが無い・書式に未対応のときは、HTTP 越しでも手元と同じエラーとして見分けられる(画面はメーターを出さないだけにする)
+// モデルが無い・書式に未対応・画像を読めないときは、HTTP 越しでも手元と同じエラーとして見分けられる(画面はメーターを出さないだけにする)
 func TestModelErrors(t *testing.T) {
 	for _, tc := range []struct{ err, is error }{
 		{engine.ErrNoModel, engine.ErrNoModel},
 		{format.Unsupported("gemma4"), format.ErrUnsupported},
+		{engine.VisionError("書式 Gemma 4 は画像に対応していません。画像を読めるのは Qwen3.5 だけです"), engine.ErrNoVision},
+		{engine.ErrNoVision, engine.ErrNoVision},
 	} {
 		c, _ := newServer(t, &fakeGen{err: tc.err})
 		_, err := c.CountTokens(format.Prompt{Messages: []format.Message{{Role: "user", Content: "hi"}}})

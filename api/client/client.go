@@ -127,13 +127,15 @@ type APIError struct {
 func (e *APIError) Error() string { return e.Message }
 
 // Unwrap は、サーバーが code で知らせたモデルの状態を、手元と同じエラーにする
-// (errors.Is(err, engine.ErrNoModel) / errors.Is(err, format.ErrUnsupported) が、直接でも HTTP 越しでも同じに効くように)。
+// (errors.Is(err, engine.ErrNoModel) / errors.Is(err, format.ErrUnsupported) / errors.Is(err, engine.ErrNoVision) が、直接でも HTTP 越しでも同じに効くように)。
 func (e *APIError) Unwrap() error {
 	switch e.Code {
 	case "model_not_loaded":
 		return engine.ErrNoModel
 	case "unsupported_format":
 		return format.ErrUnsupported
+	case "no_vision":
+		return engine.ErrNoVision
 	}
 	return nil
 }
