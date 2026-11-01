@@ -1,5 +1,5 @@
 // 設定の画面: タブで「基本設定」(画面)・「モデル」(モデルの一覧・置き場所・GPU の層数。0015 の 8-4)・「会話」(プロファイル・ツール)・
-// 「サーバー」(aibow-server につなぐ・戻す。デスクトップだけ。0019)に分ける。
+// 「サーバー」(aibow-server につなぐ・戻す。デスクトップだけ。0019)・「MCP」(MCP のサーバーを足す・変える・消す。デスクトップだけ。0034)に分ける。
 // 会話に関わらないアプリの設定と、会話の既定として使われる値を、同じ画面に混ぜないため(2026-10-19、ユーザーの指示)。
 // GPU の層数は、以前は基本設定で読み込み中のモデルの値だけを変えていたが、「モデル」のタブでモデルごとに変えるようにした。
 // ツールは、プロファイルの中の1つの一覧で決める(最初から使う・選べば使える・使えないはプロファイル、確認しないはこの PC。0014)。
@@ -15,7 +15,8 @@ import type { ServerInfo } from "../../bindings/github.com/secondarykey/aibow/mc
 import { ProfileSettings } from "./ProfileSettings";
 import { ModelSettings } from "./ModelSettings";
 import { ServerSettings } from "./ServerSettings";
-import { isBrowser, me } from "../backend";
+import { McpEditor, type McpEditorAPI } from "./McpEditor";
+import { ChatService, isBrowser, me } from "../backend";
 import { AccountSettings, signedIn } from "./AccountSettings";
 import { LeaderGroups } from "./GroupSettings";
 import { useDirectory } from "../directory";
@@ -39,16 +40,19 @@ interface Props {
   connectDisabled: boolean;
   onDisplayChange(d: DisplaySettings): void; // 画面の設定を変える(生成に関わらないので、生成中でも変えられる)
   onToolsChanged(): void; // ツールを使う / 使わないを変えた(メーターと、会話で選べる MCP のサーバーを読み直す)
+  onNotice(text: string): void; // お知らせ(トースト)を出す(MCP のサーバーを足した、など)
   initialTab?: Tab; // 開いたときのタブ(左下の名前のメニューの「アカウント」から開くときは account)
 }
 
-export type Tab = "basic" | "model" | "conversation" | "server" | "groups" | "account";
+export type Tab = "basic" | "model" | "conversation" | "mcp" | "server" | "groups" | "account";
 
 const TABS: { id: Tab; label: string; title: string }[] = [
   { id: "basic", label: "基本設定", title: "会話によらず、この PC で1つだけのもの(画面)" },
   // ブラウザ(aibow-server)では一覧だけ。読み込む / 降ろす・GPU の層数・置き場所は管理の画面(0032 の決定事項 6)
   { id: "model", label: "モデル", title: isBrowser ? "使えるモデルの一覧" : "モデルの一覧(読み込む / 降ろす・GPU の層数)と置き場所" },
   { id: "conversation", label: "会話", title: "プロファイル(新しい会話の既定・ツールの扱い)" },
+  // MCP のサーバーそのものを足す・変える・消す(アプリだけ。0034 の決定事項 2・3)。使う・確認するを決めるのは「会話」のプロファイルの「ツール」
+  { id: "mcp", label: "MCP", title: "MCP のサーバーを足す・変える・消す・試しにつなぐ" },
   // aibow-server につなぐ・戻すは、デスクトップのアプリだけ(0019。ブラウザは aibow-server そのものの画面)
   { id: "server", label: "サーバー", title: "aibow-server につなぐ・ログインする・アプリの中で動かす形に戻す" },
   // グループの長だけ(管理者でない人。管理者は「利用者」のタブで扱う。0031 の決定事項 32・37)
@@ -57,7 +61,17 @@ const TABS: { id: Tab; label: string; title: string }[] = [
   { id: "account", label: "アカウント", title: "自分の表示名・メールアドレス・パスワード・ログアウト" },
 ];
 
-export function SettingsView({ onClose, errors, app, models, modelState, servers, onProfilesChanged, onApplyLimits, onError, appDisabled, connectDisabled, onDisplayChange, onToolsChanged, initialTab }: Props) {
+// appMcpAPI は、アプリの「MCP」のタブが呼ぶ口(mcp.json。0034)。aibow-server の分を作るときは、ここを替えた口を McpEditor に渡す
+const appMcpAPI: McpEditorAPI = {
+  list: () => ChatService.MCPServerList(),
+  add: servers => ChatService.AddMCPServers(servers),
+  update: (name, config) => ChatService.UpdateMCPServer(name, config),
+  remove: name => ChatService.DeleteMCPServer(name),
+  try: (name, config, add) => ChatService.TryMCPServer(name, config, add),
+  parse: text => ChatService.ParseMCPJSON(text),
+};
+
+export function SettingsView({ onClose, errors, app, models, modelState, servers, onProfilesChanged, onApplyLimits, onError, appDisabled, connectDisabled, onDisplayChange, onToolsChanged, onNotice, initialTab }: Props) {
   // 開くたびに「基本設定」から(開いている間だけ覚える)。左下の名前のメニューから開いたときは「アカウント」
   const [tab, setTab] = useState<Tab>(initialTab ?? "basic");
   // グループの長かは、共有の相手の一覧(グループの長も入っている)で決める。ブラウザでログインしているときだけ
@@ -73,7 +87,7 @@ export function SettingsView({ onClose, errors, app, models, modelState, servers
         {errors.map(e => <div key={e.id} className="msg error">{e.text}</div>)}
 
         <div className="settings-tabs" role="tablist">
-          {TABS.filter(t => (t.id !== "groups" || leader) && (t.id !== "account" || signedIn()) && (t.id !== "server" || !isBrowser)).map(t => (
+          {TABS.filter(t => (t.id !== "groups" || leader) && (t.id !== "account" || signedIn()) && (t.id !== "server" || !isBrowser) && (t.id !== "mcp" || !isBrowser)).map(t => (
             <button
               key={t.id}
               role="tab"
@@ -102,6 +116,8 @@ export function SettingsView({ onClose, errors, app, models, modelState, servers
         {tab === "account" && <AccountSettings onError={onError} />}
 
         {tab === "server" && <ServerSettings disabled={connectDisabled} onError={onError} />}
+
+        {tab === "mcp" && <McpEditor api={appMcpAPI} onChanged={onToolsChanged} onNotice={onNotice} />}
 
         {tab === "conversation" && (
           <>

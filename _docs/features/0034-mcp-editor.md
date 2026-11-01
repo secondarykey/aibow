@@ -105,3 +105,26 @@ aibow-server(`server.json`)の分は、あとで同じ部品で作る(今回は�
 2. **段2(Go の口)**:画面から呼ぶメソッド(一覧・保存・消す・試す・JSON を読み取る)。保存したら `NoteServers` とお知らせ、画面に一覧が変わったことを知らせる
 3. **段3(画面)**:タブ「MCP」と、共用できる部品(一覧・フォーム・JSON を貼る欄・試しにつなぐ)。見た目はユーザーに見せて決める(未決事項 1)
 4. **段4(書類)**:`_docs/mcp.md` の「設定ファイル」の表に `mcp.json` を足し、`_docs/usage.md` の MCP の足し方に画面からの足し方を書く
+
+## 経過
+
+### 2026-11-02(段1〜段4。Code)
+
+- 段1:`mcpfile.go`(`MCPFile`・`MergeMCPServers`・`MCPConfig`)。`Manager` は設定を差し替えられるようにした(`Update`・`TryTools`・`ServerConfig.Equal`)。テストは `mcpfile_test.go` と `mcp/client` の `TestUpdate`・`TestUpdateFromEmpty`・`TestTryTools`
+- 段2:`ui/mcpedit.go`(`MCPServerList`・`AddMCPServers`・`UpdateMCPServer`・`DeleteMCPServer`・`TryMCPServer`・`ParseMCPJSON`)。ブラウザの口(`browserMethods`)には載せず、`mcpConfig` が無ければ断る
+- 段3:設定の画面のタブ「MCP」と `McpEditor.tsx`(呼ぶ口 `McpEditorAPI` を外から渡す)
+- 段4:`_docs/mcp.md` の「画面から足す」・`_docs/usage.md`(MCP のサーバー・`AIBOW_MCP`)・`_docs/ui.md`・`_docs/structure.md`
+- 一時ビルド(CDP)で確かめたこと:一覧に settings.json の印・settings.json のサーバーを試しにつなぐ(ツール 7 個)・2つ入った `{"mcpServers": …}` を貼る(settings.json と同じ名前は理由つきで外れる)→ 足す → `mcp.json` に書かれ settings.json は変わらない・お知らせ・`seen` と `notDefault` に入る・「この会話のツール」にすぐ出る・env の値が伏せ字で、空のまま保存しても前の値が残る・打ち間違えた command で試すと理由が出る・消す
+- 確かめていないこと:モデルを読み込んで、画面から足したサーバーを選んで送信し、ツールを使う(`Manager` の単体テストで、足したものが次の `Start` で起動することだけ確かめた)
+
+Code が決めたこと:
+
+- 決定事項 6 の「すぐ止める」:SDK の `ClientSession.Close` は実行中の呼び出しが終わるのを待つので、サーバーごとに打ち切り用の ctx を持たせ、実行中の `tools/call` を「設定が変わったので止めました」のエラーで打ち切ってから止める。
+  起動している間に設定が変わったら、つながったあとで捨てる(古い設定のサーバーを残さない)
+- 決定事項 8 の `known`:試しにつないだときの設定と一覧をサーバーの名前ごとに覚え、同じ設定(`ServerConfig.Equal`)で保存したら `tools.json` の `known` に書く
+- 決定事項 15:会話の仕組みの `remote == nil` の分かれ道は残した(空の `Manager` でも同じ動きで、aibow-server の側の作りを変えずに済むため)
+- 決定事項 13 の起動のお知らせ:「MCP のサーバー X は、settings.json と画面から足した分(mcp.json の場所)の両方にあります。settings.json のほうを使います」。
+  一覧では mcp.json のほうにも「使われていない」の印を付けて出す(消すことはできる)
+- settings.json が壊れていたら、settings.json のサーバーだけを使わずに起動する(mcp.json のサーバーは使う)
+- 貼った JSON は、外側の `{}` を付けずに写したもの(`"名前": {...},`)も読む。ほかのツールの項目(`disabled`・`autoApprove` など)は捨てる。1つで足せる(か名前を打つ)ものはフォームに入れ、それ以外は一覧で選んでから足す
+- 未決事項 1 の見た目は、利用者の一覧と同じ「一覧の行を押すと下にフォームを開く」で作った(ユーザーに見てもらう)

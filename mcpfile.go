@@ -496,6 +496,8 @@ func (c *MCPConfig) ParseMCPJSON(text string) ([]ParsedMCPServer, error) {
 		switch err := json.Unmarshal(servers[name], &p.Config); {
 		case err != nil:
 			p.Error = fmt.Sprintf("サーバーの設定の形が違います: %v", err)
+		case hasKey(c.hand, name):
+			p.Error = "settings.json に同じ名前のサーバーがあります(足すなら別の名前にしてください)"
 		case name != "" && hasKey(current, name):
 			p.Error = "同じ名前のサーバーがあります(上書きはしません。変えるときは一覧から選んでください)"
 		default:

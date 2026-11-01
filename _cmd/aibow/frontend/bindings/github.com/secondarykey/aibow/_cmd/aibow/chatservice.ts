@@ -43,6 +43,14 @@ export function Account(): $CancellablePromise<$models.AccountInfo> {
 }
 
 /**
+ * AddMCPServers は、MCP のサーバーを mcp.json に足す(フォームの1つか、貼った JSON のいくつか)。画面のお知らせに出す文を返す。
+ * 足したサーバーは、新しい会話で最初から使わない(0034 の決定事項 12)。
+ */
+export function AddMCPServers(servers: aibow$0.MCPServerInput[] | null): $CancellablePromise<string[] | null> {
+    return $Call.ByID(3611279202, servers);
+}
+
+/**
  * AddModelPlace は置き場所(フォルダか GGUF のファイル)を足し、足したあとの一覧を返す。
  * aibow-server 越しなら、path はサーバーの PC のパスで、サーバーがあるかを確かめる(0015 の 31)。
  */
@@ -203,6 +211,13 @@ export function DeleteGroup(id: uuid$0.UUID): $CancellablePromise<void> {
 }
 
 /**
+ * DeleteMCPServer は、mcp.json のサーバー name を消す。動いていれば止める(tools.json の扱いは残す)。
+ */
+export function DeleteMCPServer(name: string): $CancellablePromise<string[] | null> {
+    return $Call.ByID(3974140519, name);
+}
+
+/**
  * DeleteProfile は、使っている会話が無いプロファイルを消す。
  */
 export function DeleteProfile(id: uuid$0.UUID): $CancellablePromise<void> {
@@ -266,6 +281,13 @@ export function Logout(): $CancellablePromise<void> {
 }
 
 /**
+ * MCPServerList は、設定の画面の「MCP」に出す一覧(settings.json と mcp.json のサーバー。env・headers の値は伏せる)。
+ */
+export function MCPServerList(): $CancellablePromise<aibow$0.MCPServerList> {
+    return $Call.ByID(1577104562);
+}
+
+/**
  * MCPServers は、会話ごとに使うものを選ぶ MCP のサーバーの一覧(settings.json に書いたもの全部)。書いてなければ空。
  * 設定の画面の「ツール」のチェックは「新しい会話で最初から選ぶか」だけなので、チェックを外したものもここに出す。
  * ブラウザでは aibow-server の server.json に書いたもの。${workdir} を使うサーバーは、資料のフォルダが無ければ出さない
@@ -311,6 +333,13 @@ export function MyUsage(): $CancellablePromise<genlog$0.Mine> {
  */
 export function NewConversation(profile: uuid$0.UUID, settings: aibow$0.ConversationSettings | null): $CancellablePromise<aibow$0.Conversation> {
     return $Call.ByID(1999326860, profile, settings);
+}
+
+/**
+ * ParseMCPJSON は、貼った JSON から足すサーバーを読み取る(足すのは AddMCPServers)。
+ */
+export function ParseMCPJSON(text: string): $CancellablePromise<aibow$0.ParsedMCPServer[] | null> {
+    return $Call.ByID(507244092, text);
 }
 
 /**
@@ -609,6 +638,14 @@ export function TryLimits(history: number, reply: number): $CancellablePromise<b
 }
 
 /**
+ * TryMCPServer は、保存する前の設定で一時的に起動してツールの一覧を受け取り、止める(何も書かない)。
+ * add が false なら今あるサーバー name を変えるときで、env・headers の空の値は前の値で試す。
+ */
+export function TryMCPServer(name: string, config: client$0.ServerConfig, add: boolean): $CancellablePromise<aibow$0.KnownTool[] | null> {
+    return $Call.ByID(1773410707, name, config, add);
+}
+
+/**
  * UnloadModel は読み込み中のモデルを降ろす(VRAM を空ける。ほかのアプリと並べて使うため。0015 の 23)。
  * 降ろしたあとに送信すると、送信の前に会話のモデルを読み込む(0014 の 3)。
  */
@@ -621,6 +658,13 @@ export function UnloadModel(): $CancellablePromise<void> {
  */
 export function UpdateConversationSettings(id: uuid$0.UUID, settings: aibow$0.ConversationSettings): $CancellablePromise<void> {
     return $Call.ByID(1660834684, id, settings);
+}
+
+/**
+ * UpdateMCPServer は、mcp.json のサーバー name の設定を変える(env・headers の空の値は前の値のまま)。動いていれば止める。
+ */
+export function UpdateMCPServer(name: string, config: client$0.ServerConfig): $CancellablePromise<string[] | null> {
+    return $Call.ByID(2737066329, name, config);
 }
 
 /**

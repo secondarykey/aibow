@@ -6,6 +6,9 @@
 import * as format$0 from "./format/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as client$0 from "./mcp/client/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as tool$0 from "./tool/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -518,6 +521,58 @@ export interface KnownTool {
 }
 
 /**
+ * MCPServerEntry は、設定の画面の「MCP」の一覧の1つ。
+ */
+export interface MCPServerEntry {
+    "name": string;
+
+    /**
+     * Config はつなぎ方。env と headers の値は伏せる(キーだけを出し、値は空。0034 の決定事項 10)
+     */
+    "config": client$0.ServerConfig;
+
+    /**
+     * settings か screen
+     */
+    "source": string;
+
+    /**
+     * Shadowed は、mcp.json のサーバーのうち、settings.json に同じ名前があって使われていないもの(消すことだけできる)
+     */
+    "shadowed"?: boolean;
+}
+
+/**
+ * MCPServerInput は、画面から足す・変えるサーバー1つ。
+ */
+export interface MCPServerInput {
+    "name": string;
+    "config": client$0.ServerConfig;
+}
+
+/**
+ * MCPServerList は、設定の画面の「MCP」に出すもの。
+ */
+export interface MCPServerList {
+    "servers": MCPServerEntry[] | null;
+
+    /**
+     * mcp.json の場所
+     */
+    "path": string;
+
+    /**
+     * settings.json の場所
+     */
+    "settings_path": string;
+
+    /**
+     * mcp.json を読めなかった理由(あれば画面から保存できない)
+     */
+    "error": string;
+}
+
+/**
  * NotDefault は、新しい会話で最初から選ばないグループ。
  */
 export interface NotDefault {
@@ -530,6 +585,22 @@ export interface NotDefault {
      * MCP のサーバー(settings.json の名前)
      */
     "servers"?: string[] | null;
+}
+
+/**
+ * ParsedMCPServer は、貼った JSON から読み取ったサーバー1つ。
+ */
+export interface ParsedMCPServer {
+    /**
+     * 名前の無い形({"command": ...} だけ)なら空(画面で打つ)
+     */
+    "name": string;
+    "config": client$0.ServerConfig;
+
+    /**
+     * Error は、足せない理由(形が違う・同じ名前がある)。空なら足せる
+     */
+    "error"?: string;
 }
 
 /**
