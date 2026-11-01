@@ -135,7 +135,7 @@ func newLocalTool(orig tool.Tool, session *mcp.ClientSession) tool.Tool {
 	limit := mcpserver.TimeLimit(orig) + localGrace
 	lt := localTool{
 		orig: orig,
-		rt:   &remoteTool{server: localName, session: session, name: orig.Def().Name, limit: limit},
+		rt:   &remoteTool{server: localName, session: session, name: orig.Def().Name, limit: limit, stopped: context.Background()},
 	}
 	if ct, ok := orig.(tool.Confirmable); ok {
 		return &localConfirmTool{localTool: lt, preview: ct}

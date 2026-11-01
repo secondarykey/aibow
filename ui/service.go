@@ -86,6 +86,8 @@ type Options struct {
 	Local *client.Local
 	MCP   *client.Manager
 	Prefs *aibow.ToolPrefs
+	// MCPConfig は、画面から MCP のサーバーを足す・変える・消す係(mcp.json。0034)。デスクトップのアプリだけで、ブラウザでは nil
+	MCPConfig *aibow.MCPConfig
 	// Version はアプリのバージョン(画面の左下に出す)
 	Version string
 	// Notices は起動時に画面のトーストで伝えること。StartupErr は起動に失敗した理由(画面に表示する)
@@ -131,6 +133,8 @@ type Service struct {
 	// mcp は settings.json の MCP のサーバー(書いてなければ nil)。prefs はツールの扱いの PC の既定(tools.json)
 	mcp   *client.Manager
 	prefs *aibow.ToolPrefs
+	// mcpConfig は、画面から MCP のサーバーを変える係(デスクトップのアプリだけ。ブラウザでは nil。mcpedit.go)
+	mcpConfig *aibow.MCPConfig
 
 	// version はアプリのバージョン(_cmd/aibow/version。画面の左下に出す)
 	version string
@@ -172,7 +176,7 @@ func New(o Options) (*Service, Lifecycle) {
 	quit, cancel := context.WithCancel(context.Background())
 	s := &Service{
 		host: o.Host, app: o.App, initial: o.Initial, notices: o.Notices, startupErr: o.StartupErr, notify: o.Notify, seat: o.Seat,
-		quit: quit, cancelQuit: cancel, mcp: o.MCP, prefs: o.Prefs, version: o.Version,
+		quit: quit, cancelQuit: cancel, mcp: o.MCP, prefs: o.Prefs, mcpConfig: o.MCPConfig, version: o.Version,
 		browser: o.Browser, waits: map[string]*time.Timer{}, folders: slices.Sorted(maps.Keys(o.Folders)),
 	}
 	if d, ok := o.Host.(*DirectHost); ok {
