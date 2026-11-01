@@ -10,6 +10,7 @@ import (
 
 	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/format"
+	"github.com/secondarykey/aibow/genlog"
 )
 
 // promptLen は、発言の列を実際にモデルに渡す文字列にしたときのトークン数(fakeGen の数え方)。
@@ -290,6 +291,10 @@ func TestSummaryRunsBeforeTheReply(t *testing.T) {
 		t.Fatalf("要約の区切りが組の切れ目ではありません: upto=%v", list[0].UptoMessageID)
 	}
 	reply := g.calls[len(g.calls)-1]
+	// 使用量の記録(0033)では、要約と返事を分けて数える。どちらも会話の ID が付く
+	if sum.job != (genlog.Job{Purpose: genlog.PurposeSummary, Conversation: c.ID}) || reply.job != (genlog.Job{Purpose: genlog.PurposeReply, Conversation: c.ID}) {
+		t.Errorf("生成の付箋: 要約 %+v / 返事 %+v", sum.job, reply.job)
+	}
 	wantSystem := c.Settings.System + "\n\n" + summaryHeading + "\n- 要約1"
 	if systemOf(reply.messages) != wantSystem || len(reply.messages) != 1+len(ms)-keep-1 {
 		t.Errorf("返事に渡した内容: %+v", reply.messages)

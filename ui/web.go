@@ -40,6 +40,7 @@ import (
 	"uuid"
 
 	"github.com/secondarykey/aibow"
+	"github.com/secondarykey/aibow/genlog"
 	"github.com/secondarykey/aibow/log"
 )
 
@@ -127,7 +128,9 @@ func Handler(s *Service, ev *Events, who Who) http.Handler {
 			writeError(w, http.StatusForbidden, msg)
 			return
 		}
-		call(w, r.WithContext(withCaller(aibow.WithUser(r.Context(), c.ID), c)), name, m)
+		// 道の付箋は、ここから始まる生成をブラウザの会話として使用量に記録するため(0033)
+		ctx := genlog.WithRoute(withCaller(aibow.WithUser(r.Context(), c.ID), c), genlog.RouteBrowser)
+		call(w, r.WithContext(ctx), name, m)
 	})
 	mux.HandleFunc("GET /aibow/ui/events", func(w http.ResponseWriter, r *http.Request) {
 		c, err := who(r)

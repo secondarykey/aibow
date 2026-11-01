@@ -322,6 +322,32 @@ CREATE INDEX profile_group_shares_by_group ON profile_group_shares(group_id);
 ALTER TABLE users ADD COLUMN email TEXT NOT NULL DEFAULT '';
 CREATE UNIQUE INDEX users_email ON users(lower(email)) WHERE email <> '';
 `,
+	// 版 20: aibow-server の生成1回ごとの記録(使用量。0033)。会話の中身は写さず、数字と、だれ・いつ・どのモデルかだけ。
+	// 利用者と会話の ID は外部キーにしない(消しても記録を残すため。決定事項 4・8)。消された人も読めるよう名前を写す。
+	// 分からない ID は ''、分からない順番待ちの秒数は NULL。集計は期間(at)で絞るので at に索引、人ごとに見るので (user_id, at) にも
+	`
+CREATE TABLE generation_log (
+	id              TEXT PRIMARY KEY,
+	at              TEXT NOT NULL,
+	user_id         TEXT NOT NULL,
+	user_name       TEXT NOT NULL,
+	route           TEXT NOT NULL,   -- browser / app / api
+	purpose         TEXT NOT NULL,   -- reply / summary
+	conversation_id TEXT NOT NULL,
+	model           TEXT NOT NULL,
+	prompt_tokens   INTEGER NOT NULL,
+	reused_tokens   INTEGER NOT NULL,
+	gen_tokens      INTEGER NOT NULL,
+	image_tokens    INTEGER NOT NULL,
+	prompt_sec      REAL NOT NULL,
+	gen_sec         REAL NOT NULL,
+	encode_sec      REAL NOT NULL,
+	wait_sec        REAL,
+	stop_reason     TEXT NOT NULL
+);
+CREATE INDEX generation_log_at ON generation_log(at);
+CREATE INDEX generation_log_user ON generation_log(user_id, at);
+`,
 }
 
 func migrate(db *sql.DB) error {

@@ -22,9 +22,11 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"uuid"
 
 	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/format"
+	"github.com/secondarykey/aibow/genlog"
 	"github.com/secondarykey/aibow/tool"
 )
 
@@ -52,6 +54,9 @@ type chatRequest struct {
 // aibowRequest は aibow のクライアントだと知らせる欄。モデルに渡した文字列も返してもらう(画面に出すため)
 type aibowRequest struct {
 	ReturnPrompt bool `json:"return_prompt"`
+	// 何のための生成か(reply / summary)と会話の ID。aibow-server の使用量の記録に書く(0033)。会話の仕組みが ctx に付けた付箋から写す
+	Purpose      string `json:"purpose,omitempty"`
+	Conversation string `json:"conversation,omitempty"`
 }
 
 type chatMessage struct {
@@ -226,6 +231,12 @@ func (c *Client) Generate(ctx context.Context, p format.Prompt, opt engine.Gener
 	req.Stream = true
 	req.Temperature, req.MaxTokens, req.PresencePenalty = &opt.Temperature, opt.MaxTokens, &opt.PresencePenalty
 	req.Aibow = &aibowRequest{ReturnPrompt: true}
+	if j := genlog.JobOf(ctx); j.Purpose != "" {
+		req.Aibow.Purpose = j.Purpose
+		if j.Conversation != (uuid.UUID{}) {
+			req.Aibow.Conversation = j.Conversation.String()
+		}
+	}
 
 	res, err := c.do(ctx, http.MethodPost, "/v1/chat/completions", req)
 	if err != nil {

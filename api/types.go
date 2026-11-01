@@ -57,6 +57,10 @@ type chatRequest struct {
 type aibowRequest struct {
 	// ReturnPrompt を立てると、モデルに渡した文字列を返す(学習用に画面に出すため。長いので頼んだときだけ)
 	ReturnPrompt bool `json:"return_prompt"`
+	// Purpose と Conversation は、何のための生成か(reply / summary)と会話の ID(0033)。aibow-server の使用量の記録に書くだけで、生成は変わらない。
+	// アプリの compact の要約も、この口には普通の生成として来るので、要約かはここで知らせてもらう
+	Purpose      string `json:"purpose,omitempty"`
+	Conversation string `json:"conversation,omitempty"`
 }
 
 // aibowResult は、aibow のクライアントに返す欄(返事の "aibow")。標準の形では表せない、画面が使うもの。

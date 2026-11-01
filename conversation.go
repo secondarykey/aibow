@@ -27,6 +27,7 @@ import (
 
 	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/format"
+	"github.com/secondarykey/aibow/genlog"
 	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/tool"
 )
@@ -813,6 +814,8 @@ func (cs *Conversations) generate(ctx context.Context, conv Conversation, messag
 		}
 	}
 
+	// 何のための生成かを付箋にして運ぶ(aibow-server の使用量の記録が読む。0033。アプリなら api/client が aibow 欄で送る)
+	ctx = genlog.WithPurpose(ctx, genlog.PurposeReply, conv.ID)
 	out, st, err := cs.gen.Generate(ctx, cs.promptFor(set, messages), opt,
 		func(p string) {
 			ev := ChatEvent{ConversationID: conv.ID, Type: "prompt", Text: p}

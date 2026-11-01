@@ -41,6 +41,7 @@ import (
 	"github.com/secondarykey/aibow/format"
 	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/models"
+	"github.com/secondarykey/aibow/store"
 	"github.com/secondarykey/aibow/ui"
 )
 
@@ -170,9 +171,17 @@ func run(c config, notices []string, cfgErr error, env *envReader) error {
 	if err != nil {
 		return err
 	}
-	srv := api.New(eng, mm, nCtx, defaults)
+	// server.db(ブラウザの会話・利用者・使用量の記録)
+	st, err := store.Open(c.DBPath)
+	if err != nil {
+		return err
+	}
+	defer st.Close() // 後に登録した closeBrowser(生成を止める)より後に閉じる
+	// 生成は記録付きの engine を通す(使用量。0033)。OpenAI 互換の口とブラウザの会話に同じものを渡し、1か所で記録する
+	gen := newRecorder(eng, st)
+	srv := api.New(gen, mm, nCtx, defaults)
 	// ブラウザの会話(0016)。OpenAI 互換の口と同じ engine・同じ順番待ちの席で動かす
-	browser, keys, closeBrowser, err := startBrowser(c, initial, eng, mm, nCtx, base, srv.Seat())
+	browser, keys, closeBrowser, err := startBrowser(c, initial, st, gen, mm, nCtx, base, srv.Seat())
 	if err != nil {
 		return err
 	}
@@ -183,6 +192,8 @@ func run(c config, notices []string, cfgErr error, env *envReader) error {
 	apiH := srv.Handler()
 	if c.KeysRequired() {
 		apiH = keys.RequireKey(apiH)
+	} else {
+		apiH = asLocal(apiH) // キーの要らない形では、だれでもない呼び出しを local の分として記録する(0033)
 	}
 
 	ln, err := net.Listen("tcp", addr)

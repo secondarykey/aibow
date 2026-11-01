@@ -40,6 +40,7 @@ import (
 	apiclient "github.com/secondarykey/aibow/api/client"
 	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/format"
+	"github.com/secondarykey/aibow/genlog"
 	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/mcp/client"
 	"github.com/secondarykey/aibow/models"
@@ -1524,11 +1525,14 @@ func (s *Service) run(ctx context.Context, id uuid.UUID, f func(ctx context.Cont
 
 	// 順番待ちの席があれば(aibow-server の中)、送信の全体(モデルの読み直し・要約・返事)の間、席を持つ。
 	// 生成1回ごとに取り直すと、その間に Cline などがモデルを入れ替えてしまうため
+	waitStart := time.Now()
 	if !s.takeSeat(ctx, id, emit) {
 		return
 	}
 	if s.seat != nil {
 		defer s.seat.Release()
+		// 待った時間は、使用量の記録で、この送信の最初の生成に付ける(0033)
+		ctx = genlog.WithWait(ctx, time.Since(waitStart))
 	}
 
 	who := whoOf(ctx)

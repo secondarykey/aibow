@@ -16,6 +16,7 @@ package api
 
 import (
 	"cmp"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,6 +26,7 @@ import (
 
 	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/format"
+	"github.com/secondarykey/aibow/genlog"
 	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/models"
 	"github.com/secondarykey/aibow/tool"
@@ -59,6 +61,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 	defer s.releaseTurn()
 	wait := time.Since(waitStart)
+	r = r.WithContext(jobContext(r.Context(), req.Aibow, wait))
 
 	if err := s.requestedModel(req.Model); err != nil {
 		// 管理者が使えないようにしたモデルは、知らないモデルと同じ 404 で断る(0018 の決定事項 13)
@@ -103,6 +106,22 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.complete(w, r, c, p, opt)
+}
+
+// jobContext は、生成に付箋を付ける(aibow-server の使用量の記録が読む。0033)。
+// 道はアプリ(aibow 欄がある)とそれ以外(Cline など)。受け付けたときのログ(logAccepted)と同じ見分け方。
+// 用途と会話はアプリが aibow 欄で知らせたもの(書いていなければ返事)。会話の ID は記録に書くだけなので、読めなければ空にする。
+func jobContext(ctx context.Context, a *aibowRequest, wait time.Duration) context.Context {
+	ctx = genlog.WithWait(ctx, wait)
+	if a == nil {
+		return genlog.WithPurpose(genlog.WithRoute(ctx, genlog.RouteAPI), genlog.PurposeReply, uuid.UUID{})
+	}
+	purpose := genlog.PurposeReply
+	if a.Purpose == genlog.PurposeSummary {
+		purpose = genlog.PurposeSummary
+	}
+	conv, _ := uuid.Parse(a.Conversation)
+	return genlog.WithPurpose(genlog.WithRoute(ctx, genlog.RouteApp), purpose, conv)
 }
 
 // readChatRequest は本文を読み、書式の形にする。読めなければ 400 を返して false。

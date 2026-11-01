@@ -30,7 +30,6 @@ import (
 	"github.com/secondarykey/aibow"
 	"github.com/secondarykey/aibow/api"
 	"github.com/secondarykey/aibow/auth"
-	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/mcp/client"
 	"github.com/secondarykey/aibow/store"
@@ -39,20 +38,16 @@ import (
 	"github.com/secondarykey/aibow/web"
 )
 
-// startBrowser は、ブラウザの会話の DB を開き、会話の仕組みと画面用の口を作る。
+// startBrowser は、ブラウザの会話の会話の仕組みと画面用の口を作る。st は server.db(main が開いて閉じる。使用量の記録にも使うため。0033)。
 // initial は DB にまだ値が無いときの設定、url は aibow-server のアドレス(画面の「つなぎ先」に出す)。
+// gen は生成の係(記録付きの engine。OpenAI 互換の口と同じもの)。
 // 戻り値の handler は /aibow/ui/・/aibow/auth/・/aibow/store/・/aibow/admin/ の下を受け持つ。keys は API キーの係(利用者は同じ server.db にいるので、ここで作る)。
-// close は終了のときに呼ぶ(生成を止めて、DB を閉じる)。
-func startBrowser(c config, initial aibow.AppSettings, eng *engine.Engine, mm *modelManager, nCtx int, url string, seat *api.Seat) (http.Handler, *auth.Keys, func(), error) {
-	st, err := store.Open(c.DBPath)
-	if err != nil {
-		return nil, nil, nil, err
-	}
+// close は終了のときに呼ぶ(生成を止める)。
+func startBrowser(c config, initial aibow.AppSettings, st *store.SQLite, gen ui.ServerEngine, mm *modelManager, nCtx int, url string, seat *api.Seat) (http.Handler, *auth.Keys, func(), error) {
 	log.Noticef("ブラウザの会話の保存先: %s", absPath(c.DBPath))
 	// 起動のときに読む人ごとの設定(新しい会話の既定)は、ログインなしの形の利用者のもの(ログインは 0017 の 10-1)
 	app, notes, err := aibow.LoadAppSettings(aibow.WithUser(context.Background(), aibow.LocalUser), st, initial)
 	if err != nil {
-		st.Close()
 		return nil, nil, nil, err
 	}
 	for _, n := range notes {
@@ -74,7 +69,7 @@ func startBrowser(c config, initial aibow.AppSettings, eng *engine.Engine, mm *m
 	local := client.NewLocal(client.Options{Version: appVersion()})
 	mcpm, prefs := startServerTools(c)
 	svc, life := ui.New(ui.Options{
-		Host:  ui.NewServerHost(eng, mm, nCtx, url),
+		Host:  ui.NewServerHost(gen, mm, nCtx, url),
 		Store: st, App: app, Version: appVersion(),
 		Notify: events, Seat: seat, Local: local, MCP: mcpm, Prefs: prefs, Browser: true, Folders: c.Folders,
 	})
@@ -106,7 +101,6 @@ func startBrowser(c config, initial aibow.AppSettings, eng *engine.Engine, mm *m
 			mcpm.Close() // 起動した MCP のサーバーも止める(子プロセスまで)
 		}
 		local.Close()
-		st.Close()
 	}
 	return sessions.Middleware(mux), keys, stop, nil
 }

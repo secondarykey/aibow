@@ -19,10 +19,12 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"uuid"
 
 	"github.com/secondarykey/aibow/api"
 	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/format"
+	"github.com/secondarykey/aibow/genlog"
 	"github.com/secondarykey/aibow/models"
 	"github.com/secondarykey/aibow/tool"
 )
@@ -39,6 +41,7 @@ type fakeGen struct {
 	started chan struct{}
 	err     error  // nil でなければ、数えるときにこのエラーを返す
 	loading string // 入れ替えている先のモデル(Loading が返す)
+	jobs    []genlog.Job
 }
 
 func (f *fakeGen) Loading() string {
@@ -70,6 +73,7 @@ func (f *fakeGen) Generate(ctx context.Context, p format.Prompt, opt engine.Gene
 	f.mu.Lock()
 	f.prompts = append(f.prompts, p)
 	f.opts = append(f.opts, opt)
+	f.jobs = append(f.jobs, genlog.JobOf(ctx))
 	f.mu.Unlock()
 	onPrompt("<prompt>")
 	if f.started != nil {
@@ -436,6 +440,27 @@ func TestGenerateAsksKnownModel(t *testing.T) {
 	}
 	if want := []string{"ollama:qwen3.5:9b", "ollama:qwen3.5:4b"}; !slices.Equal(m.loads, want) || g.Info().ID != "ollama:qwen3.5:4b" {
 		t.Errorf("前に知った 4B で生成するはず: 読み込んだモデル %v / 読み込み中 %s", m.loads, g.Info().ID)
+	}
+}
+
+// 会話の仕組みが付けた付箋(要約か・会話の ID)を aibow 欄で送り、サーバーはアプリの道として受け取る(使用量の記録。0033)
+func TestGenerateSendsJob(t *testing.T) {
+	g := &fakeGen{id: "ollama:qwen3.5:4b", st: engine.GenerateStats{StopReason: "eos"}}
+	c, _ := newServer(t, g)
+	conv := uuid.NewV7()
+	p := format.Prompt{Messages: []format.Message{{Role: "user", Content: "hi"}}}
+	nop := func(string) {}
+	for _, ctx := range []context.Context{genlog.WithPurpose(context.Background(), genlog.PurposeSummary, conv), context.Background()} {
+		if _, _, err := c.Generate(ctx, p, engine.GenerateOptions{MaxTokens: 5}, nop, nop, nop); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want := []genlog.Job{
+		{Route: genlog.RouteApp, Purpose: genlog.PurposeSummary, Conversation: conv},
+		{Route: genlog.RouteApp, Purpose: genlog.PurposeReply}, // 付箋が無ければ返事
+	}
+	if !slices.Equal(g.jobs, want) {
+		t.Errorf("サーバーが受け取った付箋: %+v(期待: %+v)", g.jobs, want)
 	}
 }
 

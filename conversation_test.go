@@ -13,6 +13,7 @@ import (
 
 	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/format"
+	"github.com/secondarykey/aibow/genlog"
 	"github.com/secondarykey/aibow/tool"
 )
 
@@ -47,7 +48,8 @@ type fakeCall struct {
 	tools    []tool.Def
 	opt      engine.GenerateOptions
 	think    bool
-	prompt   string // 書式を当てた文字列
+	prompt   string     // 書式を当てた文字列
+	job      genlog.Job // 生成に付けた付箋(使用量の記録。0033)
 }
 
 // fakeGen の書式は本物と同じ Qwen3.5(トークン数を数えるとき、プロンプトを画面に渡すときに使う)
@@ -78,7 +80,7 @@ func (g *fakeGen) CountTokens(p format.Prompt) (int, error) {
 func (g *fakeGen) Generate(ctx context.Context, p format.Prompt, opt engine.GenerateOptions,
 	onPrompt func(string), onThinking, onContent func(string)) (format.Output, engine.GenerateStats, error) {
 	g.gotMessages, g.gotOpt, g.gotThink = p.Messages, opt, p.Think
-	g.calls = append(g.calls, fakeCall{p.Messages, p.Tools, opt, p.Think, testFormat.BuildPrompt(p)})
+	g.calls = append(g.calls, fakeCall{p.Messages, p.Tools, opt, p.Think, testFormat.BuildPrompt(p), genlog.JobOf(ctx)})
 	onPrompt(testFormat.BuildPrompt(p))
 	if g.block != nil {
 		<-g.block

@@ -26,6 +26,7 @@ import (
 
 	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/format"
+	"github.com/secondarykey/aibow/genlog"
 	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/tool"
 )
@@ -601,7 +602,7 @@ func (cs *Conversations) summarizePart(ctx context.Context, conv Conversation, h
 // (中途半端な要約を保存して、以後ずっとモデルに渡し続けないため)。
 func (cs *Conversations) generateSummary(ctx context.Context, id uuid.UUID, msgs []format.Message, opt engine.GenerateOptions, emit func(ChatEvent)) (string, engine.GenerateStats, error) {
 	// 停止ボタン(StopSummary)で、送信全体ではなく要約だけを止められるようにする
-	sctx, cancel := context.WithCancel(ctx)
+	sctx, cancel := context.WithCancel(genlog.WithPurpose(ctx, genlog.PurposeSummary, id)) // 使用量の記録では要約として数える(0033)
 	defer cancel()
 	cs.summaryMu.Lock()
 	cs.stopSummary = cancel
