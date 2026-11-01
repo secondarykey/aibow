@@ -59,6 +59,7 @@ OpenAI 互換のクライアント(Cline など)⇄ HTTP(S)(既定は 127.0.0.1�
 | `api/client/` | aibow-server につなぐクライアント(`client` パッケージ。ステップ8)。会話の仕組みの `Generator` と `ModelLoader` の HTTP 版。ルートの `aibow` は import しない |
 | `ui/` | 画面向けの処理(`ui` パッケージ。ステップ9の 9-0 で `_cmd/aibow` から切り出した)。画面から呼ぶメソッド(`Service`。モデル・会話・設定・送信)と、モデルを扱う係(直接 `DirectHost`・aibow-server 越し `RemoteHost`)。ルートの `aibow` を使い、Wails を import しない。デスクトップのアプリは `ChatService` に埋め込んで Wails に渡す。ブラウザ向けには aibow-server が使う:aibow-server の engine でモデルを扱う係(`ServerHost`)と、画面用の HTTP の口(`Handler`。`/aibow/ui/call/{メソッド}` と SSE の `/aibow/ui/events`)。9-1。仕組みは [_docs/api.md](_docs/api.md) の「画面用の口」 |
 | `web/` | 画面のビルド結果(`web` パッケージ。ステップ9の 9-2)。vite が `_cmd/aibow/frontend` から `web/dist/app` に書き、デスクトップのアプリと aibow-server の両方が `web.Files()` で埋め込む(写さない)。ビルドしていなければ `web/dist/index.html`(ビルドの仕方だけのページ) |
+| `genlog/` | aibow-server の使用量の記録(0033)で使う形と、生成に付ける付箋(道・用途・会話・順番待ちを ctx で運ぶ)。何にも依存しない(会話の仕組み・`api`・`api/client`・`ui`・`store` から使う)。記録するのは `_cmd/aibow-server` の記録付きの engine |
 | `mcp/internal/` | MCP のクライアントとサーバーの両方で使う部分(`meta`: `_meta` の名前) |
 | `internal/proc/` | 子プロセスまでまとめて止める仕組み(`tool` の `run_command` と `mcp/client` で使う) |
 | `log/` | aibow のログ(`log` パッケージ)。aibow のコードはログをここから出す。土台は wenteasy/log だが、使う人には `slog.Level` と `*slog.Logger` しか見せない。出口はアプリが `Init` で組み、ライブラリとして使う人は `SetLogger(*slog.Logger)` で aibow のログだけ別にできる(決めなければ `slog.Default()`)。詳しくは [log/AGENTS.md](log/AGENTS.md) |

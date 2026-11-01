@@ -624,6 +624,9 @@ nav.conversations.collapsed .admin.active { color: var(--accent); }
 .account-rows .user-field-label { width: auto; }
 .account-name { display: flex; align-items: center; gap: 6px; }
 .segmented.user-view { margin-bottom: 8px; }
+/* 使用量(UsageSettings.tsx。0033)。表は利用者の一覧と同じ形(名前 / 回数 / GPU の秒数 / 生成トークン) */
+.usage-table { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; column-gap: 16px; align-items: center; }
+.segmented.usage-periods { margin-bottom: 8px; }
 /* グループ(GroupSettings.tsx。0031 の段4)。一覧は利用者の一覧と同じ形(名前 / 長 / 人数 / 共有) */
 .group-table { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; column-gap: 12px; align-items: center; margin-top: 8px; }
 .group-members { display: flex; flex-direction: column; gap: 6px; }

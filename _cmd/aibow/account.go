@@ -5,6 +5,7 @@ package main
 //	Account        … 今のアカウント(名前・表示名・メールアドレス・管理者か)と、ログインし直す必要があるか
 //	Login / Logout … ブラウザと同じく、起動したままログインし直す・ログアウトする(つなぎ先は残す)
 //	SetMy…         … 表示名・メールアドレス・パスワードを変える(ブラウザと同じ口を、アプリ用のトークンで呼ぶ)
+//	MyUsage        … 自分の使用量(0033。同じくアプリ用のトークンで呼ぶ)
 //
 // 以前は、ログアウトは「サーバー」のタブの「ログアウトして戻す」(アプリの中で動かす形に戻り、起動し直すと切り替わる)だけだった。
 // ブラウザとそろえ、ログアウトしたらその場でログインの画面になるようにした(2026-11-01、ユーザーの指示)。
@@ -19,6 +20,7 @@ import (
 	"github.com/secondarykey/aibow"
 	apiclient "github.com/secondarykey/aibow/api/client"
 	"github.com/secondarykey/aibow/auth"
+	"github.com/secondarykey/aibow/genlog"
 	"github.com/secondarykey/aibow/log"
 )
 
@@ -124,6 +126,14 @@ func (s *ChatService) SetMyDisplayName(name string) (AccountInfo, error) {
 		return AccountInfo{}, err
 	}
 	return s.Account()
+}
+
+// MyUsage は、aibow-server での自分の使用量(今日・7日・30日。設定の画面の「アカウント」のタブ。0033)。
+func (s *ChatService) MyUsage() (genlog.Mine, error) {
+	if s.conn.client == nil {
+		return genlog.Mine{}, errors.New("使用量は、aibow-server につないでいるときだけ見られます")
+	}
+	return s.conn.client.MyUsage()
 }
 
 // SetMyEmail は、自分のメールアドレスを変える(空なら無し)。

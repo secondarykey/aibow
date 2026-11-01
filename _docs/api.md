@@ -21,6 +21,8 @@ Cline など [ 会話の仕組み + 手 ] ⇄ HTTP(OpenAI 互換。127.0.0.1 だ
 | `api/seat.go` | 生成の順番待ちの席(`Seat`)。ステップ9で `Server` の外に出し、ブラウザの会話(`ui`)も同じ席を通す(下の「画面用の口」) |
 | `api/api_test.go`・`api/aibow_test.go` | 偽物の生成とモデルの係でのテスト(モデル不要) |
 | `api/client/` | aibow-server につなぐクライアント(`client` パッケージ。ステップ8)。下の「クライアント(`api/client`)」 |
+| `genlog/` | 生成の付箋(道・用途・会話・順番待ちを ctx で運ぶ)と、使用量の記録の形(`genlog` パッケージ。0033)。何にも依存しない。下の「使用量の記録」 |
+| `_cmd/aibow-server/usage.go` | 記録付きの engine(`recorder`)と、使用量を見る口(0033)。下の「使用量の記録」 |
 | `ui/web.go`・`ui/serverhost.go` | 画面用の口(`/aibow/ui/` の下)と、aibow-server の中でブラウザの会話のモデルを扱う係(`ServerHost`)。ステップ9。下の「画面用の口」 |
 | `_cmd/aibow-server/` | exe(ステップ8で `aibow-api` から名前を変えた。0015)。`config.go` は設定(強さの順は 引数 > 設定ファイル `server.json` > 環境変数 > 既定)、`models.go` はモデルの係(GPU の層数と画面で足した置き場所を `server-models.json` に覚える)、`main.go` はエンジンとモデルを用意して `api` を `127.0.0.1` で待ち受けるだけ、`browser.go` はブラウザの会話(`server.db` を開き、`ui` の会話の仕組みと画面用の口を作る。ステップ9)。`log.go` はログの出口(`aibow-server_<日付>.log`)、`version` / `appversion.go` はアプリと同じバージョン(`_cmd/aibow/version` の写し) |
 
@@ -328,6 +330,32 @@ aibow-server user admin <名前>(コマンドだけ)→ server.db の users.admi
   OpenAI 互換の口は知らないモデルと同じ 404 `model_not_found`(読み込み中のモデルで代わりに答えない)、aibow 専用の `/models/load` は 404 `model_disabled`、
   会話の送信は注意で断る(`ChatEvent.Caution`。勝手にほかのモデルに替えない)。使えなくしたのが読み込み中のモデルなら降ろす。
   一覧の外の GGUF をパスで読み込ませるのは起動のとき(`-model` など)だけ。つないでくる人には、パスで好きなファイルを読ませない
+
+## 使用量の記録(0033)
+
+```
+OpenAI 互換の口(api)──────────┐   付箋:道 api / app(aibow 欄)・用途と会話(アプリは aibow 欄の purpose・conversation)・順番待ち
+                                 ├→ recorder.Generate → engine.Generate
+ブラウザの会話(ui.ServerHost)──┘   付箋:道 browser(ui.Handler)・用途と会話(会話の仕組み)・順番待ち(送信の最初の生成だけ)
+                                           └→ 終わったら server.db の generation_log に1行
+```
+
+- **1か所で包む**:生成が通る2本の道の両方に書き足さず、aibow-server が engine を渡すところで包む(デコレータの形)。
+  `recorder` は `api.Generator` を満たすので、`api.New` にも `ui.NewServerHost` にも同じものを渡す(`main.go`)。トークン数・書式・読み込み中のモデルはそのまま通す
+- **付箋(`genlog`)**:包む側は「だれが・どの道で・何のために」を知らないので、呼ぶ側が ctx に付ける。道は HTTP の口(`api` の `handleChat`・`ui.Handler`)、
+  用途(`reply` / `summary`)と会話は会話の仕組み(`Conversations.generate`・`generateSummary`)。アプリの会話の仕組みは aibow-server の外で動くので、
+  `api/client` が付箋を `aibow` 欄の `purpose`・`conversation` に写して送り、`api` が読んで付け直す
+- **だれか**:`auth.UserFrom`(API キー・アプリ用のトークン・ログインの cookie)、無ければ `aibow.UserOf`(ブラウザのログインなしの形の `local`)。
+  キーの要らない形(127.0.0.1 だけでログインなし)の OpenAI 互換の口は `asLocal` で `local` にする(保存の口と同じ線)。それでも分からなければ、利用者を空にして Warn
+- **1行に持つもの**:時刻(始めた時刻)・利用者の ID と名前(写す)・道・用途・会話の ID・モデル・プロンプト / 使い回した / 生成 / 画像のトークン数・プロンプト / 生成 / エンコードの秒数・順番待ちの秒数・終了理由。
+  会話の中身は持たない。**GPU の秒数 = プロンプト + 生成 + エンコード**(モデルの読み込みは入れない)。失敗して秒数が 0 の生成は書かず、途中で失敗したものは終了理由 `error`
+- **書けなくても止めない**:記録は使えるかどうかに関わらないので、書けなければ Warn のログだけ(最後に使った日と同じ考え方)
+- **見る口**(`usage.go`。days は今日を含めた日数 1〜366、既定 7。日の区切りはサーバーの PC の時刻):
+  `GET /aibow/admin/usage?days=N`(利用者ごと。GPU の秒数の多い順。消された人は `deleted`)・`GET /aibow/admin/usage/user?id=<ID>&days=N`(1人のモデルごと・日ごと)は、
+  ログインした管理者だけ(ほかは 401 / 403)。ログインなしの形ではサーバーの PC の上から(127.0.0.1)だけ。
+  `GET /aibow/auth/usage`(自分の今日・7日・30日。`genlog.Mine`)は本人(cookie かアプリ用のトークン。`keys.WithBearer`)。アプリは `api/client` の `MyUsage` で呼ぶ
+- **KV キャッシュと使用量**:プロンプトのトークン数には使い回した分も入る。実際に計算したのは「プロンプト − 使い回した数」。同じ会話を続けると軽く、
+  毎回最初から読み直す使い方は重い、がプロンプトの秒数に出る(画面ではバルーンに使い回した数を出す)
 
 ## 会話の共有と管理者が読む(ステップ11の 11-2。0018)
 

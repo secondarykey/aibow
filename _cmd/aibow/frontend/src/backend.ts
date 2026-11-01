@@ -46,6 +46,7 @@ export interface Backend {
   changePassword(current: string, password: string): Promise<void>; // ログインしている本人がパスワードを変える
   setDisplayName(name: string): Promise<Me>;      // ログインしている本人が表示名を変える(0031)
   setEmail(email: string): Promise<Me>;           // ログインしている本人がメールアドレスを変える(0031)
+  myUsage(): Promise<MyUsage>;                    // ログインしている本人の使用量(今日・7日・30日。0033)
   admin: AdminAPI;                                // 利用者の管理(ブラウザの管理者だけ。0018 の 11-0。デスクトップでは断る)
   copyText(text: string): Promise<void>;
   openURL(url: string): Promise<void>;            // リンクを開く(デスクトップは OS のブラウザ、ブラウザは新しいタブ)
@@ -96,6 +97,35 @@ export interface Link {
   expiresAt: string;
 }
 
+// UsageTotal は、使用量の表の1行(Go の genlog.Total。0033)。key は何でまとめたか(利用者の ID・モデルの ID・日付 YYYY-MM-DD)
+export interface UsageTotal {
+  key: string;
+  name?: string;         // 利用者でまとめたとき:記録に写した名前
+  display_name?: string; // 今の表示名
+  deleted?: boolean;     // もういない人(消された)
+  count: number;         // 生成の回数
+  summaries: number;     // うち要約の回数
+  gpu_sec: number;       // GPU の秒数(プロンプト + 生成 + 画像のエンコード)
+  gen_tokens: number;
+  prompt_tokens: number;
+  reused_tokens: number; // プロンプトのうち KV キャッシュを使い回した数
+  image_tokens: number;
+  wait_sec: number;      // 順番待ちの秒数(分かった分だけ)
+}
+
+// UsageDetail は、1人の使用量の内訳(モデルごと・日ごと)
+export interface UsageDetail {
+  models: UsageTotal[];
+  days: UsageTotal[];
+}
+
+// MyUsage は、本人の使用量(Go の genlog.Mine)
+export interface MyUsage {
+  today: UsageTotal;
+  week: UsageTotal;
+  month: UsageTotal;
+}
+
 // AdminAPI は、利用者の管理の口(aibow-server の /aibow/admin/)。リンクの合言葉と API キーは返事でだけ受け取れる
 export interface AdminAPI {
   users(): Promise<AdminUser[]>;
@@ -105,6 +135,9 @@ export interface AdminAPI {
   setDisplayName(name: string, display: string): Promise<void>; // 表示名を変える(空なら無し。0031)
   setEmail(name: string, email: string): Promise<void>;         // メールアドレスを変える(空なら無し。0031)
   remove(name: string): Promise<void>;
+  // 使用量(0033)。全員の分(利用者ごと)と、1人の内訳。days は今日を含めた日数。id が空ならだれでもない生成の分
+  usage(days: number): Promise<UsageTotal[]>;
+  usageOf(id: string, days: number): Promise<UsageDetail>;
 }
 
 // isBrowser は、ブラウザ(aibow-server が配った画面)か(0016 の 16)。見た目の分かれ道にだけ使う(呼び出しは分けない)。
@@ -183,6 +216,10 @@ export async function setDisplayName(name: string): Promise<Me> {
   return me;
 }
 
+export function myUsage(): Promise<MyUsage> {
+  return b.myUsage();
+}
+
 export async function setEmail(email: string): Promise<Me> {
   me = await b.setEmail(email);
   return me;
@@ -201,6 +238,8 @@ export const admin: AdminAPI = {
   setDisplayName: (name, display) => b.admin.setDisplayName(name, display),
   setEmail: (name, email) => b.admin.setEmail(name, email),
   remove: name => b.admin.remove(name),
+  usage: days => b.admin.usage(days),
+  usageOf: (id, days) => b.admin.usageOf(id, days),
 };
 
 export function copyText(text: string): Promise<void> {

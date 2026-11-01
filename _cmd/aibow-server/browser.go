@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"time"
 	"uuid"
 
 	"github.com/secondarykey/aibow"
@@ -95,6 +96,10 @@ func startBrowser(c config, initial aibow.AppSettings, st *store.SQLite, gen ui.
 	mux.Handle("GET /aibow/auth/key", keys.MeHandler(c.KeysRequired()))
 	// 管理者の画面の口(利用者の管理。0018 の決定事項 7)。ブラウザでログインした管理者だけ
 	mux.Handle("/aibow/admin/", adminHandler(st, initial))
+	// 使用量(0033)。全員の分は管理者だけ(ログインなしの形ではサーバーの PC の上の画面)、自分の分はブラウザとアプリ(アプリ用のトークン)から
+	mux.Handle("/aibow/admin/usage", adminUsageHandler(st, c.Login, time.Now))
+	mux.Handle("/aibow/admin/usage/", adminUsageHandler(st, c.Login, time.Now))
+	mux.Handle("GET /aibow/auth/usage", keys.WithBearer(myUsageHandler(st, c.Login, time.Now)))
 	stop := func() {
 		life.Stop()
 		if mcpm != nil {

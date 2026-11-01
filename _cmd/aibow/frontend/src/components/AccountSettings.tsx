@@ -4,6 +4,7 @@
 //	ログインの名前  bob(管理者)
 //	表示名          [佐藤 花子(営業)]
 //	メールアドレス  [sato@example.com]
+//	使用量          今日・7日・30日の回数・GPU の秒数・生成トークン(0033)
 //	パスワード      [今の] [新しい] [もう一度] [変える]
 //	[ログアウト]
 //
@@ -14,6 +15,7 @@ import { useState } from "react";
 import { changePassword, logout, me, setDisplayName, setEmail } from "../backend";
 import { showName } from "../directory";
 import { errorMessage } from "../errors";
+import { MyUsage } from "./UsageSettings";
 import { DisplayNameInput, EmailInput } from "./UserSettings";
 
 // signedIn は、ログインしているか(アカウントのタブと左下の名前のメニューを出すか)
@@ -59,6 +61,7 @@ export function AccountSettings({ onError }: { onError(text: string): void }) {
           onSave={value => setEmail(value).then(m => { setMail(m.email ?? ""); return true; }, err => { onError(errorMessage(err)); return false; })}
         />
       </div>
+      <MyUsage onError={onError} />
       <PasswordForm />
       {canLogout() && (
         <>

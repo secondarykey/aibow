@@ -6,7 +6,7 @@
 import { Browser, CancelError, Clipboard, Events, Window } from "@wailsio/runtime";
 import { ChatService } from "../bindings/github.com/secondarykey/aibow/_cmd/aibow";
 import type { AccountInfo } from "../bindings/github.com/secondarykey/aibow/_cmd/aibow";
-import type { Backend, Me } from "./backend";
+import type { Backend, Me, MyUsage } from "./backend";
 
 const notInApp = async (): Promise<never> => {
   throw new Error("利用者の管理は、aibow-server の画面をブラウザで開いて、管理者でログインして行います");
@@ -52,6 +52,8 @@ export const backend: Backend = {
   changePassword: async (current, password) => { await ChatService.ChangeMyPassword(current, password); },
   setDisplayName: async name => asMe(await ChatService.SetMyDisplayName(name)),
   setEmail: async email => asMe(await ChatService.SetMyEmail(email)),
+  // 自分の使用量は、aibow-server の口をアプリ用のトークンで呼ぶ(0033)。Go の genlog.Mine と同じ形
+  myUsage: async () => (await ChatService.MyUsage()) as unknown as MyUsage,
   onUnauthorized: () => () => {},
   // 利用者の管理はブラウザの管理者だけ(0018 の 11-0)。デスクトップには「利用者」のタブを出さないので、呼ばれない
   admin: {
@@ -62,6 +64,8 @@ export const backend: Backend = {
     setDisplayName: notInApp,
     setEmail: notInApp,
     remove: notInApp,
+    usage: notInApp,
+    usageOf: notInApp,
   },
 
   // まずブラウザの navigator.clipboard を使う(WebView2 の画面は http://wails.localhost で、安全な場所として扱われるので使える)。

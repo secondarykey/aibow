@@ -16,6 +16,9 @@ import * as client$1 from "../../api/client/models.js";
 import * as engine$0 from "../../engine/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as genlog$0 from "../../genlog/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as client$0 from "../../mcp/client/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -292,6 +295,13 @@ export function ModelSettings(): $CancellablePromise<ui$0.ModelSettingsResult> {
  */
 export function Models(): $CancellablePromise<ui$0.ModelsResult> {
     return $Call.ByID(2626444425);
+}
+
+/**
+ * MyUsage は、aibow-server での自分の使用量(今日・7日・30日。設定の画面の「アカウント」のタブ。0033)。
+ */
+export function MyUsage(): $CancellablePromise<genlog$0.Mine> {
+    return $Call.ByID(215299260);
 }
 
 /**

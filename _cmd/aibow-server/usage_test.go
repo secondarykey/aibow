@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -239,4 +240,119 @@ func readLog(t *testing.T, path string) []logRow {
 		out = append(out, r)
 	}
 	return out
+}
+
+// 使用量を見る口(0033 の段2・段3):全員の分は管理者だけ、自分の分は本人。ほかの人の分は口で断る
+func TestUsageHandlers(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "server.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	ctx := context.Background()
+	var env envReader
+	initial := initialSettings(&env, 0)
+	sessions := auth.NewSessions(st)
+	users := map[string]auth.User{}
+	tokens := map[string]string{}
+	for _, name := range []string{"alice", "bob"} {
+		l, err := createUser(ctx, st, initial, name, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := sessions.UseLink(ctx, l.Token, name+"-password"); err != nil {
+			t.Fatal(err)
+		}
+		if tokens[name], _, err = sessions.Login(ctx, name, name+"-password"); err != nil {
+			t.Fatal(err)
+		}
+		users[name], _ = st.UserByName(ctx, name)
+	}
+	if err := setAdmin(ctx, st, "alice", true); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	for i, name := range []string{"alice", "bob", "bob"} {
+		u := users[name]
+		at := now.Add(-time.Duration(i) * time.Minute)
+		if i == 2 {
+			at = now.Add(-3 * 24 * time.Hour) // bob の2回目は今日の外(7日の中)
+		}
+		if err := st.AddGeneration(ctx, genlog.Record{ID: uuid.NewV7(), At: at, User: u.ID, UserName: u.Name, Route: genlog.RouteBrowser,
+			Purpose: genlog.PurposeReply, Model: "file:qwen.gguf", GenTokens: 10, GenSec: 2, StopReason: "eos"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	clock := func() time.Time { return now }
+	mux := http.NewServeMux()
+	mux.Handle("/aibow/admin/usage", adminUsageHandler(st, true, clock))
+	mux.Handle("/aibow/admin/usage/", adminUsageHandler(st, true, clock))
+	mux.Handle("GET /aibow/auth/usage", myUsageHandler(st, true, clock))
+	srv := httptest.NewServer(sessions.Middleware(mux))
+	defer srv.Close()
+
+	get := func(name, path string, v any) int {
+		t.Helper()
+		req, _ := http.NewRequest(http.MethodGet, srv.URL+path, nil)
+		if name != "" {
+			req.AddCookie(&http.Cookie{Name: auth.CookieName, Value: tokens[name]})
+		}
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		if v != nil && res.StatusCode == http.StatusOK {
+			if err := json.NewDecoder(res.Body).Decode(v); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return res.StatusCode
+	}
+
+	var all []genlog.Total
+	if code := get("alice", "/aibow/admin/usage?days=7", &all); code != http.StatusOK || len(all) != 2 || all[0].Name != "bob" || all[0].Count != 2 || all[0].GPUSec != 4 {
+		t.Errorf("管理者が見る全員の分: %d %+v", code, all)
+	}
+	if code := get("alice", "/aibow/admin/usage?days=1", &all); code != http.StatusOK || len(all) != 2 || all[0].Count != 1 {
+		t.Errorf("今日の分: %d %+v", code, all)
+	}
+	var d usageDetail
+	if code := get("alice", "/aibow/admin/usage/user?days=7&id="+users["bob"].ID.String(), &d); code != http.StatusOK ||
+		len(d.Models) != 1 || d.Models[0].Count != 2 || len(d.Days) != 2 {
+		t.Errorf("bob の内訳: %d %+v", code, d)
+	}
+	if code := get("alice", "/aibow/admin/usage?days=0", nil); code != http.StatusBadRequest {
+		t.Errorf("days=0: %d", code)
+	}
+	// 管理者でない人・ログインしていない人には、全員の分を見せない
+	if code := get("bob", "/aibow/admin/usage", nil); code != http.StatusForbidden {
+		t.Errorf("管理者でない人: %d", code)
+	}
+	if code := get("bob", "/aibow/admin/usage/user?id="+users["alice"].ID.String(), nil); code != http.StatusForbidden {
+		t.Errorf("管理者でない人がほかの人の内訳: %d", code)
+	}
+	if code := get("", "/aibow/admin/usage", nil); code != http.StatusUnauthorized {
+		t.Errorf("ログインしていない人: %d", code)
+	}
+	// 自分の分は本人のものだけ
+	var mine genlog.Mine
+	if code := get("bob", "/aibow/auth/usage", &mine); code != http.StatusOK || mine.Today.Count != 1 || mine.Week.Count != 2 || mine.Month.Count != 2 || mine.Week.Key != users["bob"].ID.String() {
+		t.Errorf("bob の自分の分: %d %+v", code, mine)
+	}
+	if code := get("", "/aibow/auth/usage", nil); code != http.StatusUnauthorized {
+		t.Errorf("ログインしていない人の自分の分: %d", code)
+	}
+
+	// ログインなしの形:全員の分はサーバーの PC の上からだけ。自分の分は local
+	local := adminUsageHandler(st, false, clock)
+	for addr, want := range map[string]int{"127.0.0.1:5000": http.StatusOK, "192.168.0.10:5000": http.StatusForbidden} {
+		req := httptest.NewRequest(http.MethodGet, "/aibow/admin/usage", nil)
+		req.RemoteAddr = addr
+		w := httptest.NewRecorder()
+		local.ServeHTTP(w, req)
+		if w.Code != want {
+			t.Errorf("ログインなしの形で %s から: %d(期待: %d)", addr, w.Code, want)
+		}
+	}
 }
