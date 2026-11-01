@@ -67,6 +67,8 @@
 - **画像は文字にしない**:発言の画像の列(`format.Message.Images`。`imagesOf`)としてエンジンに渡す。画像の ID は中身のハッシュ(`File.Hash`)で、エンジンが KV キャッシュに入っている画像と同じかをこれで比べる。
   書式が画像の場所に印を書き、エンジンが画像エンコーダー(mmproj)で画像トークンの埋め込みにして読ませる([engine.md](engine.md) の「画像を読む」)。
   画像を読めないモデル・書式では、数えるところ(`CheckFile`・送る前の `checkFits`)でエンジンがエラーにする(発言を保存する前に止まる。`engine.ErrNoVision` で見分けられる。メーターは出さない)。
+  ただし `CheckFile` は、会話のモデルをまだ読み込んでいない(`modelPending`。送信の前に `ensureModel` が読み込む)ときに、読み込んでいるモデルのせいで数えられない
+  (画像を読めない・書式に未対応・降ろしている。`uncountable`)なら、断らずに数えないまま受け付ける(`FileCheck.Uncounted`)。会話のモデルが画像を読めるかは読み込むまで分からないので、送信のときに会話のモデルを読み込んでから `checkFits` で数えて決める。
   aibow-server につないだアプリは、`api/client` が画像を `image_url` の `data:` の URL にして送る(段4。[api.md](api.md))
 - 読み込むときに Go が確かめる(`CheckFile`。画面は `ChatService.CheckFile`):画像かテキストかは中身で決める。先頭が画像の印(`imageFormat`。PNG・JPEG・GIF・BMP。
   BMP は印が2文字だけなので、ヘッダーのファイルの大きさも確かめて「BM」で始まるテキストと見分ける)なら画像。WebP は llama.cpp(stb_image)が読めないのでエラー。

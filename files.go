@@ -22,6 +22,7 @@ import (
 	"unicode/utf8"
 	"uuid"
 
+	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/format"
 	"github.com/secondarykey/aibow/log"
 )
@@ -368,6 +369,8 @@ func (cs *Conversations) DiscardFile(ctx context.Context, id, fileID uuid.UUID) 
 type FileCheck struct {
 	File   File `json:"file"`
 	Tokens int  `json:"tokens"` // このファイルを足すと増えるトークン数(テキストは展開した見出しと囲みを含む。画像は画像トークン数)
+	// Uncounted は、会話のモデルをまだ読み込んでいないので数えなかった(Tokens は 0)。送信のときに、会話のモデルを読み込んでから数える
+	Uncounted bool `json:"uncounted,omitempty"`
 }
 
 // CheckFile は、読み込んだファイルを確かめて、会話の上限に入るかを数える(決定事項 6)。
@@ -378,6 +381,7 @@ type FileCheck struct {
 // もう付けているファイルの中身は受け取らない(画像は 1 枚 10 MB まであるので、読み込むたびに送り直させない)。
 // 文はまだ入力中なので数えない(送信のときに checkFits でもう一度確かめる)。
 // 画像を読めないモデル・書式なら、数えるところでエンジンがエラーにする(画像を付けない。決定事項 12)。
+// ただし会話のモデルをまだ読み込んでいない(送信の前に読み込む)ときは、読み込んでいるモデルでは決められないので、数えずに受け付ける(Uncounted)。
 // id がゼロなら、まだ作っていない新しい会話。新しい会話の画面で変えた設定 draft で数える(nil なら新しい会話の既定)。
 func (cs *Conversations) CheckFile(ctx context.Context, id uuid.UUID, draft *ConversationSettings, name string, data []byte, pending, pendingTokens int) (FileCheck, error) {
 	f, err := ReadFile(name, data)
@@ -410,11 +414,18 @@ func (cs *Conversations) CheckFile(ctx context.Context, id uuid.UUID, draft *Con
 		return append(slices.Clip(history), StoredMessage{Role: "user", Files: files})
 	}
 	base, err := cs.turnTokens(set, user(nil))
-	if err != nil {
-		return FileCheck{}, err
+	var with int
+	if err == nil {
+		with, err = cs.turnTokens(set, user([]File{f}))
 	}
-	with, err := cs.turnTokens(set, user([]File{f}))
 	if err != nil {
+		// 会話のモデルと読み込んでいるモデルが違い、読み込んでいるモデルでは数えられない(画像を読めない・書式に未対応・降ろしている)なら、
+		// 断らずに数えないまま受け付ける。送信の前に会話のモデルを読み込んでから数え直す(checkFits)ので、入らない・画像を読めないならそこで止まる。
+		// 入力欄の下でモデルを選んでも読み込まない(0014 の 2026-10-31)ので、選んだ画像対応のモデルで画像を送れなくなっていた
+		if cs.modelPending(set) && uncountable(err) {
+			log.Infof("%s は、会話のモデル %s をまだ読み込んでいないため数えずに受け付けました(送信のときに数えます): %v", f.Name, set.Model, err)
+			return FileCheck{File: f, Uncounted: true}, nil
+		}
 		return FileCheck{}, err
 	}
 	tokens := with - base
@@ -427,4 +438,9 @@ func (cs *Conversations) CheckFile(ctx context.Context, id uuid.UUID, draft *Con
 			f.Name, tokens, limit, max(0, limit-used), hint)
 	}
 	return FileCheck{File: f, Tokens: tokens}, nil
+}
+
+// uncountable は、読み込んでいるモデルのせいで数えられないエラーか(モデルが無い・書式に未対応・画像を読めない)。
+func uncountable(err error) bool {
+	return errors.Is(err, engine.ErrNoModel) || errors.Is(err, format.ErrUnsupported) || errors.Is(err, engine.ErrNoVision)
 }

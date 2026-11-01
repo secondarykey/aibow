@@ -469,6 +469,11 @@ export interface FileCheck {
      * このファイルを足すと増えるトークン数(テキストは展開した見出しと囲みを含む。画像は画像トークン数)
      */
     "tokens": number;
+
+    /**
+     * Uncounted は、会話のモデルをまだ読み込んでいないので数えなかった(Tokens は 0)。送信のときに、会話のモデルを読み込んでから数える
+     */
+    "uncounted"?: boolean;
 }
 
 /**

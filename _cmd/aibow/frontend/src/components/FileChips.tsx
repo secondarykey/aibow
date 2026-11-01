@@ -9,7 +9,11 @@ import type { File as StoredFile } from "../../bindings/github.com/secondarykey/
 export interface Chip {
   file: StoredFile;
   tokens?: number; // 送る前だけ(このファイルで増えるトークン数)
+  uncounted?: boolean; // 送る前に数えられなかった(会話のモデルをまだ読み込んでいない。送信のときに数える)
 }
+
+// 数えられなかった札の吹き出し
+const UNCOUNTED_TITLE = "会話のモデルをまだ読み込んでいないため、トークン数は送信するときに数えます";
 
 // onRemove は送る前の札を外す。onDiscard は送ったあとの札の中身を捨てる(読むだけの会話・生成中は渡さない)
 export function FileChips({ files, onRemove, onDiscard }: { files: Chip[]; onRemove?(index: number): void; onDiscard?(file: StoredFile): void }) {
@@ -18,7 +22,7 @@ export function FileChips({ files, onRemove, onDiscard }: { files: Chip[]; onRem
   if (!files.length) return null;
   return (
     <div className="file-chips">
-      {files.map(({ file, tokens }, i) => {
+      {files.map(({ file, tokens, uncounted }, i) => {
         if (file.discarded) {
           return (
             <span key={file.id} className="file-chip discarded" title={`${file.name}(消去済み)`}>
@@ -28,7 +32,8 @@ export function FileChips({ files, onRemove, onDiscard }: { files: Chip[]; onRem
             </span>
           );
         }
-        const size = sizeText(dataSize(file.data)) + (tokens !== undefined ? ` · ${tokens.toLocaleString()} tok` : "");
+        const tok = tokens === undefined ? undefined : uncounted ? "? tok" : `${tokens.toLocaleString()} tok`;
+        const size = sizeText(dataSize(file.data)) + (tok !== undefined ? ` · ${tok}` : "");
         const actions = confirming === file.id ? (
           <span className="file-confirm">
             <button type="button" className="danger" onClick={() => { setConfirming(null); onDiscard?.(file); }}>捨てる</button>
@@ -54,7 +59,7 @@ export function FileChips({ files, onRemove, onDiscard }: { files: Chip[]; onRem
               <button type="button" className="file-thumb" onClick={() => setViewing(file)}>
                 <img src={dataURL(file)} alt={file.name} />
               </button>
-              {tokens !== undefined && <span className="file-size">{tokens.toLocaleString()} tok</span>}
+              {tok !== undefined && <span className="file-size" title={uncounted ? UNCOUNTED_TITLE : undefined}>{tok}</span>}
               {actions}
             </span>
           );
@@ -63,7 +68,7 @@ export function FileChips({ files, onRemove, onDiscard }: { files: Chip[]; onRem
           <span key={file.id} className="file-chip" title={file.name}>
             <LuFileText className="icon" />
             <span className="file-name">{file.name}</span>
-            <span className="file-size">{size}</span>
+            <span className="file-size" title={uncounted ? UNCOUNTED_TITLE : undefined}>{size}</span>
             {actions}
           </span>
         );

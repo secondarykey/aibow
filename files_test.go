@@ -4,13 +4,16 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
 	"image"
 	"image/png"
+	"slices"
 	"strings"
 	"testing"
 	"unicode/utf16"
 	"uuid"
 
+	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/format"
 )
 
@@ -282,6 +285,74 @@ func TestSendWithImage(t *testing.T) {
 	bad.Hash = "x"
 	if errs := errorsOf(collect(func(emit func(ChatEvent)) { cs.Send(context.Background(), c.ID, "?", []File{bad}, emit) })); len(errs) != 1 {
 		t.Errorf("ハッシュの合わない画像: %v", errs)
+	}
+}
+
+// 画像を読めないモデルを読み込んだまま、会話のモデルに画像を読めるモデルを選んだとき(入力欄の下で選んでも読み込まない。0014 の 2026-10-31)。
+// 読み込みでは数えずに受け付け、送信の前に会話のモデルを読み込んでから数えて送る。会話のモデルも読めなければ、送信で止まる
+func TestCheckImageBeforeModelLoads(t *testing.T) {
+	g := &fakeGen{content: "猫です", blind: []string{"file:fake", "file:gemma"}}
+	cs, _ := newTestConversations(t, g)
+	l := &fakeLoader{g: g}
+	cs.SetModelLoader(l)
+	c := mustCreate(t, cs)
+	png := pngBytes(t)
+
+	// 会話のモデルが読み込んでいるモデルなら、今までどおり断る(決定事項 12)
+	if _, err := cs.CheckFile(ctx, c.ID, nil, "cat.png", png, 0, 0); !errors.Is(err, engine.ErrNoVision) {
+		t.Fatalf("読み込んでいるモデルが画像を読めない: %v", err)
+	}
+
+	c.Settings.Model = "ollama:qwen3.5:9b"
+	if err := cs.UpdateSettings(ctx, c.ID, c.Settings); err != nil {
+		t.Fatal(err)
+	}
+	got, err := cs.CheckFile(ctx, c.ID, nil, "cat.png", png, 0, 0)
+	if err != nil {
+		t.Fatalf("会話のモデルをまだ読み込んでいない: %v", err)
+	}
+	if !got.Uncounted || got.Tokens != 0 || got.File.Kind != FileImage {
+		t.Errorf("数えずに受け付ける: %+v", got)
+	}
+	// 新しい会話の画面(draft)でも同じ
+	draft := testDefaults
+	draft.Model = "ollama:qwen3.5:9b"
+	if got, err := cs.CheckFile(ctx, uuid.UUID{}, &draft, "cat.png", png, 0, 0); err != nil || !got.Uncounted {
+		t.Errorf("新しい会話の画面: %+v %v", got, err)
+	}
+	// テキストは読み込んでいるモデルで数えられるので、今までどおり数える
+	if got, err := cs.CheckFile(ctx, c.ID, nil, "a.txt", []byte("短い"), 0, 0); err != nil || got.Uncounted || got.Tokens == 0 {
+		t.Errorf("テキスト: %+v %v", got, err)
+	}
+
+	evs := collect(func(emit func(ChatEvent)) {
+		cs.Send(context.Background(), c.ID, "これは何?", []File{got.File}, emit)
+	})
+	if errs := errorsOf(evs); len(errs) != 0 {
+		t.Fatalf("送信: %v", errs)
+	}
+	if !slices.Equal(l.loaded, []string{"ollama:qwen3.5:9b"}) || len(g.gotMessages[len(g.gotMessages)-1].Images) != 1 {
+		t.Errorf("会話のモデルを読み込んで画像を渡す: %v", l.loaded)
+	}
+
+	// 会話のモデルも画像を読めないなら、送信(会話のモデルを読み込んでから数える)で止まり、発言を保存しない
+	c2 := mustCreate(t, cs)
+	c2.Settings.Model = "file:gemma"
+	if err := cs.UpdateSettings(ctx, c2.ID, c2.Settings); err != nil {
+		t.Fatal(err)
+	}
+	g.model = "ollama:qwen3.5:9b"
+	g.blind = append(g.blind, "ollama:qwen3.5:9b") // 読み込んでいるモデルも読めない
+	got, err = cs.CheckFile(ctx, c2.ID, nil, "cat.png", png, 0, 0)
+	if err != nil || !got.Uncounted {
+		t.Fatalf("会話のモデルをまだ読み込んでいない: %+v %v", got, err)
+	}
+	errs := errorsOf(collect(func(emit func(ChatEvent)) { cs.Send(context.Background(), c2.ID, "?", []File{got.File}, emit) }))
+	if len(errs) != 1 || !strings.Contains(errs[0], "画像に対応していません") {
+		t.Errorf("会話のモデルも画像を読めない: %v", errs)
+	}
+	if _, ms, _ := cs.Get(ctx, c2.ID); len(ms) != 0 {
+		t.Errorf("発言を保存しない: %d 件", len(ms))
 	}
 }
 

@@ -25,6 +25,7 @@ type fakeGen struct {
 	thinking, content, stopReason string
 	block                         chan struct{} // nil でなければ、閉じられるまで生成を終えない
 	model                         string        // 読み込んでいるモデルの ID(空なら file:fake。fakeLoader が書き換える)
+	blind                         []string      // 画像を読めないモデルの ID(画像の付いたプロンプトを数えると ErrNoVision)
 
 	// replies があれば、thinking / content / stopReason の代わりに、呼ばれた順に1つずつ返す
 	// (要約 → 返事、のように1回の送信で何度も生成するときに使う)
@@ -74,6 +75,9 @@ func (g *fakeGen) EnsureContextSize(n int) (bool, error) {
 }
 
 func (g *fakeGen) CountTokens(p format.Prompt) (int, error) {
+	if slices.Contains(g.blind, g.Info().ID) && slices.ContainsFunc(p.Messages, func(m format.Message) bool { return len(m.Images) > 0 }) {
+		return 0, engine.VisionError("今のモデルは画像に対応していません(テスト)")
+	}
 	return utf8.RuneCountInString(testFormat.BuildPrompt(p)), nil
 }
 

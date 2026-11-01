@@ -293,17 +293,24 @@ func (cs *Conversations) ensureWorkspace(conv Conversation, emit func(ChatEvent)
 	return nil
 }
 
+// modelPending は、送信の前に ensureModel が会話のモデルを読み込むか(読み込んでいるモデルが会話のモデルと違う)。
+// 違う間は、読み込んでいるモデルで数えたトークン数は会話のモデルのものではない(画像を読めないモデルなら数えられない)。
+func (cs *Conversations) modelPending(set ConversationSettings) bool {
+	if set.Model == "" || cs.models == nil {
+		return false
+	}
+	info := cs.gen.Info()
+	return info == nil || info.ID != set.Model
+}
+
 // ensureModel は、読み込んでいるモデルがこの会話のモデルと違えば、会話のモデルを読み込む(0014 の 3)。
 // モデルの違う会話に切り替えた最初の送信は、読み直しの分(数秒〜十数秒)待つ。読み直したらお知らせ(トースト)とログで知らせる。
 // 会話がモデルを持たない(この機能より前の会話)・読み込む係が無いときは、読み込んでいるモデルのまま。
 func (cs *Conversations) ensureModel(conv Conversation, emit func(ChatEvent)) error {
+	if !cs.modelPending(conv.Settings) {
+		return nil
+	}
 	want := conv.Settings.Model
-	if want == "" || cs.models == nil {
-		return nil
-	}
-	if info := cs.gen.Info(); info != nil && info.ID == want {
-		return nil
-	}
 	emit(ChatEvent{ConversationID: conv.ID, Type: "model_loading", Text: fmt.Sprintf("この会話のモデル %s を読み込み中…", want)})
 	info, err := cs.models.LoadModel(want)
 	if err != nil {
