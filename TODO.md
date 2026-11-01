@@ -90,6 +90,7 @@ aibow 全体の進み具合(入口)。ルールと全体の構成は `AGENTS.md`
 | ✅ | MCP のツールの信頼(「確認しない」と確認のカードの選択肢) | [0010-tool-trust.md](_docs/features/0010-tool-trust.md) |
 | ⬜ | ツールの信頼の続き(0010 のやり残し) | [0010-tool-trust.md](_docs/features/0010-tool-trust.md) の「3段目以降」 |
 | ⬜ | MCP の OAuth(ログインが要る url の MCP のサーバー) | [検討メモ](_docs/backlog.md) |
+| ⬜ | MCP のサーバーを画面から足す・変える・消す(アプリの設定の画面。aibow-server の分はあとで同じ部品で) | [0034-mcp-editor.md](_docs/features/0034-mcp-editor.md) |
 | ✅ | 会話の個別設定(会話の設定の画面) | [0009-conversation-settings.md](_docs/features/0009-conversation-settings.md) |
 | ⬜ | 今の組の中の compact(古いツールの結果を省略して続ける) | [検討メモ](_docs/backlog.md) |
 | ✅ | 同じ呼び出しが成功のまま繰り返されるのを止める(続けて同じなら、ツールを外して答えさせる。モデルでの確かめはまだ) | [0028-repeated-calls.md](_docs/features/0028-repeated-calls.md) |
