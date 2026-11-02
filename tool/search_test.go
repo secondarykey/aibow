@@ -23,8 +23,11 @@ func TestGlobMatch(t *testing.T) {
 		{"cmd/**/main.go", []string{"cmd/main.go", "cmd/aibow/main.go", "cmd/a/b/main.go"}, []string{"main.go", "x/cmd/main.go", "cmd/aibow/app.go"}},
 		{"tool/*.go", []string{"tool/list.go"}, []string{"tool/x/list.go", "list.go"}},
 		{"cmd/**", []string{"cmd/a.go", "cmd/x/y.txt"}, []string{"a.go"}},
-		{"./tool/*.go", []string{"tool/list.go"}, nil},         // ./ は省く
-		{`cmd\**\main.go`, []string{"cmd/aibow/main.go"}, nil}, // Windows の \ は / に直す
+		{"./tool/*.go", []string{"tool/list.go"}, nil}, // ./ は省く
+		// \ は区切りに直さず、path.Match のとおり「次の記号をそのまま」(正規表現の癖の *\.go・[ を含む名前)
+		{`*\.go`, []string{"main.go", "a/b.go"}, []string{"main_go"}},
+		{`app/\[id\]/*.tsx`, []string{"app/[id]/page.tsx"}, []string{"app/i/page.tsx"}},
+		{`cmd\**\main.go`, nil, []string{"cmd/aibow/main.go"}},
 		{"[ab].txt", []string{"a.txt", "x/b.txt"}, []string{"c.txt"}},
 	}
 	for _, c := range cases {
@@ -77,6 +80,13 @@ func TestListFilesPattern(t *testing.T) {
 	if got, err := run(t, tl, "path", ".claude", "pattern", "*.go"); err != nil || got != ".claude/w/a.go" {
 		t.Errorf("path=.claude: %q, %v", got, err)
 	}
+	// \ を区切りのつもりで書いたら、0 件の結果に / で書くよう添える
+	if got, err := run(t, tl, "pattern", `cmd\**\main.go`); err != nil || !strings.Contains(got, "区切りは / で書いて") {
+		t.Errorf("\\ の添え書き: %q, %v", got, err)
+	}
+	if got, _ := run(t, tl, "pattern", "*.ts"); strings.Contains(got, "区切り") {
+		t.Errorf("\\ が無いのに添え書きがある: %q", got)
+	}
 	if _, err := run(t, tl, "pattern", "[x"); err == nil || !strings.Contains(err.Error(), "読めません") {
 		t.Errorf("読めないパターン: %v", err)
 	}
@@ -125,6 +135,7 @@ func TestSearchFiles(t *testing.T) {
 		{[]string{"pattern", "// run", "path", "tool", "ignore_case", "true"}, "tool/run.go:3: // Run は実行する"},
 		{[]string{"pattern", "hidden", "path", ".claude"}, ".claude/w/a.go:1: func hidden() {}"}, // 隠しフォルダは path に指定したときだけ
 		{[]string{"pattern", "nothing", "path", "docs"}, "(見つかりませんでした)"},
+		{[]string{"pattern", "func", "glob", `*\.go`}, "main.go:3: func main() {\ntool/run.go:4: func Run() {}\ntool/run_test.go:3: func TestRun(t *testing.T) {}"},
 	}
 	for _, c := range checks {
 		if got, err := run(t, tl, c.args...); err != nil || got != c.want {

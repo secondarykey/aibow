@@ -11,6 +11,11 @@ package tool
 //	/ を含む(**/*.go・cmd/**/main.go)… 作業フォルダからの相対パスと、頭から比べる
 //
 // 中括弧({a,b})は作らない(決定事項 9)。要るときは2回に分けて呼べばよい。
+//
+// \ は path.Match のとおり「次の記号をそのまま合わせる」印として扱い、Windows の区切りとして / に直すことはしない。
+// 小さなモデルは正規表現の癖で *\.go と書きがちで、これは path.Match ならそのまま main.go に合う。
+// / に直すと */.go になって黙って 0 件になる。[id].tsx のような名前を \[id\].tsx で探すのも壊れる。
+// 区切りのつもりで \ を書いたときは、0 件の結果に「区切りは / で」と添える(hint)。
 
 import (
 	"fmt"
@@ -22,13 +27,12 @@ import (
 type globPattern struct {
 	parts  []string // / で区切ったパターン(byName なら1つ)
 	byName bool     // / を含まない(名前だけと比べる)
+	slash  bool     // \ を含む(0 件のときに区切りの書き方を添える)
 }
 
 // compileGlob は、モデルが書いた glob を読み取る。書き方の間違い([ が閉じていない、など)はエラー。
 func compileGlob(pattern string) (globPattern, error) {
 	p := strings.TrimSpace(pattern)
-	// Windows の 4B は \ で区切って書きがちなので / に直す(path.Match の \ によるエスケープは使えなくなるが、ファイル名で要ることはまず無い)
-	p = strings.ReplaceAll(p, `\`, "/")
 	for strings.HasPrefix(p, "./") {
 		p = p[2:]
 	}
@@ -36,7 +40,7 @@ func compileGlob(pattern string) (globPattern, error) {
 	if p == "" {
 		return globPattern{}, fmt.Errorf("パターン %q が空です。*.go や **/*_test.go のように書いてください", pattern)
 	}
-	g := globPattern{parts: strings.Split(p, "/"), byName: !strings.Contains(p, "/")}
+	g := globPattern{parts: strings.Split(p, "/"), byName: !strings.Contains(p, "/"), slash: strings.Contains(p, `\`)}
 	for _, part := range g.parts {
 		if part == "**" {
 			continue
@@ -47,6 +51,14 @@ func compileGlob(pattern string) (globPattern, error) {
 		}
 	}
 	return g, nil
+}
+
+// hint は、0 件だったときに添える文(\ を含むときだけ。無ければ空)。
+func (g globPattern) hint() string {
+	if !g.slash {
+		return ""
+	}
+	return "\n(\\ はフォルダの区切りではなく、次の記号をそのまま合わせる印です。フォルダの区切りは / で書いてください)"
 }
 
 // match は、作業フォルダからの相対パス rel(/ 区切り)のファイルが、パターンに合うか。
