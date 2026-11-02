@@ -71,9 +71,10 @@ func FolderMarks(f Folder, git bool) string {
 
 // FilesIn は、フォルダの組 folders の中を扱うツール。メインはちょうど1つにしておく(無ければ先頭をメインにする)。
 // フォルダが1つなら、定義は Files と同じ(folder の引数を出さない)。
+// search_files(0037)は読むだけなので、資料のフォルダ(0024)・aibow-mcp でも、ほかのフォルダのツールと一緒に出る。
 func FilesIn(folders []Folder) []Tool {
 	set := folderSet(folders)
-	return []Tool{listFiles{set}, readFile{set}, writeFile{set}, editFile{set}}
+	return []Tool{listFiles{set}, readFile{set}, searchFiles{set}, writeFile{set}, editFile{set}}
 }
 
 // MainFolder は、フォルダの組のメイン(メインの印が無ければ先頭。空なら空)。
@@ -223,9 +224,13 @@ func (t target) writable() error {
 	return nil
 }
 
-// cardFolder は、確認のカードに出すフォルダの名前(フォルダが複数で、メイン以外のときだけ)。
+// cardFolder は、確認のカードに出すフォルダの名前(フォルダが複数なら、メインでも出す。1つなら空)。
+//
+// 以前はメイン以外のときだけ出していた。でもそれだと、モデルが「前の呼び出しで cd /d B したから B にいる」と思い込んで
+// folder を付けずに git commit を書いたとき、カードにフォルダが出ず、メイン(A)で動くことに気づきにくい
+// (run_command は呼ぶたびに新しいシェルで始まり、cd は持ち越されない)。ファイルのツールも同じ理由でそろえる(2026-11-02、ユーザーと決めた)。
 func (set folderSet) cardFolder(t target) string {
-	if !set.multi() || t.folder.Main {
+	if !set.multi() {
 		return ""
 	}
 	return t.folder.Name

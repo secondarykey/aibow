@@ -129,3 +129,5 @@ MCP の OAuth:ログインが要る url の MCP サーバー(GitHub・Notion な
 4. **git の差分と状態を読む**:worktree の構想(「コーディングエージェントとして洗練する」)と相性が良い。git の exe に頼るので、作業フォルダの扱い(ワークスペース。[0035-workspaces.md](features/0035-workspaces.md))と一緒に考える
 
 Web 検索・データベース・ブラウザの操作は、キーや環境に左右されるので MCP のままが向く。
+
+→ 1〜3 は [0037-coding-tools.md](features/0037-coding-tools.md) にした(`search_files`・`list_files` の `pattern`・`update_plan`)。4 の git は worktree と一緒に考える(0037 の決定事項 3)

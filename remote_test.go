@@ -334,7 +334,7 @@ func TestLocalToolPolicy(t *testing.T) {
 	prefs := &ToolPrefs{}
 	cs.SetToolPrefs(prefs)
 	set := ConversationSettings{}
-	write, read := tool.Files(".")[2], tool.Files(".")[1]
+	write, read := tool.Find(tool.Files("."), "write_file"), tool.Find(tool.Files("."), "read_file")
 	if write.Def().Name != "write_file" || read.Def().Name != "read_file" {
 		t.Fatalf("並び: %s %s", write.Def().Name, read.Def().Name)
 	}
@@ -353,7 +353,7 @@ func TestLocalToolPolicy(t *testing.T) {
 	if cs.toolPolicy(set, read) != ToolAsk {
 		t.Error("会話の上書きが一番優先")
 	}
-	if names := BuiltinTools(); len(names) != 8 || names[0].Name != "get_current_time" || names[2].Name != "fetch_url" || names[7].Name != "run_command" {
+	if names := BuiltinTools(); len(names) != 10 || names[0].Name != "get_current_time" || names[2].Name != "fetch_url" || names[8].Name != "update_plan" || names[9].Name != "run_command" {
 		t.Errorf("組み込みのツールの一覧: %+v", names)
 	}
 }
@@ -614,7 +614,7 @@ func TestToolOnOverridesPCOff(t *testing.T) {
 	// グループごと使わないにした組み込みのツールも、会話で使うにできる。書き換えるツールは確認する
 	prefs.SetBuiltinPolicy(ToolOff)
 	set.ToolPolicies = map[string]ToolPolicy{"write_file": ToolOn}
-	if got := cs.toolPolicy(set, tool.Files(".")[2]); got != ToolAsk {
+	if got := cs.toolPolicy(set, tool.Find(tool.Files("."), "write_file")); got != ToolAsk {
 		t.Errorf("書き換えるツールは確認する: %v", got)
 	}
 	if err := set.validate(); err != nil {

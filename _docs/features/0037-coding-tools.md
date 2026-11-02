@@ -1,6 +1,6 @@
 # 0037: コーディングエージェント向けの組み込みのツール(中を探す・名前で探す・作業の予定)
 
-- 状態: ⬜ 未着手
+- 状態: 🔧 作業中(段1〜段3を作った。残りは実際のモデルでの試しと未決事項)
 - ロードマップ: ロードマップの外(TODO.md の「ロードマップの外でやりたいこと」)
 - 決めた日: 2026-11-02(Chat でユーザーと決めた。案は Chat が今のコードを読んで出した。検討メモ:Chat の `builtin-tools-design-draft.md`)
 - 前提: 0005(作業フォルダのツール・`os.Root`)、0025(結果を入る分だけ切って渡す・read_file の切り方)、0035(ワークスペース・`folder` の引数)、0002(compact)、0024(資料のフォルダ)
@@ -90,6 +90,58 @@
 5. アプリの画面で `update_plan` がチェックリストとして見える
 6. 実際のモデル(Qwen3.5 4B)で、aibow のリポジトリの中で関数を探して直す作業を試し、search_files と update_plan の使われ方を `_docs/tuning.md` に書く
 7. `_docs/tools.md`・`_docs/compact.md`(予定を残すこと)・`_docs/usage.md`・`_docs/backlog.md`(この仕様へ案内)・`TODO.md` を更新している
+
+## 作業の経過
+
+- 2026-11-02 段1:`search_files`(`tool/search.go`)と `list_files` の `pattern`(`tool/glob.go` の `**` の合わせ方)。
+  完了の条件 1・2・4 はテスト(`tool/search_test.go`。pattern の無い `list_files` は今までの `TestListFiles` がそのまま通る)で確かめた。
+  `list_files` のたどり方(浅い順・名前の順)を `walk` に切り出し、`search_files` と同じものを使う。
+  `search_files` は段1では `tool.FilesIn` にまだ入れなかった
+- 2026-11-02 段2:`search_files` を `tool.FilesIn` に入れた(`read_file` の後ろ)。これでアプリ(aibow の中の MCP サーバー越しも)・aibow-mcp・aibow-server の資料のフォルダ(0024)に出る。
+  決まりの既定は「確認しない」(`tool.Confirmable` でないので、list_files・read_file と同じ)。設定の画面の組み込みのツールの一覧にも出る(日本語の説明は `toolLabels.ts`)。
+  環境の説明のシェルの行を `tool.ShellNoteFor` にし、`search_files` を使う会話では findstr ではなく `search_files` を案内する(決定事項 8)。aibow-mcp の instructions も同じ。
+  0036 の段2を待たずに進めた(2026-11-02、ユーザーと決めた。重なる `localTools` は触らずに済んだ。0036 と重なるのは `mcp/server/server.go` の instructions の2行と、書類)。
+  画面のアプリ(`_cmd/aibow`)のビルドとテストは、クラウドセッションに GTK が無いので動かしていない(`toolLabels.ts` に1行足しただけ)
+- 2026-11-02 段3:`update_plan`(`tool/plan.go`)・compact で予定を残す(`plan.go`。`passFrom` で足す)・画面のチェックリスト(`PlanCard.tsx`)。
+  完了の条件 3 はテスト(`TestPlanSurvivesTruncate`・`TestPlanSurvivesSummary`。足す処理を外すと両方とも失敗することも確かめた)で確かめた。
+  画面は `.harness` にダミーのカードを描いて、ライト / ダークで見た(Go を動かした画面の確認はまだ)。`localTools` に1行足したので、0036 の段2とここが重なる
+
+- 2026-11-02 段4:クラウドセッションでは試せなかった(GPU が無いうえ、ネットワークの決まりで huggingface.co・registry.ollama.ai・GitHub のリリースに届かず、
+  モデルも llama.cpp も取ってこられない)。backlog からこの仕様への案内だけ書いた。試しはユーザーの Windows の環境で行う(下の「段4の試し方」)
+
+### 段4の試し方(完了の条件 6)
+
+Qwen3.5 4B(思考あり・temperature 0.7・presence penalty 1.5・会話の上限 8192 + 返事の上限 8192。0035 の試しと同じ)で、
+アプリと同じ形(aibow の中の MCP サーバー越しの組み込みのツール)。作業フォルダは aibow のリポジトリの写し(本体ではなく、一時フォルダに `git clone` したもの)。確認のカードは「実行する」で答える。
+
+- 課題 A(探す):「`cutResult` という関数はどこにありますか?何をしていますか?」… `search_files` を使うか(`run_command` の findstr・`read_file` で丸ごと読む、にならないか)。`pattern` の正規表現の書き方
+- 課題 B(名前で探す):「テストのファイルはいくつありますか?」… `list_files` の `pattern`(`*_test.go`)を使うか。`\` で区切って書かないか
+- 課題 C(探して直す・予定):「`tool/glob.go` の `compileGlob` のエラーの文に、例として `*.go` を足して、テストが通るか確かめて」… `update_plan` を自分から使うか・状態を進めるか・`in_progress` を2つにしないか
+- 課題 D(compact):会話の上限を 4096 にして課題 C をやり直し、途中で compact が起きたあとも予定どおりに進むか(ログの compact と、モデルに渡した文字列のパネルで「Current plan」を見る)
+- 見ること:どのツールを何回呼んだか・つまずき(引数の間違い・同じ呼び出しの繰り返し)・かかった秒数。上限(100 件・8,000 文字)が使いやすいか(未決事項)
+
+## 作業中に決めたこと(Code。ユーザーの確認待ち)
+
+- glob:`\` は Windows の区切りとして `/` に直さず、`path.Match` のとおり「次の記号をそのまま合わせる」印として扱う(2026-11-02、ユーザーと決めた。
+  直すと、正規表現の癖で書いた `*\.go` が `*/.go` になって黙って 0 件になり、`\[id\].tsx` のような名前も探せなくなるため)。
+  ツールの説明(`list_files` の `pattern`・`search_files` の `glob`)に「Use / between folders, even on Windows.」と書き(2026-11-02、ユーザーと決めた。1つで 8 トークンほど)、
+  0 件の結果に区切りの書き方を添えることはしない(説明に反した使い方を結果で言い直さない。`\` が区切りのつもりか印のつもりかは、結果からは分からない。2026-11-02、ユーザーと決めた)。頭の `./`・`/` は省く。大文字と小文字は区別する(`path.Match` のまま)
+- glob の `**` は段の全体のときだけ。`a**b` のように段の一部なら `path.Match` の `*` と同じ
+- `list_files` の pattern で 0 件のときは「(pattern *.ts に合うファイルはありません)」。上限で切ったときの文は pattern が無いときと同じ
+- `search_files` の結果の文は日本語(ほかのフォルダのツールの添え書きに合わせた):0 件は「(見つかりませんでした)」、
+  切ったときは「(一致は全部で N 件(M ファイル)あり、100 件までを並べました。path か glob で絞ってください)」、
+  飛ばしたときは「(バイナリ・UTF-8 でない・1 MB を超えるファイル K 件は、探さずに飛ばしました)」
+- 行の頭の空白(字下げ)は削らない(edit_file の old_string にそのまま写せるように)。300 文字で切った行は最後に `…` を付ける
+- `path` にファイルを名指ししたときは `glob` を見ない(選んだファイルなので)
+- 時間切れ(既定の 10 秒)のときは、途中までの結果を返さず「時間内に探しきれませんでした。path か glob で、探す範囲を絞ってください」のエラーにする(全部の件数が書けないため)
+- 引数 `ignore_case` は JSON Schema の `boolean`(`tool.Args` に `Bool` を足した)
+- `update_plan` の並びは、フォルダのツールの後ろ・`run_command` の前(アプリの直接の道・aibow の中の MCP サーバー・設定の画面の一覧で同じ)
+- `update_plan` の結果の文は日本語。空の予定(`items: []`)は受け付けて「予定を空にしました」。状態の値は3つだけ(`completed` などはエラーで3つを案内する)
+- compact のあとに足すのは「渡さない部分の最後の成功した予定」(会話全体の最後ではない)。モデルが予定を書き直すたびにシステムの文が変わり、KV キャッシュが使えなくなるのを避けるため。
+  文は `Current plan (from update_plan in the earlier part of this conversation, which is no longer shown):` と `- [done] …` の行(状態の値をそのまま。書き直すときに写せるように)。
+  エラーになった呼び出しと、MCP のサーバーの同じ名前のツールは見ない
+- 画面のカード(未決事項の「見た目」の仮の形):畳まずにチェックリストで出す。見出しは「予定」と「N / M 済み」、済みは薄く打ち消し線、取りかかっているものは太字で印を青に。
+  カードは今までどおり「思考の過程」の枠の中(枠を畳むと見えない)。最新の予定を入力欄の上に出すかは、まだ作っていない
 
 ## 作業の順番(案)
 

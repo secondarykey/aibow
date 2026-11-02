@@ -293,6 +293,20 @@ footer.home .composer textarea { line-height: 1.5; min-height: calc(3 * 1.5em + 
 .tool-card.confirm { border-color: #d97706; }
 .tool-card.confirm .tool-status { color: #d97706; }
 .tool-card.rejected .tool-status { color: var(--muted); }
+/* 作業の予定(update_plan。0037)のカード: 畳まずにチェックリストで出す。済みは薄く、取りかかっているものは強調する */
+.plan-card {
+  border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; margin-bottom: 6px;
+  font-size: 12.5px; color: var(--muted); background: var(--panel);
+}
+.plan-head { display: flex; align-items: center; gap: 6px; }
+.plan-head .plan-count { margin-left: auto; }
+.plan-items { list-style: none; margin: 4px 0 2px; padding: 0; }
+.plan-item { display: flex; align-items: flex-start; gap: 6px; padding: 1px 0; color: var(--text); }
+.plan-item .plan-mark { flex: none; margin-top: 2px; }
+.plan-item.done { color: var(--muted); }
+.plan-item.done span { text-decoration: line-through; }
+.plan-item.in_progress { font-weight: 600; }
+.plan-item.in_progress .plan-mark { color: var(--accent); }
 .confirm { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
 .confirm-target { display: flex; align-items: center; gap: 8px; }
 .confirm-target code { font-size: 12.5px; }

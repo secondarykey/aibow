@@ -32,7 +32,7 @@ func TestLocalTools(t *testing.T) {
 		t.Errorf("作業フォルダが無ければ時刻と計算だけ: %v", got)
 	}
 	tools := l.Tools(tool.Single(dir))
-	if got := names(tools); !slices.Equal(got, []string{"calculate", "edit_file", "get_current_time", "list_files", "read_file", "run_command", "write_file"}) {
+	if got := names(tools); !slices.Equal(got, []string{"calculate", "edit_file", "get_current_time", "list_files", "read_file", "run_command", "search_files", "update_plan", "write_file"}) {
 		t.Errorf("作業フォルダのツールも: %v", got)
 	}
 	if d := tool.Find(tools, "read_file").Def(); d.Description != tool.Find(tool.Files(dir), "read_file").Def().Description {
@@ -87,7 +87,7 @@ func TestLocalClosed(t *testing.T) {
 	l := NewLocal(Options{Version: "test"})
 	l.Close()
 	tools := l.Tools(tool.Single(t.TempDir()))
-	if _, ok := tool.Find(tools, "write_file").(tool.SelfConfirming); ok || len(tools) != 7 {
+	if _, ok := tool.Find(tools, "write_file").(tool.SelfConfirming); ok || len(tools) != 9 {
 		t.Errorf("直接呼ぶツール: %v", tools)
 	}
 }

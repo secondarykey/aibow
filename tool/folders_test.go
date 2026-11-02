@@ -67,9 +67,9 @@ func TestFolderArgument(t *testing.T) {
 	if b, _ := os.ReadFile(filepath.Join(notes, "memo.md")); string(b) != "# メモ\n" {
 		t.Errorf("読むだけのフォルダが書き換わった: %q", b)
 	}
-	// メインには書ける。確認のカードにフォルダの名前は出さない(メインのとき)
+	// メインには書ける。フォルダが複数なら、メインでも確認のカードにフォルダの名前を出す
 	pv, err := write.(Confirmable).Preview(argsFor(t, write, "path", "new.go", "content", "package app\n"))
-	if err != nil || pv.Folder != "" || pv.Path != "new.go" {
+	if err != nil || pv.Folder != "app" || pv.Path != "new.go" {
 		t.Errorf("メインへの書き込み: %+v, %v", pv, err)
 	}
 	if _, err := run(t, write, "path", "new.go", "content", "package app\n"); err != nil {
@@ -80,14 +80,24 @@ func TestFolderArgument(t *testing.T) {
 	}
 }
 
-// 書けるフォルダがメイン以外なら、確認のカードにフォルダの名前を出す
+// フォルダが複数なら、確認のカードにフォルダの名前を出す(メインでも)。1つなら出さない
 func TestFolderOnCard(t *testing.T) {
 	main, other := t.TempDir(), t.TempDir()
+	os.WriteFile(filepath.Join(main, "b.txt"), []byte("old\n"), 0o644)
 	tools := FilesIn([]Folder{{Name: "app", Path: main, Main: true, Writable: true}, {Name: "lib", Path: other, Writable: true}})
-	write := Find(tools, "write_file")
+	write, edit := Find(tools, "write_file"), Find(tools, "edit_file")
 	pv, err := write.(Confirmable).Preview(argsFor(t, write, "folder", "lib", "path", "a.txt", "content", "x"))
 	if err != nil || pv.Folder != "lib" || pv.Path != "a.txt" {
 		t.Errorf("カード: %+v, %v", pv, err)
+	}
+	pv, err = edit.(Confirmable).Preview(argsFor(t, edit, "path", "b.txt", "old_string", "old", "new_string", "new"))
+	if err != nil || pv.Folder != "app" {
+		t.Errorf("メインの書き換えのカード: %+v, %v", pv, err)
+	}
+	one := Find(Files(main), "edit_file")
+	pv, err = one.(Confirmable).Preview(argsFor(t, one, "path", "b.txt", "old_string", "old", "new_string", "new"))
+	if err != nil || pv.Folder != "" {
+		t.Errorf("フォルダが1つのカード: %+v, %v", pv, err)
 	}
 }
 
@@ -100,7 +110,8 @@ func TestFolderDefs(t *testing.T) {
 		if a.Name != b.Name || a.Description != b.Description || string(a.Parameters) != string(b.Parameters) {
 			t.Errorf("%s: フォルダ1つの定義が変わった", a.Name)
 		}
-		if strings.Contains(string(b.Parameters), "folder") {
+		// 引数の名前(キー)で見る。説明の文の「folders」には合わせない
+		if strings.Contains(string(b.Parameters), `"folder":`) {
 			t.Errorf("%s: フォルダ1つで folder がある", b.Name)
 		}
 	}
@@ -168,5 +179,44 @@ func TestFolderHints(t *testing.T) {
 	os.WriteFile(filepath.Join(main, "notes", "x.md"), []byte("x\n"), 0o644)
 	if got, err := run(t, read, "path", "notes/x.md"); err != nil || got != "1\tx" {
 		t.Errorf("メインのサブフォルダ: %q, %v", got, err)
+	}
+}
+
+// run_command も folder でカレントを選び、省けばメイン。読むだけのフォルダでも動かせ、確認のカードにそう出す(2026-11-02)
+func TestRunCommandFolder(t *testing.T) {
+	main, notes, _ := twoFolders(t)
+	tl := RunCommandIn([]Folder{
+		{Name: "app", Path: main, Main: true, Writable: true},
+		{Name: "notes", Path: notes},
+	})
+	list := byOS("dir /b", "ls")
+
+	if got, err := run(t, tl, "command", list); err != nil || !strings.Contains(got, "app.go") {
+		t.Errorf("folder を省くとメイン: %q, %v", got, err)
+	}
+	if got, err := run(t, tl, "folder", "Notes", "command", list); err != nil || !strings.Contains(got, "memo.md") || strings.Contains(got, "app.go") {
+		t.Errorf("notes で動く: %q, %v", got, err)
+	}
+	if _, err := run(t, tl, "folder", "docs", "command", list); err == nil || !strings.Contains(err.Error(), "app・notes") {
+		t.Errorf("無いフォルダ: %v", err)
+	}
+
+	// 確認のカード:フォルダの名前(メインでも)。読むだけのフォルダならそう書く
+	pv, err := tl.(Confirmable).Preview(argsFor(t, tl, "folder", "notes", "command", "git log"))
+	if err != nil || pv.Folder != "notes" || pv.Note != "コマンド(読むだけのフォルダ)" || pv.Command != "git log" {
+		t.Errorf("読むだけのフォルダの確認: %+v, %v", pv, err)
+	}
+	pv, err = tl.(Confirmable).Preview(argsFor(t, tl, "command", "go test"))
+	if err != nil || pv.Folder != "app" || pv.Note != "コマンド" {
+		t.Errorf("メインの確認: %+v, %v", pv, err)
+	}
+
+	// 定義:複数なら folder(名前の enum)がある。1つなら RunCommand と同じ(folder を出さない)
+	if d := tl.Def(); !strings.Contains(string(d.Parameters), `"folder": {"type": "string", "enum": ["app","notes"]`) || !strings.Contains(d.Description, "a cd does not carry over to the next call") {
+		t.Errorf("複数のときの定義: %+v", d)
+	}
+	one := RunCommandIn(Single(main)).Def()
+	if want := RunCommand(main).Def(); string(one.Parameters) != string(want.Parameters) || one.Description != want.Description || strings.Contains(string(one.Parameters), "folder") {
+		t.Errorf("1つのときの定義が変わった: %+v", one)
 	}
 }

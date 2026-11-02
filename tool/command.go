@@ -41,23 +41,44 @@ const (
 
 // RunCommand は、作業フォルダ dir をカレントにしてコマンドを実行するツール。dir は絶対パス。
 func RunCommand(dir string) Tool {
-	return runCommand{dir: dir}
+	return RunCommandIn(Single(dir))
+}
+
+// RunCommandIn は、フォルダの組 folders のどれかをカレントにしてコマンドを実行するツール(ワークスペース。0035)。
+//
+// フォルダが複数なら、ファイルのツールと同じ引数 folder(名前の enum)で選ばせ、省けばメイン。1つなら定義は RunCommand と同じ。
+// 以前はメインだけで動かしていたが、書けるフォルダや git の印の付いたフォルダでビルドや Git を動かせず、
+// モデルが「cd B && git status」(メインの下の B を探す)や、cmd.exe の /d 無しの別のドライブへの cd で失敗した(2026-11-02、ユーザーの報告)。
+// コマンドはどこでも書けるので、カレントをメインに縛っても守りにはならない(守りは実行前の確認)。
+// 読むだけのフォルダでも動かせる(git log・git diff のような調べるだけのコマンドのため。2026-11-02、ユーザーと決めた)。
+// そのときは確認のカードに「読むだけのフォルダ」と出す。
+func RunCommandIn(folders []Folder) Tool {
+	return runCommand{folders: folderSet(folders)}
 }
 
 type runCommand struct {
-	dir   string
-	limit time.Duration // 時間の上限。0 なら commandTimeLimit(テストで短くするため)
+	folders folderSet
+	limit   time.Duration // 時間の上限。0 なら commandTimeLimit(テストで短くするため)
 }
 
-func (runCommand) Def() Def {
-	return Def{
+func (t runCommand) Def() Def {
+	where := "It already runs in the working directory; do not cd into it. "
+	if t.folders.multi() {
+		// フォルダが複数のときだけ言い換える(1つなら段1と同じ定義。4B のプロンプトを変えない)。
+		// 呼ぶたびに新しいシェルなので、前の呼び出しの cd は効かない。モデルが同じシェルが続くと思い込むと、
+		// 「cd /d B」のあとの folder なしの git commit がメインで動いてしまうので、それを書く。
+		// サブフォルダへの cd(cd frontend && npm test)まで禁じて読めないよう、cd を避けるのは「一覧のほかのフォルダ」に絞る
+		where = "Each call starts a new shell in the chosen folder (the main folder if folder is omitted); a cd does not carry over to the next call. " +
+			"To run in another folder of the list, pass folder instead of cd. "
+	}
+	return t.folders.withFolder(Def{
 		Name: "run_command",
 		Description: "Run a command line with the shell named in the Environment section, and return its output and exit code. " +
-			"It already runs in the working directory; do not cd into it. " +
+			where +
 			"Use it to build, test or run programs. Commands cannot read input and are stopped after 120 seconds. The user is asked to approve before it runs.",
 		Parameters: json.RawMessage(`{"type": "object", "properties": {"command": {"type": "string", ` +
 			`"description": "The command line to run."}}, "required": ["command"]}`),
-	}
+	})
 }
 
 func (t runCommand) TimeLimit() time.Duration {
@@ -68,32 +89,41 @@ func (t runCommand) TimeLimit() time.Duration {
 }
 
 func (t runCommand) Preview(args Args) (Preview, error) {
-	command, err := t.check(args)
+	command, f, err := t.check(args)
 	if err != nil {
 		return Preview{}, err
 	}
-	return Preview{Note: "コマンド", Command: command}, nil
+	note := "コマンド"
+	if !f.Writable {
+		// コマンドは読むだけのフォルダでも書けてしまう。守りは確認なので、カードで分かるようにする
+		note = "コマンド(読むだけのフォルダ)"
+	}
+	return Preview{Folder: t.folders.cardFolder(target{folder: f}), Note: note, Command: command}, nil
 }
 
-// check はコマンドと作業フォルダを確かめる。
-func (t runCommand) check(args Args) (string, error) {
+// check はコマンドと、カレントにするフォルダ(引数 folder。省けばメイン)を確かめる。
+func (t runCommand) check(args Args) (string, Folder, error) {
 	command := strings.TrimSpace(args.String("command"))
 	if command == "" {
-		return "", errors.New("command が空です")
+		return "", Folder{}, errors.New("command が空です")
 	}
-	if st, err := os.Stat(t.dir); err != nil || !st.IsDir() {
-		return "", fmt.Errorf("作業フォルダ %s がありません(消えたか、名前が変わった可能性があります)", t.dir)
+	f, err := t.folders.pick(strings.TrimSpace(args.String("folder")), "")
+	if err != nil {
+		return "", Folder{}, err
 	}
-	return command, nil
+	if st, err := os.Stat(f.Path); err != nil || !st.IsDir() {
+		return "", Folder{}, fmt.Errorf("作業フォルダ %s がありません(消えたか、名前が変わった可能性があります)", f.Path)
+	}
+	return command, f, nil
 }
 
 func (t runCommand) Run(ctx context.Context, args Args) (string, error) {
-	command, err := t.check(args)
+	command, f, err := t.check(args)
 	if err != nil {
 		return "", err
 	}
 	var out outputBuffer
-	cmd := shellCommand(t.dir, command)
+	cmd := shellCommand(f.Path, command)
 	cmd.Stdin = nil                     // 標準入力は空(NUL / /dev/null)。入力待ちで止まらないように
 	cmd.Stdout, cmd.Stderr = &out, &out // 同じ書き先にすると、標準出力とエラー出力が出た順に1つにまとまる
 	cmd.WaitDelay = waitDelay

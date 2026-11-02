@@ -6,7 +6,9 @@ export const TOOL_LABELS: Record<string, string> = {
   fetch_url: "URL のページを読む",
   list_files: "作業フォルダの中のファイルを並べる",
   read_file: "作業フォルダの中のファイルを読む",
+  search_files: "作業フォルダの中のファイルから、合う行を探す",
   write_file: "作業フォルダの中のファイルを丸ごと書く",
   edit_file: "作業フォルダの中のファイルの一部を置き換える",
+  update_plan: "作業の予定をチェックリストとして書く",
   run_command: "作業フォルダでコマンドを実行する",
 };

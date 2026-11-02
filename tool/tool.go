@@ -90,6 +90,12 @@ func (a Args) Int(name string, def int) int {
 	return def
 }
 
+// Bool は真偽の引数を返す。省略されていたら false。
+func (a Args) Bool(name string) bool {
+	b, _ := a[name].(bool)
+	return b
+}
+
 // Builtin は aibow に組み込みのツール。どれも何も書き換えない。
 func Builtin() []Tool {
 	return []Tool{currentTime{}, calculator{}}

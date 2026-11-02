@@ -21,7 +21,7 @@ export interface Preview {
     "path": string;
 
     /**
-     * Folder は対象のフォルダの名前(ワークスペースのフォルダが複数で、メイン以外のときだけ。0035)
+     * Folder は対象のフォルダの名前(ワークスペースのフォルダが複数のとき。メインでも出す。0035)
      */
     "folder"?: string;
 

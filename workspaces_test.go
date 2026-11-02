@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -229,10 +230,48 @@ func TestWorkspaceFolders(t *testing.T) {
 		if d := tool.ArgTypesFor(call.tools, "read_file"); d["folder"] != "string" {
 			t.Errorf("MCP %v: read_file に folder が無い: %v", viaMCP, d)
 		}
-		for _, want := range []string{"Folders (pass the folder argument; omit it for the main folder):\n- app (main, writable): ", "\n- notes (read-only): " + notes + "\n", "Commands already run inside the main folder \"app\""} {
+		for _, want := range []string{"Folders (pass the folder argument; omit it for the main folder):\n- app (main, writable): ", "\n- notes (read-only): " + notes + "\n", "Each command starts in the main folder \"app\" unless you pass folder; a cd does not carry over to the next command. To run in another folder of the list, pass folder instead of cd."} {
 			if !strings.Contains(call.prompt, want) {
 				t.Errorf("MCP %v: 環境の説明に %q が無い:\n%s", viaMCP, want, call.prompt)
 			}
+		}
+	}
+}
+
+// run_command も folder でフォルダを選んで動く。読むだけのフォルダでも動かせ、確認のカードにフォルダの名前と「読むだけのフォルダ」が出る。
+// 以前はメインでしか動かず、git の印の付いたほかのフォルダで Git を使えなかった(2026-11-02、ユーザーの報告)
+func TestWorkspaceRunCommandFolder(t *testing.T) {
+	list := "ls"
+	if runtime.GOOS == "windows" {
+		list = "dir /b"
+	}
+	for _, viaMCP := range []bool{false, true} {
+		g := &fakeGen{replies: []fakeReply{
+			{toolCalls: []format.ToolCall{toolCall("run_command", "folder", "notes", "command", list)}},
+			{content: "memo.md がありました"},
+		}}
+		cs, c, _, _ := newFoldersConversation(t, g)
+		if viaMCP {
+			l := client.NewLocal(client.Options{Version: "test"})
+			t.Cleanup(l.Close)
+			cs.SetLocalTools(l)
+		}
+		var req *ConfirmRequest
+		evs := sendAnswering(cs, context.Background(), c, "notes の中を見て", func(q *ConfirmRequest) bool {
+			req = q
+			return cs.Confirm(ctx, c.ID, q.ID, true, "") == nil
+		})
+		if errs := errorsOf(evs); len(errs) != 0 {
+			t.Fatalf("MCP %v: エラー: %v", viaMCP, errs)
+		}
+		if req == nil || req.Preview.Folder != "notes" || req.Preview.Note != "コマンド(読むだけのフォルダ)" {
+			t.Errorf("MCP %v: 確認: %+v", viaMCP, req)
+		}
+		if rs := toolResults(t, cs, c); len(rs) != 1 || !strings.Contains(rs[0].Content, "memo.md") {
+			t.Errorf("MCP %v: 結果: %+v", viaMCP, rs)
+		}
+		if d := tool.ArgTypesFor(g.calls[0].tools, "run_command"); d["folder"] != "string" {
+			t.Errorf("MCP %v: run_command に folder が無い: %v", viaMCP, d)
 		}
 	}
 }

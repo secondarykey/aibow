@@ -40,9 +40,9 @@ func TestWorkDirAddsFileToolsAndEnvironment(t *testing.T) {
 		wantShell bool
 	}{
 		{"作業フォルダなし", "", func() {}, []string{"get_current_time", "calculate"}, false, false},
-		{"作業フォルダあり", dir, func() {}, []string{"get_current_time", "calculate", "list_files", "read_file", "write_file", "edit_file", "run_command"}, true, true},
+		{"作業フォルダあり", dir, func() {}, []string{"get_current_time", "calculate", "list_files", "read_file", "search_files", "write_file", "edit_file", "update_plan", "run_command"}, true, true},
 		{"run_command を使わない", dir, func() { prefs.SetToolPolicy("run_command", ToolOff) },
-			[]string{"get_current_time", "calculate", "list_files", "read_file", "write_file", "edit_file"}, true, false},
+			[]string{"get_current_time", "calculate", "list_files", "read_file", "search_files", "write_file", "edit_file", "update_plan"}, true, false},
 		{"組み込みのツールを使わない", dir, func() { prefs.SetBuiltinPolicy(ToolOff) }, nil, false, false},
 	}
 	for i, s := range steps {
@@ -80,7 +80,7 @@ func TestEnvironmentPlacement(t *testing.T) {
 	set.Workspace = workspaceFor(t, cs, work)
 	msgs := promptMessages(cs.systemPrompt(set), "- 要約", nil)
 	want := testDefaults.System + "\n\n# Environment\nWorking directory: " + work + "\nOS: " + runtime.GOOS +
-		"\nShell for run_command: " + tool.ShellNote + "\nUse paths relative to the working directory.\n" +
+		"\nShell for run_command: " + tool.ShellNoteFor(true) + "\nUse paths relative to the working directory.\n" +
 		"Commands already run inside the working directory, so do not cd into it. \"example\" refers to the working directory itself.\n\n" +
 		summaryHeading + "\n- 要約"
 	if len(msgs) != 1 || msgs[0].Content != want {

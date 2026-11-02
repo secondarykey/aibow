@@ -18,6 +18,11 @@ func byOS(windows, sh string) string {
 	return sh
 }
 
+// cmdIn は、作業フォルダ dir 1つの run_command
+func cmdIn(dir string) runCommand {
+	return runCommand{folders: folderSet(Single(dir))}
+}
+
 func runCmd(t *testing.T, tl runCommand, command string) (string, error) {
 	t.Helper()
 	return tl.Run(context.Background(), Args{"command": command})
@@ -25,7 +30,7 @@ func runCmd(t *testing.T, tl runCommand, command string) (string, error) {
 
 func TestRunCommand(t *testing.T) {
 	dir := workDir(t, map[string]string{"a.txt": "hello\n"})
-	tl := runCommand{dir: dir}
+	tl := cmdIn(dir)
 
 	// 作業フォルダがカレント。標準出力とエラー出力はまとめ、終了コードを付ける
 	got, err := runCmd(t, tl, byOS("type a.txt", "cat a.txt"))
@@ -60,14 +65,14 @@ func TestRunCommand(t *testing.T) {
 	if _, err := tl.Preview(Args{"command": " "}); err == nil {
 		t.Error("空のコマンドはエラーのはず")
 	}
-	if _, err := (runCommand{dir: filepath.Join(dir, "gone")}).Preview(Args{"command": "echo"}); err == nil {
+	if _, err := (cmdIn(filepath.Join(dir, "gone"))).Preview(Args{"command": "echo"}); err == nil {
 		t.Error("作業フォルダが無ければエラーのはず")
 	}
 }
 
 // 長い出力は先頭と末尾を残して間を切る
 func TestRunCommandLongOutput(t *testing.T) {
-	tl := runCommand{dir: workDir(t, nil)}
+	tl := cmdIn(workDir(t, nil))
 	got, err := runCmd(t, tl, byOS(
 		"for /l %i in (1,1,3000) do @echo line %i",
 		`i=1; while [ $i -le 3000 ]; do echo line $i; i=$((i+1)); done`))
@@ -83,7 +88,7 @@ func TestRunCommandLongOutput(t *testing.T) {
 // 止めきれないと、2秒後に子プロセスが late.txt を作る
 func TestRunCommandTimeoutKillsChildren(t *testing.T) {
 	dir := workDir(t, nil)
-	tl := runCommand{dir: dir, limit: time.Second}
+	tl := runCommand{folders: folderSet(Single(dir)), limit: time.Second}
 	command := byOS(
 		`start /b cmd /c "ping -n 3 127.0.0.1 >nul & echo late> late.txt" & echo started & ping -n 30 127.0.0.1 >nul`,
 		`(sleep 2; echo late > late.txt) & echo started; sleep 30`)
@@ -105,7 +110,7 @@ func TestRunCommandTimeoutKillsChildren(t *testing.T) {
 
 // 停止(ctx を止める)でも止まり、その旨を返す
 func TestRunCommandStop(t *testing.T) {
-	tl := runCommand{dir: workDir(t, nil)}
+	tl := cmdIn(workDir(t, nil))
 	ctx, cancel := context.WithCancel(context.Background())
 	time.AfterFunc(500*time.Millisecond, cancel)
 	start := time.Now()

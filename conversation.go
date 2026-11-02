@@ -906,8 +906,9 @@ func (cs *Conversations) environment(set ConversationSettings) string {
 		return ""
 	}
 	command := tool.Find(tools, "run_command") != nil
+	shell := tool.ShellNoteFor(tool.Find(tools, "search_files") != nil) // search_files を「使わない」にしたら、今までの findstr の案内のまま
 	if folders := cs.toolFolders(set); len(folders) > 1 {
-		return foldersEnvironment(folders, command)
+		return foldersEnvironment(folders, command, shell)
 	}
 	var b strings.Builder
 	b.WriteString("# Environment\n")
@@ -921,7 +922,7 @@ func (cs *Conversations) environment(set ConversationSettings) string {
 	}
 	b.WriteString("OS: " + runtime.GOOS + "\n")
 	if command {
-		b.WriteString("Shell for run_command: " + tool.ShellNote + "\n")
+		b.WriteString("Shell for run_command: " + shell + "\n")
 	}
 	b.WriteString("Use paths relative to the working directory.\n")
 	// ユーザーが「ytscroll をコミットして」のようにフォルダの名前で呼ぶと、4B は ytscroll を作業フォルダの下のフォルダだと思い、
@@ -936,9 +937,10 @@ func (cs *Conversations) environment(set ConversationSettings) string {
 // foldersEnvironment は、ワークスペースのフォルダが複数のときの環境の説明(0035 の段2)。
 //
 // フォルダを名前・印(メイン・書ける / 読むだけ・リポジトリ)・パスで並べ、ファイルのツールの引数 folder で選ぶこと、省けばメインになることを書く。
+// run_command も引数 folder でフォルダを選び、省けばメインで動く(読むだけのフォルダでも動かせる)。
 // 読むだけのフォルダもコマンドからは書けてしまうが、守りは確認なので、ここに書くのは「read-only」の印まで。
 // フォルダが1つのときは今までの形のまま(environment)。4B のプロンプトを変えないため。
-func foldersEnvironment(folders []tool.Folder, command bool) string {
+func foldersEnvironment(folders []tool.Folder, command bool, shell string) string {
 	var b strings.Builder
 	b.WriteString("# Environment\nFolders (pass the folder argument; omit it for the main folder):\n")
 	for _, f := range folders {
@@ -946,12 +948,17 @@ func foldersEnvironment(folders []tool.Folder, command bool) string {
 	}
 	b.WriteString("OS: " + runtime.GOOS + "\n")
 	if command {
-		b.WriteString("Shell for run_command: " + tool.ShellNote + "\n")
+		b.WriteString("Shell for run_command: " + shell + "\n")
 	}
 	b.WriteString("Use paths relative to the folder.\n")
 	main := tool.MainFolder(folders).Name
 	if command {
-		b.WriteString("Commands already run inside the main folder \"" + main + "\", so do not cd into it. ")
+		// run_command も folder で選ぶ(2026-11-02)。cd でほかのフォルダに移ろうとすると、メインの下を探したり、
+		// cmd.exe では /d が無いと別のドライブに移れなかったりするので、cd ではなく folder を使うよう書く。
+		// 呼ぶたびに新しいシェルなので cd は次に持ち越されないことも書く(同じシェルが続くと思い込むと、メインで動いてしまう)。
+		// サブフォルダへの cd まで禁じて読めないよう、「一覧のほかのフォルダ」に絞る
+		b.WriteString("Each command starts in the main folder \"" + main + "\" unless you pass folder; a cd does not carry over to the next command. " +
+			"To run in another folder of the list, pass folder instead of cd. ")
 	}
 	b.WriteString("Each folder name refers to that folder itself, not to a subfolder.")
 	return b.String()

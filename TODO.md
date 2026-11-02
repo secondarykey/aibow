@@ -97,7 +97,7 @@ aibow 全体の進み具合(入口)。ルールと全体の構成は `AGENTS.md`
 | 🔧 | ワークスペース(作業フォルダを名前付きのフォルダの組にする。複数のフォルダ・読むだけ / 書く。会話の作業フォルダを PC ごとにする、も含む) | [0035-workspaces.md](_docs/features/0035-workspaces.md) |
 | ⬜ | Web で検索する(検索の MCP のサーバー。ページを読むのは組み込みの fetch。0036) | [検討メモ](_docs/backlog.md) |
 | 🔧 | 組み込みの fetch(MCP のサーバーなしで URL を読む。aibow-server では管理者が有効にしたときだけ) | [0036-fetch.md](_docs/features/0036-fetch.md) |
-| ⬜ | コーディングエージェント向けの組み込みのツールを足す(ファイルの中を探す・名前で探す・作業の予定。git はあと) | [0037-coding-tools.md](_docs/features/0037-coding-tools.md) |
+| 🔧 | コーディングエージェント向けの組み込みのツールを足す(ファイルの中を探す・名前で探す・作業の予定。git はあと) | [0037-coding-tools.md](_docs/features/0037-coding-tools.md) |
 | ⬜ | コーディングエージェントとして洗練する(最後のほうでやる) | [検討メモ](_docs/backlog.md) |
 | ✅ | aibow-server がモデルを読み直している間の一覧 | [0016-browser.md](_docs/features/0016-browser.md) の 9-3 |
 | ⬜ | KV キャッシュの使い回しを良くする | `_docs/tuning.md` の「Cline からつないで比べる」「ファイルを読むツール」・[検討メモ](_docs/backlog.md) |

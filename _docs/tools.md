@@ -19,7 +19,10 @@
 | `tool/time.go` / `tool/calc.go` | 組み込みのツール `get_current_time` / `calculate` |
 | `tool/fetch.go` / `tool/fetchhtml.go` | URL を読むツール `fetch_url`(取りに行く・アドレスを確かめる・文字コード・切り方 / 本文の取り出しと Markdown。0036)。実行前に確認する |
 | `tool/files.go` | 作業フォルダのツールの共通部分(`Files`・`os.Root` で開く・パスを作業フォルダからの相対にする) |
-| `tool/list.go` / `tool/read.go` | 作業フォルダのツール `list_files` / `read_file` |
+| `tool/list.go` / `tool/read.go` | 作業フォルダのツール `list_files`(浅い順にたどる `walk` もここ)/ `read_file` |
+| `tool/search.go` / `tool/glob.go` | ファイルの中を探す `search_files` / 名前の形(glob。`**` を自分で合わせる)。`list_files` の `pattern` と `search_files` の `glob` で使う(0037) |
+| `tool/plan.go` | 作業の予定を書く `update_plan`(0037)と、履歴の呼び出しから予定を読む `PlanFromCall` |
+| `plan.go` | compact で渡さなくなった部分の最後の予定を、システムの文の最後に残す(`lastPlan`・`planNote`・`withPlan`。0037) |
 | `tool/write.go` | 書き換えるツール `write_file`(丸ごと書く)/ `edit_file`(1か所だけ置き換える)。どちらも実行前に確認する |
 | `tool/command.go` | コマンドのツール `run_command`(時間の上限 120 秒・出力の切り方・結果の書き方)。実行前に確認する |
 | `tool/shell_windows.go` / `tool/shell_unix.go` | どのシェルで動かすか(cmd.exe / `/bin/sh`) |
@@ -257,6 +260,11 @@ tool ── 何も知らない
   - **500 件か 8,000 文字の早いほうで切る**。件数だけだとパスの長い深いファイルで大きくなりすぎる(aibow のリポジトリで 500 件・約 43,000 文字になった)
   - **浅い順に並べる**(直下を全部 → 1つ下を全部 → …。それぞれの中は名前の順)。切ったときも全体の形が残るように。奥までたどる順だと、最初の大きなフォルダで上限に達する
   - **隠しフォルダ(`.` で始まる)は名前だけ出して中に入らない**(「(中は省略)」と書く)。path に指定すれば中を並べる。`.gitignore` は読まない
+  - **`pattern`(0037)を付けると、名前の形に合うファイルだけを並べる**(フォルダは並べない。たどり方・上限・順は同じ)。`/` を含まない形(`*.go`)は名前だけと、
+    含む形(`**/*_test.go`・`cmd/**/main.go`)は作業フォルダからの相対パスと比べる。`**` は0段以上(`path.Match` に無いので `glob.go` で自分で合わせる)。`\` は区切りに直さず、記号をそのまま合わせる印(`*\.go` は `main.go` に合う)。新しいツールにしないのは、小さなモデルのプロンプトを増やさないため
+- `search_files`(0037):正規表現(Go の RE2)に合う行を `パス:行番号: 行` で返す。たどり方は `list_files` と同じ `walk`。
+  100 件か 8,000 文字で切り、数えるのは最後まで続けて「一致は全部で N 件(M ファイル)」を書く。1 行は 300 文字で切る。
+  NUL を含む・UTF-8 でない・1MB を超えるファイルは黙って飛ばし、数だけを最後に書く。読むだけなので確認しない
 - `read_file`: `行番号 + タブ + 行`。200 行か 8,000 文字の早いほうで切り、「続きは offset=N で読めます」を書き添える。
   1,000 文字を超える行は 1,000 文字ごとに分けて、別の行として番号を付ける(`splitLong`。0025。長い行の続きも offset で読めるように。番号はエディタの行番号とずれる)。
   NUL を含むもの・UTF-8 でないもの・10MB を超えるものはエラー。CRLF の CR は見せない
@@ -269,12 +277,14 @@ tool ── 何も知らない
 # Environment
 Working directory: D:\Work\example
 OS: windows
-Shell for run_command: cmd.exe (use dir, type, findstr; ls, cat and grep are not available)
+Shell for run_command: cmd.exe (use dir and type; ls, cat and grep are not available. To search inside files, use search_files instead of findstr)
 Use paths relative to the working directory.
 Commands already run inside the working directory, so do not cd into it. "example" refers to the working directory itself.
 ```
 
-書式に関係ない情報なので、書式ではなく会話の仕組みの側で組み立てる。シェルの行は OS ごとに `tool.ShellNote`(Linux なら `/bin/sh`)。
+書式に関係ない情報なので、書式ではなく会話の仕組みの側で組み立てる。シェルの行は OS ごとに `tool.ShellNoteFor`(Linux なら `/bin/sh`)。
+`search_files` を使う会話では、Windows の行で findstr を案内せず `search_files` に向ける(0037 の決定事項 8。4B が `run_command` で findstr を呼び、確認が挟まるのを防ぐ)。
+`search_files` を「使わない」にした会話では、前の行(`use dir, type, findstr; …`)のまま。aibow-mcp の instructions は、フォルダがあればいつも `search_files` を出すので、いつも新しい行
 
 ワークスペースのフォルダが複数なら、フォルダを名前・印・パスで並べる(`foldersEnvironment`。印は main / writable か read-only / git。git は `.git` があるか):
 
@@ -284,14 +294,14 @@ Folders (pass the folder argument; omit it for the main folder):
 - aibow (main, writable, git): D:\Go\Projects\aibow
 - notes (read-only): D:\Docs\notes
 OS: windows
-Shell for run_command: cmd.exe (use dir, type, findstr; ls, cat and grep are not available)
+Shell for run_command: cmd.exe (use dir and type; ls, cat and grep are not available. To search inside files, use search_files instead of findstr)
 Use paths relative to the folder.
-Commands already run inside the main folder "aibow", so do not cd into it. Each folder name refers to that folder itself, not to a subfolder.
+Each command starts in the main folder "aibow" unless you pass folder; a cd does not carry over to the next command. To run in another folder of the list, pass folder instead of cd. Each folder name refers to that folder itself, not to a subfolder.
 ```
 
 ### フォルダが複数のワークスペース(0035 の段2)
 
-- ファイルのツール(`list_files`・`read_file`・`write_file`・`edit_file`)に引数 `folder`(省略可。名前を JSON Schema の `enum` で並べる)を足す。省けばメイン。
+- ファイルのツール(`list_files`・`read_file`・`search_files`・`write_file`・`edit_file`)に引数 `folder`(省略可。名前を JSON Schema の `enum` で並べる)を足す。省けばメイン。
   名前は大文字と小文字を区別しない(ワークスペースの中でも、大文字と小文字だけの違いは重なりとして断る)。
   パスの先頭に名前を付ける形(`notes/a.md`)は、メインの中のサブフォルダと区別できないので採らない
 - **フォルダが1つなら `folder` を出さない**(定義は段1・`tool.Files` と同じ。4B のプロンプトを増やさない。`withFolder`)
@@ -301,9 +311,17 @@ Commands already run inside the main folder "aibow", so do not cd into it. Each 
 - 絶対パスは、どのフォルダの中かを見て振り分ける(入れ子なら深いほう)。`folder` を書いたのにそのフォルダの外を指していれば「食い違い」のエラー
 - **読むだけのフォルダ**には `write_file`・`edit_file` を向けられない。`Preview` の前(`filePath`)で「<名前> は読むだけのフォルダなので、書き換えられません。ほかのフォルダに写しを作らず、書き換えられないことをユーザーに伝えて、ここで止まってください」を返すので、確認のカードは出ない
   (止まるよう促すのは、4B が書けるフォルダに写しを作ることがあったため。[tuning.md](tuning.md))
-- `run_command` はメインをカレントにする。読むだけのフォルダもコマンドからは書けてしまうので、守りは今までどおり確認(環境の説明に書くのは read-only の印まで)
+- `run_command` にも引数 `folder` を付け、選んだフォルダをカレントにする(省けばメイン。`tool.RunCommandIn`。フォルダが1つなら定義は今までと同じ)。
+  以前はメインだけで動かしていたが、書けるフォルダや git の印の付いたフォルダでビルドや Git を動かせず、モデルが `cd B && git status`(メインの下の B を探す)や、
+  cmd.exe の `/d` 無しの別のドライブへの `cd`(カレントが変わらない)で失敗した(2026-11-02、ユーザーの報告。0035)。コマンドはどこでも書けるので、カレントをメインに縛っても守りにはならない
+- **読むだけのフォルダでも `run_command` は動かせる**(`git log`・`git diff` のような調べるだけのコマンドのため。2026-11-02、ユーザーと決めた)。
+  コマンドからは書けてしまうので、守りは今までどおり確認。確認のカードの「何をするか」を「コマンド(読むだけのフォルダ)」にする(環境の説明に書くのは read-only の印まで)
 - `${workdir}` の MCP のサーバーはメインのパスで起動する(ほかのフォルダを渡す書き方は作らない)
-- 確認のカードには、メイン以外のフォルダのとき、そのフォルダの名前を出す(`tool.Preview.Folder`)
+- **`run_command` は呼ぶたびに新しいシェル**(`cmd.Dir` にフォルダを決めて起動し、終われば閉じる)。`cd` はその1回の中だけで、次の呼び出しに持ち越されない。
+  モデルが同じシェルが続くと思い込むと、「`cd /d B`」のあとの `folder` なしの `git commit` がメインで動いてしまうので、ツールの説明と環境の説明にそれを書く。
+  `cd` を避けるのは「一覧のほかのフォルダ」に絞り、サブフォルダへの `cd`(`cd frontend && npm test`)は禁じない
+- 確認のカードには、**フォルダが複数なら、メインでもそのフォルダの名前を出す**(`tool.Preview.Folder`。ファイルのツールも `run_command` も。フォルダが1つなら出さない)。
+  以前はメイン以外のときだけ出していたが、それだと上の取り違えでメインで動くことにカードで気づけないので、そろえた(2026-11-02、ユーザーと決めた)
 - aibow の中の MCP サーバー(`mcp/client` の `Local`)は、フォルダの組ごと(名前・パス・メイン・書けるかの組。`folderKey`)に1つ。設定の画面で組を変えたら、次の送信から新しい組のサーバーを使う
 
 ### URL を読むツール(0036)
@@ -324,9 +342,18 @@ Commands already run inside the main folder "aibow", so do not cd into it. Each 
 - 扱いの既定:`tool.Confirmable` なので確認する(確認のカードにホストと URL。`tool.Preview.URL`)。aibow-server では管理者が `server-tools.json` でツールごとに有効にするまで禁止(`ToolPrefs.banned` の `optIn`。組み込みのグループの扱いでは有効にならない)
 - ログ:取りに行った URL・状態・受け取ったバイト数・本文と渡した文字数・秒数を Info、断ったアドレスを Warn(誰の・どの会話かは `ui` の `logTool` が出す)
 
+### 作業の予定(update_plan。0037 の段3)
+
+- `update_plan`:モデルが作業の予定をチェックリストとして書く(Claude Code の TodoWrite に当たる)。引数 `items` は予定の全部(項目ごとに `text` と `status`(`pending` / `in_progress` / `done`))で、毎回まるごと書き直す。
+  `in_progress` は1つまで(2つ以上はエラー)。何も実行せず、結果は「予定を覚えました(N 件中 M 件済み)」だけ(予定は呼び出しとして履歴にあるので繰り返さない)
+- 作業フォルダのある会話だけで出す(フォルダのツールと `run_command` の間。`localTools` と `mcp/server` の `Options.Tools`)。aibow-server の資料のフォルダ・aibow-mcp でも出る。確認しない
+- 予定は別に保存しない。「今の予定」は履歴の最後の、成功した `update_plan` の呼び出しの引数(`lastPlan`)。
+  compact で呼び出しを含む発言をモデルに渡さなくなったら、渡さない部分の最後の予定を、システムの文の最後(要約の後ろ / truncate なら残した発言の前)に英語で足す(`passFrom` → `withPlan`。[compact.md](compact.md))
+- 画面では、`update_plan` のカードを引数と結果ではなくチェックリストで出す(`PlanCard.tsx`。済みは打ち消し線、取りかかっているものは太字)。エラーの呼び出しはふつうのカード
+
 ### コマンドのツール(0005 の 3-3)
 
-- `run_command`: 作業フォルダをカレントにしてシェルで実行し、出力と終了コードを返す。実行前に確認する(確認のカードにはコマンドを出す)
+- `run_command`: 作業フォルダ(ワークスペースのフォルダが複数なら、引数 `folder` で選んだフォルダ。省けばメイン)をカレントにしてシェルで実行し、出力と終了コードを返す。実行前に確認する(確認のカードにはコマンドを出す)
 - コマンドは何でもできるので、ファイルのツールの `os.Root` のように仕組みでは縛れない。実行前の確認が唯一の守り
 - **Windows**:`cmd.exe /d /v:on /s /c "chcp 65001 >nul && cmd.exe /d /s /c "!AIBOW_COMMAND!""`(コマンドは環境変数 `AIBOW_COMMAND`)。窓は出さない(`CREATE_NO_WINDOW`)
   - 同じ cmd.exe の中で `chcp 65001` しても組み込みのコマンドは Shift_JIS のままなので、chcp の後に起動した cmd.exe で動かす(cmd.exe 自身のメッセージは英語になる)
