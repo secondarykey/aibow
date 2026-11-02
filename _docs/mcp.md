@@ -37,6 +37,8 @@ aibow ── tools/call ──────→ 結果(content)が返る → ツ�
 | `mcp/client/log.go` | 送受信したメッセージとサーバーのエラー出力を、1行ずつログに出す |
 | `mcp/client/client_test.go` | テスト。SDK でテスト用のサーバーを作り、プロセスを起動せずにつなぐ(`NewInMemoryTransports`)。本物の子プロセスは、テストの実行ファイル自身をサーバーとして起動して確かめる |
 | `settingsfile.go` | 設定ファイル `settings.json` の読み込み(`mcpServers`) |
+| `mcpfile.go` | 画面から足した MCP のサーバー `mcp.json` の読み書き(`MCPFile`)・settings.json との合わせ方(`MergeMCPServers`)・画面で変えたものを `Manager` に流す係(`MCPConfig`)・貼った JSON の読み取り(0034) |
+| `ui/mcpedit.go` | 設定の画面の「MCP」から呼ぶメソッド(一覧・足す・変える・消す・試す・JSON を読み取る。デスクトップのアプリだけ) |
 | `toolprefs.go` | ツールの扱い(`ToolPolicy`: 使わない / 確認する / 確認しない、会話の上書きだけの「使う」)と、その PC の既定 `tools.json`(`ToolPrefs`) |
 | `agent.go` | `RemoteTools`(会話の仕組みから見た MCP の口)・送信の前にサーバーを起動する(`startRemote`)・組み込みのツールの後ろに並べる(`toolsFor`)・ツールの扱いを決める(`toolPolicy` / `policyOf` / `needsConfirm`)・会話の設定の画面に出す扱い(`ToolStates`)・ツールの一覧を覚える(`rememberTools`) |
 | `internal/proc/` | 子プロセスまでまとめて止める仕組み(`run_command` と共有) |
@@ -53,11 +55,45 @@ aibow ── tools/call ──────→ 結果(content)が返る → ツ�
 |---|---|---|---|
 | DB(`app_settings` / `conversations.settings`) | aibow | 会話と、画面で変える設定。会話ごとに使う MCP のサーバー・会話だけのツールの扱いの上書きもここ | サーバーへ |
 | `settings.json`(`%APPDATA%\aibow\settings.json`、`AIBOW_SETTINGS`) | 人が手で | その PC でどう起動するか。`mcpServers` と、生成を頼む aibow-server のつなぎ先 `serverUrl`(0015。[usage.md](usage.md) の「画面のアプリを aibow-server につなぐ」) | 手元に残る |
+| `mcp.json`(`%APPDATA%\aibow\mcp.json`、`AIBOW_MCP`) | aibow(設定の画面の「MCP」で足したもの) | 画面から足した MCP のサーバー。形は settings.json と同じ `{"mcpServers": {...}}`(0034。下の「画面から足す」) | 手元に残る |
 | `tools.json`(`%APPDATA%\aibow\tools.json`、`AIBOW_TOOLS`) | aibow(画面で変えたもの) | ツールの扱いの PC の既定と、サーバーを起動したときに見えたツールの一覧 | 手元に残る |
 | `model-places.json`(`%APPDATA%\aibow\model-places.json`、`AIBOW_MODEL_PLACES`) | aibow(画面で変えたもの) | 画面で足したモデルの置き場所(アプリの中で動かすとき。0015 の 24) | 手元に残る |
 | `window.json`(`%APPDATA%\aibow\window.json`、`AIBOW_WINDOW`) | aibow(閉じるとき) | ウィンドウの位置・大きさ・最大化([ui.md](ui.md) の「次の起動で戻すもの」) | 手元に残る |
 
 MCP のサーバーの起動のしかた(`npx` のパスなど)は「その PC の設定」で、会話のデータとは性格が違うので、DB ではなくファイルにしています。
+
+### 画面から足す(mcp.json。0034)
+
+MCP のサーバーは、手で書く `settings.json` のほかに、設定の画面の「MCP」のタブ(アプリだけ)から足せます。画面から足したものは aibow が `mcp.json` に書きます。
+
+- **手で書くファイルと aibow が書くファイルを分ける**:手で書いた JSON を aibow が書き戻すと、並びや書き方を壊す。`tools.json`・`connection.json` と同じ考え方。
+  画面から変えられるのは `mcp.json` の分だけで、settings.json のサーバーは一覧に「settings.json」の印を付けて出す(試しにつなぐだけできる)
+- 起動したときに両方を読み、合わせたものを `Manager` に渡す(`MCPConfig.Servers`)。同じ名前は **settings.json のほうを使い**、お知らせで伝える(手で書いた値が画面の値より強い。0019 と同じ線)。
+  画面から足すときは、settings.json と同じ名前を断る
+- 保存の前に、settings.json の分と合わせた全体を `CheckMCPServers` で確かめる(ツールの名前で重なる・url に `${workdir}` など)。エラーなら書かない
+- `mcp.json` が壊れていたら、お知らせで伝えて `mcp.json` のサーバーを使わずに起動し、画面からは保存させない(壊れたファイルを上書きしない)
+- 書き方は `tools.json` と同じ(一時ファイルに書いてから名前を変える)。headers・env の値は平文で書かれる(settings.json と同じ)。画面には値を返さず(キーだけ)、空のまま保存したら前の値のまま
+- 名前は変えられない(会話の設定の `mcp_servers` と `tools.json` の扱いのキーのため)。消しても `tools.json` の扱いと `seen` は残す
+- 足したサーバーは、settings.json に足したときと同じく `NoteServers` を通す(新しい会話で最初から使わない)
+
+**動いている仕組みに設定の変更を流す**:保存したらすぐ効く(起動し直さない)。`Manager.Update` が設定を差し替え、何が変わったら作り直すかを次のように決める。
+
+| 変わり方 | すること |
+|---|---|
+| 足した | 何もしない(次にそのサーバーを使う送信で起動する) |
+| 変えた・消した | 動いていれば、すぐ止める。変えたものは次に使う送信で、新しい設定で起動する |
+| 変わらない | 動いたまま(`ServerConfig.Equal` で比べる) |
+
+- 止めたサーバーのツールを実行中だった送信には、ツールのエラー(「設定が変わったので止めました」)が返る。SDK の `ClientSession.Close` は実行中の呼び出しが終わるのを待つので、
+  サーバーごとに打ち切り用の ctx(`context.WithCancelCause`)を持たせ、止める前に実行中の `tools/call` を打ち切る(`remoteTool.stopped`)
+- 起動している間に設定が変わったら、つながったあとで捨てる(古い設定のサーバーを動いている一覧に入れない。`startAndKeep`)
+- 名前の順は毎回同じ(名前で並べる)。ツールの並びが変わると KV キャッシュが効かなくなるため。足したり消したりで並びが変わるのは仕方ない
+- `Manager` はサーバーが1つも無くても作る(画面から最初の1つを足せるように)
+- 「試しにつなぐ」は、保存する前の設定で一時的に起動して一覧だけ受け取り、止める(`Manager.TryTools`。`ListTools` と同じ動きで、設定を受け取る形)。何も書かない。
+  同じ設定のまま保存したら、そのとき受け取った一覧を `tools.json` の `known` に覚える
+- 貼った JSON(`MCPConfig.ParseMCPJSON`)は、`{"mcpServers": {...}}`・`{"名前": {...}}`・`{"command": ...}` だけ、の3つの形と、外側の `{}` を付けずに写したものを読む。
+  ほかのツールが足した項目(`disabled`・`autoApprove` など)は捨てる。今ある名前と同じなら足さずに理由を返す(上書きしない)
+- 画面の部品(`McpEditor.tsx`)は、呼ぶ口(一覧・足す・変える・消す・試す・読み取る)を外から受け取る。aibow-server(`server.json`)の分は、あとで口だけ替えて使う見込み
 
 - 形は多くのツールで使われている `mcpServers` に合わせています(`command` / `args` / `env`、`url` / `headers`)。`type` は書かなくてよく(`command` か `url` で決まる)、書いてあれば確かめます。
   古い HTTP+SSE のトランスポート(`type: sse`。2025-03-26 版から非推奨)には対応しません。OAuth(ブラウザでのログイン)には、まだ対応していません(TODO.md のロードマップの外)

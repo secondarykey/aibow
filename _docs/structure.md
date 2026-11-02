@@ -42,6 +42,7 @@ Ollama が保存したファイルを aibow が直接読むので、Ollama は�
 | `log/` | aibow のログ。aibow のコードはここからログを出す。aibow をライブラリとして使う人は `log.SetLogger` で aibow のログの出し先(`*slog.Logger`)を決められる(決めなければ `slog.Default()`) |
 | `settingsfile.go` | 設定ファイル `settings.json`(手で書く設定。MCP のサーバーと aibow-server のつなぎ先)の読み込み |
 | `toolprefs.go` | ツールの扱い(使わない / 確認する / 確認しない)と、その PC の既定 `tools.json` の読み書き |
+| `mcpfile.go` | 設定の画面の「MCP」から足した MCP のサーバー `mcp.json` の読み書きと、`settings.json` の分との合わせ方 |
 | `connectionfile.go` | 設定の画面の「サーバー」で決めた aibow-server のつなぎ先 `connection.json` の読み書き(アプリ用のトークンは `internal/secret` で包む。0019) |
 | `compact.go` | 長くなった会話を「会話の上限」に収める仕組み(古い発言を捨てる / 要約する)と、メーターの計算 |
 | `store.go` | 会話の保存先の約束(interface)と、会話・発言・要約の形。会話の仕組みは保存先が SQLite かどうかを知らない |

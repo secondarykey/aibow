@@ -550,6 +550,7 @@ export default function App() {
           reloadMcp();
           convs.refreshUsage().catch(err => addError(errorMessage(err)));
         }}
+        onNotice={text => toasts.notify(text, { ms: 8000 })}
       />
     );
   } else if (adminOpen) {

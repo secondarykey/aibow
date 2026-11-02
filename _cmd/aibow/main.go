@@ -74,15 +74,15 @@ func main() {
 	// ログが書けない・前回は異常終了した、などは起動を止めず、画面のお知らせで伝える
 	cfg.notices = append(cfg.notices, logNotices...)
 	var mcpm *client.Manager
+	var mcpc *aibow.MCPConfig
 	var prefs *aibow.ToolPrefs
 	// 組み込みのツールは、aibow の中で自作の MCP サーバーを動かし、MCP 越しに呼ぶ(0007 の 5-4)。サーバーは要る最初のときに動かす
 	local := client.NewLocal(client.Options{Version: appVersion()})
 	defer local.Close()
 	if err == nil {
-		if mcpm = startMCP(&cfg); mcpm != nil {
-			defer mcpm.Close() // アプリを閉じたら、起動した MCP のサーバーも止める(子プロセスまで)
-		}
 		prefs = loadToolPrefs(&cfg)
+		mcpm, mcpc = startMCP(&cfg, prefs)
+		defer mcpm.Close() // アプリを閉じたら、起動した MCP のサーバーも止める(子プロセスまで)
 	}
 	for _, n := range cfg.notices {
 		log.Warn(n)
@@ -133,7 +133,7 @@ func main() {
 		Logger: slog.Default(),
 		Services: []application.Service{
 			application.NewService(NewChatService(ui.Options{
-				Host: host, Store: st, App: settings, Initial: initial, Local: local, MCP: mcpm, Prefs: prefs,
+				Host: host, Store: st, App: settings, Initial: initial, Local: local, MCP: mcpm, MCPConfig: mcpc, Prefs: prefs,
 				Version: appVersion(), Notices: cfg.notices, StartupErr: err,
 			}, conn)),
 		},
@@ -247,22 +247,29 @@ func startLog() (io.Closer, []string) {
 	return c, notices
 }
 
-// startMCP は設定ファイル(settings.json)を読み、MCP のサーバーの係(client.Manager)を作る。
-// サーバーはまだ起動しない(要る最初の送信のときに起動する)。サーバーが書いてなければ nil。
-// 設定ファイルの書き間違いは、アプリを止めずに画面のお知らせで伝え、MCP を使わずに起動する。
-func startMCP(cfg *appConfig) *client.Manager {
-	sf, err := cfg.settings, cfg.settingsErr
-	if err != nil {
-		cfg.notices = append(cfg.notices, err.Error()+"(MCP のサーバーは使わずに起動しました)")
-		return nil
+// startMCP は、settings.json(手で書いた分)と mcp.json(画面から足した分。0034)の MCP のサーバーを合わせて、
+// MCP のサーバーの係(client.Manager)と、画面で変えたものをそこに流す係(aibow.MCPConfig)を作る。
+// サーバーはまだ起動しない(要る最初の送信のときに起動する)。サーバーが1つも無くても作る(画面から最初の1つを足せるように)。
+// ファイルの書き間違いは、アプリを止めずに画面のお知らせで伝え、そのファイルのサーバーを使わずに起動する。
+func startMCP(cfg *appConfig, prefs *aibow.ToolPrefs) (*client.Manager, *aibow.MCPConfig) {
+	hand := cfg.settings.MCPServers
+	if cfg.settingsErr != nil {
+		cfg.notices = append(cfg.notices, cfg.settingsErr.Error()+"(settings.json の MCP のサーバーは使わずに起動しました)")
+		hand = nil
 	}
-	if len(sf.MCPServers) == 0 {
-		log.Infof("MCP のサーバー: なし(設定ファイル: %s)", absPath(cfg.settingsPath))
-		return nil
+	file, _ := aibow.LoadMCPFile(cfg.mcpPath) // 読めなかった理由は Notices が返す
+	c := aibow.NewMCPConfig(absPath(cfg.settingsPath), hand, file, prefs)
+	cfg.notices = append(cfg.notices, c.Notices()...)
+	servers := c.Servers()
+	if len(servers) == 0 {
+		log.Infof("MCP のサーバー: なし(設定ファイル: %s・%s)", absPath(cfg.settingsPath), absPath(cfg.mcpPath))
+	} else {
+		names := slices.Sorted(maps.Keys(servers))
+		log.Infof("MCP のサーバー: %s(設定ファイル: %s・%s。要る最初の送信で起動します)", strings.Join(names, ", "), absPath(cfg.settingsPath), absPath(cfg.mcpPath))
 	}
-	names := slices.Sorted(maps.Keys(sf.MCPServers))
-	log.Infof("MCP のサーバー: %s(設定ファイル: %s。要る最初の送信で起動します)", strings.Join(names, ", "), absPath(cfg.settingsPath))
-	return client.New(sf.MCPServers, client.Options{Version: appVersion()})
+	m := client.New(servers, client.Options{Version: appVersion()})
+	c.SetManager(m)
+	return m, c
 }
 
 // noteNewServers は、settings.json に足したばかりの MCP のサーバーを、新しい会話で最初から使わないにする(tools.json に書く)。
