@@ -878,12 +878,12 @@ func (s *Service) AllMCPServers() []client.ServerInfo {
 }
 
 // BuiltinTools は組み込みのツール(aibow の中で動くツール)の一覧(設定の画面の「ツール」に出す)。
-// ブラウザでは、コマンドのツールを出さない。資料のフォルダが無ければ、作業フォルダを使わないツール(時刻・計算)だけ(0024 の決定事項 5・17)。
+// ブラウザでは、コマンドのツールを出さない。資料のフォルダが無ければ、作業フォルダを使わないツール(時刻・計算・URL を読む)だけ(0024 の決定事項 5・17)。
 func (s *Service) BuiltinTools() []aibow.KnownTool {
 	l := aibow.BuiltinTools()
 	if s.browser {
 		l = slices.DeleteFunc(l, func(k aibow.KnownTool) bool {
-			return k.Name == "run_command" || len(s.folders) == 0 && tool.Find(tool.Builtin(), k.Name) == nil
+			return k.Name == "run_command" || len(s.folders) == 0 && tool.Find(tool.Folderless(), k.Name) == nil
 		})
 	}
 	return l

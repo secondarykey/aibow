@@ -77,7 +77,7 @@ export function AppSettings(): $CancellablePromise<aibow$0.AppSettings> {
 
 /**
  * BuiltinTools は組み込みのツール(aibow の中で動くツール)の一覧(設定の画面の「ツール」に出す)。
- * ブラウザでは、コマンドのツールを出さない。資料のフォルダが無ければ、作業フォルダを使わないツール(時刻・計算)だけ(0024 の決定事項 5・17)。
+ * ブラウザでは、コマンドのツールを出さない。資料のフォルダが無ければ、作業フォルダを使わないツール(時刻・計算・URL を読む)だけ(0024 の決定事項 5・17)。
  */
 export function BuiltinTools(): $CancellablePromise<aibow$0.KnownTool[] | null> {
     return $Call.ByID(704771653);

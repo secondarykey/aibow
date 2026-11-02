@@ -178,9 +178,9 @@ func TestFetchErrors(t *testing.T) {
 	s := testServer(t)
 	f := fetchURL{opt: FetchOptions{AllowPrivate: true}}
 	for args, want := range map[string]string{
-		s.URL + "/png":     "この種類(image/png)は読めません",
-		s.URL + "/missing": "404 Not Found",
-		s.URL + "/loop":    "リダイレクトが 5 回を超えた",
+		s.URL + "/png":      "この種類(image/png)は読めません",
+		s.URL + "/missing":  "404 Not Found",
+		s.URL + "/loop":     "リダイレクトが 5 回を超えた",
 		"ftp://example.com": "http と https の URL だけ",
 		"https:///path":     "ホストがありません",
 	} {

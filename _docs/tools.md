@@ -17,6 +17,7 @@
 | `tool/tool.go` | `tool` パッケージ。ツールの interface(`Tool`)・定義(`Def`)・呼び出し(`Call`: 名前と引数だけ)・引数(`Arg`)。引数を JSON Schema と照らし合わせる `CheckArgs` |
 | `tool/arg.go` | 引数の値の持ち方(書式によらない形。下の「引数の値の持ち方」)と、書式・JSON との行き来(`ArgFromText` / `ArgText`・`ArgFromJSON` / `ArgJSON`・`ArgsFromJSON` / `ArgsJSON`・`ArgTypes`) |
 | `tool/time.go` / `tool/calc.go` | 組み込みのツール `get_current_time` / `calculate` |
+| `tool/fetch.go` / `tool/fetchhtml.go` | URL を読むツール `fetch_url`(取りに行く・アドレスを確かめる・文字コード・切り方 / 本文の取り出しと Markdown。0036)。実行前に確認する |
 | `tool/files.go` | 作業フォルダのツールの共通部分(`Files`・`os.Root` で開く・パスを作業フォルダからの相対にする) |
 | `tool/list.go` / `tool/read.go` | 作業フォルダのツール `list_files`(浅い順にたどる `walk` もここ)/ `read_file` |
 | `tool/search.go` / `tool/glob.go` | ファイルの中を探す `search_files` / 名前の形(glob。`**` を自分で合わせる)。`list_files` の `pattern` と `search_files` の `glob` で使う(0037) |
@@ -323,11 +324,29 @@ Each command starts in the main folder "aibow" unless you pass folder; a cd does
   以前はメイン以外のときだけ出していたが、それだと上の取り違えでメインで動くことにカードで気づけないので、そろえた(2026-11-02、ユーザーと決めた)
 - aibow の中の MCP サーバー(`mcp/client` の `Local`)は、フォルダの組ごと(名前・パス・メイン・書けるかの組。`folderKey`)に1つ。設定の画面で組を変えたら、次の送信から新しい組のサーバーを使う
 
+### URL を読むツール(0036)
+
+- `fetch_url`(`tool/fetch.go`・`tool/fetchhtml.go`):URL のページを取ってきて、本文を返す。引数は `url` と `start_index`(0 から)。返す長さはモデルに選ばせず 5,000 文字(`fetchMaxRunes`)。
+  結果は1行目に `URL: <最終的な URL>(<状態>・<種類>)`、空行をはさんで本文、切ったときは最後に「全体は N 文字です。続きは start_index=M で読めます」(`read_file` の offset と同じ考え方。0025)。読むたびにページを取り直す(保存・キャッシュはしない)
+- 設定で動きが変わる(PC の中のアドレスを許すか・User-Agent の版)ので `tool.Builtin` には入れず、動かす側が `mcp/server` の `Options.Fetch` で足す。
+  アプリと aibow-server は aibow の中のサーバー(`mcp/client` の `Options.Fetch`)で出し、aibow-mcp は `-fetch` のときだけ出す。設定の画面の一覧は `tool.Folderless`(時刻・計算・URL を読む)。
+  `SetLocalTools` をしない会話の仕組み(テストの直接の形)には入らない
+- 中身の種類:HTML(`text/html`・`application/xhtml+xml`)は本文を Markdown に、`text/*`・JSON・XML はそのまま、ほかは「この種類は読めません」。種類は Content-Type で先に見て(画像を 2MB 受け取ってから断らない)、無ければ `http.DetectContentType`
+- 文字コード:`charset.DetermineEncoding`(BOM → Content-Type → `<meta charset>`)。どれにも書いていなくて UTF-8 として正しければ UTF-8(既定の windows-1252 にしない)
+- 本文の取り出し:`script`・`style`・`noscript`・`template`・`svg`・`iframe`・`nav`・`header`・`footer`・`aside`・`form`(と `head`・`button`・`select`・`img`)を落とし、
+  最初の `main` → いちばん長い `article` → `body` の順に本文の場所を選ぶ。`<title>` は頭に `# 題`。リンクは絶対の URL にし、ページの中(`#…`)・`javascript:` は文だけ。表の最初の行が `th` だけなら区切りの行 `| --- |` を足す
+- 上限:2MB(超えた分は読まずに切り、そう書き添える)・15 秒(`tool.TimeLimiter`)・リダイレクト 5 回・`http` と `https` だけ。プロキシは使わない(`Transport.Proxy` が nil)
+- **PC の中・社内のアドレスを断る**:`net.Dialer.Control` で、名前を引いた後の実際につなぐアドレスを `tool.PublicAddr` で確かめる(loopback・private・link-local・100.64/10・未指定・マルチキャスト・説明用など)。
+  名前を引いてから確かめて名前でつなぎ直す形だと、その間に答えを変えられる(DNS rebinding)ため。リダイレクトの先も同じ Transport を通るので確かめられる。
+  テストは名前の引き方とつなぎ先を差し替える(`fetchURL.dial`。同じ `control` で確かめてからテストのサーバーにつなぐ)
+- 扱いの既定:`tool.Confirmable` なので確認する(確認のカードにホストと URL。`tool.Preview.URL`)。aibow-server では管理者が `server-tools.json` でツールごとに有効にするまで禁止(`ToolPrefs.banned` の `optIn`。組み込みのグループの扱いでは有効にならない)
+- ログ:取りに行った URL・状態・受け取ったバイト数・本文と渡した文字数・秒数を Info、断ったアドレスを Warn(誰の・どの会話かは `ui` の `logTool` が出す)
+
 ### 作業の予定(update_plan。0037 の段3)
 
 - `update_plan`:モデルが作業の予定をチェックリストとして書く(Claude Code の TodoWrite に当たる)。引数 `items` は予定の全部(項目ごとに `text` と `status`(`pending` / `in_progress` / `done`))で、毎回まるごと書き直す。
   `in_progress` は1つまで(2つ以上はエラー)。何も実行せず、結果は「予定を覚えました(N 件中 M 件済み)」だけ(予定は呼び出しとして履歴にあるので繰り返さない)
-- 作業フォルダのある会話だけで出す(フォルダのツールと `run_command` の間。`localTools` と `mcp/server` の `ToolsIn`)。aibow-server の資料のフォルダ・aibow-mcp でも出る。確認しない
+- 作業フォルダのある会話だけで出す(フォルダのツールと `run_command` の間。`localTools` と `mcp/server` の `Options.Tools`)。aibow-server の資料のフォルダ・aibow-mcp でも出る。確認しない
 - 予定は別に保存しない。「今の予定」は履歴の最後の、成功した `update_plan` の呼び出しの引数(`lastPlan`)。
   compact で呼び出しを含む発言をモデルに渡さなくなったら、渡さない部分の最後の予定を、システムの文の最後(要約の後ろ / truncate なら残した発言の前)に英語で足す(`passFrom` → `withPlan`。[compact.md](compact.md))
 - 画面では、`update_plan` のカードを引数と結果ではなくチェックリストで出す(`PlanCard.tsx`。済みは打ち消し線、取りかかっているものは太字)。エラーの呼び出しはふつうのカード

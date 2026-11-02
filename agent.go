@@ -843,7 +843,7 @@ func (cs *Conversations) ToolStates(set ConversationSettings) []ToolGroupState {
 			Name: t.Def().Name, Description: firstLine(t.Def().Description), Policy: p, From: from, Default: def, NeedsWorkDir: needsWorkDir,
 		})
 	}
-	for _, t := range tool.Builtin() {
+	for _, t := range tool.Folderless() {
 		add(t, false)
 	}
 	// 作業フォルダのツールは、定義が作業フォルダによらないので仮のフォルダで作る(BuiltinTools と同じ)
@@ -965,7 +965,7 @@ func (cs *Conversations) LoadToolList(ctx context.Context, server string) error 
 // BuiltinTools は、組み込みのツール(aibow の中で動くツール)の一覧(設定の画面に出す)。
 // 作業フォルダのツールも入れる(作業フォルダを決めた会話でだけ使える)。定義は作業フォルダによらないので、仮のフォルダで作る。
 func BuiltinTools() []KnownTool {
-	tools := append(tool.Builtin(), tool.Files(".")...)
+	tools := append(tool.Folderless(), tool.Files(".")...)
 	return knownTools(append(tools, tool.UpdatePlan(), tool.RunCommand(".")))
 }
 

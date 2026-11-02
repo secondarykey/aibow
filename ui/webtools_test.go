@@ -290,7 +290,7 @@ func TestWebIgnoresWorkDir(t *testing.T) {
 	w.mustCall(t, &groups, "ToolStates", c.ID, s)
 	for _, g := range groups {
 		for _, tl := range g.Tools {
-			if tl.Name != "get_current_time" && tl.Name != "calculate" {
+			if tl.NeedsWorkDir {
 				t.Errorf("作業フォルダのツールが見えている: %s", tl.Name)
 			}
 		}

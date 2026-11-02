@@ -76,6 +76,9 @@ type configFile struct {
 	// Folders は資料のフォルダ(名前 → 絶対パス。0024 の 12-2)。管理者が配るプロファイルで1つ選ぶと、そのプロファイルの会話の作業フォルダになる。
 	// ブラウザには名前だけを見せる。git は管理者がサーバーで手で行う(aibow は触れない。決定事項 6)
 	Folders map[string]string `json:"folders"`
+	// FetchAllowPrivate は、ブラウザの会話の URL を読むツール(fetch_url)で、サーバーの PC の中・社内のアドレスも読むか(0036 の決定事項 12)。
+	// 既定は読まない(モデルが書いた URL で、社内のサーバーやクラウドのメタデータに届かないように)。fetch_url は管理者が「ツール」のタブで有効にするまで使えない
+	FetchAllowPrivate bool `json:"fetchAllowPrivate"`
 }
 
 // config は、強さの順で決めた設定。
@@ -98,6 +101,8 @@ type config struct {
 	// MCPServers は、ブラウザの会話で使う MCP のサーバー、Folders は資料のフォルダ(どちらも設定ファイルにだけ書ける。0024)
 	MCPServers map[string]client.ServerConfig
 	Folders    map[string]string
+	// FetchAllowPrivate は、fetch_url で PC の中・社内のアドレスも読むか(設定ファイルにだけ書ける。0036)
+	FetchAllowPrivate bool
 
 	// File は読んだ設定ファイル(無ければ空)。StatePath は aibow-server が書くファイル(server-models.json)、
 	// DBPath はブラウザの会話の DB(server.db)、ToolsPath はツールの扱いの既定(server-tools.json)。どれも設定ファイルの隣
@@ -159,7 +164,7 @@ func resolve(fs *flag.FlagSet, f *flags, env *envReader) (config, []string, erro
 
 	dir := filepath.Dir(path)
 	c := config{StatePath: filepath.Join(dir, stateFileName), DBPath: filepath.Join(dir, dbFileName), ToolsPath: filepath.Join(dir, toolsFileName),
-		MCPServers: file.MCPServers, Folders: file.Folders}
+		MCPServers: file.MCPServers, Folders: file.Folders, FetchAllowPrivate: file.FetchAllowPrivate}
 	if found {
 		c.File = path
 	}

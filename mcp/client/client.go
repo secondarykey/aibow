@@ -200,6 +200,8 @@ const (
 type Options struct {
 	// Version は、サーバーに名乗る aibow のバージョン(clientInfo)
 	Version string
+	// Fetch は、aibow の中のサーバー(Local)が出す fetch_url の設定(0036)。nil なら出さない。Manager は使わない
+	Fetch *tool.FetchOptions
 }
 
 // Manager は settings.json(と画面から足した mcp.json)に書いた MCP のサーバーを起動し、そのツールを渡す。

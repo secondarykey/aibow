@@ -42,6 +42,9 @@ type Options struct {
 	Folders []tool.Folder
 	// Version はサーバーの版(MCP の serverInfo.version)。空なら "(devel)"
 	Version string
+	// Fetch は、URL のページを読むツール(fetch_url。0036)の設定。nil なら出さない。
+	// aibow の中で動かすときは出し、aibow-mcp は引数 -fetch を付けたときだけ出す(Claude Code などは自分の fetch を持っていて重なるため。決定事項 15)
+	Fetch *tool.FetchOptions
 }
 
 // folders は、ツールが扱うフォルダの組(Folders か、WorkDir 1つ。どちらも無ければ空)。
@@ -61,20 +64,20 @@ func New(opts Options) *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: Name, Version: version}, &mcp.ServerOptions{
 		Instructions: instructions(opts.folders()),
 	})
-	for _, t := range ToolsIn(opts.folders()) {
+	for _, t := range opts.Tools() {
 		s.AddTool(mcpTool(t), handler(t))
 	}
 	return s
 }
 
-// Tools はサーバーが出すツール(作業フォルダ workDir 1つ)。tools/list の並びは SDK が名前の順にする(ここで並べた順ではない)。
-func Tools(workDir string) []tool.Tool {
-	return ToolsIn(tool.Single(workDir))
-}
-
-// ToolsIn は、フォルダの組 folders のときにサーバーが出すツール。folders が空なら組み込みのツール(時刻・計算)だけ。
-func ToolsIn(folders []tool.Folder) []tool.Tool {
+// Tools はサーバーが出すツール。tools/list の並びは SDK が名前の順にする(ここで並べた順ではない)。
+// 作業フォルダが無ければ、組み込みのツール(時刻・計算と、Fetch を決めたら fetch_url)だけ。
+func (o Options) Tools() []tool.Tool {
 	tools := tool.Builtin()
+	if o.Fetch != nil {
+		tools = append(tools, tool.FetchURL(*o.Fetch))
+	}
+	folders := o.folders()
 	if len(folders) > 0 {
 		tools = append(tools, tool.FilesIn(folders)...)
 		tools = append(tools, tool.UpdatePlan()) // 作業の予定(0037)。フォルダのある会話だけで出す(決定事項 14)

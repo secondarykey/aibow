@@ -41,6 +41,9 @@ type SettingsFile struct {
 	// ServerCert は、aibow-server の証明書のファイル(自己署名の証明書で HTTPS を待ち受けているとき、サーバーの PC から写したもの)。
 	// 書けば、その証明書を信頼してつなぐ。環境変数 AIBOW_SERVER_CERT より強い
 	ServerCert string `json:"serverCert"`
+	// FetchAllowPrivate は、URL を読むツール(fetch_url)で、PC の中・社内のアドレス(127.0.0.1・192.168.x.x など)も読むか(0036 の決定事項 12)。
+	// 既定は読まない。めったに使わず、危うさを分かって書く人だけが使うので、画面からは変えない
+	FetchAllowPrivate bool `json:"fetchAllowPrivate"`
 }
 
 // LoadSettingsFile は設定ファイルを読む。ファイルが無ければ空の設定を返す(MCP を使わないだけで、エラーにしない)。

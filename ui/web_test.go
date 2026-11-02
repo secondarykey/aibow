@@ -26,6 +26,7 @@ import (
 	"github.com/secondarykey/aibow/mcp/client"
 	"github.com/secondarykey/aibow/models"
 	"github.com/secondarykey/aibow/store"
+	"github.com/secondarykey/aibow/tool"
 )
 
 // 画面用の口(web.go)のテスト。aibow-server の中と同じ組み立て(ServerHost・席・組み込みのツール・Browser)を、偽物の engine で作る(モデル不要)。
@@ -222,12 +223,18 @@ func newTestWeb(t *testing.T, opts ...func(*Options)) *testWeb {
 	srv := httptest.NewUnstartedServer(nil)
 	srv.Start()
 	t.Cleanup(srv.Close)
-	local := client.NewLocal(client.Options{Version: "0.0.1-test"})
+	local := client.NewLocal(client.Options{Version: "0.0.1-test", Fetch: &tool.FetchOptions{}}) // aibow-server と同じく fetch_url も出す(管理者が有効にするまで使えない)
 	t.Cleanup(local.Close)
+	// ツールの扱いの既定も aibow-server と同じく管理者の既定(禁止がある形)にする
+	prefs, err := aibow.LoadServerToolPrefs(filepath.Join(t.TempDir(), "server-tools.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	o := Options{
 		Host:  NewServerHost(eng, mm, 32768, srv.URL),
 		Store: st, App: app, Version: "0.0.1-test",
 		Notify: events, Seat: seat, Local: local, Browser: true,
+		Prefs: prefs,
 	}
 	for _, f := range opts {
 		f(&o)

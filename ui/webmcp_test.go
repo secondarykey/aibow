@@ -105,8 +105,8 @@ func TestWebMCPServer(t *testing.T) {
 	}
 	var builtin []aibow.KnownTool
 	w.mustCall(t, &builtin, "BuiltinTools")
-	if len(builtin) != 2 {
-		t.Errorf("BuiltinTools は時刻と計算だけ: %+v", builtin)
+	if len(builtin) != 3 {
+		t.Errorf("BuiltinTools は時刻・計算・URL を読むだけ: %+v", builtin)
 	}
 }
 
@@ -190,5 +190,55 @@ func TestWebAdminBan(t *testing.T) {
 	}
 	if !slices.Contains(names, "get_current_time") {
 		t.Errorf("禁止していないツールは見せるはず: %v", names)
+	}
+}
+
+// URL を読むツール(fetch_url)は、管理者が「ツール」のタブでツールごとに有効にするまで使えない(0036 の決定事項 14)。
+// 組み込みのグループを「確認しない」にしても有効にならない。有効にしたら、確認つきで使える
+func TestWebFetchOptIn(t *testing.T) {
+	w := newMCPWeb(t)
+	events := w.openEvents(t)
+	c := w.webConversation(t, map[string]aibow.ToolPolicy{"fetch_url": aibow.ToolOn})
+	fetchState := func() aibow.ToolState {
+		t.Helper()
+		var groups []aibow.ToolGroupState
+		w.mustCall(t, &groups, "ToolStates", c.ID, c.Settings)
+		for _, tl := range groups[0].Tools {
+			if tl.Name == "fetch_url" {
+				return tl
+			}
+		}
+		t.Fatal("組み込みのツールの一覧に fetch_url が無い")
+		return aibow.ToolState{}
+	}
+	sees := func() bool {
+		t.Helper()
+		w.mustCall(t, nil, "Send", c.ID, "読んで", nil)
+		until(t, events, "done")
+		return slices.Contains(w.eng.tools[len(w.eng.tools)-1], "fetch_url")
+	}
+
+	if s := fetchState(); s.Policy != aibow.ToolOff || s.From != aibow.PolicyFromAdmin {
+		t.Errorf("有効にする前は管理者の禁止のはず: %+v", s)
+	}
+	if sees() {
+		t.Error("有効にする前に、モデルに見せている")
+	}
+
+	w.admin.Store(true)
+	w.mustCall(t, nil, "SetGroupPolicy", "", aibow.ToolAllow)
+	w.admin.Store(false)
+	if s := fetchState(); s.Policy != aibow.ToolOff {
+		t.Errorf("組み込みのグループの扱いで有効になった: %+v", s)
+	}
+
+	w.admin.Store(true)
+	w.mustCall(t, nil, "SetToolPolicy", "fetch_url", aibow.ToolAsk)
+	w.admin.Store(false)
+	if s := fetchState(); s.Policy != aibow.ToolAsk {
+		t.Errorf("有効にしたら確認するはず: %+v", s)
+	}
+	if !sees() {
+		t.Error("有効にしたのに、モデルに見せていない")
 	}
 }
