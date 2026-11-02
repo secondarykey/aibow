@@ -32,6 +32,7 @@ type Preview struct {
 	Diff   string `json:"diff"` // 変更の差分(unified diff。画面は ```diff のコードブロックで出す)。大きすぎるときは空
 
 	Command string `json:"command,omitempty"` // 実行するコマンド(run_command)
+	URL     string `json:"url,omitempty"`     // 読みに行く URL(fetch_url。0036)
 	Server  string `json:"server,omitempty"`  // MCP のサーバーの名前。中身が見えないので差分は作れず、どのサーバーに何を渡すかを見せる
 	Args    string `json:"args,omitempty"`    // MCP のサーバーに渡す引数(JSON を整えたもの)
 }
