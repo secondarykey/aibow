@@ -75,12 +75,12 @@ func (s *ChatService) ChooseModelPlace(kind string) (string, error) {
 	return p, nil
 }
 
-// ChooseWorkDir は作業フォルダを選ぶダイアログを出し、選んだフォルダの絶対パスを返す。取り消したら空。
-// current が空でなければ、そのフォルダから開く。選んだフォルダを会話に入れるのは画面の側(会話の設定として保存する)。
+// ChooseWorkDir はワークスペースにするフォルダを選ぶダイアログを出し、選んだフォルダの絶対パスを返す。取り消したら空。
+// current が空でなければ、そのフォルダから開く。選んだフォルダでワークスペースを作るのは画面の側(CreateWorkspace。0035)。
 func (s *ChatService) ChooseWorkDir(current string) (string, error) {
 	app := application.Get()
 	d := app.Dialog.OpenFile().
-		SetTitle("作業フォルダを選ぶ").
+		SetTitle("ワークスペースにするフォルダを選ぶ").
 		CanChooseFiles(false).
 		CanChooseDirectories(true).
 		CanCreateDirectories(true)

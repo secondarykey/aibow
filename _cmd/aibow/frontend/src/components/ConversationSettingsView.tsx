@@ -28,6 +28,7 @@ interface Props {
   onChange(patch: Partial<ConversationSettings>): void;
   profile: Profile | null;              // この会話のプロファイル(どのプロファイルから作ったか・決まり。0014)
   folder: string;                       // ブラウザの会話の資料のフォルダの名前(無ければ空。0024 の 12-2)
+  workDir: string;                      // ツールが使うフォルダ(アプリはワークスペースのメインのフォルダ、ブラウザは資料のフォルダの名前。無ければ空)
   onSaveToProfile(): void;              // この会話の設定で、プロファイルの値を上書きする
   onSaveAsProfile(name: string): void;  // この会話の設定で、新しいプロファイルを作る
   lastPrompt: string;
@@ -80,7 +81,7 @@ function TitleField({ title, onRename }: { title: string; onRename(title: string
   );
 }
 
-export function ConversationSettingsView({ id, title, onRename, settings, models, errors, onClose, onChange, profile, folder, onSaveToProfile, onSaveAsProfile, lastPrompt, lastPromptFormat, servers, limitsDisabled, onApplyLimits,
+export function ConversationSettingsView({ id, title, onRename, settings, models, errors, onClose, onChange, profile, folder, workDir, onSaveToProfile, onSaveAsProfile, lastPrompt, lastPromptFormat, servers, limitsDisabled, onApplyLimits,
   share, shareWith, shareGroups, onShare,
 }: Props) {
   const lock = lockOf(profile);
@@ -118,7 +119,7 @@ export function ConversationSettingsView({ id, title, onRename, settings, models
         <SaveToProfile profile={profile} onSave={onSaveToProfile} onSaveAs={onSaveAsProfile} />
 
         <h2 className="section" title="この会話で使うツール(入力欄の上の「この会話のツール」と同じ)">ツール</h2>
-        <ConversationTools id={id} settings={settings} workDir={isBrowser ? folder : settings.work_dir} servers={servers} profile={profile} onChange={onChange} />
+        <ConversationTools id={id} settings={settings} workDir={workDir} servers={servers} profile={profile} onChange={onChange} />
 
 
         <h2 className="section">モデルに渡した文字列{lastPromptFormat && <span className="prompt-format">(書式: {lastPromptFormat})</span>}</h2>

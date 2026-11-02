@@ -669,7 +669,7 @@ func (s *SQLite) ReadConversation(ctx context.Context, id uuid.UUID) (aibow.Shar
 	if r.Conversation, err = scanConversation(s.db.QueryRowContext(ctx, conversationSelect+" WHERE id = ?", id.String())); err != nil {
 		return r, err
 	}
-	r.Conversation.Settings.WorkDir = "" // 持ち主の PC のパスは見せない
+	r.Conversation.Settings.Workspace, r.Conversation.Settings.WorkDir = "", "" // 持ち主の PC のフォルダは見せない(0035)
 	if r.Messages, err = s.messages(ctx, id); err != nil {
 		return r, err
 	}

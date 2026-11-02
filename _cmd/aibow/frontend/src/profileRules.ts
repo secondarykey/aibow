@@ -55,13 +55,13 @@ export function offGroup(p: Profile | null | undefined, group: string): boolean 
   return group === "" ? !!p.rules.off?.builtin : (p.rules.off?.servers ?? []).includes(group);
 }
 
-// asSettings は、プロファイルの値を会話の設定の入力欄に渡す形にする(作業フォルダ・会話だけのツールの扱いは無い)。
+// asSettings は、プロファイルの値を会話の設定の入力欄に渡す形にする(ワークスペース・会話だけのツールの扱いは無い)。
 export function asSettings(v: ProfileValues): ConversationSettings {
-  return { ...v, mcp_servers: v.mcp_servers ?? [], work_dir: "" } as ConversationSettings;
+  return { ...v, mcp_servers: v.mcp_servers ?? [], workspace: "" } as ConversationSettings;
 }
 
 // valuesPatch は、会話の設定の入力欄が返した変更から、プロファイルの値の項目だけを取り出す。
 export function valuesPatch(patch: Partial<ConversationSettings>): Partial<ProfileValues> {
-  const { work_dir: _w, tool_policies: _t, ...rest } = patch;
+  const { workspace: _ws, work_dir: _w, tool_policies: _t, ...rest } = patch;
   return rest as Partial<ProfileValues>;
 }

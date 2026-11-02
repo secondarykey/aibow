@@ -122,8 +122,8 @@ export function ChooseModelPlace(kind: string): $CancellablePromise<string> {
 }
 
 /**
- * ChooseWorkDir は作業フォルダを選ぶダイアログを出し、選んだフォルダの絶対パスを返す。取り消したら空。
- * current が空でなければ、そのフォルダから開く。選んだフォルダを会話に入れるのは画面の側(会話の設定として保存する)。
+ * ChooseWorkDir はワークスペースにするフォルダを選ぶダイアログを出し、選んだフォルダの絶対パスを返す。取り消したら空。
+ * current が空でなければ、そのフォルダから開く。選んだフォルダでワークスペースを作るのは画面の側(CreateWorkspace。0035)。
  */
 export function ChooseWorkDir(current: string): $CancellablePromise<string> {
     return $Call.ByID(2873180618, current);
@@ -197,6 +197,14 @@ export function CreateProfile(name: string, values: aibow$0.ProfileValues, rules
 }
 
 /**
+ * CreateWorkspace は、フォルダ path 1つのワークスペースを作る(入力欄の上の「フォルダから新しく作る」・設定の画面)。
+ * 同じフォルダ1つだけのワークスペースがあれば、それを返す。
+ */
+export function CreateWorkspace(path: string): $CancellablePromise<aibow$0.Workspace> {
+    return $Call.ByID(1897882904, path);
+}
+
+/**
  * DeleteConversation は会話を消す。返事を生成中の会話は消せない。
  */
 export function DeleteConversation(id: uuid$0.UUID): $CancellablePromise<void> {
@@ -222,6 +230,13 @@ export function DeleteMCPServer(name: string): $CancellablePromise<string[] | nu
  */
 export function DeleteProfile(id: uuid$0.UUID): $CancellablePromise<void> {
     return $Call.ByID(648749573, id);
+}
+
+/**
+ * DeleteWorkspace は、ワークスペースを消す。そのワークスペースを選んでいた会話は消さない(見つからないワークスペースになる)。
+ */
+export function DeleteWorkspace(id: string): $CancellablePromise<void> {
+    return $Call.ByID(2276624797, id);
 }
 
 /**
@@ -676,6 +691,14 @@ export function UpdateProfile(p: aibow$0.Profile): $CancellablePromise<void> {
 }
 
 /**
+ * UpdateWorkspace は、ワークスペース ws.ID の名前とフォルダの組を変える(設定の画面の「ワークスペース」)。
+ * 次の送信から効く(ツールは送信のたびにワークスペースから作るため)。
+ */
+export function UpdateWorkspace(ws: aibow$0.Workspace): $CancellablePromise<void> {
+    return $Call.ByID(4012031331, ws);
+}
+
+/**
  * Usage は、会話がモデルに渡す文字列で、会話の上限をどれだけ使っているか(メーター)を返す。
  * トークン数は今のモデルで数えるので、モデルが読み込まれていなければ null を返す。
  * 画面は、モデル・上限・会話の設定を変えたあとに呼び直す。
@@ -696,4 +719,11 @@ export function UserConversations(name: string): $CancellablePromise<aibow$0.Con
  */
 export function Version(): $CancellablePromise<string> {
     return $Call.ByID(2667902589);
+}
+
+/**
+ * Workspaces は、この PC のワークスペースの一覧。ブラウザでは空。
+ */
+export function Workspaces(): $CancellablePromise<ui$0.WorkspaceList> {
+    return $Call.ByID(501863521);
 }

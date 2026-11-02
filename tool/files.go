@@ -12,9 +12,15 @@ package tool
 //
 // 作業フォルダは会話ごとの設定なので、ツールは作業フォルダを持った値として、会話ごとに作る(Files)。
 // Tool の interface は作業フォルダを知らなくてよい。
+//
+// ワークスペース(0035)では、フォルダが複数になる(FilesIn)。モデルにはツールの引数 folder でフォルダを選ばせ、省けばメイン。
+// 名前は JSON Schema の enum で並べる(パスの先頭に名前を付ける形は、メインの中のサブフォルダと区別できないので採らない)。
+// フォルダが1つのときは folder の引数を出さない(定義は Files と同じ。4B のプロンプトを増やさない)。
+// 読むだけのフォルダには、書き換えるツール(write_file・edit_file)を向けられない(確認のカードを出す前に断る)。
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -24,9 +30,217 @@ import (
 	"unicode/utf8"
 )
 
+// Folder は、ファイルのツールが扱うフォルダ1つ(ワークスペースのフォルダ。0035)。
+type Folder struct {
+	Name     string // モデルが引数 folder で呼ぶ名前(フォルダが複数のときだけ使う)
+	Path     string // 絶対パス
+	Main     bool   // メイン(folder を省いたときのフォルダ)
+	Writable bool   // 書けるか(false なら読むだけ。write_file・edit_file を受け付けない)
+}
+
 // Files は、作業フォルダ dir の中を扱うツール。dir は絶対パス。
 func Files(dir string) []Tool {
-	return []Tool{listFiles{dir}, readFile{dir}, writeFile{dir}, editFile{dir}}
+	return FilesIn(Single(dir))
+}
+
+// Single は、作業フォルダ dir 1つ(メイン・書く)のフォルダの組。dir が空なら空。
+func Single(dir string) []Folder {
+	if dir == "" {
+		return nil
+	}
+	return []Folder{{Name: filepath.Base(dir), Path: dir, Main: true, Writable: true}}
+}
+
+// FolderMarks は、フォルダの印(main・writable / read-only・git)を、環境の説明に書く形にする(英語。モデルが読む)。
+// git は呼ぶ側が調べて渡す(tool はリポジトリかを見ない)。
+func FolderMarks(f Folder, git bool) string {
+	var marks []string
+	if f.Main {
+		marks = append(marks, "main")
+	}
+	if f.Writable {
+		marks = append(marks, "writable")
+	} else {
+		marks = append(marks, "read-only")
+	}
+	if git {
+		marks = append(marks, "git")
+	}
+	return strings.Join(marks, ", ")
+}
+
+// FilesIn は、フォルダの組 folders の中を扱うツール。メインはちょうど1つにしておく(無ければ先頭をメインにする)。
+// フォルダが1つなら、定義は Files と同じ(folder の引数を出さない)。
+func FilesIn(folders []Folder) []Tool {
+	set := folderSet(folders)
+	return []Tool{listFiles{set}, readFile{set}, writeFile{set}, editFile{set}}
+}
+
+// MainFolder は、フォルダの組のメイン(メインの印が無ければ先頭。空なら空)。
+func MainFolder(folders []Folder) Folder {
+	for _, f := range folders {
+		if f.Main {
+			return f
+		}
+	}
+	if len(folders) > 0 {
+		return folders[0]
+	}
+	return Folder{}
+}
+
+// folderSet は、ファイルのツールが扱うフォルダの組。
+type folderSet []Folder
+
+// multi は、フォルダが複数か(folder の引数を出すか)。
+func (set folderSet) multi() bool { return len(set) > 1 }
+
+// target は、モデルが選んだフォルダと、その中の相対パス(/ 区切り)。
+type target struct {
+	folder Folder
+	path   string
+}
+
+// dir はフォルダの絶対パス。
+func (t target) dir() string { return t.folder.Path }
+
+// resolve は、引数 folder と path から、扱うフォルダとその中の相対パスを決める。
+//
+//   - folder を省いたら、メイン。ただし path がほかのフォルダの中を指す絶対パスなら、そのフォルダ
+//     (4B は絶対パスで書きがちで、今も作業フォルダの中の絶対パスを受け付けているため)
+//   - folder を書いたら、その名前のフォルダ(大文字と小文字は区別しない)。絶対パスがそのフォルダの外を指せばエラー(食い違い)
+func (set folderSet) resolve(args Args) (target, error) {
+	p := strings.TrimSpace(args.String("path"))
+	name := strings.TrimSpace(args.String("folder"))
+	f, err := set.pick(name, p)
+	if err != nil {
+		return target{}, err
+	}
+	rel, err := localPath(f.Path, p)
+	if err != nil {
+		if name != "" && set.multi() && filepath.IsAbs(p) {
+			return target{}, fmt.Errorf("%s はフォルダ %s の外です(folder と path が食い違っています。folder を省くと、絶対パスからフォルダを選びます)", p, f.Name)
+		}
+		return target{}, err
+	}
+	tg := target{folder: f, path: rel}
+	if err := set.prefixed(tg); err != nil {
+		return target{}, err
+	}
+	return tg, nil
+}
+
+// prefixed は、パスの先頭にほかのフォルダの名前を付けた書き方(spec/greeting.md)を、直し方の分かるエラーにする。
+//
+// Qwen3.5 4B で試したら、folder を使わずに、フォルダの名前をパスの先頭に付けて書くことがあった(0035 の完了の条件 7。_docs/tuning.md)。
+// その形はメインの中のサブフォルダと見分けられないので受け付けない(決定事項 3)。メインの中にその名前のものが無いときだけ、
+// folder と path に分けて書くよう返す(あるなら、メインの中のサブフォルダとしてそのまま扱う)。
+// write_file で、メインの中に同じ名前のフォルダを新しく作ってしまうのも、これで防ぐ。
+func (set folderSet) prefixed(tg target) error {
+	if !set.multi() {
+		return nil
+	}
+	first, rest, ok := strings.Cut(tg.path, "/")
+	if !ok || rest == "" {
+		return nil
+	}
+	for _, f := range set {
+		if f.Path == tg.folder.Path || !strings.EqualFold(f.Name, first) {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(tg.folder.Path, filepath.FromSlash(first))); err == nil {
+			return nil // メインの中に本当にある(サブフォルダ)
+		}
+		return fmt.Errorf("%s はフォルダの名前です。パスの先頭に付けず、folder に %s、path に %s と分けて書いてください", first, f.Name, rest)
+	}
+	return nil
+}
+
+// elsewhere は、フォルダの中に見つからなかったパスが、ほかのフォルダにあるときの添え書き(無ければ空)。
+// 4B は list_files(folder=spec) の結果を見たあと、次の read_file で folder を付け忘れることがあった(_docs/tuning.md)。
+// 書き換えるツール(write が true)では、読むだけのフォルダを案内しない(書けないフォルダへ誘うことになるため)。
+func (set folderSet) elsewhere(tg target, write bool) string {
+	if !set.multi() {
+		return ""
+	}
+	for _, f := range set {
+		if f.Path == tg.folder.Path || write && !f.Writable {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(f.Path, filepath.FromSlash(tg.path))); err == nil {
+			return fmt.Sprintf("(%s はフォルダ %s の中にあります。folder に %s を書いてください)", tg.path, f.Name, f.Name)
+		}
+	}
+	return ""
+}
+
+// pick は、引数 folder の名前と path から、扱うフォルダを選ぶ。
+func (set folderSet) pick(name, p string) (Folder, error) {
+	if name != "" && set.multi() {
+		for _, f := range set {
+			if strings.EqualFold(f.Name, name) {
+				return f, nil
+			}
+		}
+		return Folder{}, fmt.Errorf("フォルダ %s はありません。folder には %s のどれかを書くか、省いてメインのフォルダを使ってください", name, strings.Join(set.names(), "・"))
+	}
+	main := MainFolder(set)
+	if !set.multi() || !filepath.IsAbs(p) {
+		return main, nil
+	}
+	// 絶対パスなら、それを含むフォルダ(入れ子なら深いほう)
+	best := Folder{}
+	for _, f := range set {
+		if rel, err := filepath.Rel(f.Path, p); err == nil && filepath.IsLocal(rel) {
+			if len(f.Path) > len(best.Path) {
+				best = f
+			}
+		}
+	}
+	if best.Path == "" {
+		return main, nil // どこにも入らない。メインの外としてエラーにする(localPath)
+	}
+	return best, nil
+}
+
+func (set folderSet) names() []string {
+	var names []string
+	for _, f := range set {
+		names = append(names, f.Name)
+	}
+	return names
+}
+
+// writable は、書き換えるツールでフォルダを書けるかを確かめる(読むだけのフォルダならエラー。確認のカードを出す前に呼ぶ)。
+//
+// 文では、ほかのフォルダに写しを作らず、書けないことをユーザーに伝えて止まるよう促す。
+// Qwen3.5 4B で試したら、読むだけと知ると、書けるフォルダ(メイン)に同じ内容のファイルを新しく作ることがあった(4回のうち2回。_docs/tuning.md)。
+// 読むだけにしたのはユーザーなので、どうするかはユーザーに聞く(2026-11-02、ユーザーと決めた)。
+func (t target) writable() error {
+	if !t.folder.Writable {
+		return fmt.Errorf("%s は読むだけのフォルダなので、書き換えられません。ほかのフォルダに写しを作らず、書き換えられないことをユーザーに伝えて、ここで止まってください", t.folder.Name)
+	}
+	return nil
+}
+
+// cardFolder は、確認のカードに出すフォルダの名前(フォルダが複数で、メイン以外のときだけ)。
+func (set folderSet) cardFolder(t target) string {
+	if !set.multi() || t.folder.Main {
+		return ""
+	}
+	return t.folder.Name
+}
+
+// withFolder は、フォルダが複数のとき、ツールの定義に引数 folder(名前の enum)を足す。1つなら def のまま。
+// path の説明の「作業フォルダ」は、フォルダが複数でも「選んだフォルダ」と読めるように変えない(定義を短く保つ)。
+func (set folderSet) withFolder(def Def) Def {
+	if !set.multi() {
+		return def
+	}
+	names, _ := json.Marshal(set.names())
+	prop := `"folder": {"type": "string", "enum": ` + string(names) + `, "description": "Folder to use (see Environment). Omit for the main folder."}, `
+	def.Parameters = json.RawMessage(strings.Replace(string(def.Parameters), `"properties": {`, `"properties": {`+prop, 1))
+	return def
 }
 
 // textMaxBytes は、テキストとして扱うファイルの大きさの上限。これより大きいファイルは読ませも書き換えさせもしない

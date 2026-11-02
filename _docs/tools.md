@@ -242,8 +242,11 @@ tool ── 何も知らない
 
 ### 作業フォルダのツール(0005 の 3-1)
 
-- 作業フォルダは会話ごとの設定(`ConversationSettings.WorkDir`)。ツールは作業フォルダを持った値として、送信のたびに `tool.Files(dir)` で作る
-  (`Conversations.toolsFor`)。`Tool` の interface は作業フォルダを知らない。ステップ5の MCP サーバーも、自分の決めたフォルダで `tool.Files` を作ればよい
+- 作業フォルダは、会話が選んだ**ワークスペース**(その PC の `workspaces.json` に登録した、名前付きのフォルダの組。0035)。
+  会話の設定はワークスペースの ID(`ConversationSettings.Workspace`)だけを持ち、パスは PC の手元に置く(`aibow.Workspaces`。`workspaces.go`)。
+  この PC に無い ID(別の PC で選んだ・消した)なら、作業フォルダが無いものとして扱う(フォルダのツール・`${workdir}` の MCP・環境の説明を出さない)
+- ツールはフォルダの組を持った値として、送信のたびに `tool.FilesIn(folders)` で作る(`Conversations.toolFolders` → `localTools`)。
+  `Tool` の interface は作業フォルダを知らない。MCP のサーバー(`mcp/server` の `Options.Folders`)も、渡されたフォルダの組で同じツールを作る
 - 作業フォルダを決めた会話だけ、ファイルのツールと環境の説明をプロンプトに入れる。環境の説明は使うツールに合わせ、時刻・計算のほかにツールが無ければ書かず、シェルと cd の注意は `run_command` を使うときだけ書く
 - **外に出られないことは仕組みで守る**: `os.Root`(決めたフォルダの下しか開けないファイル操作の口)で開く。開くのは呼び出しごと(フォルダが消えたらエラーの結果を返す)
   - `../` や外の絶対パスは、開く前に `localPath` が分かりやすいエラーにする。作業フォルダの中を指す絶対パスは受け付ける(4B は絶対パスで書きがちなため)
@@ -271,6 +274,36 @@ Commands already run inside the working directory, so do not cd into it. "exampl
 ```
 
 書式に関係ない情報なので、書式ではなく会話の仕組みの側で組み立てる。シェルの行は OS ごとに `tool.ShellNote`(Linux なら `/bin/sh`)。
+
+ワークスペースのフォルダが複数なら、フォルダを名前・印・パスで並べる(`foldersEnvironment`。印は main / writable か read-only / git。git は `.git` があるか):
+
+```
+# Environment
+Folders (pass the folder argument; omit it for the main folder):
+- aibow (main, writable, git): D:\Go\Projects\aibow
+- notes (read-only): D:\Docs\notes
+OS: windows
+Shell for run_command: cmd.exe (use dir, type, findstr; ls, cat and grep are not available)
+Use paths relative to the folder.
+Commands already run inside the main folder "aibow", so do not cd into it. Each folder name refers to that folder itself, not to a subfolder.
+```
+
+### フォルダが複数のワークスペース(0035 の段2)
+
+- ファイルのツール(`list_files`・`read_file`・`write_file`・`edit_file`)に引数 `folder`(省略可。名前を JSON Schema の `enum` で並べる)を足す。省けばメイン。
+  名前は大文字と小文字を区別しない(ワークスペースの中でも、大文字と小文字だけの違いは重なりとして断る)。
+  パスの先頭に名前を付ける形(`notes/a.md`)は、メインの中のサブフォルダと区別できないので採らない
+- **フォルダが1つなら `folder` を出さない**(定義は段1・`tool.Files` と同じ。4B のプロンプトを増やさない。`withFolder`)
+- 見つからないパスがほかのフォルダにあれば、エラーに「folder に <名前> を書いて」と添える(`elsewhere`。書き換えるツールでは読むだけのフォルダを案内しない)。
+  パスの先頭にほかのフォルダの名前を付けた書き方(`spec/a.md`)は、メインにその名前のものが無ければ「folder と path に分けて」のエラーにする(`prefixed`)。
+  どちらも Qwen3.5 4B で試して足した([tuning.md](tuning.md))
+- 絶対パスは、どのフォルダの中かを見て振り分ける(入れ子なら深いほう)。`folder` を書いたのにそのフォルダの外を指していれば「食い違い」のエラー
+- **読むだけのフォルダ**には `write_file`・`edit_file` を向けられない。`Preview` の前(`filePath`)で「<名前> は読むだけのフォルダなので、書き換えられません。ほかのフォルダに写しを作らず、書き換えられないことをユーザーに伝えて、ここで止まってください」を返すので、確認のカードは出ない
+  (止まるよう促すのは、4B が書けるフォルダに写しを作ることがあったため。[tuning.md](tuning.md))
+- `run_command` はメインをカレントにする。読むだけのフォルダもコマンドからは書けてしまうので、守りは今までどおり確認(環境の説明に書くのは read-only の印まで)
+- `${workdir}` の MCP のサーバーはメインのパスで起動する(ほかのフォルダを渡す書き方は作らない)
+- 確認のカードには、メイン以外のフォルダのとき、そのフォルダの名前を出す(`tool.Preview.Folder`)
+- aibow の中の MCP サーバー(`mcp/client` の `Local`)は、フォルダの組ごと(名前・パス・メイン・書けるかの組。`folderKey`)に1つ。設定の画面で組を変えたら、次の送信から新しい組のサーバーを使う
 
 ### コマンドのツール(0005 の 3-3)
 

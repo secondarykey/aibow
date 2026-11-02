@@ -14,7 +14,7 @@ func TestCopyShared(t *testing.T) {
 		t.Fatal(err)
 	}
 	src.Title = "調べもの"
-	src.Settings.WorkDir = "C:/work"
+	src.Settings.Workspace = "ws-1"
 	st.UpdateConversation(ctx, src)
 	now := time.Now()
 	var msgs []StoredMessage
@@ -38,7 +38,7 @@ func TestCopyShared(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.ID == src.ID || c.Title != "調べもの(写し)" || c.Settings.WorkDir != "" || c.ProfileID == (uuid.UUID{}) {
+	if c.ID == src.ID || c.Title != "調べもの(写し)" || c.Settings.Workspace != "" || c.ProfileID == (uuid.UUID{}) {
 		t.Errorf("写した会話: %+v", c)
 	}
 	_, got, err := st.Conversation(ctx, c.ID)

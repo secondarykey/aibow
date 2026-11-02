@@ -203,10 +203,15 @@ type ConversationSettings struct {
 	// (以前の「ツールを使う」(tools)は 0006 で無くした。ツールを使うかは、設定の画面の「ツール」(tools.json)と、
 	// 会話で使う MCP のサーバーだけで決める。保存済みの会話の JSON に残っている tools は、読むときに無視される)
 	//
-	// WorkDir は作業フォルダ(絶対パス)。空なら決めていない。決めた会話では、
-	// その中のファイルを扱うツール(tool.Files)とコマンドのツールをモデルに出す。
+	// Workspace はワークスペース(この PC の workspaces.json に登録したフォルダの組。0035)の ID。空なら決めていない。
+	// 決めた会話では、そのフォルダの中のファイルを扱うツール(tool.Files)とコマンドのツールをモデルに出す。
+	// パスは PC のものなので会話には置かず、ID だけを持つ(別の PC で開くと、その ID が無いのでフォルダのツールを出さない)。
 	// 新しい会話の既定には入れない(前の会話のフォルダを引き継いで、別のフォルダを書き換えてしまうのを防ぐため)
-	WorkDir string `json:"work_dir"`
+	Workspace string `json:"workspace,omitempty"`
+	// WorkDir は、ワークスペースより前の作業フォルダ(絶対パス)。もう使わない。
+	// 起動したときに、この PC にあるパスならワークスペースに移して空にする(Conversations.MigrateWorkDirs)。
+	// この PC に無いパスは、そのまま残す(そのパスのある PC で起動したときに、そちらで移せるように)。画面からは変えられない
+	WorkDir string `json:"work_dir,omitempty"`
 	// MCPServers は、この会話で使う MCP のサーバー(settings.json の名前)。選んでいないサーバーはモデルに見せず、起動もしない。
 	// ツールの説明は毎回プロンプトに入るので、全部を載せると会話の上限を食い尽くす(Blender だけで 26 個)。
 	// 新しい会話では、設定の画面の「ツール」で使うにしているサーバーを最初から選ぶ(Conversations.Defaults)
@@ -250,12 +255,12 @@ func (s ConversationSettings) normalized() ConversationSettings {
 	return s
 }
 
-// asDefaults は「新しい会話の既定の設定」にするときの形。作業フォルダは外す(会話ごとに毎回選ぶ)。
+// asDefaults は「新しい会話の既定の設定」にするときの形。ワークスペースは外す(会話ごとに毎回選ぶ)。
 // 会話だけのツールの扱いの上書きも外す(その会話のためのものなので)。
 // 使う MCP のサーバーと組み込みのツールを使うかも外す(新しい会話で最初から使うものは、設定の画面の「ツール」で決める。Conversations.Defaults)。
 func (s ConversationSettings) asDefaults() ConversationSettings {
 	s = s.normalized()
-	s.WorkDir = ""
+	s.Workspace, s.WorkDir = "", ""
 	s.ToolPolicies = nil
 	s.MCPServers = []string{}
 	s.BuiltinOff = false

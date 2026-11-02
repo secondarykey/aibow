@@ -3,6 +3,9 @@
 
 export type {
     ConversationDetail,
+    FolderView,
     ModelSettingsResult,
-    ModelsResult
+    ModelsResult,
+    WorkspaceList,
+    WorkspaceView
 } from "./models.js";

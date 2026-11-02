@@ -21,7 +21,7 @@ func newWorkDirConversation(t *testing.T, g *fakeGen) (*Conversations, Conversat
 		t.Fatal(err)
 	}
 	cs, _, c := newToolConversation(t, g)
-	c.Settings.WorkDir = dir
+	c.Settings.Workspace = workspaceFor(t, cs, dir)
 	if err := cs.UpdateSettings(ctx, c.ID, c.Settings); err != nil {
 		t.Fatal(err)
 	}

@@ -41,6 +41,7 @@ Ollama が保存したファイルを aibow が直接読むので、Ollama は�
 | `internal/secret/` | 手元に置くアプリ用のトークンを、Windows の DPAPI で包む(標準の `syscall` で `crypt32.dll` を呼ぶ。Windows 以外は包まない。0019) |
 | `log/` | aibow のログ。aibow のコードはここからログを出す。aibow をライブラリとして使う人は `log.SetLogger` で aibow のログの出し先(`*slog.Logger`)を決められる(決めなければ `slog.Default()`) |
 | `settingsfile.go` | 設定ファイル `settings.json`(手で書く設定。MCP のサーバーと aibow-server のつなぎ先)の読み込み |
+| `workspaces.go` | ワークスペース(名前を付けたフォルダの組。0035)の `workspaces.json` の読み書きと、前の作業フォルダ(`work_dir`)を移す `MigrateWorkDirs` |
 | `toolprefs.go` | ツールの扱い(使わない / 確認する / 確認しない)と、その PC の既定 `tools.json` の読み書き |
 | `mcpfile.go` | 設定の画面の「MCP」から足した MCP のサーバー `mcp.json` の読み書きと、`settings.json` の分との合わせ方 |
 | `connectionfile.go` | 設定の画面の「サーバー」で決めた aibow-server のつなぎ先 `connection.json` の読み書き(アプリ用のトークンは `internal/secret` で包む。0019) |

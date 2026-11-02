@@ -41,5 +41,7 @@ export type {
     ToolState,
     Usage,
     UserRef,
+    Workspace,
+    WorkspaceFolder,
     WorkspaceSettings
 } from "./models.js";

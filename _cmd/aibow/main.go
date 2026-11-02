@@ -76,11 +76,13 @@ func main() {
 	var mcpm *client.Manager
 	var mcpc *aibow.MCPConfig
 	var prefs *aibow.ToolPrefs
+	var workspaces *aibow.Workspaces
 	// 組み込みのツールは、aibow の中で自作の MCP サーバーを動かし、MCP 越しに呼ぶ(0007 の 5-4)。サーバーは要る最初のときに動かす
 	local := client.NewLocal(client.Options{Version: appVersion()})
 	defer local.Close()
 	if err == nil {
 		prefs = loadToolPrefs(&cfg)
+		workspaces = loadWorkspaces(&cfg)
 		mcpm, mcpc = startMCP(&cfg, prefs)
 		defer mcpm.Close() // アプリを閉じたら、起動した MCP のサーバーも止める(子プロセスまで)
 	}
@@ -133,7 +135,7 @@ func main() {
 		Logger: slog.Default(),
 		Services: []application.Service{
 			application.NewService(NewChatService(ui.Options{
-				Host: host, Store: st, App: settings, Initial: initial, Local: local, MCP: mcpm, MCPConfig: mcpc, Prefs: prefs,
+				Host: host, Store: st, App: settings, Initial: initial, Local: local, MCP: mcpm, MCPConfig: mcpc, Prefs: prefs, Workspaces: workspaces,
 				Version: appVersion(), Notices: cfg.notices, StartupErr: err,
 			}, conn)),
 		},
@@ -301,6 +303,17 @@ func loadToolPrefs(cfg *appConfig) *aibow.ToolPrefs {
 		cfg.notices = append(cfg.notices, err.Error())
 	}
 	return prefs
+}
+
+// loadWorkspaces は、その PC のワークスペース(workspaces.json。0035)を読む。
+// aibow-server につないでいても手元のファイル(パスは PC のもの)。壊れていたら画面のお知らせで伝え、ワークスペースが無いものとして動く(書き換えない)。
+func loadWorkspaces(cfg *appConfig) *aibow.Workspaces {
+	w, err := aibow.LoadWorkspaces(cfg.wsPath)
+	if err != nil {
+		cfg.notices = append(cfg.notices, err.Error())
+	}
+	log.Noticef("ワークスペース: %s", absPath(cfg.wsPath))
+	return w
 }
 
 // newServerClient は aibow-server につなぐクライアントを作る(API キーと、自己署名の証明書を信頼するか。0017 の 10-2)。ここではまだつながない。

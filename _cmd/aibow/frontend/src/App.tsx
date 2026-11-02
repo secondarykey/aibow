@@ -39,7 +39,8 @@ import { AdminView, canAdmin } from "./components/AdminView";
 import { ConversationSettingsView } from "./components/ConversationSettingsView";
 import { ReadView } from "./components/ReadView";
 import { Composer } from "./components/Composer";
-import { FolderBar, WorkDirBar } from "./components/WorkDirBar";
+import { FolderBar, WorkspaceBar } from "./components/WorkspaceBar";
+import { mainFolder, useWorkspaces } from "./workspaces";
 import { ToolBar } from "./components/ToolBar";
 import { LuSettings } from "react-icons/lu";
 import { ChatService, isBrowser, me, onReconnect, onWindowFocus } from "./backend";
@@ -183,6 +184,8 @@ export default function App() {
     );
   }, [addError]);
   useEffect(reloadMcp, [reloadMcp]);
+  // その PC のワークスペース(入力欄の上で選ぶ・設定の画面で変える。0035。ブラウザでは空)
+  const [workspaces, reloadWorkspaces] = useWorkspaces(addError);
 
   // GPU に載せる層の数はモデルごとに覚えている(0014 の 4)ので、読み込んでいるモデルが変わったら設定の画面の値を取り直す
   const currentModel = models.current?.id;
@@ -287,6 +290,8 @@ export default function App() {
   const lock = lockOf(profile);
   // ブラウザの会話の資料のフォルダ(名前だけ。0024 の 12-2)。開いている会話は Go が決めたもの、新しい会話の画面は選んだプロファイルのもの
   const folder = !isBrowser ? "" : convs.current ? convs.current.folder ?? "" : grantedFolder(profile);
+  // ツールが使うフォルダ(アプリはワークスペースのメインのフォルダ、ブラウザは資料のフォルダの名前)。無ければ空。作業フォルダが要るツールの印に使う
+  const workDir = isBrowser ? folder : mainFolder(workspaces.workspaces?.find(w => w.id === settings?.workspace))?.path ?? "";
   const input = (
     <>
       <Composer
@@ -308,18 +313,20 @@ export default function App() {
         onAddFiles={fs => void attachments.add(fs)}
         onRemoveFile={attachments.remove}
         top={settings && (
-          // 入力欄の上: 作業フォルダと、この会話のツール(どちらも会話ごとの設定)。
-          // ブラウザの会話は作業フォルダを選ばない(ツールはサーバーの PC で動くため。0024 の決定事項 17)。
+          // 入力欄の上: ワークスペースと、この会話のツール(どちらも会話ごとの設定)。
+          // ブラウザの会話はワークスペースを選ばない(ツールはサーバーの PC で動くため。0024 の決定事項 17)。
           // 配られたプロファイルに資料のフォルダがあれば、その名前を押せない形で出す(決定事項 26)
           <div className="composer-top">
             {isBrowser && folder && <FolderBar name={folder} />}
             {!isBrowser && (
-              <WorkDirBar
-                workDir={settings.work_dir}
-                onChange={workDir => {
-                  convs.updateSettings({ work_dir: workDir });
+              <WorkspaceBar
+                workspaces={workspaces.workspaces ?? []}
+                selected={settings.workspace ?? ""}
+                onChange={workspace => {
+                  convs.updateSettings({ workspace });
                   focusInput();
                 }}
+                onCreated={reloadWorkspaces}
                 onError={addError}
               />
             )}
@@ -327,7 +334,7 @@ export default function App() {
               builtinOn={!settings.builtin_off}
               servers={mcpServers}
               selected={settings.mcp_servers ?? []}
-              workDir={isBrowser ? folder : settings.work_dir}
+              workDir={workDir}
               profile={profile}
               onBuiltinChange={on => convs.updateSettings({ builtin_off: !on })}
               onServersChange={mcp_servers => convs.updateSettings({ mcp_servers })}
@@ -551,6 +558,8 @@ export default function App() {
           convs.refreshUsage().catch(err => addError(errorMessage(err)));
         }}
         onNotice={text => toasts.notify(text, { ms: 8000 })}
+        workspaces={workspaces}
+        onWorkspacesChanged={reloadWorkspaces}
       />
     );
   } else if (adminOpen) {
@@ -590,6 +599,7 @@ export default function App() {
         onChange={convs.updateSettings}
         profile={convs.current.profile}
         folder={folder}
+        workDir={workDir}
         onSaveToProfile={() => {
           const id = convs.current!.conversation.id;
           const p = convs.current!.profile;

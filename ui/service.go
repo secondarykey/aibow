@@ -88,6 +88,8 @@ type Options struct {
 	Prefs *aibow.ToolPrefs
 	// MCPConfig は、画面から MCP のサーバーを足す・変える・消す係(mcp.json。0034)。デスクトップのアプリだけで、ブラウザでは nil
 	MCPConfig *aibow.MCPConfig
+	// Workspaces は、その PC のワークスペース(workspaces.json。0035)。デスクトップのアプリだけで、ブラウザでは nil
+	Workspaces *aibow.Workspaces
 	// Version はアプリのバージョン(画面の左下に出す)
 	Version string
 	// Notices は起動時に画面のトーストで伝えること。StartupErr は起動に失敗した理由(画面に表示する)
@@ -113,9 +115,9 @@ type Options struct {
 // モデルに見せないので、呼ばれても「ツールはありません」になる。
 type noCommand struct{ aibow.LocalTools }
 
-func (n noCommand) Tools(workDir string) []tool.Tool {
+func (n noCommand) Tools(folders []tool.Folder) []tool.Tool {
 	// 写してから外す(Local はつないだサーバーのツールの一覧を覚えていて、同じスライスを返すため)
-	return slices.DeleteFunc(slices.Clone(n.LocalTools.Tools(workDir)), func(t tool.Tool) bool { return t.Def().Name == "run_command" })
+	return slices.DeleteFunc(slices.Clone(n.LocalTools.Tools(folders)), func(t tool.Tool) bool { return t.Def().Name == "run_command" })
 }
 
 type Service struct {
@@ -135,6 +137,8 @@ type Service struct {
 	prefs *aibow.ToolPrefs
 	// mcpConfig は、画面から MCP のサーバーを変える係(デスクトップのアプリだけ。ブラウザでは nil。mcpedit.go)
 	mcpConfig *aibow.MCPConfig
+	// workspaces は、その PC のワークスペース(デスクトップのアプリだけ。ブラウザでは nil。workspaces.go)
+	workspaces *aibow.Workspaces
 
 	// version はアプリのバージョン(_cmd/aibow/version。画面の左下に出す)
 	version string
@@ -176,7 +180,7 @@ func New(o Options) (*Service, Lifecycle) {
 	quit, cancel := context.WithCancel(context.Background())
 	s := &Service{
 		host: o.Host, app: o.App, initial: o.Initial, notices: o.Notices, startupErr: o.StartupErr, notify: o.Notify, seat: o.Seat,
-		quit: quit, cancelQuit: cancel, mcp: o.MCP, prefs: o.Prefs, mcpConfig: o.MCPConfig, version: o.Version,
+		quit: quit, cancelQuit: cancel, mcp: o.MCP, prefs: o.Prefs, mcpConfig: o.MCPConfig, workspaces: o.Workspaces, version: o.Version,
 		browser: o.Browser, waits: map[string]*time.Timer{}, folders: slices.Sorted(maps.Keys(o.Folders)),
 	}
 	if d, ok := o.Host.(*DirectHost); ok {
@@ -198,6 +202,9 @@ func New(o Options) (*Service, Lifecycle) {
 			if o.Local != nil {
 				s.convs.SetLocalTools(noCommand{o.Local})
 			}
+		}
+		if !o.Browser {
+			s.convs.SetWorkspaces(o.Workspaces)
 		}
 		if o.MCP != nil { // nil の *Manager を interface に入れると nil に見えなくなるので、確かめてから渡す
 			s.convs.SetRemoteTools(o.MCP)
@@ -229,6 +236,8 @@ func New(o Options) (*Service, Lifecycle) {
 		} else if n > 0 {
 			log.Noticef("モデルを持たない %d 個の会話に、最後に使ったモデル %s を入れました", n, app.Workspace.Model)
 		}
+		// ワークスペースより前の会話の作業フォルダを、この PC にあるものだけワークスペースに移す(0035 の段1)
+		s.migrateWorkDirs(ctx)
 	}
 	return s, Lifecycle{s}
 }
