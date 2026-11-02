@@ -9,7 +9,7 @@ package engine
 // 画像のチャンクは、トークン(語彙の番号)ではなく、画像エンコーダー(mmproj)が作った埋め込み(ベクトル)を直接モデルに入れる。
 // 文字のトークンも、モデルの中では最初に埋め込みに変えられるので、モデルから見れば「埋め込みの列」として同じに扱える。
 //
-// KV キャッシュの記録(cached)もチャンクの列で持つ。次のプロンプトと先頭から比べ、文字はトークン、画像は ID(中身のハッシュ)で
+// KV キャッシュの記録(シーケンスの cached。sequence.go)もチャンクの列で持つ。次のプロンプトと先頭から比べ、文字はトークン、画像は ID(中身のハッシュ)で
 // 同じところまでを読み直さずに使う(画像はトークンが無いので、トークンでは比べられない)。
 //
 // 位置(RoPE の位置)にも気をつける。Qwen3.5 は M-RoPE(位置を「時間・縦・横」で持つ)で、画像は縦横の大きいほうの数しか位置を進めない
@@ -19,6 +19,7 @@ package engine
 
 import (
 	"fmt"
+	"runtime"
 	"slices"
 	"time"
 
@@ -98,54 +99,48 @@ func common(cached, next []chunk) (i, off int) {
 	return i, 0
 }
 
-// reuseCache は、KV キャッシュの中身と次のプロンプト next の共通部分を残し、残りを捨てる。
+// reuseCache は、シーケンス s の KV キャッシュの中身と次のプロンプト next の共通部分を残し、残りを捨てる。
 // 続きをどこから読ませるか(next の i 番目のチャンクの off トークン目)と、再利用できたマスの数を返す。
 //
 // 例えば前回のプロンプトの続きに新しい発言が足されただけなら、前回分(画像も)は計算し直さずに済む。
 // ただし Qwen3.5 は一部の層が「途中まで巻き戻せない」仕組み(線形アテンション)なので、
 // 途中から捨てられない場合は全部捨てて最初から読ませる。
-func (e *Engine) reuseCache(next []chunk) (i, off, reused int) {
-	i, off = common(e.cached, next)
-	// 最後の1トークンは必ず読ませ直す(そうしないと「次の確率」が計算されない)。プロンプトの最後は返事の書き出しの文字なので、文字のチャンク
-	if i == len(next) {
-		i = len(next) - 1
-		off = max(0, next[i].nTok-1)
-		if next[i].image != "" {
-			off = 0
-		}
-	}
-
-	keep := slices.Clone(next[:i])
-	if off > 0 {
-		keep = append(keep, textChunk(next[i].tokens[:off]))
-	}
-	for k := range keep {
-		keep[k].src = 0 // 記録には mtmd のチャンクを持たない(生成が終わると解放するため)
-	}
+func (e *Engine) reuseCache(s *sequence, next []chunk) (i, off, reused int) {
+	keep, i, off := plan(s.cached, next)
 	mem, err := llama.GetMemory(e.lctx)
 	if err != nil {
-		e.cached = nil
+		s.cached = nil
 		return 0, 0, 0
 	}
-	if positions(keep) < positions(e.cached) {
+	if positions(keep) < positions(s.cached) {
 		// 捨てるのは位置で指定する(マスの数ではない。画像があると違う数になる)
-		ok, _ := llama.MemorySeqRm(mem, 0, llama.Pos(positions(keep)), -1)
+		ok, _ := llama.MemorySeqRm(mem, s.id, llama.Pos(positions(keep)), -1)
 		if !ok {
-			llama.MemoryClear(mem, true)
-			e.cached = nil
+			e.dropSeq(mem, s)
 			return 0, 0, 0
 		}
 	}
-	e.cached = keep
+	s.cached = keep
 	return i, off, cells(keep)
 }
 
+// dropSeq はシーケンス s の KV キャッシュを丸ごと捨てる。
+// シーケンスが1本なら作業領域ごと空にする(今までと同じ)。2本以上なら、ほかのシーケンスは残す(丸ごとならハイブリッドのモデルでも捨てられる。段1)。
+func (e *Engine) dropSeq(mem llama.Memory, s *sequence) {
+	if len(e.seqs) == 1 {
+		llama.MemoryClear(mem, true)
+	} else {
+		llama.MemorySeqRm(mem, s.id, 0, -1)
+	}
+	s.cached = nil
+}
+
 // feed は next の i 番目のチャンクの off トークン目から後ろを、モデルに読ませる。読ませた画像のエンコードの秒数を返す。
-func (e *Engine) feed(next []chunk, i, off int) (encodeSec float64, err error) {
+func (e *Engine) feed(s *sequence, next []chunk, i, off int) (encodeSec float64, err error) {
 	for ; i < len(next); i++ {
 		c := next[i]
 		if c.image != "" {
-			sec, err := e.decodeImage(c)
+			sec, err := e.decodeImage(s, c)
 			encodeSec += sec
 			if err != nil {
 				return encodeSec, err
@@ -153,7 +148,7 @@ func (e *Engine) feed(next []chunk, i, off int) (encodeSec float64, err error) {
 		} else {
 			tokens := c.tokens[off:]
 			for k := 0; k < len(tokens); k += batchSize {
-				if err := e.decode(tokens[k:min(k+batchSize, len(tokens))]); err != nil {
+				if err := e.decode(s, tokens[k:min(k+batchSize, len(tokens))]); err != nil {
 					return encodeSec, err
 				}
 			}
@@ -163,38 +158,47 @@ func (e *Engine) feed(next []chunk, i, off int) (encodeSec float64, err error) {
 	return encodeSec, nil
 }
 
-// nextPos は次に読ませるものの位置。
-func (e *Engine) nextPos() llama.Pos {
-	return llama.Pos(positions(e.cached))
+// nextPos はシーケンス s に次に読ませるものの位置。
+func (s *sequence) nextPos() llama.Pos {
+	return llama.Pos(positions(s.cached))
 }
 
-// decode はトークン列をモデルに通し、KV キャッシュに追加する。位置は自分で書く(画像の後ろでずれないように)。
-func (e *Engine) decode(tokens []llama.Token) error {
+// addText は、読ませた文字のトークンを KV キャッシュの記録に足す。
+// 記録の最後が文字なら、そこに足す(生成したトークンも1つずつ足していく)。
+func (s *sequence) addText(tokens []llama.Token) {
+	if n := len(s.cached); n > 0 && s.cached[n-1].image == "" {
+		last := &s.cached[n-1]
+		last.tokens = append(last.tokens, tokens...)
+		last.nTok += len(tokens)
+		last.nPos += len(tokens)
+	} else {
+		s.cached = append(s.cached, textChunk(slices.Clone(tokens)))
+	}
+}
+
+// decode はトークン列をシーケンス s に読ませ、KV キャッシュに追加する(シーケンスが1本のときの道)。位置は自分で書く(画像の後ろでずれないように)。
+func (e *Engine) decode(s *sequence, tokens []llama.Token) error {
 	pos := make([]llama.Pos, len(tokens))
-	p0 := e.nextPos()
+	p0 := s.nextPos()
 	for k := range pos {
 		pos[k] = p0 + llama.Pos(k)
 	}
-	batch := llama.BatchGetOne(tokens)
+	batch := llama.BatchGetOne(tokens) // シーケンスは 0 に決まっている
 	batch.Pos = &pos[0]
 	rc, err := llama.Decode(e.lctx, batch)
 	if err != nil {
 		return err
 	}
 	if rc != 0 {
-		// 1 はキャッシュに空きがない、負の値はそれ以外のエラー
-		return fmt.Errorf("decode に失敗しました(戻り値 %d)。コンテキストが足りない可能性があります", rc)
+		return decodeError(rc)
 	}
-	// 記録の最後が文字なら、そこに足す(生成したトークンも1つずつ足していく)
-	if n := len(e.cached); n > 0 && e.cached[n-1].image == "" {
-		last := &e.cached[n-1]
-		last.tokens = append(last.tokens, tokens...)
-		last.nTok += len(tokens)
-		last.nPos += len(tokens)
-	} else {
-		e.cached = append(e.cached, textChunk(slices.Clone(tokens)))
-	}
+	s.addText(tokens)
 	return nil
+}
+
+// decodeError は decode の戻り値が 0 でないときのエラー。1 はキャッシュに空きがない、負の値はそれ以外のエラー。
+func decodeError(rc int32) error {
+	return fmt.Errorf("decode に失敗しました(戻り値 %d)。コンテキストが足りない可能性があります", rc)
 }
 
 // decodeImage は画像のチャンクを読ませる。エンコードにかかった秒数を返す。
@@ -205,7 +209,9 @@ func (e *Engine) decode(tokens []llama.Token) error {
 //
 // llama.cpp の helper(mtmd_helper_eval_chunks)も同じことをしているが、チャンクの列を丸ごと読ませるものしか yzma に無い。
 // KV キャッシュを使い回して途中のチャンクから読ませるため、ここで自分で書く。
-func (e *Engine) decodeImage(c chunk) (float64, error) {
+//
+// 画像の埋め込みは文字のトークンと同じ batch に混ぜられないので、シーケンスが2本以上のときも、画像だけで1回の decode にする(parallel.go)。
+func (e *Engine) decodeImage(s *sequence, c chunk) (float64, error) {
 	var embd []float32
 	var mrope, nonCausal bool
 	start := time.Now()
@@ -232,7 +238,7 @@ func (e *Engine) decodeImage(c chunk) (float64, error) {
 
 	nEmbd := int(llama.ModelNEmbdInp(e.model))
 	it := mtmd.InputChunkGetTokensImage(c.src)
-	p0 := e.nextPos()
+	p0 := s.nextPos()
 	for off := 0; off < c.nTok; off += batchSize {
 		m := min(batchSize, c.nTok-off)
 		var pos []llama.Pos
@@ -252,7 +258,11 @@ func (e *Engine) decodeImage(c chunk) (float64, error) {
 		batch.NTokens = int32(m)
 		batch.Embd = &embd[off*nEmbd]
 		batch.Pos = &pos[0]
+		nSeq, seqIDs := seqOf(m, s.id)
+		batch.NSeqId, batch.SeqId = &nSeq[0], &seqIDs[0]
 		rc, err := llama.Decode(e.lctx, batch)
+		runtime.KeepAlive(nSeq)
+		runtime.KeepAlive(seqIDs)
 		if err != nil {
 			return sec, err
 		}
@@ -260,6 +270,18 @@ func (e *Engine) decodeImage(c chunk) (float64, error) {
 			return sec, fmt.Errorf("画像の decode に失敗しました(戻り値 %d)。コンテキストが足りない可能性があります", rc)
 		}
 	}
-	e.cached = append(e.cached, chunk{image: c.image, nTok: c.nTok, nPos: c.nPos})
+	s.cached = append(s.cached, chunk{image: c.image, nTok: c.nTok, nPos: c.nPos})
 	return sec, nil
+}
+
+// seqOf は、batch の n 個の埋め込みを全部シーケンス id に読ませるための、llama_batch の n_seq_id と seq_id の中身。
+// 埋め込みの batch は BatchInit の Add が使えない(トークンの欄が無い)ので、Go のメモリで作って渡す(Decode が終わるまで生かしておく)。
+func seqOf(n int, id llama.SeqId) ([]int32, []*llama.SeqId) {
+	nSeq := make([]int32, n)
+	ids := make([]*llama.SeqId, n)
+	one := &id
+	for k := range n {
+		nSeq[k], ids[k] = 1, one
+	}
+	return nSeq, ids
 }

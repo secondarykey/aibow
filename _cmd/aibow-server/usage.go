@@ -59,7 +59,19 @@ func (r *recorder) Generate(ctx context.Context, p format.Prompt, opt engine.Gen
 	}
 	out, st, err := r.Generator.Generate(ctx, p, opt, onPrompt, onThinking, onContent)
 	r.record(ctx, at, model, st, err)
+	logSequence(st)
 	return out, st, err
+}
+
+// logSequence は、シーケンスが2本以上のとき、どのシーケンスを使ったかを出す(学習用。0023 の決定事項 8)。
+// 生成は2本の道(OpenAI 互換の口・ブラウザの会話)を通るので、どちらの道のログにも書き足さず、ここで1か所だけ出す。
+// 混ざった数は、この生成の decode に一番多く入っていた生成の数(自分を含む。2 なら、ほかの人と1回の decode にまとめて進めた)。
+func logSequence(st engine.GenerateStats) {
+	if st.Mixed == 0 {
+		return // シーケンスが1本(今までと同じ)か、decode まで行かなかった
+	}
+	log.Infof("シーケンス %d:プロンプト %d トークン(KV キャッシュの使い回し %d)%.2f 秒 / 生成 %d トークン %.2f 秒 / 同じ decode に混ざった生成 最大 %d 件 / 終了理由: %s",
+		st.Seq, st.PromptTokens, st.ReusedTokens, st.PromptSec, st.GenTokens, st.GenSec, st.Mixed, st.StopReason)
 }
 
 func (r *recorder) record(ctx context.Context, at time.Time, model string, st engine.GenerateStats, genErr error) {

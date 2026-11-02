@@ -5,7 +5,7 @@ package api
 // 流れ:
 //
 //	1. JSON を読み、書式の形(format.Prompt)にする(types.go の toPrompt)
-//	2. 生成の順番を待つ(生成は1つずつ)
+//	2. 生成の順番を待つ(同時に生成できるのは、作業領域の中のシーケンスの数まで。0023)
 //	3. リクエストの model が読み込み中のモデルと違えば読み直す(0015 の 2。順番待ちの席の中で行い、生成と取り合わない)
 //	4. 書式を当てたトークン数を数え、作業領域に入らなければエラーを返す(compact はしない。履歴を持つのはクライアントなので)
 //	5. 生成する。ストリーミングなら、文字が出るたびに Server-Sent Events の塊を送る
@@ -88,7 +88,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		log.Warnf("リクエストを断りました: プロンプト %d トークンが作業領域 %d に入りません(発言 %d 件)", n, nCtx, len(p.Messages))
 		writeError(w, http.StatusBadRequest, "invalid_request_error", "context_length_exceeded",
 			fmt.Sprintf("履歴が長すぎます。プロンプトが %d トークンあり、作業領域(%d トークン)に入りません。"+
-				"履歴を短くするか、aibow-server を -ctx(設定ファイルの ctx)で大きくして起動し直してください", n, nCtx))
+				"履歴を短くするか、aibow-server を -ctx(設定ファイルの ctx)で大きくするか -parallel(parallel)を減らして起動し直してください", n, nCtx))
 		return
 	}
 
@@ -360,7 +360,7 @@ func joinContent(content, extra string) string {
 
 // logAccepted は、リクエストを受け付けたときのログ(2026-10-21、ユーザーの指示)。
 // 終わったときの行(logResult)だけだと、順番待ちの間や長い生成・読み直しの途中に、何を処理しているかが見えないため。
-// busy は、受け付けたときに前のリクエストを処理中だったか(この行のあと順番を待つ)。
+// busy は、受け付けたときに席が全部ふさがっていたか(この行のあと順番を待つ)。
 // どのクライアントからかは aibow 欄で見分ける(画面のアプリは付ける。Cline などは付けない)。
 func logAccepted(req chatRequest, p format.Prompt, busy bool, opt engine.GenerateOptions) {
 	mode := "まとめて"
@@ -373,7 +373,7 @@ func logAccepted(req chatRequest, p format.Prompt, busy bool, opt engine.Generat
 	}
 	wait := ""
 	if busy {
-		wait = "。前のリクエストを処理中なので順番を待ちます"
+		wait = "。席が全部ふさがっている(前のリクエストを処理中)ので順番を待ちます"
 	}
 	log.Infof("受け付けました: %s・%s・モデル %s・発言 %d 件・ツール %d 個%s", mode, from, cmp.Or(req.Model, "(書いていない)"), len(p.Messages), len(p.Tools), wait)
 	log.Debugf("生成の設定: temperature %.2f・返事の上限 %d・presence penalty %.2f・思考 %v・tool_choice %s",

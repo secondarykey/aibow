@@ -48,7 +48,7 @@ type Server struct {
 	gen      Generator
 	models   Models // モデルの一覧と読み込みの係(nil なら読み込み中のモデルだけを使う)
 	defaults Defaults
-	// nCtx はサーバーの作業領域の大きさ。起動のときに決めた大きさで固定し、クライアントからは変えさせない
+	// nCtx はサーバーの作業領域の大きさ(シーケンスが2本以上なら1本あたり。0023)。起動のときに決めた大きさで固定し、クライアントからは変えさせない
 	// (共有するサーバーで1人の都合で作り直すと、ほかの人の KV キャッシュが消えるため。0015 の 3)
 	nCtx int
 	// settings は、表示だけのサーバーの設定(GET /aibow/settings。8-4)。SetSettings で渡す
@@ -113,6 +113,9 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 
 // Seat は生成の順番待ちの席。aibow-server の中のブラウザの会話(ui)に渡し、同じ席で順番を待たせる(0016 の 11)。
 func (s *Server) Seat() *Seat { return s.seat }
+
+// SetSeats は席の数を n にする(作業領域の中のシーケンスの数。0023)。待ち受けを始める前に呼ぶ。
+func (s *Server) SetSeats(n int) { s.seat = NewSeats(n) }
 
 // takeTurn は順番待ちの席が空くまで待って取る。待っている間につながりが切れたら false(列から外れる)。
 // 取れたら、終わったときに releaseTurn で返す。
