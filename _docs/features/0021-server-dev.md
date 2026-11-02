@@ -41,7 +41,7 @@
 - 見ていないこと:ターミナルで Ctrl+C を押したときの止まり方(このセッションからはコンソールに Ctrl+C を送れない)・HTTPS の aibow-server に渡すとき・mac / Linux
 - 2026-11-02:Ctrl+C で止めると、vite(npm.cmd)が先に終わり、aibow-server が後片付けの途中で止められていた(ログに `end here` が出ない)。上の 4. のように直し、
   新しいコンソールで起動して Ctrl+C を送ると(`AttachConsole` + `GenerateConsoleCtrlEvent`)、5回とも 0.5 秒で終わり、aibow-server のログに `end here` が出て、プロセスも残らなかった。
-  Git Bash で押したときの見え方はユーザーに確かめてもらう
+  Git Bash で Ctrl+C を押すとプロンプトが戻ることを、ユーザーが確かめた(2026-11-02)
 
 ## やらないこと
 
