@@ -12,7 +12,7 @@
 | `App.tsx` | 画面全体をまとめる。一覧の開閉(狭いウィンドウでは重ねて出す)、会話の場所に出すもの(チャット / 新しい会話 / 設定) |
 | `useModels.ts` / `useConversations.ts` / `useChat.ts` / `useAppSettings.ts` | Go とのやり取り |
 | `transcript.ts` | 会話の表示(吹き出し・ツールのカード・エラー・区切り)の持ち方。保存された発言から表示を作る |
-| `components/` | 表示。`ConversationList` / `Splitter` / `TitleBar` / `ChatView` / `ToolCard` / `Composer` / `WorkDirBar` / `ModelBar` / `Meter` / `NewChat` / `SettingsView` / `ConversationSettingsView` / `ConversationSettingsForm` / `ProfileSettings` / `ProfileTools` / `ConversationTools` / `ConfirmChip` / `CopyButton` など。返事の中身は [rendering.md](rendering.md) |
+| `components/` | 表示。`ConversationList` / `Splitter` / `TitleBar` / `ChatView` / `ToolCard` / `Composer` / `WorkspaceBar` / `WorkspaceSettings` / `ModelBar` / `Meter` / `NewChat` / `SettingsView` / `ConversationSettingsView` / `ConversationSettingsForm` / `ProfileSettings` / `ProfileTools` / `ConversationTools` / `ConfirmChip` / `CopyButton` など。返事の中身は [rendering.md](rendering.md) |
 | `stored.ts` | 画面の見た目の好み(一覧の幅・一覧を開いているか・最後に開いていた会話)を localStorage に覚える |
 | `mediaQuery.ts` | 画面の幅を見る(`useMediaQuery`。狭いウィンドウの境目 `NARROW_QUERY`) |
 | `theme.ts` | 画面の明るさ(ライト / ダーク)を決めて `<html data-theme>` に書く([下](#明るさライト--ダーク)) |
@@ -27,7 +27,7 @@
 - 左: 会話の一覧([下](#会話の一覧))
 - 右上: タイトルバー(`TitleBar.tsx`)。Frameless のため自前で作る。開いている会話の名前と、右端に最小化・最大化・閉じる。
   一覧の上の空いているところと合わせてドラッグで移動できる
-- 中央: チャット([下](#チャット))。入力欄の上に作業フォルダ(`WorkDirBar.tsx`)、入力欄の下にモデルの選択、右端にメーター(`Meter.tsx`)。
+- 中央: チャット([下](#チャット))。入力欄の上にワークスペース(`WorkspaceBar.tsx`)、入力欄の下にモデルの選択、右端にメーター(`Meter.tsx`)。
   モデルの選択は「この会話のモデル」(新しい会話の画面では、これから作る会話のモデル)。選ぶと会話のモデルを変えるだけで、読み込むのは送信(作り直す・今すぐ要約も)の前(0014 の「あとから決めたこと(2026-10-31)」。aibow-server 越しでは選んだときに読み込んでも、送信までにほかの人に入れ替えられることがあるため)。
   会話のモデルが読み込んでいるモデルと違う(送信するときに読み直す)ときは、枠を破線にし、吹き出しに書く(`ModelBar.tsx`。0014 の 3)。
   読み込んだモデルの情報(名前・パラメータ数・GPU / CPU・読み込み時間・作業領域・モデルの説明)は、いつも出しておかず、モデルの選択にマウスを乗せたときの吹き出しに出す(2026-10-15、ユーザーの指示)。
@@ -181,13 +181,18 @@ aibow-server につないでいるときは、**モデルの一覧(名前・書�
 - 表示は保存された返事とツールの結果から作る(`turnView`)。生成中も `reply` / `tool_result` イベントで届いた保存済みの発言から作り直すので、再起動して開き直しても同じ並びになる
 - 生成中にその会話を開き直したときは、生成中の送信で保存済みの発言を、保存された発言の側からは外す(生成中の吹き出しの中に出すため)
 
-### 作業フォルダ
+### ワークスペース(作業フォルダ。0035)
 
-- 入力欄の枠の上に左寄せで出す(`WorkDirBar.tsx`。`Composer` の `top`)。チャットの画面と新しい会話の画面の両方
-- 決めていないときはフォルダのアイコンだけ。押すとフォルダを選ぶダイアログ(Go の `ChatService.ChooseWorkDir`。Wails のダイアログ)
-- 決めたらフォルダの名前を枠付きで出し、右に外す × を出す。名前にマウスを乗せると絶対パス
+- 入力欄の枠の上に左寄せで出す(`WorkspaceBar.tsx`。`Composer` の `top`)。チャットの画面と新しい会話の画面の両方
+- 決めていないときはフォルダのアイコンだけ。押すとワークスペースの一覧が上に開く(この会話のツールと同じ形)。
+  最後の「フォルダから新しく作る」は、フォルダを選ぶダイアログ(Go の `ChatService.ChooseWorkDir`。Wails のダイアログ)→ そのフォルダ1つのワークスペースを作って選ぶ(`CreateWorkspace`。同じフォルダ1つのものがあればそれ)
+- 決めたらワークスペースの名前を枠付きで出し、右に外す × を出す。名前にマウスを乗せるとフォルダの絶対パス
+- 会話の ID のワークスペースがこの PC に無い(別の PC で選んだ・消した)ときは、赤い枠で「この PC にはこのワークスペースがありません」。押すと選び直せ、× で外せる
+- 一覧は `workspaces.ts` の `useWorkspaces`(`ChatService.Workspaces`)。App が持ち、設定の画面で変えたら読み直す
 - 設定の画面ではなくここに置くのは、どのフォルダを触らせているかがいつも見えるように、また新しい会話の画面から設定を開かずに選べるようにするため
-  (作業フォルダは新しい会話の既定に入らないので、会話ごとに選ぶ)
+  (ワークスペースは新しい会話の既定に入らないので、会話ごとに選ぶ)
+- ワークスペースの一覧・名前・フォルダの組(足す・外す・メイン・書く / 読むだけ・モデルが呼ぶ名前)・削除は、設定の画面の「ワークスペース」のタブ(`WorkspaceSettings.tsx`。デスクトップだけ)。
+  一覧の行を押すと下に詳しい欄が開く(MCP のタブと同じ形)。足したフォルダは読むだけから始める
 
 ### ファイルを読み込む
 
@@ -369,7 +374,7 @@ aibow-server が `http://127.0.0.1:8089/` で、デスクトップのアプリ�
   管理の画面に「ツール」のタブ(`components/ServerTools.tsx`。ブラウザだけ。0032 で設定の画面から移した)を出し、組み込みと MCP のサーバーごとにグループとツールの扱いを「使わない / 確認する / 確認しない」の選択で見せる。
   管理の画面を開けるのは管理者とサーバーの PC の上から開いた画面だけ(モデルのタブの `manage` と同じ人)。ほかの人には表を出さない(自分の会話の「この会話のツール」で、使えるものと使えないものが分かる。0032 の段2で決めた)。
   一覧の読み直しのボタンと保存先も出す。
-  資料のフォルダ(0024 の 12-2)は、入力欄の上に作業フォルダのバーと同じ見た目で、名前だけを押せない形で出す(`WorkDirBar.tsx` の `FolderBar`。新しい会話の画面では選んだプロファイルの `grantedFolder`)。
+  資料のフォルダ(0024 の 12-2)は、入力欄の上に作業フォルダのバーと同じ見た目で、名前だけを押せない形で出す(`WorkspaceBar.tsx` の `FolderBar`。新しい会話の画面では選んだプロファイルの `grantedFolder`)。
   会話の設定の画面にも名前を出し、プロファイルの画面に「資料のフォルダ」の選択(管理者だけ。ほかの人には名前だけ。`ProfileSettings.tsx` の `FolderField`)を出す
   確認のカードはアプリと同じ部品で、知らせ(SSE)をつなぎ直したら、待っている確認を取り直して出し直す(`useChat` の `resync`)
 - 見せ方は aibow-server につないだ画面のアプリと同じ(Go の `ServerHost` がつなぎ先を返すので、画面はその見せ方になる):モデルのタブは一覧(名前・大きさ・読み込み中か)と、つなぎ先・作業領域だけ

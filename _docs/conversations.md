@@ -93,11 +93,15 @@
 
 ## 設定
 
-- 会話ごとの設定(システムプロンプト・temperature・思考・presence penalty・compact の方式・作業フォルダ・使う MCP のサーバー)は `conversations.settings`(JSON)
+- 会話ごとの設定(システムプロンプト・temperature・思考・presence penalty・compact の方式・ワークスペース・使う MCP のサーバー)は `conversations.settings`(JSON)
+  - `workspace`(ワークスペースの ID。0035)は**新しい会話の既定に入れない**(`asDefaults` で外す)。パスは会話に置かず、その PC の `workspaces.json` で引く(`Conversations.workDir`・`toolFolders`)。
+    この PC に無い ID なら作業フォルダが無いものとして扱う。共有で読む・写すときは渡さない
+  - `work_dir` はワークスペースより前の作業フォルダ(絶対パス)。もう使わず、画面からも書けない(`CreateIn`・`UpdateSettings` が保存してある値のままにする)。
+    起動したときに、そのパスがこの PC にある会話だけ、パスごとに1つのワークスペース(フォルダ1つ・メイン・書く)に移して空にする(`MigrateWorkDirs`)。
+    無いパスは残し、その PC では使わない(そのパスのある PC で起動したときに、そちらで移す)。aibow-server につないでいるときの会話(server.db)も、つないでいる PC で同じように移す
   - `compact` が空の古い会話は `summary` として扱う(`normalized`)。古い JSON の `max_tokens` は読むときに無視される
   - 以前の「ツールを使う」(`tools`)は 0006 で無くした。ツールを使うかは、ツールの扱い(会話の上書き・プロファイル・`tools.json`)と会話で使う MCP のサーバーだけで決める。保存済みの JSON に残っている `tools` は読むときに無視される(OFF だった会話でもツールを使うようになる)
-  - `work_dir`(作業フォルダの絶対パス。空なら決めていない)は**新しい会話の既定に入れない**(`asDefaults` で外す)。相対パスは保存しない(`validate`)。
-    決めた会話では、ファイルのツール・コマンドのツールと環境の説明がプロンプトに入る(使わないにしたツールは除く。[tools.md](tools.md))
+  - ワークスペースを決めた会話では、ファイルのツール・コマンドのツールと環境の説明がプロンプトに入る(使わないにしたツールは除く。[tools.md](tools.md))
   - `mcp_servers`(この会話で使う MCP のサーバーの名前)と `builtin_off`(この会話で組み込みのツールを使わない。入力欄の上の「この会話のツール」で外したとき)は、
     新しい会話では、プロファイルの「使うツールのグループ」(設定の画面のプロファイルの「ツール」)を写す。settings.json に無いサーバーは無視する(`Conversations.Defaults`)。読むときは空の配列にそろえる(`normalized`)
   - `tool_policies`(この会話だけのツールの扱いの上書き。会話の設定の画面の「ツール」で `on` / `off` を書く)は新しい会話の既定に入れない(`asDefaults` で外す)。知らない値は保存しない(`validate`)。仕組みは [mcp.md](mcp.md)
