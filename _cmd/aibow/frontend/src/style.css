@@ -677,6 +677,14 @@ button.danger-outline { color: var(--error); border-color: var(--error); backgro
 .mcp-summary { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, Consolas, monospace; font-size: 12px; color: var(--muted); }
 .mcp-row > span:last-child { display: flex; gap: 4px; justify-content: flex-end; }
 .mcp-row.shadowed .mcp-name, .mcp-row.shadowed .mcp-summary { opacity: .5; }
+/* 設定の画面の「ワークスペース」(0035)。一覧は MCP のタブと同じ形(名前 / メインのフォルダ / 印) */
+.workspace-table { grid-template-columns: fit-content(30%) minmax(0, 1fr) auto; }
+.origin-chip svg { vertical-align: -2px; }
+.origin-chip.warn { border-color: var(--error); color: var(--error); }
+.workspace-folders { display: flex; flex-direction: column; gap: 4px; }
+.workspace-folder { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.workspace-folder.missing .mcp-summary { text-decoration: line-through; }
+.workspace-warn { color: var(--error); flex-shrink: 0; }
 .segmented.mcp-kind { margin-top: 12px; }
 .mcp-kv { display: flex; gap: 6px; align-items: center; margin-top: 4px; }
 .settings-view .mcp-kv input[type=text] { width: 35%; flex-shrink: 0; }
@@ -813,6 +821,14 @@ footer { border-top: 1px solid var(--border); background: var(--panel); padding:
 .conv-tools-item:hover { background: var(--bg); }
 .conv-tools-item.needs-dir { color: var(--muted); }
 .conv-tools-check { width: 14px; display: inline-flex; color: var(--accent); }
+/* ワークスペースを選ぶ一覧(0035)。この会話のツールと同じ形で、上に開く。最後に「フォルダから新しく作る」 */
+.workspace-menu { min-width: 220px; max-width: 360px; }
+.workspace-menu-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-menu-warn { color: var(--error); flex-shrink: 0; }
+.workspace-menu-sep { height: 1px; margin: 4px 2px; background: var(--border); }
+.workdir-bar { position: relative; }
+/* 会話のワークスペースがこの PC に無い(別の PC で選んだ・消した) */
+.workdir-bar.missing .workdir { border-color: var(--error); color: var(--error); }
 
 /* トースト: 右上(タイトルバーのすぐ下)に重ねて出す。クリックで消える */
 .toasts {

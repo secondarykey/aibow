@@ -228,15 +228,15 @@ func TestSaveConversationToProfile(t *testing.T) {
 	cs, _ := newTestConversations(t, &fakeGen{})
 	cs.SetRemoteTools(&fakeRemote{})
 	c := mustCreate(t, cs)
-	c.Settings.System, c.Settings.WorkDir, c.Settings.MCPServers = "会話で直した", t.TempDir(), []string{"fake"}
+	c.Settings.System, c.Settings.Workspace, c.Settings.MCPServers = "会話で直した", workspaceFor(t, cs, t.TempDir()), []string{"fake"}
 	if err := cs.UpdateSettings(ctx, c.ID, c.Settings); err != nil {
 		t.Fatal(err)
 	}
 	if err := cs.SaveToProfile(ctx, c.ID, mustDefaultProfile(t, cs).ID); err != nil {
 		t.Fatal(err)
 	}
-	if d := mustDefaults(t, cs); d.System != "会話で直した" || !slices.Equal(d.MCPServers, []string{"fake"}) || d.WorkDir != "" {
-		t.Errorf("値と使うグループを写し、作業フォルダは写さない: %+v", d)
+	if d := mustDefaults(t, cs); d.System != "会話で直した" || !slices.Equal(d.MCPServers, []string{"fake"}) || d.Workspace != "" {
+		t.Errorf("値と使うグループを写し、ワークスペースは写さない: %+v", d)
 	}
 	p, err := cs.SaveAsProfile(ctx, c.ID, "直した版")
 	if err != nil || p.Values.System != "会話で直した" || len(p.Rules.Fixed) != 0 {

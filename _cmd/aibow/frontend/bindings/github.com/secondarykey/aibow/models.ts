@@ -375,11 +375,19 @@ export interface ConversationSettings {
      * (以前の「ツールを使う」(tools)は 0006 で無くした。ツールを使うかは、設定の画面の「ツール」(tools.json)と、
      * 会話で使う MCP のサーバーだけで決める。保存済みの会話の JSON に残っている tools は、読むときに無視される)
      * 
-     * WorkDir は作業フォルダ(絶対パス)。空なら決めていない。決めた会話では、
-     * その中のファイルを扱うツール(tool.Files)とコマンドのツールをモデルに出す。
+     * Workspace はワークスペース(この PC の workspaces.json に登録したフォルダの組。0035)の ID。空なら決めていない。
+     * 決めた会話では、そのフォルダの中のファイルを扱うツール(tool.Files)とコマンドのツールをモデルに出す。
+     * パスは PC のものなので会話には置かず、ID だけを持つ(別の PC で開くと、その ID が無いのでフォルダのツールを出さない)。
      * 新しい会話の既定には入れない(前の会話のフォルダを引き継いで、別のフォルダを書き換えてしまうのを防ぐため)
      */
-    "work_dir": string;
+    "workspace"?: string;
+
+    /**
+     * WorkDir は、ワークスペースより前の作業フォルダ(絶対パス)。もう使わない。
+     * 起動したときに、この PC にあるパスならワークスペースに移して空にする(Conversations.MigrateWorkDirs)。
+     * この PC に無いパスは、そのまま残す(そのパスのある PC で起動したときに、そちらで移せるように)。画面からは変えられない
+     */
+    "work_dir"?: string;
 
     /**
      * MCPServers は、この会話で使う MCP のサーバー(settings.json の名前)。選んでいないサーバーはモデルに見せず、起動もしない。
@@ -1082,6 +1090,51 @@ export interface Usage {
 export interface UserRef {
     "name": string;
     "display_name"?: string;
+}
+
+/**
+ * Workspace はワークスペース1つ。
+ */
+export interface Workspace {
+    /**
+     * 会話の設定(ConversationSettings.Workspace)が持つ ID(UUID)
+     */
+    "id": string;
+
+    /**
+     * 画面に出す名前
+     */
+    "name": string;
+
+    /**
+     * Folders はフォルダの組。メイン(Main)はちょうど1つ
+     */
+    "folders": WorkspaceFolder[] | null;
+}
+
+/**
+ * WorkspaceFolder はワークスペースのフォルダ1つ。
+ */
+export interface WorkspaceFolder {
+    /**
+     * 絶対パス
+     */
+    "path": string;
+
+    /**
+     * Name はモデルが呼ぶ短い名前(ファイルのツールの引数 folder の値。既定はフォルダ名)。ワークスペースの中で重ならない
+     */
+    "name": string;
+
+    /**
+     * Main はメインのフォルダか。run_command のカレント・${workdir} の MCP のサーバーに渡すフォルダ。folder を省いたときもこれ
+     */
+    "main"?: boolean;
+
+    /**
+     * Writable は、ファイルのツールで書けるか(false なら読むだけ。write_file・edit_file を受け付けない)
+     */
+    "writable"?: boolean;
 }
 
 /**

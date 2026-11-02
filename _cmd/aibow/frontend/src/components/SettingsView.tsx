@@ -16,6 +16,8 @@ import { ProfileSettings } from "./ProfileSettings";
 import { ModelSettings } from "./ModelSettings";
 import { ServerSettings } from "./ServerSettings";
 import { McpEditor, type McpEditorAPI } from "./McpEditor";
+import { WorkspaceSettings } from "./WorkspaceSettings";
+import type { WorkspaceList } from "../../bindings/github.com/secondarykey/aibow/ui";
 import { ChatService, isBrowser, me } from "../backend";
 import { AccountSettings, signedIn } from "./AccountSettings";
 import { LeaderGroups } from "./GroupSettings";
@@ -42,15 +44,19 @@ interface Props {
   onToolsChanged(): void; // ツールを使う / 使わないを変えた(メーターと、会話で選べる MCP のサーバーを読み直す)
   onNotice(text: string): void; // お知らせ(トースト)を出す(MCP のサーバーを足した、など)
   initialTab?: Tab; // 開いたときのタブ(左下の名前のメニューの「アカウント」から開くときは account)
+  workspaces: WorkspaceList; // その PC のワークスペース(「ワークスペース」のタブ。デスクトップだけ。0035)
+  onWorkspacesChanged(): void; // ワークスペースを変えた(入力欄の上の一覧を読み直す)
 }
 
-export type Tab = "basic" | "model" | "conversation" | "mcp" | "server" | "groups" | "account";
+export type Tab = "basic" | "model" | "conversation" | "workspace" | "mcp" | "server" | "groups" | "account";
 
 const TABS: { id: Tab; label: string; title: string }[] = [
   { id: "basic", label: "基本設定", title: "会話によらず、この PC で1つだけのもの(画面)" },
   // ブラウザ(aibow-server)では一覧だけ。読み込む / 降ろす・GPU の層数・置き場所は管理の画面(0032 の決定事項 6)
   { id: "model", label: "モデル", title: isBrowser ? "使えるモデルの一覧" : "モデルの一覧(読み込む / 降ろす・GPU の層数)と置き場所" },
   { id: "conversation", label: "会話", title: "プロファイル(新しい会話の既定・ツールの扱い)" },
+  // その PC のフォルダの組(アプリだけ。0035)。会話は入力欄の上でここから選ぶ
+  { id: "workspace", label: "ワークスペース", title: "この PC のワークスペース(名前を付けたフォルダの組)を作る・変える・消す" },
   // MCP のサーバーそのものを足す・変える・消す(アプリだけ。0034 の決定事項 2・3)。使う・確認するを決めるのは「会話」のプロファイルの「ツール」
   { id: "mcp", label: "MCP", title: "MCP のサーバーを足す・変える・消す・試しにつなぐ" },
   // aibow-server につなぐ・戻すは、デスクトップのアプリだけ(0019。ブラウザは aibow-server そのものの画面)
@@ -71,7 +77,7 @@ const appMcpAPI: McpEditorAPI = {
   parse: text => ChatService.ParseMCPJSON(text),
 };
 
-export function SettingsView({ onClose, errors, app, models, modelState, servers, onProfilesChanged, onApplyLimits, onError, appDisabled, connectDisabled, onDisplayChange, onToolsChanged, onNotice, initialTab }: Props) {
+export function SettingsView({ onClose, errors, app, models, modelState, servers, onProfilesChanged, onApplyLimits, onError, appDisabled, connectDisabled, onDisplayChange, onToolsChanged, onNotice, initialTab, workspaces, onWorkspacesChanged }: Props) {
   // 開くたびに「基本設定」から(開いている間だけ覚える)。左下の名前のメニューから開いたときは「アカウント」
   const [tab, setTab] = useState<Tab>(initialTab ?? "basic");
   // グループの長かは、共有の相手の一覧(グループの長も入っている)で決める。ブラウザでログインしているときだけ
@@ -87,7 +93,7 @@ export function SettingsView({ onClose, errors, app, models, modelState, servers
         {errors.map(e => <div key={e.id} className="msg error">{e.text}</div>)}
 
         <div className="settings-tabs" role="tablist">
-          {TABS.filter(t => (t.id !== "groups" || leader) && (t.id !== "account" || signedIn()) && (t.id !== "server" || !isBrowser) && (t.id !== "mcp" || !isBrowser)).map(t => (
+          {TABS.filter(t => (t.id !== "groups" || leader) && (t.id !== "account" || signedIn()) && (t.id !== "server" || !isBrowser) && (t.id !== "mcp" || !isBrowser) && (t.id !== "workspace" || !isBrowser)).map(t => (
             <button
               key={t.id}
               role="tab"
@@ -116,6 +122,8 @@ export function SettingsView({ onClose, errors, app, models, modelState, servers
         {tab === "account" && <AccountSettings onError={onError} />}
 
         {tab === "server" && <ServerSettings disabled={connectDisabled} onError={onError} />}
+
+        {tab === "workspace" && <WorkspaceSettings list={workspaces} reload={onWorkspacesChanged} />}
 
         {tab === "mcp" && <McpEditor api={appMcpAPI} onChanged={onToolsChanged} onNotice={onNotice} />}
 

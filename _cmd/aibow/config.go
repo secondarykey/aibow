@@ -73,6 +73,7 @@ type appConfig struct {
 	windowPath   string // ウィンドウの位置と大きさ(window.json。閉じるときに aibow が書く。windowstate.go)
 	placesPath   string // 画面で足したモデルの置き場所(model-places.json。直接の形のときだけ使う。ui/modelplaces.go)
 	connPath     string // 画面で決めた aibow-server のつなぎ先とログイン(connection.json。aibow が書く。0019)
+	wsPath       string // ワークスペース(workspaces.json。PC のフォルダの組。aibow が書く。0035)
 	initialModel string // AIBOW_MODEL。空なら最後に使ったモデル → 一覧の先頭(書式に対応している最初のモデル)
 
 	// settings は settings.json の中身。settingsErr は読めなかった理由(settings.json の MCP のサーバーは使わずに起動し、お知らせで伝える。startMCP)
@@ -118,6 +119,7 @@ func loadConfig() (appConfig, error) {
 		windowPath:   env.str("AIBOW_WINDOW", configFile("window.json")),
 		placesPath:   env.str("AIBOW_MODEL_PLACES", configFile("model-places.json")),
 		connPath:     env.str("AIBOW_CONNECTION", configFile("connection.json")),
+		wsPath:       env.str("AIBOW_WORKSPACES", configFile("workspaces.json")),
 		initialModel: os.Getenv("AIBOW_MODEL"),
 		// 既定のシステムプロンプトなど、環境変数で変えない初期値は ui にある(aibow-server のブラウザの会話と同じ既定にするため)
 		app: ui.InitialAppSettings(ui.InitialValues{

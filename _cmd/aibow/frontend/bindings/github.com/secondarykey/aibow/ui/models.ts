@@ -49,6 +49,41 @@ export interface ConversationDetail {
 }
 
 /**
+ * FolderView は、画面に出すフォルダ1つ。この PC にあるか・リポジトリかを添える(どちらもそのつど見る)。
+ */
+export interface FolderView {
+    /**
+     * 絶対パス
+     */
+    "path": string;
+
+    /**
+     * Name はモデルが呼ぶ短い名前(ファイルのツールの引数 folder の値。既定はフォルダ名)。ワークスペースの中で重ならない
+     */
+    "name": string;
+
+    /**
+     * Main はメインのフォルダか。run_command のカレント・${workdir} の MCP のサーバーに渡すフォルダ。folder を省いたときもこれ
+     */
+    "main"?: boolean;
+
+    /**
+     * Writable は、ファイルのツールで書けるか(false なら読むだけ。write_file・edit_file を受け付けない)
+     */
+    "writable"?: boolean;
+
+    /**
+     * この PC に無い(消した・ドライブを外した)
+     */
+    "missing"?: boolean;
+
+    /**
+     * .git がある
+     */
+    "git"?: boolean;
+}
+
+/**
  * ModelSettingsResult は ModelSettings の戻り値。
  */
 export interface ModelSettingsResult {
@@ -116,4 +151,37 @@ export interface ModelsResult {
      * (管理者か、サーバーの PC の上から開いた画面。0018 の決定事項 8)。画面はモデルのタブを、アプリの中で動かすときと同じに出す
      */
     "manage"?: boolean;
+}
+
+/**
+ * WorkspaceList は、画面に出すワークスペースの一覧。
+ */
+export interface WorkspaceList {
+    "workspaces": WorkspaceView[] | null;
+
+    /**
+     * workspaces.json の場所(設定の画面に出す)
+     */
+    "path": string;
+
+    /**
+     * 読めなかったときの理由(書き換えない)
+     */
+    "error"?: string;
+}
+
+/**
+ * WorkspaceView は、画面に出すワークスペース1つ。
+ */
+export interface WorkspaceView {
+    /**
+     * 会話の設定(ConversationSettings.Workspace)が持つ ID(UUID)
+     */
+    "id": string;
+
+    /**
+     * 画面に出す名前
+     */
+    "name": string;
+    "folders": FolderView[] | null;
 }

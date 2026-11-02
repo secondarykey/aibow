@@ -128,8 +128,10 @@ type Conversations struct {
 	confirmMu sync.Mutex
 	pending   *pendingConfirm
 
-	// noWorkDir は、会話に保存した作業フォルダを使わないか(IgnoreWorkDir)
+	// noWorkDir は、会話に保存した作業フォルダ(ワークスペース)を使わないか(IgnoreWorkDir)
 	noWorkDir bool
+	// workspaces は、その PC のワークスペース(workspaces.json。0035)。nil なら何も登録していない扱い(SetWorkspaces)
+	workspaces *Workspaces
 	// folders は aibow-server の資料のフォルダ(名前 → 絶対パス。SetFolders)
 	folders map[string]string
 }
@@ -432,7 +434,7 @@ func (cs *Conversations) CopyShared(ctx context.Context, id uuid.UUID) (Conversa
 		profile = def.ID
 	}
 	s := src.Conversation.Settings.normalized()
-	s.WorkDir, s.profile = "", nil
+	s.Workspace, s.WorkDir, s.profile = "", "", nil // ワークスペースは渡さない(PC のもの。0018・0035)
 	now := time.Now()
 	c := Conversation{ID: uuid.NewV7(), Title: src.Conversation.Title + "(写し)", Settings: s, ProfileID: profile, CreatedAt: now, UpdatedAt: now}
 	if err := cs.store.CreateConversation(ctx, c); err != nil {
@@ -481,8 +483,9 @@ func (cs *Conversations) CreateIn(ctx context.Context, profileID uuid.UUID, sett
 		s = settings.normalized()
 	}
 	s.profile = nil
+	s.WorkDir = "" // 前の作業フォルダは、新しい会話には書かない(ワークスペースを使う。0035)
 	if cs.noWorkDir {
-		s.WorkDir = ""
+		s.Workspace = ""
 	}
 	// 会話の上限・返事の上限も会話の値として持つ(画面が渡さなかったら既定の値)
 	if s, err = cs.withLimits(ctx, s); err != nil {
@@ -556,8 +559,9 @@ func (cs *Conversations) UpdateSettings(ctx context.Context, id uuid.UUID, s Con
 	}
 	s = keepStored(s, stored, p)
 	s.profile = nil
+	s.WorkDir = stored.WorkDir // 前の作業フォルダは画面からは変えない(起動したときに移すまで残す。MigrateWorkDirs)
 	if cs.noWorkDir {
-		s.WorkDir = stored.WorkDir // 決めも消しもしない(画面には空で見せているため)
+		s.Workspace = stored.Workspace // 決めも消しもしない(画面には空で見せているため)
 	}
 	c.Settings = s
 	return cs.store.UpdateConversation(ctx, c)

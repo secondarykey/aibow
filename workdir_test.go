@@ -46,7 +46,7 @@ func TestWorkDirAddsFileToolsAndEnvironment(t *testing.T) {
 		{"組み込みのツールを使わない", dir, func() { prefs.SetBuiltinPolicy(ToolOff) }, nil, false, false},
 	}
 	for i, s := range steps {
-		set.WorkDir = s.workDir
+		set.Workspace = workspaceFor(t, cs, s.workDir)
 		s.prefs()
 		if err := cs.UpdateSettings(ctx, c.ID, set); err != nil {
 			t.Fatal(err)
@@ -74,7 +74,10 @@ func TestEnvironmentPlacement(t *testing.T) {
 	cs, _ := newTestConversations(t, &fakeGen{})
 	set := testDefaults
 	work := filepath.Join(t.TempDir(), "example") // OS の書き方の絶対パス(Linux のテストでも名前が取れるように)
-	set.WorkDir = work
+	if err := os.Mkdir(work, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	set.Workspace = workspaceFor(t, cs, work)
 	msgs := promptMessages(cs.systemPrompt(set), "- 要約", nil)
 	want := testDefaults.System + "\n\n# Environment\nWorking directory: " + work + "\nOS: " + runtime.GOOS +
 		"\nShell for run_command: " + tool.ShellNote + "\nUse paths relative to the working directory.\n" +
@@ -103,7 +106,7 @@ func TestAgentReadsFileInWorkDir(t *testing.T) {
 	}}
 	cs, _, c := newToolConversation(t, g)
 	set := c.Settings
-	set.WorkDir = dir
+	set.Workspace = workspaceFor(t, cs, dir)
 	cs.UpdateSettings(ctx, c.ID, set)
 	send(t, cs, c, "このフォルダに何がある?")
 
@@ -119,33 +122,61 @@ func TestAgentReadsFileInWorkDir(t *testing.T) {
 	}
 }
 
-// 作業フォルダは新しい会話の既定に入れない(前の会話のフォルダを引き継がない)
-func TestWorkDirIsNotADefault(t *testing.T) {
+// ワークスペースは新しい会話の既定に入れない(前の会話のフォルダを引き継がない)
+func TestWorkspaceIsNotADefault(t *testing.T) {
 	cs, _ := newTestConversations(t, &fakeGen{})
 	set := testDefaults
-	set.WorkDir = t.TempDir()
+	set.Workspace = workspaceFor(t, cs, t.TempDir())
 	if err := cs.SetDefaults(ctx, set); err != nil {
 		t.Fatal(err)
 	}
-	if mustDefaults(t, cs).WorkDir != "" {
-		t.Errorf("既定に作業フォルダが入っています: %q", mustDefaults(t, cs).WorkDir)
+	if mustDefaults(t, cs).Workspace != "" {
+		t.Errorf("既定にワークスペースが入っています: %q", mustDefaults(t, cs).Workspace)
 	}
 	saved, _, err := LoadAppSettings(ctx, cs.store, AppSettings{})
-	if err != nil || saved.Defaults.WorkDir != "" {
+	if err != nil || saved.Defaults.Workspace != "" {
 		t.Errorf("保存した既定: %+v, %v", saved.Defaults, err)
 	}
 	c, _ := cs.Create(ctx, nil)
-	if c.Settings.WorkDir != "" {
-		t.Errorf("既定から作った会話: %q", c.Settings.WorkDir)
+	if c.Settings.Workspace != "" {
+		t.Errorf("既定から作った会話: %q", c.Settings.Workspace)
 	}
-	// 新しい会話の画面で選んだフォルダは、その会話には入る
+	// 新しい会話の画面で選んだワークスペースは、その会話には入る
 	c, err = cs.Create(ctx, &set)
-	if err != nil || c.Settings.WorkDir != set.WorkDir {
-		t.Errorf("選んで作った会話: %q, %v", c.Settings.WorkDir, err)
+	if err != nil || c.Settings.Workspace != set.Workspace {
+		t.Errorf("選んで作った会話: %q, %v", c.Settings.Workspace, err)
 	}
-	// 相対パスは受け付けない
-	set.WorkDir = "work"
-	if err := cs.UpdateSettings(ctx, c.ID, set); err == nil {
-		t.Error("相対パスの作業フォルダはエラーのはず")
+}
+
+// 前の作業フォルダ(work_dir)は、画面からは書けない(作る会話にも、設定を変えるときにも。0035)
+func TestWorkDirIsNotWritable(t *testing.T) {
+	cs, _ := newTestConversations(t, &fakeGen{})
+	set := testDefaults
+	set.WorkDir = t.TempDir()
+	c, err := cs.Create(ctx, &set)
+	if err != nil || c.Settings.WorkDir != "" {
+		t.Fatalf("作った会話: %q, %v", c.Settings.WorkDir, err)
 	}
+	if err := cs.UpdateSettings(ctx, c.ID, set); err != nil {
+		t.Fatal(err)
+	}
+	if stored, _, _ := cs.store.Conversation(ctx, c.ID); stored.Settings.WorkDir != "" {
+		t.Errorf("設定を変えて作業フォルダが入った: %q", stored.Settings.WorkDir)
+	}
+}
+
+// workspaceFor は、フォルダ dir 1つのワークスペースを cs に登録して、その ID を返す(ファイルは使わない)。dir が空なら空
+func workspaceFor(t *testing.T, cs *Conversations, dir string) string {
+	t.Helper()
+	if dir == "" {
+		return ""
+	}
+	if cs.workspaces == nil {
+		cs.workspaces, _ = LoadWorkspaces("")
+	}
+	ws, err := cs.workspaces.CreateFromFolder(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ws.ID
 }
