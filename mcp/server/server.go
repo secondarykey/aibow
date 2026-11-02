@@ -78,7 +78,7 @@ func ToolsIn(folders []tool.Folder) []tool.Tool {
 	if len(folders) > 0 {
 		tools = append(tools, tool.FilesIn(folders)...)
 		tools = append(tools, tool.UpdatePlan()) // 作業の予定(0037)。フォルダのある会話だけで出す(決定事項 14)
-		tools = append(tools, tool.RunCommand(tool.MainFolder(folders).Path))
+		tools = append(tools, tool.RunCommandIn(folders))
 	}
 	return tools
 }
@@ -97,11 +97,11 @@ func instructions(folders []tool.Folder) string {
 			"- Shell for run_command: " + tool.ShellNoteFor(true) + "\n"
 	}
 	var b strings.Builder
-	b.WriteString("# Environment\n- Folders (file tools take a folder argument; omit it for the main folder. File paths are relative to the folder):\n")
+	b.WriteString("# Environment\n- Folders (file tools and run_command take a folder argument; omit it for the main folder. File paths are relative to the folder):\n")
 	for _, f := range folders {
 		fmt.Fprintf(&b, "  - %s (%s): %s\n", f.Name, tool.FolderMarks(f, false), f.Path)
 	}
-	b.WriteString("- Shell for run_command: " + tool.ShellNoteFor(true) + " (runs in the main folder)\n")
+	b.WriteString("- Shell for run_command: " + tool.ShellNoteFor(true) + " (runs in the chosen folder; do not cd into a folder)\n")
 	return b.String()
 }
 

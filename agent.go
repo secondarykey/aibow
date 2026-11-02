@@ -933,7 +933,7 @@ func (cs *Conversations) localTools(set ConversationSettings) []tool.Tool {
 		return cs.tools
 	}
 	// 作業の予定(update_plan。0037)もフォルダのある会話だけで出す(mcp/server の ToolsIn と同じ並び)
-	return append(append(slices.Clip(cs.tools), tool.FilesIn(folders)...), tool.UpdatePlan(), tool.RunCommand(tool.MainFolder(folders).Path))
+	return append(append(slices.Clip(cs.tools), tool.FilesIn(folders)...), tool.UpdatePlan(), tool.RunCommandIn(folders))
 }
 
 // RemoteTools は、aibow の外のプログラムが実行するツールの置き場(MCP のサーバー。本物は mcp/client の Manager)。

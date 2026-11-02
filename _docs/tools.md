@@ -295,7 +295,7 @@ Folders (pass the folder argument; omit it for the main folder):
 OS: windows
 Shell for run_command: cmd.exe (use dir and type; ls, cat and grep are not available. To search inside files, use search_files instead of findstr)
 Use paths relative to the folder.
-Commands already run inside the main folder "aibow", so do not cd into it. Each folder name refers to that folder itself, not to a subfolder.
+Commands run in the main folder "aibow" unless you pass folder; do not cd into a folder. Each folder name refers to that folder itself, not to a subfolder.
 ```
 
 ### フォルダが複数のワークスペース(0035 の段2)
@@ -310,9 +310,13 @@ Commands already run inside the main folder "aibow", so do not cd into it. Each 
 - 絶対パスは、どのフォルダの中かを見て振り分ける(入れ子なら深いほう)。`folder` を書いたのにそのフォルダの外を指していれば「食い違い」のエラー
 - **読むだけのフォルダ**には `write_file`・`edit_file` を向けられない。`Preview` の前(`filePath`)で「<名前> は読むだけのフォルダなので、書き換えられません。ほかのフォルダに写しを作らず、書き換えられないことをユーザーに伝えて、ここで止まってください」を返すので、確認のカードは出ない
   (止まるよう促すのは、4B が書けるフォルダに写しを作ることがあったため。[tuning.md](tuning.md))
-- `run_command` はメインをカレントにする。読むだけのフォルダもコマンドからは書けてしまうので、守りは今までどおり確認(環境の説明に書くのは read-only の印まで)
+- `run_command` にも引数 `folder` を付け、選んだフォルダをカレントにする(省けばメイン。`tool.RunCommandIn`。フォルダが1つなら定義は今までと同じ)。
+  以前はメインだけで動かしていたが、書けるフォルダや git の印の付いたフォルダでビルドや Git を動かせず、モデルが `cd B && git status`(メインの下の B を探す)や、
+  cmd.exe の `/d` 無しの別のドライブへの `cd`(カレントが変わらない)で失敗した(2026-11-02、ユーザーの報告。0035)。コマンドはどこでも書けるので、カレントをメインに縛っても守りにはならない
+- **読むだけのフォルダでも `run_command` は動かせる**(`git log`・`git diff` のような調べるだけのコマンドのため。2026-11-02、ユーザーと決めた)。
+  コマンドからは書けてしまうので、守りは今までどおり確認。確認のカードの「何をするか」を「コマンド(読むだけのフォルダ)」にする(環境の説明に書くのは read-only の印まで)
 - `${workdir}` の MCP のサーバーはメインのパスで起動する(ほかのフォルダを渡す書き方は作らない)
-- 確認のカードには、メイン以外のフォルダのとき、そのフォルダの名前を出す(`tool.Preview.Folder`)
+- 確認のカードには、メイン以外のフォルダのとき、そのフォルダの名前を出す(`tool.Preview.Folder`。`run_command` も)
 - aibow の中の MCP サーバー(`mcp/client` の `Local`)は、フォルダの組ごと(名前・パス・メイン・書けるかの組。`folderKey`)に1つ。設定の画面で組を変えたら、次の送信から新しい組のサーバーを使う
 
 ### 作業の予定(update_plan。0037 の段3)
@@ -326,7 +330,7 @@ Commands already run inside the main folder "aibow", so do not cd into it. Each 
 
 ### コマンドのツール(0005 の 3-3)
 
-- `run_command`: 作業フォルダをカレントにしてシェルで実行し、出力と終了コードを返す。実行前に確認する(確認のカードにはコマンドを出す)
+- `run_command`: 作業フォルダ(ワークスペースのフォルダが複数なら、引数 `folder` で選んだフォルダ。省けばメイン)をカレントにしてシェルで実行し、出力と終了コードを返す。実行前に確認する(確認のカードにはコマンドを出す)
 - コマンドは何でもできるので、ファイルのツールの `os.Root` のように仕組みでは縛れない。実行前の確認が唯一の守り
 - **Windows**:`cmd.exe /d /v:on /s /c "chcp 65001 >nul && cmd.exe /d /s /c "!AIBOW_COMMAND!""`(コマンドは環境変数 `AIBOW_COMMAND`)。窓は出さない(`CREATE_NO_WINDOW`)
   - 同じ cmd.exe の中で `chcp 65001` しても組み込みのコマンドは Shift_JIS のままなので、chcp の後に起動した cmd.exe で動かす(cmd.exe 自身のメッセージは英語になる)

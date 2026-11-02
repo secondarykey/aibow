@@ -171,3 +171,42 @@ func TestFolderHints(t *testing.T) {
 		t.Errorf("メインのサブフォルダ: %q, %v", got, err)
 	}
 }
+
+// run_command も folder でカレントを選び、省けばメイン。読むだけのフォルダでも動かせ、確認のカードにそう出す(2026-11-02)
+func TestRunCommandFolder(t *testing.T) {
+	main, notes, _ := twoFolders(t)
+	tl := RunCommandIn([]Folder{
+		{Name: "app", Path: main, Main: true, Writable: true},
+		{Name: "notes", Path: notes},
+	})
+	list := byOS("dir /b", "ls")
+
+	if got, err := run(t, tl, "command", list); err != nil || !strings.Contains(got, "app.go") {
+		t.Errorf("folder を省くとメイン: %q, %v", got, err)
+	}
+	if got, err := run(t, tl, "folder", "Notes", "command", list); err != nil || !strings.Contains(got, "memo.md") || strings.Contains(got, "app.go") {
+		t.Errorf("notes で動く: %q, %v", got, err)
+	}
+	if _, err := run(t, tl, "folder", "docs", "command", list); err == nil || !strings.Contains(err.Error(), "app・notes") {
+		t.Errorf("無いフォルダ: %v", err)
+	}
+
+	// 確認のカード:メイン以外ならフォルダの名前、読むだけのフォルダならそう書く
+	pv, err := tl.(Confirmable).Preview(argsFor(t, tl, "folder", "notes", "command", "git log"))
+	if err != nil || pv.Folder != "notes" || pv.Note != "コマンド(読むだけのフォルダ)" || pv.Command != "git log" {
+		t.Errorf("読むだけのフォルダの確認: %+v, %v", pv, err)
+	}
+	pv, err = tl.(Confirmable).Preview(argsFor(t, tl, "command", "go test"))
+	if err != nil || pv.Folder != "" || pv.Note != "コマンド" {
+		t.Errorf("メインの確認: %+v, %v", pv, err)
+	}
+
+	// 定義:複数なら folder(名前の enum)がある。1つなら RunCommand と同じ(folder を出さない)
+	if d := tl.Def(); !strings.Contains(string(d.Parameters), `"folder": {"type": "string", "enum": ["app","notes"]`) || !strings.Contains(d.Description, "pass folder instead") {
+		t.Errorf("複数のときの定義: %+v", d)
+	}
+	one := RunCommandIn(Single(main)).Def()
+	if want := RunCommand(main).Def(); string(one.Parameters) != string(want.Parameters) || one.Description != want.Description || strings.Contains(string(one.Parameters), "folder") {
+		t.Errorf("1つのときの定義が変わった: %+v", one)
+	}
+}

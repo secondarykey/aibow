@@ -937,6 +937,7 @@ func (cs *Conversations) environment(set ConversationSettings) string {
 // foldersEnvironment は、ワークスペースのフォルダが複数のときの環境の説明(0035 の段2)。
 //
 // フォルダを名前・印(メイン・書ける / 読むだけ・リポジトリ)・パスで並べ、ファイルのツールの引数 folder で選ぶこと、省けばメインになることを書く。
+// run_command も引数 folder でフォルダを選び、省けばメインで動く(読むだけのフォルダでも動かせる)。
 // 読むだけのフォルダもコマンドからは書けてしまうが、守りは確認なので、ここに書くのは「read-only」の印まで。
 // フォルダが1つのときは今までの形のまま(environment)。4B のプロンプトを変えないため。
 func foldersEnvironment(folders []tool.Folder, command bool, shell string) string {
@@ -952,7 +953,9 @@ func foldersEnvironment(folders []tool.Folder, command bool, shell string) strin
 	b.WriteString("Use paths relative to the folder.\n")
 	main := tool.MainFolder(folders).Name
 	if command {
-		b.WriteString("Commands already run inside the main folder \"" + main + "\", so do not cd into it. ")
+		// run_command も folder で選ぶ(2026-11-02)。cd でほかのフォルダに移ろうとすると、メインの下を探したり、
+		// cmd.exe では /d が無いと別のドライブに移れなかったりするので、cd ではなく folder を使うよう書く
+		b.WriteString("Commands run in the main folder \"" + main + "\" unless you pass folder; do not cd into a folder. ")
 	}
 	b.WriteString("Each folder name refers to that folder itself, not to a subfolder.")
 	return b.String()
