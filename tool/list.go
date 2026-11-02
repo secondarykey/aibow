@@ -52,7 +52,7 @@ func (t listFiles) Def() Def {
 		Parameters: json.RawMessage(`{"type": "object", "properties": {"path": {"type": "string", ` +
 			`"description": "Folder to list, relative to the working directory. Omit to list the whole working directory."}, ` +
 			`"pattern": {"type": "string", "description": "Only list files matching this glob, such as *.go, **/*_test.go or cmd/**/main.go. ` +
-			`Without / it matches file names at any depth; with / it matches the path from the working directory (** matches any depth). Only files are listed."}}, "required": []}`),
+			`Without / it matches file names at any depth; with / it matches the path from the working directory (** matches any depth). Use / between folders, even on Windows. Only files are listed."}}, "required": []}`),
 	})
 }
 

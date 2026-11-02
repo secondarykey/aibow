@@ -50,7 +50,7 @@ func (t searchFiles) Def() Def {
 		Parameters: json.RawMessage(`{"type": "object", "properties": {` +
 			`"pattern": {"type": "string", "description": "Regular expression to search for, such as func main or TODO\\(.*\\)."}, ` +
 			`"path": {"type": "string", "description": "Folder or file to search, relative to the working directory. Omit to search the whole working directory."}, ` +
-			`"glob": {"type": "string", "description": "Only search files matching this glob, such as *.go or **/*_test.go."}, ` +
+			`"glob": {"type": "string", "description": "Only search files matching this glob, such as *.go or **/*_test.go. Use / between folders, even on Windows."}, ` +
 			`"ignore_case": {"type": "boolean", "description": "Ignore upper and lower case. Default false."}}, "required": ["pattern"]}`),
 	})
 }

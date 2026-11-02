@@ -197,7 +197,7 @@ func TestSearchFilesFolder(t *testing.T) {
 	os.WriteFile(filepath.Join(main, "app.go"), []byte("package app\n"), 0o644)
 	os.WriteFile(filepath.Join(notes, "memo.md"), []byte("# メモ\npackage の話\n"), 0o644)
 	tl := searchFiles{folderSet{{Name: "app", Path: main, Main: true, Writable: true}, {Name: "notes", Path: notes}}}
-	if !strings.Contains(string(tl.Def().Parameters), `"folder"`) {
+	if !strings.Contains(string(tl.Def().Parameters), `"folder":`) {
 		t.Error("フォルダが複数なのに folder の引数が無い")
 	}
 	if got, err := run(t, tl, "pattern", "package", "folder", "notes"); err != nil || got != "memo.md:2: package の話" {
@@ -206,7 +206,7 @@ func TestSearchFilesFolder(t *testing.T) {
 	if got, err := run(t, tl, "pattern", "package"); err != nil || got != "app.go:1: package app" {
 		t.Errorf("メイン: %q, %v", got, err)
 	}
-	if strings.Contains(string(searchFiles{one(main)}.Def().Parameters), "folder") {
+	if strings.Contains(string(searchFiles{one(main)}.Def().Parameters), `"folder":`) {
 		t.Error("フォルダが1つなのに folder の引数がある")
 	}
 }

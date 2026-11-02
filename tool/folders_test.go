@@ -100,7 +100,8 @@ func TestFolderDefs(t *testing.T) {
 		if a.Name != b.Name || a.Description != b.Description || string(a.Parameters) != string(b.Parameters) {
 			t.Errorf("%s: フォルダ1つの定義が変わった", a.Name)
 		}
-		if strings.Contains(string(b.Parameters), "folder") {
+		// 引数の名前(キー)で見る。説明の文の「folders」には合わせない
+		if strings.Contains(string(b.Parameters), `"folder":`) {
 			t.Errorf("%s: フォルダ1つで folder がある", b.Name)
 		}
 	}
