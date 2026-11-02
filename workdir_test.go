@@ -40,9 +40,9 @@ func TestWorkDirAddsFileToolsAndEnvironment(t *testing.T) {
 		wantShell bool
 	}{
 		{"作業フォルダなし", "", func() {}, []string{"get_current_time", "calculate"}, false, false},
-		{"作業フォルダあり", dir, func() {}, []string{"get_current_time", "calculate", "list_files", "read_file", "search_files", "write_file", "edit_file", "run_command"}, true, true},
+		{"作業フォルダあり", dir, func() {}, []string{"get_current_time", "calculate", "list_files", "read_file", "search_files", "write_file", "edit_file", "update_plan", "run_command"}, true, true},
 		{"run_command を使わない", dir, func() { prefs.SetToolPolicy("run_command", ToolOff) },
-			[]string{"get_current_time", "calculate", "list_files", "read_file", "search_files", "write_file", "edit_file"}, true, false},
+			[]string{"get_current_time", "calculate", "list_files", "read_file", "search_files", "write_file", "edit_file", "update_plan"}, true, false},
 		{"組み込みのツールを使わない", dir, func() { prefs.SetBuiltinPolicy(ToolOff) }, nil, false, false},
 	}
 	for i, s := range steps {

@@ -847,7 +847,7 @@ func (cs *Conversations) ToolStates(set ConversationSettings) []ToolGroupState {
 		add(t, false)
 	}
 	// 作業フォルダのツールは、定義が作業フォルダによらないので仮のフォルダで作る(BuiltinTools と同じ)
-	for _, t := range append(tool.Files("."), tool.RunCommand(".")) {
+	for _, t := range append(tool.Files("."), tool.UpdatePlan(), tool.RunCommand(".")) {
 		add(t, true)
 	}
 	groups := []ToolGroupState{builtin}
@@ -932,7 +932,8 @@ func (cs *Conversations) localTools(set ConversationSettings) []tool.Tool {
 	if len(folders) == 0 {
 		return cs.tools
 	}
-	return append(append(slices.Clip(cs.tools), tool.FilesIn(folders)...), tool.RunCommand(tool.MainFolder(folders).Path))
+	// 作業の予定(update_plan。0037)もフォルダのある会話だけで出す(mcp/server の ToolsIn と同じ並び)
+	return append(append(slices.Clip(cs.tools), tool.FilesIn(folders)...), tool.UpdatePlan(), tool.RunCommand(tool.MainFolder(folders).Path))
 }
 
 // RemoteTools は、aibow の外のプログラムが実行するツールの置き場(MCP のサーバー。本物は mcp/client の Manager)。
@@ -965,7 +966,7 @@ func (cs *Conversations) LoadToolList(ctx context.Context, server string) error 
 // 作業フォルダのツールも入れる(作業フォルダを決めた会話でだけ使える)。定義は作業フォルダによらないので、仮のフォルダで作る。
 func BuiltinTools() []KnownTool {
 	tools := append(tool.Builtin(), tool.Files(".")...)
-	return knownTools(append(tools, tool.RunCommand(".")))
+	return knownTools(append(tools, tool.UpdatePlan(), tool.RunCommand(".")))
 }
 
 // knownTools は、設定の画面に出すツールの一覧(名前と説明の1行目)。

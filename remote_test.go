@@ -353,7 +353,7 @@ func TestLocalToolPolicy(t *testing.T) {
 	if cs.toolPolicy(set, read) != ToolAsk {
 		t.Error("会話の上書きが一番優先")
 	}
-	if names := BuiltinTools(); len(names) != 8 || names[0].Name != "get_current_time" || names[7].Name != "run_command" {
+	if names := BuiltinTools(); len(names) != 9 || names[0].Name != "get_current_time" || names[7].Name != "update_plan" || names[8].Name != "run_command" {
 		t.Errorf("組み込みのツールの一覧: %+v", names)
 	}
 }

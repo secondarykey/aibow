@@ -77,6 +77,7 @@ func ToolsIn(folders []tool.Folder) []tool.Tool {
 	tools := tool.Builtin()
 	if len(folders) > 0 {
 		tools = append(tools, tool.FilesIn(folders)...)
+		tools = append(tools, tool.UpdatePlan()) // 作業の予定(0037)。フォルダのある会話だけで出す(決定事項 14)
 		tools = append(tools, tool.RunCommand(tool.MainFolder(folders).Path))
 	}
 	return tools

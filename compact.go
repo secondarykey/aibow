@@ -82,6 +82,8 @@ func (cs *Conversations) passFrom(set ConversationSettings, summary *Compaction,
 		text = summary.Summary
 	}
 	msgs := promptMessages(cs.systemPrompt(set), text, history[first:])
+	// 渡さない部分(要約した・truncate で外した)に作業の予定があれば、最後の予定をシステムの文に残す(plan.go)
+	msgs = withPlan(msgs, planNote(lastPlan(history[:first])))
 	n, err := cs.count(cs.promptFor(set, msgs))
 	return passing{summary: summary, first: first, messages: msgs, tokens: n}, err
 }

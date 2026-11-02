@@ -7,6 +7,7 @@
 // MCP のサーバーのツールは中身が見えないので、全部確認する。差分の代わりに、サーバーに渡す引数(JSON)を出す。
 // MCP のツールは、名前の前にサーバーの名前を小さく出す(モデルに見せる名前は「サーバーの名前__ツールの名前」なので、前の部分は外して出す)。
 // 答えると Go の待っているループに届き、実行(か拒否)の結果が届いたら、ほかのカードと同じく畳んだ1行に戻る。
+// 作業の予定(update_plan。0037)は、引数と結果ではなく、予定のチェックリストとして出す(PlanCard)。
 import { useState } from "react";
 import { LuBan, LuCheck, LuFolder, LuHourglass, LuLoaderCircle, LuWrench, LuX } from "react-icons/lu";
 import { ToolPolicy } from "../../bindings/github.com/secondarykey/aibow";
@@ -14,6 +15,7 @@ import type { ConfirmRequest } from "../../bindings/github.com/secondarykey/aibo
 import type { ToolView } from "../transcript";
 import { CodeBlock } from "./CodeBlock";
 import { TOOL_LABELS } from "../toolLabels";
+import { PlanCard, planOf } from "./PlanCard";
 
 interface Props {
   tool: ToolView;
@@ -22,6 +24,8 @@ interface Props {
 }
 
 export function ToolCard({ tool, generating, onAnswer }: Props) {
+  const plan = planOf(tool);
+  if (plan) return <PlanCard items={plan} />;
   // 結果がまだ無いのは実行中(停止や上限で実行しなかったときも、結果は「エラー: …」として届く)
   const running = tool.result === undefined;
   const rejected = tool.decision?.approved === false;
