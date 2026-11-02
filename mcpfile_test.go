@@ -89,6 +89,90 @@ func TestMergeMCPServers(t *testing.T) {
 	}
 }
 
+// settings.json に手で書いたサーバーは、起動したときに mcp.json へ移し、settings.json からは mcpServers だけを消す(0034 の決定事項 13)
+func TestMoveFromSettings(t *testing.T) {
+	dir := t.TempDir()
+	settings := filepath.Join(dir, "settings.json")
+	os.WriteFile(settings, []byte(`{
+    "serverUrl": "http://127.0.0.1:8089",
+    "mcpServers": {"a": {"command": "hand-a"}, "b": {"command": "hand-b", "env": {"TOKEN": "secret"}}},
+    "custom": {"x": [1, 2]}
+}`), 0o644)
+	path := filepath.Join(dir, "mcp.json")
+	os.WriteFile(path, []byte(`{"mcpServers": {"a": {"command": "screen-a"}, "c": {"command": "screen-c"}}}`), 0o644)
+
+	s, err := LoadSettingsFile(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, _ := LoadMCPFile(path)
+	left, notices := f.MoveFromSettings(settings, s.MCPServers)
+	if left != nil || len(notices) != 1 || !strings.Contains(notices[0], "移しました") || !strings.Contains(notices[0], "a は mcp.json にもあった") {
+		t.Fatalf("移した: %v %v", left, notices)
+	}
+
+	// mcp.json:同じ名前は settings.json の設定(動いていたほう)。env の値もそのまま移る
+	f2, err := LoadMCPFile(path)
+	got := f2.Servers()
+	if err != nil || len(got) != 3 || got["a"].Command != "hand-a" || got["b"].Env["TOKEN"] != "secret" || got["c"].Command != "screen-c" {
+		t.Errorf("mcp.json: %v %v", got, err)
+	}
+
+	// settings.json:mcpServers だけが消え、ほかの項目は並びも値も残る(aibow の知らない custom も)
+	b, _ := os.ReadFile(settings)
+	want := "{\n  \"serverUrl\": \"http://127.0.0.1:8089\",\n  \"custom\": {\"x\": [1, 2]}\n}\n"
+	var a, w any
+	json.Unmarshal(b, &a)
+	json.Unmarshal([]byte(want), &w)
+	if strings.Contains(string(b), "mcpServers") || strings.Index(string(b), "serverUrl") > strings.Index(string(b), "custom") || !jsonEqual(a, w) {
+		t.Errorf("settings.json:\n%s", b)
+	}
+	if s, err := LoadSettingsFile(settings); err != nil || s.ServerURL != "http://127.0.0.1:8089" || len(s.MCPServers) != 0 {
+		t.Errorf("書き直した settings.json を読める: %+v %v", s, err)
+	}
+
+	// もう一度起動しても何もしない
+	if left, notices := f2.MoveFromSettings(settings, nil); left != nil || notices != nil {
+		t.Errorf("移すものが無ければ何もしない: %v %v", left, notices)
+	}
+}
+
+// 移せないとき(mcp.json が壊れている・合わせるとツールの名前で重なる)は、settings.json の分として持ち続け、settings.json も変えない
+func TestMoveFromSettingsFails(t *testing.T) {
+	dir := t.TempDir()
+	settings := filepath.Join(dir, "settings.json")
+	orig := `{"mcpServers": {"a.b": {"command": "hand"}}}`
+	os.WriteFile(settings, []byte(orig), 0o644)
+	hand := map[string]client.ServerConfig{"a.b": {Command: "hand"}}
+
+	broken := filepath.Join(dir, "broken.json")
+	os.WriteFile(broken, []byte("{,"), 0o644)
+	f, _ := LoadMCPFile(broken)
+	if left, notices := f.MoveFromSettings(settings, hand); len(left) != 1 || notices != nil {
+		t.Errorf("mcp.json が壊れていたら移さない(理由は Notices が出す): %v %v", left, notices)
+	}
+
+	clash := filepath.Join(dir, "clash.json")
+	os.WriteFile(clash, []byte(`{"mcpServers": {"a_b": {"command": "screen"}}}`), 0o644)
+	f, _ = LoadMCPFile(clash)
+	left, notices := f.MoveFromSettings(settings, hand)
+	if len(left) != 1 || len(notices) != 1 || !strings.Contains(notices[0], "移せませんでした") {
+		t.Errorf("ツールの名前で重なるなら移さない: %v %v", left, notices)
+	}
+	if len(f.Servers()) != 1 {
+		t.Errorf("mcp.json は変えない: %v", f.Servers())
+	}
+	if b, _ := os.ReadFile(settings); string(b) != orig {
+		t.Errorf("settings.json は変えない: %s", b)
+	}
+}
+
+func jsonEqual(a, b any) bool {
+	x, _ := json.Marshal(a)
+	y, _ := json.Marshal(b)
+	return string(x) == string(y)
+}
+
 // 画面から足す・変える・消す。mcp.json に書き、動いている係に流す。settings.json の分は変えない
 func TestMCPConfigEdit(t *testing.T) {
 	dir := t.TempDir()

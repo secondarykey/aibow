@@ -162,7 +162,7 @@ aibow を起動したまま `ollama pull` した場合は、aibow のウィン�
 
 ### MCP のサーバー
 
-MCP(Model Context Protocol)のサーバーのツールも使えます。サーバーは、設定の画面の「MCP」のタブから足すか、設定ファイル `settings.json`(`%APPDATA%\aibow\settings.json`)の `mcpServers` に手で書きます。
+MCP(Model Context Protocol)のサーバーのツールも使えます。サーバーは、設定の画面の「MCP」のタブから足します。`mcp.json`(`%APPDATA%\aibow\mcp.json`)に書かれます。
 書き方は、ほかのツール(Claude Desktop など)の `mcpServers` と同じです。たとえば公式の filesystem サーバー(Node.js が要ります)は次のようにします。
 
 ```json
@@ -178,12 +178,13 @@ MCP(Model Context Protocol)のサーバーのツールも使えます。サー�
 
 - **画面から足す**:設定の画面の「MCP」のタブで「足す」を押してフォームに書くか、「JSON を貼る」に MCP サーバーの説明にある JSON(上の形。`{"名前": {...}}` や、サーバー1つの `{"command": ...}` だけでも読めます)を貼ります。
   保存したらすぐ使えます(起動し直さなくてよい)。「試しにつなぐ」で、保存する前にツールの数と名前を確かめられます(起動できなければ理由が出ます)。
-  画面から足したものは `mcp.json`(`%APPDATA%\aibow\mcp.json`)に書かれ、`settings.json` は変わりません。変えた・消したサーバーが動いていれば、すぐ止まります(次に使う送信で、新しい設定で起動します)。
+  変えた・消したサーバーが動いていれば、すぐ止まります(次に使う送信で、新しい設定で起動します)。
   名前は変えられません(変えるときは消して足し直します)。`env`・`headers` の値は伏せて出し、空のまま保存すると前の値のままです
 - `${workdir}` は会話の作業フォルダに置き換わります。`${workdir}` を使うサーバーは作業フォルダごとに起動し、作業フォルダを決めていない会話では使いません
 - サーバーは、その会話で最初に送信したときに起動します(`npx` の初回はダウンロードで時間がかかります)。アプリを閉じると止まります
-- `settings.json` に手で書いたサーバーは、「MCP」のタブに「settings.json」の印つきで出て、画面からは変えられません。`settings.json` を変えたら、アプリを起動し直してください。書き間違いは起動したときにお知らせに出ます。
-  `settings.json` と `mcp.json` に同じ名前があれば、`settings.json` のほうを使います
+- 設定ファイル `settings.json`(`%APPDATA%\aibow\settings.json`)の `mcpServers` に手で書いてもかまいません。次に起動したときに `mcp.json` へ移り(お知らせが出ます)、それからは画面から変える・消すができます。
+  `settings.json` からは `mcpServers` だけが消え、ほかの項目(`serverUrl` など)は残ります。`mcp.json` に同じ名前があれば、`settings.json` に書いたほうになります。書き間違いは起動したときにお知らせに出ます。
+  移せなかったとき(`mcp.json` が壊れているなど)は、理由がお知らせに出て、そのサーバーは「settings.json」の印つきで出ます(画面からは変えられません)
 - 起動できなかったときは、お知らせに理由が出ます(サーバーがエラー出力に書いた最後の行も添えます)
 - ツール1回の実行の上限は 60 秒です。長く動くツールのあるサーバーは、サーバーごとに `"callTimeout": 130` のように秒数を書くと延ばせます(aibow-mcp の `run_command` は 120 秒まで動くので、それより長くします)
 - 起動してつながるまでの上限は 60 秒です。初回の `npx` / `uv` はダウンロードや環境の組み立てで超えることがあるので、サーバーごとに `"startupTimeout": 180` のように秒数を書くと延ばせます
@@ -682,7 +683,7 @@ aibow-server は、生成1回ごとに「だれが・いつ・どのモデルで
 | `OLLAMA_MODELS` | `%USERPROFILE%\.ollama\models` | Ollama の保存フォルダ(Ollama 自身と同じ変数) |
 | `AIBOW_LIB` | `lib` | llama.cpp の DLL があるフォルダ(相対パスはカレントフォルダが基準) |
 | `AIBOW_DB` | `%APPDATA%\aibow\aibow.db` | 会話を保存する SQLite のファイル。フォルダが無ければ作る |
-| `AIBOW_SETTINGS` | `%APPDATA%\aibow\settings.json` | 設定ファイル(手で書く設定。MCP のサーバーの `mcpServers` と、aibow-server のつなぎ先 `serverUrl`)。無ければ MCP を使わない |
+| `AIBOW_SETTINGS` | `%APPDATA%\aibow\settings.json` | 設定ファイル(手で書く設定。aibow-server のつなぎ先 `serverUrl` など)。`mcpServers` を書くと、起動したときに `mcp.json` へ移す |
 | `AIBOW_SERVER_KEY` | なし | aibow-server の API キー(`aibow-server user key <名前>` で作ったもの)。つなぎ先を `settings.json` の `serverUrl` か `AIBOW_SERVER_URL` に手で書いて、ログインが要る aibow-server につなぐときだけ使う。設定の画面の「サーバー」でログインしたときは要らない(アプリ用のトークンを使う。0019)。settings.json の `serverKey` が優先 |
 | `AIBOW_SERVER_CERT` | なし | aibow-server の証明書のファイル(自己署名の証明書で HTTPS にしているとき)。`AIBOW_SERVER_KEY` と同じく、つなぎ先を手で書いたときだけ使う(画面でつないだときは、確かめたフィンガープリントで信頼する)。settings.json の `serverCert` が優先 |
 | `AIBOW_CONNECTION` | `%APPDATA%\aibow\connection.json` | 設定の画面の「サーバー」で決めた aibow-server のつなぎ先・信頼した証明書のフィンガープリント・アプリ用のトークン(DPAPI で包む)と、信頼した最後のつなぎ先(`known`。ログアウトしても残す)。aibow が書く。`serverUrl`・`AIBOW_SERVER_URL` を手で書いてあれば使わない |
@@ -690,7 +691,7 @@ aibow-server は、生成1回ごとに「だれが・いつ・どのモデルで
 | `AIBOW_LOG_DIR` | `%APPDATA%\aibow\logs` | ログファイル(`aibow_<日付>.log`。日ごと)を書くフォルダ。exe は Notice 以上(起動した版・使ったモデル・変えた設定・注意・エラーなど)だけを書き、起動時に古いファイルを消して今日を含めて 10 日分を残す。異常終了したときは同じフォルダの `aibow_crash_<日時>.log` に内容が残る(次の起動で画面に知らせる)。MCP のサーバー `aibow-mcp` も同じフォルダの `aibow-mcp_<日付>.log` に、OpenAI 互換 API の `aibow-server` は `aibow-server_<日付>.log` に書く(どちらも Info 以上・10 日分)。フォルダが無ければ作る。`wails3 build` で作った exe は既定でここに書く。`wails3 dev` はターミナルに出し、ここの `aibow-dev_<日付>.log` にも書く(Info 以上・10 日分。exe のログと混ざらないよう名前を分けている) |
 | `AIBOW_TOOLS` | `%APPDATA%\aibow\tools.json` | ツールの扱いの、この PC の既定(設定の画面で変えたものを aibow が書く) |
 | `AIBOW_WORKSPACES` | `%APPDATA%\aibow\workspaces.json` | この PC のワークスペース(名前を付けたフォルダの組。設定の画面の「ワークスペース」と入力欄の上で変えたものを aibow が書く。0035)。aibow-server につないでいても手元に置く |
-| `AIBOW_MCP` | `%APPDATA%\aibow\mcp.json` | 設定の画面の「MCP」から足した MCP のサーバー(aibow が書く。形は settings.json の `mcpServers` と同じ)。settings.json と同じ名前があれば settings.json のほうを使う |
+| `AIBOW_MCP` | `%APPDATA%\aibow\mcp.json` | MCP のサーバー(設定の画面の「MCP」で足したもの・settings.json から移したもの。aibow が書く。形は settings.json の `mcpServers` と同じ) |
 | `AIBOW_MODEL_PLACES` | `%APPDATA%\aibow\model-places.json` | 画面で足したモデルの置き場所(aibow が書く。`AIBOW_MODELS_DIR`・`OLLAMA_MODELS` に足して一覧に出す)。aibow-server につないでいるときは使わない(置き場所はサーバーの `server-models.json`) |
 | `AIBOW_WINDOW` | `%APPDATA%\aibow\window.json` | ウィンドウの位置・大きさ・最大化(閉じるときに aibow が書き、次の起動でそこに開く)。消すと初めの大きさ(720×820)で真ん中に開く |
 | `AIBOW_HISTORY_TOKENS` | `8192` | 新しい会話の既定の会話の上限(モデルに渡す、これまでの会話のトークン数の上限)。超えたら会話ごとの compact の方式で収める |

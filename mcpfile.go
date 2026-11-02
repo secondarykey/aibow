@@ -1,14 +1,14 @@
 package aibow
 
-// mcpfile.go: 画面から足した MCP のサーバー(mcp.json)と、手で書いた settings.json の分との合わせ方(0034)。
+// mcpfile.go: MCP のサーバーの置き場所 mcp.json と、手で settings.json に書いた分の扱い(0034)。
 //
-// MCP のサーバーの置き場所は2つ:
-//
-//	settings.json … 手で書く(今までどおり)。画面からは変えない(手で書いた JSON を書き戻すと、並びや書き方を壊すため)
-//	mcp.json      … 画面から足す・変える・消す。aibow が書く(tools.json・connection.json と同じ考え方)
+// MCP のサーバーは mcp.json で管理する(画面から足す・変える・消す。aibow が書く。tools.json・connection.json と同じ考え方)。
+// settings.json に手で書いた mcpServers は、起動したときに mcp.json へ移し、settings.json からは消す(MoveFromSettings。0034 の決定事項 13)。
+// 置き場所が2つあると、画面から変えられないサーバーや、同じ名前で使われないサーバーができて分かりにくいため。
 //
 // 形はどちらも {"mcpServers": {...}}(Claude Desktop などと同じ)なので、MCP サーバーの説明にある JSON をそのまま貼れ、写し合える。
-// 同じ名前が両方にあれば settings.json のほうを使う(手で書いた値が画面の値より強い。0019 と同じ線)。
+// 移せなかったとき(mcp.json が壊れている・書けない)だけ、settings.json の分を今までどおり別に持つ(画面からは変えない)。
+// そのとき同じ名前が両方にあれば settings.json のほうを使う(動いていたものを変えない)。
 //
 // このファイルの係は、アプリに縛らない(パスを受け取る)。aibow-server(server.json)の分も、あとで同じ部品で作る見込み(0034 の決定事項 4)。
 
@@ -112,7 +112,58 @@ func (f *MCPFile) save(servers map[string]client.ServerConfig) error {
 	return nil
 }
 
-// MergeMCPServers は、settings.json(hand)と mcp.json(screen)の MCP のサーバーを合わせる。
+// MoveFromSettings は、settings.json(settingsPath)に手で書いた MCP のサーバー hand を mcp.json に移し、settings.json から mcpServers を消す
+// (0034 の決定事項 13。2026-11-03、ユーザーが決めた)。移したあとは、画面から足したものと同じく変える・消すができる。
+//
+// mcp.json に同じ名前があれば settings.json の設定にする(今まで動いていたのは settings.json のほうなので、動きを変えない)。
+// 先に mcp.json に書き、そのあとで settings.json を書き直す。途中で失敗しても、両方に同じ設定が残るだけで、次の起動でもう一度移す。
+//
+// left は移せずに残った settings.json の分(今までどおり別に持つ)、notices は画面のお知らせに出す文。
+// mcp.json が読めないときは移さない(理由は MCPConfig.Notices が伝える。壊れたファイルを上書きしない)。
+func (f *MCPFile) MoveFromSettings(settingsPath string, hand map[string]client.ServerConfig) (left map[string]client.ServerConfig, notices []string) {
+	if len(hand) == 0 || f.broken != nil {
+		return hand, nil
+	}
+	next := f.Servers()
+	var replaced []string
+	for name, cfg := range hand {
+		if old, ok := next[name]; ok && !old.Equal(cfg) {
+			replaced = append(replaced, name)
+		}
+		next[name] = cfg
+	}
+	slices.Sort(replaced)
+	names := strings.Join(slices.Sorted(maps.Keys(hand)), ", ")
+
+	if err := CheckMCPServers(f.path, next); err != nil {
+		return hand, f.moveFailed(names, err)
+	}
+	if err := f.save(next); err != nil {
+		return hand, f.moveFailed(names, err)
+	}
+	if err := removeSettingsKey(settingsPath, "mcpServers"); err != nil {
+		// mcp.json には書けた。settings.json にも残るので、settings.json の分として持ち続ける(画面で変えても、次の起動で戻ってしまうため)
+		n := fmt.Sprintf("MCP のサーバー %s を mcp.json(%s)に写しましたが、settings.json から mcpServers を消せませんでした(settings.json のものとして使います。mcpServers を手で消して、アプリを起動し直してください): %v",
+			names, f.path, err)
+		log.Warn(n)
+		return hand, []string{n}
+	}
+	n := fmt.Sprintf("settings.json の MCP のサーバー %s を mcp.json(%s)に移しました。これからは設定の画面の「MCP」で変える・消すができます", names, f.path)
+	if len(replaced) > 0 {
+		n += fmt.Sprintf("(%s は mcp.json にもあったので、使っていた settings.json の設定にしました)", strings.Join(replaced, ", "))
+	}
+	log.Notice(n)
+	return nil, []string{n}
+}
+
+// moveFailed は、settings.json の分を mcp.json に移せなかったときのお知らせの文(ログにも出す)。
+func (f *MCPFile) moveFailed(names string, err error) []string {
+	n := fmt.Sprintf("settings.json の MCP のサーバー %s を mcp.json(%s)に移せませんでした(settings.json のものとして使います。画面からは変えられません): %v", names, f.path, err)
+	log.Warn(n)
+	return []string{n}
+}
+
+// MergeMCPServers は、settings.json(hand)と mcp.json(screen)の MCP のサーバーを合わせる(settings.json の分を移せなかったとき)。
 // 同じ名前は settings.json のほうを使い、その名前を dup に返す(起動したときにお知らせで伝える。0034 の決定事項 13)。
 func MergeMCPServers(hand, screen map[string]client.ServerConfig) (merged map[string]client.ServerConfig, dup []string) {
 	merged = maps.Clone(screen)

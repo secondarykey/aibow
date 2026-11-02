@@ -10,7 +10,7 @@ aibow がどう組み立てられているか(画面・Wails・llama.cpp・保�
                                                   ⇅                           ↑
                                   会話の保存(SQLite)   _cmd/aibow/models\*.gguf  または  Ollama が保存したモデル
                                                   ⇅
-                                  MCP のサーバー(settings.json に書いたもの。子プロセスとして起動し、標準入出力で話す)
+                                  MCP のサーバー(mcp.json に書いたもの。子プロセスとして起動し、標準入出力で話す)
 ```
 
 画面は [Wails v3](https://v3.wails.io/) のデスクトップアプリです。Wails は OS に入っている WebView(Windows なら WebView2)で HTML の画面を出し、
@@ -34,16 +34,16 @@ Ollama が保存したファイルを aibow が直接読むので、Ollama は�
 | `files.go` | 読み込んだファイル(テキストのファイル・画像。0030)。中身の確かめ(テキストか画像か・文字コード・大きさ)、会話の上限に入るか、テキストのファイルを発言の文の前に展開する、画像をエンジンに渡す形にする |
 | `agent.go` | エージェントループ。モデルがツールを呼んだら実行し、結果を渡して続きを書かせる、をツールを呼ばなくなるまで繰り返す |
 | `tool/` | ツールの形と、組み込みのツール(現在時刻・計算)・作業フォルダのツール(ファイルを並べる・読む・書き換える・コマンドを実行する)。LLM や会話の仕組みを知らない独立したパッケージ(MCP でツールだけを使うため) |
-| `mcp/client/` | MCP のクライアント。`settings.json` に書いた MCP のサーバーを起動してつなぎ、そのツールを `tool` の形で見せる(公式の Go SDK を使う)。組み込みのツールも、aibow の中で自作のサーバーを動かして MCP 越しに呼ぶ |
+| `mcp/client/` | MCP のクライアント。`mcp.json` に書いた MCP のサーバーを起動してつなぎ、そのツールを `tool` の形で見せる(公式の Go SDK を使う)。組み込みのツールも、aibow の中で自作のサーバーを動かして MCP 越しに呼ぶ |
 | `mcp/server/` | 自作の MCP のサーバー。`tool` のツールを MCP のツールとして出す(公式の Go SDK を使う)。書き換えるツールは、実行する前にサーバーの側からユーザーに確かめる |
 | `mcp/internal/` | MCP のクライアントとサーバーの両方で使う部分 |
 | `internal/proc/` | 起動したプロセスを、子プロセスまでまとめて止める仕組み(コマンドのツールと MCP のサーバーで使う) |
 | `internal/secret/` | 手元に置くアプリ用のトークンを、Windows の DPAPI で包む(標準の `syscall` で `crypt32.dll` を呼ぶ。Windows 以外は包まない。0019) |
 | `log/` | aibow のログ。aibow のコードはここからログを出す。aibow をライブラリとして使う人は `log.SetLogger` で aibow のログの出し先(`*slog.Logger`)を決められる(決めなければ `slog.Default()`) |
-| `settingsfile.go` | 設定ファイル `settings.json`(手で書く設定。MCP のサーバーと aibow-server のつなぎ先)の読み込み |
+| `settingsfile.go` | 設定ファイル `settings.json`(手で書く設定。aibow-server のつなぎ先など)の読み込みと、MCP のサーバーを移したあとに `mcpServers` を消す書き直し |
 | `workspaces.go` | ワークスペース(名前を付けたフォルダの組。0035)の `workspaces.json` の読み書きと、前の作業フォルダ(`work_dir`)を移す `MigrateWorkDirs` |
 | `toolprefs.go` | ツールの扱い(使わない / 確認する / 確認しない)と、その PC の既定 `tools.json` の読み書き |
-| `mcpfile.go` | 設定の画面の「MCP」から足した MCP のサーバー `mcp.json` の読み書きと、`settings.json` の分との合わせ方 |
+| `mcpfile.go` | 設定の画面の「MCP」から足した MCP のサーバー `mcp.json` の読み書きと、`settings.json` に手で書いた分を起動したときに移す係 |
 | `connectionfile.go` | 設定の画面の「サーバー」で決めた aibow-server のつなぎ先 `connection.json` の読み書き(アプリ用のトークンは `internal/secret` で包む。0019) |
 | `compact.go` | 長くなった会話を「会話の上限」に収める仕組み(古い発言を捨てる / 要約する)と、メーターの計算 |
 | `store.go` | 会話の保存先の約束(interface)と、会話・発言・要約の形。会話の仕組みは保存先が SQLite かどうかを知らない |

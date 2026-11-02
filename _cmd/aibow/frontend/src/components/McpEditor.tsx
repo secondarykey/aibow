@@ -4,7 +4,7 @@
 // Go を呼ぶ口(一覧・足す・変える・消す・試す・JSON を読み取る)は外から受け取る(api)。
 // aibow-server(server.json)の分も、あとで同じ部品に口だけ替えて使う見込み(0034 の決定事項 4。ServerTools・ProfileTools と同じ考え方)。
 //
-// 画面から変えられるのは mcp.json の分だけ。settings.json に手で書いたサーバーは「settings.json」の印を付けて出し、試しにつなぐだけできる(決定事項 13)。
+// settings.json に手で書いたサーバーは起動したときに mcp.json へ移す(決定事項 13)。移せなかったものだけ「settings.json」の印を付けて出し、試しにつなぐだけできる。
 // headers と env の値は Go が伏せて返す(キーだけ)。フォームでも伏せ字で出し、空のまま保存したら前の値のまま(決定事項 10)。
 // 名前は変えられない(会話の設定と tools.json のキーのため。決定事項 11)。
 import { useCallback, useEffect, useState } from "react";
@@ -164,7 +164,7 @@ export function McpEditor({ api, onChanged, onNotice }: Props) {
                 type="button"
                 className={"user-row model-row mcp-row" + (current ? " current" : "") + (s.shadowed ? " shadowed" : "")}
                 onClick={() => select(s)}
-                title={s.source === "settings" ? "settings.json に手で書いたサーバー(画面からは変えられません。試しにつなぐことはできます)" : "画面から足したサーバー(押すと変える・消す)"}
+                title={s.source === "settings" ? "settings.json に手で書いたまま、mcp.json に移せなかったサーバー(理由は起動したときのお知らせ。画面からは変えられません。試しにつなぐことはできます)" : "画面から足したサーバー(押すと変える・消す)"}
               >
                 <span className="mcp-name">{s.name}</span>
                 <span className="origin-chip">{s.config.url ? "url" : "command"}</span>

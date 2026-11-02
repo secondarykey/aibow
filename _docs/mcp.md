@@ -54,8 +54,8 @@ aibow ── tools/call ──────→ 結果(content)が返る → ツ�
 | 置き場所 | 書くのは | 中身 | 会話をサーバーに置く形にしたら |
 |---|---|---|---|
 | DB(`app_settings` / `conversations.settings`) | aibow | 会話と、画面で変える設定。会話ごとに使う MCP のサーバー・会話だけのツールの扱いの上書きもここ | サーバーへ |
-| `settings.json`(`%APPDATA%\aibow\settings.json`、`AIBOW_SETTINGS`) | 人が手で | その PC でどう起動するか。`mcpServers` と、生成を頼む aibow-server のつなぎ先 `serverUrl`(0015。[usage.md](usage.md) の「画面のアプリを aibow-server につなぐ」) | 手元に残る |
-| `mcp.json`(`%APPDATA%\aibow\mcp.json`、`AIBOW_MCP`) | aibow(設定の画面の「MCP」で足したもの) | 画面から足した MCP のサーバー。形は settings.json と同じ `{"mcpServers": {...}}`(0034。下の「画面から足す」) | 手元に残る |
+| `settings.json`(`%APPDATA%\aibow\settings.json`、`AIBOW_SETTINGS`) | 人が手で | その PC でどう起動するか。生成を頼む aibow-server のつなぎ先 `serverUrl`(0015。[usage.md](usage.md) の「画面のアプリを aibow-server につなぐ」)。`mcpServers` を書いたら、起動したときに `mcp.json` へ移して消す | 手元に残る |
+| `mcp.json`(`%APPDATA%\aibow\mcp.json`、`AIBOW_MCP`) | aibow(設定の画面の「MCP」で足したもの・settings.json から移したもの) | MCP のサーバー。形は settings.json と同じ `{"mcpServers": {...}}`(0034。下の「画面から足す」) | 手元に残る |
 | `tools.json`(`%APPDATA%\aibow\tools.json`、`AIBOW_TOOLS`) | aibow(画面で変えたもの) | ツールの扱いの PC の既定と、サーバーを起動したときに見えたツールの一覧 | 手元に残る |
 | `model-places.json`(`%APPDATA%\aibow\model-places.json`、`AIBOW_MODEL_PLACES`) | aibow(画面で変えたもの) | 画面で足したモデルの置き場所(アプリの中で動かすとき。0015 の 24) | 手元に残る |
 | `window.json`(`%APPDATA%\aibow\window.json`、`AIBOW_WINDOW`) | aibow(閉じるとき) | ウィンドウの位置・大きさ・最大化([ui.md](ui.md) の「次の起動で戻すもの」) | 手元に残る |
@@ -64,13 +64,16 @@ MCP のサーバーの起動のしかた(`npx` のパスなど)は「その PC �
 
 ### 画面から足す(mcp.json。0034)
 
-MCP のサーバーは、手で書く `settings.json` のほかに、設定の画面の「MCP」のタブ(アプリだけ)から足せます。画面から足したものは aibow が `mcp.json` に書きます。
+MCP のサーバーは、設定の画面の「MCP」のタブ(アプリだけ)から足す・変える・消す。aibow が `mcp.json` に書きます。
 
-- **手で書くファイルと aibow が書くファイルを分ける**:手で書いた JSON を aibow が書き戻すと、並びや書き方を壊す。`tools.json`・`connection.json` と同じ考え方。
-  画面から変えられるのは `mcp.json` の分だけで、settings.json のサーバーは一覧に「settings.json」の印を付けて出す(試しにつなぐだけできる)
-- 起動したときに両方を読み、合わせたものを `Manager` に渡す(`MCPConfig.Servers`)。同じ名前は **settings.json のほうを使い**、お知らせで伝える(手で書いた値が画面の値より強い。0019 と同じ線)。
-  画面から足すときは、settings.json と同じ名前を断る
-- 保存の前に、settings.json の分と合わせた全体を `CheckMCPServers` で確かめる(ツールの名前で重なる・url に `${workdir}` など)。エラーなら書かない
+- **置き場所は `mcp.json` の1つ**:`settings.json` に手で書いた `mcpServers` は、起動したときに `mcp.json` へ移し、`settings.json` からは `mcpServers` だけを消す(`MCPFile.MoveFromSettings`。0034 の決定事項 13。2026-11-03 に改めた)。
+  置き場所が2つあると、画面から変えられないサーバーや、同じ名前で使われないサーバーができて分かりにくいため。説明にある JSON を `settings.json` に貼る今までの足し方も、次の起動で移るので使える
+  - `settings.json` のほかの項目は、並びも値もそのまま残す(`removeSettingsKey`。項目を生のまま1つずつ読んで並べ直す。aibow の知らない項目も落とさない。変わるのは字下げだけ)
+  - `mcp.json` に同じ名前があれば、`settings.json` の設定にする(それまで動いていたのは settings.json のほうなので)
+  - 先に `mcp.json` を書き、そのあとで `settings.json` を書き直す。途中で失敗しても両方に同じ設定が残るだけで、次の起動でもう一度移す
+- 移せなかったとき(`mcp.json` が壊れている・合わせるとツールの名前で重なる・書けない)だけ、settings.json の分を別に持つ:お知らせで理由を伝え、一覧に「settings.json」の印を付けて出す(画面からは変えない。試しにつなぐだけできる)。
+  そのとき同じ名前は settings.json のほうを使い(`MCPConfig.Servers`)、画面から足すときは settings.json と同じ名前を断る
+- 保存の前に、設定の全体を `CheckMCPServers` で確かめる(ツールの名前で重なる・url に `${workdir}` など)。エラーなら書かない
 - `mcp.json` が壊れていたら、お知らせで伝えて `mcp.json` のサーバーを使わずに起動し、画面からは保存させない(壊れたファイルを上書きしない)
 - 書き方は `tools.json` と同じ(一時ファイルに書いてから名前を変える)。headers・env の値は平文で書かれる(settings.json と同じ)。画面には値を返さず(キーだけ)、空のまま保存したら前の値のまま
 - 名前は変えられない(会話の設定の `mcp_servers` と `tools.json` の扱いのキーのため)。消しても `tools.json` の扱いと `seen` は残す

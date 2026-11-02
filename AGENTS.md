@@ -20,7 +20,7 @@ aibow は、ローカルLLMを使ったアプリを**自分で作りながら仕
 ウィンドウ(_cmd/aibow/frontend の React) ⇄ Wails v3 ⇄ aibow/ui ⇄ aibow ⇄ aibow/engine ⇄ yzma ⇄ llama.cpp(_cmd/aibow/lib\ の DLL)⇄ GPU
                                                                 ⇅          ↑ aibow/format(書式)・aibow/models(_cmd/aibow/models\*.gguf / Ollama の保存フォルダ)
                                                      aibow/store(SQLite: %APPDATA%\aibow\aibow.db)
-                                                     aibow/mcp/client ⇄ MCP のサーバー(%APPDATA%\aibow\settings.json に書いたもの。子プロセス)
+                                                     aibow/mcp/client ⇄ MCP のサーバー(%APPDATA%\aibow\mcp.json。設定の画面の「MCP」で足す。子プロセス)
 
 MCP のクライアント(Claude Code・aibow など)⇄ 標準入出力 ⇄ aibow-mcp(_cmd/aibow-mcp)= aibow/mcp/server ⇄ aibow/tool
 aibow の組み込みのツール: 会話の仕組み ⇄ aibow/mcp/client の Local ⇄ MCP(メモリ内)⇄ aibow/mcp/server ⇄ aibow/tool
@@ -122,7 +122,7 @@ OpenAI 互換のクライアント(Cline など)⇄ HTTP(S)(既定は 127.0.0.1�
 - チャットテンプレートなど、学習の対象になる仕組みはライブラリ任せにせず自分で書く
 - 設定は `AIBOW_` で始まる環境変数にし、[_docs/usage.md](_docs/usage.md) の表に追加する(今ある環境変数はその表と [_cmd/aibow/AGENTS.md](_cmd/aibow/AGENTS.md))。
   画面で変えられる設定の環境変数は「DB にまだ値が無いときの初期値」で、画面で変えたら DB の値が優先
-- 画面で変える設定は DB、手で書く設定(その PC でどう起動するか。MCP のサーバーなど)は設定ファイル `settings.json`、画面で変えるがその PC の人が決めること(ツールの扱い)は `tools.json`、ワークスペース(PC のフォルダの組。会話は ID だけを持つ)は `workspaces.json`(0035)([_docs/mcp.md](_docs/mcp.md))、aibow-server のつなぎ先とアプリのログインは `connection.json`(0019。手で書いた `serverUrl` が強い)。会話をサーバーに置く形にしても手元に残るものを、会話の DB に入れない
+- 画面で変える設定は DB、手で書く設定(その PC でどう起動するか。aibow-server のつなぎ先 `serverUrl` など)は設定ファイル `settings.json`、画面で変えるがその PC の人が決めること(ツールの扱い)は `tools.json`、MCP のサーバーは `mcp.json`(画面で足す。settings.json に手で書いた `mcpServers` は起動したときにここへ移す。0034)、ワークスペース(PC のフォルダの組。会話は ID だけを持つ)は `workspaces.json`(0035)([_docs/mcp.md](_docs/mcp.md))、aibow-server のつなぎ先とアプリのログインは `connection.json`(0019。手で書いた `serverUrl` が強い)。会話をサーバーに置く形にしても手元に残るものを、会話の DB に入れない
 
 ## コードの書き方
 

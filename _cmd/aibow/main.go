@@ -249,8 +249,8 @@ func startLog() (io.Closer, []string) {
 	return c, notices
 }
 
-// startMCP は、settings.json(手で書いた分)と mcp.json(画面から足した分。0034)の MCP のサーバーを合わせて、
-// MCP のサーバーの係(client.Manager)と、画面で変えたものをそこに流す係(aibow.MCPConfig)を作る。
+// startMCP は、mcp.json(0034)の MCP のサーバーで、MCP のサーバーの係(client.Manager)と、画面で変えたものをそこに流す係(aibow.MCPConfig)を作る。
+// settings.json に手で書いた分は、先に mcp.json へ移す(0034 の決定事項 13。移せなかった分だけ settings.json のものとして合わせる)。
 // サーバーはまだ起動しない(要る最初の送信のときに起動する)。サーバーが1つも無くても作る(画面から最初の1つを足せるように)。
 // ファイルの書き間違いは、アプリを止めずに画面のお知らせで伝え、そのファイルのサーバーを使わずに起動する。
 func startMCP(cfg *appConfig, prefs *aibow.ToolPrefs) (*client.Manager, *aibow.MCPConfig) {
@@ -260,6 +260,8 @@ func startMCP(cfg *appConfig, prefs *aibow.ToolPrefs) (*client.Manager, *aibow.M
 		hand = nil
 	}
 	file, _ := aibow.LoadMCPFile(cfg.mcpPath) // 読めなかった理由は Notices が返す
+	hand, moved := file.MoveFromSettings(cfg.settingsPath, hand)
+	cfg.notices = append(cfg.notices, moved...)
 	c := aibow.NewMCPConfig(absPath(cfg.settingsPath), hand, file, prefs)
 	cfg.notices = append(cfg.notices, c.Notices()...)
 	servers := c.Servers()
