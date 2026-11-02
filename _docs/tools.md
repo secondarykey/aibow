@@ -17,6 +17,7 @@
 | `tool/tool.go` | `tool` パッケージ。ツールの interface(`Tool`)・定義(`Def`)・呼び出し(`Call`: 名前と引数だけ)・引数(`Arg`)。引数を JSON Schema と照らし合わせる `CheckArgs` |
 | `tool/arg.go` | 引数の値の持ち方(書式によらない形。下の「引数の値の持ち方」)と、書式・JSON との行き来(`ArgFromText` / `ArgText`・`ArgFromJSON` / `ArgJSON`・`ArgsFromJSON` / `ArgsJSON`・`ArgTypes`) |
 | `tool/time.go` / `tool/calc.go` | 組み込みのツール `get_current_time` / `calculate` |
+| `tool/fetch.go` / `tool/fetchhtml.go` | URL を読むツール `fetch_url`(取りに行く・アドレスを確かめる・文字コード・切り方 / 本文の取り出しと Markdown。0036)。実行前に確認する |
 | `tool/files.go` | 作業フォルダのツールの共通部分(`Files`・`os.Root` で開く・パスを作業フォルダからの相対にする) |
 | `tool/list.go` / `tool/read.go` | 作業フォルダのツール `list_files` / `read_file` |
 | `tool/write.go` | 書き換えるツール `write_file`(丸ごと書く)/ `edit_file`(1か所だけ置き換える)。どちらも実行前に確認する |
@@ -304,6 +305,24 @@ Commands already run inside the main folder "aibow", so do not cd into it. Each 
 - `${workdir}` の MCP のサーバーはメインのパスで起動する(ほかのフォルダを渡す書き方は作らない)
 - 確認のカードには、メイン以外のフォルダのとき、そのフォルダの名前を出す(`tool.Preview.Folder`)
 - aibow の中の MCP サーバー(`mcp/client` の `Local`)は、フォルダの組ごと(名前・パス・メイン・書けるかの組。`folderKey`)に1つ。設定の画面で組を変えたら、次の送信から新しい組のサーバーを使う
+
+### URL を読むツール(0036)
+
+- `fetch_url`(`tool/fetch.go`・`tool/fetchhtml.go`):URL のページを取ってきて、本文を返す。引数は `url` と `start_index`(0 から)。返す長さはモデルに選ばせず 5,000 文字(`fetchMaxRunes`)。
+  結果は1行目に `URL: <最終的な URL>(<状態>・<種類>)`、空行をはさんで本文、切ったときは最後に「全体は N 文字です。続きは start_index=M で読めます」(`read_file` の offset と同じ考え方。0025)。読むたびにページを取り直す(保存・キャッシュはしない)
+- 設定で動きが変わる(PC の中のアドレスを許すか・User-Agent の版)ので `tool.Builtin` には入れず、動かす側が `mcp/server` の `Options.Fetch` で足す。
+  アプリと aibow-server は aibow の中のサーバー(`mcp/client` の `Options.Fetch`)で出し、aibow-mcp は `-fetch` のときだけ出す。設定の画面の一覧は `tool.Folderless`(時刻・計算・URL を読む)。
+  `SetLocalTools` をしない会話の仕組み(テストの直接の形)には入らない
+- 中身の種類:HTML(`text/html`・`application/xhtml+xml`)は本文を Markdown に、`text/*`・JSON・XML はそのまま、ほかは「この種類は読めません」。種類は Content-Type で先に見て(画像を 2MB 受け取ってから断らない)、無ければ `http.DetectContentType`
+- 文字コード:`charset.DetermineEncoding`(BOM → Content-Type → `<meta charset>`)。どれにも書いていなくて UTF-8 として正しければ UTF-8(既定の windows-1252 にしない)
+- 本文の取り出し:`script`・`style`・`noscript`・`template`・`svg`・`iframe`・`nav`・`header`・`footer`・`aside`・`form`(と `head`・`button`・`select`・`img`)を落とし、
+  最初の `main` → いちばん長い `article` → `body` の順に本文の場所を選ぶ。`<title>` は頭に `# 題`。リンクは絶対の URL にし、ページの中(`#…`)・`javascript:` は文だけ。表の最初の行が `th` だけなら区切りの行 `| --- |` を足す
+- 上限:2MB(超えた分は読まずに切り、そう書き添える)・15 秒(`tool.TimeLimiter`)・リダイレクト 5 回・`http` と `https` だけ。プロキシは使わない(`Transport.Proxy` が nil)
+- **PC の中・社内のアドレスを断る**:`net.Dialer.Control` で、名前を引いた後の実際につなぐアドレスを `tool.PublicAddr` で確かめる(loopback・private・link-local・100.64/10・未指定・マルチキャスト・説明用など)。
+  名前を引いてから確かめて名前でつなぎ直す形だと、その間に答えを変えられる(DNS rebinding)ため。リダイレクトの先も同じ Transport を通るので確かめられる。
+  テストは名前の引き方とつなぎ先を差し替える(`fetchURL.dial`。同じ `control` で確かめてからテストのサーバーにつなぐ)
+- 扱いの既定:`tool.Confirmable` なので確認する(確認のカードにホストと URL。`tool.Preview.URL`)。aibow-server では管理者が `server-tools.json` でツールごとに有効にするまで禁止(`ToolPrefs.banned` の `optIn`。組み込みのグループの扱いでは有効にならない)
+- ログ:取りに行った URL・状態・受け取ったバイト数・本文と渡した文字数・秒数を Info、断ったアドレスを Warn(誰の・どの会話かは `ui` の `logTool` が出す)
 
 ### コマンドのツール(0005 の 3-3)
 

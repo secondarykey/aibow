@@ -110,12 +110,13 @@ OpenAI 互換のクライアント(Cline など)⇄ HTTP(S)(既定は 127.0.0.1�
 ## 技術方針
 
 - **言語は Go**(1.27 以上。標準の `uuid` パッケージを使う)。Python など別言語の実装を持ち込まない
-- Go の外部パッケージは次の6つだけ。それ以外は標準ライブラリで書く
+- Go の外部パッケージは次の7つだけ。それ以外は標準ライブラリで書く
   - yzma(github.com/hybridgroup/yzma): llama.cpp の呼び出し。`engine` パッケージだけで使う。llama.cpp との版の組み合わせは [_docs/engine.md](_docs/engine.md)
   - Wails v3: 画面。`_cmd/aibow` だけで使い、ルートの `go.mod` には入れない
   - `modernc.org/sqlite`: 会話の保存。`store` パッケージだけで使う
   - `github.com/pkg/diff`: 書き換えるツールの実行前の確認で見せる差分(diff)の計算。`tool` パッケージだけで使う(0005 の 3-2 でユーザーと決めた)
   - `github.com/modelcontextprotocol/go-sdk`: MCP の公式 Go SDK。`mcp/` の下(`mcp/client`・`mcp/server`)と、それを起動するだけの `_cmd/aibow-mcp` で使う(0006・0007 でユーザーと決めた)
+  - `golang.org/x/net`(`html` と `html/charset`): URL を読むツール(`fetch_url`)で、HTML の字句と木の組み立て・文字コードの判定と変換。`tool` パッケージだけで使う。本文の取り出しと Markdown への書き直しは自分で書く(0036 でユーザーと決めた)
   - `github.com/wenteasy/log`: ログの土台(レベルの段階と、出口の部品 `SimpleHandler` など)。`log` パッケージだけで使い、aibow を使う人には wenteasy/log の型を見せない(2026-10-14、ユーザーの指定。shinte/ikkyoku の log と同じ形)
 - C コンパイラなし(`CGO_ENABLED=0`)でビルドできる状態を保つ
 - 外部パッケージ(Go・npm とも)を足すときは、理由と代替案を示してユーザーに確認してから足す

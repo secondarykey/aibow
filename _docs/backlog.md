@@ -111,6 +111,8 @@ MCP の OAuth:ログインが要る url の MCP サーバー(GitHub・Notion な
 
 ## 組み込みの fetch(2026-11-02、ユーザーと話した)
 
+→ 仕様にした:[features/0036-fetch.md](features/0036-fetch.md)(2026-11-03 に `fetch_url` として作った)。以下は仕様にする前のメモ。
+
 今の fetch は公式の MCP のサーバー(`uvx mcp-server-fetch`)頼みで、Python と uv が要る。組み込みにすれば exe だけで使え、ブラウザの会話でも管理者の設定なしで試せる。結果の大きさを aibow が決められるので、0025 の「入る分だけ切って渡す」を最初から合わせられる。Chat の案:
 
 - aibow-server では既定で切っておき、管理者のツールの画面で有効にする(0024 の決定事項 14:社内の URL や PC の中に届く危うさは管理者が決める)。アプリ(手元の PC)では run_command と同じく確認してから取りに行く

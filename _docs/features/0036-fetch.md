@@ -93,6 +93,30 @@
 6. 実際のモデル(Qwen3.5 4B か 9B)で、URL を渡して内容をまとめさせる・続きを読ませる、を試し、気づいたことを `_docs/tuning.md` に書く
 7. `AGENTS.md`(外部パッケージの表)・`_docs/tools.md`・`_docs/usage.md`(fetch の足し方・危うさ・許す設定)・`_docs/backlog.md`(「組み込みの fetch」をこの仕様へ案内)・`TODO.md` を更新している
 
+## 作業の経過
+
+- 2026-11-03 段1:`golang.org/x/net` v0.62.0 を足し、`tool/fetch.go`(取りに行く・`net.Dialer.Control` でアドレスを確かめる・文字コード・切り方)と `tool/fetchhtml.go`(本文の取り出しと Markdown)を作った。
+  完了の条件 2・3 はテスト(`tool/fetch_test.go`。`httptest` と手で書いた HTML。`127.0.0.1`・`localhost` は本物のつなぎ方で、名前とリダイレクトはつなぎ方を差し替えて)で確かめた
+- 2026-11-03 段2・段3:アプリと aibow-server の aibow の中のサーバーで `fetch_url` を出す(作業フォルダの無い会話でも)・`settings.json` / `server.json` の `fetchAllowPrivate`・
+  aibow-server では管理者がツールごとに有効にするまで禁止・aibow-mcp の `-fetch`・確認のカードにホストと URL・管理の画面の「ツール」の表示。
+  完了の条件 4・5 はテスト(`TestWebFetchOptIn`・`TestFetchPolicy`・`TestListToolsFetch`)で確かめた。書類(完了の条件 7)も更新した
+- まだのもの:完了の条件 1(アプリの画面で確認のカード → 本文 → `start_index` で続き)と 6(Qwen3.5 で試して `_docs/tuning.md` に書く)。未決事項の3つも、これを試してから決める
+
+## 作業中に決めたこと(Code。ユーザーの確認待ち)
+
+- 設定の名前は、アプリ・aibow-server とも `fetchAllowPrivate`(決定事項 12 の例のまま)。許すと起動のログに Notice で出す
+- 結果の文は、ほかのツールに合わせて日本語(1行目 `URL: <最終的な URL>(200 OK・text/html)`・続きがあるとき「(全体は N 文字です。続きは start_index=M で読めます)」・
+  `start_index` が 0 でないときは1行目に「・M 文字目から」)。本文が空なら「本文が見つかりません。JavaScript で中身を作るページかもしれません」(エラーにしない)
+- 状態コードが 400 以上なら、本文を渡さずにエラー(「… を読めません(404 Not Found)」)
+- 断るアドレスには、公式の範囲に加えて説明用(192.0.2.0/24 など)・性能の試験用(198.18.0.0/15)・予約(240.0.0.0/4)も入れた(`tool.PublicAddr`)
+- 決定事項 7 の落とす要素に、`head`・`button`・`select`・`img` を足した(画像は文が無いので落とす。画像だけのリンクも書かない)。表の最初の行が `th` だけなら、Markdown の表の区切りの行を足す
+- 文字コードを書いていないページは、UTF-8 として正しければ UTF-8 にする(`charset.DetermineEncoding` の既定は windows-1252 で、日本語の UTF-8 のページが化けるため)
+- aibow-server の「有効にする」は、管理者が `fetch_url` の行を「確認する」か「確認しない」にすること。組み込みのグループを「確認しない」にしても有効にならない
+  (時刻・計算のためにグループを変えたら、URL を読むツールまで聞かずに動く、をなくすため)。管理の画面の「ツール」では、有効にする前の行に「使わない(確認する・確認しないで有効にする)」と出す
+- 確認のカードは、上の行にホスト(太字)と「URL を読む」、下に URL 全体(未決事項の「確認のカードの見た目」の仮の形。見てから決める)
+- aibow-mcp に PC の中のアドレスを許す引数は作らない(決定事項 15 は `-fetch` だけ)
+- `fetch_url` は設定で動きが変わるので `tool.Builtin` に入れず、`mcp/server` の `Options.Fetch` で足す。aibow の中のサーバーを使わない会話の仕組み(テストの直接の形)には入らない
+
 ## 作業の順番(案)
 
 1. **段1(tool)**:`golang.org/x/net` を足し、`fetch_url`(取りに行く・アドレスを確かめる・文字コード・本文の取り出し・切り方)とテスト
