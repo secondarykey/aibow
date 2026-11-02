@@ -16,6 +16,10 @@ package tool
 // 隠しフォルダ(名前が . で始まる。.claude・.vscode など)は、名前だけ出して中に入らない。
 // 道具の設定や作業用のコピーが入っていることが多く、たどると一覧がそれで埋まってしまうため。
 // 中を見たいときは path に指定すれば並べる。
+//
+// pattern(0037)を付けると、名前の形(glob.go)に合うファイルだけを並べる(フォルダは並べない)。
+// 新しいツール(glob)にせず引数にしたのは、ツールを1つ足すたびにその説明がシステムプロンプトに入り、
+// 小さなモデルのプロンプトが増えるため(決定事項 2)。たどり方・上限・並べる順は pattern が無いときと同じ。
 
 import (
 	"context"
@@ -46,7 +50,9 @@ func (t listFiles) Def() Def {
 		Description: "List files and folders in the working directory recursively, shallower ones first. Folder names end with /. " +
 			"Skips .git and node_modules, and does not go into hidden folders (names starting with .) unless you pass one as path.",
 		Parameters: json.RawMessage(`{"type": "object", "properties": {"path": {"type": "string", ` +
-			`"description": "Folder to list, relative to the working directory. Omit to list the whole working directory."}}, "required": []}`),
+			`"description": "Folder to list, relative to the working directory. Omit to list the whole working directory."}, ` +
+			`"pattern": {"type": "string", "description": "Only list files matching this glob, such as *.go, **/*_test.go or cmd/**/main.go. ` +
+			`Without / it matches file names at any depth; with / it matches the path from the working directory (** matches any depth). Only files are listed."}}, "required": []}`),
 	})
 }
 
@@ -72,37 +78,59 @@ func (t listFiles) Run(ctx context.Context, args Args) (string, error) {
 	}
 
 	l := lister{}
-	// 浅い順にたどる(幅優先)。queue は次に中を並べるフォルダ
-	queue := []string{p}
-	for len(queue) > 0 && !l.full {
-		if ctx.Err() != nil {
-			return "", ctx.Err()
-		}
-		dir := queue[0]
-		queue = queue[1:]
-		// fs.ReadDir は名前の順に返す。シンボリックリンクのフォルダはフォルダとして扱わない
-		// (外を指していても一覧に名前が出るだけ。開くときに os.Root が止める)
-		entries, err := fs.ReadDir(root.FS(), dir)
+	if pattern := args.String("pattern"); pattern != "" {
+		g, err := compileGlob(pattern)
 		if err != nil {
-			if dir == p {
-				return "", fmt.Errorf("%s の中を読めません: %w", p, err)
-			}
-			continue // 下のフォルダが読めない(権限など)ときは、名前だけ出ている状態で先へ進む
+			return "", err
 		}
-		for _, d := range entries {
-			if sub, ok := l.add(path.Join(dir, d.Name()), d); ok {
-				queue = append(queue, sub)
-			}
-			if l.full {
-				break
-			}
-		}
+		l.glob, l.pattern = &g, pattern
+	}
+	err = walk(ctx, root.FS(), p, l.add, func() bool { return l.full })
+	if err != nil {
+		return "", err
 	}
 	return l.result(p), nil
 }
 
+// walk は、フォルダ p の下を浅い順(幅優先)にたどり、見つけたものごとに visit を呼ぶ(list_files と search_files で使う)。
+// visit が true を返したフォルダは、中もたどる。stop が true を返したら、そこで止める。
+//
+// p の中を読めなければエラー。下のフォルダが読めない(権限など)ときは、名前だけ出ている状態で先へ進む。
+// fs.ReadDir は名前の順に返す。シンボリックリンクのフォルダはフォルダとして扱わない
+// (外を指していても一覧に名前が出るだけ。開くときに os.Root が止める)。
+func walk(ctx context.Context, fsys fs.FS, p string, visit func(name string, d fs.DirEntry) bool, stop func() bool) error {
+	queue := []string{p} // 次に中をたどるフォルダ
+	for len(queue) > 0 && !stop() {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		dir := queue[0]
+		queue = queue[1:]
+		entries, err := fs.ReadDir(fsys, dir)
+		if err != nil {
+			if dir == p {
+				return fmt.Errorf("%s の中を読めません: %w", p, err)
+			}
+			continue
+		}
+		for _, d := range entries {
+			name := path.Join(dir, d.Name())
+			if visit(name, d) && d.IsDir() {
+				queue = append(queue, name)
+			}
+			if stop() {
+				break
+			}
+		}
+	}
+	return nil
+}
+
 // lister は list_files の結果を、上限を数えながら組み立てる。
 type lister struct {
+	glob    *globPattern // pattern を付けたとき、合うファイルだけを並べる
+	pattern string       // モデルが書いた pattern(0 件のときの文に使う)
+
 	b      strings.Builder
 	count  int  // 並べた件数
 	runes  int  // 並べた文字数
@@ -110,12 +138,22 @@ type lister struct {
 	hidden bool // 中を省略した隠しフォルダがある
 }
 
-// add は1件を並べる。中もたどるフォルダなら、そのパスと true を返す。
-func (l *lister) add(name string, d fs.DirEntry) (string, bool) {
+// add は1件を並べる。中もたどるフォルダなら true を返す。
+func (l *lister) add(name string, d fs.DirEntry) bool {
 	if d.IsDir() && listSkip[d.Name()] {
-		return "", false
+		return false
 	}
 	hiddenDir := d.IsDir() && strings.HasPrefix(d.Name(), ".")
+	if l.glob != nil {
+		// pattern のときはファイルだけを並べる。フォルダは並べずに中をたどる(隠しフォルダには入らない)
+		if d.IsDir() {
+			return !hiddenDir
+		}
+		if !l.glob.match(name) {
+			return false
+		}
+		hiddenDir = false
+	}
 	line := name
 	switch {
 	case hiddenDir:
@@ -126,20 +164,23 @@ func (l *lister) add(name string, d fs.DirEntry) (string, bool) {
 	n := utf8.RuneCountInString(line) + 1 // 改行の分
 	if l.count == listMax || l.runes+n > listMaxRunes {
 		l.full = true
-		return "", false
+		return false
 	}
 	l.b.WriteString(line + "\n")
 	l.count, l.runes = l.count+1, l.runes+n
 	if hiddenDir {
 		l.hidden = true
-		return "", false
+		return false
 	}
-	return name, d.IsDir()
+	return d.IsDir()
 }
 
 // result は並べた結果に、省略と切ったことの説明を添えて返す。
 func (l *lister) result(p string) string {
 	if l.count == 0 {
+		if l.glob != nil {
+			return fmt.Sprintf("(pattern %s に合うファイルはありません)", l.pattern)
+		}
 		if p == "." {
 			return "(作業フォルダは空です)"
 		}

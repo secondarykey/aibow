@@ -1,6 +1,6 @@
 # 0037: コーディングエージェント向けの組み込みのツール(中を探す・名前で探す・作業の予定)
 
-- 状態: ⬜ 未着手
+- 状態: 🔧 作業中(段1を作った)
 - ロードマップ: ロードマップの外(TODO.md の「ロードマップの外でやりたいこと」)
 - 決めた日: 2026-11-02(Chat でユーザーと決めた。案は Chat が今のコードを読んで出した。検討メモ:Chat の `builtin-tools-design-draft.md`)
 - 前提: 0005(作業フォルダのツール・`os.Root`)、0025(結果を入る分だけ切って渡す・read_file の切り方)、0035(ワークスペース・`folder` の引数)、0002(compact)、0024(資料のフォルダ)
@@ -90,6 +90,26 @@
 5. アプリの画面で `update_plan` がチェックリストとして見える
 6. 実際のモデル(Qwen3.5 4B)で、aibow のリポジトリの中で関数を探して直す作業を試し、search_files と update_plan の使われ方を `_docs/tuning.md` に書く
 7. `_docs/tools.md`・`_docs/compact.md`(予定を残すこと)・`_docs/usage.md`・`_docs/backlog.md`(この仕様へ案内)・`TODO.md` を更新している
+
+## 作業の経過
+
+- 2026-11-02 段1:`search_files`(`tool/search.go`)と `list_files` の `pattern`(`tool/glob.go` の `**` の合わせ方)。
+  完了の条件 1・2・4 はテスト(`tool/search_test.go`。pattern の無い `list_files` は今までの `TestListFiles` がそのまま通る)で確かめた。
+  `list_files` のたどり方(浅い順・名前の順)を `walk` に切り出し、`search_files` と同じものを使う。
+  `search_files` は `tool.FilesIn` にまだ入れていない(組み込みに入れるのは段2。0036 の段2と同じ場所(`localTools`・aibow-mcp)を触るため、そちらが入ってから)
+
+## 作業中に決めたこと(Code。ユーザーの確認待ち)
+
+- glob:Windows の `\` は `/` に直す(4B が `cmd\**\main.go` と書いても合うように。`path.Match` の `\` によるエスケープは使えなくなる)。頭の `./`・`/` は省く。大文字と小文字は区別する(`path.Match` のまま)
+- glob の `**` は段の全体のときだけ。`a**b` のように段の一部なら `path.Match` の `*` と同じ
+- `list_files` の pattern で 0 件のときは「(pattern *.ts に合うファイルはありません)」。上限で切ったときの文は pattern が無いときと同じ
+- `search_files` の結果の文は日本語(ほかのフォルダのツールの添え書きに合わせた):0 件は「(見つかりませんでした)」、
+  切ったときは「(一致は全部で N 件(M ファイル)あり、100 件までを並べました。path か glob で絞ってください)」、
+  飛ばしたときは「(バイナリ・UTF-8 でない・1 MB を超えるファイル K 件は、探さずに飛ばしました)」
+- 行の頭の空白(字下げ)は削らない(edit_file の old_string にそのまま写せるように)。300 文字で切った行は最後に `…` を付ける
+- `path` にファイルを名指ししたときは `glob` を見ない(選んだファイルなので)
+- 時間切れ(既定の 10 秒)のときは、途中までの結果を返さず「時間内に探しきれませんでした。path か glob で、探す範囲を絞ってください」のエラーにする(全部の件数が書けないため)
+- 引数 `ignore_case` は JSON Schema の `boolean`(`tool.Args` に `Bool` を足した)
 
 ## 作業の順番(案)
 

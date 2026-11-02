@@ -18,7 +18,8 @@
 | `tool/arg.go` | 引数の値の持ち方(書式によらない形。下の「引数の値の持ち方」)と、書式・JSON との行き来(`ArgFromText` / `ArgText`・`ArgFromJSON` / `ArgJSON`・`ArgsFromJSON` / `ArgsJSON`・`ArgTypes`) |
 | `tool/time.go` / `tool/calc.go` | 組み込みのツール `get_current_time` / `calculate` |
 | `tool/files.go` | 作業フォルダのツールの共通部分(`Files`・`os.Root` で開く・パスを作業フォルダからの相対にする) |
-| `tool/list.go` / `tool/read.go` | 作業フォルダのツール `list_files` / `read_file` |
+| `tool/list.go` / `tool/read.go` | 作業フォルダのツール `list_files`(浅い順にたどる `walk` もここ)/ `read_file` |
+| `tool/search.go` / `tool/glob.go` | ファイルの中を探す `search_files` / 名前の形(glob。`**` を自分で合わせる)。`list_files` の `pattern` と `search_files` の `glob` で使う(0037。`search_files` を組み込みに入れるのは段2) |
 | `tool/write.go` | 書き換えるツール `write_file`(丸ごと書く)/ `edit_file`(1か所だけ置き換える)。どちらも実行前に確認する |
 | `tool/command.go` | コマンドのツール `run_command`(時間の上限 120 秒・出力の切り方・結果の書き方)。実行前に確認する |
 | `tool/shell_windows.go` / `tool/shell_unix.go` | どのシェルで動かすか(cmd.exe / `/bin/sh`) |
@@ -256,6 +257,11 @@ tool ── 何も知らない
   - **500 件か 8,000 文字の早いほうで切る**。件数だけだとパスの長い深いファイルで大きくなりすぎる(aibow のリポジトリで 500 件・約 43,000 文字になった)
   - **浅い順に並べる**(直下を全部 → 1つ下を全部 → …。それぞれの中は名前の順)。切ったときも全体の形が残るように。奥までたどる順だと、最初の大きなフォルダで上限に達する
   - **隠しフォルダ(`.` で始まる)は名前だけ出して中に入らない**(「(中は省略)」と書く)。path に指定すれば中を並べる。`.gitignore` は読まない
+  - **`pattern`(0037)を付けると、名前の形に合うファイルだけを並べる**(フォルダは並べない。たどり方・上限・順は同じ)。`/` を含まない形(`*.go`)は名前だけと、
+    含む形(`**/*_test.go`・`cmd/**/main.go`)は作業フォルダからの相対パスと比べる。`**` は0段以上(`path.Match` に無いので `glob.go` で自分で合わせる)。新しいツールにしないのは、小さなモデルのプロンプトを増やさないため
+- `search_files`(0037):正規表現(Go の RE2)に合う行を `パス:行番号: 行` で返す。たどり方は `list_files` と同じ `walk`。
+  100 件か 8,000 文字で切り、数えるのは最後まで続けて「一致は全部で N 件(M ファイル)」を書く。1 行は 300 文字で切る。
+  NUL を含む・UTF-8 でない・1MB を超えるファイルは黙って飛ばし、数だけを最後に書く。読むだけなので確認しない
 - `read_file`: `行番号 + タブ + 行`。200 行か 8,000 文字の早いほうで切り、「続きは offset=N で読めます」を書き添える。
   1,000 文字を超える行は 1,000 文字ごとに分けて、別の行として番号を付ける(`splitLong`。0025。長い行の続きも offset で読めるように。番号はエディタの行番号とずれる)。
   NUL を含むもの・UTF-8 でないもの・10MB を超えるものはエラー。CRLF の CR は見せない
