@@ -211,6 +211,17 @@ func TestRunCommandFolder(t *testing.T) {
 		t.Errorf("メインの確認: %+v, %v", pv, err)
 	}
 
+	// folder を渡さずに、先頭の cd でフォルダを選んだら、そのフォルダをカレントにする(cmd.exe の /d 無しの cd は別のドライブへ移らないため。2026-11-03)。
+	// コマンドは書き換えない。folder を書いていても cd の行き先が勝つ(コマンドがそこで動くつもりで書かれているため)
+	cd := `cd "` + notes + `" && ` + list
+	pv, err = tl.(Confirmable).Preview(argsFor(t, tl, "command", cd))
+	if err != nil || pv.Folder != "notes" || pv.Note != "コマンド(読むだけのフォルダ)" || pv.Command != cd {
+		t.Errorf("cd で選ぶ確認: %+v, %v", pv, err)
+	}
+	if got, err := run(t, tl, "folder", "app", "command", "cd /d "+notes+" & "+list); err != nil || !strings.Contains(got, "memo.md") {
+		t.Errorf("cd で notes を選ぶ: %q, %v", got, err)
+	}
+
 	// 定義:複数なら folder(名前の enum)がある。1つなら RunCommand と同じ(folder を出さない)
 	if d := tl.Def(); !strings.Contains(string(d.Parameters), `"folder": {"type": "string", "enum": ["app","notes"]`) || !strings.Contains(d.Description, "a cd does not carry over to the next call") {
 		t.Errorf("複数のときの定義: %+v", d)

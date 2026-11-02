@@ -120,6 +120,27 @@ func TestRunCommandStop(t *testing.T) {
 	}
 }
 
+// 先頭の「cd <絶対パス> &&」の行き先だけを読む(フォルダを選ぶため)
+func TestLeadingCd(t *testing.T) {
+	abs := byOS(`C:\Users\me\Binder Manual`, "/home/me/Binder Manual")
+	sub := byOS(`C:\work\notes`, "/work/notes")
+	for _, c := range []struct{ command, want string }{
+		{`cd "` + abs + `" && git log --all --oneline`, abs},
+		{`CD /D "` + abs + string(filepath.Separator) + `" & git status`, abs},
+		{`chdir ` + sub + `&&git log`, sub},
+		{"cd " + sub + "; ls", sub},
+		{`cd "` + abs + `"`, ""},        // cd だけ
+		{"cd frontend && npm test", ""}, // サブフォルダ(相対パス)はそのまま
+		{"git log", ""},
+		{`cd "` + abs + ` && git log`, ""}, // 引用符が閉じていない
+		{"cdx " + sub + " && ls", ""},
+	} {
+		if got := leadingCd(c.command); got != c.want {
+			t.Errorf("%q: %q(期待は %q)", c.command, got, c.want)
+		}
+	}
+}
+
 // 出力を残す部分の切れ目で、日本語(3バイト)の途中を切らない
 func TestOutputBufferCutsAtRunes(t *testing.T) {
 	var o outputBuffer

@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -111,10 +112,52 @@ func (t runCommand) check(args Args) (string, Folder, error) {
 	if err != nil {
 		return "", Folder{}, err
 	}
+	if cf, ok := t.folders.containing(leadingCd(command)); ok {
+		f = cf
+	}
 	if st, err := os.Stat(f.Path); err != nil || !st.IsDir() {
 		return "", Folder{}, fmt.Errorf("作業フォルダ %s がありません(消えたか、名前が変わった可能性があります)", f.Path)
 	}
 	return command, f, nil
+}
+
+// leadingCd は、コマンドの先頭の「cd <絶対パス> &&」の行き先(無ければ空)。
+//
+// folder を渡さずに「cd "C:\...\B" && git log」と書かれると、cmd.exe の cd は /d が無いと別のドライブへ移らず、
+// しかも成功扱いなので、git log がメイン(D: のフォルダ)で動き、別のリポジトリのログが返った(2026-11-03、ユーザーの報告)。
+// ツールの説明に「cd でなく folder」と書いても書かれるので、行き先がワークスペースのフォルダ(の中)なら、そこをカレントにする。
+// コマンドは書き換えない(カレントがそのフォルダなら、cd は同じドライブの中の移動になり、/d が無くても効く)。
+// 確認のカードにも、cd の行き先のフォルダの名前が出る。
+// 読むのは先頭の1つだけ(cd /d・chdir も)。引用符の無いパスは空白か & ; までにする(空白を含むパスは引用符で書かれる)。
+func leadingCd(command string) string {
+	word, rest, _ := strings.Cut(command, " ")
+	if !strings.EqualFold(word, "cd") && !strings.EqualFold(word, "chdir") {
+		return ""
+	}
+	rest = strings.TrimSpace(rest)
+	if len(rest) > 2 && strings.EqualFold(rest[:2], "/d") && rest[2] == ' ' {
+		rest = strings.TrimSpace(rest[3:])
+	}
+	var p string
+	if strings.HasPrefix(rest, `"`) {
+		end := strings.Index(rest[1:], `"`)
+		if end < 0 {
+			return ""
+		}
+		p, rest = rest[1:1+end], rest[2+end:]
+	} else {
+		end := strings.IndexAny(rest, " &;")
+		if end < 0 {
+			return ""
+		}
+		p, rest = rest[:end], rest[end:]
+	}
+	// cd だけのコマンド(後ろに続きが無い)は、その場所で動かす意味が無いので読まない
+	rest = strings.TrimSpace(rest)
+	if !strings.HasPrefix(rest, "&") && !strings.HasPrefix(rest, ";") || !filepath.IsAbs(p) {
+		return ""
+	}
+	return filepath.Clean(p)
 }
 
 func (t runCommand) Run(ctx context.Context, args Args) (string, error) {

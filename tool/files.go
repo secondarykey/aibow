@@ -186,10 +186,20 @@ func (set folderSet) pick(name, p string) (Folder, error) {
 		return Folder{}, fmt.Errorf("フォルダ %s はありません。folder には %s のどれかを書くか、省いてメインのフォルダを使ってください", name, strings.Join(set.names(), "・"))
 	}
 	main := MainFolder(set)
-	if !set.multi() || !filepath.IsAbs(p) {
+	if !set.multi() {
 		return main, nil
 	}
-	// 絶対パスなら、それを含むフォルダ(入れ子なら深いほう)
+	if f, ok := set.containing(p); ok {
+		return f, nil
+	}
+	return main, nil // 相対パスか、どこにも入らない。メインの外の絶対パスはエラーにする(localPath)
+}
+
+// containing は、絶対パス p を含むフォルダ(入れ子なら深いほう)。p が相対パスか、どこにも入らなければ false。
+func (set folderSet) containing(p string) (Folder, bool) {
+	if !filepath.IsAbs(p) {
+		return Folder{}, false
+	}
 	best := Folder{}
 	for _, f := range set {
 		if rel, err := filepath.Rel(f.Path, p); err == nil && filepath.IsLocal(rel) {
@@ -198,10 +208,7 @@ func (set folderSet) pick(name, p string) (Folder, error) {
 			}
 		}
 	}
-	if best.Path == "" {
-		return main, nil // どこにも入らない。メインの外としてエラーにする(localPath)
-	}
-	return best, nil
+	return best, best.Path != ""
 }
 
 func (set folderSet) names() []string {
