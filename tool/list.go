@@ -20,6 +20,7 @@ package tool
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"path"
@@ -62,6 +63,9 @@ func (t listFiles) Run(ctx context.Context, args Args) (string, error) {
 	defer root.Close()
 
 	if st, err := root.Stat(p); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return "", fmt.Errorf("%w%s", openError(p, err), t.folders.elsewhere(tg, false))
+		}
 		return "", openError(p, err)
 	} else if !st.IsDir() {
 		return "", fmt.Errorf("%s はフォルダではありません。ファイルの中身は read_file で読めます", p)

@@ -123,7 +123,55 @@ func (set folderSet) resolve(args Args) (target, error) {
 		}
 		return target{}, err
 	}
-	return target{folder: f, path: rel}, nil
+	tg := target{folder: f, path: rel}
+	if err := set.prefixed(tg); err != nil {
+		return target{}, err
+	}
+	return tg, nil
+}
+
+// prefixed は、パスの先頭にほかのフォルダの名前を付けた書き方(spec/greeting.md)を、直し方の分かるエラーにする。
+//
+// Qwen3.5 4B で試したら、folder を使わずに、フォルダの名前をパスの先頭に付けて書くことがあった(0035 の完了の条件 7。_docs/tuning.md)。
+// その形はメインの中のサブフォルダと見分けられないので受け付けない(決定事項 3)。メインの中にその名前のものが無いときだけ、
+// folder と path に分けて書くよう返す(あるなら、メインの中のサブフォルダとしてそのまま扱う)。
+// write_file で、メインの中に同じ名前のフォルダを新しく作ってしまうのも、これで防ぐ。
+func (set folderSet) prefixed(tg target) error {
+	if !set.multi() {
+		return nil
+	}
+	first, rest, ok := strings.Cut(tg.path, "/")
+	if !ok || rest == "" {
+		return nil
+	}
+	for _, f := range set {
+		if f.Path == tg.folder.Path || !strings.EqualFold(f.Name, first) {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(tg.folder.Path, filepath.FromSlash(first))); err == nil {
+			return nil // メインの中に本当にある(サブフォルダ)
+		}
+		return fmt.Errorf("%s はフォルダの名前です。パスの先頭に付けず、folder に %s、path に %s と分けて書いてください", first, f.Name, rest)
+	}
+	return nil
+}
+
+// elsewhere は、フォルダの中に見つからなかったパスが、ほかのフォルダにあるときの添え書き(無ければ空)。
+// 4B は list_files(folder=spec) の結果を見たあと、次の read_file で folder を付け忘れることがあった(_docs/tuning.md)。
+// 書き換えるツール(write が true)では、読むだけのフォルダを案内しない(書けないフォルダへ誘うことになるため)。
+func (set folderSet) elsewhere(tg target, write bool) string {
+	if !set.multi() {
+		return ""
+	}
+	for _, f := range set {
+		if f.Path == tg.folder.Path || write && !f.Writable {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(f.Path, filepath.FromSlash(tg.path))); err == nil {
+			return fmt.Sprintf("(%s はフォルダ %s の中にあります。folder に %s を書いてください)", tg.path, f.Name, f.Name)
+		}
+	}
+	return ""
 }
 
 // pick は、引数 folder の名前と path から、扱うフォルダを選ぶ。

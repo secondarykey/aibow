@@ -134,3 +134,39 @@ func argsFor(t *testing.T, tl Tool, kv ...string) Args {
 	}
 	return a
 }
+
+// 4B のつまずき(_docs/tuning.md)への添え書き:folder の付け忘れと、フォルダの名前をパスの先頭に付けた書き方
+func TestFolderHints(t *testing.T) {
+	main, _, tools := twoFolders(t)
+	read, list, write := Find(tools, "read_file"), Find(tools, "list_files"), Find(tools, "write_file")
+
+	if _, err := run(t, read, "path", "memo.md"); err == nil || !strings.Contains(err.Error(), "memo.md はフォルダ notes の中にあります。folder に notes を書いてください") {
+		t.Errorf("folder の付け忘れ: %v", err)
+	}
+	for _, c := range []struct {
+		tool Tool
+		args []string
+	}{
+		{read, []string{"path", "notes/memo.md"}},
+		{list, []string{"path", "Notes/sub"}},
+		{write, []string{"path", "notes/new.md", "content", "x"}}, // メインの中に notes/ を作らない
+	} {
+		if _, err := run(t, c.tool, c.args...); err == nil || !strings.Contains(err.Error(), "はフォルダの名前です。パスの先頭に付けず、folder に notes") {
+			t.Errorf("%s %v: %v", c.tool.Def().Name, c.args, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(main, "notes")); err == nil {
+		t.Error("メインの中に notes を作ってしまった")
+	}
+	// 書き換えるツールでは、読むだけのフォルダを案内しない
+	edit := Find(tools, "edit_file")
+	if _, err := run(t, edit, "path", "memo.md", "old_string", "メモ", "new_string", "めも"); err == nil || strings.Contains(err.Error(), "folder に notes") {
+		t.Errorf("edit_file の添え書き: %v", err)
+	}
+	// メインの中に本当に同じ名前のサブフォルダがあれば、そのまま使う
+	os.MkdirAll(filepath.Join(main, "notes"), 0o755)
+	os.WriteFile(filepath.Join(main, "notes", "x.md"), []byte("x\n"), 0o644)
+	if got, err := run(t, read, "path", "notes/x.md"); err != nil || got != "1\tx" {
+		t.Errorf("メインのサブフォルダ: %q, %v", got, err)
+	}
+}

@@ -60,7 +60,7 @@ func (t readFile) Run(ctx context.Context, args Args) (string, error) {
 	case err != nil:
 		return "", err
 	case !exists:
-		return "", fmt.Errorf("%s は見つかりません。list_files で、ある場所を確かめてください", p)
+		return "", fmt.Errorf("%s は見つかりません。list_files で、ある場所を確かめてください%s", p, t.folders.elsewhere(tg, false))
 	}
 	return readLines(p, text, args.Int("offset", 1), args.Int("limit", readMaxLines))
 }

@@ -142,7 +142,7 @@ func (t editFile) plan(args Args) (edit, error) {
 	case err != nil:
 		return edit{}, err
 	case !exists:
-		return edit{}, fmt.Errorf("%s は見つかりません。新しく作るときは write_file を使ってください", p)
+		return edit{}, fmt.Errorf("%s は見つかりません。新しく作るときは write_file を使ってください%s", p, t.folders.elsewhere(tg, true))
 	}
 
 	old, repl := args.String("old_string"), args.String("new_string")
