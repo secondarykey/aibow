@@ -71,9 +71,10 @@ func FolderMarks(f Folder, git bool) string {
 
 // FilesIn は、フォルダの組 folders の中を扱うツール。メインはちょうど1つにしておく(無ければ先頭をメインにする)。
 // フォルダが1つなら、定義は Files と同じ(folder の引数を出さない)。
+// search_files(0037)は読むだけなので、資料のフォルダ(0024)・aibow-mcp でも、ほかのフォルダのツールと一緒に出る。
 func FilesIn(folders []Folder) []Tool {
 	set := folderSet(folders)
-	return []Tool{listFiles{set}, readFile{set}, writeFile{set}, editFile{set}}
+	return []Tool{listFiles{set}, readFile{set}, searchFiles{set}, writeFile{set}, editFile{set}}
 }
 
 // MainFolder は、フォルダの組のメイン(メインの印が無ければ先頭。空なら空)。

@@ -93,14 +93,14 @@ func instructions(folders []tool.Folder) string {
 	if len(folders) == 1 {
 		return "# Environment\n" +
 			"- Working directory: " + folders[0].Path + " (file paths are relative to it)\n" +
-			"- Shell for run_command: " + tool.ShellNote + "\n"
+			"- Shell for run_command: " + tool.ShellNoteFor(true) + "\n"
 	}
 	var b strings.Builder
 	b.WriteString("# Environment\n- Folders (file tools take a folder argument; omit it for the main folder. File paths are relative to the folder):\n")
 	for _, f := range folders {
 		fmt.Fprintf(&b, "  - %s (%s): %s\n", f.Name, tool.FolderMarks(f, false), f.Path)
 	}
-	b.WriteString("- Shell for run_command: " + tool.ShellNote + " (runs in the main folder)\n")
+	b.WriteString("- Shell for run_command: " + tool.ShellNoteFor(true) + " (runs in the main folder)\n")
 	return b.String()
 }
 

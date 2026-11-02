@@ -1,6 +1,6 @@
 # 0037: コーディングエージェント向けの組み込みのツール(中を探す・名前で探す・作業の予定)
 
-- 状態: 🔧 作業中(段1を作った)
+- 状態: 🔧 作業中(段1・段2を作った)
 - ロードマップ: ロードマップの外(TODO.md の「ロードマップの外でやりたいこと」)
 - 決めた日: 2026-11-02(Chat でユーザーと決めた。案は Chat が今のコードを読んで出した。検討メモ:Chat の `builtin-tools-design-draft.md`)
 - 前提: 0005(作業フォルダのツール・`os.Root`)、0025(結果を入る分だけ切って渡す・read_file の切り方)、0035(ワークスペース・`folder` の引数)、0002(compact)、0024(資料のフォルダ)
@@ -96,7 +96,12 @@
 - 2026-11-02 段1:`search_files`(`tool/search.go`)と `list_files` の `pattern`(`tool/glob.go` の `**` の合わせ方)。
   完了の条件 1・2・4 はテスト(`tool/search_test.go`。pattern の無い `list_files` は今までの `TestListFiles` がそのまま通る)で確かめた。
   `list_files` のたどり方(浅い順・名前の順)を `walk` に切り出し、`search_files` と同じものを使う。
-  `search_files` は `tool.FilesIn` にまだ入れていない(組み込みに入れるのは段2。0036 の段2と同じ場所(`localTools`・aibow-mcp)を触るため、そちらが入ってから)
+  `search_files` は段1では `tool.FilesIn` にまだ入れなかった
+- 2026-11-02 段2:`search_files` を `tool.FilesIn` に入れた(`read_file` の後ろ)。これでアプリ(aibow の中の MCP サーバー越しも)・aibow-mcp・aibow-server の資料のフォルダ(0024)に出る。
+  決まりの既定は「確認しない」(`tool.Confirmable` でないので、list_files・read_file と同じ)。設定の画面の組み込みのツールの一覧にも出る(日本語の説明は `toolLabels.ts`)。
+  環境の説明のシェルの行を `tool.ShellNoteFor` にし、`search_files` を使う会話では findstr ではなく `search_files` を案内する(決定事項 8)。aibow-mcp の instructions も同じ。
+  0036 の段2を待たずに進めた(2026-11-02、ユーザーと決めた。重なる `localTools` は触らずに済んだ。0036 と重なるのは `mcp/server/server.go` の instructions の2行と、書類)。
+  画面のアプリ(`_cmd/aibow`)のビルドとテストは、クラウドセッションに GTK が無いので動かしていない(`toolLabels.ts` に1行足しただけ)
 
 ## 作業中に決めたこと(Code。ユーザーの確認待ち)
 

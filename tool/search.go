@@ -116,6 +116,15 @@ func (t searchFiles) Run(ctx context.Context, args Args) (string, error) {
 	return s.result(), nil
 }
 
+// ShellNoteFor は、環境の説明に書く run_command のシェル。search_files も使えるなら(search が true)、
+// ファイルの中を探すのは run_command(Windows の findstr)ではなく search_files だと書く(0037 の決定事項 8)。
+func ShellNoteFor(search bool) string {
+	if search {
+		return shellNoteSearch
+	}
+	return ShellNote
+}
+
 // searchRegexp は、モデルが書いた正規表現を読み取る。読めなければ、直し方の分かるエラー。
 func searchRegexp(pattern string, ignoreCase bool) (*regexp.Regexp, error) {
 	if pattern == "" {

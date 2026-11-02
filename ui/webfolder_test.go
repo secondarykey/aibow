@@ -84,7 +84,7 @@ func TestWebFolderRead(t *testing.T) {
 		t.Errorf("資料のフォルダを読めるはず: %q", r.Content)
 	}
 	names = w.eng.tools[0]
-	for _, want := range []string{"list_files", "read_file", "write_file", "edit_file"} {
+	for _, want := range []string{"list_files", "read_file", "search_files", "write_file", "edit_file"} {
 		if !slices.Contains(names, want) {
 			t.Errorf("%s を知らせるはず: %v", want, names)
 		}

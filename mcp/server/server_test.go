@@ -62,7 +62,7 @@ func TestListTools(t *testing.T) {
 		readOnly[tl.Name] = tl.Annotations != nil && tl.Annotations.ReadOnlyHint
 	}
 	// SDK は名前の順に返す
-	want := []string{"calculate", "edit_file", "get_current_time", "list_files", "read_file", "run_command", "write_file"}
+	want := []string{"calculate", "edit_file", "get_current_time", "list_files", "read_file", "run_command", "search_files", "write_file"}
 	if !slices.Equal(names, want) {
 		t.Errorf("ツール = %v, want %v", names, want)
 	}

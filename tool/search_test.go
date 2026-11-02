@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -201,5 +202,21 @@ func TestSearchFilesFolder(t *testing.T) {
 	}
 	if strings.Contains(string(searchFiles{one(main)}.Def().Parameters), `"folder":`) {
 		t.Error("フォルダが1つなのに folder の引数がある")
+	}
+}
+
+// search_files があれば、Windows の環境の説明で findstr ではなく search_files を案内する(決定事項 8)
+func TestShellNoteFor(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		if ShellNoteFor(true) != ShellNote || ShellNoteFor(false) != ShellNote {
+			t.Errorf("/bin/sh は書き分けない: %q %q", ShellNoteFor(true), ShellNoteFor(false))
+		}
+		return
+	}
+	if got := ShellNoteFor(true); !strings.Contains(got, "use search_files instead of findstr") || strings.Contains(got, "use dir, type, findstr") {
+		t.Errorf("search_files あり: %q", got)
+	}
+	if ShellNoteFor(false) != ShellNote {
+		t.Errorf("search_files なし: %q", ShellNoteFor(false))
 	}
 }

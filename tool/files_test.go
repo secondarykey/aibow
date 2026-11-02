@@ -267,8 +267,9 @@ func TestReadFile(t *testing.T) {
 func TestFilesWorkDirGone(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "gone")
 	args := map[string][]string{
-		"write_file": {"path", "a.txt", "content", "x"},
-		"edit_file":  {"path", "a.txt", "old_string", "a", "new_string", "b"},
+		"write_file":   {"path", "a.txt", "content", "x"},
+		"edit_file":    {"path", "a.txt", "old_string", "a", "new_string", "b"},
+		"search_files": {"pattern", "x"},
 	}
 	for _, tl := range Files(dir) {
 		kv, ok := args[tl.Def().Name]

@@ -274,12 +274,14 @@ tool ── 何も知らない
 # Environment
 Working directory: D:\Work\example
 OS: windows
-Shell for run_command: cmd.exe (use dir, type, findstr; ls, cat and grep are not available)
+Shell for run_command: cmd.exe (use dir and type; ls, cat and grep are not available. To search inside files, use search_files instead of findstr)
 Use paths relative to the working directory.
 Commands already run inside the working directory, so do not cd into it. "example" refers to the working directory itself.
 ```
 
-書式に関係ない情報なので、書式ではなく会話の仕組みの側で組み立てる。シェルの行は OS ごとに `tool.ShellNote`(Linux なら `/bin/sh`)。
+書式に関係ない情報なので、書式ではなく会話の仕組みの側で組み立てる。シェルの行は OS ごとに `tool.ShellNoteFor`(Linux なら `/bin/sh`)。
+`search_files` を使う会話では、Windows の行で findstr を案内せず `search_files` に向ける(0037 の決定事項 8。4B が `run_command` で findstr を呼び、確認が挟まるのを防ぐ)。
+`search_files` を「使わない」にした会話では、前の行(`use dir, type, findstr; …`)のまま。aibow-mcp の instructions は、フォルダがあればいつも `search_files` を出すので、いつも新しい行
 
 ワークスペースのフォルダが複数なら、フォルダを名前・印・パスで並べる(`foldersEnvironment`。印は main / writable か read-only / git。git は `.git` があるか):
 
@@ -289,14 +291,14 @@ Folders (pass the folder argument; omit it for the main folder):
 - aibow (main, writable, git): D:\Go\Projects\aibow
 - notes (read-only): D:\Docs\notes
 OS: windows
-Shell for run_command: cmd.exe (use dir, type, findstr; ls, cat and grep are not available)
+Shell for run_command: cmd.exe (use dir and type; ls, cat and grep are not available. To search inside files, use search_files instead of findstr)
 Use paths relative to the folder.
 Commands already run inside the main folder "aibow", so do not cd into it. Each folder name refers to that folder itself, not to a subfolder.
 ```
 
 ### フォルダが複数のワークスペース(0035 の段2)
 
-- ファイルのツール(`list_files`・`read_file`・`write_file`・`edit_file`)に引数 `folder`(省略可。名前を JSON Schema の `enum` で並べる)を足す。省けばメイン。
+- ファイルのツール(`list_files`・`read_file`・`search_files`・`write_file`・`edit_file`)に引数 `folder`(省略可。名前を JSON Schema の `enum` で並べる)を足す。省けばメイン。
   名前は大文字と小文字を区別しない(ワークスペースの中でも、大文字と小文字だけの違いは重なりとして断る)。
   パスの先頭に名前を付ける形(`notes/a.md`)は、メインの中のサブフォルダと区別できないので採らない
 - **フォルダが1つなら `folder` を出さない**(定義は段1・`tool.Files` と同じ。4B のプロンプトを増やさない。`withFolder`)
