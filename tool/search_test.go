@@ -80,13 +80,6 @@ func TestListFilesPattern(t *testing.T) {
 	if got, err := run(t, tl, "path", ".claude", "pattern", "*.go"); err != nil || got != ".claude/w/a.go" {
 		t.Errorf("path=.claude: %q, %v", got, err)
 	}
-	// \ を区切りのつもりで書いたら、0 件の結果に / で書くよう添える
-	if got, err := run(t, tl, "pattern", `cmd\**\main.go`); err != nil || !strings.Contains(got, "区切りは / で書いて") {
-		t.Errorf("\\ の添え書き: %q, %v", got, err)
-	}
-	if got, _ := run(t, tl, "pattern", "*.ts"); strings.Contains(got, "区切り") {
-		t.Errorf("\\ が無いのに添え書きがある: %q", got)
-	}
 	if _, err := run(t, tl, "pattern", "[x"); err == nil || !strings.Contains(err.Error(), "読めません") {
 		t.Errorf("読めないパターン: %v", err)
 	}

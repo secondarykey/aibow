@@ -179,7 +179,7 @@ func (l *lister) add(name string, d fs.DirEntry) bool {
 func (l *lister) result(p string) string {
 	if l.count == 0 {
 		if l.glob != nil {
-			return fmt.Sprintf("(pattern %s に合うファイルはありません)", l.pattern) + l.glob.hint()
+			return fmt.Sprintf("(pattern %s に合うファイルはありません)", l.pattern)
 		}
 		if p == "." {
 			return "(作業フォルダは空です)"

@@ -87,7 +87,7 @@ func (t searchFiles) Run(ctx context.Context, args Args) (string, error) {
 		return "", openError(p, err)
 	}
 
-	s := searcher{re: re, glob: g}
+	s := searcher{re: re}
 	if !st.IsDir() {
 		// ファイルを名指ししたときは glob を見ない(書いた本人が選んだファイルなので)
 		s.file(root, p)
@@ -135,8 +135,7 @@ func searchRegexp(pattern string, ignoreCase bool) (*regexp.Regexp, error) {
 
 // searcher は search_files の結果を、上限を数えながら組み立てる。上限を超えても数えるのは続ける。
 type searcher struct {
-	re   *regexp.Regexp
-	glob *globPattern // glob を付けたとき(0 件のときの添え書きに使う)
+	re *regexp.Regexp
 
 	b       strings.Builder
 	shown   int  // 書いた一致の数
@@ -187,9 +186,6 @@ func (s *searcher) add(line string) {
 func (s *searcher) result() string {
 	if s.total == 0 {
 		s.b.WriteString("(見つかりませんでした)\n")
-		if s.glob != nil && s.glob.hint() != "" {
-			s.b.WriteString(strings.TrimPrefix(s.glob.hint(), "\n") + "\n")
-		}
 	}
 	if s.full {
 		fmt.Fprintf(&s.b, "(一致は全部で %d 件(%d ファイル)あり、%d 件までを並べました。path か glob で絞ってください)\n", s.total, s.files, s.shown)
