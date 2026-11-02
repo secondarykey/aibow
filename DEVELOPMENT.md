@@ -98,6 +98,8 @@ worktree を消すツールによっては、ジャンクションの先(本体�
 go run ./_cmd/dev server
 ```
 
+止めるときは Ctrl+C です。aibow-server が後片付け(DB・ログを閉じる)をして自分で終わるのを待ってから戻ります(15 秒まで)。
+
 exe を作るときは `go run ./_cmd/dev build` です(画面をビルドしてから `go build` する。`go build` だけだと前にビルドした古い画面が入る)。仕組みは [_docs/features/0021-server-dev.md](_docs/features/0021-server-dev.md)。
 
 ## 確かめる
