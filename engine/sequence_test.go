@@ -44,6 +44,8 @@ func TestUsable(t *testing.T) {
 		// 同じプロンプトをもう一度:最後の1トークンは読ませ直すので、巻き戻せないモデルでは使えない(0012 の 6-1)
 		{"同じプロンプト・巻き戻せない", convA, convA, false, 0},
 		{"同じプロンプト・巻き戻せる", convA, convA, true, 149},
+		// 頭の数トークン(発言の始まりの印など)だけ同じ会話は、巻き戻せるモデルでも使えないとみなす(半分も一致しない。段4)
+		{"頭だけ一致・巻き戻せる", textOf(toks(1, 4), toks(1000, 40)), textOf(toks(1, 4), toks(3000, 30)), true, 0},
 	}
 	for _, c := range cases {
 		if got := usable(c.cached, c.next, c.rollback); got != c.want {
@@ -85,6 +87,12 @@ func TestPickSeq(t *testing.T) {
 	// 巻き戻せるモデルでは、システムの発言の分の一致があるので、新しい会話でも一致が長いほう(同じなら古いほう)
 	if got := pickSeq([]*sequence{seqB(), seqA()}, nextC, true); got != 1 {
 		t.Errorf("巻き戻せるモデル: %d, want 1(一致は同じ 100 なので古い A)", got)
+	}
+
+	// 頭の数トークンだけ同じ新しい会話は、巻き戻せるモデルでも、ほかの会話のシーケンスではなく空のものに(段4。Gemma 4)
+	short := &sequence{id: 0, cached: textOf(toks(1, 4), toks(1000, 40)), used: now}
+	if got := pickSeq([]*sequence{short, {id: 1}}, textOf(toks(1, 4), toks(3000, 30)), true); got != 1 {
+		t.Errorf("頭だけ一致: %d, want 1(空)", got)
 	}
 
 	// 使っているものは選ばない

@@ -15,7 +15,9 @@ package engine
 // これが llama.cpp の server の --parallel(連続バッチ)の中身。この仕様は2本まで(N 本はあとで)。
 
 import (
+	"cmp"
 	"context"
+	"slices"
 	"sync"
 	"time"
 
@@ -186,19 +188,24 @@ func (e *Engine) step(batch *llama.Batch, active []*job) []*job {
 		live = append(live, j)
 	}
 
-	// 2. batch を作る。生成中の人の1トークンずつが先、残りをプロンプトを読んでいる人に(到着順)
+	// 2. batch を作る。生成中の人の1トークンずつを先に取っておき、残りをプロンプトを読んでいる人に。
+	// batch の中はシーケンスの番号の順に並べる。作業領域を分け合わない形(KVUnified なし)では、llama.cpp は batch を
+	// 「番号が 1 ずつ増えるシーケンスのまとまり」で区切って計算する。逆の順(1 → 0)に並べると2回に分かれ、1回の decode が倍かかった(段4)
+	slices.SortFunc(live, func(a, b *job) int { return cmp.Compare(a.seq.id, b.seq.id) })
 	batch.Clear()
 	budget := batchSize
 	for _, j := range live {
 		j.fed, j.sample = j.fed[:0], -1
 		if j.pending {
-			j.add(batch, j.last, true)
-			j.pending = false
 			budget--
 		}
 	}
 	for _, j := range live {
-		if j.i < len(j.input) && budget > 0 {
+		switch {
+		case j.pending:
+			j.add(batch, j.last, true)
+			j.pending = false
+		case j.i < len(j.input) && budget > 0:
 			budget -= j.addPrompt(batch, budget)
 		}
 	}

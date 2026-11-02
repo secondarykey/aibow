@@ -254,7 +254,7 @@ go run ./_cmd/dev server
 - Ctrl+C で両方止まります。Go のコードを変えたら、止めて打ち直します。Go のメソッドを変えたときのバインディングは、今までどおり `wails3 generate bindings` で作り直します
 
 ```
-aibow-server [-model モデル] [-ctx 作業領域の大きさ] [-port ポート] [-host アドレス] [-tls-cert 証明書 -tls-key 秘密鍵] [-lib llama.cpp のフォルダ] [-models GGUF のフォルダ] [-config 設定ファイル] [-login=false] [-debug]
+aibow-server [-model モデル] [-ctx 作業領域の大きさ] [-parallel 同時に生成できる数] [-port ポート] [-host アドレス] [-tls-cert 証明書 -tls-key 秘密鍵] [-lib llama.cpp のフォルダ] [-models GGUF のフォルダ] [-config 設定ファイル] [-login=false] [-debug]
 aibow-server [-config 設定ファイル] user list|add|passwd|remove|key|admin|unadmin [名前]
 aibow-server [-config 設定ファイル] user display <名前> [表示名]
 aibow-server [-config 設定ファイル] user email <名前> [アドレス]
@@ -269,20 +269,24 @@ aibow-server [-config 設定ファイル] cert <ホスト名か IP アドレス>
 - `-model` は `ollama:qwen3.5:4b` のような ID・`qwen3.5:4b` のような一覧の名前・GGUF ファイルのパス。書かなければ `AIBOW_MODEL`、それも無ければ一覧の先頭から、書式に対応している最初のモデルです(models フォルダに未対応のモデル(llama など)を置いても起動できるように、GGUF の先頭から種類だけを読んで飛ばします)。書式に未対応のモデルを指定すると、読み込む前に理由を出して止まります。
   `-model` は起動したときに読み込むモデルで、リクエストの `model` が違えば読み直してから答えます(数秒〜十数秒。知らない名前なら読み込み中のモデルで答えます)。`/v1/models` は使えるモデルを全部返します
 - `-ctx` は作業領域の大きさ(プロンプト + 返事のトークン数。既定 32768。`AIBOW_SERVER_CTX`)。履歴がこれに入らないリクエストは、400 のエラー(`code: context_length_exceeded`)で断ります(compact はしません)
+- `-parallel` は同時に生成できる数(作業領域の中のシーケンスの数。既定 1。`AIBOW_SERVER_PARALLEL`。0023)。2 にすると、2人が同時に送っても待たずに両方の返事が流れ、
+  会話ごとに KV キャッシュが残ります(2人が交互に使っても読み直しが減る)。そのかわり作業領域を等分するので、1つの会話・リクエストが使えるのは `ctx` ÷ `parallel`(32768 を 2 なら 16384)までです。
+  VRAM は変わりません。1人あたりの生成の速さは 1 割ほど落ちます(Qwen3.5 4B で 1人 68 tok/s → 2人同時でそれぞれ 58 tok/s。[tuning.md](tuning.md))
 - `-port` は待ち受けのポート(既定 8089。`AIBOW_SERVER_PORT`)。待ち受けは既定で `127.0.0.1` だけで、PC の外からはつなげません(広げるときは下の「ほかの PC から使う」)
 - `-lib`・`-models` は llama.cpp の DLL のフォルダと GGUF を置くフォルダ(既定はカレントフォルダの `lib`・`models`。`AIBOW_LIB`・`AIBOW_MODELS_DIR`)。
   リポジトリのフォルダで起動するときは `aibow-server -lib _cmd/aibow/lib -models _cmd/aibow/models` のように指定します
 - GPU の層数・返事の上限の既定・presence penalty は、アプリと同じ環境変数(下の表)で決めます。画面の設定(DB)は読みません
 - 思考は返事の `reasoning_content` に分けて返します。リクエストに `"chat_template_kwargs": {"enable_thinking": false}` を書くと思考しません(書かなければ思考します)
-- 同時に来たリクエストは、順番に1つずつ答えます。つながりを切ると(クライアントの停止ボタンなど)、生成を止めます
+- 同時に来たリクエストは、`-parallel` の数まで同時に答え、それより多ければ順番を待たせます(既定は1つずつ)。つながりを切ると(クライアントの停止ボタンなど)、生成を止めます
 - ツール呼び出し(`tools`・`tool_calls`)に対応しています。モデルが呼び出しを書くと `finish_reason: tool_calls` で返すので、クライアントがツールを実行して結果(`tool` の役)を足して送り直します。
   書式が崩れて読み取れなかった呼び出しは、答えの文字列として返します
 - `aibow-server -version` でバージョンを表示します。ログは `%APPDATA%\aibow\logs\aibow-server_<日付>.log` と標準エラー出力に出ます。
   起動のときに、待ち受けるアドレスと、画面のアプリのつなぎ先(`serverUrl`)・Cline などの Base URL が出ます
 - ログのレベルは、`go run` で動かすと Info、exe(`go build`・`go install` で作ったもの)だと Notice です。`-debug` で Debug まで出ます。
   設定ファイルの `logLevel`(`debug`・`info`・`notice`・`warn`・`error`)でも決められます。`-debug` を付けたときは `-debug` が優先です
-  - Info:リクエストを受け付けたとき(どこから・モデル・発言とツールの数。前のリクエストを処理中なら「順番を待ちます」)と、
-    終わったとき(プロンプトのトークン数・KV キャッシュを使い回せた数・生成の速さ・終了の理由)に1行ずつ
+  - Info:リクエストを受け付けたとき(どこから・モデル・発言とツールの数。席が全部ふさがっていれば「順番を待ちます」)と、
+    終わったとき(プロンプトのトークン数・KV キャッシュを使い回せた数・生成の速さ・終了の理由)に1行ずつ。
+    `-parallel` が 2 以上なら、生成のたびに、使ったシーケンスの番号と、同じ decode に混ざった生成の数も1行
   - Debug:受け付けたリクエストの生成の設定(temperature・返事の上限・presence penalty・思考・tool_choice)
   - Notice:起動・モデルの読み込み・GPU の層数の変更。exe でもこれは残ります
 - 仕組みは [api.md](api.md)
@@ -296,6 +300,7 @@ aibow-server [-config 設定ファイル] cert <ホスト名か IP アドレス>
 {
   "port": 8089,
   "ctx": 32768,
+  "parallel": 1,
   "model": "qwen3.5:4b",
   "lib": "D:/Go/Projects/aibow/_cmd/aibow/lib",
   "modelsDir": "D:/Go/Projects/aibow/_cmd/aibow/models",
@@ -303,7 +308,7 @@ aibow-server [-config 設定ファイル] cert <ホスト名か IP アドレス>
 }
 ```
 
-- 欄は `port`・`ctx`・`model`・`lib`・`modelsDir`・`logLevel`・`login`・`host`・`tlsCert`・`tlsKey`・`mcpServers`・`folders` の12こ。知らない欄があると、書き間違いとして起動を止めます
+- 欄は `port`・`ctx`・`parallel`・`model`・`lib`・`modelsDir`・`logLevel`・`login`・`host`・`tlsCert`・`tlsKey`・`mcpServers`・`folders` の13こ。知らない欄があると、書き間違いとして起動を止めます
 - `mcpServers` は、ブラウザの会話で使う MCP のサーバーです(下の「ブラウザの会話のツール」。形はアプリの `settings.json` と同じ)
 - `folders` は、ブラウザの会話で読み書きする資料のフォルダです(下の「資料のフォルダ」。名前 → 絶対パス)
 - `login` を `true` にすると、ブラウザの画面にログインが要るようになります(下の「ログインと利用者」)
@@ -681,6 +686,7 @@ aibow-server は、生成1回ごとに「だれが・いつ・どのモデルで
 | `AIBOW_GPU_LAYERS` | `999` | GPU に載せる層の数。VRAM に入りきらないモデルは減らす(残りは CPU で計算)。画面ではモデルごとに変えられます(まだ変えていないモデルはこの値) |
 | `AIBOW_PRESENCE_PENALTY` | `1.5` | すでに生成した言葉を選ばれにくくする強さ。思考の堂々巡りを抑える。`0` で無効 |
 | `AIBOW_SERVER_CTX` | `32768` | `aibow-server` の作業領域の大きさ(プロンプト + 返事のトークン数)。引数の `-ctx`・設定ファイルの `ctx` が優先。以前の `AIBOW_API_CTX` は使わなくなった |
+| `AIBOW_SERVER_PARALLEL` | `1` | `aibow-server` で同時に生成できる数(作業領域の中のシーケンスの数。作業領域はこの数で等分する。0023)。引数の `-parallel`・設定ファイルの `parallel` が優先 |
 | `AIBOW_SERVER_LOGIN` | `1` | `0` にすると、`aibow-server` をログインなしにする(127.0.0.1 だけで待ち受けるとき。0020 で既定を要るにした)。引数の `-login`・設定ファイルの `login` が優先 |
 | `AIBOW_SERVER_HOST` | `127.0.0.1` | `aibow-server` の待ち受けのアドレス(`0.0.0.0` で全部のネットワーク。外ではログインと API キーが要る)。引数の `-host`・設定ファイルの `host` が優先 |
 | `AIBOW_SERVER_TLS_CERT`・`AIBOW_SERVER_TLS_KEY` | なし | `aibow-server` の HTTPS の証明書と秘密鍵のファイル(`aibow-server cert` で作れる)。引数の `-tls-cert`・`-tls-key`・設定ファイルの `tlsCert`・`tlsKey` が優先 |

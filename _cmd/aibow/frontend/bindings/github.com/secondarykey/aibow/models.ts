@@ -152,6 +152,12 @@ export interface CompactStats {
     "stop_reason": string;
 
     /**
+     * シーケンスが2本以上のとき(0023)。Seq は使ったシーケンスの番号、Mixed はこの生成の decode に一番多く混ざった生成の数(自分を含む。1本なら 0)
+     */
+    "seq"?: number;
+    "mixed"?: number;
+
+    /**
      * 画像(0030)。ImageTokens は PromptTokens のうち画像の分、EncodeSec は今回エンコードした画像の秒数(使い回した画像は入らない)。
      * ProjectorSec はこの回に mmproj を読み込んだ秒数(読み込んだ回だけ)、ProjectorCPU は GPU に載らず CPU に載せたか(その回だけ。画面のお知らせに使う)
      */
@@ -782,6 +788,12 @@ export interface ReplyStats {
      * eos / length / context / cancel / stop(書式が決めた位置で止めた)
      */
     "stop_reason": string;
+
+    /**
+     * シーケンスが2本以上のとき(0023)。Seq は使ったシーケンスの番号、Mixed はこの生成の decode に一番多く混ざった生成の数(自分を含む。1本なら 0)
+     */
+    "seq"?: number;
+    "mixed"?: number;
 
     /**
      * 画像(0030)。ImageTokens は PromptTokens のうち画像の分、EncodeSec は今回エンコードした画像の秒数(使い回した画像は入らない)。

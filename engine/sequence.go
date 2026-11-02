@@ -54,12 +54,18 @@ func plan(cached, next []chunk) (keep []chunk, i, off int) {
 // usable は、cached を next に使い回せるマスの数。
 // 途中から巻き戻せないモデル(rollback が false。Qwen3.5 などハイブリッド・再帰の層を持つもの)は、
 // 残す分が cached の全部のときだけ使える(途中から捨てようとすると、llama.cpp が断って全部を捨てることになる。段1)。
+// 巻き戻せるモデルでも、cached の半分も一致しなければ使えないとみなす(llama.cpp の server の --slot-prompt-similarity の既定 0.5 と同じ)。
+// どの会話も頭の数トークン(発言の始まりの印など)は同じなので、そこだけの一致で選ぶと、全部の会話が1本のシーケンスを奪い合い、
+// ほかのシーケンスが空のまま残った(段4。Gemma 4 E4B)。
 func usable(cached, next []chunk, rollback bool) int {
 	keep, _, _ := plan(cached, next)
 	if !rollback && positions(keep) < positions(cached) {
 		return 0
 	}
-	return cells(keep)
+	if n := cells(keep); 2*n >= cells(cached) {
+		return n
+	}
+	return 0
 }
 
 // pickSeq は next を読ませるシーケンスの番号を選ぶ。空きが無ければ -1。

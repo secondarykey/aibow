@@ -21,11 +21,11 @@ func TestResolveOrder(t *testing.T) {
 	t.Setenv("AIBOW_SERVER_PORT", "9100") // 設定ファイルに負ける
 	t.Setenv("AIBOW_SERVER_CTX", "")
 	t.Setenv("AIBOW_SERVER_PARALLEL", "3") // 設定ファイルに負ける(0023)
-	t.Setenv("AIBOW_MODEL", "env-model") // 設定ファイルに無いので効く
-	t.Setenv("AIBOW_LIB", "env-lib")     // 引数に負ける
-	t.Setenv("AIBOW_MODELS_DIR", "")     // どこにも無いので既定
-	t.Setenv("AIBOW_API_PORT", "8000")   // 古い名前。読まずに注意を出す
-	t.Setenv("AIBOW_SERVER_LOGIN", "")   // どこにも無いので既定(要る。0020)
+	t.Setenv("AIBOW_MODEL", "env-model")   // 設定ファイルに無いので効く
+	t.Setenv("AIBOW_LIB", "env-lib")       // 引数に負ける
+	t.Setenv("AIBOW_MODELS_DIR", "")       // どこにも無いので既定
+	t.Setenv("AIBOW_API_PORT", "8000")     // 古い名前。読まずに注意を出す
+	t.Setenv("AIBOW_SERVER_LOGIN", "")     // どこにも無いので既定(要る。0020)
 
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
 	f := defineFlags(fs)
