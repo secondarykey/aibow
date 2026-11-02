@@ -95,6 +95,13 @@ func Builtin() []Tool {
 	return []Tool{currentTime{}, calculator{}}
 }
 
+// Folderless は、作業フォルダを使わない組み込みのツール(時刻・計算・URL を読む)。設定の画面の一覧に出す用。
+// fetch_url は設定(PC の中のアドレスを許すか)で動きが変わるので Builtin に入れず、動かす側(mcp/server の Options.Fetch)が足す。
+// 定義は設定によらないので、ここでは既定の設定で作る。
+func Folderless() []Tool {
+	return append(Builtin(), FetchURL(FetchOptions{}))
+}
+
 // Defs はツールの定義の一覧(モデルに知らせる用)。
 func Defs(tools []Tool) []Def {
 	defs := make([]Def, len(tools))

@@ -40,6 +40,7 @@ import (
 	"github.com/secondarykey/aibow/models"
 	"github.com/secondarykey/aibow/store"
 	"github.com/secondarykey/aibow/store/remote"
+	"github.com/secondarykey/aibow/tool"
 	"github.com/secondarykey/aibow/ui"
 	"github.com/secondarykey/aibow/web"
 
@@ -78,7 +79,7 @@ func main() {
 	var prefs *aibow.ToolPrefs
 	var workspaces *aibow.Workspaces
 	// 組み込みのツールは、aibow の中で自作の MCP サーバーを動かし、MCP 越しに呼ぶ(0007 の 5-4)。サーバーは要る最初のときに動かす
-	local := client.NewLocal(client.Options{Version: appVersion()})
+	local := client.NewLocal(client.Options{Version: appVersion(), Fetch: fetchOptions(cfg)})
 	defer local.Close()
 	if err == nil {
 		prefs = loadToolPrefs(&cfg)
@@ -305,6 +306,15 @@ func loadToolPrefs(cfg *appConfig) *aibow.ToolPrefs {
 		cfg.notices = append(cfg.notices, err.Error())
 	}
 	return prefs
+}
+
+// fetchOptions は、URL を読むツール(fetch_url。0036)の設定。アプリでは作業フォルダの無い会話でも出し、確認してから読む(決定事項 13・16)。
+// PC の中・社内のアドレスを許すのは settings.json の fetchAllowPrivate を書いたときだけ(決定事項 12)。
+func fetchOptions(cfg appConfig) *tool.FetchOptions {
+	if cfg.settings.FetchAllowPrivate {
+		log.Noticef("fetch_url: PC の中・社内のアドレスも読みます(%s の fetchAllowPrivate)", cfg.settingsPath)
+	}
+	return &tool.FetchOptions{AllowPrivate: cfg.settings.FetchAllowPrivate, Version: appVersion()}
 }
 
 // loadWorkspaces は、その PC のワークスペース(workspaces.json。0035)を読む。

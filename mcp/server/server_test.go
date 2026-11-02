@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/secondarykey/aibow/tool"
 )
 
 // connect は、プロセスを起動せずに(SDK の NewInMemoryTransports で)サーバーにつないだクライアントを返す。
@@ -163,5 +165,26 @@ func TestCallErrors(t *testing.T) {
 				t.Errorf("%s = %q (isError %v), want %q を含むエラー", tt.tool, text, isErr, tt.want)
 			}
 		})
+	}
+}
+
+// fetch_url は Fetch を決めたときだけ出す(aibow-mcp は引数 -fetch のときだけ。0036 の決定事項 15)。確認が要るツールなので「読むだけ」の印は付けない
+func TestListToolsFetch(t *testing.T) {
+	for _, fetch := range []bool{false, true} {
+		opts := Options{}
+		if fetch {
+			opts.Fetch = &tool.FetchOptions{}
+		}
+		res, err := connect(t, opts).ListTools(context.Background(), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		i := slices.IndexFunc(res.Tools, func(tl *mcp.Tool) bool { return tl.Name == "fetch_url" })
+		if (i >= 0) != fetch {
+			t.Errorf("Fetch %v のとき fetch_url を出したか = %v", fetch, i >= 0)
+		}
+		if i >= 0 && res.Tools[i].Annotations != nil && res.Tools[i].Annotations.ReadOnlyHint {
+			t.Error("fetch_url に読むだけの印を付けている")
+		}
 	}
 }

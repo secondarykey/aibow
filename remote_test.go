@@ -353,13 +353,47 @@ func TestLocalToolPolicy(t *testing.T) {
 	if cs.toolPolicy(set, read) != ToolAsk {
 		t.Error("会話の上書きが一番優先")
 	}
-	if names := BuiltinTools(); len(names) != 7 || names[0].Name != "get_current_time" || names[6].Name != "run_command" {
+	if names := BuiltinTools(); len(names) != 8 || names[0].Name != "get_current_time" || names[2].Name != "fetch_url" || names[7].Name != "run_command" {
 		t.Errorf("組み込みのツールの一覧: %+v", names)
 	}
 }
 
 // 組み込みのツールも「使わない」ならモデルに見せない。読むだけのツールを「確認する」にすると、引数を見せて確認する。
 // サーバーごと「使わない」にした MCP のサーバーは、会話で選んであっても起動しない
+// fetch_url は、アプリでは確認する(決定事項 13)、aibow-server では管理者がツールごとに有効にするまで禁止(決定事項 14)。0036
+func TestFetchPolicy(t *testing.T) {
+	fetch := tool.FetchURL(tool.FetchOptions{})
+	set := ConversationSettings{}
+	app := &Conversations{}
+	app.SetToolPrefs(&ToolPrefs{})
+	if p := app.toolPolicy(set, fetch); p != ToolAsk {
+		t.Errorf("アプリの既定が %q(確認するのはず)", p)
+	}
+
+	prefs, err := LoadServerToolPrefs(filepath.Join(t.TempDir(), "server-tools.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := &Conversations{}
+	server.SetToolPrefs(prefs)
+	on := ConversationSettings{ToolPolicies: map[string]ToolPolicy{"fetch_url": ToolOn}}
+	if p := server.toolPolicy(on, fetch); p != ToolOff {
+		t.Errorf("有効にする前に、会話の「使う」で使えた(%q)", p)
+	}
+	prefs.SetBuiltinPolicy(ToolAllow)
+	if p := server.toolPolicy(set, fetch); p != ToolOff {
+		t.Errorf("組み込みのグループの扱いで有効になった(%q)", p)
+	}
+	prefs.SetToolPolicy("fetch_url", ToolAllow)
+	if p := server.toolPolicy(set, fetch); p != ToolAllow {
+		t.Errorf("管理者が確認しないにしたのに %q", p)
+	}
+	prefs.SetBuiltinPolicy(ToolOff)
+	if p := server.toolPolicy(set, fetch); p != ToolOff {
+		t.Errorf("組み込みのグループごと禁止したのに %q", p)
+	}
+}
+
 func TestLocalToolPolicyInConversation(t *testing.T) {
 	g := &fakeGen{replies: []fakeReply{
 		{toolCalls: []format.ToolCall{toolCall("read_file", "path", "main.go")}},

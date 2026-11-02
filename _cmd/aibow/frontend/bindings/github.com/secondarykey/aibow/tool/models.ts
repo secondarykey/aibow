@@ -41,6 +41,11 @@ export interface Preview {
     "command"?: string;
 
     /**
+     * 読みに行く URL(fetch_url。0036)
+     */
+    "url"?: string;
+
+    /**
      * MCP のサーバーの名前。中身が見えないので差分は作れず、どのサーバーに何を渡すかを見せる
      */
     "server"?: string;

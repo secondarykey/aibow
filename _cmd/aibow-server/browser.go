@@ -8,7 +8,7 @@ package main
 //	Cline など ──HTTP──→ /v1/ など → api ─────────────────────→ engine ┴─ 順番待ちの席は1つ(api.Seat)
 //
 // 生成は同じ engine を直接使い、OpenAI 互換の口と同じ席を通す(HTTP で自分自身に頼まない。0016 の 11)。
-// ブラウザの会話のツールはサーバーの PC で動く(0024)。組み込みの時刻・計算と、server.json の mcpServers に書いた MCP のサーバー。
+// ブラウザの会話のツールはサーバーの PC で動く(0024)。組み込みの時刻・計算・URL を読む(管理者が有効にしたとき。0036)と、server.json の mcpServers に書いた MCP のサーバー。
 // 扱いの既定は管理者が決める(server-tools.json)。確認のカードは SSE で届き、答えは画面用の口で返す。
 // 会話は server.db に保存し、画面のアプリの aibow.db とは別にする(0016 の 13)。
 //
@@ -35,6 +35,7 @@ import (
 	"github.com/secondarykey/aibow/mcp/client"
 	"github.com/secondarykey/aibow/store"
 	"github.com/secondarykey/aibow/store/remote"
+	"github.com/secondarykey/aibow/tool"
 	"github.com/secondarykey/aibow/ui"
 	"github.com/secondarykey/aibow/web"
 )
@@ -66,8 +67,12 @@ func startBrowser(c config, initial aibow.AppSettings, st *store.SQLite, gen ui.
 
 	events := ui.NewEvents()
 	// 組み込みのツールは、アプリと同じく aibow の中の自作の MCP サーバー越しに呼ぶ(0007 の 5-4)。
-	// ブラウザの会話は作業フォルダを使わない(Browser)ので、時刻と計算だけになる(0024 の 12-1a)
-	local := client.NewLocal(client.Options{Version: appVersion()})
+	// 資料のフォルダの無い会話では、時刻・計算と URL を読むツールだけになる(0024 の 12-1a)。
+	// URL を読むツールは、管理者が「ツール」のタブで有効にするまで使えない(server-tools.json。0036 の決定事項 14)
+	if c.FetchAllowPrivate {
+		log.Noticef("fetch_url: サーバーの PC の中・社内のアドレスも読みます(server.json の fetchAllowPrivate)")
+	}
+	local := client.NewLocal(client.Options{Version: appVersion(), Fetch: &tool.FetchOptions{AllowPrivate: c.FetchAllowPrivate, Version: appVersion()}})
 	mcpm, prefs := startServerTools(c)
 	svc, life := ui.New(ui.Options{
 		Host:  ui.NewServerHost(gen, mm, nCtx, url),

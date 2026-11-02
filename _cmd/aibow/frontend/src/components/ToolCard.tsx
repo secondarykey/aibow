@@ -91,9 +91,13 @@ function Confirm({ req, onAnswer }: { req: ConfirmRequest; onAnswer: Props["onAn
         {pv.folder && <span className="confirm-folder" title="ワークスペースのフォルダ"><LuFolder /> {pv.folder}</span>}
         {pv.path && <code>{pv.path}</code>}
         {pv.server && <code>{pv.server}</code>}
+        {/* URL を読む(fetch_url。0036)は、どこへ取りに行くか(ホスト)を先に出す */}
+        {pv.url && <code className="confirm-host">{hostOf(pv.url)}</code>}
         <span className={`confirm-note ${pv.note === "上書き" ? "overwrite" : ""}`}>{pv.note}</span>
       </div>
-      {pv.command
+      {pv.url
+        ? <p className="confirm-url"><code>{pv.url}</code></p>
+        : pv.command
         ? <CodeBlock code={pv.command} lang="" closed />
         : pv.diff // MCP のサーバー(aibow-mcp)が送ってきた差分も、組み込みと同じに出す
           ? <CodeBlock code={pv.diff.replace(/\n$/, "")} lang="diff" closed />
@@ -116,4 +120,13 @@ function Confirm({ req, onAnswer }: { req: ConfirmRequest; onAnswer: Props["onAn
       </div>
     </div>
   );
+}
+
+// hostOf は URL のホスト(読めなければ URL のまま)。
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
 }

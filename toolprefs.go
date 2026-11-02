@@ -284,13 +284,26 @@ func (p *ToolPrefs) clearOff(names []string) error {
 
 // banned は、ツールが禁止されているか(aibow-server の管理者が、ツールかグループを「使わない」にした。LoadServerToolPrefs)。
 // アプリの PC の既定では、いつも false(「使わない」は「既定では使わない」なので)。
+//
+// 管理者が有効にするまで使えない組み込みのツール(optIn)は、ツールごとに「確認する」か「確認しない」にしてあるときだけ使える。
+// グループ(組み込み)の扱いでは有効にならない(時刻・計算のために組み込みを「確認しない」にしたら、URL を読むツールまで聞かずに動く、をなくすため)。
 func (p *ToolPrefs) banned(group, name string) bool {
 	if p == nil || !p.ban {
 		return false
 	}
 	v, ok := p.policy(group, name)
+	if group == "" && optIn[name] {
+		p.mu.Lock()
+		own, set := p.data.Tools[name]
+		p.mu.Unlock()
+		return !set || own == ToolOff || ok && v == ToolOff
+	}
 	return ok && v == ToolOff
 }
+
+// optIn は、aibow-server で管理者が「ツール」のタブで有効にするまで使えない組み込みのツール。
+// サーバーの PC から外へ取りに行くので、どこへ届いてよいかを決めた管理者だけが使えるようにする(0036 の決定事項 14)。
+var optIn = map[string]bool{"fetch_url": true}
 
 // Bans は、「使わない」を禁止として扱うか(aibow-server の管理者の既定)。
 func (p *ToolPrefs) Bans() bool { return p != nil && p.ban }

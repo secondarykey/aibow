@@ -76,12 +76,12 @@ func (l *Local) Tools(folders []tool.Folder) []tool.Tool {
 		return s.tools
 	}
 	if l.closed {
-		return mcpserver.ToolsIn(folders)
+		return l.serverOptions(folders).Tools()
 	}
 	s, err := l.connect(folders)
 	if err != nil {
 		log.Errorf("MCP %s: aibow の中のサーバーにつなげないので、組み込みのツールを直接呼びます: %v", localName, err)
-		return mcpserver.ToolsIn(folders)
+		return l.serverOptions(folders).Tools()
 	}
 	l.sessions[key] = s
 	return s.tools
@@ -92,7 +92,7 @@ func (l *Local) connect(folders []tool.Folder) (*localSession, error) {
 	ctx := context.Background()
 	begin := time.Now()
 	ct, st := mcp.NewInMemoryTransports()
-	ss, err := mcpserver.New(mcpserver.Options{Folders: folders, Version: l.opt.Version}).Connect(ctx, st, nil)
+	ss, err := mcpserver.New(l.serverOptions(folders)).Connect(ctx, st, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +104,7 @@ func (l *Local) connect(folders []tool.Folder) (*localSession, error) {
 		return nil, err
 	}
 	s := &localSession{server: ss, client: session}
-	originals := mcpserver.ToolsIn(folders) // サーバーが出しているツールの中身(扱いの決まりの既定を決めるため)
+	originals := l.serverOptions(folders).Tools() // サーバーが出しているツールの中身(扱いの決まりの既定を決めるため)
 	for mt, err := range session.Tools(ctx, nil) {
 		if err != nil {
 			s.close()
@@ -126,6 +126,11 @@ func (l *Local) connect(folders []tool.Folder) (*localSession, error) {
 	}
 	log.Infof("MCP %s: aibow の中のサーバーにつなぎました(%.3f 秒。作業フォルダ: %s・ツール %d 個)", localName, time.Since(begin).Seconds(), where, len(s.tools))
 	return s, nil
+}
+
+// serverOptions は、フォルダの組 folders のときの、aibow の中のサーバーの設定。
+func (l *Local) serverOptions(folders []tool.Folder) mcpserver.Options {
+	return mcpserver.Options{Folders: folders, Version: l.opt.Version, Fetch: l.opt.Fetch}
 }
 
 // Close は、aibow の中のサーバーを全部止める(アプリを閉じるとき)。

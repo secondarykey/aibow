@@ -121,6 +121,8 @@ func message(name string, pv tool.Preview) string {
 	switch {
 	case pv.Command != "":
 		fmt.Fprintf(&b, "\nコマンド:\n%s", pv.Command)
+	case pv.URL != "":
+		fmt.Fprintf(&b, "\nURL: %s", pv.URL)
 	case pv.Diff != "":
 		fmt.Fprintf(&b, "\n差分:\n%s", strings.TrimRight(pv.Diff, "\n"))
 	case pv.Path != "":
