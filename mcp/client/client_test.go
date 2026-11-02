@@ -277,6 +277,12 @@ func TestUpdate(t *testing.T) {
 		_, err := slow.Run(ctx, nil)
 		done <- err
 	}()
+	removedSlow := tool.Find(m.Tools("", m.Servers()), "remove__slow")
+	removed := make(chan error, 1)
+	go func() {
+		_, err := removedSlow.Run(ctx, nil)
+		removed <- err
+	}()
 	time.Sleep(50 * time.Millisecond) // slow が呼び出しを送るのを待つ
 
 	stopped := m.Update(map[string]ServerConfig{
@@ -303,6 +309,14 @@ func TestUpdate(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("止めたサーバーのツールの実行が返らない")
+	}
+	select {
+	case err := <-removed:
+		if err == nil || !strings.Contains(err.Error(), "remove を消したので止めました") || strings.Contains(err.Error(), "新しい設定で起動") {
+			t.Errorf("消したサーバーのツールを実行中なら、消したことが分かるエラーで返る(起動し直すとは言わない): %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("消したサーバーのツールの実行が返らない")
 	}
 	started, errs := m.Start(ctx, "", m.Servers())
 	if len(errs) != 0 || !slices.Equal(started, []string{"add", "change"}) {

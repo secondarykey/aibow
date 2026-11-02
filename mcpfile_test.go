@@ -251,9 +251,11 @@ func TestMCPConfigEdit(t *testing.T) {
 		t.Errorf("断ったときは何も書かない: %v", c.file.Servers())
 	}
 
-	// 消す。tools.json の seen は残す
-	if _, err := c.Delete("api"); err != nil {
-		t.Fatal(err)
+	// 消す。tools.json の seen は残す。動いていれば、消したので止めたと伝える(起動し直すとは言わない)
+	m.stop = []string{"api"}
+	notices, err = c.Delete("api")
+	if err != nil || len(notices) != 1 || !strings.Contains(notices[0], "消したので止めました") || strings.Contains(notices[0], "新しい設定で起動") {
+		t.Fatalf("消す: %v %v", notices, err)
 	}
 	if len(c.file.Servers()) != 0 || len(m.configs) != 1 || !slices.Contains(prefs.data.Seen, "api") {
 		t.Errorf("消す: %v %v %v", c.file.Servers(), m.configs, prefs.data.Seen)
