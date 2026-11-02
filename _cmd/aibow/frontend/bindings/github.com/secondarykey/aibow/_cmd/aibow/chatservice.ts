@@ -122,8 +122,8 @@ export function ChooseModelPlace(kind: string): $CancellablePromise<string> {
 }
 
 /**
- * ChooseWorkDir は作業フォルダを選ぶダイアログを出し、選んだフォルダの絶対パスを返す。取り消したら空。
- * current が空でなければ、そのフォルダから開く。選んだフォルダを会話に入れるのは画面の側(会話の設定として保存する)。
+ * ChooseWorkDir はワークスペースにするフォルダを選ぶダイアログを出し、選んだフォルダの絶対パスを返す。取り消したら空。
+ * current が空でなければ、そのフォルダから開く。選んだフォルダでワークスペースを作るのは画面の側(CreateWorkspace。0035)。
  */
 export function ChooseWorkDir(current: string): $CancellablePromise<string> {
     return $Call.ByID(2873180618, current);

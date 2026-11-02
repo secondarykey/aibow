@@ -1,11 +1,11 @@
 // 設定の画面の「ワークスペース」(デスクトップだけ。0035)。その PC のワークスペース(名前の付いたフォルダの組。workspaces.json)を
-// 作る・名前を変える・消す。会話はワークスペースの ID だけを持つので、ここで変えたものは、そのワークスペースを選んだ会話の次の送信から効く。
+// 作る・名前とフォルダの組を変える・消す。会話はワークスペースの ID だけを持つので、ここで変えたものは、そのワークスペースを選んだ会話の次の送信から効く。
 // 消しても会話は消さない(その会話では「この PC にはこのワークスペースがありません」になる)。
 //
 // 一覧の行を押すと下に詳しい欄が開く(MCP のタブと同じ形)。
 import { useState } from "react";
-import { LuFolderPlus, LuGitBranch, LuTriangleAlert, LuX } from "react-icons/lu";
-import type { WorkspaceList, WorkspaceView } from "../../bindings/github.com/secondarykey/aibow/ui";
+import { LuFolderPlus, LuGitBranch, LuPlus, LuTriangleAlert, LuX } from "react-icons/lu";
+import type { FolderView, WorkspaceList, WorkspaceView } from "../../bindings/github.com/secondarykey/aibow/ui";
 import type { Workspace } from "../../bindings/github.com/secondarykey/aibow";
 import { ChatService } from "../backend";
 import { errorMessage } from "../errors";
@@ -91,7 +91,10 @@ export function WorkspaceSettings({ list, reload }: Props) {
   );
 }
 
-// WorkspaceForm は、ワークスペース1つの詳しい欄(名前を変える・消す)。
+// Draft は、編集中のフォルダ1つ(画面に出す印は、保存してある間だけ持つ)。
+type Draft = Omit<FolderView, "missing" | "git"> & { missing?: boolean; git?: boolean };
+
+// WorkspaceForm は、ワークスペース1つの詳しい欄(名前・フォルダを足す / 外す・メイン・読むだけ / 書く・モデルが呼ぶ名前・消す。0035 の段2)。
 function WorkspaceForm({ workspace, locked, onClose, onSaved, onDeleted }: {
   workspace: WorkspaceView;
   locked: boolean;
@@ -100,11 +103,13 @@ function WorkspaceForm({ workspace, locked, onClose, onSaved, onDeleted }: {
   onDeleted(): void;
 }) {
   const [name, setName] = useState(workspace.name);
+  const [folders, setFolders] = useState<Draft[]>(workspace.folders ?? []);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const folders = workspace.folders ?? [];
-  const changed = name.trim() !== workspace.name;
+  const plain = (fs: Draft[]) => fs.map(({ path, name, main, writable }) => ({ path, name, main: !!main, writable: !!writable }));
+  const changed = name.trim() !== workspace.name || JSON.stringify(plain(folders)) !== JSON.stringify(plain(workspace.folders ?? []));
+  const multi = folders.length > 1;
 
   const run = (p: Promise<void>, done: () => void) => {
     setSaving(true);
@@ -112,8 +117,31 @@ function WorkspaceForm({ workspace, locked, onClose, onSaved, onDeleted }: {
     p.then(done, err => setError(errorMessage(err))).finally(() => setSaving(false));
   };
   const save = () => {
-    const ws: Workspace = { id: workspace.id, name, folders: folders.map(({ path, name, main, writable }) => ({ path, name, main, writable })) };
+    const ws: Workspace = { id: workspace.id, name, folders: plain(folders) };
     run(ChatService.UpdateWorkspace(ws), onSaved);
+  };
+  const set = (i: number, patch: Partial<Draft>) => setFolders(fs => fs.map((f, j) => (j === i ? { ...f, ...patch } : f)));
+  const setMain = (i: number) => setFolders(fs => fs.map((f, j) => ({ ...f, main: j === i })));
+  const remove = (i: number) =>
+    setFolders(fs => {
+      const rest = fs.filter((_, j) => j !== i);
+      // メインを外したら、残りの先頭をメインにする(メインはちょうど1つ)
+      return fs[i].main && rest.length > 0 ? rest.map((f, j) => ({ ...f, main: j === 0 })) : rest;
+    });
+  // 足すフォルダは読むだけから始める(メインのソースの横に置く資料。書くかは選んで決める)
+  const add = () => {
+    setError("");
+    ChatService.ChooseWorkDir("").then(
+      dir => {
+        if (!dir) return;
+        if (folders.some(f => samePath(f.path, dir))) {
+          setError(`${dir} はもう入っています`);
+          return;
+        }
+        setFolders(fs => [...fs, { path: dir, name: uniqueName(baseName(dir), fs), main: false, writable: false }]);
+      },
+      err => setError(errorMessage(err)),
+    );
   };
 
   return (
@@ -133,13 +161,34 @@ function WorkspaceForm({ workspace, locked, onClose, onSaved, onDeleted }: {
         onChange={e => setName(e.target.value)}
         onKeyDown={e => e.key === "Enter" && changed && save()}
       />
-      <div className="field-label">フォルダ</div>
+      <div className="field-label">
+        フォルダ
+        <button type="button" className="place-remove" disabled={locked} onClick={add} title="フォルダを足す"><LuPlus /></button>
+      </div>
       <div className="workspace-folders">
-        {folders.map(f => (
-          <div key={f.path} className={"workspace-folder" + (f.missing ? " missing" : "")} title={f.missing ? "この PC に見つからない" : undefined}>
-            <span className="mcp-summary">{f.path}</span>
-            {f.git && <span className="origin-chip" title="リポジトリ(.git がある)"><LuGitBranch /></span>}
-            {f.missing && <LuTriangleAlert className="workspace-warn" />}
+        <span className="model-table-head" title="run_command のカレント・${workdir} の MCP のサーバーに渡すフォルダ。モデルが folder を省いたときもこのフォルダ">メイン</span>
+        <span className="model-table-head" title="モデルがツールの引数 folder で呼ぶ名前(フォルダが複数のときだけ使う)">モデルが呼ぶ名前</span>
+        <span className="model-table-head">パス</span>
+        <span className="model-table-head" title="読むだけのフォルダには、ファイルを書き換えるツールを使わせない(コマンドからは書けるので、確認が守り)">書く</span>
+        <span className="model-table-head" />
+        {folders.map((f, i) => (
+          <div key={f.path} className={"workspace-folder" + (f.missing ? " missing" : "")}>
+            <span><input type="radio" name="workspace-main" checked={!!f.main} disabled={locked} onChange={() => setMain(i)} title="メインにする" /></span>
+            <input
+              type="text"
+              className="workspace-folder-name"
+              value={f.name}
+              disabled={locked || !multi}
+              onChange={e => set(i, { name: e.target.value })}
+              title={multi ? "モデルが folder で呼ぶ名前" : "フォルダが1つのときは使わない"}
+            />
+            <span className="workspace-folder-path" title={f.missing ? "この PC に見つからない" : f.path}>
+              <span className="mcp-summary">{f.path}</span>
+              {f.git && <span className="origin-chip" title="リポジトリ(.git がある)"><LuGitBranch /></span>}
+              {f.missing && <LuTriangleAlert className="workspace-warn" />}
+            </span>
+            <span><input type="checkbox" checked={!!f.writable} disabled={locked} onChange={e => set(i, { writable: e.target.checked })} title={f.writable ? "書ける" : "読むだけ"} /></span>
+            <button type="button" className="place-remove" disabled={locked || folders.length === 1} onClick={() => remove(i)} title="このフォルダを外す(フォルダそのものは消さない)"><LuX /></button>
           </div>
         ))}
       </div>
@@ -160,4 +209,25 @@ function WorkspaceForm({ workspace, locked, onClose, onSaved, onDeleted }: {
       </div>
     </section>
   );
+}
+
+// baseName はパスの最後の名前(D:\Work\example → example)。ドライブそのもの(D:\)ならドライブの文字
+function baseName(path: string): string {
+  const parts = path.split(/[\\/]+/).filter(Boolean);
+  const last = parts[parts.length - 1] ?? "folder";
+  return parts.length > 1 ? last : last.replace(/:$/, "") || "folder";
+}
+
+// uniqueName は、ワークスペースの中で重ならない名前(重なれば -2・-3 … を付ける。大文字と小文字は区別しない。Go の validate と同じ)
+function uniqueName(name: string, folders: Draft[]): string {
+  const used = new Set(folders.map(f => f.name.toLowerCase()));
+  let n = name;
+  for (let i = 2; used.has(n.toLowerCase()); i++) n = `${name}-${i}`;
+  return n;
+}
+
+// samePath は同じフォルダか(Windows のパスは大文字と小文字を区別しない。末尾の区切りは無視する)
+function samePath(a: string, b: string): boolean {
+  const norm = (p: string) => p.replace(/[\\/]+$/, "").toLowerCase();
+  return norm(a) === norm(b);
 }

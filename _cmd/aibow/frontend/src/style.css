@@ -296,6 +296,7 @@ footer.home .composer textarea { line-height: 1.5; min-height: calc(3 * 1.5em + 
 .confirm { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
 .confirm-target { display: flex; align-items: center; gap: 8px; }
 .confirm-target code { font-size: 12.5px; }
+.confirm-folder { display: inline-flex; align-items: center; gap: 4px; font-size: 12.5px; padding: 1px 6px; border: 1px solid var(--border); border-radius: 4px; }
 .confirm-note { font-size: 11.5px; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border); color: var(--muted); }
 .confirm-note.overwrite { color: #d97706; border-color: #d97706; }
 .confirm .code-block { margin: 0; }
@@ -681,9 +682,13 @@ button.danger-outline { color: var(--error); border-color: var(--error); backgro
 .workspace-table { grid-template-columns: fit-content(30%) minmax(0, 1fr) auto; }
 .origin-chip svg { vertical-align: -2px; }
 .origin-chip.warn { border-color: var(--error); color: var(--error); }
-.workspace-folders { display: flex; flex-direction: column; gap: 4px; }
-.workspace-folder { display: flex; align-items: center; gap: 8px; min-width: 0; }
+/* フォルダの組の編集(段2)。列: メイン / モデルが呼ぶ名前 / パス / 書く / 外す。行は display: contents で表の列を共有する */
+.workspace-folders { display: grid; grid-template-columns: auto 10em minmax(0, 1fr) auto auto; column-gap: 10px; row-gap: 4px; align-items: center; }
+.workspace-folder { display: contents; }
+.settings-view .workspace-folders input.workspace-folder-name { width: 100%; padding: 2px 6px; font-size: 12.5px; }
+.workspace-folder-path { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .workspace-folder.missing .mcp-summary { text-decoration: line-through; }
+.settings-view .workspace-folders input[type=radio], .settings-view .workspace-folders input[type=checkbox] { margin: 0; }
 .workspace-warn { color: var(--error); flex-shrink: 0; }
 .segmented.mcp-kind { margin-top: 12px; }
 .mcp-kv { display: flex; gap: 6px; align-items: center; margin-top: 4px; }

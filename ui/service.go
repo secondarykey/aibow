@@ -115,9 +115,9 @@ type Options struct {
 // モデルに見せないので、呼ばれても「ツールはありません」になる。
 type noCommand struct{ aibow.LocalTools }
 
-func (n noCommand) Tools(workDir string) []tool.Tool {
+func (n noCommand) Tools(folders []tool.Folder) []tool.Tool {
 	// 写してから外す(Local はつないだサーバーのツールの一覧を覚えていて、同じスライスを返すため)
-	return slices.DeleteFunc(slices.Clone(n.LocalTools.Tools(workDir)), func(t tool.Tool) bool { return t.Def().Name == "run_command" })
+	return slices.DeleteFunc(slices.Clone(n.LocalTools.Tools(folders)), func(t tool.Tool) bool { return t.Def().Name == "run_command" })
 }
 
 type Service struct {

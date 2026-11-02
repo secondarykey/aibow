@@ -906,6 +906,9 @@ func (cs *Conversations) environment(set ConversationSettings) string {
 		return ""
 	}
 	command := tool.Find(tools, "run_command") != nil
+	if folders := cs.toolFolders(set); len(folders) > 1 {
+		return foldersEnvironment(folders, command)
+	}
 	var b strings.Builder
 	b.WriteString("# Environment\n")
 	// 資料のフォルダ(aibow-server)は、サーバーの PC のパスを見せず、名前だけを書く(パスはツールの中だけで使う。0024 の決定事項 32)
@@ -927,6 +930,30 @@ func (cs *Conversations) environment(set ConversationSettings) string {
 		b.WriteString("Commands already run inside the working directory, so do not cd into it. ")
 	}
 	b.WriteString("\"" + name + "\" refers to the working directory itself.")
+	return b.String()
+}
+
+// foldersEnvironment は、ワークスペースのフォルダが複数のときの環境の説明(0035 の段2)。
+//
+// フォルダを名前・印(メイン・書ける / 読むだけ・リポジトリ)・パスで並べ、ファイルのツールの引数 folder で選ぶこと、省けばメインになることを書く。
+// 読むだけのフォルダもコマンドからは書けてしまうが、守りは確認なので、ここに書くのは「read-only」の印まで。
+// フォルダが1つのときは今までの形のまま(environment)。4B のプロンプトを変えないため。
+func foldersEnvironment(folders []tool.Folder, command bool) string {
+	var b strings.Builder
+	b.WriteString("# Environment\nFolders (pass the folder argument; omit it for the main folder):\n")
+	for _, f := range folders {
+		fmt.Fprintf(&b, "- %s (%s): %s\n", f.Name, tool.FolderMarks(f, IsGitRepo(f.Path)), f.Path)
+	}
+	b.WriteString("OS: " + runtime.GOOS + "\n")
+	if command {
+		b.WriteString("Shell for run_command: " + tool.ShellNote + "\n")
+	}
+	b.WriteString("Use paths relative to the folder.\n")
+	main := tool.MainFolder(folders).Name
+	if command {
+		b.WriteString("Commands already run inside the main folder \"" + main + "\", so do not cd into it. ")
+	}
+	b.WriteString("Each folder name refers to that folder itself, not to a subfolder.")
 	return b.String()
 }
 

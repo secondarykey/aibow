@@ -37,8 +37,19 @@ type Options struct {
 	// WorkDir は作業フォルダ(絶対パス)。ファイルのツールとコマンドのツールは、この中だけを扱う。
 	// 空なら作業フォルダを使うツールを出さず、組み込みのツール(時刻・計算)だけを出す
 	WorkDir string
+	// Folders は、フォルダの組(ワークスペース。0035 の段2)。決めたら WorkDir の代わりに使う。
+	// ファイルのツールは引数 folder でフォルダを選び、run_command はメインのフォルダで動く
+	Folders []tool.Folder
 	// Version はサーバーの版(MCP の serverInfo.version)。空なら "(devel)"
 	Version string
+}
+
+// folders は、ツールが扱うフォルダの組(Folders か、WorkDir 1つ。どちらも無ければ空)。
+func (o Options) folders() []tool.Folder {
+	if len(o.Folders) > 0 {
+		return o.Folders
+	}
+	return tool.Single(o.WorkDir)
 }
 
 // New は、tool のツールを出す MCP のサーバーを作る。動かすのは呼ぶ側(Run に標準入出力やメモリ内のトランスポートを渡す)。
@@ -48,20 +59,25 @@ func New(opts Options) *mcp.Server {
 		version = "(devel)"
 	}
 	s := mcp.NewServer(&mcp.Implementation{Name: Name, Version: version}, &mcp.ServerOptions{
-		Instructions: instructions(opts.WorkDir),
+		Instructions: instructions(opts.folders()),
 	})
-	for _, t := range Tools(opts.WorkDir) {
+	for _, t := range ToolsIn(opts.folders()) {
 		s.AddTool(mcpTool(t), handler(t))
 	}
 	return s
 }
 
-// Tools はサーバーが出すツール。tools/list の並びは SDK が名前の順にする(ここで並べた順ではない)。
+// Tools はサーバーが出すツール(作業フォルダ workDir 1つ)。tools/list の並びは SDK が名前の順にする(ここで並べた順ではない)。
 func Tools(workDir string) []tool.Tool {
+	return ToolsIn(tool.Single(workDir))
+}
+
+// ToolsIn は、フォルダの組 folders のときにサーバーが出すツール。folders が空なら組み込みのツール(時刻・計算)だけ。
+func ToolsIn(folders []tool.Folder) []tool.Tool {
 	tools := tool.Builtin()
-	if workDir != "" {
-		tools = append(tools, tool.Files(workDir)...)
-		tools = append(tools, tool.RunCommand(workDir))
+	if len(folders) > 0 {
+		tools = append(tools, tool.FilesIn(folders)...)
+		tools = append(tools, tool.RunCommand(tool.MainFolder(folders).Path))
 	}
 	return tools
 }
@@ -70,13 +86,22 @@ func Tools(workDir string) []tool.Tool {
 //
 // run_command の説明は「Environment の節に書いたシェルで動かす」と言っている。aibow はシステムプロンプトにその節を書くが、
 // ほかのクライアント(Claude Code など)は書かないので、同じことをここで伝える。クライアントはふつう、これをモデルに見せる
-func instructions(workDir string) string {
-	if workDir == "" {
+func instructions(folders []tool.Folder) string {
+	if len(folders) == 0 {
 		return ""
 	}
-	return "# Environment\n" +
-		"- Working directory: " + workDir + " (file paths are relative to it)\n" +
-		"- Shell for run_command: " + tool.ShellNote + "\n"
+	if len(folders) == 1 {
+		return "# Environment\n" +
+			"- Working directory: " + folders[0].Path + " (file paths are relative to it)\n" +
+			"- Shell for run_command: " + tool.ShellNote + "\n"
+	}
+	var b strings.Builder
+	b.WriteString("# Environment\n- Folders (file tools take a folder argument; omit it for the main folder. File paths are relative to the folder):\n")
+	for _, f := range folders {
+		fmt.Fprintf(&b, "  - %s (%s): %s\n", f.Name, tool.FolderMarks(f, false), f.Path)
+	}
+	b.WriteString("- Shell for run_command: " + tool.ShellNote + " (runs in the main folder)\n")
+	return b.String()
 }
 
 // mcpTool は tool の定義を MCP のツールの定義にする。

@@ -1,11 +1,16 @@
 package aibow
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/secondarykey/aibow/format"
+	"github.com/secondarykey/aibow/mcp/client"
+	"github.com/secondarykey/aibow/tool"
 )
 
 // ワークスペースを作る・名前を変える・消すと workspaces.json に書き、読み直すと同じものが戻る(0035 の完了の条件 1)
@@ -166,5 +171,84 @@ func TestMissingWorkspace(t *testing.T) {
 	call := g.calls[1]
 	if got := toolNamesOf(call.tools); !slices.Equal(got, []string{"get_current_time", "calculate"}) || strings.Contains(call.prompt, "# Environment") {
 		t.Errorf("見つからないワークスペース: %v / %q", got, call.prompt)
+	}
+}
+
+// newFoldersConversation は、フォルダ2つ(メイン app・書く / notes・読むだけ)のワークスペースを選んだ会話を作る(0035 の段2)。
+func newFoldersConversation(t *testing.T, g *fakeGen) (*Conversations, Conversation, string, string) {
+	t.Helper()
+	cs, c, main := newWorkDirConversation(t, g)
+	notes := t.TempDir()
+	os.WriteFile(filepath.Join(notes, "memo.md"), []byte("# メモ\n"), 0o644)
+	ws, _ := cs.workspaces.Get(c.Settings.Workspace)
+	ws.Folders = []WorkspaceFolder{
+		{Path: main, Name: "app", Main: true, Writable: true},
+		{Path: notes, Name: "notes"},
+	}
+	if err := cs.workspaces.Update(ws); err != nil {
+		t.Fatal(err)
+	}
+	return cs, c, main, notes
+}
+
+// フォルダを複数にしたワークスペースで、folder を付けて読み、読むだけのフォルダへの書き込みはエラーとしてモデルに返る(完了の条件 5)。
+// aibow の中の MCP サーバー越し(アプリと同じ形)でも、直接呼ぶ形でも同じ
+func TestWorkspaceFolders(t *testing.T) {
+	for _, viaMCP := range []bool{false, true} {
+		g := &fakeGen{replies: []fakeReply{
+			{toolCalls: []format.ToolCall{toolCall("read_file", "folder", "notes", "path", "memo.md")}},
+			{toolCalls: []format.ToolCall{toolCall("write_file", "folder", "notes", "path", "memo.md", "content", "消した")}},
+			{content: "読むだけでした"},
+		}}
+		cs, c, _, notes := newFoldersConversation(t, g)
+		if viaMCP {
+			l := client.NewLocal(client.Options{Version: "test"})
+			t.Cleanup(l.Close)
+			cs.SetLocalTools(l)
+		}
+		asked := 0
+		evs := sendAnswering(cs, context.Background(), c, "メモを読んで直して", func(q *ConfirmRequest) bool {
+			asked++
+			return cs.Confirm(ctx, c.ID, q.ID, true, "") == nil
+		})
+		if errs := errorsOf(evs); len(errs) != 0 {
+			t.Fatalf("MCP %v: エラー: %v", viaMCP, errs)
+		}
+		rs := toolResults(t, cs, c)
+		if len(rs) != 2 || rs[0].Content != "1\t# メモ" || !rs[1].ToolResult.Error || !strings.Contains(rs[1].Content, "notes は読むだけのフォルダです") {
+			t.Errorf("MCP %v: ツールの結果: %+v", viaMCP, rs)
+		}
+		if asked != 0 {
+			t.Errorf("MCP %v: 読むだけのフォルダへの書き込みで確認のカードを出した", viaMCP)
+		}
+		if b, _ := os.ReadFile(filepath.Join(notes, "memo.md")); string(b) != "# メモ\n" {
+			t.Errorf("MCP %v: 読むだけのフォルダが書き換わった: %q", viaMCP, b)
+		}
+		// モデルに知らせた定義には folder(名前の enum)があり、環境の説明にフォルダが並ぶ
+		call := g.calls[0]
+		if d := tool.ArgTypesFor(call.tools, "read_file"); d["folder"] != "string" {
+			t.Errorf("MCP %v: read_file に folder が無い: %v", viaMCP, d)
+		}
+		for _, want := range []string{"Folders (pass the folder argument; omit it for the main folder):\n- app (main, writable): ", "\n- notes (read-only): " + notes + "\n", "Commands already run inside the main folder \"app\""} {
+			if !strings.Contains(call.prompt, want) {
+				t.Errorf("MCP %v: 環境の説明に %q が無い:\n%s", viaMCP, want, call.prompt)
+			}
+		}
+	}
+}
+
+// フォルダが1つなら、ツールの定義と環境の説明は段1と同じ(folder の引数・Folders の行を出さない。完了の条件 6)
+func TestWorkspaceOneFolder(t *testing.T) {
+	g := &fakeGen{content: "はい"}
+	cs, c, dir := newWorkDirConversation(t, g)
+	send(t, cs, c, "質問")
+	call := g.calls[0]
+	for _, d := range call.tools {
+		if strings.Contains(string(d.Parameters), `"folder"`) {
+			t.Errorf("%s に folder がある", d.Name)
+		}
+	}
+	if !strings.Contains(call.prompt, "Working directory: "+dir+"\n") || strings.Contains(call.prompt, "Folders") {
+		t.Errorf("環境の説明:\n%s", call.prompt)
 	}
 }

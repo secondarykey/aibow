@@ -8,7 +8,7 @@
 // MCP のツールは、名前の前にサーバーの名前を小さく出す(モデルに見せる名前は「サーバーの名前__ツールの名前」なので、前の部分は外して出す)。
 // 答えると Go の待っているループに届き、実行(か拒否)の結果が届いたら、ほかのカードと同じく畳んだ1行に戻る。
 import { useState } from "react";
-import { LuBan, LuCheck, LuHourglass, LuLoaderCircle, LuWrench, LuX } from "react-icons/lu";
+import { LuBan, LuCheck, LuFolder, LuHourglass, LuLoaderCircle, LuWrench, LuX } from "react-icons/lu";
 import { ToolPolicy } from "../../bindings/github.com/secondarykey/aibow";
 import type { ConfirmRequest } from "../../bindings/github.com/secondarykey/aibow";
 import type { ToolView } from "../transcript";
@@ -87,6 +87,8 @@ function Confirm({ req, onAnswer }: { req: ConfirmRequest; onAnswer: Props["onAn
   return (
     <div className="confirm">
       <div className="confirm-target">
+        {/* メイン以外のフォルダ(ワークスペースのフォルダが複数のとき。0035)は、どのフォルダかを先に出す */}
+        {pv.folder && <span className="confirm-folder" title="ワークスペースのフォルダ"><LuFolder /> {pv.folder}</span>}
         {pv.path && <code>{pv.path}</code>}
         {pv.server && <code>{pv.server}</code>}
         <span className={`confirm-note ${pv.note === "上書き" ? "overwrite" : ""}`}>{pv.note}</span>

@@ -36,25 +36,26 @@ const (
 var listSkip = map[string]bool{".git": true, "node_modules": true}
 
 type listFiles struct {
-	dir string // 作業フォルダ(絶対パス)
+	folders folderSet // 作業フォルダ(ワークスペースのフォルダの組)
 }
 
-func (listFiles) Def() Def {
-	return Def{
+func (t listFiles) Def() Def {
+	return t.folders.withFolder(Def{
 		Name: "list_files",
 		Description: "List files and folders in the working directory recursively, shallower ones first. Folder names end with /. " +
 			"Skips .git and node_modules, and does not go into hidden folders (names starting with .) unless you pass one as path.",
 		Parameters: json.RawMessage(`{"type": "object", "properties": {"path": {"type": "string", ` +
 			`"description": "Folder to list, relative to the working directory. Omit to list the whole working directory."}}, "required": []}`),
-	}
+	})
 }
 
 func (t listFiles) Run(ctx context.Context, args Args) (string, error) {
-	p, err := localPath(t.dir, args.String("path"))
+	tg, err := t.folders.resolve(args)
 	if err != nil {
 		return "", err
 	}
-	root, err := openRoot(t.dir)
+	p := tg.path
+	root, err := openRoot(tg.dir())
 	if err != nil {
 		return "", err
 	}

@@ -23,22 +23,22 @@ import (
 )
 
 type writeFile struct {
-	dir string // 作業フォルダ(絶対パス)
+	folders folderSet // 作業フォルダ(ワークスペースのフォルダの組)
 }
 
-func (writeFile) Def() Def {
-	return Def{
+func (t writeFile) Def() Def {
+	return t.folders.withFolder(Def{
 		Name: "write_file",
 		Description: "Create a new file, or overwrite an existing file, in the working directory with the given content. " +
 			"Missing parent folders are created. The user is asked to approve before it runs. Prefer edit_file for small changes to an existing file.",
 		Parameters: json.RawMessage(`{"type": "object", "properties": {` +
 			`"path": {"type": "string", "description": "File path relative to the working directory."}, ` +
 			`"content": {"type": "string", "description": "The full content of the file. Do not include line numbers."}}, "required": ["path", "content"]}`),
-	}
+	})
 }
 
 func (t writeFile) Preview(args Args) (Preview, error) {
-	p, before, exists, err := t.current(args)
+	tg, before, exists, err := t.current(args)
 	if err != nil {
 		return Preview{}, err
 	}
@@ -46,16 +46,18 @@ func (t writeFile) Preview(args Args) (Preview, error) {
 	if exists {
 		note = "上書き"
 	}
-	return Preview{Path: p, Note: note, Diff: unifiedDiff(p, before, args.String("content"))}, nil
+	p := tg.path
+	return Preview{Path: p, Folder: t.folders.cardFolder(tg), Note: note, Diff: unifiedDiff(p, before, args.String("content"))}, nil
 }
 
 func (t writeFile) Run(ctx context.Context, args Args) (string, error) {
-	p, _, exists, err := t.current(args)
+	tg, _, exists, err := t.current(args)
 	if err != nil {
 		return "", err
 	}
+	p := tg.path
 	content := args.String("content")
-	if err := writeText(t.dir, p, content); err != nil {
+	if err := writeText(tg.dir(), p, content); err != nil {
 		return "", err
 	}
 	done := "新しく作りました"
@@ -65,27 +67,27 @@ func (t writeFile) Run(ctx context.Context, args Args) (string, error) {
 	return fmt.Sprintf("%s を%s(%d 行)", p, done, lineCount(content)), nil
 }
 
-// current は書く先のパスと、今の中身(無ければ exists=false)を返す。
-func (t writeFile) current(args Args) (p, text string, exists bool, err error) {
-	p, err = filePath(t.dir, args.String("path"))
+// current は書く先(フォルダとパス)と、今の中身(無ければ exists=false)を返す。読むだけのフォルダならエラー。
+func (t writeFile) current(args Args) (tg target, text string, exists bool, err error) {
+	tg, err = filePath(t.folders, args)
 	if err != nil {
-		return "", "", false, err
+		return tg, "", false, err
 	}
-	root, err := openRoot(t.dir)
+	root, err := openRoot(tg.dir())
 	if err != nil {
-		return "", "", false, err
+		return tg, "", false, err
 	}
 	defer root.Close()
-	text, exists, err = readText(root, p)
-	return p, text, exists, err
+	text, exists, err = readText(root, tg.path)
+	return tg, text, exists, err
 }
 
 type editFile struct {
-	dir string // 作業フォルダ(絶対パス)
+	folders folderSet // 作業フォルダ(ワークスペースのフォルダの組)
 }
 
-func (editFile) Def() Def {
-	return Def{
+func (t editFile) Def() Def {
+	return t.folders.withFolder(Def{
 		Name: "edit_file",
 		Description: "Replace text in an existing file in the working directory. old_string must appear exactly once in the file; " +
 			"include enough surrounding lines to make it unique. Copy old_string exactly from the file, without the line numbers that read_file adds. " +
@@ -94,7 +96,7 @@ func (editFile) Def() Def {
 			`"path": {"type": "string", "description": "File path relative to the working directory."}, ` +
 			`"old_string": {"type": "string", "description": "The exact text to replace."}, ` +
 			`"new_string": {"type": "string", "description": "The text to replace it with."}}, "required": ["path", "old_string", "new_string"]}`),
-	}
+	})
 }
 
 func (t editFile) Preview(args Args) (Preview, error) {
@@ -102,7 +104,7 @@ func (t editFile) Preview(args Args) (Preview, error) {
 	if err != nil {
 		return Preview{}, err
 	}
-	return Preview{Path: e.path, Note: "書き換え", Diff: unifiedDiff(e.path, e.before, e.after)}, nil
+	return Preview{Path: e.path, Folder: t.folders.cardFolder(e.target), Note: "書き換え", Diff: unifiedDiff(e.path, e.before, e.after)}, nil
 }
 
 func (t editFile) Run(ctx context.Context, args Args) (string, error) {
@@ -110,7 +112,7 @@ func (t editFile) Run(ctx context.Context, args Args) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := writeText(t.dir, e.path, e.after); err != nil {
+	if err := writeText(e.dir(), e.path, e.after); err != nil {
 		return "", err
 	}
 	return fmt.Sprintf("%s の %d 行目からを書き換えました", e.path, e.line), nil
@@ -118,18 +120,19 @@ func (t editFile) Run(ctx context.Context, args Args) (string, error) {
 
 // edit は edit_file で書き換える内容。
 type edit struct {
-	path          string
+	target               // 書き換えるフォルダとパス
 	before, after string // 書き換える前と後の、ファイルの中身全体
 	line          int    // 書き換える場所の行番号(1 始まり)
 }
 
 // plan は、引数とファイルの今の中身から、書き換えた後の中身を作る。置き換える場所が1か所に決まらなければエラー。
 func (t editFile) plan(args Args) (edit, error) {
-	p, err := filePath(t.dir, args.String("path"))
+	tg, err := filePath(t.folders, args)
 	if err != nil {
 		return edit{}, err
 	}
-	root, err := openRoot(t.dir)
+	p := tg.path
+	root, err := openRoot(tg.dir())
 	if err != nil {
 		return edit{}, err
 	}
@@ -164,23 +167,27 @@ func (t editFile) plan(args Args) (edit, error) {
 	}
 	i := strings.Index(before, old)
 	return edit{
-		path:   p,
+		target: tg,
 		before: before,
 		after:  before[:i] + repl + before[i+len(old):],
 		line:   strings.Count(before[:i], "\n") + 1,
 	}, nil
 }
 
-// filePath は、書き換えるツールの path を確かめる(作業フォルダの中で、作業フォルダそのものではないこと)。
-func filePath(dir, p string) (string, error) {
-	p, err := localPath(dir, p)
+// filePath は、書き換えるツールの書く先を決めて確かめる(書けるフォルダの中で、フォルダそのものではないこと)。
+// 読むだけのフォルダはここで断るので、確認のカード(Preview)は出ない。
+func filePath(set folderSet, args Args) (target, error) {
+	tg, err := set.resolve(args)
 	if err != nil {
-		return "", err
+		return tg, err
 	}
-	if p == "." {
-		return "", errors.New("path にファイルのパスを指定してください")
+	if err := tg.writable(); err != nil {
+		return tg, err
 	}
-	return p, nil
+	if tg.path == "." {
+		return tg, errors.New("path にファイルのパスを指定してください")
+	}
+	return tg, nil
 }
 
 // writeText はファイルを書く。親のフォルダが無ければ作る。すでにあるファイルは、ファイルの属性(パーミッション)を引き継ぐ。

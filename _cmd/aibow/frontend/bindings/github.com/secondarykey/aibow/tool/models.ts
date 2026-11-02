@@ -21,6 +21,11 @@ export interface Preview {
     "path": string;
 
     /**
+     * Folder は対象のフォルダの名前(ワークスペースのフォルダが複数で、メイン以外のときだけ。0035)
+     */
+    "folder"?: string;
+
+    /**
      * 何をするか(「上書き」「新しく作る」「書き換え」「コマンド」)
      */
     "note": string;

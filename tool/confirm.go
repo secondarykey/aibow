@@ -26,8 +26,10 @@ type Confirmable interface {
 // Preview は確認の画面に出す内容。
 type Preview struct {
 	Path string `json:"path"` // 対象(作業フォルダからの相対パス)。コマンドでは空
-	Note string `json:"note"` // 何をするか(「上書き」「新しく作る」「書き換え」「コマンド」)
-	Diff string `json:"diff"` // 変更の差分(unified diff。画面は ```diff のコードブロックで出す)。大きすぎるときは空
+	// Folder は対象のフォルダの名前(ワークスペースのフォルダが複数で、メイン以外のときだけ。0035)
+	Folder string `json:"folder,omitempty"`
+	Note   string `json:"note"` // 何をするか(「上書き」「新しく作る」「書き換え」「コマンド」)
+	Diff   string `json:"diff"` // 変更の差分(unified diff。画面は ```diff のコードブロックで出す)。大きすぎるときは空
 
 	Command string `json:"command,omitempty"` // 実行するコマンド(run_command)
 	Server  string `json:"server,omitempty"`  // MCP のサーバーの名前。中身が見えないので差分は作れず、どのサーバーに何を渡すかを見せる

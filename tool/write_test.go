@@ -34,7 +34,7 @@ const greet = "package greet\n\n// Hello は name へのあいさつを返す。
 
 func TestWriteFile(t *testing.T) {
 	dir := workDir(t, map[string]string{"greet.go": greet, "sub/": ""})
-	tl := writeFile{dir}
+	tl := writeFile{one(dir)}
 
 	// 新しく作る(親のフォルダが無ければ作る)。差分は全部 + の行
 	pv, err := preview(t, tl, "path", "pkg/new/x.go", "content", "package x\n")
@@ -74,7 +74,7 @@ func TestEditFile(t *testing.T) {
 		"twice.go": "x := 1\nx := 1\n",
 		"crlf.txt": "a\r\nb\r\nc\r\n",
 	})
-	tl := editFile{dir}
+	tl := editFile{one(dir)}
 
 	pv, err := preview(t, tl, "path", "greet.go", "old_string", "\treturn \"Hello, \"", "new_string", "\treturn \"こんにちは、\"")
 	if err != nil || pv.Note != "書き換え" || !strings.Contains(pv.Diff, "@@ -2,5 +2,5 @@") || !strings.Contains(pv.Diff, "+\treturn \"こんにちは、\" + name + \"!\"\n") {
@@ -113,7 +113,7 @@ func TestEditFile(t *testing.T) {
 // 確認を待つ間にファイルが変わったら、実行するときにもう一度確かめる(古い中身で書き戻さない)
 func TestEditFileChangedWhileWaiting(t *testing.T) {
 	dir := workDir(t, map[string]string{"a.txt": "one\n"})
-	tl := editFile{dir}
+	tl := editFile{one(dir)}
 	if _, err := preview(t, tl, "path", "a.txt", "old_string", "one", "new_string", "two"); err != nil {
 		t.Fatal(err)
 	}

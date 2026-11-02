@@ -19,6 +19,8 @@ import (
 	"fmt"
 	"slices"
 	"uuid"
+
+	"github.com/secondarykey/aibow/tool"
 )
 
 // 固定できる項目(ProfileRules.Fixed に入れる名前)。プロファイルの値(ProfileValues)の項目
@@ -282,6 +284,23 @@ func (cs *Conversations) workDir(set ConversationSettings) string {
 		return ""
 	}
 	return ws.MainFolder().Path
+}
+
+// toolFolders は、ファイルのツールが扱うフォルダの組。アプリでは会話のワークスペースのフォルダ全部(0035 の段2)、
+// ブラウザの会話では資料のフォルダ1つ(workDir と同じ)。無ければ空。
+func (cs *Conversations) toolFolders(set ConversationSettings) []tool.Folder {
+	if cs.noWorkDir {
+		return tool.Single(cs.workDir(set))
+	}
+	ws, ok := cs.workspaces.Get(set.Workspace)
+	if !ok {
+		return nil
+	}
+	folders := make([]tool.Folder, 0, len(ws.Folders))
+	for _, f := range ws.Folders {
+		folders = append(folders, tool.Folder{Name: f.Name, Path: f.Path, Main: f.Main, Writable: f.Writable})
+	}
+	return folders
 }
 
 // groupOfTool は、ツールの名前からグループ(組み込みなら空、MCP ならサーバーの名前)を引く。
