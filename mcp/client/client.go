@@ -303,10 +303,17 @@ func (m *Manager) Update(configs map[string]ServerConfig) (stopped []string) {
 	m.mu.Unlock()
 	slices.Sort(stopped)
 	// 止めるのは待たない(標準入力を閉じてから最大 closeWait 待つので、保存の返事を遅らせないため)
+	// 実行中のツールに返す理由は、変えたか消したかで分ける(消したサーバーは、もう起動しないため)
 	for _, s := range stop {
+		_, changed := next[s.key.name]
 		go func() {
-			s.close(fmt.Errorf("MCP のサーバー %s の設定が変わったので止めました(次の送信で、新しい設定で起動します)", s.key.name))
-			log.Infof("MCP %s: 設定が変わったので止めました", s.key.name)
+			if changed {
+				s.close(fmt.Errorf("MCP のサーバー %s の設定が変わったので止めました(次の送信で、新しい設定で起動します)", s.key.name))
+				log.Infof("MCP %s: 設定が変わったので止めました", s.key.name)
+			} else {
+				s.close(fmt.Errorf("MCP のサーバー %s を消したので止めました", s.key.name))
+				log.Infof("MCP %s: 消したので止めました", s.key.name)
+			}
 		}()
 	}
 	return stopped
@@ -392,6 +399,9 @@ func (m *Manager) startAndKeep(ctx context.Context, k serverKey, cfg ServerConfi
 	if now, ok := m.configs[k.name]; !ok || !now.Equal(cfg) { // 起動している間に、画面で設定を変えた・消した(Update)
 		m.mu.Unlock()
 		s.close(nil)
+		if !ok {
+			return errors.New("起動している間にサーバーを消したので、起動をやめました")
+		}
 		return errors.New("起動している間に設定が変わったので、起動をやめました(次の送信で、新しい設定で起動します)")
 	}
 	m.running[k] = s

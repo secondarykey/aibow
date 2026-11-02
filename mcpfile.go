@@ -454,10 +454,27 @@ func (c *MCPConfig) change(edit func(next map[string]client.ServerConfig) error)
 	if c.mgr == nil {
 		return nil, nil
 	}
-	if stopped := c.mgr.Update(merged); len(stopped) > 0 {
-		return []string{fmt.Sprintf("動いていた MCP のサーバー %s を止めました(次に使う送信で、新しい設定で起動します)", strings.Join(stopped, ", "))}, nil
+	return stopNotices(c.mgr.Update(merged), merged), nil
+}
+
+// stopNotices は、止めたサーバーのお知らせの文。変えたものは次に使う送信で起動し直すが、消したものはもう起動しないので、文を分ける。
+func stopNotices(stopped []string, now map[string]client.ServerConfig) []string {
+	var changed, removed []string
+	for _, name := range stopped {
+		if hasKey(now, name) {
+			changed = append(changed, name)
+		} else {
+			removed = append(removed, name)
+		}
 	}
-	return nil, nil
+	var out []string
+	if len(changed) > 0 {
+		out = append(out, fmt.Sprintf("動いていた MCP のサーバー %s を止めました(次に使う送信で、新しい設定で起動します)", strings.Join(changed, ", ")))
+	}
+	if len(removed) > 0 {
+		out = append(out, fmt.Sprintf("動いていた MCP のサーバー %s を、消したので止めました", strings.Join(removed, ", ")))
+	}
+	return out
 }
 
 // Try は、設定 cfg のサーバーを一時的に起動してツールの一覧を受け取り、止める(画面の「試しにつなぐ」。0034 の決定事項 8)。何も書かない。
