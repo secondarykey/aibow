@@ -57,7 +57,7 @@ func TestFolderArgument(t *testing.T) {
 		{write, []string{"path", filepath.Join(notes, "new.md"), "content", "x"}}, // 絶対パスで notes を指しても
 	} {
 		_, err := c.tool.(Confirmable).Preview(argsFor(t, c.tool, c.args...))
-		if err == nil || !strings.Contains(err.Error(), "notes は読むだけのフォルダです") {
+		if err == nil || !strings.Contains(err.Error(), "notes は読むだけのフォルダなので、書き換えられません") {
 			t.Errorf("%s %v: %v", c.tool.Def().Name, c.args, err)
 		}
 		if _, err := run(t, c.tool, c.args...); err == nil {

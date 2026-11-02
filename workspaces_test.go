@@ -215,7 +215,7 @@ func TestWorkspaceFolders(t *testing.T) {
 			t.Fatalf("MCP %v: エラー: %v", viaMCP, errs)
 		}
 		rs := toolResults(t, cs, c)
-		if len(rs) != 2 || rs[0].Content != "1\t# メモ" || !rs[1].ToolResult.Error || !strings.Contains(rs[1].Content, "notes は読むだけのフォルダです") {
+		if len(rs) != 2 || rs[0].Content != "1\t# メモ" || !rs[1].ToolResult.Error || !strings.Contains(rs[1].Content, "notes は読むだけのフォルダなので、書き換えられません") {
 			t.Errorf("MCP %v: ツールの結果: %+v", viaMCP, rs)
 		}
 		if asked != 0 {
