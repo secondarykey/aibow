@@ -295,7 +295,7 @@ Folders (pass the folder argument; omit it for the main folder):
 OS: windows
 Shell for run_command: cmd.exe (use dir and type; ls, cat and grep are not available. To search inside files, use search_files instead of findstr)
 Use paths relative to the folder.
-Commands run in the main folder "aibow" unless you pass folder; do not cd into a folder. Each folder name refers to that folder itself, not to a subfolder.
+Each command starts in the main folder "aibow" unless you pass folder; a cd does not carry over to the next command. To run in another folder of the list, pass folder instead of cd. Each folder name refers to that folder itself, not to a subfolder.
 ```
 
 ### フォルダが複数のワークスペース(0035 の段2)
@@ -316,7 +316,11 @@ Commands run in the main folder "aibow" unless you pass folder; do not cd into a
 - **読むだけのフォルダでも `run_command` は動かせる**(`git log`・`git diff` のような調べるだけのコマンドのため。2026-11-02、ユーザーと決めた)。
   コマンドからは書けてしまうので、守りは今までどおり確認。確認のカードの「何をするか」を「コマンド(読むだけのフォルダ)」にする(環境の説明に書くのは read-only の印まで)
 - `${workdir}` の MCP のサーバーはメインのパスで起動する(ほかのフォルダを渡す書き方は作らない)
-- 確認のカードには、メイン以外のフォルダのとき、そのフォルダの名前を出す(`tool.Preview.Folder`。`run_command` も)
+- **`run_command` は呼ぶたびに新しいシェル**(`cmd.Dir` にフォルダを決めて起動し、終われば閉じる)。`cd` はその1回の中だけで、次の呼び出しに持ち越されない。
+  モデルが同じシェルが続くと思い込むと、「`cd /d B`」のあとの `folder` なしの `git commit` がメインで動いてしまうので、ツールの説明と環境の説明にそれを書く。
+  `cd` を避けるのは「一覧のほかのフォルダ」に絞り、サブフォルダへの `cd`(`cd frontend && npm test`)は禁じない
+- 確認のカードには、**フォルダが複数なら、メインでもそのフォルダの名前を出す**(`tool.Preview.Folder`。ファイルのツールも `run_command` も。フォルダが1つなら出さない)。
+  以前はメイン以外のときだけ出していたが、それだと上の取り違えでメインで動くことにカードで気づけないので、そろえた(2026-11-02、ユーザーと決めた)
 - aibow の中の MCP サーバー(`mcp/client` の `Local`)は、フォルダの組ごと(名前・パス・メイン・書けるかの組。`folderKey`)に1つ。設定の画面で組を変えたら、次の送信から新しい組のサーバーを使う
 
 ### 作業の予定(update_plan。0037 の段3)

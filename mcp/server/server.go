@@ -101,7 +101,7 @@ func instructions(folders []tool.Folder) string {
 	for _, f := range folders {
 		fmt.Fprintf(&b, "  - %s (%s): %s\n", f.Name, tool.FolderMarks(f, false), f.Path)
 	}
-	b.WriteString("- Shell for run_command: " + tool.ShellNoteFor(true) + " (runs in the chosen folder; do not cd into a folder)\n")
+	b.WriteString("- Shell for run_command: " + tool.ShellNoteFor(true) + " (each call starts a new shell in the chosen folder; a cd does not carry over. Pass folder instead of cd to use another folder)\n")
 	return b.String()
 }
 

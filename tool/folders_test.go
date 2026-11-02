@@ -67,9 +67,9 @@ func TestFolderArgument(t *testing.T) {
 	if b, _ := os.ReadFile(filepath.Join(notes, "memo.md")); string(b) != "# メモ\n" {
 		t.Errorf("読むだけのフォルダが書き換わった: %q", b)
 	}
-	// メインには書ける。確認のカードにフォルダの名前は出さない(メインのとき)
+	// メインには書ける。フォルダが複数なら、メインでも確認のカードにフォルダの名前を出す
 	pv, err := write.(Confirmable).Preview(argsFor(t, write, "path", "new.go", "content", "package app\n"))
-	if err != nil || pv.Folder != "" || pv.Path != "new.go" {
+	if err != nil || pv.Folder != "app" || pv.Path != "new.go" {
 		t.Errorf("メインへの書き込み: %+v, %v", pv, err)
 	}
 	if _, err := run(t, write, "path", "new.go", "content", "package app\n"); err != nil {
@@ -80,14 +80,24 @@ func TestFolderArgument(t *testing.T) {
 	}
 }
 
-// 書けるフォルダがメイン以外なら、確認のカードにフォルダの名前を出す
+// フォルダが複数なら、確認のカードにフォルダの名前を出す(メインでも)。1つなら出さない
 func TestFolderOnCard(t *testing.T) {
 	main, other := t.TempDir(), t.TempDir()
+	os.WriteFile(filepath.Join(main, "b.txt"), []byte("old\n"), 0o644)
 	tools := FilesIn([]Folder{{Name: "app", Path: main, Main: true, Writable: true}, {Name: "lib", Path: other, Writable: true}})
-	write := Find(tools, "write_file")
+	write, edit := Find(tools, "write_file"), Find(tools, "edit_file")
 	pv, err := write.(Confirmable).Preview(argsFor(t, write, "folder", "lib", "path", "a.txt", "content", "x"))
 	if err != nil || pv.Folder != "lib" || pv.Path != "a.txt" {
 		t.Errorf("カード: %+v, %v", pv, err)
+	}
+	pv, err = edit.(Confirmable).Preview(argsFor(t, edit, "path", "b.txt", "old_string", "old", "new_string", "new"))
+	if err != nil || pv.Folder != "app" {
+		t.Errorf("メインの書き換えのカード: %+v, %v", pv, err)
+	}
+	one := Find(Files(main), "edit_file")
+	pv, err = one.(Confirmable).Preview(argsFor(t, one, "path", "b.txt", "old_string", "old", "new_string", "new"))
+	if err != nil || pv.Folder != "" {
+		t.Errorf("フォルダが1つのカード: %+v, %v", pv, err)
 	}
 }
 
@@ -191,18 +201,18 @@ func TestRunCommandFolder(t *testing.T) {
 		t.Errorf("無いフォルダ: %v", err)
 	}
 
-	// 確認のカード:メイン以外ならフォルダの名前、読むだけのフォルダならそう書く
+	// 確認のカード:フォルダの名前(メインでも)。読むだけのフォルダならそう書く
 	pv, err := tl.(Confirmable).Preview(argsFor(t, tl, "folder", "notes", "command", "git log"))
 	if err != nil || pv.Folder != "notes" || pv.Note != "コマンド(読むだけのフォルダ)" || pv.Command != "git log" {
 		t.Errorf("読むだけのフォルダの確認: %+v, %v", pv, err)
 	}
 	pv, err = tl.(Confirmable).Preview(argsFor(t, tl, "command", "go test"))
-	if err != nil || pv.Folder != "" || pv.Note != "コマンド" {
+	if err != nil || pv.Folder != "app" || pv.Note != "コマンド" {
 		t.Errorf("メインの確認: %+v, %v", pv, err)
 	}
 
 	// 定義:複数なら folder(名前の enum)がある。1つなら RunCommand と同じ(folder を出さない)
-	if d := tl.Def(); !strings.Contains(string(d.Parameters), `"folder": {"type": "string", "enum": ["app","notes"]`) || !strings.Contains(d.Description, "pass folder instead") {
+	if d := tl.Def(); !strings.Contains(string(d.Parameters), `"folder": {"type": "string", "enum": ["app","notes"]`) || !strings.Contains(d.Description, "a cd does not carry over to the next call") {
 		t.Errorf("複数のときの定義: %+v", d)
 	}
 	one := RunCommandIn(Single(main)).Def()

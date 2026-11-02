@@ -91,7 +91,7 @@ function Confirm({ req, onAnswer }: { req: ConfirmRequest; onAnswer: Props["onAn
   return (
     <div className="confirm">
       <div className="confirm-target">
-        {/* メイン以外のフォルダ(ワークスペースのフォルダが複数のとき。0035)は、どのフォルダかを先に出す */}
+        {/* ワークスペースのフォルダが複数のとき(0035)は、どのフォルダかを先に出す(メインでも) */}
         {pv.folder && <span className="confirm-folder" title="ワークスペースのフォルダ"><LuFolder /> {pv.folder}</span>}
         {pv.path && <code>{pv.path}</code>}
         {pv.server && <code>{pv.server}</code>}

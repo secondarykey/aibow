@@ -230,7 +230,7 @@ func TestWorkspaceFolders(t *testing.T) {
 		if d := tool.ArgTypesFor(call.tools, "read_file"); d["folder"] != "string" {
 			t.Errorf("MCP %v: read_file に folder が無い: %v", viaMCP, d)
 		}
-		for _, want := range []string{"Folders (pass the folder argument; omit it for the main folder):\n- app (main, writable): ", "\n- notes (read-only): " + notes + "\n", "Commands run in the main folder \"app\" unless you pass folder; do not cd into a folder."} {
+		for _, want := range []string{"Folders (pass the folder argument; omit it for the main folder):\n- app (main, writable): ", "\n- notes (read-only): " + notes + "\n", "Each command starts in the main folder \"app\" unless you pass folder; a cd does not carry over to the next command. To run in another folder of the list, pass folder instead of cd."} {
 			if !strings.Contains(call.prompt, want) {
 				t.Errorf("MCP %v: 環境の説明に %q が無い:\n%s", viaMCP, want, call.prompt)
 			}

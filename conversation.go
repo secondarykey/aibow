@@ -954,8 +954,11 @@ func foldersEnvironment(folders []tool.Folder, command bool, shell string) strin
 	main := tool.MainFolder(folders).Name
 	if command {
 		// run_command も folder で選ぶ(2026-11-02)。cd でほかのフォルダに移ろうとすると、メインの下を探したり、
-		// cmd.exe では /d が無いと別のドライブに移れなかったりするので、cd ではなく folder を使うよう書く
-		b.WriteString("Commands run in the main folder \"" + main + "\" unless you pass folder; do not cd into a folder. ")
+		// cmd.exe では /d が無いと別のドライブに移れなかったりするので、cd ではなく folder を使うよう書く。
+		// 呼ぶたびに新しいシェルなので cd は次に持ち越されないことも書く(同じシェルが続くと思い込むと、メインで動いてしまう)。
+		// サブフォルダへの cd まで禁じて読めないよう、「一覧のほかのフォルダ」に絞る
+		b.WriteString("Each command starts in the main folder \"" + main + "\" unless you pass folder; a cd does not carry over to the next command. " +
+			"To run in another folder of the list, pass folder instead of cd. ")
 	}
 	b.WriteString("Each folder name refers to that folder itself, not to a subfolder.")
 	return b.String()

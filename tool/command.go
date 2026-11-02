@@ -64,8 +64,12 @@ type runCommand struct {
 func (t runCommand) Def() Def {
 	where := "It already runs in the working directory; do not cd into it. "
 	if t.folders.multi() {
-		// フォルダが複数のときだけ言い換える(1つなら段1と同じ定義。4B のプロンプトを変えない)
-		where = "It runs in the chosen folder (the main folder if omitted); do not cd into a folder, pass folder instead. "
+		// フォルダが複数のときだけ言い換える(1つなら段1と同じ定義。4B のプロンプトを変えない)。
+		// 呼ぶたびに新しいシェルなので、前の呼び出しの cd は効かない。モデルが同じシェルが続くと思い込むと、
+		// 「cd /d B」のあとの folder なしの git commit がメインで動いてしまうので、それを書く。
+		// サブフォルダへの cd(cd frontend && npm test)まで禁じて読めないよう、cd を避けるのは「一覧のほかのフォルダ」に絞る
+		where = "Each call starts a new shell in the chosen folder (the main folder if folder is omitted); a cd does not carry over to the next call. " +
+			"To run in another folder of the list, pass folder instead of cd. "
 	}
 	return t.folders.withFolder(Def{
 		Name: "run_command",

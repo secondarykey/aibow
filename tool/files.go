@@ -224,9 +224,13 @@ func (t target) writable() error {
 	return nil
 }
 
-// cardFolder は、確認のカードに出すフォルダの名前(フォルダが複数で、メイン以外のときだけ)。
+// cardFolder は、確認のカードに出すフォルダの名前(フォルダが複数なら、メインでも出す。1つなら空)。
+//
+// 以前はメイン以外のときだけ出していた。でもそれだと、モデルが「前の呼び出しで cd /d B したから B にいる」と思い込んで
+// folder を付けずに git commit を書いたとき、カードにフォルダが出ず、メイン(A)で動くことに気づきにくい
+// (run_command は呼ぶたびに新しいシェルで始まり、cd は持ち越されない)。ファイルのツールも同じ理由でそろえる(2026-11-02、ユーザーと決めた)。
 func (set folderSet) cardFolder(t target) string {
-	if !set.multi() || t.folder.Main {
+	if !set.multi() {
 		return ""
 	}
 	return t.folder.Name
