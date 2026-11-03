@@ -40,6 +40,19 @@ type Workspace struct {
 	Name string `json:"name"` // 画面に出す名前
 	// Folders はフォルダの組。メイン(Main)はちょうど1つ
 	Folders []WorkspaceFolder `json:"folders"`
+	// Worktrees は、このワークスペースで worktree を作って作業している会話(0039)。会話との結び付けは PC の手元に持つ
+	// (worktree は PC のフォルダなので。会話の DB には「worktree で作業する」の切り替えだけを置く)。
+	// 設定の画面からは変えない(Update は今の値を残す)。作る・捨てるのは会話の仕組み(worktree.go)
+	Worktrees []WorkspaceWorktree `json:"worktrees,omitempty"`
+}
+
+// WorkspaceWorktree は、会話1つの worktree(0039)。
+type WorkspaceWorktree struct {
+	Conversation string `json:"conversation"` // 会話の ID
+	Repo         string `json:"repo"`         // 本体(作ったときのメインのフォルダ)。差分を当てる先・消すときに git を動かす場所
+	Path         string `json:"path"`         // worktree のフォルダ(本体の .aibow/worktrees/<短い ID>)
+	Branch       string `json:"branch"`       // worktree のブランチ(aibow/<短い ID>)
+	Base         string `json:"base"`         // 作ったときのコミット。差分はいつもこれと比べる
 }
 
 // WorkspaceFolder はワークスペースのフォルダ1つ。
@@ -224,17 +237,22 @@ func (w *Workspaces) Update(ws Workspace) error {
 		if i < 0 {
 			return errWorkspaceNotFound
 		}
+		ws.Worktrees = (*list)[i].Worktrees // 画面から来た値では変えない(worktree は会話の仕組みが作る・捨てる)
 		(*list)[i] = ws
 		return nil
 	})
 }
 
 // Delete はワークスペースを消す。会話は消さない(その会話では、見つからないワークスペースになる)。
+// worktree で作業している会話があれば消さない(結び付けが消えると、worktree のフォルダとブランチが片付けられずに残るため)。
 func (w *Workspaces) Delete(id string) error {
 	return w.update(func(list *[]Workspace) error {
 		i := slices.IndexFunc(*list, func(ws Workspace) bool { return ws.ID == id })
 		if i < 0 {
 			return errWorkspaceNotFound
+		}
+		if n := len((*list)[i].Worktrees); n > 0 {
+			return fmt.Errorf("このワークスペースでは %d 個の会話が worktree で作業しています。その会話の差分の画面で worktree を捨てるか、会話を消してから、ワークスペースを消してください", n)
 		}
 		*list = slices.Delete(*list, i, i+1)
 		return nil
@@ -301,7 +319,47 @@ func (w *Workspaces) save(list []Workspace) error {
 
 func (ws Workspace) clone() Workspace {
 	ws.Folders = slices.Clone(ws.Folders)
+	ws.Worktrees = slices.Clone(ws.Worktrees)
 	return ws
+}
+
+// Worktree は、会話 conv の worktree と、それを持つワークスペースの ID。作っていなければ ok=false。
+func (w *Workspaces) Worktree(conv string) (wt WorkspaceWorktree, workspace string, ok bool) {
+	if w == nil || conv == "" {
+		return WorkspaceWorktree{}, "", false
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	for _, ws := range w.list {
+		for _, t := range ws.Worktrees {
+			if t.Conversation == conv {
+				return t, ws.ID, true
+			}
+		}
+	}
+	return WorkspaceWorktree{}, "", false
+}
+
+// addWorktree は、ワークスペース id に会話の worktree を結び付けて、workspaces.json に書く。
+func (w *Workspaces) addWorktree(id string, wt WorkspaceWorktree) error {
+	return w.update(func(list *[]Workspace) error {
+		i := slices.IndexFunc(*list, func(ws Workspace) bool { return ws.ID == id })
+		if i < 0 {
+			return errWorkspaceNotFound
+		}
+		(*list)[i].Worktrees = append((*list)[i].Worktrees, wt)
+		return nil
+	})
+}
+
+// removeWorktree は、会話 conv の worktree の結び付けを消す(無ければ何もしない)。
+func (w *Workspaces) removeWorktree(conv string) error {
+	return w.update(func(list *[]Workspace) error {
+		for i := range *list {
+			(*list)[i].Worktrees = slices.DeleteFunc((*list)[i].Worktrees, func(t WorkspaceWorktree) bool { return t.Conversation == conv })
+		}
+		return nil
+	})
 }
 
 // validate は、ワークスペース1つを確かめる(読んだとき・変えるとき)。

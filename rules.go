@@ -229,6 +229,7 @@ func (cs *Conversations) load(ctx context.Context, id uuid.UUID) (Conversation, 
 		return c, ms, err
 	}
 	c.Settings = cs.forUse(withProfile(c.Settings.normalized(), p))
+	c.Settings.conv = c.ID
 	return c, ms, nil
 }
 
@@ -236,7 +237,7 @@ func (cs *Conversations) load(ctx context.Context, id uuid.UUID) (Conversation, 
 // 資料のフォルダ(SetFolders)のパスも、ここでは入れない(画面に返す設定にパスを載せないため)。ツールを作るときに workDir で引く。
 func (cs *Conversations) forUse(s ConversationSettings) ConversationSettings {
 	if cs.noWorkDir {
-		s.Workspace, s.WorkDir = "", ""
+		s.Workspace, s.WorkDir, s.Worktree = "", "", false
 	}
 	return s
 }
@@ -279,6 +280,9 @@ func (cs *Conversations) workDir(set ConversationSettings) string {
 		_, p := cs.folderOf(set)
 		return p
 	}
+	if wt, ok := cs.worktreeOf(set); ok {
+		return wt.Path // worktree で作業している会話は、メインのフォルダの代わりに worktree(0039)
+	}
 	ws, ok := cs.workspaces.Get(set.Workspace)
 	if !ok {
 		return ""
@@ -296,9 +300,16 @@ func (cs *Conversations) toolFolders(set ConversationSettings) []tool.Folder {
 	if !ok {
 		return nil
 	}
+	wt, inWorktree := cs.worktreeOf(set)
 	folders := make([]tool.Folder, 0, len(ws.Folders))
 	for _, f := range ws.Folders {
-		folders = append(folders, tool.Folder{Name: f.Name, Path: f.Path, Main: f.Main, Writable: f.Writable, Description: f.Description})
+		path := f.Path
+		if f.Main && inWorktree {
+			// worktree で作業している会話は、メインのフォルダのパスだけを worktree にする(0039)。
+			// 名前(モデルが呼ぶ名前)は変えず、モデルには worktree だと伝えない(プロンプトを変えない)
+			path = wt.Path
+		}
+		folders = append(folders, tool.Folder{Name: f.Name, Path: path, Main: f.Main, Writable: f.Writable, Description: f.Description})
 	}
 	return folders
 }

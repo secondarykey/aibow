@@ -434,7 +434,7 @@ func (cs *Conversations) CopyShared(ctx context.Context, id uuid.UUID) (Conversa
 		profile = def.ID
 	}
 	s := src.Conversation.Settings.normalized()
-	s.Workspace, s.WorkDir, s.profile = "", "", nil // ワークスペースは渡さない(PC のもの。0018・0035)
+	s.Workspace, s.WorkDir, s.Worktree, s.profile = "", "", false, nil // ワークスペースは渡さない(PC のもの。0018・0035・0039)
 	now := time.Now()
 	c := Conversation{ID: uuid.NewV7(), Title: src.Conversation.Title + "(写し)", Settings: s, ProfileID: profile, CreatedAt: now, UpdatedAt: now}
 	if err := cs.store.CreateConversation(ctx, c); err != nil {
@@ -485,7 +485,7 @@ func (cs *Conversations) CreateIn(ctx context.Context, profileID uuid.UUID, sett
 	s.profile = nil
 	s.WorkDir = "" // 前の作業フォルダは、新しい会話には書かない(ワークスペースを使う。0035)
 	if cs.noWorkDir {
-		s.Workspace = ""
+		s.Workspace, s.Worktree = "", false
 	}
 	// 会話の上限・返事の上限も会話の値として持つ(画面が渡さなかったら既定の値)
 	if s, err = cs.withLimits(ctx, s); err != nil {
@@ -519,7 +519,11 @@ func (cs *Conversations) Delete(ctx context.Context, id uuid.UUID) error {
 	if g := cs.generating.Load(); g != nil && *g == id {
 		return errors.New("返事を生成中の会話は削除できません。停止してから削除してください")
 	}
-	return cs.store.DeleteConversation(ctx, id)
+	if err := cs.store.DeleteConversation(ctx, id); err != nil {
+		return err
+	}
+	cs.removeWorktreeOf(ctx, id) // この PC で worktree を作っていた会話なら、worktree とブランチも消す(0039)
+	return nil
 }
 
 // Rename は会話のタイトルを変える。自動で付いたタイトルも、あとから変えられる。
@@ -561,7 +565,10 @@ func (cs *Conversations) UpdateSettings(ctx context.Context, id uuid.UUID, s Con
 	s.profile = nil
 	s.WorkDir = stored.WorkDir // 前の作業フォルダは画面からは変えない(起動したときに移すまで残す。MigrateWorkDirs)
 	if cs.noWorkDir {
-		s.Workspace = stored.Workspace // 決めも消しもしない(画面には空で見せているため)
+		s.Workspace, s.Worktree = stored.Workspace, stored.Worktree // 決めも消しもしない(画面には空で見せているため)
+	}
+	if err := cs.keepWorktree(id, stored, &s); err != nil {
+		return err
 	}
 	c.Settings = s
 	return cs.store.UpdateConversation(ctx, c)
@@ -913,7 +920,7 @@ func (cs *Conversations) environment(set ConversationSettings) string {
 	var b strings.Builder
 	b.WriteString("# Environment\n")
 	// 資料のフォルダ(aibow-server)は、サーバーの PC のパスを見せず、名前だけを書く(パスはツールの中だけで使う。0024 の決定事項 32)
-	name := filepath.Base(dir)
+	name := filepath.Base(cs.mainPath(set, dir)) // worktree でも、本体のフォルダの名前(0039。モデルが呼ぶ名前を変えない)
 	if folder := cs.FolderName(set); folder != "" {
 		name = folder
 		b.WriteString("Working directory: \"" + folder + "\" (a shared folder on the server)\n")
