@@ -5,7 +5,7 @@ package api
 // 流れ:
 //
 //	1. JSON を読み、書式の形(format.Prompt)にする(types.go の toPrompt)
-//	2. 生成の順番を待つ(生成は1つずつ)
+//	2. 生成の順番を待つ(同時に生成できるのは、作業領域の中のシーケンスの数まで。0023)
 //	3. リクエストの model が読み込み中のモデルと違えば読み直す(0015 の 2。順番待ちの席の中で行い、生成と取り合わない)
 //	4. 書式を当てたトークン数を数え、作業領域に入らなければエラーを返す(compact はしない。履歴を持つのはクライアントなので)
 //	5. 生成する。ストリーミングなら、文字が出るたびに Server-Sent Events の塊を送る
@@ -16,6 +16,7 @@ package api
 
 import (
 	"cmp"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,13 +26,15 @@ import (
 
 	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/format"
+	"github.com/secondarykey/aibow/genlog"
 	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/models"
 	"github.com/secondarykey/aibow/tool"
 )
 
-// maxBody はリクエストの本文の上限。履歴の全部が毎回来るので大きめにする(作業領域 32K トークンでも数百 KB)
-const maxBody = 32 << 20
+// maxBody はリクエストの本文の上限。履歴の全部が毎回来るので大きめにする(作業領域 32K トークンでも数百 KB)。
+// 画像(image_url の data: URL。0030)は 1 枚 maxImageBytes まで、base64(4/3 倍)で 10 枚分の余裕を足す
+const maxBody = 32<<20 + 10*maxImageBytes*4/3
 
 // handleChat は POST /v1/chat/completions。
 func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
@@ -58,6 +61,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 	defer s.releaseTurn()
 	wait := time.Since(waitStart)
+	r = r.WithContext(jobContext(r.Context(), req.Aibow, wait))
 
 	if err := s.requestedModel(req.Model); err != nil {
 		// 管理者が使えないようにしたモデルは、知らないモデルと同じ 404 で断る(0018 の決定事項 13)
@@ -77,14 +81,14 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	// 作業領域に入るかを、生成の前に確かめる。返事の分の空きまでは求めない(足りなくなったら、そこで止めて finish_reason を length にする)
 	n, err := s.gen.CountTokens(p)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "server_error", "", err.Error())
+		writeError(w, http.StatusInternalServerError, "server_error", modelErrorCode(err), err.Error())
 		return
 	}
 	if nCtx := int(info.NCtx); n >= nCtx {
 		log.Warnf("リクエストを断りました: プロンプト %d トークンが作業領域 %d に入りません(発言 %d 件)", n, nCtx, len(p.Messages))
 		writeError(w, http.StatusBadRequest, "invalid_request_error", "context_length_exceeded",
 			fmt.Sprintf("履歴が長すぎます。プロンプトが %d トークンあり、作業領域(%d トークン)に入りません。"+
-				"履歴を短くするか、aibow-server を -ctx(設定ファイルの ctx)で大きくして起動し直してください", n, nCtx))
+				"履歴を短くするか、aibow-server を -ctx(設定ファイルの ctx)で大きくするか -parallel(parallel)を減らして起動し直してください", n, nCtx))
 		return
 	}
 
@@ -102,6 +106,22 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.complete(w, r, c, p, opt)
+}
+
+// jobContext は、生成に付箋を付ける(aibow-server の使用量の記録が読む。0033)。
+// 道はアプリ(aibow 欄がある)とそれ以外(Cline など)。受け付けたときのログ(logAccepted)と同じ見分け方。
+// 用途と会話はアプリが aibow 欄で知らせたもの(書いていなければ返事)。会話の ID は記録に書くだけなので、読めなければ空にする。
+func jobContext(ctx context.Context, a *aibowRequest, wait time.Duration) context.Context {
+	ctx = genlog.WithWait(ctx, wait)
+	if a == nil {
+		return genlog.WithPurpose(genlog.WithRoute(ctx, genlog.RouteAPI), genlog.PurposeReply, uuid.UUID{})
+	}
+	purpose := genlog.PurposeReply
+	if a.Purpose == genlog.PurposeSummary {
+		purpose = genlog.PurposeSummary
+	}
+	conv, _ := uuid.Parse(a.Conversation)
+	return genlog.WithPurpose(genlog.WithRoute(ctx, genlog.RouteApp), purpose, conv)
 }
 
 // readChatRequest は本文を読み、書式の形にする。読めなければ 400 を返して false。
@@ -168,7 +188,7 @@ func (c call) result(out format.Output, st engine.GenerateStats) (calls []toolCa
 	calls, broken := toResponseCalls(out.ToolCalls, c.tools, c.aibow != nil)
 	content = out.Content
 	if c.aibow != nil {
-		extra = &aibowResult{StopReason: st.StopReason, BrokenToolCalls: broken}
+		extra = &aibowResult{StopReason: st.StopReason, BrokenToolCalls: broken, ImageTokens: st.ImageTokens, EncodeSec: st.EncodeSec}
 	} else if len(broken) > 0 {
 		// 書式が崩れた呼び出しは、答えの続きとして返す(0012 の形)
 		content = joinContent(out.Content, joinBroken(broken))
@@ -340,7 +360,7 @@ func joinContent(content, extra string) string {
 
 // logAccepted は、リクエストを受け付けたときのログ(2026-10-21、ユーザーの指示)。
 // 終わったときの行(logResult)だけだと、順番待ちの間や長い生成・読み直しの途中に、何を処理しているかが見えないため。
-// busy は、受け付けたときに前のリクエストを処理中だったか(この行のあと順番を待つ)。
+// busy は、受け付けたときに席が全部ふさがっていたか(この行のあと順番を待つ)。
 // どのクライアントからかは aibow 欄で見分ける(画面のアプリは付ける。Cline などは付けない)。
 func logAccepted(req chatRequest, p format.Prompt, busy bool, opt engine.GenerateOptions) {
 	mode := "まとめて"
@@ -353,7 +373,7 @@ func logAccepted(req chatRequest, p format.Prompt, busy bool, opt engine.Generat
 	}
 	wait := ""
 	if busy {
-		wait = "。前のリクエストを処理中なので順番を待ちます"
+		wait = "。席が全部ふさがっている(前のリクエストを処理中)ので順番を待ちます"
 	}
 	log.Infof("受け付けました: %s・%s・モデル %s・発言 %d 件・ツール %d 個%s", mode, from, cmp.Or(req.Model, "(書いていない)"), len(p.Messages), len(p.Tools), wait)
 	log.Debugf("生成の設定: temperature %.2f・返事の上限 %d・presence penalty %.2f・思考 %v・tool_choice %s",
@@ -380,6 +400,17 @@ func logResult(c call, stream bool, st engine.GenerateStats, calls int, err erro
 	}
 	log.Infof("%s・%s・発言 %d 件・ツール %d 個 / 順番待ち %.2f 秒 / プロンプト %d トークン(KV キャッシュの再利用 %d)%.2f 秒 / 生成 %d トークン %.2f 秒(%.1f tok/s)/ 終了理由: %s / ツール呼び出し %d 件",
 		mode, c.model, c.msgs, len(c.tools), c.wait.Seconds(), st.PromptTokens, st.ReusedTokens, st.PromptSec, st.GenTokens, st.GenSec, speed, st.StopReason, calls)
+	// 画像(0030)。画像トークン数と、今回エンコードした秒数(KV キャッシュを使い回した画像は 0 秒)
+	if st.ImageTokens > 0 {
+		log.Infof("画像: %d トークン / エンコード %.2f 秒", st.ImageTokens, st.EncodeSec)
+	}
+	if st.ProjectorSec > 0 {
+		where := "GPU"
+		if st.ProjectorCPU {
+			where = "CPU(GPU に載らなかった)"
+		}
+		log.Noticef("画像を読む部品(mmproj)を %s に読み込みました(%.1f 秒)", where, st.ProjectorSec)
+	}
 }
 
 // ---- 書式とトークン数(aibow 専用の口。0015) -----------------------------------------------
@@ -431,6 +462,9 @@ func (s *Server) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 const (
 	codeModelNotLoaded    = "model_not_loaded"   // engine.ErrNoModel(降ろした・まだ読み込んでいない)
 	codeUnsupportedFormat = "unsupported_format" // format.ErrUnsupported(書式に未対応の種類のモデル)
+	// engine.ErrNoVision(画像の付いた会話を、画像を読めないモデル・書式で数えた。0030)。
+	// これが無いと、画像の付いた会話を画像を読めないモデルで開いたとき、アプリは会話を開くこと自体に失敗する
+	codeNoVision = "no_vision"
 )
 
 func modelErrorCode(err error) string {
@@ -439,6 +473,8 @@ func modelErrorCode(err error) string {
 		return codeModelNotLoaded
 	case errors.Is(err, format.ErrUnsupported):
 		return codeUnsupportedFormat
+	case errors.Is(err, engine.ErrNoVision):
+		return codeNoVision
 	}
 	return ""
 }

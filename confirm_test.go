@@ -21,7 +21,7 @@ func newWorkDirConversation(t *testing.T, g *fakeGen) (*Conversations, Conversat
 		t.Fatal(err)
 	}
 	cs, _, c := newToolConversation(t, g)
-	c.Settings.WorkDir = dir
+	c.Settings.Workspace = workspaceFor(t, cs, dir)
 	if err := cs.UpdateSettings(ctx, c.ID, c.Settings); err != nil {
 		t.Fatal(err)
 	}
@@ -31,7 +31,7 @@ func newWorkDirConversation(t *testing.T, g *fakeGen) (*Conversations, Conversat
 // sendAnswering は送信し、確認を求められたら answer で答える(answer が false を返したら答えない)。
 func sendAnswering(cs *Conversations, ctx context.Context, c Conversation, text string, answer func(req *ConfirmRequest) bool) []ChatEvent {
 	var evs []ChatEvent
-	cs.Send(ctx, c.ID, text, func(ev ChatEvent) {
+	cs.Send(ctx, c.ID, text, nil, func(ev ChatEvent) {
 		evs = append(evs, ev)
 		if ev.Type == "confirm" {
 			answer(ev.Confirm)

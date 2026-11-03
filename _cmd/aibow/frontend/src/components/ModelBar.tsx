@@ -15,7 +15,8 @@ interface Props {
 }
 
 // 選ぶのは「この会話のモデル」(0014 の 3)。読み込めるモデルは1つ(VRAM に1つしか載らない)なので、
-// 会話を開いただけでは読み直さず、読み込んでいるモデルと違う会話は、送信するときに Go が読み直す
+// 会話を開いただけでも、ここで選んだだけでも読み直さず、読み込んでいるモデルと違う会話は、送信するときに Go が読み直す
+// (0014 の「あとから決めたこと(2026-10-31)」)
 export function ModelBar({ models, disabled, size, selected, lockReason, onSelect, children }: Props) {
   const { current, gpu, loading, server, serverError } = models;
   // 会話のモデルが無ければ読み込んでいるモデル。降ろしていれば最後に読み込んだモデル(新しい会話はそれで作る)

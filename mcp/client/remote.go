@@ -39,6 +39,9 @@ type remoteTool struct {
 	name    string        // サーバーが付けたツールの名前(tools/call にはこちらを送る)
 	limit   time.Duration // 1回の実行の時間の上限(settings.json の callTimeout。サーバーごと)
 	broken  func(error)   // つながりが切れたと分かったときに呼ぶ(Manager が一覧から外し、次の送信でつなぎ直す)
+	// stopped は、Manager がサーバーを止めると終わる(設定を変えた・消した。Update)。理由は context.Cause で読む。
+	// SDK の Close は実行中の呼び出しが終わるのを待つので、こちらから打ち切らないと、止めるまで callTimeout だけ待つことになる
+	stopped context.Context
 }
 
 var (
@@ -77,7 +80,7 @@ func ServerPrefix(server string) string {
 // inputSchema(引数の JSON Schema)は、0004 の tool.Def の引数と同じ形なので、そのまま使える。
 // ただし SDK は inputSchema を map[string]any で渡してくるので、サーバーが書いた順(type → properties → required など)は残らず、
 // JSON にし直すとキーの名前の順になる。モデルが読むには困らない。
-func newRemoteTool(server string, limit time.Duration, session *mcp.ClientSession, t *mcp.Tool, broken func(error)) (*remoteTool, error) {
+func newRemoteTool(server string, limit time.Duration, session *mcp.ClientSession, t *mcp.Tool, broken func(error), stopped context.Context) (*remoteTool, error) {
 	schema := t.InputSchema
 	if schema == nil {
 		schema = map[string]any{"type": "object", "properties": map[string]any{}}
@@ -87,7 +90,7 @@ func newRemoteTool(server string, limit time.Duration, session *mcp.ClientSessio
 		return nil, fmt.Errorf("ツール %s の inputSchema を読めません: %w", t.Name, err)
 	}
 	return &remoteTool{
-		server: server, session: session, broken: broken, limit: limit,
+		server: server, session: session, broken: broken, limit: limit, stopped: stopped,
 		def:  tool.Def{Name: ToolName(server, t.Name), Description: t.Description, Parameters: params},
 		name: t.Name,
 	}, nil
@@ -157,8 +160,11 @@ func (t *remoteTool) RunInteractive(ctx context.Context, args tool.Args, ask too
 func (t *remoteTool) call(ctx context.Context, params *mcp.CallToolParams) (*mcp.CallToolResult, error) {
 	rctx, cancel := context.WithTimeout(ctx, t.limit)
 	defer cancel()
+	defer context.AfterFunc(t.stopped, cancel)() // サーバーを止めたら、実行中の呼び出しも打ち切る
 	res, err := t.session.CallTool(rctx, params)
 	switch {
+	case t.stopped.Err() != nil && ctx.Err() == nil:
+		return nil, context.Cause(t.stopped)
 	case errors.Is(ctx.Err(), context.DeadlineExceeded) || (ctx.Err() == nil && errors.Is(rctx.Err(), context.DeadlineExceeded)):
 		return nil, fmt.Errorf("時間の上限(%d 秒)を超えたため止めました(settings.json の callTimeout に秒数を書くと延ばせます)", int(t.limit.Seconds()))
 	case ctx.Err() != nil:

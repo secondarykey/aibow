@@ -26,6 +26,7 @@ import (
 
 	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/format"
+	"github.com/secondarykey/aibow/genlog"
 	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/tool"
 )
@@ -81,6 +82,8 @@ func (cs *Conversations) passFrom(set ConversationSettings, summary *Compaction,
 		text = summary.Summary
 	}
 	msgs := promptMessages(cs.systemPrompt(set), text, history[first:])
+	// 渡さない部分(要約した・truncate で外した)に作業の予定があれば、最後の予定をシステムの文に残す(plan.go)
+	msgs = withPlan(msgs, planNote(lastPlan(history[:first])))
 	n, err := cs.count(cs.promptFor(set, msgs))
 	return passing{summary: summary, first: first, messages: msgs, tokens: n}, err
 }
@@ -406,7 +409,12 @@ func summaryMessages(prev string, part []StoredMessage, maxTokens int) []format.
 	for _, m := range part {
 		switch m.Role {
 		case "user":
-			fmt.Fprintf(&b, "ユーザー: %s\n", m.Content)
+			// 読み込んだファイルは中身を渡さず「[ファイル: 名前]」にする(0030 の決定事項 4。重いうえ、要約に要るのは話の流れ)
+			if len(m.Files) > 0 {
+				fmt.Fprintf(&b, "ユーザー: %s %s\n", filesNote(m.Files), m.Content)
+			} else {
+				fmt.Fprintf(&b, "ユーザー: %s\n", m.Content)
+			}
 		case "assistant":
 			if m.Content != "" {
 				fmt.Fprintf(&b, "アシスタント: %s\n", m.Content)
@@ -596,7 +604,7 @@ func (cs *Conversations) summarizePart(ctx context.Context, conv Conversation, h
 // (中途半端な要約を保存して、以後ずっとモデルに渡し続けないため)。
 func (cs *Conversations) generateSummary(ctx context.Context, id uuid.UUID, msgs []format.Message, opt engine.GenerateOptions, emit func(ChatEvent)) (string, engine.GenerateStats, error) {
 	// 停止ボタン(StopSummary)で、送信全体ではなく要約だけを止められるようにする
-	sctx, cancel := context.WithCancel(ctx)
+	sctx, cancel := context.WithCancel(genlog.WithPurpose(ctx, genlog.PurposeSummary, id)) // 使用量の記録では要約として数える(0033)
 	defer cancel()
 	cs.summaryMu.Lock()
 	cs.stopSummary = cancel

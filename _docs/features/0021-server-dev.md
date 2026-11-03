@@ -21,7 +21,8 @@
 
 4. コマンドは2つ:
    - `go run ./_cmd/dev server [aibow-server の引数...]`:vite の開発用サーバー(`127.0.0.1:9246`。画面のアプリの `wails3 dev` の 9245 とぶつからないように)と、`go run ./_cmd/aibow-server` を一緒に起動する。
-     ブラウザは vite のほう(`http://127.0.0.1:9246/`)を開く。Ctrl+C で両方止める
+     ブラウザは vite のほう(`http://127.0.0.1:9246/`)を開く。Ctrl+C で両方止める。
+     Ctrl+C のあとは、vite が先に終わっても aibow-server が自分で終わるのを待つ(15 秒まで)。vite は `npm run dev` ではなく node で直接動かす(npm.cmd はバッチなので「バッチ ジョブを終了しますか (Y/N)?」が出る。2026-11-02)
    - `go run ./_cmd/dev build [-o 出力先]`:`npm run build` で画面をビルドしてから `go build ./_cmd/aibow-server` で exe を作る
 5. **aibow-server には開発のためのコードを足さない**。vite の側で、`/aibow/` の呼び出しを aibow-server に渡し(vite の proxy)、ブラウザの印(`<meta name="aibow-browser">`)を index.html に足す。
    どちらも、スクリプトが環境変数 `AIBOW_BROWSER_DEV`(aibow-server のアドレス)を渡したときだけ効く(`wails3 dev` の画面には効かない)
@@ -38,6 +39,9 @@
 - スクリプトのプロセスを強制終了しても、vite と aibow-server が残らない(どちらも Windows のジョブオブジェクトに入れてある。`internal/proc`)
 - `go run ./_cmd/dev build -o <一時フォルダ>/aibow-server.exe`:`npm run build` のあとに `go build` し、作った画面の時刻を出す
 - 見ていないこと:ターミナルで Ctrl+C を押したときの止まり方(このセッションからはコンソールに Ctrl+C を送れない)・HTTPS の aibow-server に渡すとき・mac / Linux
+- 2026-11-02:Ctrl+C で止めると、vite(npm.cmd)が先に終わり、aibow-server が後片付けの途中で止められていた(ログに `end here` が出ない)。上の 4. のように直し、
+  新しいコンソールで起動して Ctrl+C を送ると(`AttachConsole` + `GenerateConsoleCtrlEvent`)、5回とも 0.5 秒で終わり、aibow-server のログに `end here` が出て、プロセスも残らなかった。
+  Git Bash で Ctrl+C を押すとプロンプトが戻ることを、ユーザーが確かめた(2026-11-02)
 
 ## やらないこと
 

@@ -28,7 +28,12 @@ type folderWeb struct {
 
 func newFolderWeb(t *testing.T) *folderWeb {
 	t.Helper()
-	dir := t.TempDir()
+	// フォルダの名前は、ほかの値(時刻・ID)にたまたま出てこないものにする。パスを画面に見せていないかを、名前が返事に無いことで確かめるため
+	// (t.TempDir の名前は「001」などで、時刻の「39.001909」にたまたま入ってテストが落ちることがあった)
+	dir := filepath.Join(t.TempDir(), "aibow-shared-docs")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	os.WriteFile(filepath.Join(dir, "README.md"), []byte("# 仕様の置き場\n合言葉は「みかん」\n"), 0o644)
 	w := &folderWeb{testWeb: newTestWeb(t, func(o *Options) { o.Folders = map[string]string{"docs": dir} }), dir: dir}
 	now := time.Now()
@@ -45,7 +50,7 @@ func newFolderWeb(t *testing.T) *folderWeb {
 	w.admin.Store(true)
 	w.mustCall(t, &w.profile, "CreateProfile", "仕様の相談", aibow.ProfileValues{Model: "ollama:a", HistoryTokens: 8192, ReplyTokens: 8192},
 		aibow.ProfileRules{Folder: "docs"})
-	w.mustCall(t, nil, "SetProfileShare", w.profile.ID, aibow.ShareUsers, []string{"bob"})
+	w.mustCall(t, nil, "SetProfileShare", w.profile.ID, aibow.ShareUsers, []string{"bob"}, []string{})
 	w.admin.Store(false)
 	return w
 }
@@ -73,13 +78,13 @@ func TestWebFolderRead(t *testing.T) {
 	}
 
 	w.eng.calls = [][]format.ToolCall{readCall("README.md")}
-	w.mustCall(t, nil, "Send", c.ID, "README を読んで")
+	w.mustCall(t, nil, "Send", c.ID, "README を読んで", nil)
 	until(t, events, "done")
 	if r := w.toolResult(t, c.ID); !strings.Contains(r.Content, "合言葉は「みかん」") {
 		t.Errorf("資料のフォルダを読めるはず: %q", r.Content)
 	}
 	names = w.eng.tools[0]
-	for _, want := range []string{"list_files", "read_file", "write_file", "edit_file"} {
+	for _, want := range []string{"list_files", "read_file", "search_files", "write_file", "edit_file"} {
 		if !slices.Contains(names, want) {
 			t.Errorf("%s を知らせるはず: %v", want, names)
 		}
@@ -157,7 +162,7 @@ func TestWebFolderAccess(t *testing.T) {
 	// 配るのをやめたら、今ある会話でもフォルダを使えない(決まりなので、すぐ効く)
 	w.user.Store(w.alice)
 	w.admin.Store(true)
-	w.mustCall(t, nil, "SetProfileShare", w.profile.ID, aibow.ShareNone, []string{})
+	w.mustCall(t, nil, "SetProfileShare", w.profile.ID, aibow.ShareNone, []string{}, []string{})
 	w.admin.Store(false)
 	w.user.Store(w.bob)
 	var d ConversationDetail
@@ -167,7 +172,7 @@ func TestWebFolderAccess(t *testing.T) {
 	}
 	events := w.openEvents(t)
 	w.eng.calls = [][]format.ToolCall{readCall("README.md")}
-	w.mustCall(t, nil, "Send", c.ID, "README を読んで")
+	w.mustCall(t, nil, "Send", c.ID, "README を読んで", nil)
 	until(t, events, "done")
 	if r := w.toolResult(t, c.ID); !r.ToolResult.Error || strings.Contains(r.Content, "みかん") {
 		t.Errorf("配るのをやめたあとに読めた: %q", r.Content)

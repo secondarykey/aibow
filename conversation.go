@@ -27,6 +27,7 @@ import (
 
 	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/format"
+	"github.com/secondarykey/aibow/genlog"
 	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/tool"
 )
@@ -127,8 +128,10 @@ type Conversations struct {
 	confirmMu sync.Mutex
 	pending   *pendingConfirm
 
-	// noWorkDir は、会話に保存した作業フォルダを使わないか(IgnoreWorkDir)
+	// noWorkDir は、会話に保存した作業フォルダ(ワークスペース)を使わないか(IgnoreWorkDir)
 	noWorkDir bool
+	// workspaces は、その PC のワークスペース(workspaces.json。0035)。nil なら何も登録していない扱い(SetWorkspaces)
+	workspaces *Workspaces
 	// folders は aibow-server の資料のフォルダ(名前 → 絶対パス。SetFolders)
 	folders map[string]string
 }
@@ -292,17 +295,24 @@ func (cs *Conversations) ensureWorkspace(conv Conversation, emit func(ChatEvent)
 	return nil
 }
 
+// modelPending は、送信の前に ensureModel が会話のモデルを読み込むか(読み込んでいるモデルが会話のモデルと違う)。
+// 違う間は、読み込んでいるモデルで数えたトークン数は会話のモデルのものではない(画像を読めないモデルなら数えられない)。
+func (cs *Conversations) modelPending(set ConversationSettings) bool {
+	if set.Model == "" || cs.models == nil {
+		return false
+	}
+	info := cs.gen.Info()
+	return info == nil || info.ID != set.Model
+}
+
 // ensureModel は、読み込んでいるモデルがこの会話のモデルと違えば、会話のモデルを読み込む(0014 の 3)。
 // モデルの違う会話に切り替えた最初の送信は、読み直しの分(数秒〜十数秒)待つ。読み直したらお知らせ(トースト)とログで知らせる。
 // 会話がモデルを持たない(この機能より前の会話)・読み込む係が無いときは、読み込んでいるモデルのまま。
 func (cs *Conversations) ensureModel(conv Conversation, emit func(ChatEvent)) error {
+	if !cs.modelPending(conv.Settings) {
+		return nil
+	}
 	want := conv.Settings.Model
-	if want == "" || cs.models == nil {
-		return nil
-	}
-	if info := cs.gen.Info(); info != nil && info.ID == want {
-		return nil
-	}
 	emit(ChatEvent{ConversationID: conv.ID, Type: "model_loading", Text: fmt.Sprintf("この会話のモデル %s を読み込み中…", want)})
 	info, err := cs.models.LoadModel(want)
 	if err != nil {
@@ -424,7 +434,7 @@ func (cs *Conversations) CopyShared(ctx context.Context, id uuid.UUID) (Conversa
 		profile = def.ID
 	}
 	s := src.Conversation.Settings.normalized()
-	s.WorkDir, s.profile = "", nil
+	s.Workspace, s.WorkDir, s.profile = "", "", nil // ワークスペースは渡さない(PC のもの。0018・0035)
 	now := time.Now()
 	c := Conversation{ID: uuid.NewV7(), Title: src.Conversation.Title + "(写し)", Settings: s, ProfileID: profile, CreatedAt: now, UpdatedAt: now}
 	if err := cs.store.CreateConversation(ctx, c); err != nil {
@@ -436,6 +446,7 @@ func (cs *Conversations) CopyShared(ctx context.Context, id uuid.UUID) (Conversa
 	for _, m := range src.Messages {
 		old := m.ID
 		m.ID, m.ConversationID = uuid.NewV7(), c.ID
+		m.Files = renewFiles(m.Files) // 読み込んだファイルも写す(0030 の決定事項 21。ID は表の主キーなので新しくする)
 		ids[old] = m.ID
 		if err := cs.store.AddMessage(ctx, m); err != nil {
 			return c, fmt.Errorf("会話の発言を写せません: %w", err)
@@ -472,8 +483,9 @@ func (cs *Conversations) CreateIn(ctx context.Context, profileID uuid.UUID, sett
 		s = settings.normalized()
 	}
 	s.profile = nil
+	s.WorkDir = "" // 前の作業フォルダは、新しい会話には書かない(ワークスペースを使う。0035)
 	if cs.noWorkDir {
-		s.WorkDir = ""
+		s.Workspace = ""
 	}
 	// 会話の上限・返事の上限も会話の値として持つ(画面が渡さなかったら既定の値)
 	if s, err = cs.withLimits(ctx, s); err != nil {
@@ -547,8 +559,9 @@ func (cs *Conversations) UpdateSettings(ctx context.Context, id uuid.UUID, s Con
 	}
 	s = keepStored(s, stored, p)
 	s.profile = nil
+	s.WorkDir = stored.WorkDir // 前の作業フォルダは画面からは変えない(起動したときに移すまで残す。MigrateWorkDirs)
 	if cs.noWorkDir {
-		s.WorkDir = stored.WorkDir // 決めも消しもしない(画面には空で見せているため)
+		s.Workspace = stored.Workspace // 決めも消しもしない(画面には空で見せているため)
 	}
 	c.Settings = s
 	return cs.store.UpdateConversation(ctx, c)
@@ -608,22 +621,24 @@ func (cs *Conversations) Generating() *uuid.UUID {
 }
 
 // Send はユーザーの発言を保存し、返事を生成して保存する。
+// files は発言に付けて読み込んだファイル(0030。CheckFile で確かめたもの。無ければ nil)。
 // 途中経過は emit に ChatEvent で渡す。最後に必ず done を1回渡す。
 // ctx がキャンセルされると(画面の停止ボタン)、そこまでの返事を保存して終わる。
-func (cs *Conversations) Send(ctx context.Context, id uuid.UUID, text string, emit func(ChatEvent)) {
-	cs.turn(ctx, id, text, keepAll, emit)
+func (cs *Conversations) Send(ctx context.Context, id uuid.UUID, text string, files []File, emit func(ChatEvent)) {
+	cs.turn(ctx, id, text, files, keepAll, emit)
 }
 
 // Regenerate は、最後の返事を作り直す(0011)。最後のユーザーの発言の後ろ(返事とツールの結果)を消し、
 // 今のモデル・設定でもう一度返事を作る。ツールをオンにした・9B に切り替えた、など条件を変えてやり直すときのため。
 // 途中経過と終わりは Send と同じく emit で渡す。前の返事でツールが行ったこと(ファイルの書き換えなど)は元に戻らない。
 func (cs *Conversations) Regenerate(ctx context.Context, id uuid.UUID, emit func(ChatEvent)) {
-	cs.turn(ctx, id, "", dropReply, emit)
+	cs.turn(ctx, id, "", nil, dropReply, emit)
 }
 
 // Resend は、最後のユーザーの発言を text に直して送り直す(0011)。最後の発言とその返事を消してから送る。
+// 直すのは文だけで、元の発言に付いていたファイルは新しい発言に付け直す(0030 の決定事項 21。turn)。
 func (cs *Conversations) Resend(ctx context.Context, id uuid.UUID, text string, emit func(ChatEvent)) {
-	cs.turn(ctx, id, text, dropLastTurn, emit)
+	cs.turn(ctx, id, text, nil, dropLastTurn, emit)
 }
 
 // やり直しの種類(turn の drop)。保存された発言のうち、消して送り直す部分を決める
@@ -666,9 +681,9 @@ func lastUserIndex(history []StoredMessage) int {
 	return -1
 }
 
-// turn は Send / Regenerate / Resend の共通部分。drop で保存された発言から消す部分を決め、text が空でなければ新しい発言として送る。
+// turn は Send / Regenerate / Resend の共通部分。drop で保存された発言から消す部分を決め、text が空でなければ(ファイルだけでも)新しい発言として送る。
 // 消すのは、会話の上限に収まるかを確かめてから(送れないときに、前のやり取りだけが消えないように)。
-func (cs *Conversations) turn(ctx context.Context, id uuid.UUID, text string, drop dropFunc, emit func(ChatEvent)) {
+func (cs *Conversations) turn(ctx context.Context, id uuid.UUID, text string, files []File, drop dropFunc, emit func(ChatEvent)) {
 	var reply *StoredMessage
 	defer func() { emit(ChatEvent{ConversationID: id, Type: "done", Reply: reply}) }()
 	fail := func(err error) {
@@ -699,6 +714,15 @@ func (cs *Conversations) turn(ctx context.Context, id uuid.UUID, text string, dr
 		return
 	}
 	history := forModel(saved)
+	// 送り直すときは、消す発言(最後のユーザーの発言)に付いていたファイルを、新しい発言に付け直す(0030 の決定事項 21)。
+	// 消すと一緒にファイルの行も消えるので、新しい ID を振る
+	if text != "" && files == nil && len(dropped) > 0 && dropped[0].Role == "user" {
+		files = renewFiles(dropped[0].Files)
+	}
+	if err := checkFiles(files); err != nil {
+		fail(err)
+		return
+	}
 
 	// 0. 作業領域をこの会話の大きさにする(会話の上限 + 返事の上限。要約も返事も、この中で生成する)。
 	// この会話で使う MCP のサーバーが動いていなければ、起動する(そのツールも会話の上限に数えるので、確かめる前に)
@@ -717,8 +741,8 @@ func (cs *Conversations) turn(ctx context.Context, id uuid.UUID, text string, dr
 	// 1. 会話の上限に収められるかを確かめてから、(やり直しなら前の部分を消して)ユーザーの発言を保存する。
 	// タイトルがまだ無ければ(最初の発言なら)、その先頭をタイトルにする。作り直す(text が空)なら、最後の発言をそのまま使う
 	var user *StoredMessage
-	if text != "" {
-		user = &StoredMessage{ID: uuid.NewV7(), ConversationID: id, Role: "user", Content: text, CreatedAt: time.Now()}
+	if text != "" || len(files) > 0 {
+		user = &StoredMessage{ID: uuid.NewV7(), ConversationID: id, Role: "user", Content: text, Files: files, CreatedAt: time.Now()}
 		history = append(history, *user)
 	}
 	if err := cs.checkFits(conv.Settings, history); err != nil {
@@ -733,7 +757,7 @@ func (cs *Conversations) turn(ctx context.Context, id uuid.UUID, text string, dr
 		log.Infof("会話 %s のやり直し: 発言 %d 件を消しました", id, len(dropped))
 	}
 	if user != nil {
-		if err := cs.save(ctx, *user, titleFrom(text)); err != nil {
+		if err := cs.save(ctx, *user, titleFrom(userTitle(text, files))); err != nil {
 			fail(err)
 			return
 		}
@@ -801,6 +825,8 @@ func (cs *Conversations) generate(ctx context.Context, conv Conversation, messag
 		}
 	}
 
+	// 何のための生成かを付箋にして運ぶ(aibow-server の使用量の記録が読む。0033。アプリなら api/client が aibow 欄で送る)
+	ctx = genlog.WithPurpose(ctx, genlog.PurposeReply, conv.ID)
 	out, st, err := cs.gen.Generate(ctx, cs.promptFor(set, messages), opt,
 		func(p string) {
 			ev := ChatEvent{ConversationID: conv.ID, Type: "prompt", Text: p}
@@ -811,6 +837,11 @@ func (cs *Conversations) generate(ctx context.Context, conv Conversation, messag
 		},
 		onText("thinking"), onText("content"),
 	)
+	if st.ProjectorCPU {
+		// 画像を読む部品(mmproj)が GPU に載らず CPU に載った(0030 の決定事項 23)。画像は読めるが、エンコードが 15〜30 倍遅くなる
+		emit(ChatEvent{ConversationID: conv.ID, Type: "notice",
+			Text: "画像を読む部品(mmproj)が GPU に載らなかったので、CPU に読み込みました。画像の読み込みに時間がかかります(GPU に載せる層の数を減らすと GPU に載ることがあります)"})
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -875,6 +906,10 @@ func (cs *Conversations) environment(set ConversationSettings) string {
 		return ""
 	}
 	command := tool.Find(tools, "run_command") != nil
+	shell := tool.ShellNoteFor(tool.Find(tools, "search_files") != nil) // search_files を「使わない」にしたら、今までの findstr の案内のまま
+	if folders := cs.toolFolders(set); len(folders) > 1 {
+		return foldersEnvironment(folders, command, shell)
+	}
 	var b strings.Builder
 	b.WriteString("# Environment\n")
 	// 資料のフォルダ(aibow-server)は、サーバーの PC のパスを見せず、名前だけを書く(パスはツールの中だけで使う。0024 の決定事項 32)
@@ -887,7 +922,7 @@ func (cs *Conversations) environment(set ConversationSettings) string {
 	}
 	b.WriteString("OS: " + runtime.GOOS + "\n")
 	if command {
-		b.WriteString("Shell for run_command: " + tool.ShellNote + "\n")
+		b.WriteString("Shell for run_command: " + shell + "\n")
 	}
 	b.WriteString("Use paths relative to the working directory.\n")
 	// ユーザーが「ytscroll をコミットして」のようにフォルダの名前で呼ぶと、4B は ytscroll を作業フォルダの下のフォルダだと思い、
@@ -896,6 +931,36 @@ func (cs *Conversations) environment(set ConversationSettings) string {
 		b.WriteString("Commands already run inside the working directory, so do not cd into it. ")
 	}
 	b.WriteString("\"" + name + "\" refers to the working directory itself.")
+	return b.String()
+}
+
+// foldersEnvironment は、ワークスペースのフォルダが複数のときの環境の説明(0035 の段2)。
+//
+// フォルダを名前・印(メイン・書ける / 読むだけ・リポジトリ)・パス・説明(ユーザーが書いたもの)で並べ、ファイルのツールの引数 folder で選ぶこと、省けばメインになることを書く。
+// run_command も引数 folder でフォルダを選び、省けばメインで動く(読むだけのフォルダでも動かせる)。
+// 読むだけのフォルダもコマンドからは書けてしまうが、守りは確認なので、ここに書くのは「read-only」の印まで。
+// フォルダが1つのときは今までの形のまま(environment)。4B のプロンプトを変えないため。
+func foldersEnvironment(folders []tool.Folder, command bool, shell string) string {
+	var b strings.Builder
+	b.WriteString("# Environment\nFolders (pass the folder argument; omit it for the main folder):\n")
+	for _, f := range folders {
+		b.WriteString("- " + tool.FolderLine(f, IsGitRepo(f.Path)) + "\n")
+	}
+	b.WriteString("OS: " + runtime.GOOS + "\n")
+	if command {
+		b.WriteString("Shell for run_command: " + shell + "\n")
+	}
+	b.WriteString("Use paths relative to the folder.\n")
+	main := tool.MainFolder(folders).Name
+	if command {
+		// run_command も folder で選ぶ(2026-11-02)。cd でほかのフォルダに移ろうとすると、メインの下を探したり、
+		// cmd.exe では /d が無いと別のドライブに移れなかったりするので、cd ではなく folder を使うよう書く。
+		// 呼ぶたびに新しいシェルなので cd は次に持ち越されないことも書く(同じシェルが続くと思い込むと、メインで動いてしまう)。
+		// サブフォルダへの cd まで禁じて読めないよう、「一覧のほかのフォルダ」に絞る
+		b.WriteString("Each command starts in the main folder \"" + main + "\" unless you pass folder; a cd does not carry over to the next command. " +
+			"To run in another folder of the list, pass folder instead of cd. ")
+	}
+	b.WriteString("Each folder name refers to that folder itself, not to a subfolder.")
 	return b.String()
 }
 
@@ -918,7 +983,8 @@ func promptMessages(system, summary string, history []StoredMessage) []format.Me
 		out = append(out, format.Message{Role: "system", Content: s})
 	}
 	for _, m := range history {
-		fm := format.Message{Role: m.Role, Content: m.Content, Thinking: m.Thinking, ToolCalls: m.ToolCalls}
+		// 読み込んだファイルは、発言の文の前に展開する(0030。書式はファイルのことを知らない)
+		fm := format.Message{Role: m.Role, Content: withFiles(m.Content, m.Files), Images: imagesOf(m.Files), Thinking: m.Thinking, ToolCalls: m.ToolCalls}
 		if m.ToolResult != nil {
 			// ツールの結果には、元の呼び出しの名前を付ける(Gemma 4 は結果に名前を書く。0026 の決定事項 5)
 			fm.Name = m.ToolResult.Call.Name
@@ -945,6 +1011,14 @@ func noAnswerNote(stopReason string) string {
 		return "(考えている途中で停止されたため、答えを出していません)"
 	}
 	return "(考えている途中で終わったため、答えを出せませんでした)"
+}
+
+// userTitle は、最初の発言からタイトルを作るときの元の文。ファイルだけを送ったときは、ファイル名にする(0030)。
+func userTitle(text string, files []File) string {
+	if strings.TrimSpace(text) != "" || len(files) == 0 {
+		return text
+	}
+	return files[0].Name
 }
 
 // titleMaxRunes は自動で付けるタイトルの長さ(文字数)。

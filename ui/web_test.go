@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -25,6 +26,7 @@ import (
 	"github.com/secondarykey/aibow/mcp/client"
 	"github.com/secondarykey/aibow/models"
 	"github.com/secondarykey/aibow/store"
+	"github.com/secondarykey/aibow/tool"
 )
 
 // 画面用の口(web.go)のテスト。aibow-server の中と同じ組み立て(ServerHost・席・組み込みのツール・Browser)を、偽物の engine で作る(モデル不要)。
@@ -221,12 +223,18 @@ func newTestWeb(t *testing.T, opts ...func(*Options)) *testWeb {
 	srv := httptest.NewUnstartedServer(nil)
 	srv.Start()
 	t.Cleanup(srv.Close)
-	local := client.NewLocal(client.Options{Version: "0.0.1-test"})
+	local := client.NewLocal(client.Options{Version: "0.0.1-test", Fetch: &tool.FetchOptions{}}) // aibow-server と同じく fetch_url も出す(管理者が有効にするまで使えない)
 	t.Cleanup(local.Close)
+	// ツールの扱いの既定も aibow-server と同じく管理者の既定(禁止がある形)にする
+	prefs, err := aibow.LoadServerToolPrefs(filepath.Join(t.TempDir(), "server-tools.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	o := Options{
 		Host:  NewServerHost(eng, mm, 32768, srv.URL),
 		Store: st, App: app, Version: "0.0.1-test",
 		Notify: events, Seat: seat, Local: local, Browser: true,
+		Prefs: prefs,
 	}
 	for _, f := range opts {
 		f(&o)
@@ -477,7 +485,7 @@ func TestWebSend(t *testing.T) {
 	if c.Settings.Model != "ollama:a" {
 		t.Errorf("新しい会話のモデルは読み込み中のモデルのはず: %q", c.Settings.Model)
 	}
-	w.mustCall(t, nil, "Send", c.ID, "こんにちは?")
+	w.mustCall(t, nil, "Send", c.ID, "こんにちは?", nil)
 	got := until(t, events, "done")
 	var content string
 	for _, e := range got {
@@ -508,7 +516,7 @@ func TestWebSendReloadsModel(t *testing.T) {
 	events := w.openEvents(t)
 	c := w.newConversation(t)
 	w.mm.Load(models.Entry{ID: "ollama:b"}) // ほかの人がモデルを入れ替えた
-	w.mustCall(t, nil, "Send", c.ID, "こんにちは?")
+	w.mustCall(t, nil, "Send", c.ID, "こんにちは?", nil)
 	got := until(t, events, "done")
 	if w.eng.Info().ID != "ollama:a" || !strings.Contains(strings.Join(types(got), ","), "model") {
 		t.Errorf("会話のモデルに読み直すはず: %s(届いたもの: %v)", w.eng.Info().ID, types(got))
@@ -534,7 +542,7 @@ func TestWebStop(t *testing.T) {
 		<-w.eng.started
 		cancel()
 	}()
-	w.call(t, ctx, "Send", c.ID, "長く書いて")
+	w.call(t, ctx, "Send", c.ID, "長く書いて", nil)
 	until(t, events, "done")
 
 	var d ConversationDetail
@@ -555,7 +563,7 @@ func TestWebSeat(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		w.mustCall(t, nil, "Send", c.ID, "こんにちは?")
+		w.mustCall(t, nil, "Send", c.ID, "こんにちは?", nil)
 	}()
 	got := until(t, events, "notice")
 	if n := got[len(got)-1]; !strings.Contains(n.Text, "待っています") {
@@ -603,7 +611,7 @@ func TestWebModelsWhileLoading(t *testing.T) {
 	w.eng.model, w.eng.loading = "ollama:b", ""
 	w.eng.mu.Unlock()
 	events := w.openEvents(t)
-	w.mustCall(t, nil, "Send", c.ID, "こんにちは?")
+	w.mustCall(t, nil, "Send", c.ID, "こんにちは?", nil)
 	until(t, events, "done")
 	if w.eng.Info().ID != "ollama:a" {
 		t.Errorf("会話のモデルに読み直すはず: %s", w.eng.Info().ID)
@@ -639,11 +647,11 @@ func TestWebSharedProfile(t *testing.T) {
 	w.mustCall(t, &p, "CreateProfile", "調べもの",
 		aibow.ProfileValues{Model: "ollama:a", HistoryTokens: 4096, ReplyTokens: 1024}, aibow.ProfileRules{Fixed: []string{"system"}})
 	w.mm.disabled = map[string]bool{"ollama:a": true}
-	if status, body := w.call(t, context.Background(), "SetProfileShare", p.ID, aibow.ShareAll, []string{}); status == http.StatusOK || !strings.Contains(string(body), "使えるモデル") {
+	if status, body := w.call(t, context.Background(), "SetProfileShare", p.ID, aibow.ShareAll, []string{}, []string{}); status == http.StatusOK || !strings.Contains(string(body), "使えるモデル") {
 		t.Errorf("使えないモデルのプロファイルは配れない: %d %s", status, body)
 	}
 	w.mm.disabled = nil
-	w.mustCall(t, nil, "SetProfileShare", p.ID, aibow.ShareUsers, []string{"bob"})
+	w.mustCall(t, nil, "SetProfileShare", p.ID, aibow.ShareUsers, []string{"bob"}, []string{})
 
 	w.user.Store(bob)
 	var list []aibow.ProfileInfo
@@ -654,7 +662,7 @@ func TestWebSharedProfile(t *testing.T) {
 	if status, body := w.call(t, context.Background(), "UpdateProfile", list[0].Profile); status == http.StatusOK || !strings.Contains(string(body), "写して") {
 		t.Errorf("受け取った人は変えられない: %d %s", status, body)
 	}
-	if status, _ := w.call(t, context.Background(), "SetProfileShare", p.ID, aibow.ShareAll, []string{}); status == http.StatusOK {
+	if status, _ := w.call(t, context.Background(), "SetProfileShare", p.ID, aibow.ShareAll, []string{}, []string{}); status == http.StatusOK {
 		t.Error("管理者でない人は配れない")
 	}
 	var cp aibow.Profile
@@ -669,7 +677,7 @@ func TestWebSharedProfile(t *testing.T) {
 	}
 
 	w.user.Store(alice)
-	w.mustCall(t, nil, "SetProfileShare", p.ID, aibow.ShareNone, []string{})
+	w.mustCall(t, nil, "SetProfileShare", p.ID, aibow.ShareNone, []string{}, []string{})
 	w.user.Store(bob)
 	w.mustCall(t, &list, "Profiles")
 	if len(list) != 1 || list[0].Profile.ID != cp.ID {
@@ -703,11 +711,11 @@ func TestWebSharedConversation(t *testing.T) {
 
 	w.user.Store(bob)
 	c := w.newConversation(t)
-	w.mustCall(t, nil, "Send", c.ID, "こんにちは?")
-	if status, _ := w.call(t, context.Background(), "SetConversationShare", c.ID, aibow.ShareUsers, []string{}); status == http.StatusOK {
+	w.mustCall(t, nil, "Send", c.ID, "こんにちは?", nil)
+	if status, _ := w.call(t, context.Background(), "SetConversationShare", c.ID, aibow.ShareUsers, []string{}, []string{}); status == http.StatusOK {
 		t.Error("相手を選ばずに指定した人にはできない")
 	}
-	w.mustCall(t, nil, "SetConversationShare", c.ID, aibow.ShareUsers, []string{"carol"})
+	w.mustCall(t, nil, "SetConversationShare", c.ID, aibow.ShareUsers, []string{"carol"}, []string{})
 
 	w.user.Store(carol)
 	var refs []aibow.ConversationRef
@@ -721,7 +729,7 @@ func TestWebSharedConversation(t *testing.T) {
 		t.Errorf("読む: %+v", r)
 	}
 	// ほかの人の会話に送ってみる。Send は結果を SSE で返すので呼び出しは 200 で終わる。書き込めていないことは、最後に持ち主の会話で確かめる
-	w.call(t, context.Background(), "Send", c.ID, "書き込み")
+	w.call(t, context.Background(), "Send", c.ID, "書き込み", nil)
 	var cp aibow.Conversation
 	w.mustCall(t, &cp, "CopyShared", c.ID)
 	var mine []aibow.Conversation
@@ -748,6 +756,133 @@ func TestWebSharedConversation(t *testing.T) {
 	w.mustCall(t, &detail, "Conversation", c.ID)
 	if len(detail.Messages) != 2 || detail.Conversation.Share != aibow.ShareUsers {
 		t.Errorf("ほかの人が書き込めてしまった・共有の印が無い: %d %+v", len(detail.Messages), detail.Conversation)
+	}
+}
+
+// 写して配る(管理の画面。0032 の段3):写すと配るを1回で行い、名前は元と同じ・資料のフォルダは写さない。
+// 配れなかったら(管理者でない)写したものは残さない
+func TestWebShareCopy(t *testing.T) {
+	w := newTestWeb(t)
+	now := time.Now()
+	add := func(name string, admin bool) *uuid.UUID {
+		u := auth.User{ID: uuid.NewV7(), Name: name, Admin: admin, CreatedAt: now, UpdatedAt: now}
+		if err := w.st.CreateUser(context.Background(), u); err != nil {
+			t.Fatal(err)
+		}
+		return &u.ID
+	}
+	alice, bob := add("alice", true), add("bob", false)
+	count := func() int {
+		t.Helper()
+		var list []aibow.ProfileInfo
+		w.mustCall(t, &list, "Profiles")
+		return len(list)
+	}
+
+	w.user.Store(bob)
+	var own aibow.Profile
+	w.mustCall(t, &own, "CreateProfile", "営業用", aibow.ProfileValues{HistoryTokens: 4096, ReplyTokens: 1024}, aibow.ProfileRules{})
+	before := count()
+	if status, _ := w.call(t, context.Background(), "ShareCopy", own.ID, aibow.ShareAll, []string{}, []string{}); status == http.StatusOK {
+		t.Error("管理者でない人が写して配れる")
+	}
+	if n := count(); n != before {
+		t.Errorf("配れなかった写しが残っている: %d → %d", before, n)
+	}
+
+	w.user.Store(alice)
+	var src aibow.Profile
+	w.mustCall(t, &src, "CreateProfile", "調べもの", aibow.ProfileValues{HistoryTokens: 4096, ReplyTokens: 1024}, aibow.ProfileRules{Fixed: []string{"system"}})
+	if status, _ := w.call(t, context.Background(), "ShareCopy", src.ID, aibow.ShareNone, []string{}, []string{}); status == http.StatusOK {
+		t.Error("配る範囲を選ばずに写して配れる")
+	}
+	var p aibow.Profile
+	w.mustCall(t, &p, "ShareCopy", src.ID, aibow.ShareUsers, []string{"bob"}, []string{})
+	if p.ID == src.ID || p.Name != "調べもの" || p.Share != aibow.ShareUsers || len(p.Rules.Fixed) != 1 || p.Rules.Folder != "" {
+		t.Errorf("写して配ったもの: %+v", p)
+	}
+	if status, _ := w.call(t, context.Background(), "ShareCopy", src.ID, aibow.ShareAll, []string{}, []string{}); status == http.StatusOK {
+		t.Error("配ったもの同士で同じ名前になる")
+	}
+	// 元は自分のプロファイルのまま残る
+	var mine []aibow.ProfileInfo
+	w.mustCall(t, &mine, "Profiles")
+	if i := slices.IndexFunc(mine, func(i aibow.ProfileInfo) bool { return i.Profile.ID == src.ID }); i < 0 || mine[i].Profile.Share != aibow.ShareNone {
+		t.Errorf("元のプロファイルが配られた・消えた: %+v", mine)
+	}
+
+	w.user.Store(bob)
+	var list []aibow.ProfileInfo
+	w.mustCall(t, &list, "Profiles")
+	if !slices.ContainsFunc(list, func(i aibow.ProfileInfo) bool { return i.Profile.ID == p.ID && i.Profile.ReadOnly }) {
+		t.Errorf("配った相手に見えない: %+v", list)
+	}
+}
+
+// グループ(0031 の段4)を画面用の口から。グループに共有した会話は、あとから入った人にも見え、抜けた人には見えなくなる。
+// メンバーを変えられるのは管理者とそのグループの長だけ(判定は保存先。画面用の口からも同じ線)
+func TestWebGroups(t *testing.T) {
+	w := newTestWeb(t)
+	now := time.Now()
+	add := func(name string, admin bool) *uuid.UUID {
+		u := auth.User{ID: uuid.NewV7(), Name: name, Admin: admin, CreatedAt: now, UpdatedAt: now}
+		if err := w.st.CreateUser(context.Background(), u); err != nil {
+			t.Fatal(err)
+		}
+		uctx := aibow.WithUser(context.Background(), u.ID)
+		app, _, _ := aibow.LoadAppSettings(uctx, w.st, InitialAppSettings(InitialValues{GPULayers: 999, PresencePenalty: 1.5, HistoryTokens: 8192, ReplyTokens: 8192}))
+		if _, err := aibow.NewConversations(w.st, nil, app).PrepareProfiles(uctx); err != nil {
+			t.Fatal(err)
+		}
+		return &u.ID
+	}
+	alice, bob, carol, dan := add("alice", true), add("bob", false), add("carol", false), add("dan", false)
+
+	w.user.Store(bob)
+	if status, _ := w.call(t, context.Background(), "CreateGroup", "営業"); status == http.StatusOK {
+		t.Error("管理者でない人がグループを作れる")
+	}
+	w.user.Store(alice)
+	var g aibow.Group
+	w.mustCall(t, &g, "CreateGroup", "営業")
+	w.mustCall(t, nil, "SetGroupMember", g.ID, "carol", true)
+	w.mustCall(t, nil, "SetGroupLeader", g.ID, "carol", true)
+
+	w.user.Store(bob)
+	c := w.newConversation(t)
+	w.mustCall(t, nil, "SetConversationShare", c.ID, aibow.ShareUsers, []string{}, []string{"営業"})
+	shared := func(who *uuid.UUID) bool {
+		t.Helper()
+		w.user.Store(who)
+		var refs []aibow.ConversationRef
+		w.mustCall(t, &refs, "SharedConversations")
+		return len(refs) == 1 && refs[0].ID == c.ID && refs[0].Share == aibow.ShareUsers
+	}
+	if !shared(carol) || shared(dan) {
+		t.Fatal("グループのメンバーだけに見える")
+	}
+	// 長(carol)が dan を足すと dan に見え、外すと見えなくなる
+	w.user.Store(carol)
+	w.mustCall(t, nil, "SetGroupMember", g.ID, "dan", true)
+	if !shared(dan) {
+		t.Error("あとから入った人に見えない")
+	}
+	w.user.Store(dan)
+	if status, _ := w.call(t, context.Background(), "SetGroupMember", g.ID, "bob", true); status == http.StatusOK {
+		t.Error("長でないメンバーがメンバーを変えられる")
+	}
+	if status, _ := w.call(t, context.Background(), "SetGroupLeader", g.ID, "dan", true); status == http.StatusOK {
+		t.Error("長でない人が長を決められる")
+	}
+	w.user.Store(carol)
+	w.mustCall(t, nil, "SetGroupMember", g.ID, "dan", false)
+	if shared(dan) {
+		t.Error("抜けた人に見える")
+	}
+	var d aibow.Directory
+	w.mustCall(t, &d, "Directory")
+	if len(d.Groups) != 1 || d.Groups[0].Conversations != 1 || len(d.Groups[0].Leaders) != 1 {
+		t.Errorf("グループの一覧: %+v", d.Groups)
 	}
 }
 
@@ -787,7 +922,7 @@ func TestWebUsers(t *testing.T) {
 	theirs := w.openEvents(t)
 	w.user.Store(nil)
 	ours := w.openEvents(t)
-	w.mustCall(t, nil, "Send", mine.ID, "こんにちは?")
+	w.mustCall(t, nil, "Send", mine.ID, "こんにちは?", nil)
 	until(t, ours, "done")
 	select {
 	case m := <-theirs:
@@ -798,5 +933,63 @@ func TestWebUsers(t *testing.T) {
 	w.user.Store(&uuid.UUID{})
 	if status, body := w.call(t, context.Background(), "Conversations"); status != http.StatusUnauthorized || !strings.Contains(string(body), "ログインしてください") {
 		t.Errorf("利用者を決められなければ 401: %d %s", status, body)
+	}
+}
+
+// ファイルを読み込む(0030):ブラウザも、確かめる(CheckFile)→ 送る(Send)の2つの呼び出しで、中身は base64 の JSON で運ぶ。
+// 読めないファイルは理由を返し、送ったファイルはモデルに展開して渡り、会話を開き直しても付いている
+func TestWebFiles(t *testing.T) {
+	w := newTestWeb(t)
+	events := w.openEvents(t)
+	c := w.newConversation(t)
+	var fc aibow.FileCheck
+	w.mustCall(t, &fc, "CheckFile", c.ID, nil, "main.go", []byte("package main\n"), 0, 0)
+	if fc.File.Name != "main.go" || fc.Tokens <= 0 {
+		t.Errorf("確かめた結果: %+v", fc)
+	}
+	if status, body := w.call(t, context.Background(), "CheckFile", c.ID, nil, "sjis.txt", []byte{0x82, 0xa0}, 0, 0); status == http.StatusOK || !strings.Contains(string(body), "UTF-8 で保存し直してください") {
+		t.Errorf("読めないファイル: %d %s", status, body)
+	}
+
+	w.mustCall(t, nil, "Send", c.ID, "何をしていますか", []aibow.File{fc.File})
+	until(t, events, "done")
+	if p := w.eng.prompts[len(w.eng.prompts)-1]; !strings.Contains(p, "ファイル: main.go\n```\npackage main\n```\n\n何をしていますか") {
+		t.Errorf("モデルに渡した文字列: %q", p)
+	}
+	var d ConversationDetail
+	w.mustCall(t, &d, "Conversation", c.ID)
+	if len(d.Messages[0].Files) != 1 || string(d.Messages[0].Files[0].Data) != "package main\n" {
+		t.Errorf("開き直した発言のファイル: %+v", d.Messages[0].Files)
+	}
+}
+
+// 画像(0030)もブラウザの口で運べる:CheckFile → Send で、画像は発言の画像の列になってエンジンに届く(書式が印を書く)
+func TestWebImage(t *testing.T) {
+	w := newTestWeb(t)
+	events := w.openEvents(t)
+	c := w.newConversation(t)
+	png := []byte("\x89PNG\r\n\x1a\n" + strings.Repeat("x", 100))
+	var fc aibow.FileCheck
+	w.mustCall(t, &fc, "CheckFile", c.ID, nil, "a.png", png, 0, 0)
+	if fc.File.Kind != aibow.FileImage || fc.File.Format != "image/png" {
+		t.Fatalf("確かめた結果: %+v", fc.File.Kind)
+	}
+	w.mustCall(t, nil, "Send", c.ID, "これは?", []aibow.File{fc.File})
+	until(t, events, "done")
+	if p := w.eng.prompts[len(w.eng.prompts)-1]; !strings.Contains(p, "<|im_start|>user\n<__media__>これは?<|im_end|>") {
+		t.Errorf("モデルに渡した文字列: %q", p)
+	}
+	var d ConversationDetail
+	w.mustCall(t, &d, "Conversation", c.ID)
+	if f := d.Messages[0].Files; len(f) != 1 || string(f[0].Data) != string(png) {
+		t.Errorf("開き直した発言の画像: %+v", f)
+	}
+
+	// 送った画像を捨てる(0030 の決定事項 26〜28)。中身が消え、捨てた印が付く
+	w.mustCall(t, nil, "DiscardFile", c.ID, fc.File.ID)
+	d = ConversationDetail{}
+	w.mustCall(t, &d, "Conversation", c.ID)
+	if f := d.Messages[0].Files; len(f) != 1 || !f[0].Discarded || f[0].Data != nil {
+		t.Errorf("捨てた画像: %+v", f)
 	}
 }

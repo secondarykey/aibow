@@ -44,15 +44,15 @@ func TestProfileShare(t *testing.T) {
 	if visible(bob) || visible(dave) {
 		t.Fatal("配る前は、ほかの人(管理者も)には見えない")
 	}
-	if err := s.SetProfileShare(bob, p.ID, aibow.ShareAll, nil); !errors.Is(err, aibow.ErrNotAdmin) {
+	if err := s.SetProfileShare(bob, p.ID, aibow.ShareAll, nil, nil); !errors.Is(err, aibow.ErrNotAdmin) {
 		t.Errorf("管理者でない人は配れない: %v", err)
 	}
 
 	// bob にだけ配る
-	if err := s.SetProfileShare(alice, p.ID, aibow.ShareUsers, []string{"bob"}); err != nil {
+	if err := s.SetProfileShare(alice, p.ID, aibow.ShareUsers, []string{"bob"}, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SetProfileShare(alice, p.ID, aibow.ShareUsers, []string{"nobody"}); err == nil {
+	if err := s.SetProfileShare(alice, p.ID, aibow.ShareUsers, []string{"nobody"}, nil); err == nil {
 		t.Error("いない名前には配れない")
 	}
 	if !visible(bob) || visible(carol) || !visible(dave) {
@@ -85,7 +85,7 @@ func TestProfileShare(t *testing.T) {
 	if err := s.CreateConversation(bob, c); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SetProfileShare(alice, p.ID, aibow.ShareNone, nil); err != nil {
+	if err := s.SetProfileShare(alice, p.ID, aibow.ShareNone, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if visible(bob) {
@@ -102,7 +102,7 @@ func TestProfileShare(t *testing.T) {
 	}
 
 	// 全員に配ってから作った人を消しても、配ったものは残る(決定事項 20)
-	if err := s.SetProfileShare(alice, p.ID, aibow.ShareAll, nil); err != nil {
+	if err := s.SetProfileShare(alice, p.ID, aibow.ShareAll, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	a, _ := s.UserByName(context.Background(), "alice")
@@ -145,14 +145,14 @@ func TestConversationShare(t *testing.T) {
 	if _, err := s.ReadConversation(carol, c.ID); !errors.Is(err, aibow.ErrNotFound) {
 		t.Errorf("共有していない人には見えない: %v", err)
 	}
-	if err := s.SetConversationShare(carol, c.ID, aibow.ShareAll, nil); !errors.Is(err, aibow.ErrNotFound) {
+	if err := s.SetConversationShare(carol, c.ID, aibow.ShareAll, nil, nil); !errors.Is(err, aibow.ErrNotFound) {
 		t.Errorf("持ち主でない人は共有を変えられない: %v", err)
 	}
-	if err := s.SetConversationShare(bob, c.ID, aibow.ShareUsers, []string{"carol"}); err != nil {
+	if err := s.SetConversationShare(bob, c.ID, aibow.ShareUsers, []string{"carol"}, nil); err != nil {
 		t.Fatal(err)
 	}
-	if list, _ := s.SharedConversations(carol); len(list) != 1 || list[0].ID != c.ID || list[0].OwnerName != "bob" {
-		t.Errorf("共有された会話の一覧: %+v", list)
+	if list, _ := s.SharedConversations(carol); len(list) != 1 || list[0].ID != c.ID || list[0].OwnerName != "bob" || list[0].Share != aibow.ShareUsers {
+		t.Errorf("共有された会話の一覧(自分あて): %+v", list)
 	}
 	if list, _ := s.SharedConversations(dan); len(list) != 0 {
 		t.Errorf("相手でない人の一覧に出る: %+v", list)
@@ -186,11 +186,22 @@ func TestConversationShare(t *testing.T) {
 	if got, _, _ := s.Conversation(bob, c.ID); got.Share != aibow.ShareUsers || len(got.ShareWith) != 1 || got.ShareWith[0] != "carol" {
 		t.Errorf("持ち主に見える共有: %+v", got)
 	}
-	if names, _ := s.UserNames(carol); len(names) != 4 {
-		t.Errorf("利用者の名前(local を除く): %v", names)
+	if d, _ := s.Directory(carol); len(d.Users) != 4 {
+		t.Errorf("利用者の名前(local を除く): %v", d)
+	}
+	// 利用者のタブの「会話」の列(0031)
+	b, _ := s.UserByName(context.Background(), "bob")
+	if counts, err := s.ConversationCounts(context.Background()); err != nil || counts[b.ID] != 1 || len(counts) != 1 {
+		t.Errorf("会話の数: %v %v", counts, err)
+	}
+	// 全員に共有したものは「全員に共有」に分かれる(0031 の決定事項 17)
+	if err := s.SetConversationShare(bob, c.ID, aibow.ShareAll, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if list, _ := s.SharedConversations(dan); len(list) != 1 || list[0].Share != aibow.ShareAll {
+		t.Errorf("共有された会話の一覧(全員): %+v", list)
 	}
 	// 持ち主を消すと、共有した会話も消える(決定事項 26)
-	b, _ := s.UserByName(context.Background(), "bob")
 	if err := s.DeleteUser(context.Background(), b.ID); err != nil {
 		t.Fatal(err)
 	}

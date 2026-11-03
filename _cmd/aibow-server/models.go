@@ -25,6 +25,7 @@ import (
 	"sync"
 
 	"github.com/secondarykey/aibow"
+	"github.com/secondarykey/aibow/api"
 	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/models"
@@ -36,6 +37,10 @@ type modelManager struct {
 	catalog       models.Catalog // 手で決めた置き場所(足した置き場所は state にあり、catalogNow で合わせる)
 	state         *serverState
 	defaultLayers int // まだ覚えていないモデルの GPU の層数
+	// seat は生成の順番待ちの席(起動のときのモデルを読み込んだあとに入れる)。
+	// 作業領域を作り直す操作(読み込む・降ろす・層の数)は、席を持った人が、ほかの席が全部空いてから一人で行う(0023 の決定事項 9)。
+	// シーケンスが2本以上だと、席を持っていてもほかの人が生成中のことがあるため
+	seat *api.Seat
 
 	missing models.MissingWatch
 	hidden  models.HiddenWatch
@@ -139,6 +144,7 @@ func (m *modelManager) SetEnabled(id string, enabled bool) (bool, error) {
 	}
 	log.Noticef("モデル %s を使えないようにしました(一覧に出さず、頼まれても読み込みません)", id)
 	if cur := m.eng.Info(); cur != nil && cur.ID == id {
+		defer m.alone()()
 		if _, err := m.eng.UnloadModel(); err != nil {
 			return false, err
 		}
@@ -149,6 +155,7 @@ func (m *modelManager) SetEnabled(id string, enabled bool) (bool, error) {
 }
 
 func (m *modelManager) Load(e models.Entry) (*engine.ModelInfo, error) {
+	defer m.alone()()
 	info, err := m.eng.LoadModelWithLayers(e, m.GPULayers(e.ID))
 	if err != nil {
 		return nil, err
@@ -171,6 +178,7 @@ func (m *modelManager) GPULayers(id string) int {
 func (m *modelManager) SetGPULayers(id string, n int) (*engine.ModelInfo, error) {
 	var info *engine.ModelInfo
 	if cur := m.eng.Info(); cur != nil && cur.ID == id {
+		defer m.alone()()
 		var err error
 		if info, err = m.eng.SetGPULayers(n); err != nil {
 			return nil, err
@@ -185,7 +193,22 @@ func (m *modelManager) SetGPULayers(id string, n int) (*engine.ModelInfo, error)
 
 func (m *modelManager) HasGPU() bool { return m.eng.HasGPU }
 
-func (m *modelManager) Unload() (bool, error) { return m.eng.UnloadModel() }
+func (m *modelManager) Unload() (bool, error) {
+	defer m.alone()()
+	return m.eng.UnloadModel()
+}
+
+// alone は、ほかの席が全部空くまで待って一人で使う(席を持った状態で呼ぶ)。返した関数で、ほかの人も使えるように戻す。
+// 席がまだ無い(起動のとき)なら待たない。
+func (m *modelManager) alone() func() {
+	if m.seat == nil {
+		return func() {}
+	}
+	if m.seat.Size() > 1 && m.seat.Busy() {
+		log.Info("モデルを読み直すので、ほかの人の生成が終わるのを待ちます")
+	}
+	return m.seat.Exclusive()
+}
 
 func (m *modelManager) Places() []models.Place { return m.catalogNow().Places() }
 

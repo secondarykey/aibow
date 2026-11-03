@@ -91,6 +91,39 @@ func TestAdminUsers(t *testing.T) {
 	if code != http.StatusOK || made["name"] != "carol" || made["token"] == "" || strings.Contains(body, "password") {
 		t.Fatalf("作る: %d %s", code, body)
 	}
+	// 招待中の人には、まだ使っていないリンクの期限が付く(0031 の決定事項 14)
+	_, body = do(alice, "GET", "/aibow/admin/users", "")
+	list = nil
+	json.Unmarshal([]byte(body), &list)
+	if c := list[len(list)-1]; c.Name != "carol" || c.Password || c.LinkExpiresAt == nil || c.Conversations != 0 {
+		t.Errorf("招待中の人: %s", body)
+	}
+	// 表示名(0031)。制御文字は断る
+	if code, body := do(alice, "POST", "/aibow/admin/users/carol/display", `{"display_name":" 佐藤 花子 "}`); code != http.StatusOK {
+		t.Errorf("表示名: %d %s", code, body)
+	}
+	if code, _ := do(alice, "POST", "/aibow/admin/users/carol/display", `{"display_name":"a\nb"}`); code != http.StatusBadRequest {
+		t.Errorf("制御文字の表示名: %d", code)
+	}
+	if code, _ := do(alice, "POST", "/aibow/admin/users/nobody/display", `{"display_name":"x"}`); code != http.StatusNotFound {
+		t.Errorf("いない人の表示名: %d", code)
+	}
+	if u, _ := st.UserByName(ctx, "carol"); u.DisplayName != "佐藤 花子" {
+		t.Errorf("表示名が入らない: %+v", u)
+	}
+	// メールアドレス(0031)。重なりは 409
+	if code, body := do(alice, "POST", "/aibow/admin/users/carol/email", `{"email":"carol@example.com"}`); code != http.StatusOK {
+		t.Errorf("メールアドレス: %d %s", code, body)
+	}
+	if code, _ := do(alice, "POST", "/aibow/admin/users/alice/email", `{"email":"Carol@Example.com"}`); code != http.StatusConflict {
+		t.Errorf("重なるメールアドレス: %d", code)
+	}
+	if code, _ := do(alice, "POST", "/aibow/admin/users/carol/email", `{"email":"carol"}`); code != http.StatusBadRequest {
+		t.Errorf("形でないメールアドレス: %d", code)
+	}
+	if _, body := do(alice, "GET", "/aibow/admin/users", ""); !strings.Contains(body, `"email":"carol@example.com"`) {
+		t.Errorf("一覧にメールアドレスが無い: %s", body)
+	}
 	if _, _, err := sessions.UseLink(ctx, made["token"], "carol-password"); err != nil {
 		t.Errorf("返したリンクでパスワードを決められない: %v", err)
 	}

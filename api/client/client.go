@@ -36,6 +36,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/secondarykey/aibow/engine"
@@ -46,8 +47,9 @@ import (
 type Client struct {
 	base string // つなぎ先(例: http://127.0.0.1:8089)。後ろの / と /v1 は外してある
 	hc   *http.Client
-	// key は API キー(SetKey。0017 の 10-2)。空なら付けない(127.0.0.1 だけでログインの要らない aibow-server は、キーなしで通す)
-	key string
+	// key は API キー(SetKey。0017 の 10-2)。空なら付けない(127.0.0.1 だけでログインの要らない aibow-server は、キーなしで通す)。
+	// 画面のアプリは、起動したままログアウト・ログインし直す(トークンを替える)ので、atomic で持つ(0031 の決定事項 44)
+	key atomic.Pointer[string]
 
 	// mu は、最後に知ったサーバーの様子を守る。
 	// Info は呼ばれる回数が多い(メーター・発言の記録など)ので、毎回は聞きに行かず、
@@ -72,8 +74,19 @@ func New(baseURL string) *Client {
 // URL はつなぎ先(ログと画面に出す)。
 func (c *Client) URL() string { return c.base }
 
-// SetKey は、毎回のリクエストに付ける API キーを決める(Authorization: Bearer <キー>)。使い始める前に呼ぶ。
-func (c *Client) SetKey(key string) { c.key = strings.TrimSpace(key) }
+// SetKey は、毎回のリクエストに付ける API キーを決める(Authorization: Bearer <キー>)。使っている途中でも替えられる(ログインし直したとき)。
+func (c *Client) SetKey(key string) {
+	k := strings.TrimSpace(key)
+	c.key.Store(&k)
+}
+
+// Key は、今のキー(無ければ空)。
+func (c *Client) Key() string {
+	if k := c.key.Load(); k != nil {
+		return *k
+	}
+	return ""
+}
 
 // TrustCert は、aibow-server の証明書(PEM のファイル)を信頼する(自己署名の証明書で HTTPS を待ち受けているとき。0017 の 10-2)。
 // 自己署名の証明書は、どの認証局も「本物」と保証していないので、そのままでは HTTPS のつなぎ方を確かめる段階で断られる。
@@ -127,13 +140,15 @@ type APIError struct {
 func (e *APIError) Error() string { return e.Message }
 
 // Unwrap は、サーバーが code で知らせたモデルの状態を、手元と同じエラーにする
-// (errors.Is(err, engine.ErrNoModel) / errors.Is(err, format.ErrUnsupported) が、直接でも HTTP 越しでも同じに効くように)。
+// (errors.Is(err, engine.ErrNoModel) / errors.Is(err, format.ErrUnsupported) / errors.Is(err, engine.ErrNoVision) が、直接でも HTTP 越しでも同じに効くように)。
 func (e *APIError) Unwrap() error {
 	switch e.Code {
 	case "model_not_loaded":
 		return engine.ErrNoModel
 	case "unsupported_format":
 		return format.ErrUnsupported
+	case "no_vision":
+		return engine.ErrNoVision
 	}
 	return nil
 }
@@ -184,8 +199,8 @@ func (c *Client) do(ctx context.Context, method, path string, body any) (*http.R
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	if c.key != "" {
-		req.Header.Set("Authorization", "Bearer "+c.key)
+	if key := c.Key(); key != "" {
+		req.Header.Set("Authorization", "Bearer "+key)
 	}
 	res, err := c.hc.Do(req)
 	if err != nil {

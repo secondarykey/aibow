@@ -15,21 +15,6 @@ import * as engine$0 from "../engine/models.js";
 import * as models$0 from "../models/models.js";
 
 /**
- * Account は、aibow-server に誰としてつないでいるか(Account の戻り値。0017 の 10-4)。
- */
-export interface Account {
-    /**
-     * Login は、利用者として(API キーで)つないでいるか。アプリの中で動かすとき・キーの要らない aibow-server なら false(名前を出さない)
-     */
-    "login": boolean;
-
-    /**
-     * 利用者の名前(API キーの持ち主)
-     */
-    "name": string;
-}
-
-/**
  * ConversationDetail は会話1つと、その発言。
  */
 export interface ConversationDetail {
@@ -61,6 +46,47 @@ export interface ConversationDetail {
      * Folder は、この会話で使える aibow-server の資料のフォルダの名前(パスは出さない。無ければ空。0024 の決定事項 26)
      */
     "folder"?: string;
+}
+
+/**
+ * FolderView は、画面に出すフォルダ1つ。この PC にあるか・リポジトリかを添える(どちらもそのつど見る)。
+ */
+export interface FolderView {
+    /**
+     * 絶対パス
+     */
+    "path": string;
+
+    /**
+     * Name はモデルが呼ぶ短い名前(ファイルのツールの引数 folder の値。既定はフォルダ名)。ワークスペースの中で重ならない
+     */
+    "name": string;
+
+    /**
+     * Main はメインのフォルダか。run_command のカレント・${workdir} の MCP のサーバーに渡すフォルダ。folder を省いたときもこれ
+     */
+    "main"?: boolean;
+
+    /**
+     * Writable は、ファイルのツールで書けるか(false なら読むだけ。write_file・edit_file を受け付けない)
+     */
+    "writable"?: boolean;
+
+    /**
+     * Description は、フォルダの中身の短い説明(1行。folderDescriptionMax 文字まで)。環境の説明の、そのフォルダの行の末尾に付ける(2026-11-03)。
+     * ユーザーが「マニュアルを直して」のように名前と違う言葉で呼んでも、モデルがどのフォルダかを当てる手がかりにする
+     */
+    "description"?: string;
+
+    /**
+     * この PC に無い(消した・ドライブを外した)
+     */
+    "missing"?: boolean;
+
+    /**
+     * .git がある
+     */
+    "git"?: boolean;
 }
 
 /**
@@ -131,4 +157,37 @@ export interface ModelsResult {
      * (管理者か、サーバーの PC の上から開いた画面。0018 の決定事項 8)。画面はモデルのタブを、アプリの中で動かすときと同じに出す
      */
     "manage"?: boolean;
+}
+
+/**
+ * WorkspaceList は、画面に出すワークスペースの一覧。
+ */
+export interface WorkspaceList {
+    "workspaces": WorkspaceView[] | null;
+
+    /**
+     * workspaces.json の場所(設定の画面に出す)
+     */
+    "path": string;
+
+    /**
+     * 読めなかったときの理由(書き換えない)
+     */
+    "error"?: string;
+}
+
+/**
+ * WorkspaceView は、画面に出すワークスペース1つ。
+ */
+export interface WorkspaceView {
+    /**
+     * 会話の設定(ConversationSettings.Workspace)が持つ ID(UUID)
+     */
+    "id": string;
+
+    /**
+     * 画面に出す名前
+     */
+    "name": string;
+    "folders": FolderView[] | null;
 }

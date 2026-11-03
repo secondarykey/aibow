@@ -53,7 +53,8 @@ var typeError = reflect.TypeFor[error]()
 // 最初の引数(context.Context)には、利用者を入れたリクエストの ctx を渡す。
 func call(w http.ResponseWriter, r *http.Request, name string, m reflect.Value) {
 	var raw []json.RawMessage
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 32<<20)).Decode(&raw); err != nil {
+	// 本文の上限は、発言1件(読み込んだファイルを含む。0030)を運べる大きさ
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, aibow.MessageMaxBytes)).Decode(&raw); err != nil {
 		writeError(w, http.StatusBadRequest, "", name+" の引数が読めません(本文は JSON の配列で書いてください): "+err.Error())
 		return
 	}

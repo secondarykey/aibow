@@ -40,6 +40,13 @@
     理由は2つ。最近の発言が上限の半分に収まっている(`errNothingToSummarize`)と、
     要約に入っていないのが最新の組だけで、それが半分を超えている(`errOnlyLatestTurn`。「次に送信すると要約の対象になる」と伝える)
 - ツールを使う会話では、ツールの説明もトークン数に入る(メーターも同じ)
+- 読み込んだファイル(0030)は、展開した文字のままトークン数に入る(メーターも同じ)。画像は画像トークン数(1 枚 1,024 まで)で入る。要約に渡すときは、中身ではなく「[ファイル: 名前]」・「[画像]」にする(`summaryMessages`)。
+  重いうえ、要約に要るのは話の流れなので。truncate はファイルの付いた発言も、ほかの発言と同じく組ごと外す
+- **作業の予定(update_plan。0037)は compact のあとも渡す**:渡さない部分(要約した・truncate で外した。`history[:first]`)に成功した `update_plan` があれば、
+  その最後の予定を、システムの文の最後(要約の後ろ。truncate なら残した発言の前)に「Current plan (from update_plan in the earlier part of this conversation, which is no longer shown):」と項目で足す(`plan.go`)。
+  足すのは `passFrom` なので、送信・メーター・truncate の位置探し・要約の前後の数え方のどれも同じ内容で数える。
+  会話全体の最後の予定ではなく「渡さない部分の」最後の予定にするのは、モデルが予定を書き直すたびにシステムの文が変わって KV キャッシュが使えなくなるのを避けるため
+  (渡す部分で書き直した予定は、履歴の中で足した予定より後ろに見えるので、新しいほうだと分かる)
 - 送信の途中の要約中だけは `ChatService.StopSummary()` で要約だけを止められる(その回は truncate で返事に進む。仕様の「失敗したとき」)
 - 要約の生成(`summarizePart` → `generateSummary`): 上限は会話の上限の 1/4・最低 1024(`summaryMaxTokens`)、指示で伝える字数はその半分(`summaryRunes`)、
   presence penalty は会話の設定の値、思考オフ、temperature 0.3。要約ごとに字数とトークン数をログ(Info)に出す(0002 の「使ってみて変えたこと」)

@@ -16,6 +16,9 @@ import * as client$1 from "../../api/client/models.js";
 import * as engine$0 from "../../engine/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as genlog$0 from "../../genlog/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as client$0 from "../../mcp/client/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -32,12 +35,19 @@ import * as uuid$0 from "../../../../../uuid/models.js";
 import * as $models from "./models.js";
 
 /**
- * Account は、aibow-server に誰としてつないでいるか(画面の一覧の下に名前を出す)。
- * アプリはログインの画面を持たず、settings.json の serverKey(API キー)で利用者が決まるので、その持ち主を aibow-server に聞く。
- * アプリの中で動かしているときは、利用者は1人なので Login が false。
+ * Account は今のアカウント。ログインし直す必要があれば NeedLogin(エラーにしない。画面がログインの画面を出すため)。
+ * ui.Service の Account(名前だけ)を、この形で置き換える。
  */
-export function Account(): $CancellablePromise<ui$0.Account> {
+export function Account(): $CancellablePromise<$models.AccountInfo> {
     return $Call.ByID(4020571366);
+}
+
+/**
+ * AddMCPServers は、MCP のサーバーを mcp.json に足す(フォームの1つか、貼った JSON のいくつか)。画面のお知らせに出す文を返す。
+ * 足したサーバーは、新しい会話で最初から使わない(0034 の決定事項 12)。
+ */
+export function AddMCPServers(servers: aibow$0.MCPServerInput[] | null): $CancellablePromise<string[] | null> {
+    return $Call.ByID(3611279202, servers);
 }
 
 /**
@@ -67,10 +77,31 @@ export function AppSettings(): $CancellablePromise<aibow$0.AppSettings> {
 
 /**
  * BuiltinTools は組み込みのツール(aibow の中で動くツール)の一覧(設定の画面の「ツール」に出す)。
- * ブラウザでは、コマンドのツールを出さない。資料のフォルダが無ければ、作業フォルダを使わないツール(時刻・計算)だけ(0024 の決定事項 5・17)。
+ * ブラウザでは、コマンドのツールを出さない。資料のフォルダが無ければ、作業フォルダを使わないツール(時刻・計算・URL を読む)だけ(0024 の決定事項 5・17)。
  */
 export function BuiltinTools(): $CancellablePromise<aibow$0.KnownTool[] | null> {
     return $Call.ByID(704771653);
+}
+
+/**
+ * ChangeMyPassword は、自分のパスワードを変える。ほかのログイン中の画面とアプリはログインし直しになるが、
+ * このアプリは aibow-server が返した新しいトークンに替えて、つながったままにする(ブラウザが新しい cookie をもらうのと同じ)。
+ */
+export function ChangeMyPassword(current: string, password: string): $CancellablePromise<void> {
+    return $Call.ByID(2113828472, current, password);
+}
+
+/**
+ * CheckFile は、入力欄で読み込んだファイル(選ぶ・ドロップ・貼り付け)を確かめ、会話の上限に入るかを数える(0030)。
+ * 画面は、返ってきたもの(札に出すトークン数と、Send に渡すファイル)を、送信するまで持っておく。
+ * テキストでも画像でもない・UTF-8 / UTF-16(BOM あり)でない・大きすぎる・会話の上限に入らない・画像を読めないモデルのときはエラー(理由と数字を書く)。
+ * 
+ * id は送り先の会話(新しい会話の画面ではゼロ。そのときは新しい会話の画面の設定 draft で数える)。
+ * pending と pendingTokens は、この発言にもう付けているファイルの数とトークン数の合計(一緒に数えるため。中身は送らせない)。
+ * data は、Wails でもブラウザでも JSON の base64 の文字列で届く([]byte の JSON の形)。
+ */
+export function CheckFile(id: uuid$0.UUID, draft: aibow$0.ConversationSettings | null, name: string, data: string | null, pending: number, pendingTokens: number): $CancellablePromise<aibow$0.FileCheck> {
+    return $Call.ByID(73545923, id, draft, name, data, pending, pendingTokens);
 }
 
 /**
@@ -91,8 +122,8 @@ export function ChooseModelPlace(kind: string): $CancellablePromise<string> {
 }
 
 /**
- * ChooseWorkDir は作業フォルダを選ぶダイアログを出し、選んだフォルダの絶対パスを返す。取り消したら空。
- * current が空でなければ、そのフォルダから開く。選んだフォルダを会話に入れるのは画面の側(会話の設定として保存する)。
+ * ChooseWorkDir はワークスペースにするフォルダを選ぶダイアログを出し、選んだフォルダの絶対パスを返す。取り消したら空。
+ * current が空でなければ、そのフォルダから開く。選んだフォルダでワークスペースを作るのは画面の側(CreateWorkspace。0035)。
  */
 export function ChooseWorkDir(current: string): $CancellablePromise<string> {
     return $Call.ByID(2873180618, current);
@@ -152,10 +183,25 @@ export function CopyShared(id: uuid$0.UUID): $CancellablePromise<aibow$0.Convers
 }
 
 /**
+ * CreateGroup はグループを作る(管理者だけ)。
+ */
+export function CreateGroup(name: string): $CancellablePromise<aibow$0.Group> {
+    return $Call.ByID(3179978986, name);
+}
+
+/**
  * CreateProfile は、新しいプロファイルを作る(設定の画面の「新しいプロファイル」)。
  */
 export function CreateProfile(name: string, values: aibow$0.ProfileValues, rules: aibow$0.ProfileRules): $CancellablePromise<aibow$0.Profile> {
     return $Call.ByID(3303129020, name, values, rules);
+}
+
+/**
+ * CreateWorkspace は、フォルダ path 1つのワークスペースを作る(入力欄の上の「フォルダから新しく作る」・設定の画面)。
+ * 同じフォルダ1つだけのワークスペースがあれば、それを返す。
+ */
+export function CreateWorkspace(path: string): $CancellablePromise<aibow$0.Workspace> {
+    return $Call.ByID(1897882904, path);
 }
 
 /**
@@ -166,10 +212,46 @@ export function DeleteConversation(id: uuid$0.UUID): $CancellablePromise<void> {
 }
 
 /**
+ * DeleteGroup はグループを消す(管理者だけ)。そのグループへの共有と配るも消える。
+ */
+export function DeleteGroup(id: uuid$0.UUID): $CancellablePromise<void> {
+    return $Call.ByID(1950614787, id);
+}
+
+/**
+ * DeleteMCPServer は、mcp.json のサーバー name を消す。動いていれば止める(tools.json の扱いは残す)。
+ */
+export function DeleteMCPServer(name: string): $CancellablePromise<string[] | null> {
+    return $Call.ByID(3974140519, name);
+}
+
+/**
  * DeleteProfile は、使っている会話が無いプロファイルを消す。
  */
 export function DeleteProfile(id: uuid$0.UUID): $CancellablePromise<void> {
     return $Call.ByID(648749573, id);
+}
+
+/**
+ * DeleteWorkspace は、ワークスペースを消す。そのワークスペースを選んでいた会話は消さない(見つからないワークスペースになる)。
+ */
+export function DeleteWorkspace(id: string): $CancellablePromise<void> {
+    return $Call.ByID(2276624797, id);
+}
+
+/**
+ * Directory は、共有の相手に選べる人(名前と表示名)とグループ(0031)。全員を一度に返し、画面で絞る。
+ */
+export function Directory(): $CancellablePromise<aibow$0.Directory> {
+    return $Call.ByID(4032022530);
+}
+
+/**
+ * DiscardFile は、送った発言に付けたファイル(画像・テキスト)を捨てる(0030 の決定事項 26〜28)。中身は戻せない。
+ * 画面は、捨てたら札を「消去済み」にし、メーターを取り直す。
+ */
+export function DiscardFile(id: uuid$0.UUID, fileID: uuid$0.UUID): $CancellablePromise<void> {
+    return $Call.ByID(3031380289, id, fileID);
 }
 
 /**
@@ -195,6 +277,29 @@ export function Folders(): $CancellablePromise<string[] | null> {
  */
 export function LoadToolList(server: string): $CancellablePromise<void> {
     return $Call.ByID(4133085097, server);
+}
+
+/**
+ * Login は、画面でつないだ aibow-server に、名前とパスワードでログインし直す(ログアウトしたあと・期限が切れたあと)。
+ * アプリ用のトークンをもらって、今動いているクライアントのキーを替え、connection.json に書く(起動し直さない)。
+ */
+export function Login(name: string, password: string): $CancellablePromise<$models.AccountInfo> {
+    return $Call.ByID(1301374160, name, password);
+}
+
+/**
+ * Logout は、aibow-server からログアウトする:トークンを aibow-server で消し、connection.json からも消す。
+ * つなぎ先は残すので、そのままログインの画面になり、次に起動したときもログインから始まる(ブラウザと同じ)。
+ */
+export function Logout(): $CancellablePromise<void> {
+    return $Call.ByID(2662670453);
+}
+
+/**
+ * MCPServerList は、設定の画面の「MCP」に出す一覧(settings.json と mcp.json のサーバー。env・headers の値は伏せる)。
+ */
+export function MCPServerList(): $CancellablePromise<aibow$0.MCPServerList> {
+    return $Call.ByID(1577104562);
 }
 
 /**
@@ -230,12 +335,26 @@ export function Models(): $CancellablePromise<ui$0.ModelsResult> {
 }
 
 /**
+ * MyUsage は、aibow-server での自分の使用量(今日・7日・30日。設定の画面の「アカウント」のタブ。0033)。
+ */
+export function MyUsage(): $CancellablePromise<genlog$0.Mine> {
+    return $Call.ByID(215299260);
+}
+
+/**
  * NewConversation は、プロファイル profile から新しい会話を作る(空なら新しい会話で最初に選ばれるプロファイル)。
  * settings が null ならプロファイルの値のコピーで始まる。
  * 画面は、新しい会話の画面で最初に送信するときに呼ぶ(空の会話を作らないため)。
  */
 export function NewConversation(profile: uuid$0.UUID, settings: aibow$0.ConversationSettings | null): $CancellablePromise<aibow$0.Conversation> {
     return $Call.ByID(1999326860, profile, settings);
+}
+
+/**
+ * ParseMCPJSON は、貼った JSON から足すサーバーを読み取る(足すのは AddMCPServers)。
+ */
+export function ParseMCPJSON(text: string): $CancellablePromise<aibow$0.ParsedMCPServer[] | null> {
+    return $Call.ByID(507244092, text);
 }
 
 /**
@@ -290,6 +409,13 @@ export function RenameConversation(id: uuid$0.UUID, title: string): $Cancellable
 }
 
 /**
+ * RenameGroup はグループの名前を変える(管理者だけ)。
+ */
+export function RenameGroup(id: uuid$0.UUID, name: string): $CancellablePromise<void> {
+    return $Call.ByID(1183955888, id, name);
+}
+
+/**
  * Resend は最後の発言を text に直して送り直す(0011)。途中経過と終わり(done)は Send と同じく chat イベントで送る。
  */
 export function Resend(id: uuid$0.UUID, text: string): $CancellablePromise<void> {
@@ -320,9 +446,11 @@ export function SaveToProfile(conv: uuid$0.UUID, profile: uuid$0.UUID): $Cancell
  * 
  * 画面で「停止」を押すと、JavaScript 側で Promise の cancel() が呼ばれ、
  * Wails がこの ctx をキャンセルする。エンジンはそれを見て生成を止める。
+ * 
+ * files は入力欄で読み込んだファイル(0030。CheckFile が返したもの)。無ければ空の配列か null。
  */
-export function Send(id: uuid$0.UUID, text: string): $CancellablePromise<void> {
-    return $Call.ByID(2164379061, id, text);
+export function Send(id: uuid$0.UUID, text: string, files: aibow$0.File[] | null): $CancellablePromise<void> {
+    return $Call.ByID(2164379061, id, text, files);
 }
 
 /**
@@ -333,10 +461,10 @@ export function ServerConnection(): $CancellablePromise<$models.ServerConnection
 }
 
 /**
- * SetConversationShare は、自分の会話の共有の範囲(""・all・users)と相手(利用者の名前)を変える。
+ * SetConversationShare は、自分の会話の共有の範囲(""・all・users)と相手(利用者の名前とグループの名前。0031)を変える。
  */
-export function SetConversationShare(id: uuid$0.UUID, share: string, $with: string[] | null): $CancellablePromise<void> {
-    return $Call.ByID(1343982337, id, share, $with);
+export function SetConversationShare(id: uuid$0.UUID, share: string, $with: string[] | null, groups: string[] | null): $CancellablePromise<void> {
+    return $Call.ByID(1343982337, id, share, $with, groups);
 }
 
 /**
@@ -373,6 +501,20 @@ export function SetGPULayers(n: number): $CancellablePromise<engine$0.ModelInfo 
 }
 
 /**
+ * SetGroupLeader は、メンバーを長にする / 外す(管理者だけ)。
+ */
+export function SetGroupLeader(id: uuid$0.UUID, user: string, leader: boolean): $CancellablePromise<void> {
+    return $Call.ByID(2478322473, id, user, leader);
+}
+
+/**
+ * SetGroupMember は、グループに利用者を足す / 外す(管理者か、そのグループの長)。
+ */
+export function SetGroupMember(id: uuid$0.UUID, user: string, member: boolean): $CancellablePromise<void> {
+    return $Call.ByID(2605923530, id, user, member);
+}
+
+/**
  * SetGroupPolicy は、グループ(空なら組み込み、そうでなければ MCP のサーバー)の全部のツールの確認の扱いの PC の既定を変える
  * (確認する ask / 確認しない allow / 決めていない 空。tools.json に書く)。
  * ブラウザでは aibow-server の管理者だけが変えられ(server-tools.json に書く)、使わない(off。禁止)も決められる(0024 の決定事項 21・22)。
@@ -398,6 +540,20 @@ export function SetModelGPULayers(id: string, n: number): $CancellablePromise<en
 }
 
 /**
+ * SetMyDisplayName は、自分の表示名を変える(空なら無し)。
+ */
+export function SetMyDisplayName(name: string): $CancellablePromise<$models.AccountInfo> {
+    return $Call.ByID(1832668012, name);
+}
+
+/**
+ * SetMyEmail は、自分のメールアドレスを変える(空なら無し)。
+ */
+export function SetMyEmail(email: string): $CancellablePromise<$models.AccountInfo> {
+    return $Call.ByID(536370613, email);
+}
+
+/**
  * SetProfileArchived は、プロファイルをしまう / 戻す。
  */
 export function SetProfileArchived(id: uuid$0.UUID, archived: boolean): $CancellablePromise<void> {
@@ -405,10 +561,10 @@ export function SetProfileArchived(id: uuid$0.UUID, archived: boolean): $Cancell
 }
 
 /**
- * SetProfileShare は、プロファイルを配る範囲(""・all・users)と相手(利用者の名前)を変える(0018 の 11-1)。管理者だけ。
+ * SetProfileShare は、プロファイルを配る範囲(""・all・users)と相手(利用者の名前とグループの名前。0031)を変える(0018 の 11-1)。管理者だけ。
  */
-export function SetProfileShare(id: uuid$0.UUID, share: string, $with: string[] | null): $CancellablePromise<void> {
-    return $Call.ByID(2853156393, id, share, $with);
+export function SetProfileShare(id: uuid$0.UUID, share: string, $with: string[] | null, groups: string[] | null): $CancellablePromise<void> {
+    return $Call.ByID(2853156393, id, share, $with, groups);
 }
 
 /**
@@ -418,6 +574,14 @@ export function SetProfileShare(id: uuid$0.UUID, share: string, $with: string[] 
  */
 export function SetToolPolicy(name: string, policy: aibow$0.ToolPolicy): $CancellablePromise<void> {
     return $Call.ByID(1851266373, name, policy);
+}
+
+/**
+ * ShareCopy は、プロファイルを写して、そのまま配る(管理の画面の「写して配る」。0032 の段3)。管理者だけ(保存先が確かめる)。
+ * 配るプロファイルのモデルは、使えるモデルから(0018 の決定事項 13。SetProfileShare と同じ)。
+ */
+export function ShareCopy(id: uuid$0.UUID, share: string, $with: string[] | null, groups: string[] | null): $CancellablePromise<aibow$0.Profile> {
+    return $Call.ByID(3279875687, id, share, $with, groups);
 }
 
 /**
@@ -441,8 +605,9 @@ export function StopSummary(): $CancellablePromise<void> {
  * 失敗したときは元のモデルに戻っている(画面は Models を呼び直して確認する)。
  * Go で error を返すと、JavaScript 側では Promise が reject される。
  * 
- * 読み込めるモデルは1つ(VRAM に1つしか載らない)。画面は入力欄の下でモデルを選んだとき、会話のモデルを変えてからこれを呼ぶ。
- * 会話を開いただけでは読み直さず、モデルの違う会話に送信するときに読み直す(Conversations.ensureWorkspace。0014 の 3)。
+ * 読み込めるモデルは1つ(VRAM に1つしか載らない)。画面は設定の画面の「モデル」のタブの「読み込む」でこれを呼ぶ。
+ * 入力欄の下でモデルを選んだときは呼ばない(会話のモデルを変えるだけ。0014 の「あとから決めたこと(2026-10-31)」)。
+ * 会話を開いた・選んだだけでは読み直さず、モデルの違う会話に送信するときに読み直す(Conversations.ensureWorkspace。0014 の 3)。
  * 
  * 順番待ちの席があれば(aibow-server の中)、席を取ってから読み込む(生成中のほかの人の作業領域を、途中で入れ替えないように)。
  */
@@ -488,6 +653,14 @@ export function TryLimits(history: number, reply: number): $CancellablePromise<b
 }
 
 /**
+ * TryMCPServer は、保存する前の設定で一時的に起動してツールの一覧を受け取り、止める(何も書かない)。
+ * add が false なら今あるサーバー name を変えるときで、env・headers の空の値は前の値で試す。
+ */
+export function TryMCPServer(name: string, config: client$0.ServerConfig, add: boolean): $CancellablePromise<aibow$0.KnownTool[] | null> {
+    return $Call.ByID(1773410707, name, config, add);
+}
+
+/**
  * UnloadModel は読み込み中のモデルを降ろす(VRAM を空ける。ほかのアプリと並べて使うため。0015 の 23)。
  * 降ろしたあとに送信すると、送信の前に会話のモデルを読み込む(0014 の 3)。
  */
@@ -503,11 +676,26 @@ export function UpdateConversationSettings(id: uuid$0.UUID, settings: aibow$0.Co
 }
 
 /**
+ * UpdateMCPServer は、mcp.json のサーバー name の設定を変える(env・headers の空の値は前の値のまま)。動いていれば止める。
+ */
+export function UpdateMCPServer(name: string, config: client$0.ServerConfig): $CancellablePromise<string[] | null> {
+    return $Call.ByID(2737066329, name, config);
+}
+
+/**
  * UpdateProfile は、プロファイルの名前・値・決まりを変える。値は今ある会話に効かず、決まりは今ある会話にもすぐ効く。
  * 配っているプロファイルなら、モデルは使えるモデルの中から(0018 の決定事項 13)。
  */
 export function UpdateProfile(p: aibow$0.Profile): $CancellablePromise<void> {
     return $Call.ByID(2462467583, p);
+}
+
+/**
+ * UpdateWorkspace は、ワークスペース ws.ID の名前とフォルダの組を変える(設定の画面の「ワークスペース」)。
+ * 次の送信から効く(ツールは送信のたびにワークスペースから作るため)。
+ */
+export function UpdateWorkspace(ws: aibow$0.Workspace): $CancellablePromise<void> {
+    return $Call.ByID(4012031331, ws);
 }
 
 /**
@@ -527,15 +715,15 @@ export function UserConversations(name: string): $CancellablePromise<aibow$0.Con
 }
 
 /**
- * UserNames は、共有の相手に選べる利用者の名前。
- */
-export function UserNames(): $CancellablePromise<string[] | null> {
-    return $Call.ByID(4174638800);
-}
-
-/**
  * Version はアプリのバージョン(画面の左下に出す)。起動に失敗していても返す。
  */
 export function Version(): $CancellablePromise<string> {
     return $Call.ByID(2667902589);
+}
+
+/**
+ * Workspaces は、この PC のワークスペースの一覧。ブラウザでは空。
+ */
+export function Workspaces(): $CancellablePromise<ui$0.WorkspaceList> {
+    return $Call.ByID(501863521);
 }

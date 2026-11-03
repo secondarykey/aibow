@@ -45,6 +45,9 @@ type Store interface {
 	SetMessagesExcluded(ctx context.Context, ids []uuid.UUID, excluded bool) error
 	// DeleteMessages は発言を消す(最後の返事を作り直す・最後の発言を直して送り直す。0011)
 	DeleteMessages(ctx context.Context, ids []uuid.UUID) error
+	// DiscardFile は、発言に付けたファイルの中身を消し、捨てた印を付ける(名前と種類は残す。0030 の決定事項 27)。
+	// 自分の会話のファイルでなければ ErrNotFound
+	DiscardFile(ctx context.Context, id uuid.UUID) error
 
 	// AddCompaction は要約を1件保存する(compact の summary)。会話が無ければ ErrNotFound。
 	AddCompaction(ctx context.Context, c Compaction) error
@@ -63,24 +66,38 @@ type Store interface {
 	// ---- 会話の共有(0018 の 11-2)。ほかの人の会話は、ここの読むだけのメソッドでだけ読める
 	// (上の会話のメソッドは、今までどおり自分の会話だけを読み書きする。書き込めないことを、メソッドの分け方で守る)。
 	//
-	// SetConversationShare は、自分の会話の共有の範囲と相手(名前)を変える。自分の会話でなければ ErrNotFound
-	SetConversationShare(ctx context.Context, id uuid.UUID, share string, with []string) error
+	// SetConversationShare は、自分の会話の共有の範囲と相手(人の名前 with・グループの名前 groups。0031)を変える。自分の会話でなければ ErrNotFound
+	SetConversationShare(ctx context.Context, id uuid.UUID, share string, with, groups []string) error
 	// SharedConversations は、自分に共有された(全員か自分が相手の)ほかの人の会話の一覧(更新の新しい順)
 	SharedConversations(ctx context.Context) ([]ConversationRef, error)
 	// UserConversations は、利用者 name の会話の一覧(管理者だけ。ほかは ErrNotAdmin)
 	UserConversations(ctx context.Context, name string) ([]ConversationRef, error)
 	// ReadConversation は、ほかの人の会話を読む(共有されているか、管理者)。読めなければ ErrNotFound(あることも見せない)
 	ReadConversation(ctx context.Context, id uuid.UUID) (SharedRead, error)
-	// UserNames は、利用者の名前の一覧(共有の相手を選ぶため。ログインした人なら誰でも。ログインなしの形の利用者は入れない)
-	UserNames(ctx context.Context) ([]string, error)
+	// Directory は、共有の相手に選べる人(名前と表示名)とグループ(メンバーと長。0031)。ログインした人なら誰でも。ログインなしの形の利用者は入れない
+	Directory(ctx context.Context) (Directory, error)
 
-	// SetProfileShare は、プロファイルを配る範囲と相手(名前)を変える(0018 の 11-1)。管理者でなければ ErrNotAdmin。
+	// ---- グループ(0031 の段4)。作る・名前を変える・消す・長を決めるは管理者だけ(ほかは ErrNotAdmin)。
+	// メンバーを足す・外すは、管理者か、そのグループの長(ほかは ErrNotGroupLeader)。判定は保存先の1か所(SQLite なら groupEditable)。
+	//
+	// CreateGroup はグループを作る。同じ名前があれば ErrGroupExists
+	CreateGroup(ctx context.Context, name string) (Group, error)
+	// RenameGroup はグループの名前を変える。無ければ ErrNotFound、同じ名前があれば ErrGroupExists
+	RenameGroup(ctx context.Context, id uuid.UUID, name string) error
+	// DeleteGroup はグループを消す。そのグループへの共有と配るも消え、相手がだれもいなくなった会話・プロファイルは非公開(配らない)になる(決定事項 28)
+	DeleteGroup(ctx context.Context, id uuid.UUID) error
+	// SetGroupMember は利用者 user(名前)をグループに足す / 外す。外すと長でもなくなる(決定事項 30)
+	SetGroupMember(ctx context.Context, id uuid.UUID, user string, member bool) error
+	// SetGroupLeader はメンバー user を長にする / 外す。メンバーでなければエラー
+	SetGroupLeader(ctx context.Context, id uuid.UUID, user string, leader bool) error
+
+	// SetProfileShare は、プロファイルを配る範囲と相手(人の名前 with・グループの名前 groups)を変える(0018 の 11-1・0031)。管理者でなければ ErrNotAdmin。
 	//
 	// 誰に何が見えて、誰が変えられるかは、保存先が1か所で決める(SQLite なら WHERE の条件。0018 の「学ぶこと」の認可):
 	//   - 読める:自分のもの・全員に配られたもの・自分に配られたもの・(管理者なら)配られたもの全部。
 	//     Profile(id) だけは、自分がそのプロファイルから作った会話があれば、配られなくなっても読める(Withdrawn。決まりを引き続けるため)
 	//   - 変えられる:自分の配っていないもの・(管理者なら)配られたもの。ほかは ErrProfileReadOnly
-	SetProfileShare(ctx context.Context, id uuid.UUID, share string, with []string) error
+	SetProfileShare(ctx context.Context, id uuid.UUID, share string, with, groups []string) error
 
 	// AppSetting はアプリ全体の設定(利用者によらないもの)を1つ読む。まだ保存されていなければ ok=false。
 	AppSetting(ctx context.Context, key string) (value string, ok bool, err error)
@@ -107,6 +124,8 @@ type Conversation struct {
 	// ShareWith は相手の名前(会話1つを読んだときだけ入る)。変えるのは SetConversationShare(UpdateConversation では変わらない)
 	Share     string   `json:"share,omitempty"`
 	ShareWith []string `json:"share_with,omitempty"`
+	// ShareGroups は相手のグループの名前(0031。ShareWith と同じく会話1つを読んだときだけ入る)
+	ShareGroups []string `json:"share_groups,omitempty"`
 }
 
 // ConversationRef は、ほかの人の会話の一覧の1件(共有された会話・管理者が見る人の会話。0018 の 11-2)。中身は ReadConversation で読む。
@@ -114,7 +133,37 @@ type ConversationRef struct {
 	ID        uuid.UUID `json:"id"`
 	Title     string    `json:"title"`
 	OwnerName string    `json:"owner_name"`
-	UpdatedAt time.Time `json:"updated_at"`
+	// OwnerDisplay は持ち主の表示名(0031。空ならログインの名前を出す)
+	OwnerDisplay string    `json:"owner_display,omitempty"`
+	UpdatedAt    time.Time `json:"updated_at"`
+	// Share はその会話の共有の範囲(0031 の決定事項 17)。共有された会話の一覧では、ShareUsers なら自分あて(指定した人に入っている)、
+	// ShareAll なら全員に共有されたもの。画面はこれで「自分に共有」と「全員に共有」に分ける
+	Share string `json:"share,omitempty"`
+}
+
+// UserRef は、共有の相手に選べる利用者1人(0031)。DisplayName は表示名(空ならログインの名前を出す)
+type UserRef struct {
+	Name        string `json:"name"`
+	DisplayName string `json:"display_name,omitempty"`
+}
+
+// Directory は、共有の相手に選べる人とグループ(0031 の決定事項 13・29。全員を一度に渡し、画面で絞る)
+type Directory struct {
+	Users  []UserRef `json:"users"`
+	Groups []Group   `json:"groups"`
+}
+
+// Group はグループ1つ(0031 の段4)。管理者が作り、利用者を入れる。1人が複数のグループに入れる。グループの中にグループは入れない。
+// 共有の相手にグループを選ぶと、そのときのメンバーではなく「グループ」として覚える(あとから入った人にも見え、抜けた人には見えなくなる。決定事項 26)
+type Group struct {
+	ID      uuid.UUID `json:"id"`
+	Name    string    `json:"name"`
+	Members []string  `json:"members"` // メンバーのログインの名前(名前の順)
+	Leaders []string  `json:"leaders"` // 長(メンバーの中から管理者が決める。決定事項 30)
+	// Conversations・Profiles は、このグループに共有されている会話・配られているプロファイルの数
+	// (グループを消すとき・長が人を足すときの確かめの文。決定事項 28・33)
+	Conversations int `json:"conversations"`
+	Profiles      int `json:"profiles"`
 }
 
 // SharedRead は、ほかの人の会話を読んだもの(読むだけ。0018 の 11-2)。
@@ -123,6 +172,7 @@ type SharedRead struct {
 	Messages     []StoredMessage `json:"messages"`
 	Compactions  []Compaction    `json:"compactions"`
 	OwnerName    string          `json:"owner_name"`
+	OwnerDisplay string          `json:"owner_display,omitempty"` // 持ち主の表示名(0031)
 	// ByAdmin は、共有されていないが管理者として読んだ(読んだことをログに残す。決定事項 1)
 	ByAdmin bool `json:"by_admin"`
 	// ReaderName は読んだ人(ctx の利用者)の名前(ログに書くため)
@@ -153,10 +203,15 @@ type ConversationSettings struct {
 	// (以前の「ツールを使う」(tools)は 0006 で無くした。ツールを使うかは、設定の画面の「ツール」(tools.json)と、
 	// 会話で使う MCP のサーバーだけで決める。保存済みの会話の JSON に残っている tools は、読むときに無視される)
 	//
-	// WorkDir は作業フォルダ(絶対パス)。空なら決めていない。決めた会話では、
-	// その中のファイルを扱うツール(tool.Files)とコマンドのツールをモデルに出す。
+	// Workspace はワークスペース(この PC の workspaces.json に登録したフォルダの組。0035)の ID。空なら決めていない。
+	// 決めた会話では、そのフォルダの中のファイルを扱うツール(tool.Files)とコマンドのツールをモデルに出す。
+	// パスは PC のものなので会話には置かず、ID だけを持つ(別の PC で開くと、その ID が無いのでフォルダのツールを出さない)。
 	// 新しい会話の既定には入れない(前の会話のフォルダを引き継いで、別のフォルダを書き換えてしまうのを防ぐため)
-	WorkDir string `json:"work_dir"`
+	Workspace string `json:"workspace,omitempty"`
+	// WorkDir は、ワークスペースより前の作業フォルダ(絶対パス)。もう使わない。
+	// 起動したときに、この PC にあるパスならワークスペースに移して空にする(Conversations.MigrateWorkDirs)。
+	// この PC に無いパスは、そのまま残す(そのパスのある PC で起動したときに、そちらで移せるように)。画面からは変えられない
+	WorkDir string `json:"work_dir,omitempty"`
 	// MCPServers は、この会話で使う MCP のサーバー(settings.json の名前)。選んでいないサーバーはモデルに見せず、起動もしない。
 	// ツールの説明は毎回プロンプトに入るので、全部を載せると会話の上限を食い尽くす(Blender だけで 26 個)。
 	// 新しい会話では、設定の画面の「ツール」で使うにしているサーバーを最初から選ぶ(Conversations.Defaults)
@@ -200,12 +255,12 @@ func (s ConversationSettings) normalized() ConversationSettings {
 	return s
 }
 
-// asDefaults は「新しい会話の既定の設定」にするときの形。作業フォルダは外す(会話ごとに毎回選ぶ)。
+// asDefaults は「新しい会話の既定の設定」にするときの形。ワークスペースは外す(会話ごとに毎回選ぶ)。
 // 会話だけのツールの扱いの上書きも外す(その会話のためのものなので)。
 // 使う MCP のサーバーと組み込みのツールを使うかも外す(新しい会話で最初から使うものは、設定の画面の「ツール」で決める。Conversations.Defaults)。
 func (s ConversationSettings) asDefaults() ConversationSettings {
 	s = s.normalized()
-	s.WorkDir = ""
+	s.Workspace, s.WorkDir = "", ""
 	s.ToolPolicies = nil
 	s.MCPServers = []string{}
 	s.BuiltinOff = false
@@ -248,7 +303,10 @@ type StoredMessage struct {
 	ToolCalls      []format.ToolCall `json:"tool_calls,omitempty"`  // その回のツール呼び出し(assistant のみ)
 	ToolResult     *ToolResult       `json:"tool_result,omitempty"` // どの呼び出しの結果か(tool のみ)
 	// Excluded は、ユーザーが選んで「モデルに渡さない」にした発言(0011)。画面には薄く残し、モデルに渡す履歴からは外す(Conversations.forModel)
-	Excluded  bool      `json:"excluded,omitempty"`
+	Excluded bool `json:"excluded,omitempty"`
+	// Files は、発言に付けて読み込んだファイル(user のみ。0030)。保存は発言とは別の表。
+	// モデルに渡すときに、テキストのファイルは発言の文の前に展開する(files.go の withFiles)
+	Files     []File    `json:"files,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 }
 

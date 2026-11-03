@@ -33,7 +33,7 @@ func (w *testWeb) askCalc(t *testing.T, c aibow.Conversation) {
 func (w *testWeb) sendAsync(t *testing.T, ctx context.Context, id uuid.UUID, text string) <-chan int {
 	done := make(chan int, 1)
 	go func() {
-		status, _ := w.call(t, ctx, "Send", id, text)
+		status, _ := w.call(t, ctx, "Send", id, text, nil)
 		done <- status
 	}()
 	return done
@@ -260,53 +260,53 @@ func TestWebConfirmAnsweredBeforeLimit(t *testing.T) {
 func TestWebIgnoresWorkDir(t *testing.T) {
 	w := newTestWeb(t)
 	events := w.openEvents(t)
-	dir := t.TempDir()
+	const ws = "ws-1" // サーバー越しのアプリの PC のワークスペースの ID(0035)
 
-	// ブラウザからは作業フォルダを書けない(作る会話にも、設定を変えるときにも)
+	// ブラウザからはワークスペースを書けない(作る会話にも、設定を変えるときにも)
 	var c aibow.Conversation
-	w.mustCall(t, &c, "NewConversation", uuid.UUID{}, aibow.ConversationSettings{WorkDir: dir, HistoryTokens: 8192, ReplyTokens: 8192})
+	w.mustCall(t, &c, "NewConversation", uuid.UUID{}, aibow.ConversationSettings{Workspace: ws, HistoryTokens: 8192, ReplyTokens: 8192})
 	ctx := aibow.WithUser(context.Background(), aibow.LocalUser)
 	stored, _, err := w.st.Conversation(ctx, c.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stored.Settings.WorkDir != "" {
-		t.Errorf("作る会話に作業フォルダが入った: %q", stored.Settings.WorkDir)
+	if stored.Settings.Workspace != "" {
+		t.Errorf("作る会話にワークスペースが入った: %q", stored.Settings.Workspace)
 	}
 
-	// サーバー越しのアプリで作った会話には、その PC の作業フォルダが入っている
-	stored.Settings.WorkDir = dir
+	// サーバー越しのアプリで作った会話には、その PC のワークスペースが入っている
+	stored.Settings.Workspace = ws
 	if err := w.st.UpdateConversation(ctx, stored); err != nil {
 		t.Fatal(err)
 	}
 	var d ConversationDetail
 	w.mustCall(t, &d, "Conversation", c.ID)
-	if d.Conversation.Settings.WorkDir != "" {
-		t.Errorf("ブラウザに作業フォルダを見せている: %q", d.Conversation.Settings.WorkDir)
+	if d.Conversation.Settings.Workspace != "" {
+		t.Errorf("ブラウザにワークスペースを見せている: %q", d.Conversation.Settings.Workspace)
 	}
 	var groups []aibow.ToolGroupState
 	s := d.Conversation.Settings
-	s.WorkDir = dir // 画面から送られてきた設定に書いてあっても
+	s.Workspace = ws // 画面から送られてきた設定に書いてあっても
 	w.mustCall(t, &groups, "ToolStates", c.ID, s)
 	for _, g := range groups {
 		for _, tl := range g.Tools {
-			if tl.Name != "get_current_time" && tl.Name != "calculate" {
+			if tl.NeedsWorkDir {
 				t.Errorf("作業フォルダのツールが見えている: %s", tl.Name)
 			}
 		}
 	}
 	w.mustCall(t, nil, "UpdateConversationSettings", c.ID, s)
-	if stored, _, _ = w.st.Conversation(ctx, c.ID); stored.Settings.WorkDir != dir {
-		t.Errorf("保存してある作業フォルダは残すはず: %q", stored.Settings.WorkDir)
+	if stored, _, _ = w.st.Conversation(ctx, c.ID); stored.Settings.Workspace != ws {
+		t.Errorf("保存してあるワークスペースは残すはず: %q", stored.Settings.Workspace)
 	}
 
-	w.mustCall(t, nil, "Send", c.ID, "ファイルを見せて")
+	w.mustCall(t, nil, "Send", c.ID, "ファイルを見せて", nil)
 	until(t, events, "done")
 	last := len(w.eng.tools) - 1
 	if strings.Join(w.eng.tools[last], ",") != "calculate,get_current_time" {
 		t.Errorf("作業フォルダのツールを知らせている: %v", w.eng.tools[last])
 	}
-	if p := w.eng.prompts[last]; strings.Contains(p, "Working directory") || strings.Contains(p, dir) {
+	if p := w.eng.prompts[last]; strings.Contains(p, "Working directory") {
 		t.Errorf("システムプロンプトに作業フォルダが入っている: %q", p)
 	}
 }

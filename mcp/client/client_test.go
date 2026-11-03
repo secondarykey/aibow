@@ -258,6 +258,124 @@ func TestListTools(t *testing.T) {
 	}
 }
 
+// 設定を差し替えたら、変えた・消したサーバーだけを止める。変わらないものは動いたまま、足したものは起動しない。名前の順は保つ(0034)
+func TestUpdate(t *testing.T) {
+	m, l, _ := memoryManager(t, map[string]ServerConfig{
+		"keep":   {Command: "keep-server"},
+		"change": {Command: "change-server"},
+		"remove": {Command: "remove-server"},
+	})
+	ctx := context.Background()
+	m.Start(ctx, "", m.Servers())
+	if got := len(m.Tools("", m.Servers())); got != 12 {
+		t.Fatalf("3つとも起動する: %d", got)
+	}
+	keep := tool.Find(m.Tools("", m.Servers()), "keep__echo")
+	slow := tool.Find(m.Tools("", m.Servers()), "change__slow")
+	done := make(chan error, 1)
+	go func() {
+		_, err := slow.Run(ctx, nil)
+		done <- err
+	}()
+	removedSlow := tool.Find(m.Tools("", m.Servers()), "remove__slow")
+	removed := make(chan error, 1)
+	go func() {
+		_, err := removedSlow.Run(ctx, nil)
+		removed <- err
+	}()
+	time.Sleep(50 * time.Millisecond) // slow が呼び出しを送るのを待つ
+
+	stopped := m.Update(map[string]ServerConfig{
+		"keep":   {Command: "keep-server"},
+		"change": {Command: "change-server", Args: []string{"--new"}},
+		"add":    {Command: "add-server"},
+	})
+	if !slices.Equal(stopped, []string{"change", "remove"}) {
+		t.Errorf("変えた・消したものを止める: %v", stopped)
+	}
+	if got := m.Servers(); !slices.Equal(got, []string{"add", "change", "keep"}) {
+		t.Errorf("名前の順: %v", got)
+	}
+	if got := names(m.Tools("", m.Servers())); len(got) != 4 || got[0] != "keep/keep__echo" {
+		t.Errorf("動いたままなのは keep だけ: %v", got)
+	}
+	if tool.Find(m.Tools("", m.Servers()), "keep__echo") != keep {
+		t.Error("変わらないサーバーは起動し直さない")
+	}
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), "設定が変わったので止めました") {
+			t.Errorf("止めたサーバーのツールを実行中なら、理由の分かるエラーで返る: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("止めたサーバーのツールの実行が返らない")
+	}
+	select {
+	case err := <-removed:
+		if err == nil || !strings.Contains(err.Error(), "remove を消したので止めました") || strings.Contains(err.Error(), "新しい設定で起動") {
+			t.Errorf("消したサーバーのツールを実行中なら、消したことが分かるエラーで返る(起動し直すとは言わない): %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("消したサーバーのツールの実行が返らない")
+	}
+	started, errs := m.Start(ctx, "", m.Servers())
+	if len(errs) != 0 || !slices.Equal(started, []string{"add", "change"}) {
+		t.Errorf("足したもの・変えたものは、次の Start で起動する: %v %v", started, errs)
+	}
+	if got := m.Infos(); len(got) != 3 || got[0].Name != "add" {
+		t.Errorf("Infos も新しい設定: %+v", got)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for !l.contains("設定が変わったので止めました") {
+		if time.Now().After(deadline) {
+			t.Fatal("止めたことをログに出す")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// 空の設定でも Manager を作れて、あとから足せる(画面から最初の1つを足す。0034 の決定事項 15)
+func TestUpdateFromEmpty(t *testing.T) {
+	m, _, _ := memoryManager(t, nil)
+	if got := m.Servers(); len(got) != 0 {
+		t.Fatalf("空: %v", got)
+	}
+	m.Update(map[string]ServerConfig{"a": {Command: "a-server"}})
+	if started, errs := m.Start(context.Background(), "", []string{"a"}); !slices.Equal(started, []string{"a"}) || len(errs) != 0 {
+		t.Errorf("足したものを起動できる: %v %v", started, errs)
+	}
+}
+
+// 保存していない設定で、一時的に起動してツールの一覧を受け取る(画面の「試しにつなぐ」)。動いているサーバーには入れない
+func TestTryTools(t *testing.T) {
+	m, _, _ := memoryManager(t, nil)
+	tools, err := m.TryTools(context.Background(), "new", ServerConfig{Command: "new-server"})
+	if err != nil || len(tools) != 4 || tools[0].Def().Name != "new__echo" {
+		t.Fatalf("%v %v", names(tools), err)
+	}
+	if len(m.Servers()) != 0 || len(m.Tools("", []string{"new"})) != 0 {
+		t.Error("試しただけでは設定にも動いているサーバーにも入らない")
+	}
+	if _, err := m.TryTools(context.Background(), "bad", ServerConfig{}); err == nil {
+		t.Error("形の違う設定は、起動する前にエラー")
+	}
+}
+
+func TestServerConfigEqual(t *testing.T) {
+	a := ServerConfig{Command: "x", Args: []string{"1"}, Env: map[string]string{"K": "v"}}
+	b := ServerConfig{Command: "x", Args: []string{"1"}, Env: map[string]string{"K": "v"}}
+	if !a.Equal(b) {
+		t.Error("同じ")
+	}
+	b.Env = map[string]string{"K": "w"}
+	if a.Equal(b) {
+		t.Error("env の値が違う")
+	}
+	if a.Equal(ServerConfig{Command: "x", Args: []string{"1"}, Env: map[string]string{"K": "v"}, CallTimeout: 5}) {
+		t.Error("callTimeout が違う")
+	}
+}
+
 // 引数は CheckArgs で JSON Schema の型に変換され(配列・真偽値)、その型のまま tools/call で届く
 func TestRun(t *testing.T) {
 	m, _, _ := memoryManager(t, map[string]ServerConfig{"util": {Command: "util-server"}})
@@ -573,7 +691,7 @@ func TestHTTPServer(t *testing.T) {
 
 	// サーバーが JSON-RPC のエラーで答えた(知らないツール)だけなら、つながりは生きているので外さない
 	e := echo.(*remoteTool)
-	unknown := &remoteTool{server: e.server, session: e.session, def: tool.Def{Name: "intra__no_such_tool"}, name: "no_such_tool", broken: e.broken}
+	unknown := &remoteTool{server: e.server, session: e.session, def: tool.Def{Name: "intra__no_such_tool"}, name: "no_such_tool", broken: e.broken, stopped: e.stopped}
 	if _, err := unknown.Run(ctx, nil); err == nil || strings.Contains(err.Error(), "つながりが切れました") {
 		t.Errorf("サーバーの答えのエラー: %v", err)
 	}

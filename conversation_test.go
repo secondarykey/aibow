@@ -13,6 +13,7 @@ import (
 
 	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/format"
+	"github.com/secondarykey/aibow/genlog"
 	"github.com/secondarykey/aibow/tool"
 )
 
@@ -24,6 +25,7 @@ type fakeGen struct {
 	thinking, content, stopReason string
 	block                         chan struct{} // nil でなければ、閉じられるまで生成を終えない
 	model                         string        // 読み込んでいるモデルの ID(空なら file:fake。fakeLoader が書き換える)
+	blind                         []string      // 画像を読めないモデルの ID(画像の付いたプロンプトを数えると ErrNoVision)
 
 	// replies があれば、thinking / content / stopReason の代わりに、呼ばれた順に1つずつ返す
 	// (要約 → 返事、のように1回の送信で何度も生成するときに使う)
@@ -47,7 +49,8 @@ type fakeCall struct {
 	tools    []tool.Def
 	opt      engine.GenerateOptions
 	think    bool
-	prompt   string // 書式を当てた文字列
+	prompt   string     // 書式を当てた文字列
+	job      genlog.Job // 生成に付けた付箋(使用量の記録。0033)
 }
 
 // fakeGen の書式は本物と同じ Qwen3.5(トークン数を数えるとき、プロンプトを画面に渡すときに使う)
@@ -72,13 +75,16 @@ func (g *fakeGen) EnsureContextSize(n int) (bool, error) {
 }
 
 func (g *fakeGen) CountTokens(p format.Prompt) (int, error) {
+	if slices.Contains(g.blind, g.Info().ID) && slices.ContainsFunc(p.Messages, func(m format.Message) bool { return len(m.Images) > 0 }) {
+		return 0, engine.VisionError("今のモデルは画像に対応していません(テスト)")
+	}
 	return utf8.RuneCountInString(testFormat.BuildPrompt(p)), nil
 }
 
 func (g *fakeGen) Generate(ctx context.Context, p format.Prompt, opt engine.GenerateOptions,
 	onPrompt func(string), onThinking, onContent func(string)) (format.Output, engine.GenerateStats, error) {
 	g.gotMessages, g.gotOpt, g.gotThink = p.Messages, opt, p.Think
-	g.calls = append(g.calls, fakeCall{p.Messages, p.Tools, opt, p.Think, testFormat.BuildPrompt(p)})
+	g.calls = append(g.calls, fakeCall{p.Messages, p.Tools, opt, p.Think, testFormat.BuildPrompt(p), genlog.JobOf(ctx)})
 	onPrompt(testFormat.BuildPrompt(p))
 	if g.block != nil {
 		<-g.block
@@ -141,7 +147,7 @@ func newTestConversations(t *testing.T, g *fakeGen) (*Conversations, *memStore) 
 func send(t *testing.T, cs *Conversations, c Conversation, text string) []ChatEvent {
 	t.Helper()
 	var evs []ChatEvent
-	cs.Send(context.Background(), c.ID, text, func(ev ChatEvent) { evs = append(evs, ev) })
+	cs.Send(context.Background(), c.ID, text, nil, func(ev ChatEvent) { evs = append(evs, ev) })
 	if len(evs) == 0 || evs[len(evs)-1].Type != "done" {
 		t.Fatalf("最後のイベントが done ではありません: %+v", evs)
 	}
@@ -319,7 +325,7 @@ func TestOnlyOneGenerationAtATime(t *testing.T) {
 	started := make(chan struct{})
 	finished := make(chan struct{})
 	go func() {
-		cs.Send(context.Background(), a.ID, "長い質問", func(ev ChatEvent) {
+		cs.Send(context.Background(), a.ID, "長い質問", nil, func(ev ChatEvent) {
 			if ev.Type == "prompt" {
 				close(started)
 			}
@@ -337,7 +343,7 @@ func TestOnlyOneGenerationAtATime(t *testing.T) {
 	}
 	// 送信と、生成中の会話の削除はできない
 	var gotErr string
-	cs.Send(context.Background(), b.ID, "割り込み", func(ev ChatEvent) {
+	cs.Send(context.Background(), b.ID, "割り込み", nil, func(ev ChatEvent) {
 		if ev.Type == "error" {
 			gotErr = ev.Error
 		}
@@ -491,7 +497,7 @@ func TestChangesDuringGenerationAreKept(t *testing.T) {
 	started := make(chan struct{})
 	finished := make(chan struct{})
 	go func() {
-		cs.Send(context.Background(), c.ID, "質問", func(ev ChatEvent) {
+		cs.Send(context.Background(), c.ID, "質問", nil, func(ev ChatEvent) {
 			if ev.Type == "prompt" {
 				close(started)
 			}

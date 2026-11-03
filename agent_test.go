@@ -236,7 +236,7 @@ func TestAgentStopDuringTool(t *testing.T) {
 	}}
 	cs, _, c := newToolConversation(t, g, blocking)
 	var evs []ChatEvent
-	cs.Send(ctx, c.ID, "待って", func(ev ChatEvent) { evs = append(evs, ev) })
+	cs.Send(ctx, c.ID, "待って", nil, func(ev ChatEvent) { evs = append(evs, ev) })
 
 	_, ms, _ := cs.Get(ctx, c.ID)
 	if roles(ms) != "user,assistant,tool,tool" || len(g.calls) != 1 || len(errorsOf(evs)) != 0 {
@@ -258,7 +258,7 @@ func TestAgentStopDuringGeneration(t *testing.T) {
 		}
 		cancel()
 	}()
-	cs.Send(ctx, c.ID, "計算して", func(ChatEvent) {})
+	cs.Send(ctx, c.ID, "計算して", nil, func(ChatEvent) {})
 	_, ms, _ := cs.Get(ctx, c.ID)
 	if roles(ms) != "user,assistant,tool" || !strings.Contains(ms[2].Content, "停止されたため実行していません") {
 		t.Errorf("発言: %s / %+v", roles(ms), ms)

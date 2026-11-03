@@ -169,7 +169,7 @@ func (c *Client) AppLogin(name, password, device string) (auth.AppLogin, error) 
 
 // RevokeToken は、SetKey で決めたアプリ用のトークンを aibow-server で消す(ログアウト)。
 func (c *Client) RevokeToken() error {
-	if !auth.IsAppToken(c.key) {
+	if !auth.IsAppToken(c.Key()) {
 		return nil // 手で書いた API キーは消さない(Cline などでも使っているかもしれないので)
 	}
 	return c.call(http.MethodPost, "/aibow/auth/token/revoke", nil, nil, shortTimeout)

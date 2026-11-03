@@ -21,6 +21,9 @@ type qwen35 struct{}
 
 func (qwen35) Name() string { return "Qwen3.5" }
 
+// WritesImages は、画像の印を書けるか(0030)。Qwen3.5 は画像を読めるモデル(mmproj があれば)
+func (qwen35) WritesImages() bool { return true }
+
 // BuildPrompt は会話を Qwen3.5 の書式の1本の文字列にする。
 //
 // Qwen は ChatML と呼ばれる次の書式で学習されているので、それに合わせて並べる:
@@ -90,6 +93,12 @@ func (qwen35) BuildPrompt(p Prompt) string {
 		content := strings.TrimSpace(m.Content)
 		switch m.Role {
 		case "user":
+			// 画像は文字より前に置く(0030 の決定事項 11)。公式テンプレートは content の部品を並んだ順に書き、
+			// 画像の部品を <|vision_start|><|image_pad|><|vision_end|> にする。aibow は印だけを書き、前後の印はエンジン(mtmd)が足す。
+			// テンプレートは部品を並べたあとに全体を trim するので、ここも画像の印と文字をつないでから空白を削る
+			if len(m.Images) > 0 {
+				content = strings.TrimSpace(strings.Repeat(ImageMarker, len(m.Images)) + m.Content)
+			}
 			b.WriteString("<|im_start|>user\n" + content + "<|im_end|>\n")
 		case "assistant":
 			b.WriteString("<|im_start|>assistant\n")

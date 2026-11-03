@@ -101,6 +101,7 @@ func (s *Sessions) User(ctx context.Context, token string) (u User, extended boo
 	if err != nil {
 		return User{}, false, err
 	}
+	markUsed(ctx, s.store, &u, now)
 	// 期限を延ばすのは、前に延ばしてから1日以上たったとき(期限 = 最後に延ばした時刻 + 30 日 なので、残りで見る)
 	if ss.ExpiresAt.Sub(now) <= SessionTTL-extendEvery {
 		if err := s.store.ExtendSession(ctx, id, now.Add(SessionTTL)); err != nil {

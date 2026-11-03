@@ -58,7 +58,11 @@ func (k *Keys) User(ctx context.Context, key string) (User, error) {
 	if errors.Is(err, ErrUserNotFound) {
 		return User{}, ErrBadKey
 	}
-	return u, err
+	if err != nil {
+		return User{}, err
+	}
+	markUsed(ctx, k.store, &u, k.now())
+	return u, nil
 }
 
 // RequireKey は、Authorization: Bearer <API キー> を確かめ、持ち主をリクエストの ctx に入れてから next に渡す(UserFrom で読める)。
@@ -87,6 +91,34 @@ func (k *Keys) RequireKey(next http.Handler) http.Handler {
 	})
 }
 
+// bearerKey は、WithBearer が ctx に入れた、呼んだときのキー(API キーかアプリ用のトークン)
+type bearerKey struct{}
+
+// WithBearer は、cookie でログインしていないリクエストに Authorization: Bearer <API キーかアプリ用のトークン> があれば、
+// その持ち主をリクエストの ctx に入れる(UserFrom で読める)。本人が自分の表示名・メールアドレス・パスワードを変える口(/aibow/auth/)を、
+// 画面のアプリからも呼べるようにするため(0031 の決定事項 45)。違うキーは入れずに次へ渡す(断るかは受け取った側が決める)。
+// Bearer はブラウザがほかのサイトから勝手に付けて送らないので、cookie と違ってほかのサイトから使われる心配はない。
+func (k *Keys) WithBearer(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, ok := UserFrom(r.Context()); !ok {
+			if key, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok {
+				key = strings.TrimSpace(key)
+				if u, err := k.User(r.Context(), key); err == nil {
+					ctx := context.WithValue(r.Context(), userKey{}, u)
+					r = r.WithContext(context.WithValue(ctx, bearerKey{}, key))
+				}
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// bearerOf は、WithBearer が入れたキー(cookie でログインしているなら空)。
+func bearerOf(ctx context.Context) string {
+	k, _ := ctx.Value(bearerKey{}).(string)
+	return k
+}
+
 // writeAPIError は OpenAI 互換の形のエラー({"error": {"message", "type", "code"}})。
 func writeAPIError(w http.ResponseWriter, status int, code, msg string) {
 	typ := "server_error"
@@ -107,6 +139,6 @@ func (k *Keys) MeHandler(required bool) http.Handler {
 	}
 	return k.RequireKey(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		u, _ := UserFrom(r.Context())
-		writeJSON(w, http.StatusOK, Me{Login: true, Name: u.Name, Admin: u.Admin})
+		writeJSON(w, http.StatusOK, meOf(u))
 	}))
 }

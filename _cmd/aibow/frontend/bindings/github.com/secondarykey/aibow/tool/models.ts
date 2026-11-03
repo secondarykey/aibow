@@ -21,6 +21,11 @@ export interface Preview {
     "path": string;
 
     /**
+     * Folder は対象のフォルダの名前(ワークスペースのフォルダが複数のとき。メインでも出す。0035)
+     */
+    "folder"?: string;
+
+    /**
      * 何をするか(「上書き」「新しく作る」「書き換え」「コマンド」)
      */
     "note": string;
@@ -34,6 +39,11 @@ export interface Preview {
      * 実行するコマンド(run_command)
      */
     "command"?: string;
+
+    /**
+     * 読みに行く URL(fetch_url。0036)
+     */
+    "url"?: string;
 
     /**
      * MCP のサーバーの名前。中身が見えないので差分は作れず、どのサーバーに何を渡すかを見せる

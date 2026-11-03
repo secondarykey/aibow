@@ -12,6 +12,7 @@ import { ToolCard } from "./ToolCard";
 import { useStickToBottom } from "../stickToBottom";
 import { QUESTION_ATTR, usePinnedQuestion } from "../pinnedQuestion";
 import { useQuestionsOnly } from "../questionsOnly";
+import { FileChips } from "./FileChips";
 
 const FADED_TITLE = "この発言はモデルに渡していません(要約に入ったか、会話の上限に収めるために外しました)";
 const EXCLUDED_TITLE = "モデルに渡さないにしています";
@@ -29,12 +30,18 @@ export interface Exclude {
   onChange(msgId: string, excluded: boolean): void;
 }
 
+// Discard は送ったファイルを捨てる(0030 の決定事項 26)。読むだけの会話では渡さない
+export interface Discard {
+  disabled: boolean; // 生成中の会話では捨てられない
+  onDiscard(fileId: string): void;
+}
+
 // onStop は生成中の返事(要約中なら要約だけ)を止める。生成中の返事は1つだけ(生成は同時に1つ)なので、どの返事かは渡さない。
 // firstId はモデルに渡す最初の発言(Go の Usage.first_id)。これより前の発言は、要約に入ったか
 // truncate で外れて、モデルに渡していないので薄く表示する(発言そのものは保存されている)
 // conversationId は表示している会話の ID。会話を切り替えたら、一番下(最新の発言)から見せる
 // pinQuestion は、スクロールして質問が上に隠れたら、その質問を右上に出しておくか(アプリの設定の「画面」)
-export function ChatView({ items, firstId, conversationId, pinQuestion, readOnly = false, onStop, onAnswer, exclude, retry }: {
+export function ChatView({ items, firstId, conversationId, pinQuestion, readOnly = false, onStop, onAnswer, exclude, discard, retry }: {
   items: Item[];
   firstId: string | null;
   conversationId: string | null;
@@ -42,6 +49,7 @@ export function ChatView({ items, firstId, conversationId, pinQuestion, readOnly
   readOnly?: boolean; // ほかの人の会話を読むだけ(0018 の 11-2)。直す・作り直す・モデルに渡さないを出さない
   onStop(): void;
   exclude: Exclude;
+  discard?: Discard;
   retry: Retry;
   onAnswer(reqId: string, approved: boolean, reason: string, remember: ToolPolicy): void; // ツールの実行前の確認に答える(remember はこれから先の扱い)
 }) {
@@ -96,6 +104,12 @@ export function ChatView({ items, firstId, conversationId, pinQuestion, readOnly
                 }
                 return (
                   <div key={it.id} className="user-turn">
+                    {it.files && (
+                      <FileChips
+                        files={it.files.map(file => ({ file }))}
+                        onDiscard={!readOnly && it.msgId && discard && !discard.disabled ? f => discard.onDiscard(f.id) : undefined}
+                      />
+                    )}
                     <div
                       className={"msg user" + faded(it.msgId) + (it.excluded ? " excluded" : "") + (questions.current === i ? " current" : "")}
                       title={questions.on ? "この質問へ飛ぶ" : fadedTitle(it.msgId, it.excluded)}

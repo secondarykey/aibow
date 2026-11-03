@@ -23,8 +23,9 @@ import { Toasts, useToasts } from "./toast";
 import { useModels } from "./useModels";
 import { ServerContext } from "./serverContext";
 import type { Busy } from "./useModels";
-import { useConversations } from "./useConversations";
+import { NIL, useConversations } from "./useConversations";
 import { useChat } from "./useChat";
+import { useAttachments } from "./attachments";
 import { useAppSettings } from "./useAppSettings";
 import { ModelBar } from "./components/ModelBar";
 import { Meter } from "./components/Meter";
@@ -33,14 +34,17 @@ import { ConversationList } from "./components/ConversationList";
 import { Splitter, useListWidth } from "./components/Splitter";
 import { ChatView } from "./components/ChatView";
 import { NewChat } from "./components/NewChat";
-import { SettingsView } from "./components/SettingsView";
+import { SettingsView, type Tab as SettingsTab } from "./components/SettingsView";
+import { AdminView, canAdmin } from "./components/AdminView";
 import { ConversationSettingsView } from "./components/ConversationSettingsView";
 import { ReadView } from "./components/ReadView";
 import { Composer } from "./components/Composer";
-import { FolderBar, WorkDirBar } from "./components/WorkDirBar";
+import { FolderBar, WorkspaceBar } from "./components/WorkspaceBar";
+import { mainFolder, useWorkspaces } from "./workspaces";
 import { ToolBar } from "./components/ToolBar";
 import { LuSettings } from "react-icons/lu";
 import { ChatService, isBrowser, me, onReconnect, onWindowFocus } from "./backend";
+import { showName } from "./directory";
 import type { ServerInfo } from "../bindings/github.com/secondarykey/aibow/mcp/client";
 import type { ConversationRef, ConversationSettings, SharedRead } from "../bindings/github.com/secondarykey/aibow";
 import { ImeFocusRelay } from "./imeFocus";
@@ -59,7 +63,16 @@ export default function App() {
   // 生成とモデルの読み込みは同時にできない(Go 側のコンテキストが1つしかないため)
   const [busy, setBusy] = useState<Busy>("idle");
   // 設定の画面を開いているか。開いている間は、チャット(か新しい会話の画面)の代わりに設定を出す
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpenState] = useState(false);
+  // 管理の画面(0032)。設定の画面と同じ場所に出す別の画面で、同時には開かない
+  const [adminOpen, setAdminOpen] = useState(false);
+  // setSettingsOpen は設定の画面を開く / 閉じる。管理の画面は閉じる(会話を選ぶ・「+ 新規」などは、どちらの画面も閉じる。同時には開かない)
+  const setSettingsOpen = (open: boolean) => {
+    setSettingsOpenState(open);
+    setAdminOpen(false);
+  };
+  // 設定の画面を開いたときのタブ(左下の名前のメニューの「アカウント」から開くと account。開き直すたびに作り直すので key も持つ)
+  const [settingsTab, setSettingsTab] = useState<{ tab: SettingsTab; n: number }>({ tab: "basic", n: 0 });
   // 会話の設定の画面を開いているか。開いている会話の設定を出す
   const [convSettingsOpen, setConvSettingsOpen] = useState(false);
   // 設定の画面(か会話の設定の画面)を開いたときの、表示の最後の id。これより後に出たエラー(設定の適用の失敗など)はその画面にも出す
@@ -108,6 +121,12 @@ export default function App() {
   const convs = useConversations(addError);
   const chat = useChat({ ...transcript, addError }, setBusy, convs, toasts, models.reload);
   const app = useAppSettings({ addError });
+  // 入力欄で読み込んだファイル(0030)。送り先の会話(新しい会話の画面では、これから作る会話の設定)で、会話の上限に入るかを Go が数える
+  const attachTarget = useCallback(
+    () => ({ id: convs.current?.conversation.id ?? NIL, draft: convs.current ? null : convs.draft }),
+    [convs.current, convs.draft],
+  );
+  const attachments = useAttachments(attachTarget, addError);
   // 画面の明るさ: Go から届いた設定・設定の画面で選んだ値を効かせる(届くまでは前回の写し。theme.ts)
   const theme = app.settings?.display.theme;
   useEffect(() => {
@@ -165,6 +184,8 @@ export default function App() {
     );
   }, [addError]);
   useEffect(reloadMcp, [reloadMcp]);
+  // その PC のワークスペース(入力欄の上で選ぶ・設定の画面で変える。0035。ブラウザでは空)
+  const [workspaces, reloadWorkspaces] = useWorkspaces(addError);
 
   // GPU に載せる層の数はモデルごとに覚えている(0014 の 4)ので、読み込んでいるモデルが変わったら設定の画面の値を取り直す
   const currentModel = models.current?.id;
@@ -269,6 +290,8 @@ export default function App() {
   const lock = lockOf(profile);
   // ブラウザの会話の資料のフォルダ(名前だけ。0024 の 12-2)。開いている会話は Go が決めたもの、新しい会話の画面は選んだプロファイルのもの
   const folder = !isBrowser ? "" : convs.current ? convs.current.folder ?? "" : grantedFolder(profile);
+  // ツールが使うフォルダ(アプリはワークスペースのメインのフォルダ、ブラウザは資料のフォルダの名前)。無ければ空。作業フォルダが要るツールの印に使う
+  const workDir = isBrowser ? folder : mainFolder(workspaces.workspaces?.find(w => w.id === settings?.workspace))?.path ?? "";
   const input = (
     <>
       <Composer
@@ -279,22 +302,31 @@ export default function App() {
         home={home}
         focusKey={focusKey}
         onSend={async t => {
-          // 送れなかった(発言が保存されなかった)ら、打った文を入力欄に戻す。その間に打ち始めていたら、そちらを残す
-          if (!(await chat.send(t))) setText(cur => cur || t);
+          // 送れなかった(発言が保存されなかった)ら、打った文と読み込んだファイルを入力欄に戻す。その間に打ち始めていたら、そちらを残す
+          const files = attachments.take();
+          if (!(await chat.send(t, files))) {
+            setText(cur => cur || t);
+            attachments.restore(files);
+          }
         }}
+        files={attachments.files}
+        onAddFiles={fs => void attachments.add(fs)}
+        onRemoveFile={attachments.remove}
         top={settings && (
-          // 入力欄の上: 作業フォルダと、この会話のツール(どちらも会話ごとの設定)。
-          // ブラウザの会話は作業フォルダを選ばない(ツールはサーバーの PC で動くため。0024 の決定事項 17)。
+          // 入力欄の上: ワークスペースと、この会話のツール(どちらも会話ごとの設定)。
+          // ブラウザの会話はワークスペースを選ばない(ツールはサーバーの PC で動くため。0024 の決定事項 17)。
           // 配られたプロファイルに資料のフォルダがあれば、その名前を押せない形で出す(決定事項 26)
           <div className="composer-top">
             {isBrowser && folder && <FolderBar name={folder} />}
             {!isBrowser && (
-              <WorkDirBar
-                workDir={settings.work_dir}
-                onChange={workDir => {
-                  convs.updateSettings({ work_dir: workDir });
+              <WorkspaceBar
+                workspaces={workspaces.workspaces ?? []}
+                selected={settings.workspace ?? ""}
+                onChange={workspace => {
+                  convs.updateSettings({ workspace });
                   focusInput();
                 }}
+                onCreated={reloadWorkspaces}
                 onError={addError}
               />
             )}
@@ -302,7 +334,7 @@ export default function App() {
               builtinOn={!settings.builtin_off}
               servers={mcpServers}
               selected={settings.mcp_servers ?? []}
-              workDir={isBrowser ? folder : settings.work_dir}
+              workDir={workDir}
               profile={profile}
               onBuiltinChange={on => convs.updateSettings({ builtin_off: !on })}
               onServersChange={mcp_servers => convs.updateSettings({ mcp_servers })}
@@ -316,13 +348,11 @@ export default function App() {
         size={settings ? settings.history_tokens + settings.reply_tokens : undefined}
         selected={settings?.model || undefined}
         lockReason={lock && locked(lock, FIX.model) ? fixedTitle(lock) : undefined}
-        onSelect={id => {
-          // 選ぶのは「この会話のモデル」(新しい会話の画面では、これから作る会話のモデル)。選んだらすぐ読み込む(0014 の 3)
-          // 読み込めなかったときは、会話のモデルを変えない(元のモデルに戻っている)
-          models.switchModel(id).then(ok => {
-            if (ok && settings) convs.updateSettings({ model: id });
-          });
-        }}
+        // 選ぶのは「この会話のモデル」(新しい会話の画面では、これから作る会話のモデル。0014 の 3)。
+        // 選んでも読み込まず、会話のモデルを変えるだけ。読み込むのは送信(作り直す・今すぐ要約も)の前(Go の ensureModel)。
+        // aibow-server 越しでは、選んだときに読み込んでも送信までにほかの人に入れ替えられることがあり、どのみち読み直すため
+        // (0014 の「あとから決めたこと(2026-10-31)」)。それまでは枠の破線と吹き出しで見せる
+        onSelect={id => convs.updateSettings({ model: id })}
       >
         {convs.current && (
           // summary の会話では、メーターのトークン数を押すと今すぐ要約する(最近の発言は会話の上限の半分まで残す)
@@ -345,7 +375,7 @@ export default function App() {
   // タイトルバーに出す名前は一覧から取る(名前の変更や最初の送信で付いたタイトルが、すぐ反映されるように)
   const convTitle = convs.list.find(c => c.id === currentId)?.title || "新しい会話";
   const showConvSettings = convSettingsOpen && convs.current !== null;
-  const title = settingsOpen ? "設定" : showConvSettings ? "会話の設定" : convTitle;
+  const title = settingsOpen ? "設定" : adminOpen ? "管理" : showConvSettings ? "会話の設定" : convTitle;
 
   // ブラウザのタブの題名は、開いている会話の名前(タブが並んでも見分けられるように。0016 の 9-3)。
   // デスクトップのウィンドウの名前は Go が決める(タスクバーに出る。main.go)ので変えない
@@ -371,7 +401,25 @@ export default function App() {
     closeOverlay();
     if (!settingsOpen) markSettingsFrom();
     setConvSettingsOpen(false); // 会話の設定の画面からは、設定の画面に切り替える
-    setSettingsOpen(o => !o);
+    setAdminOpen(false);        // 管理の画面からも、設定の画面に切り替える
+    setSettingsTab(t => ({ tab: "basic", n: t.n + 1 }));
+    setSettingsOpenState(o => !o);
+  };
+  // 歯車の隣の盾: 管理の画面を開く / 閉じる(0032 の決定事項 5)
+  const toggleAdmin = () => {
+    closeOverlay();
+    if (!adminOpen) markSettingsFrom();
+    setConvSettingsOpen(false);
+    setSettingsOpenState(false);
+    setAdminOpen(o => !o);
+  };
+  // 左下の名前のメニューの「アカウント」: 設定の画面を「アカウント」のタブで開く(開いていても切り替える。0031 の決定事項 46)
+  const openAccount = () => {
+    closeOverlay();
+    if (!settingsOpen) markSettingsFrom();
+    setConvSettingsOpen(false);
+    setSettingsTab(t => ({ tab: "account", n: t.n + 1 }));
+    setSettingsOpen(true);
   };
   // メーターの右の歯車: 開いている会話の設定の画面を開く(閉じるのは「会話に戻る」など。開いている間は入力欄ごと隠れる)
   const openConvSettings = () => {
@@ -412,7 +460,7 @@ export default function App() {
     ChatService.CopyShared(reading.conversation.id)
       .then(c => {
         setReading(null);
-        toasts.notify(`${reading.owner_name} の会話を写しました`);
+        toasts.notify(`${showName(reading.owner_name, reading.owner_display, true)} の会話を写しました`);
         return convs.reloadList().then(() => convs.open(c.id));
       })
       .then(focusInput, err => addError(errorMessage(err)));
@@ -490,6 +538,8 @@ export default function App() {
   if (settingsOpen) {
     content = (
       <SettingsView
+        key={settingsTab.n}
+        initialTab={settingsTab.tab}
         errors={viewErrors}
         onClose={() => setSettingsOpen(false)}
         app={app.settings}
@@ -507,7 +557,27 @@ export default function App() {
           reloadMcp();
           convs.refreshUsage().catch(err => addError(errorMessage(err)));
         }}
+        onNotice={text => toasts.notify(text, { ms: 8000 })}
+        workspaces={workspaces}
+        onWorkspacesChanged={reloadWorkspaces}
+      />
+    );
+  } else if (adminOpen) {
+    content = (
+      <AdminView
+        errors={viewErrors}
+        onClose={() => setAdminOpen(false)}
+        onError={addError}
         onReadConversation={onOpenShared}
+        models={models}
+        servers={mcpServers}
+        appDisabled={busy !== "idle"}
+        onToolsChanged={() => {
+          reloadMcp();
+          convs.refreshUsage().catch(err => addError(errorMessage(err)));
+        }}
+        onApplyLimits={applyLimits}
+        onProfilesChanged={onProfilesChanged}
       />
     );
   } else if (reading) {
@@ -529,6 +599,7 @@ export default function App() {
         onChange={convs.updateSettings}
         profile={convs.current.profile}
         folder={folder}
+        workDir={workDir}
         onSaveToProfile={() => {
           const id = convs.current!.conversation.id;
           const p = convs.current!.profile;
@@ -558,9 +629,10 @@ export default function App() {
         onApplyLimits={(h, r) => applyLimits(h, r, convs.updateSettings)}
         share={convs.current.conversation.share ?? ""}
         shareWith={convs.current.conversation.share_with ?? []}
-        onShare={(share, users) => {
+        shareGroups={convs.current.conversation.share_groups ?? []}
+        onShare={(share, users, groups) => {
           const id = convs.current!.conversation.id;
-          ChatService.SetConversationShare(id, share, users)
+          ChatService.SetConversationShare(id, share, users, groups)
             .then(() => Promise.all([convs.open(id), convs.reloadList()])) // 共有の印(この画面と一覧)を読み直す
             .catch(err => addError(errorMessage(err)));
         }}
@@ -602,6 +674,20 @@ export default function App() {
               );
             },
           }}
+          discard={{
+            disabled: unavailable || (chat.generatingId !== null && chat.generatingId === currentId),
+            // 送ったファイルを捨てる(0030 の決定事項 26〜28)。Go が中身を消し、札は「消去済み」にしてメーターを数え直す
+            onDiscard: fileId => {
+              if (!currentId) return;
+              ChatService.DiscardFile(currentId, fileId).then(
+                () => {
+                  transcript.discardFile(fileId);
+                  convs.refreshUsage().catch(err => addError(errorMessage(err)));
+                },
+                err => addError(errorMessage(err)),
+              );
+            },
+          }}
         />
         {input}
       </section>
@@ -624,6 +710,10 @@ export default function App() {
     onEndRename: endRename,
     settingsOpen,
     onToggleSettings: toggleSettings,
+    adminOpen,
+    canAdmin: canAdmin(models.manage),
+    onToggleAdmin: toggleAdmin,
+    onOpenAccount: openAccount,
     onToggleOpen: () => {
       // 自分で開け閉めしたときだけ覚える(狭くなって自動で閉じた・F2 のために開いた、は覚えない)。
       // 狭いときに重ねて出す一覧は、そのときだけのものなので覚えない

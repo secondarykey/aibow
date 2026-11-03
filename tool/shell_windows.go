@@ -21,6 +21,10 @@ import (
 // モデルは Linux のコマンド(ls・cat・grep)を書きがちなので、cmd.exe の書き方を添える
 const ShellNote = "cmd.exe (use dir, type, findstr; ls, cat and grep are not available)"
 
+// shellNoteSearch は、search_files も使えるときの ShellNote(0037 の決定事項 8)。
+// findstr を案内すると、4B が run_command で findstr を呼び、確認が挟まるので、ファイルの中を探すのは search_files に向ける
+const shellNoteSearch = "cmd.exe (use dir and type; ls, cat and grep are not available. To search inside files, use search_files instead of findstr)"
+
 const createNoWindow = 0x08000000 // コンソールの窓を出さずに起動する(aibow は窓のアプリなので、無いと黒い窓が一瞬出る)
 
 // shellCommand は、dir をカレントにして command を cmd.exe で動かす exec.Cmd を作る。

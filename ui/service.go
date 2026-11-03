@@ -4,9 +4,9 @@
 // Wails では、登録した構造体の「大文字で始まるメソッド」を、画面の JavaScript から関数のように呼べる(中身は Wails が仲立ちする RPC)。
 // 埋め込んだ型のメソッドも ChatService のメソッドとして見える。
 //
-//	TypeScript: ChatService.Send(id, text)  ← wails3 generate bindings が frontend/bindings に作る関数
+//	TypeScript: ChatService.Send(id, text, files)  ← wails3 generate bindings が frontend/bindings に作る関数
 //	        ↓  Wails が引数を JSON にして Go に渡す
-//	Go:         (*ChatService).Send(ctx, id, text) = (*ui.Service).Send
+//	Go:         (*ChatService).Send(ctx, id, text, files) = (*ui.Service).Send
 //
 // メソッドのコメントと構造体の json タグは、バインディングの TypeScript の型とコメントにもなる。
 //
@@ -40,6 +40,7 @@ import (
 	apiclient "github.com/secondarykey/aibow/api/client"
 	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/format"
+	"github.com/secondarykey/aibow/genlog"
 	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/mcp/client"
 	"github.com/secondarykey/aibow/models"
@@ -85,6 +86,10 @@ type Options struct {
 	Local *client.Local
 	MCP   *client.Manager
 	Prefs *aibow.ToolPrefs
+	// MCPConfig は、画面から MCP のサーバーを足す・変える・消す係(mcp.json。0034)。デスクトップのアプリだけで、ブラウザでは nil
+	MCPConfig *aibow.MCPConfig
+	// Workspaces は、その PC のワークスペース(workspaces.json。0035)。デスクトップのアプリだけで、ブラウザでは nil
+	Workspaces *aibow.Workspaces
 	// Version はアプリのバージョン(画面の左下に出す)
 	Version string
 	// Notices は起動時に画面のトーストで伝えること。StartupErr は起動に失敗した理由(画面に表示する)
@@ -110,9 +115,9 @@ type Options struct {
 // モデルに見せないので、呼ばれても「ツールはありません」になる。
 type noCommand struct{ aibow.LocalTools }
 
-func (n noCommand) Tools(workDir string) []tool.Tool {
+func (n noCommand) Tools(folders []tool.Folder) []tool.Tool {
 	// 写してから外す(Local はつないだサーバーのツールの一覧を覚えていて、同じスライスを返すため)
-	return slices.DeleteFunc(slices.Clone(n.LocalTools.Tools(workDir)), func(t tool.Tool) bool { return t.Def().Name == "run_command" })
+	return slices.DeleteFunc(slices.Clone(n.LocalTools.Tools(folders)), func(t tool.Tool) bool { return t.Def().Name == "run_command" })
 }
 
 type Service struct {
@@ -130,6 +135,10 @@ type Service struct {
 	// mcp は settings.json の MCP のサーバー(書いてなければ nil)。prefs はツールの扱いの PC の既定(tools.json)
 	mcp   *client.Manager
 	prefs *aibow.ToolPrefs
+	// mcpConfig は、画面から MCP のサーバーを変える係(デスクトップのアプリだけ。ブラウザでは nil。mcpedit.go)
+	mcpConfig *aibow.MCPConfig
+	// workspaces は、その PC のワークスペース(デスクトップのアプリだけ。ブラウザでは nil。workspaces.go)
+	workspaces *aibow.Workspaces
 
 	// version はアプリのバージョン(_cmd/aibow/version。画面の左下に出す)
 	version string
@@ -171,7 +180,7 @@ func New(o Options) (*Service, Lifecycle) {
 	quit, cancel := context.WithCancel(context.Background())
 	s := &Service{
 		host: o.Host, app: o.App, initial: o.Initial, notices: o.Notices, startupErr: o.StartupErr, notify: o.Notify, seat: o.Seat,
-		quit: quit, cancelQuit: cancel, mcp: o.MCP, prefs: o.Prefs, version: o.Version,
+		quit: quit, cancelQuit: cancel, mcp: o.MCP, prefs: o.Prefs, mcpConfig: o.MCPConfig, workspaces: o.Workspaces, version: o.Version,
 		browser: o.Browser, waits: map[string]*time.Timer{}, folders: slices.Sorted(maps.Keys(o.Folders)),
 	}
 	if d, ok := o.Host.(*DirectHost); ok {
@@ -193,6 +202,9 @@ func New(o Options) (*Service, Lifecycle) {
 			if o.Local != nil {
 				s.convs.SetLocalTools(noCommand{o.Local})
 			}
+		}
+		if !o.Browser {
+			s.convs.SetWorkspaces(o.Workspaces)
 		}
 		if o.MCP != nil { // nil の *Manager を interface に入れると nil に見えなくなるので、確かめてから渡す
 			s.convs.SetRemoteTools(o.MCP)
@@ -224,6 +236,8 @@ func New(o Options) (*Service, Lifecycle) {
 		} else if n > 0 {
 			log.Noticef("モデルを持たない %d 個の会話に、最後に使ったモデル %s を入れました", n, app.Workspace.Model)
 		}
+		// ワークスペースより前の会話の作業フォルダを、この PC にあるものだけワークスペースに移す(0035 の段1)
+		s.migrateWorkDirs(ctx)
 	}
 	return s, Lifecycle{s}
 }
@@ -316,8 +330,9 @@ func (s *Service) Models(ctx context.Context) ModelsResult {
 // 失敗したときは元のモデルに戻っている(画面は Models を呼び直して確認する)。
 // Go で error を返すと、JavaScript 側では Promise が reject される。
 //
-// 読み込めるモデルは1つ(VRAM に1つしか載らない)。画面は入力欄の下でモデルを選んだとき、会話のモデルを変えてからこれを呼ぶ。
-// 会話を開いただけでは読み直さず、モデルの違う会話に送信するときに読み直す(Conversations.ensureWorkspace。0014 の 3)。
+// 読み込めるモデルは1つ(VRAM に1つしか載らない)。画面は設定の画面の「モデル」のタブの「読み込む」でこれを呼ぶ。
+// 入力欄の下でモデルを選んだときは呼ばない(会話のモデルを変えるだけ。0014 の「あとから決めたこと(2026-10-31)」)。
+// 会話を開いた・選んだだけでは読み直さず、モデルの違う会話に送信するときに読み直す(Conversations.ensureWorkspace。0014 の 3)。
 //
 // 順番待ちの席があれば(aibow-server の中)、席を取ってから読み込む(生成中のほかの人の作業領域を、途中で入れ替えないように)。
 func (s *Service) SwitchModel(ctx context.Context, id string) (*engine.ModelInfo, error) {
@@ -631,8 +646,8 @@ func (s *Service) usableModel(id string) error {
 	return nil
 }
 
-// SetProfileShare は、プロファイルを配る範囲(""・all・users)と相手(利用者の名前)を変える(0018 の 11-1)。管理者だけ。
-func (s *Service) SetProfileShare(ctx context.Context, id uuid.UUID, share string, with []string) error {
+// SetProfileShare は、プロファイルを配る範囲(""・all・users)と相手(利用者の名前とグループの名前。0031)を変える(0018 の 11-1)。管理者だけ。
+func (s *Service) SetProfileShare(ctx context.Context, id uuid.UUID, share string, with, groups []string) error {
 	if s.startupErr != nil {
 		return s.startupErr
 	}
@@ -645,7 +660,7 @@ func (s *Service) SetProfileShare(ctx context.Context, id uuid.UUID, share strin
 			return err
 		}
 	}
-	if err := s.convs.SetProfileShare(ctx, id, share, with); err != nil {
+	if err := s.convs.SetProfileShare(ctx, id, share, with, groups); err != nil {
 		return err
 	}
 	switch share {
@@ -654,9 +669,35 @@ func (s *Service) SetProfileShare(ctx context.Context, id uuid.UUID, share strin
 	case aibow.ShareAll:
 		log.Noticef("プロファイル「%s」を全員に配りました", p.Name)
 	default:
-		log.Noticef("プロファイル「%s」を %s に配りました", p.Name, strings.Join(with, "・"))
+		log.Noticef("プロファイル「%s」を %s に配りました", p.Name, targets(with, groups))
 	}
 	return nil
+}
+
+// ShareCopy は、プロファイルを写して、そのまま配る(管理の画面の「写して配る」。0032 の段3)。管理者だけ(保存先が確かめる)。
+// 配るプロファイルのモデルは、使えるモデルから(0018 の決定事項 13。SetProfileShare と同じ)。
+func (s *Service) ShareCopy(ctx context.Context, id uuid.UUID, share string, with, groups []string) (aibow.Profile, error) {
+	if s.startupErr != nil {
+		return aibow.Profile{}, s.startupErr
+	}
+	src, err := s.store.Profile(ctx, id)
+	if err != nil {
+		return aibow.Profile{}, err
+	}
+	if err := s.usableModel(src.Values.Model); err != nil {
+		return aibow.Profile{}, err
+	}
+	p, err := s.convs.ShareCopy(ctx, id, share, with, groups)
+	if err != nil {
+		return p, err
+	}
+	switch share {
+	case aibow.ShareAll:
+		log.Noticef("プロファイル「%s」を写して、全員に配りました(%s)", p.Name, whoOf(ctx))
+	default:
+		log.Noticef("プロファイル「%s」を写して、%s に配りました(%s)", p.Name, targets(with, groups), whoOf(ctx))
+	}
+	return p, nil
 }
 
 // CopyProfile は、プロファイル(配られたものなど)を写して自分のプロファイルを作る(値と決まりも。0018 の決定事項 19)。
@@ -837,12 +878,12 @@ func (s *Service) AllMCPServers() []client.ServerInfo {
 }
 
 // BuiltinTools は組み込みのツール(aibow の中で動くツール)の一覧(設定の画面の「ツール」に出す)。
-// ブラウザでは、コマンドのツールを出さない。資料のフォルダが無ければ、作業フォルダを使わないツール(時刻・計算)だけ(0024 の決定事項 5・17)。
+// ブラウザでは、コマンドのツールを出さない。資料のフォルダが無ければ、作業フォルダを使わないツール(時刻・計算・URL を読む)だけ(0024 の決定事項 5・17)。
 func (s *Service) BuiltinTools() []aibow.KnownTool {
 	l := aibow.BuiltinTools()
 	if s.browser {
 		l = slices.DeleteFunc(l, func(k aibow.KnownTool) bool {
-			return k.Name == "run_command" || len(s.folders) == 0 && tool.Find(tool.Builtin(), k.Name) == nil
+			return k.Name == "run_command" || len(s.folders) == 0 && tool.Find(tool.Folderless(), k.Name) == nil
 		})
 	}
 	return l
@@ -1004,15 +1045,15 @@ func (s *Service) Conversations(ctx context.Context) ([]aibow.Conversation, erro
 //
 // ほかの人の会話は読むだけ(保存先の ReadConversation)。続けたいときは写して自分の会話にする(CopyShared)。
 
-// SetConversationShare は、自分の会話の共有の範囲(""・all・users)と相手(利用者の名前)を変える。
-func (s *Service) SetConversationShare(ctx context.Context, id uuid.UUID, share string, with []string) error {
+// SetConversationShare は、自分の会話の共有の範囲(""・all・users)と相手(利用者の名前とグループの名前。0031)を変える。
+func (s *Service) SetConversationShare(ctx context.Context, id uuid.UUID, share string, with, groups []string) error {
 	if s.startupErr != nil {
 		return s.startupErr
 	}
-	if share == aibow.ShareUsers && len(with) == 0 {
+	if share == aibow.ShareUsers && len(with) == 0 && len(groups) == 0 {
 		return errors.New("共有の相手を1人以上選んでください")
 	}
-	if err := s.store.SetConversationShare(ctx, id, share, with); err != nil {
+	if err := s.store.SetConversationShare(ctx, id, share, with, groups); err != nil {
 		return err
 	}
 	switch share {
@@ -1021,7 +1062,7 @@ func (s *Service) SetConversationShare(ctx context.Context, id uuid.UUID, share 
 	case aibow.ShareAll:
 		log.Noticef("会話 %s を全員に共有しました", id)
 	default:
-		log.Noticef("会話 %s を %s に共有しました", id, strings.Join(with, "・"))
+		log.Noticef("会話 %s を %s に共有しました", id, targets(with, groups))
 	}
 	return nil
 }
@@ -1042,12 +1083,110 @@ func (s *Service) UserConversations(ctx context.Context, name string) ([]aibow.C
 	return s.store.UserConversations(ctx, name)
 }
 
-// UserNames は、共有の相手に選べる利用者の名前。
-func (s *Service) UserNames(ctx context.Context) ([]string, error) {
-	if s.startupErr != nil {
-		return nil, s.startupErr
+// targets は、ログに書く共有の相手(人はログインの名前。表示名は変わるので使わない。0031 の決定事項 20)
+func targets(with, groups []string) string {
+	all := slices.Clone(with)
+	for _, g := range groups {
+		all = append(all, g+" グループ")
 	}
-	return s.store.UserNames(ctx)
+	return strings.Join(all, "・")
+}
+
+// Directory は、共有の相手に選べる人(名前と表示名)とグループ(0031)。全員を一度に返し、画面で絞る。
+func (s *Service) Directory(ctx context.Context) (aibow.Directory, error) {
+	if s.startupErr != nil {
+		return aibow.Directory{}, s.startupErr
+	}
+	return s.store.Directory(ctx)
+}
+
+// ---- グループ(0031 の段4) ---------------------------------------------------------------------
+//
+// 誰が何を変えられるかは保存先が1か所で決める(管理者だけ / 管理者かそのグループの長)。ここはログを残すだけ。
+// メンバーを変えると、そのグループに共有された会話・配られたプロファイルが見える人も変わるので、
+// 誰が・どのグループに・誰を足した / 外したかを Notice に残す(管理者が読んだ記録と同じ考え方。決定事項 33)。
+
+// CreateGroup はグループを作る(管理者だけ)。
+func (s *Service) CreateGroup(ctx context.Context, name string) (aibow.Group, error) {
+	if s.startupErr != nil {
+		return aibow.Group{}, s.startupErr
+	}
+	g, err := s.store.CreateGroup(ctx, name)
+	if err != nil {
+		return g, err
+	}
+	log.Noticef("グループ「%s」を作りました(%s)", g.Name, whoOf(ctx))
+	return g, nil
+}
+
+// RenameGroup はグループの名前を変える(管理者だけ)。
+func (s *Service) RenameGroup(ctx context.Context, id uuid.UUID, name string) error {
+	if s.startupErr != nil {
+		return s.startupErr
+	}
+	if err := s.store.RenameGroup(ctx, id, name); err != nil {
+		return err
+	}
+	log.Noticef("グループ %s の名前を「%s」にしました(%s)", id, strings.TrimSpace(name), whoOf(ctx))
+	return nil
+}
+
+// DeleteGroup はグループを消す(管理者だけ)。そのグループへの共有と配るも消える。
+func (s *Service) DeleteGroup(ctx context.Context, id uuid.UUID) error {
+	if s.startupErr != nil {
+		return s.startupErr
+	}
+	name := s.groupName(ctx, id)
+	if err := s.store.DeleteGroup(ctx, id); err != nil {
+		return err
+	}
+	log.Noticef("グループ「%s」を消しました(%s。このグループへの共有と配るも消えました)", name, whoOf(ctx))
+	return nil
+}
+
+// SetGroupMember は、グループに利用者を足す / 外す(管理者か、そのグループの長)。
+func (s *Service) SetGroupMember(ctx context.Context, id uuid.UUID, user string, member bool) error {
+	if s.startupErr != nil {
+		return s.startupErr
+	}
+	if err := s.store.SetGroupMember(ctx, id, user, member); err != nil {
+		return err
+	}
+	if member {
+		log.Noticef("%s がグループ「%s」に %s を足しました", whoOf(ctx), s.groupName(ctx, id), user)
+	} else {
+		log.Noticef("%s がグループ「%s」から %s を外しました", whoOf(ctx), s.groupName(ctx, id), user)
+	}
+	return nil
+}
+
+// SetGroupLeader は、メンバーを長にする / 外す(管理者だけ)。
+func (s *Service) SetGroupLeader(ctx context.Context, id uuid.UUID, user string, leader bool) error {
+	if s.startupErr != nil {
+		return s.startupErr
+	}
+	if err := s.store.SetGroupLeader(ctx, id, user, leader); err != nil {
+		return err
+	}
+	if leader {
+		log.Noticef("%s がグループ「%s」の長に %s を決めました", whoOf(ctx), s.groupName(ctx, id), user)
+	} else {
+		log.Noticef("%s がグループ「%s」の長から %s を外しました", whoOf(ctx), s.groupName(ctx, id), user)
+	}
+	return nil
+}
+
+// groupName は、ログに書くグループの名前(読めなければ ID)。
+func (s *Service) groupName(ctx context.Context, id uuid.UUID) string {
+	d, err := s.store.Directory(ctx)
+	if err == nil {
+		for _, g := range d.Groups {
+			if g.ID == id {
+				return g.Name
+			}
+		}
+	}
+	return id.String()
 }
 
 // ReadConversation は、ほかの人の会話を読むだけで開く。管理者として読んだ(共有されていない)ときは、
@@ -1131,7 +1270,8 @@ func (s *Service) Usage(ctx context.Context, id uuid.UUID) (*aibow.Usage, error)
 	u, err := s.convs.Usage(ctx, id)
 	// モデルが無い(降ろした)・書式に未対応のモデルなら、数えられないのでメーターを出さない。
 	// エラーにすると会話を開くこと(Conversation)まで失敗し、開くたびにエラーのカードが積み重なるため(未対応なことは読み込んだときと送信したときに伝える)
-	if errors.Is(err, engine.ErrNoModel) || errors.Is(err, format.ErrUnsupported) {
+	// 画像の付いた会話を、画像を読めないモデルで開いたときも同じ(0030。送ったときに理由を伝える)
+	if errors.Is(err, engine.ErrNoModel) || errors.Is(err, format.ErrUnsupported) || errors.Is(err, engine.ErrNoVision) {
 		return nil, nil
 	}
 	if err != nil {
@@ -1249,10 +1389,39 @@ func (s *Service) noNewAllow(old, next map[string]aibow.ToolPolicy) error {
 //
 // 画面で「停止」を押すと、JavaScript 側で Promise の cancel() が呼ばれ、
 // Wails がこの ctx をキャンセルする。エンジンはそれを見て生成を止める。
-func (s *Service) Send(ctx context.Context, id uuid.UUID, text string) {
+//
+// files は入力欄で読み込んだファイル(0030。CheckFile が返したもの)。無ければ空の配列か null。
+func (s *Service) Send(ctx context.Context, id uuid.UUID, text string, files []aibow.File) {
 	s.run(ctx, id, func(ctx context.Context, emit func(aibow.ChatEvent)) {
-		s.convs.Send(ctx, id, text, emit)
+		s.convs.Send(ctx, id, text, files, emit)
 	})
+}
+
+// DiscardFile は、送った発言に付けたファイル(画像・テキスト)を捨てる(0030 の決定事項 26〜28)。中身は戻せない。
+// 画面は、捨てたら札を「消去済み」にし、メーターを取り直す。
+func (s *Service) DiscardFile(ctx context.Context, id, fileID uuid.UUID) error {
+	if s.startupErr != nil {
+		return s.startupErr
+	}
+	return s.convs.DiscardFile(ctx, id, fileID)
+}
+
+// CheckFile は、入力欄で読み込んだファイル(選ぶ・ドロップ・貼り付け)を確かめ、会話の上限に入るかを数える(0030)。
+// 画面は、返ってきたもの(札に出すトークン数と、Send に渡すファイル)を、送信するまで持っておく。
+// テキストでも画像でもない・UTF-8 / UTF-16(BOM あり)でない・大きすぎる・会話の上限に入らない・画像を読めないモデルのときはエラー(理由と数字を書く)。
+//
+// id は送り先の会話(新しい会話の画面ではゼロ。そのときは新しい会話の画面の設定 draft で数える)。
+// pending と pendingTokens は、この発言にもう付けているファイルの数とトークン数の合計(一緒に数えるため。中身は送らせない)。
+// data は、Wails でもブラウザでも JSON の base64 の文字列で届く([]byte の JSON の形)。
+func (s *Service) CheckFile(ctx context.Context, id uuid.UUID, draft *aibow.ConversationSettings, name string, data []byte, pending, pendingTokens int) (aibow.FileCheck, error) {
+	if s.startupErr != nil {
+		return aibow.FileCheck{}, s.startupErr
+	}
+	c, err := s.convs.CheckFile(ctx, id, draft, name, data, pending, pendingTokens)
+	if errors.Is(err, engine.ErrNoModel) {
+		return c, errors.New("モデルを読み込んでいないため、ファイルのトークン数を数えられません。モデルを読み込んでから、もう一度読み込んでください")
+	}
+	return c, err
 }
 
 // Regenerate は最後の返事を作り直す(0011)。途中経過と終わり(done)は Send と同じく chat イベントで送る。
@@ -1369,11 +1538,14 @@ func (s *Service) run(ctx context.Context, id uuid.UUID, f func(ctx context.Cont
 
 	// 順番待ちの席があれば(aibow-server の中)、送信の全体(モデルの読み直し・要約・返事)の間、席を持つ。
 	// 生成1回ごとに取り直すと、その間に Cline などがモデルを入れ替えてしまうため
+	waitStart := time.Now()
 	if !s.takeSeat(ctx, id, emit) {
 		return
 	}
 	if s.seat != nil {
 		defer s.seat.Release()
+		// 待った時間は、使用量の記録で、この送信の最初の生成に付ける(0033)
+		ctx = genlog.WithWait(ctx, time.Since(waitStart))
 	}
 
 	who := whoOf(ctx)
@@ -1403,6 +1575,17 @@ func (s *Service) run(ctx context.Context, id uuid.UUID, f func(ctx context.Cont
 				st := r.Stats
 				log.Infof("プロンプト %d トークン(再利用 %d)%.2f 秒 / 生成 %d トークン %.2f 秒(%.1f tok/s)/ 終了理由: %s / ツール呼び出し %d 件",
 					st.PromptTokens, st.ReusedTokens, st.PromptSec, st.GenTokens, st.GenSec, tokPerSec(st.GenerateStats), st.StopReason, len(r.ToolCalls))
+				// 画像(0030)。画像トークン数と、今回エンコードした秒数(KV キャッシュを使い回した画像は 0 秒)
+				if st.ImageTokens > 0 {
+					log.Infof("画像: %d トークン / エンコード %.2f 秒", st.ImageTokens, st.EncodeSec)
+				}
+				if st.ProjectorSec > 0 {
+					where := "GPU"
+					if st.ProjectorCPU {
+						where = "CPU(GPU に載らなかった)"
+					}
+					log.Noticef("画像を読む部品(mmproj)を %s に読み込みました(%.1f 秒)", where, st.ProjectorSec)
+				}
 			}
 		case "tool_result":
 			logTool(ev.Message, who)

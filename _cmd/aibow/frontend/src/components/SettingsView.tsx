@@ -1,5 +1,5 @@
 // 設定の画面: タブで「基本設定」(画面)・「モデル」(モデルの一覧・置き場所・GPU の層数。0015 の 8-4)・「会話」(プロファイル・ツール)・
-// 「サーバー」(aibow-server につなぐ・戻す。デスクトップだけ。0019)に分ける。
+// 「サーバー」(aibow-server につなぐ・戻す。デスクトップだけ。0019)・「MCP」(MCP のサーバーを足す・変える・消す。デスクトップだけ。0034)に分ける。
 // 会話に関わらないアプリの設定と、会話の既定として使われる値を、同じ画面に混ぜないため(2026-10-19、ユーザーの指示)。
 // GPU の層数は、以前は基本設定で読み込み中のモデルの値だけを変えていたが、「モデル」のタブでモデルごとに変えるようにした。
 // ツールは、プロファイルの中の1つの一覧で決める(最初から使う・選べば使える・使えないはプロファイル、確認しないはこの PC。0014)。
@@ -14,11 +14,14 @@ import type { AppSettings, ConversationSettings, DisplaySettings } from "../../b
 import type { ServerInfo } from "../../bindings/github.com/secondarykey/aibow/mcp/client";
 import { ProfileSettings } from "./ProfileSettings";
 import { ModelSettings } from "./ModelSettings";
-import { UserSettings } from "./UserSettings";
 import { ServerSettings } from "./ServerSettings";
-import { ServerTools } from "./ServerTools";
-import { changePassword, isBrowser, me } from "../backend";
-import { errorMessage } from "../errors";
+import { McpEditor, type McpEditorAPI } from "./McpEditor";
+import { WorkspaceSettings } from "./WorkspaceSettings";
+import type { WorkspaceList } from "../../bindings/github.com/secondarykey/aibow/ui";
+import { ChatService, isBrowser, me } from "../backend";
+import { AccountSettings, signedIn } from "./AccountSettings";
+import { LeaderGroups } from "./GroupSettings";
+import { useDirectory } from "../directory";
 import type { Models } from "../useModels";
 // Go の models パッケージ。"…/aibow/models" と書くと aibow パッケージの models.ts が選ばれるので、index まで書く
 import type { Entry as ModelEntry } from "../../bindings/github.com/secondarykey/aibow/models/index";
@@ -39,26 +42,47 @@ interface Props {
   connectDisabled: boolean;
   onDisplayChange(d: DisplaySettings): void; // 画面の設定を変える(生成に関わらないので、生成中でも変えられる)
   onToolsChanged(): void; // ツールを使う / 使わないを変えた(メーターと、会話で選べる MCP のサーバーを読み直す)
-  onReadConversation(id: string): void; // 管理者がほかの人の会話を読むだけで開く(0018 の 11-2)
+  onNotice(text: string): void; // お知らせ(トースト)を出す(MCP のサーバーを足した、など)
+  initialTab?: Tab; // 開いたときのタブ(左下の名前のメニューの「アカウント」から開くときは account)
+  workspaces: WorkspaceList; // その PC のワークスペース(「ワークスペース」のタブ。デスクトップだけ。0035)
+  onWorkspacesChanged(): void; // ワークスペースを変えた(入力欄の上の一覧を読み直す)
 }
 
-type Tab = "basic" | "model" | "conversation" | "tools" | "server" | "users";
+export type Tab = "basic" | "model" | "conversation" | "workspace" | "mcp" | "server" | "groups" | "account";
 
 const TABS: { id: Tab; label: string; title: string }[] = [
   { id: "basic", label: "基本設定", title: "会話によらず、この PC で1つだけのもの(画面)" },
-  { id: "model", label: "モデル", title: "モデルの一覧(読み込む / 降ろす・GPU の層数)と置き場所" },
+  // ブラウザ(aibow-server)では一覧だけ。読み込む / 降ろす・GPU の層数・置き場所は管理の画面(0032 の決定事項 6)
+  { id: "model", label: "モデル", title: isBrowser ? "使えるモデルの一覧" : "モデルの一覧(読み込む / 降ろす・GPU の層数)と置き場所" },
   { id: "conversation", label: "会話", title: "プロファイル(新しい会話の既定・ツールの扱い)" },
-  // ブラウザの会話のツールの扱いの、aibow-server 全体の既定(0024 の決定事項 21)。変えるのは管理者だけで、ほかの人は見るだけ
-  { id: "tools", label: "ツール", title: "ブラウザの会話のツールの扱い(使わない・確認する・確認しない)。aibow-server 全体の既定" },
+  // その PC のフォルダの組(アプリだけ。0035)。会話は入力欄の上でここから選ぶ
+  { id: "workspace", label: "ワークスペース", title: "この PC のワークスペース(名前を付けたフォルダの組)を作る・変える・消す" },
+  // MCP のサーバーそのものを足す・変える・消す(アプリだけ。0034 の決定事項 2・3)。使う・確認するを決めるのは「会話」のプロファイルの「ツール」
+  { id: "mcp", label: "MCP", title: "MCP のサーバーを足す・変える・消す・試しにつなぐ" },
   // aibow-server につなぐ・戻すは、デスクトップのアプリだけ(0019。ブラウザは aibow-server そのものの画面)
   { id: "server", label: "サーバー", title: "aibow-server につなぐ・ログインする・アプリの中で動かす形に戻す" },
-  // 利用者の管理は、ブラウザでログインした管理者だけ(0018 の決定事項 7)
-  { id: "users", label: "利用者", title: "aibow-server の利用者(作る・パスワードと API キーの作り直し・消す)" },
+  // グループの長だけ(管理者でない人。管理者は「利用者」のタブで扱う。0031 の決定事項 32・37)
+  { id: "groups", label: "グループ", title: "自分が長のグループ(メンバーを足す・外す)" },
+  // ログインしているとき(ブラウザ・アプリが aibow-server にログインしてつないでいるとき)。自分の名前・表示名・メールアドレス・パスワード・ログアウト(0031 の決定事項 44)
+  { id: "account", label: "アカウント", title: "自分の表示名・メールアドレス・パスワード・ログアウト" },
 ];
 
-export function SettingsView({ onClose, errors, app, models, modelState, servers, onProfilesChanged, onApplyLimits, onError, appDisabled, connectDisabled, onDisplayChange, onToolsChanged, onReadConversation }: Props) {
-  // 開くたびに「基本設定」から(開いている間だけ覚える)
-  const [tab, setTab] = useState<Tab>("basic");
+// appMcpAPI は、アプリの「MCP」のタブが呼ぶ口(mcp.json。0034)。aibow-server の分を作るときは、ここを替えた口を McpEditor に渡す
+const appMcpAPI: McpEditorAPI = {
+  list: () => ChatService.MCPServerList(),
+  add: servers => ChatService.AddMCPServers(servers),
+  update: (name, config) => ChatService.UpdateMCPServer(name, config),
+  remove: name => ChatService.DeleteMCPServer(name),
+  try: (name, config, add) => ChatService.TryMCPServer(name, config, add),
+  parse: text => ChatService.ParseMCPJSON(text),
+};
+
+export function SettingsView({ onClose, errors, app, models, modelState, servers, onProfilesChanged, onApplyLimits, onError, appDisabled, connectDisabled, onDisplayChange, onToolsChanged, onNotice, initialTab, workspaces, onWorkspacesChanged }: Props) {
+  // 開くたびに「基本設定」から(開いている間だけ覚える)。左下の名前のメニューから開いたときは「アカウント」
+  const [tab, setTab] = useState<Tab>(initialTab ?? "basic");
+  // グループの長かは、共有の相手の一覧(グループの長も入っている)で決める。ブラウザでログインしているときだけ
+  const [dir, reloadDir] = useDirectory();
+  const leader = isBrowser && me.login && !me.admin && dir.groups.some(g => g.leaders.includes(me.name));
   return (
     <section className="settings-view">
       <div className="settings-inner">
@@ -69,7 +93,7 @@ export function SettingsView({ onClose, errors, app, models, modelState, servers
         {errors.map(e => <div key={e.id} className="msg error">{e.text}</div>)}
 
         <div className="settings-tabs" role="tablist">
-          {TABS.filter(t => (t.id !== "users" || (isBrowser && me.admin)) && (t.id !== "server" || !isBrowser) && (t.id !== "tools" || isBrowser)).map(t => (
+          {TABS.filter(t => (t.id !== "groups" || leader) && (t.id !== "account" || signedIn()) && (t.id !== "server" || !isBrowser) && (t.id !== "mcp" || !isBrowser) && (t.id !== "workspace" || !isBrowser)).map(t => (
             <button
               key={t.id}
               role="tab"
@@ -87,18 +111,21 @@ export function SettingsView({ onClose, errors, app, models, modelState, servers
           <>
             <h2 title="画面の見せ方。生成には関わらない">画面</h2>
             {app && <DisplaySettingsForm display={app.display} onChange={onDisplayChange} />}
-            {/* 自分のパスワードを変える(ブラウザでログインしているときだけ。0022) */}
-            {isBrowser && me.login && me.name !== "" && <PasswordForm />}
           </>
         )}
 
-        {tab === "model" && <ModelSettings models={modelState} disabled={appDisabled} onError={onError} />}
+        {/* ブラウザ(aibow-server)では一覧だけ。読み込む / 降ろす・層の数・置き場所・使えるは管理の画面(0032 の決定事項 6)。アプリの中で動かすときは今のまま */}
+        {tab === "model" && <ModelSettings models={modelState} listOnly={isBrowser} disabled={appDisabled} onError={onError} />}
 
-        {tab === "users" && <UserSettings onError={onError} onRead={onReadConversation} />}
+        {tab === "groups" && <LeaderGroups dir={dir} reload={reloadDir} onError={onError} />}
 
-        {tab === "tools" && <ServerTools servers={servers} manage={modelState.manage} onChanged={onToolsChanged} />}
+        {tab === "account" && <AccountSettings onError={onError} />}
 
         {tab === "server" && <ServerSettings disabled={connectDisabled} onError={onError} />}
+
+        {tab === "workspace" && <WorkspaceSettings list={workspaces} reload={onWorkspacesChanged} />}
+
+        {tab === "mcp" && <McpEditor api={appMcpAPI} onChanged={onToolsChanged} onNotice={onNotice} />}
 
         {tab === "conversation" && (
           <>
@@ -117,49 +144,6 @@ export function SettingsView({ onClose, errors, app, models, modelState, servers
         )}
       </div>
     </section>
-  );
-}
-
-// PasswordForm は、ログインしている本人がパスワードを変える(0022 の決定事項 4)。変えたら、ほかのログイン中の画面とアプリは切れる。
-// 間違いはフォームの下に出す(設定の画面のエラーの欄に積むと、変えられたあとも残って紛らわしいため)
-function PasswordForm() {
-  const [current, setCurrent] = useState("");
-  const [next, setNext] = useState("");
-  const [again, setAgain] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [done, setDone] = useState(false);
-  const [error, setError] = useState("");
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-    if (next !== again) {
-      setError("2つの新しいパスワードが違います");
-      return;
-    }
-    setBusy(true);
-    try {
-      await changePassword(current, next);
-      setCurrent(""); setNext(""); setAgain("");
-      setDone(true);
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <form className="password-form" onSubmit={submit}>
-      <h2 className="section" title="変えると、ほかのログイン中の画面とアプリはログインし直しになる(この画面はそのまま)">パスワード</h2>
-      <label htmlFor="pw-current">今のパスワード</label>
-      <input id="pw-current" type="password" autoComplete="current-password" value={current} onChange={e => { setCurrent(e.target.value); setDone(false); }} />
-      <label htmlFor="pw-next">新しいパスワード(12 文字以上)</label>
-      <input id="pw-next" type="password" autoComplete="new-password" value={next} onChange={e => { setNext(e.target.value); setDone(false); }} />
-      <label htmlFor="pw-again">新しいパスワード(もう一度)</label>
-      <input id="pw-again" type="password" autoComplete="new-password" value={again} onChange={e => { setAgain(e.target.value); setDone(false); }} />
-      <button type="submit" className="apply" disabled={busy || !current || !next || !again}>パスワードを変える</button>
-      {error && <p className="login-error" role="alert">{error}</p>}
-      {done && <p className="hint">パスワードを変えました</p>}
-    </form>
   );
 }
 

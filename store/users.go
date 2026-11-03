@@ -18,17 +18,23 @@ import (
 
 var _ auth.Store = (*SQLite)(nil)
 
-const userColumns = "id, name, password, admin, created_at, updated_at"
+const userColumns = "id, name, password, admin, created_at, updated_at, display_name, last_used_at, email"
 
 func scanUser(r rowScanner) (auth.User, error) {
 	var u auth.User
-	var id, created, updated string
-	if err := r.Scan(&id, &u.Name, &u.Password, &u.Admin, &created, &updated); err != nil {
+	var id, created, updated, used string
+	if err := r.Scan(&id, &u.Name, &u.Password, &u.Admin, &created, &updated, &u.DisplayName, &used, &u.Email); err != nil {
 		return u, err
 	}
 	var err error
 	if u.ID, err = parseID(id); err != nil {
 		return u, err
+	}
+	// 一度も使っていなければ空(ゼロの時刻のまま)
+	if used != "" {
+		if u.LastUsedAt, err = parseTime(used); err != nil {
+			return u, err
+		}
 	}
 	if u.CreatedAt, err = parseTime(created); err != nil {
 		return u, err
@@ -38,8 +44,12 @@ func scanUser(r rowScanner) (auth.User, error) {
 }
 
 func (s *SQLite) CreateUser(ctx context.Context, u auth.User) error {
-	_, err := s.db.ExecContext(ctx, "INSERT INTO users ("+userColumns+") VALUES (?, ?, ?, ?, ?, ?)",
-		u.ID.String(), u.Name, u.Password, u.Admin, formatTime(u.CreatedAt), formatTime(u.UpdatedAt))
+	used := ""
+	if !u.LastUsedAt.IsZero() {
+		used = formatTime(u.LastUsedAt)
+	}
+	_, err := s.db.ExecContext(ctx, "INSERT INTO users ("+userColumns+") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		u.ID.String(), u.Name, u.Password, u.Admin, formatTime(u.CreatedAt), formatTime(u.UpdatedAt), u.DisplayName, used, u.Email)
 	// 名前は UNIQUE。SQLite のエラーの文で見分ける(ドライバーの型を使うと、このパッケージの外にドライバーの事情が漏れるため)
 	if err != nil && strings.Contains(err.Error(), "UNIQUE constraint failed: users.name") {
 		return auth.ErrUserExists
@@ -87,6 +97,26 @@ func (s *SQLite) SetPassword(ctx context.Context, id uuid.UUID, hash string, at 
 
 func (s *SQLite) SetAdmin(ctx context.Context, id uuid.UUID, admin bool, at time.Time) error {
 	res, err := s.db.ExecContext(ctx, "UPDATE users SET admin = ?, updated_at = ? WHERE id = ?", admin, formatTime(at), id.String())
+	return notFoundIfNone(res, err, auth.ErrUserNotFound)
+}
+
+func (s *SQLite) SetDisplayName(ctx context.Context, id uuid.UUID, name string, at time.Time) error {
+	res, err := s.db.ExecContext(ctx, "UPDATE users SET display_name = ?, updated_at = ? WHERE id = ?", name, formatTime(at), id.String())
+	return notFoundIfNone(res, err, auth.ErrUserNotFound)
+}
+
+// SetEmail はメールアドレスを変える(auth.CheckEmail を通したもの。空なら無し)。ほかの人と重なれば auth.ErrEmailExists。
+func (s *SQLite) SetEmail(ctx context.Context, id uuid.UUID, email string, at time.Time) error {
+	res, err := s.db.ExecContext(ctx, "UPDATE users SET email = ?, updated_at = ? WHERE id = ?", email, formatTime(at), id.String())
+	// 重なりは索引 users_email(lower(email))で断られる。名前と同じく SQLite のエラーの文で見分ける
+	if err != nil && strings.Contains(err.Error(), "users_email") {
+		return auth.ErrEmailExists
+	}
+	return notFoundIfNone(res, err, auth.ErrUserNotFound)
+}
+
+func (s *SQLite) SetLastUsed(ctx context.Context, id uuid.UUID, at time.Time) error {
+	res, err := s.db.ExecContext(ctx, "UPDATE users SET last_used_at = ? WHERE id = ?", formatTime(at), id.String())
 	return notFoundIfNone(res, err, auth.ErrUserNotFound)
 }
 
@@ -267,4 +297,54 @@ func (s *SQLite) AppToken(ctx context.Context, id string) (auth.AppToken, error)
 func (s *SQLite) DeleteAppToken(ctx context.Context, id string) error {
 	_, err := s.db.ExecContext(ctx, "DELETE FROM app_tokens WHERE id = ?", id)
 	return err
+}
+
+// ---- 管理者の一覧に足すもの(0031) ----------------------------------------------------------
+
+// ConversationCounts は、利用者ごとの会話の数(管理者の利用者のタブの「会話」の列。0031 の決定事項 14)。会話の無い人は入らない。
+func (s *SQLite) ConversationCounts(ctx context.Context) (map[uuid.UUID]int, error) {
+	rows, err := s.db.QueryContext(ctx, "SELECT owner, COUNT(*) FROM conversations GROUP BY owner")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[uuid.UUID]int{}
+	for rows.Next() {
+		var owner string
+		var n int
+		if err := rows.Scan(&owner, &n); err != nil {
+			return nil, err
+		}
+		id, err := parseID(owner)
+		if err != nil {
+			return nil, err
+		}
+		out[id] = n
+	}
+	return out, rows.Err()
+}
+
+// PasswordLinkExpiries は、パスワードを決めるリンクを持っている人と、その期限(招待中の人のリンクが切れたかを出すため。0031 の決定事項 14)。
+// 使ったリンクは消えるので、ここにあるのはまだ使っていないリンクだけ(期限が過ぎたものも入る)。
+func (s *SQLite) PasswordLinkExpiries(ctx context.Context) (map[uuid.UUID]time.Time, error) {
+	rows, err := s.db.QueryContext(ctx, "SELECT user_id, expires_at FROM password_links")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[uuid.UUID]time.Time{}
+	for rows.Next() {
+		var user, expires string
+		if err := rows.Scan(&user, &expires); err != nil {
+			return nil, err
+		}
+		id, err := parseID(user)
+		if err != nil {
+			return nil, err
+		}
+		if out[id], err = parseTime(expires); err != nil {
+			return nil, err
+		}
+	}
+	return out, rows.Err()
 }

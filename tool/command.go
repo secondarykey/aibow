@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -41,23 +42,44 @@ const (
 
 // RunCommand は、作業フォルダ dir をカレントにしてコマンドを実行するツール。dir は絶対パス。
 func RunCommand(dir string) Tool {
-	return runCommand{dir: dir}
+	return RunCommandIn(Single(dir))
+}
+
+// RunCommandIn は、フォルダの組 folders のどれかをカレントにしてコマンドを実行するツール(ワークスペース。0035)。
+//
+// フォルダが複数なら、ファイルのツールと同じ引数 folder(名前の enum)で選ばせ、省けばメイン。1つなら定義は RunCommand と同じ。
+// 以前はメインだけで動かしていたが、書けるフォルダや git の印の付いたフォルダでビルドや Git を動かせず、
+// モデルが「cd B && git status」(メインの下の B を探す)や、cmd.exe の /d 無しの別のドライブへの cd で失敗した(2026-11-02、ユーザーの報告)。
+// コマンドはどこでも書けるので、カレントをメインに縛っても守りにはならない(守りは実行前の確認)。
+// 読むだけのフォルダでも動かせる(git log・git diff のような調べるだけのコマンドのため。2026-11-02、ユーザーと決めた)。
+// そのときは確認のカードに「読むだけのフォルダ」と出す。
+func RunCommandIn(folders []Folder) Tool {
+	return runCommand{folders: folderSet(folders)}
 }
 
 type runCommand struct {
-	dir   string
-	limit time.Duration // 時間の上限。0 なら commandTimeLimit(テストで短くするため)
+	folders folderSet
+	limit   time.Duration // 時間の上限。0 なら commandTimeLimit(テストで短くするため)
 }
 
-func (runCommand) Def() Def {
-	return Def{
+func (t runCommand) Def() Def {
+	where := "It already runs in the working directory; do not cd into it. "
+	if t.folders.multi() {
+		// フォルダが複数のときだけ言い換える(1つなら段1と同じ定義。4B のプロンプトを変えない)。
+		// 呼ぶたびに新しいシェルなので、前の呼び出しの cd は効かない。モデルが同じシェルが続くと思い込むと、
+		// 「cd /d B」のあとの folder なしの git commit がメインで動いてしまうので、それを書く。
+		// サブフォルダへの cd(cd frontend && npm test)まで禁じて読めないよう、cd を避けるのは「一覧のほかのフォルダ」に絞る
+		where = "Each call starts a new shell in the chosen folder (the main folder if folder is omitted); a cd does not carry over to the next call. " +
+			"To run in another folder of the list, pass folder instead of cd. "
+	}
+	return t.folders.withFolder(Def{
 		Name: "run_command",
 		Description: "Run a command line with the shell named in the Environment section, and return its output and exit code. " +
-			"It already runs in the working directory; do not cd into it. " +
+			where +
 			"Use it to build, test or run programs. Commands cannot read input and are stopped after 120 seconds. The user is asked to approve before it runs.",
 		Parameters: json.RawMessage(`{"type": "object", "properties": {"command": {"type": "string", ` +
 			`"description": "The command line to run."}}, "required": ["command"]}`),
-	}
+	})
 }
 
 func (t runCommand) TimeLimit() time.Duration {
@@ -68,32 +90,121 @@ func (t runCommand) TimeLimit() time.Duration {
 }
 
 func (t runCommand) Preview(args Args) (Preview, error) {
-	command, err := t.check(args)
+	command, f, err := t.check(args)
 	if err != nil {
 		return Preview{}, err
 	}
-	return Preview{Note: "コマンド", Command: command}, nil
+	note := "コマンド"
+	if !f.Writable {
+		// コマンドは読むだけのフォルダでも書けてしまう。守りは確認なので、カードで分かるようにする
+		note = "コマンド(読むだけのフォルダ)"
+	}
+	return Preview{Folder: t.folders.cardFolder(target{folder: f}), Note: note, Command: command}, nil
 }
 
-// check はコマンドと作業フォルダを確かめる。
-func (t runCommand) check(args Args) (string, error) {
+// check はコマンドと、カレントにするフォルダ(引数 folder。省けばメイン)を確かめる。
+func (t runCommand) check(args Args) (string, Folder, error) {
 	command := strings.TrimSpace(args.String("command"))
 	if command == "" {
-		return "", errors.New("command が空です")
+		return "", Folder{}, errors.New("command が空です")
 	}
-	if st, err := os.Stat(t.dir); err != nil || !st.IsDir() {
-		return "", fmt.Errorf("作業フォルダ %s がありません(消えたか、名前が変わった可能性があります)", t.dir)
+	f, err := t.folders.pick(strings.TrimSpace(args.String("folder")), "")
+	if err != nil {
+		return "", Folder{}, err
 	}
-	return command, nil
+	if cf, ok := t.folders.containing(leadingCd(command)); ok {
+		f = cf
+	}
+	if st, err := os.Stat(f.Path); err != nil || !st.IsDir() {
+		return "", Folder{}, fmt.Errorf("作業フォルダ %s がありません(消えたか、名前が変わった可能性があります)", f.Path)
+	}
+	if err := t.folders.cdName(leadingCdPath(command), f); err != nil {
+		return "", Folder{}, err
+	}
+	return command, f, nil
+}
+
+// cdName は、先頭の cd の行き先がワークスペースのフォルダの名前(相対パス)のときに、直し方の分かるエラーにする。
+//
+// Qwen3.5 4B は、フォルダが1つでも「cd aibow && go build ./...」のように、作業フォルダの名前をサブフォルダとして書いた
+// (環境の説明の「"aibow" refers to the working directory itself.」は効かなかった。_docs/tuning.md)。
+// cmd.exe は「The system cannot find the path specified.」と返すだけで、モデルは /d を付けるなどして同じ失敗を繰り返したので、
+// 確認のカードを出す前に、どう書けばよいかを返す。カレントのフォルダの中にその名前のものが本当にあるなら、サブフォルダとしてそのまま動かす。
+func (set folderSet) cdName(p string, cur Folder) error {
+	p = strings.TrimRight(p, `/\`)
+	if p == "" || filepath.IsAbs(p) || strings.ContainsAny(p, `/\`) {
+		return nil
+	}
+	for _, f := range set {
+		if !strings.EqualFold(f.Name, p) {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(cur.Path, p)); err == nil {
+			return nil // カレントの中に本当にある(サブフォルダ)
+		}
+		if f.Path == cur.Path {
+			return fmt.Errorf("%s は作業フォルダそのものの名前で、コマンドはもうその中で動きます。cd %s を外して、続きだけを書いてください", p, p)
+		}
+		return fmt.Errorf("%s はワークスペースのフォルダの名前です。cd でなく、folder に %s を書いてください", p, f.Name)
+	}
+	return nil
+}
+
+// leadingCd は、コマンドの先頭の「cd <絶対パス> &&」の行き先(無ければ空)。
+//
+// folder を渡さずに「cd "C:\...\B" && git log」と書かれると、cmd.exe の cd は /d が無いと別のドライブへ移らず、
+// しかも成功扱いなので、git log がメイン(D: のフォルダ)で動き、別のリポジトリのログが返った(2026-11-03、ユーザーの報告)。
+// ツールの説明に「cd でなく folder」と書いても書かれるので、行き先がワークスペースのフォルダ(の中)なら、そこをカレントにする。
+// コマンドは書き換えない(カレントがそのフォルダなら、cd は同じドライブの中の移動になり、/d が無くても効く)。
+// 確認のカードにも、cd の行き先のフォルダの名前が出る。
+// 読むのは先頭の1つだけ(cd /d・chdir も)。引用符の無いパスは空白か & ; までにする(空白を含むパスは引用符で書かれる)。
+func leadingCd(command string) string {
+	p := leadingCdPath(command)
+	if !filepath.IsAbs(p) {
+		return ""
+	}
+	return filepath.Clean(p)
+}
+
+// leadingCdPath は、コマンドの先頭の「cd <パス> &&」の行き先を、書いてあるまま返す(相対パスも。無ければ空)。
+func leadingCdPath(command string) string {
+	word, rest, _ := strings.Cut(command, " ")
+	if !strings.EqualFold(word, "cd") && !strings.EqualFold(word, "chdir") {
+		return ""
+	}
+	rest = strings.TrimSpace(rest)
+	if len(rest) > 2 && strings.EqualFold(rest[:2], "/d") && rest[2] == ' ' {
+		rest = strings.TrimSpace(rest[3:])
+	}
+	var p string
+	if strings.HasPrefix(rest, `"`) {
+		end := strings.Index(rest[1:], `"`)
+		if end < 0 {
+			return ""
+		}
+		p, rest = rest[1:1+end], rest[2+end:]
+	} else {
+		end := strings.IndexAny(rest, " &;")
+		if end < 0 {
+			return ""
+		}
+		p, rest = rest[:end], rest[end:]
+	}
+	// cd だけのコマンド(後ろに続きが無い)は、その場所で動かす意味が無いので読まない
+	rest = strings.TrimSpace(rest)
+	if !strings.HasPrefix(rest, "&") && !strings.HasPrefix(rest, ";") {
+		return ""
+	}
+	return p
 }
 
 func (t runCommand) Run(ctx context.Context, args Args) (string, error) {
-	command, err := t.check(args)
+	command, f, err := t.check(args)
 	if err != nil {
 		return "", err
 	}
 	var out outputBuffer
-	cmd := shellCommand(t.dir, command)
+	cmd := shellCommand(f.Path, command)
 	cmd.Stdin = nil                     // 標準入力は空(NUL / /dev/null)。入力待ちで止まらないように
 	cmd.Stdout, cmd.Stderr = &out, &out // 同じ書き先にすると、標準出力とエラー出力が出た順に1つにまとまる
 	cmd.WaitDelay = waitDelay

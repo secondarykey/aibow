@@ -4,8 +4,12 @@ import (
 	"bufio"
 	"cmp"
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -383,5 +387,40 @@ func TestToolChoiceNone(t *testing.T) {
 	res.Body.Close()
 	if len(g.prompts[0].Tools) != 0 {
 		t.Error("ツールを知らせてしまった")
+	}
+}
+
+// 画像(0030):image_url は data: の URL(base64)だけを受け、user の発言の画像にする(ID は中身の SHA-256)。
+// http(s):// は取りに行かずに断り、user 以外の発言の画像も断る
+func TestImageURL(t *testing.T) {
+	g := &fakeGen{nCtx: 1000}
+	ts := newTestServer(g)
+	defer ts.Close()
+	data := []byte("\x89PNG\r\n\x1a\nfake")
+	url := "data:image/png;base64," + base64.StdEncoding.EncodeToString(data)
+	res := post(t, ts.URL, `{"messages":[{"role":"user","content":[{"type":"text","text":"これは?"},{"type":"image_url","image_url":{"url":"`+url+`"}}]}]}`)
+	res.Body.Close()
+	if res.StatusCode != 200 {
+		t.Fatalf("ステータス %d", res.StatusCode)
+	}
+	m := g.prompts[0].Messages[0]
+	sum := sha256.Sum256(data)
+	if m.Content != "これは?" || len(m.Images) != 1 || m.Images[0].ID != hex.EncodeToString(sum[:]) ||
+		m.Images[0].Format != "image/png" || string(m.Images[0].Data) != string(data) {
+		t.Errorf("受け取った発言: %q %+v", m.Content, m.Images)
+	}
+
+	for body, want := range map[string]string{
+		`{"messages":[{"role":"user","content":[{"type":"image_url","image_url":{"url":"https://example.com/a.png"}}]}]}`:   "読みません",
+		`{"messages":[{"role":"user","content":[{"type":"image_url","image_url":{"url":"data:text/plain;base64,YQ=="}}]}]}`: "画像ではありません",
+		`{"messages":[{"role":"user","content":[{"type":"image_url","image_url":{"url":"data:image/png,abc"}}]}]}`:          "の形にしてください",
+		`{"messages":[{"role":"system","content":[{"type":"image_url","image_url":{"url":"` + url + `"}}]}]}`:               "user の発言だけ",
+	} {
+		res := post(t, ts.URL, body)
+		b, _ := io.ReadAll(res.Body)
+		res.Body.Close()
+		if res.StatusCode != 400 || !strings.Contains(string(b), want) {
+			t.Errorf("%s: %d %s(期待: %q を含む)", body, res.StatusCode, b, want)
+		}
 	}
 }

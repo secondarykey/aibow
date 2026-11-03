@@ -14,6 +14,7 @@ package client
 import (
 	"bufio"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -21,9 +22,11 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"uuid"
 
 	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/format"
+	"github.com/secondarykey/aibow/genlog"
 	"github.com/secondarykey/aibow/tool"
 )
 
@@ -51,16 +54,45 @@ type chatRequest struct {
 // aibowRequest は aibow のクライアントだと知らせる欄。モデルに渡した文字列も返してもらう(画面に出すため)
 type aibowRequest struct {
 	ReturnPrompt bool `json:"return_prompt"`
+	// 何のための生成か(reply / summary)と会話の ID。aibow-server の使用量の記録に書く(0033)。会話の仕組みが ctx に付けた付箋から写す
+	Purpose      string `json:"purpose,omitempty"`
+	Conversation string `json:"conversation,omitempty"`
 }
 
 type chatMessage struct {
-	Role             string        `json:"role"`
-	Content          string        `json:"content"`
+	Role string `json:"role"`
+	// Content は文字列。画像の付いた発言(0030)は部品の配列(contentPart。画像 → 文字)
+	Content          any           `json:"content"`
 	ReasoningContent string        `json:"reasoning_content,omitempty"`
 	ToolCalls        []toolCall    `json:"tool_calls,omitempty"`
 	ToolCallID       string        `json:"tool_call_id,omitempty"` // サーバーはこれでツールの名前を引く(Gemma 4 は結果に名前を書く)。崩れた呼び出しの結果には無い
 	Name             string        `json:"name,omitempty"`         // tool の発言の、ツールの名前(崩れた呼び出しの結果は id が無いので、名前で送る)
 	Aibow            *messageExtra `json:"aibow,omitempty"`
+}
+
+// contentPart は、画像の付いた発言の content の部品1つ(OpenAI の形)。
+type contentPart struct {
+	Type     string    `json:"type"`
+	Text     string    `json:"text,omitempty"`
+	ImageURL *imageURL `json:"image_url,omitempty"`
+}
+
+type imageURL struct {
+	URL string `json:"url"`
+}
+
+// contentOf は発言の content。画像があれば、画像を data: の URL(base64)にした部品を先に並べ、最後に文字の部品を置く
+// (0030 の決定事項 17。書式も画像を文字より前に書くので、並びをそろえる)。サーバーは中身の SHA-256 を画像の ID にするので、
+// 会話の仕組みが付けた ID(File.Hash)と同じになり、サーバーのエンジンの KV キャッシュでも同じ画像と分かる
+func contentOf(m format.Message) any {
+	if len(m.Images) == 0 {
+		return m.Content
+	}
+	parts := make([]contentPart, 0, len(m.Images)+1)
+	for _, img := range m.Images {
+		parts = append(parts, contentPart{Type: "image_url", ImageURL: &imageURL{URL: "data:" + img.Format + ";base64," + base64.StdEncoding.EncodeToString(img.Data)}})
+	}
+	return append(parts, contentPart{Type: "text", Text: m.Content})
 }
 
 type messageExtra struct {
@@ -110,7 +142,7 @@ func newChatRequest(p format.Prompt) (chatRequest, error) {
 	// (結果は崩れた呼び出しの分も順番に並ぶので、取らないと後ろの結果の id がずれる)
 	var pending []string
 	for i, m := range p.Messages {
-		cm := chatMessage{Role: m.Role, Content: m.Content, ReasoningContent: m.Thinking}
+		cm := chatMessage{Role: m.Role, Content: contentOf(m), ReasoningContent: m.Thinking}
 		switch m.Role {
 		case "assistant":
 			pending = pending[:0]
@@ -168,6 +200,8 @@ type chunk struct {
 		Prompt          string       `json:"prompt"`
 		StopReason      string       `json:"stop_reason"`
 		BrokenToolCalls []brokenCall `json:"broken_tool_calls"`
+		ImageTokens     int          `json:"image_tokens"` // 画像(0030)
+		EncodeSec       float64      `json:"encode_sec"`
 	} `json:"aibow"`
 	errorBody
 }
@@ -197,6 +231,12 @@ func (c *Client) Generate(ctx context.Context, p format.Prompt, opt engine.Gener
 	req.Stream = true
 	req.Temperature, req.MaxTokens, req.PresencePenalty = &opt.Temperature, opt.MaxTokens, &opt.PresencePenalty
 	req.Aibow = &aibowRequest{ReturnPrompt: true}
+	if j := genlog.JobOf(ctx); j.Purpose != "" {
+		req.Aibow.Purpose = j.Purpose
+		if j.Conversation != (uuid.UUID{}) {
+			req.Aibow.Conversation = j.Conversation.String()
+		}
+	}
 
 	res, err := c.do(ctx, http.MethodPost, "/v1/chat/completions", req)
 	if err != nil {
@@ -295,6 +335,10 @@ func (r *streamReader) push(ch chunk) {
 		r.stats = engine.GenerateStats{
 			PromptTokens: t.PromptN + t.CacheN, ReusedTokens: t.CacheN, PromptSec: t.PromptMS / 1000,
 			GenTokens: t.PredictedN, GenSec: t.PredictedMS / 1000,
+		}
+		// 画像の記録は aibow の欄にある(timings と同じ、終了の理由の塊に入っている)
+		if ch.Aibow != nil {
+			r.stats.ImageTokens, r.stats.EncodeSec = ch.Aibow.ImageTokens, ch.Aibow.EncodeSec
 		}
 	}
 	for _, c := range ch.Choices {

@@ -8,7 +8,7 @@ package main
 //	Cline など ──HTTP──→ /v1/ など → api ─────────────────────→ engine ┴─ 順番待ちの席は1つ(api.Seat)
 //
 // 生成は同じ engine を直接使い、OpenAI 互換の口と同じ席を通す(HTTP で自分自身に頼まない。0016 の 11)。
-// ブラウザの会話のツールはサーバーの PC で動く(0024)。組み込みの時刻・計算と、server.json の mcpServers に書いた MCP のサーバー。
+// ブラウザの会話のツールはサーバーの PC で動く(0024)。組み込みの時刻・計算・URL を読む(管理者が有効にしたとき。0036)と、server.json の mcpServers に書いた MCP のサーバー。
 // 扱いの既定は管理者が決める(server-tools.json)。確認のカードは SSE で届き、答えは画面用の口で返す。
 // 会話は server.db に保存し、画面のアプリの aibow.db とは別にする(0016 の 13)。
 //
@@ -25,34 +25,31 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"time"
 	"uuid"
 
 	"github.com/secondarykey/aibow"
 	"github.com/secondarykey/aibow/api"
 	"github.com/secondarykey/aibow/auth"
-	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/mcp/client"
 	"github.com/secondarykey/aibow/store"
 	"github.com/secondarykey/aibow/store/remote"
+	"github.com/secondarykey/aibow/tool"
 	"github.com/secondarykey/aibow/ui"
 	"github.com/secondarykey/aibow/web"
 )
 
-// startBrowser は、ブラウザの会話の DB を開き、会話の仕組みと画面用の口を作る。
+// startBrowser は、ブラウザの会話の会話の仕組みと画面用の口を作る。st は server.db(main が開いて閉じる。使用量の記録にも使うため。0033)。
 // initial は DB にまだ値が無いときの設定、url は aibow-server のアドレス(画面の「つなぎ先」に出す)。
+// gen は生成の係(記録付きの engine。OpenAI 互換の口と同じもの)。
 // 戻り値の handler は /aibow/ui/・/aibow/auth/・/aibow/store/・/aibow/admin/ の下を受け持つ。keys は API キーの係(利用者は同じ server.db にいるので、ここで作る)。
-// close は終了のときに呼ぶ(生成を止めて、DB を閉じる)。
-func startBrowser(c config, initial aibow.AppSettings, eng *engine.Engine, mm *modelManager, nCtx int, url string, seat *api.Seat) (http.Handler, *auth.Keys, func(), error) {
-	st, err := store.Open(c.DBPath)
-	if err != nil {
-		return nil, nil, nil, err
-	}
+// close は終了のときに呼ぶ(生成を止める)。
+func startBrowser(c config, initial aibow.AppSettings, st *store.SQLite, gen ui.ServerEngine, mm *modelManager, nCtx int, url string, seat *api.Seat) (http.Handler, *auth.Keys, func(), error) {
 	log.Noticef("ブラウザの会話の保存先: %s", absPath(c.DBPath))
 	// 起動のときに読む人ごとの設定(新しい会話の既定)は、ログインなしの形の利用者のもの(ログインは 0017 の 10-1)
 	app, notes, err := aibow.LoadAppSettings(aibow.WithUser(context.Background(), aibow.LocalUser), st, initial)
 	if err != nil {
-		st.Close()
 		return nil, nil, nil, err
 	}
 	for _, n := range notes {
@@ -70,11 +67,15 @@ func startBrowser(c config, initial aibow.AppSettings, eng *engine.Engine, mm *m
 
 	events := ui.NewEvents()
 	// 組み込みのツールは、アプリと同じく aibow の中の自作の MCP サーバー越しに呼ぶ(0007 の 5-4)。
-	// ブラウザの会話は作業フォルダを使わない(Browser)ので、時刻と計算だけになる(0024 の 12-1a)
-	local := client.NewLocal(client.Options{Version: appVersion()})
+	// 資料のフォルダの無い会話では、時刻・計算と URL を読むツールだけになる(0024 の 12-1a)。
+	// URL を読むツールは、管理者が「ツール」のタブで有効にするまで使えない(server-tools.json。0036 の決定事項 14)
+	if c.FetchAllowPrivate {
+		log.Noticef("fetch_url: サーバーの PC の中・社内のアドレスも読みます(server.json の fetchAllowPrivate)")
+	}
+	local := client.NewLocal(client.Options{Version: appVersion(), Fetch: &tool.FetchOptions{AllowPrivate: c.FetchAllowPrivate, Version: appVersion()}})
 	mcpm, prefs := startServerTools(c)
 	svc, life := ui.New(ui.Options{
-		Host:  ui.NewServerHost(eng, mm, nCtx, url),
+		Host:  ui.NewServerHost(gen, mm, nCtx, url),
 		Store: st, App: app, Version: appVersion(),
 		Notify: events, Seat: seat, Local: local, MCP: mcpm, Prefs: prefs, Browser: true, Folders: c.Folders,
 	})
@@ -87,8 +88,9 @@ func startBrowser(c config, initial aibow.AppSettings, eng *engine.Engine, mm *m
 	sessions := auth.NewSessions(st)
 	mux := http.NewServeMux()
 	mux.Handle("/aibow/ui/", ui.Handler(svc, events, who(c.Login)))
-	mux.Handle("/aibow/auth/", auth.Handler(sessions, c.Login))
 	keys := auth.NewKeys(st)
+	// 本人が自分の表示名・メールアドレス・パスワードを変える口は、画面のアプリからもアプリ用のトークンで呼べる(0031 の決定事項 45)
+	mux.Handle("/aibow/auth/", keys.WithBearer(auth.Handler(sessions, c.Login)))
 	// 保存の口は、API キーが要る形ならキーの持ち主、要らない形(127.0.0.1 だけでログインなし)ならログインなしの形の利用者
 	var storeH http.Handler = remote.Handler(st, func(*http.Request) (uuid.UUID, error) { return aibow.LocalUser, nil })
 	if c.KeysRequired() {
@@ -99,13 +101,16 @@ func startBrowser(c config, initial aibow.AppSettings, eng *engine.Engine, mm *m
 	mux.Handle("GET /aibow/auth/key", keys.MeHandler(c.KeysRequired()))
 	// 管理者の画面の口(利用者の管理。0018 の決定事項 7)。ブラウザでログインした管理者だけ
 	mux.Handle("/aibow/admin/", adminHandler(st, initial))
+	// 使用量(0033)。全員の分は管理者だけ(ログインなしの形ではサーバーの PC の上の画面)、自分の分はブラウザとアプリ(アプリ用のトークン)から
+	mux.Handle("/aibow/admin/usage", adminUsageHandler(st, c.Login, time.Now))
+	mux.Handle("/aibow/admin/usage/", adminUsageHandler(st, c.Login, time.Now))
+	mux.Handle("GET /aibow/auth/usage", keys.WithBearer(myUsageHandler(st, c.Login, time.Now)))
 	stop := func() {
 		life.Stop()
 		if mcpm != nil {
 			mcpm.Close() // 起動した MCP のサーバーも止める(子プロセスまで)
 		}
 		local.Close()
-		st.Close()
 	}
 	return sessions.Middleware(mux), keys, stop, nil
 }

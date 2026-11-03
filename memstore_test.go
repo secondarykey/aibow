@@ -80,14 +80,21 @@ func (s *memStore) DeleteProfile(_ context.Context, id uuid.UUID) error {
 }
 
 // 会話の共有は、memStore では扱わない(利用者を区別しないため。誰に見えるかは store の SQLite のテストで確かめる)
-func (s *memStore) SetConversationShare(context.Context, uuid.UUID, string, []string) error {
+func (s *memStore) SetConversationShare(context.Context, uuid.UUID, string, []string, []string) error {
 	return nil
 }
 func (s *memStore) SharedConversations(context.Context) ([]ConversationRef, error) { return nil, nil }
 func (s *memStore) UserConversations(context.Context, string) ([]ConversationRef, error) {
 	return nil, ErrNotAdmin
 }
-func (s *memStore) UserNames(context.Context) ([]string, error) { return nil, nil }
+func (s *memStore) Directory(context.Context) (Directory, error) { return Directory{}, nil }
+
+// グループも memStore では扱わない(管理者だけの操作。誰に見えるかは store の SQLite のテストで確かめる)
+func (s *memStore) CreateGroup(context.Context, string) (Group, error)            { return Group{}, ErrNotAdmin }
+func (s *memStore) RenameGroup(context.Context, uuid.UUID, string) error          { return ErrNotAdmin }
+func (s *memStore) DeleteGroup(context.Context, uuid.UUID) error                  { return ErrNotAdmin }
+func (s *memStore) SetGroupMember(context.Context, uuid.UUID, string, bool) error { return ErrNotAdmin }
+func (s *memStore) SetGroupLeader(context.Context, uuid.UUID, string, bool) error { return ErrNotAdmin }
 
 // ReadConversation は、memStore の会話をほかの人の会話として読む(写すテストのため)
 func (s *memStore) ReadConversation(ctx context.Context, id uuid.UUID) (SharedRead, error) {
@@ -100,7 +107,7 @@ func (s *memStore) ReadConversation(ctx context.Context, id uuid.UUID) (SharedRe
 }
 
 // SetProfileShare は、配る範囲だけを覚える(利用者の区別はしない。誰に見えるかは store の SQLite のテストで確かめる)。
-func (s *memStore) SetProfileShare(_ context.Context, id uuid.UUID, share string, with []string) error {
+func (s *memStore) SetProfileShare(_ context.Context, id uuid.UUID, share string, with, _ []string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for i := range s.profiles {
@@ -206,6 +213,23 @@ func (s *memStore) AddMessage(_ context.Context, m StoredMessage) error {
 	defer s.mu.Unlock()
 	s.messages = append(s.messages, m)
 	return nil
+}
+
+func (s *memStore) DiscardFile(_ context.Context, id uuid.UUID) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, m := range s.messages {
+		for j, f := range m.Files {
+			if f.ID == id {
+				// 呼んだ側に返した発言と同じ配列を書き換えないよう、写してから変える
+				files := slices.Clone(m.Files)
+				files[j].Data, files[j].Discarded = nil, true
+				s.messages[i].Files = files
+				return nil
+			}
+		}
+	}
+	return ErrNotFound
 }
 
 func (s *memStore) DeleteMessages(_ context.Context, ids []uuid.UUID) error {

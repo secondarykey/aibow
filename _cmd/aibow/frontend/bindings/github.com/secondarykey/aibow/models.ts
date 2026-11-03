@@ -6,6 +6,9 @@
 import * as format$0 from "./format/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as client$0 from "./mcp/client/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as tool$0 from "./tool/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -149,6 +152,21 @@ export interface CompactStats {
     "stop_reason": string;
 
     /**
+     * シーケンスが2本以上のとき(0023)。Seq は使ったシーケンスの番号、Mixed はこの生成の decode に一番多く混ざった生成の数(自分を含む。1本なら 0)
+     */
+    "seq"?: number;
+    "mixed"?: number;
+
+    /**
+     * 画像(0030)。ImageTokens は PromptTokens のうち画像の分、EncodeSec は今回エンコードした画像の秒数(使い回した画像は入らない)。
+     * ProjectorSec はこの回に mmproj を読み込んだ秒数(読み込んだ回だけ)、ProjectorCPU は GPU に載らず CPU に載せたか(その回だけ。画面のお知らせに使う)
+     */
+    "image_tokens"?: number;
+    "encode_sec"?: number;
+    "projector_sec"?: number;
+    "projector_cpu"?: boolean;
+
+    /**
      * 要約する前の、モデルに渡す文字列のトークン数
      */
     "before_tokens": number;
@@ -271,6 +289,11 @@ export interface Conversation {
      */
     "share"?: string;
     "share_with"?: string[] | null;
+
+    /**
+     * ShareGroups は相手のグループの名前(0031。ShareWith と同じく会話1つを読んだときだけ入る)
+     */
+    "share_groups"?: string[] | null;
 }
 
 /**
@@ -280,7 +303,18 @@ export interface ConversationRef {
     "id": uuid$0.UUID;
     "title": string;
     "owner_name": string;
+
+    /**
+     * OwnerDisplay は持ち主の表示名(0031。空ならログインの名前を出す)
+     */
+    "owner_display"?: string;
     "updated_at": string;
+
+    /**
+     * Share はその会話の共有の範囲(0031 の決定事項 17)。共有された会話の一覧では、ShareUsers なら自分あて(指定した人に入っている)、
+     * ShareAll なら全員に共有されたもの。画面はこれで「自分に共有」と「全員に共有」に分ける
+     */
+    "share"?: string;
 }
 
 /**
@@ -341,11 +375,19 @@ export interface ConversationSettings {
      * (以前の「ツールを使う」(tools)は 0006 で無くした。ツールを使うかは、設定の画面の「ツール」(tools.json)と、
      * 会話で使う MCP のサーバーだけで決める。保存済みの会話の JSON に残っている tools は、読むときに無視される)
      * 
-     * WorkDir は作業フォルダ(絶対パス)。空なら決めていない。決めた会話では、
-     * その中のファイルを扱うツール(tool.Files)とコマンドのツールをモデルに出す。
+     * Workspace はワークスペース(この PC の workspaces.json に登録したフォルダの組。0035)の ID。空なら決めていない。
+     * 決めた会話では、そのフォルダの中のファイルを扱うツール(tool.Files)とコマンドのツールをモデルに出す。
+     * パスは PC のものなので会話には置かず、ID だけを持つ(別の PC で開くと、その ID が無いのでフォルダのツールを出さない)。
      * 新しい会話の既定には入れない(前の会話のフォルダを引き継いで、別のフォルダを書き換えてしまうのを防ぐため)
      */
-    "work_dir": string;
+    "workspace"?: string;
+
+    /**
+     * WorkDir は、ワークスペースより前の作業フォルダ(絶対パス)。もう使わない。
+     * 起動したときに、この PC にあるパスならワークスペースに移して空にする(Conversations.MigrateWorkDirs)。
+     * この PC に無いパスは、そのまま残す(そのパスのある PC で起動したときに、そちらで移せるように)。画面からは変えられない
+     */
+    "work_dir"?: string;
 
     /**
      * MCPServers は、この会話で使う MCP のサーバー(settings.json の名前)。選んでいないサーバーはモデルに見せず、起動もしない。
@@ -369,6 +411,14 @@ export interface ConversationSettings {
 }
 
 /**
+ * Directory は、共有の相手に選べる人とグループ(0031 の決定事項 13・29。全員を一度に渡し、画面で絞る)
+ */
+export interface Directory {
+    "users": UserRef[] | null;
+    "groups": Group[] | null;
+}
+
+/**
  * DisplaySettings は画面の見せ方の設定。会話によらず人ごとに1つ(会話の設定にもプロファイルにも入れない。0017 の 6)。
  * 生成には関わらないので、変えてもモデルや作業領域は読み直さない。
  */
@@ -382,6 +432,91 @@ export interface DisplaySettings {
      * Theme は画面の明るさ。ThemeSystem(OS の設定に合わせる)・ThemeLight・ThemeDark。空は ThemeSystem として扱う
      */
     "theme": string;
+}
+
+/**
+ * File は、発言に付けて読み込んだファイル1つ(0030)。
+ */
+export interface File {
+    /**
+     * UUIDv7。発言の中の並びもこれで決まる
+     */
+    "id": uuid$0.UUID;
+
+    /**
+     * 種類。FileText / FileImage
+     */
+    "kind": string;
+
+    /**
+     * ファイル名(フォルダは含まない)。テキストはモデルにも見せる
+     */
+    "name": string;
+
+    /**
+     * Format は形式。テキストは、読んだときの文字コード(utf-8 / utf-8-bom / utf-16le / utf-16be)。
+     * Data はもう UTF-8 にしてあるので、記録のためだけに残す。画像は MIME の形式(image/png など。画面の表示に使う)
+     */
+    "format": string;
+
+    /**
+     * Hash は Data の SHA-256(16進)。画像は、エンジンが KV キャッシュに入っている画像と同じかを、これ(画像の ID)で比べる
+     */
+    "hash": string;
+
+    /**
+     * 中身。テキストは UTF-8(BOM を外したもの)。画像は読み込んだファイルのまま
+     */
+    "data": string | null;
+
+    /**
+     * Discarded は、ユーザーが送ったあとに捨てたファイル(決定事項 26〜28)。中身(Data)は消してあり、名前と種類だけが残る。
+     * モデルには、発言の文の前に「[画像: 名前(消去済み)]」のような置き換えの文字で渡す
+     */
+    "discarded"?: boolean;
+}
+
+/**
+ * FileCheck は、読み込んだファイルを確かめた結果(画面の札に出す)。
+ */
+export interface FileCheck {
+    "file": File;
+
+    /**
+     * このファイルを足すと増えるトークン数(テキストは展開した見出しと囲みを含む。画像は画像トークン数)
+     */
+    "tokens": number;
+
+    /**
+     * Uncounted は、会話のモデルをまだ読み込んでいないので数えなかった(Tokens は 0)。送信のときに、会話のモデルを読み込んでから数える
+     */
+    "uncounted"?: boolean;
+}
+
+/**
+ * Group はグループ1つ(0031 の段4)。管理者が作り、利用者を入れる。1人が複数のグループに入れる。グループの中にグループは入れない。
+ * 共有の相手にグループを選ぶと、そのときのメンバーではなく「グループ」として覚える(あとから入った人にも見え、抜けた人には見えなくなる。決定事項 26)
+ */
+export interface Group {
+    "id": uuid$0.UUID;
+    "name": string;
+
+    /**
+     * メンバーのログインの名前(名前の順)
+     */
+    "members": string[] | null;
+
+    /**
+     * 長(メンバーの中から管理者が決める。決定事項 30)
+     */
+    "leaders": string[] | null;
+
+    /**
+     * Conversations・Profiles は、このグループに共有されている会話・配られているプロファイルの数
+     * (グループを消すとき・長が人を足すときの確かめの文。決定事項 28・33)
+     */
+    "conversations": number;
+    "profiles": number;
 }
 
 /**
@@ -400,6 +535,58 @@ export interface KnownTool {
 }
 
 /**
+ * MCPServerEntry は、設定の画面の「MCP」の一覧の1つ。
+ */
+export interface MCPServerEntry {
+    "name": string;
+
+    /**
+     * Config はつなぎ方。env と headers の値は伏せる(キーだけを出し、値は空。0034 の決定事項 10)
+     */
+    "config": client$0.ServerConfig;
+
+    /**
+     * settings か screen
+     */
+    "source": string;
+
+    /**
+     * Shadowed は、mcp.json のサーバーのうち、settings.json に同じ名前があって使われていないもの(消すことだけできる)
+     */
+    "shadowed"?: boolean;
+}
+
+/**
+ * MCPServerInput は、画面から足す・変えるサーバー1つ。
+ */
+export interface MCPServerInput {
+    "name": string;
+    "config": client$0.ServerConfig;
+}
+
+/**
+ * MCPServerList は、設定の画面の「MCP」に出すもの。
+ */
+export interface MCPServerList {
+    "servers": MCPServerEntry[] | null;
+
+    /**
+     * mcp.json の場所
+     */
+    "path": string;
+
+    /**
+     * settings.json の場所
+     */
+    "settings_path": string;
+
+    /**
+     * mcp.json を読めなかった理由(あれば画面から保存できない)
+     */
+    "error": string;
+}
+
+/**
  * NotDefault は、新しい会話で最初から選ばないグループ。
  */
 export interface NotDefault {
@@ -412,6 +599,22 @@ export interface NotDefault {
      * MCP のサーバー(settings.json の名前)
      */
     "servers"?: string[] | null;
+}
+
+/**
+ * ParsedMCPServer は、貼った JSON から読み取ったサーバー1つ。
+ */
+export interface ParsedMCPServer {
+    /**
+     * 名前の無い形({"command": ...} だけ)なら空(画面で打つ)
+     */
+    "name": string;
+    "config": client$0.ServerConfig;
+
+    /**
+     * Error は、足せない理由(形が違う・同じ名前がある)。空なら足せる
+     */
+    "error"?: string;
 }
 
 /**
@@ -436,6 +639,11 @@ export interface Profile {
      */
     "share"?: string;
     "share_with"?: string[] | null;
+
+    /**
+     * ShareGroups は配る相手のグループの名前(0031。ShareWith と同じく変えられる人にだけ入る)
+     */
+    "share_groups"?: string[] | null;
 
     /**
      * 次の3つは、保存先が読むときに入れる(保存しない)。
@@ -590,6 +798,21 @@ export interface ReplyStats {
     "stop_reason": string;
 
     /**
+     * シーケンスが2本以上のとき(0023)。Seq は使ったシーケンスの番号、Mixed はこの生成の decode に一番多く混ざった生成の数(自分を含む。1本なら 0)
+     */
+    "seq"?: number;
+    "mixed"?: number;
+
+    /**
+     * 画像(0030)。ImageTokens は PromptTokens のうち画像の分、EncodeSec は今回エンコードした画像の秒数(使い回した画像は入らない)。
+     * ProjectorSec はこの回に mmproj を読み込んだ秒数(読み込んだ回だけ)、ProjectorCPU は GPU に載らず CPU に載せたか(その回だけ。画面のお知らせに使う)
+     */
+    "image_tokens"?: number;
+    "encode_sec"?: number;
+    "projector_sec"?: number;
+    "projector_cpu"?: boolean;
+
+    /**
      * 送信から最初の文字が出るまでの秒数
      */
     "first_sec": number;
@@ -613,6 +836,11 @@ export interface SharedRead {
     "messages": StoredMessage[] | null;
     "compactions": Compaction[] | null;
     "owner_name": string;
+
+    /**
+     * 持ち主の表示名(0031)
+     */
+    "owner_display"?: string;
 
     /**
      * ByAdmin は、共有されていないが管理者として読んだ(読んだことをログに残す。決定事項 1)
@@ -681,6 +909,12 @@ export interface StoredMessage {
      * Excluded は、ユーザーが選んで「モデルに渡さない」にした発言(0011)。画面には薄く残し、モデルに渡す履歴からは外す(Conversations.forModel)
      */
     "excluded"?: boolean;
+
+    /**
+     * Files は、発言に付けて読み込んだファイル(user のみ。0030)。保存は発言とは別の表。
+     * モデルに渡すときに、テキストのファイルは発言の文の前に展開する(files.go の withFiles)
+     */
+    "files"?: File[] | null;
     "created_at": string;
 }
 
@@ -848,6 +1082,65 @@ export interface Usage {
      * 発言が無ければ null。
      */
     "first_id": uuid$0.UUID | null;
+}
+
+/**
+ * UserRef は、共有の相手に選べる利用者1人(0031)。DisplayName は表示名(空ならログインの名前を出す)
+ */
+export interface UserRef {
+    "name": string;
+    "display_name"?: string;
+}
+
+/**
+ * Workspace はワークスペース1つ。
+ */
+export interface Workspace {
+    /**
+     * 会話の設定(ConversationSettings.Workspace)が持つ ID(UUID)
+     */
+    "id": string;
+
+    /**
+     * 画面に出す名前
+     */
+    "name": string;
+
+    /**
+     * Folders はフォルダの組。メイン(Main)はちょうど1つ
+     */
+    "folders": WorkspaceFolder[] | null;
+}
+
+/**
+ * WorkspaceFolder はワークスペースのフォルダ1つ。
+ */
+export interface WorkspaceFolder {
+    /**
+     * 絶対パス
+     */
+    "path": string;
+
+    /**
+     * Name はモデルが呼ぶ短い名前(ファイルのツールの引数 folder の値。既定はフォルダ名)。ワークスペースの中で重ならない
+     */
+    "name": string;
+
+    /**
+     * Main はメインのフォルダか。run_command のカレント・${workdir} の MCP のサーバーに渡すフォルダ。folder を省いたときもこれ
+     */
+    "main"?: boolean;
+
+    /**
+     * Writable は、ファイルのツールで書けるか(false なら読むだけ。write_file・edit_file を受け付けない)
+     */
+    "writable"?: boolean;
+
+    /**
+     * Description は、フォルダの中身の短い説明(1行。folderDescriptionMax 文字まで)。環境の説明の、そのフォルダの行の末尾に付ける(2026-11-03)。
+     * ユーザーが「マニュアルを直して」のように名前と違う言葉で呼んでも、モデルがどのフォルダかを当てる手がかりにする
+     */
+    "description"?: string;
 }
 
 /**

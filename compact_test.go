@@ -10,6 +10,7 @@ import (
 
 	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/format"
+	"github.com/secondarykey/aibow/genlog"
 )
 
 // promptLen は、発言の列を実際にモデルに渡す文字列にしたときのトークン数(fakeGen の数え方)。
@@ -130,7 +131,7 @@ func errorsOf(evs []ChatEvent) []string {
 // sendRaw は Send を呼び、エラーがあっても止めずにイベントを返す。
 func sendRaw(cs *Conversations, c Conversation, text string) []ChatEvent {
 	var evs []ChatEvent
-	cs.Send(context.Background(), c.ID, text, func(ev ChatEvent) { evs = append(evs, ev) })
+	cs.Send(context.Background(), c.ID, text, nil, func(ev ChatEvent) { evs = append(evs, ev) })
 	return evs
 }
 
@@ -290,6 +291,10 @@ func TestSummaryRunsBeforeTheReply(t *testing.T) {
 		t.Fatalf("要約の区切りが組の切れ目ではありません: upto=%v", list[0].UptoMessageID)
 	}
 	reply := g.calls[len(g.calls)-1]
+	// 使用量の記録(0033)では、要約と返事を分けて数える。どちらも会話の ID が付く
+	if sum.job != (genlog.Job{Purpose: genlog.PurposeSummary, Conversation: c.ID}) || reply.job != (genlog.Job{Purpose: genlog.PurposeReply, Conversation: c.ID}) {
+		t.Errorf("生成の付箋: 要約 %+v / 返事 %+v", sum.job, reply.job)
+	}
 	wantSystem := c.Settings.System + "\n\n" + summaryHeading + "\n- 要約1"
 	if systemOf(reply.messages) != wantSystem || len(reply.messages) != 1+len(ms)-keep-1 {
 		t.Errorf("返事に渡した内容: %+v", reply.messages)
@@ -381,7 +386,7 @@ func TestSummaryFailureFallsBackToTruncate(t *testing.T) {
 
 			g.replies = []fakeReply{tc.summary, {content: "返事"}}
 			var evs []ChatEvent
-			cs.Send(context.Background(), c.ID, "次の質問", func(ev ChatEvent) {
+			cs.Send(context.Background(), c.ID, "次の質問", nil, func(ev ChatEvent) {
 				evs = append(evs, ev)
 				if tc.stop && ev.Type == "summarizing" {
 					cs.StopSummary(ctx) // 要約だけが止まり、返事は生成される
@@ -500,7 +505,7 @@ func TestSendUnsupportedFormat(t *testing.T) {
 	c := mustCreate(t, cs)
 	cs.gen = unsupportedGen{g}
 	var evs []ChatEvent
-	cs.Send(context.Background(), c.ID, "こんにちは", func(ev ChatEvent) { evs = append(evs, ev) })
+	cs.Send(context.Background(), c.ID, "こんにちは", nil, func(ev ChatEvent) { evs = append(evs, ev) })
 	var errs []string
 	for _, ev := range evs {
 		if ev.Type == "user" {

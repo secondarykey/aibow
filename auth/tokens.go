@@ -60,6 +60,7 @@ func (s *Sessions) IssueAppToken(ctx context.Context, name, password, device str
 	if err := s.store.SetAppToken(ctx, t); err != nil {
 		return AppLogin{}, err
 	}
+	markUsed(ctx, s.store, &u, now)
 	return AppLogin{Token: token, Name: u.Name, Admin: u.Admin, ExpiresAt: t.ExpiresAt}, nil
 }
 
@@ -86,5 +87,9 @@ func (k *Keys) appTokenUser(ctx context.Context, token string) (User, error) {
 	if errors.Is(err, ErrUserNotFound) {
 		return User{}, ErrBadKey // 消された利用者(トークンも一緒に消えるので、ふつうは来ない)
 	}
-	return u, err
+	if err != nil {
+		return User{}, err
+	}
+	markUsed(ctx, k.store, &u, k.now())
+	return u, nil
 }

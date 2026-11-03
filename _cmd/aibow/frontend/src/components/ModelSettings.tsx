@@ -8,8 +8,8 @@
 // 読み込む / 降ろす・層の数・置き場所・出どころ・サーバーの PC のパスは、サーバーの PC の事情でサーバーの側で決めること(中央の制御)。
 // つないでくる側から見せたり変えたりするのは別の問題なので出さない。モデルが変わるのは会話を送信するときだけ。
 //
-// ただしブラウザの管理者と、サーバーの PC の上から開いたブラウザ(models.manage)には、アプリの中で動かすときと同じものを出す
-// (0018 の決定事項 8)。置き場所はサーバーの PC のパスを書く(ブラウザからはサーバーの PC のフォルダを選べないので、選ぶボタンは出さない)。
+// ブラウザでは、設定の画面のモデルのタブはだれにも一覧だけを出し(listOnly)、管理者とサーバーの PC の上から開いたブラウザ(models.manage)には、
+// 管理の画面のモデルのタブで、アプリの中で動かすときと同じもの(操作)を出す(0018 の決定事項 8・0032 の決定事項 6)。置き場所はサーバーの PC のパスを書く(ブラウザからはサーバーの PC のフォルダを選べないので、選ぶボタンは出さない)。
 import { useCallback, useEffect, useState } from "react";
 import { LuCircleCheck, LuFile, LuFileX, LuFolder, LuFolderX, LuInfo, LuLock, LuX } from "react-icons/lu";
 import { ChatService } from "../backend";
@@ -23,6 +23,8 @@ import { isBrowser } from "../backend";
 
 interface Props {
   models: Models;
+  // listOnly は、一覧と作業領域だけを出す(ブラウザの設定の画面。サーバーの PC の事情の操作は管理の画面のモデルのタブ。0032 の決定事項 6)
+  listOnly?: boolean;
   disabled: boolean; // 生成中・読み込み中は、読み込む / 降ろす・層の数を変えられない(エンジンが1つのため)
   onError(text: string): void;
 }
@@ -30,12 +32,12 @@ interface Props {
 // どこから来たか(models.Entry の origin)の表示
 const ORIGINS: Record<string, string> = { models: "models フォルダ", ollama: "Ollama", added: "足した場所" };
 
-export function ModelSettings({ models, disabled, onError }: Props) {
+export function ModelSettings({ models, listOnly, disabled, onError }: Props) {
   const [places, setPlaces] = useState<Place[]>([]);
   const [settings, setSettings] = useState<ModelSettingsResult | null>(null);
   const { reload } = models;
   // remote は、一覧と作業領域だけを出す形(aibow-server 越しで、サーバーの PC の事情を変えてよい人でない)
-  const remote = !!models.server && !models.manage;
+  const remote = (!!models.server && !models.manage) || !!listOnly;
 
   // タブを開いたときに取り直す(一覧の層の数・置き場所は、ほかで変わっていることがあるため)。aibow-server 越しなら置き場所は聞かない
   const refresh = useCallback(async () => {

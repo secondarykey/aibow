@@ -9,7 +9,7 @@
 //
 // ブラウザには OS のウィンドウもクリップボードの Go 側の書き込みも無いので、そこはブラウザの仕組みを使う(0016 の 17)。
 import type { ChatEvent } from "../bindings/github.com/secondarykey/aibow";
-import type { AdminAPI, Backend, Call, ChatAPI, Me } from "./backend";
+import type { AdminAPI, Backend, Call, ChatAPI, Me, MyUsage } from "./backend";
 import { errorMessage } from "./errors";
 
 // CancelError は、cancel() で止めた呼び出しのエラー(Wails の CancelError と同じ役)
@@ -119,7 +119,11 @@ const admin: AdminAPI = {
   create: name => adminCall("POST", "users", { name }),
   resetPassword: name => adminCall("POST", `users/${encodeURIComponent(name)}/password`),
   renewKey: name => adminCall("POST", `users/${encodeURIComponent(name)}/key`),
+  setDisplayName: async (name, display) => { await adminCall("POST", `users/${encodeURIComponent(name)}/display`, { display_name: display }); },
+  setEmail: async (name, email) => { await adminCall("POST", `users/${encodeURIComponent(name)}/email`, { email }); },
   remove: async name => { await adminCall("DELETE", `users/${encodeURIComponent(name)}`); },
+  usage: days => adminCall("GET", `usage?days=${days}`),
+  usageOf: (id, days) => adminCall("GET", `usage/user?days=${days}&id=${encodeURIComponent(id)}`),
 };
 
 export const backend: Backend = {
@@ -146,6 +150,9 @@ export const backend: Backend = {
   linkUser: async token => ((await auth("POST", "link/check", { token })) as unknown as { name: string }).name,
   applyLink: (token, password) => auth("POST", "link", { token, password }),
   changePassword: async (current, password) => { await auth("POST", "password", { current, password }); },
+  setDisplayName: name => auth("POST", "display", { display_name: name }),
+  setEmail: email => auth("POST", "email", { email }),
+  myUsage: async () => (await auth("GET", "usage")) as unknown as MyUsage,
   onUnauthorized: f => {
     unauthorized.add(f);
     return () => unauthorized.delete(f);

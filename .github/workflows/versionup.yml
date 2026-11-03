@@ -1,0 +1,141 @@
+# 正式なリリース:main への PR をマージしたら、版を決め、ビルド情報の PR を作ってマージし、v+バージョンのタグを打つ。
+# タグの push で release.yml が動いてリリースの下書きを作る。
+#
+# 版の決め方は local:deploy と同じ go run _cmd/version.go -auto。
+# v+今のバージョンのタグがあれば(= リリース済み)patch を上げ、無ければ今のバージョンのまま出す。
+# local:deploy はタグを打たないので、手元で何度 deploy しても、タグが付くのはここで出した版だけ。
+#
+# main は保護する(PR を通さないと入れない)ので、ビルド情報も main に直接 push せず、PR を作ってマージする(wails3 スキルの標準の形)。
+# push・PR・マージ・タグは PAT(リポジトリの secret の MY_GITHUB_TOKEN)で行う。
+# GITHUB_TOKEN で push したタグではほかのワークフローが起動せず、release.yml が動かないため。
+name: VersionUp
+
+on:
+  pull_request:
+    branches: [ main ]
+    types: [ closed ]
+
+# 続けてマージしたときに、2つが同時に版を上げてタグを取り合わないよう、1つずつ動かす
+concurrency:
+  group: versionup
+  cancel-in-progress: false
+
+jobs:
+
+  versionup:
+
+    # マージされた PR だけ。ここで作るビルド情報の PR(chore: version …)のマージでは動かさない
+    if: |
+      github.event.pull_request.merged == true &&
+      !startsWith(github.event.pull_request.title, 'chore: version')
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Check token
+        # PAT が無いと checkout で分かりにくいエラーになるので、先に確かめる
+        env:
+          TOKEN: ${{ secrets.MY_GITHUB_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "リポジトリの secret に MY_GITHUB_TOKEN(PAT)がありません。_docs/deploy.md の「PAT を用意する」を見てください"
+            exit 1
+          fi
+
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          # マージでできた main のコミット(pull_request のイベントの既定は PR のマージ用の参照で、マージ後には使えない)
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          fetch-depth: 0   # タグを見て版を決めるので、全部取ってくる
+          token: ${{ secrets.MY_GITHUB_TOKEN }}
+
+      - name: Load variables
+        # Go と Wails の版(.github/variables)。Setup Go で使うので、その前に読む
+        run: cat .github/variables >> $GITHUB_ENV
+
+      - name: Install Linux dependencies
+        # wails3 の CLI は Linux では WebKitGTK を cgo で調べる(internal/operatingsystem)ので、入れないと go install が通らない
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-4-dev \
+            libwebkitgtk-6.0-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+
+      - name: Install Wails CLI
+        # .github/variables で固定した版を使う(@latest は使わない)
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@${{ env.WAILS_VERSION }}
+
+      - name: Determine version
+        run: |
+          go run _cmd/version.go -auto
+          echo "VERSION=$(go run _cmd/version.go -print)" >> $GITHUB_ENV
+
+      - name: Sync package-lock.json
+        # package-lock.json のバージョンを package.json にそろえる(local:deploy の sync-lock と同じ)。
+        # npm は版で lockfile の書き方が違う(npm 10 は libc の欄を消す)ので、手元と同じ npm 11 を使う(_cmd/aibow/AGENTS.md)
+        working-directory: ./_cmd/aibow/frontend
+        run: npx -y npm@11.20.0 install --package-lock-only --ignore-scripts --no-audit --no-fund
+
+      - name: Update build assets
+        # -name / -binaryname は config.yml から読まれず、省略すると空になる。Taskfile.yml の APP_NAME と一致させる(wails3 スキルの pitfalls 13)
+        working-directory: ./_cmd/aibow
+        run: wails3 update build-assets -name "aibow" -binaryname "aibow" -config build/config.yml -dir build
+
+      - name: Pull request for build info
+        # local:deploy の BUILD_INFO_FILES と同じファイルだけをコミットする。手元で deploy 済みなら変更は無く、PR も作らない。
+        # main は保護してあるので、PR を作ってマージする。保護で承認を必須にすると、ここでマージできずに止まる(承認の数は 0 にしておく)
+        working-directory: ./_cmd/aibow
+        env:
+          GH_TOKEN: ${{ secrets.MY_GITHUB_TOKEN }}
+        run: |
+          FILES="version
+            ../aibow-mcp/version
+            ../aibow-server/version
+            build/config.yml
+            build/darwin/Info.plist
+            build/darwin/Info.dev.plist
+            build/darwin/icons.icns
+            build/linux/desktop
+            build/linux/nfpm/nfpm.yaml
+            build/windows/info.json
+            build/windows/icon.ico
+            build/windows/nsis/wails_tools.nsh
+            build/windows/wails.exe.manifest
+            frontend/package.json
+            frontend/package-lock.json"
+          if git diff --quiet HEAD -- $FILES; then
+            echo "build info: no changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          BRANCH="chore/version-$VERSION"
+          git checkout -b "$BRANCH"
+          git commit -m "chore: aibow $VERSION のビルド情報を反映する" -m "Glory to mankind." -- $FILES
+          git push origin "$BRANCH"
+          # タイトルは chore: version で始める(このワークフローの if で、このマージを飛ばすため)
+          gh pr create --base main --head "$BRANCH" \
+            --title "chore: version $VERSION" \
+            --body "aibow $VERSION のビルド情報を反映する(VersionUp が作った PR)"
+          gh pr merge "$BRANCH" --merge --delete-branch
+
+      - name: Tag
+        # ビルド情報のコミット(PR を作ったときはそのコミット)にタグを打つ。PAT で push するので release.yml が動く
+        run: |
+          TAG="v$VERSION"
+          git tag "$TAG"
+          git push origin "$TAG"

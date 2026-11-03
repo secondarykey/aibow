@@ -29,6 +29,9 @@ type Entry struct {
 	Source string  `json:"source"`  // "ollama" か "file"(ID の形。どこから来たかは Origin)
 	SizeGB float64 `json:"size_gb"` // ファイルサイズ
 	Path   string  `json:"-"`       // GGUF ファイルの実際の場所
+	// Projector は、画像を読むための部品(mmproj。画像エンコーダー)の GGUF の場所。無ければ空(画像を読めない)。
+	// 今は Ollama の目録の projector の層からだけ見つける(0030 の決定事項 2。models フォルダの横に置いた mmproj は探さない)
+	Projector string `json:"-"`
 
 	// Origin はどこから来たか(OriginModels / OriginOllama / OriginAdded)。画面の一覧に出す(0015 の 27)
 	Origin string `json:"origin"`
@@ -94,6 +97,7 @@ func fileEntry(path string) Entry {
 //
 // 目録には「このモデルはどの blob でできているか」が並んでいる。
 // その中で mediaType が "application/vnd.ollama.image.model" のものが GGUF 本体。
+// 画像を読めるモデル(qwen3.5 など)は "application/vnd.ollama.image.projector" の層も持つ。中身は llama.cpp の mmproj の GGUF(0030 の段1)。
 // (ほかにチャットテンプレートやライセンスの blob もあるが、aibow は使わない)
 
 // OllamaDir は Ollama の保存フォルダを返す。
@@ -117,7 +121,10 @@ type ollamaManifest struct {
 	} `json:"layers"`
 }
 
-const ollamaModelLayer = "application/vnd.ollama.image.model"
+const (
+	ollamaModelLayer     = "application/vnd.ollama.image.model"
+	ollamaProjectorLayer = "application/vnd.ollama.image.projector"
+)
 
 func listOllamaModels(dir string) []Entry {
 	root := filepath.Join(dir, "manifests")
@@ -131,14 +138,14 @@ func listOllamaModels(dir string) []Entry {
 		if len(parts) != 4 { // ホスト / 名前空間 / モデル名 / タグ
 			return nil
 		}
-		blob, size, ok := readOllamaManifest(dir, path)
+		layers, ok := readOllamaManifest(dir, path)
 		if !ok {
 			return nil // クラウド専用モデルなど、本体のファイルがないものは飛ばす
 		}
 		name := ollamaName(parts)
 		list = append(list, Entry{
 			ID: "ollama:" + name, Name: name, Source: "ollama", Origin: OriginOllama,
-			SizeGB: float64(size) / (1 << 30), Path: blob,
+			SizeGB: float64(layers.size) / (1 << 30), Path: layers.model, Projector: layers.projector,
 		})
 		return nil
 	})
@@ -146,28 +153,44 @@ func listOllamaModels(dir string) []Entry {
 	return list
 }
 
-// readOllamaManifest は目録を読み、GGUF 本体の blob のパスを返す。
-func readOllamaManifest(dir, manifestPath string) (blob string, size int64, ok bool) {
+// ollamaLayers は、目録から読んだ blob のパス。
+type ollamaLayers struct {
+	model     string // GGUF 本体
+	size      int64  // 本体の大きさ
+	projector string // 画像を読む部品(mmproj)。無ければ空
+}
+
+// readOllamaManifest は目録を読み、GGUF 本体(と、あれば projector)の blob のパスを返す。本体が無ければ ok=false。
+func readOllamaManifest(dir, manifestPath string) (ollamaLayers, bool) {
+	var out ollamaLayers
 	b, err := os.ReadFile(manifestPath)
 	if err != nil {
-		return "", 0, false
+		return out, false
 	}
 	var m ollamaManifest
 	if json.Unmarshal(b, &m) != nil {
-		return "", 0, false
+		return out, false
 	}
 	for _, l := range m.Layers {
-		if l.MediaType != ollamaModelLayer {
-			continue
-		}
 		// "sha256:abc…" → blobs\sha256-abc…(Windows のファイル名に ":" は使えないため "-" になっている)
-		blob = filepath.Join(dir, "blobs", strings.Replace(l.Digest, ":", "-", 1))
-		if _, err := os.Stat(blob); err != nil {
-			return "", 0, false
+		blob := filepath.Join(dir, "blobs", strings.Replace(l.Digest, ":", "-", 1))
+		switch l.MediaType {
+		case ollamaModelLayer:
+			if out.model != "" {
+				continue
+			}
+			if _, err := os.Stat(blob); err != nil {
+				return out, false
+			}
+			out.model, out.size = blob, l.Size
+		case ollamaProjectorLayer:
+			// projector が無くても(まだ落としきっていないなど)本体は使える。画像を読めないだけ
+			if _, err := os.Stat(blob); err == nil && out.projector == "" {
+				out.projector = blob
+			}
 		}
-		return blob, l.Size, true
 	}
-	return "", 0, false
+	return out, out.model != ""
 }
 
 // ollamaName は目録のパスを、`ollama list` と同じ表示名にする。

@@ -23,12 +23,14 @@ import (
 
 	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/mcp/server"
+	"github.com/secondarykey/aibow/tool"
 )
 
 func main() {
 	showVersion := flag.Bool("version", false, "バージョンを表示して終わる")
+	fetch = flag.Bool("fetch", false, "URL のページを読むツール(fetch_url)も出す(PC の中・社内のアドレスは読まない)")
 	flag.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(), "使い方: %s [-version] [作業フォルダ]\n\n", filepath.Base(os.Args[0]))
+		fmt.Fprintf(flag.CommandLine.Output(), "使い方: %s [-version] [-fetch] [作業フォルダ]\n\n", filepath.Base(os.Args[0]))
 		fmt.Fprintln(flag.CommandLine.Output(), "aibow のツールを MCP のサーバー(標準入出力)として出します。")
 		fmt.Fprintln(flag.CommandLine.Output(), "作業フォルダを渡すと、その中のファイルを扱うツールとコマンドのツールも出します。")
 		flag.PrintDefaults()
@@ -51,6 +53,9 @@ func main() {
 	}
 }
 
+// fetch は、fetch_url を出すか(引数 -fetch)。Claude Code などのクライアントは自分の fetch を持っていて重なるので、既定では出さない(0036 の決定事項 15)
+var fetch *bool
+
 func run() error {
 	if flag.NArg() > 1 {
 		flag.Usage()
@@ -61,9 +66,13 @@ func run() error {
 		return err
 	}
 
-	s := server.New(server.Options{WorkDir: dir, Version: appVersion()})
+	opts := server.Options{WorkDir: dir, Version: appVersion()}
+	if *fetch {
+		opts.Fetch = &tool.FetchOptions{Version: appVersion()}
+	}
+	s := server.New(opts)
 	names := make([]string, 0)
-	for _, t := range server.Tools(dir) {
+	for _, t := range opts.Tools() {
 		names = append(names, t.Def().Name)
 	}
 	where := dir

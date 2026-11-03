@@ -18,6 +18,11 @@ func byOS(windows, sh string) string {
 	return sh
 }
 
+// cmdIn は、作業フォルダ dir 1つの run_command
+func cmdIn(dir string) runCommand {
+	return runCommand{folders: folderSet(Single(dir))}
+}
+
 func runCmd(t *testing.T, tl runCommand, command string) (string, error) {
 	t.Helper()
 	return tl.Run(context.Background(), Args{"command": command})
@@ -25,7 +30,7 @@ func runCmd(t *testing.T, tl runCommand, command string) (string, error) {
 
 func TestRunCommand(t *testing.T) {
 	dir := workDir(t, map[string]string{"a.txt": "hello\n"})
-	tl := runCommand{dir: dir}
+	tl := cmdIn(dir)
 
 	// 作業フォルダがカレント。標準出力とエラー出力はまとめ、終了コードを付ける
 	got, err := runCmd(t, tl, byOS("type a.txt", "cat a.txt"))
@@ -60,14 +65,14 @@ func TestRunCommand(t *testing.T) {
 	if _, err := tl.Preview(Args{"command": " "}); err == nil {
 		t.Error("空のコマンドはエラーのはず")
 	}
-	if _, err := (runCommand{dir: filepath.Join(dir, "gone")}).Preview(Args{"command": "echo"}); err == nil {
+	if _, err := (cmdIn(filepath.Join(dir, "gone"))).Preview(Args{"command": "echo"}); err == nil {
 		t.Error("作業フォルダが無ければエラーのはず")
 	}
 }
 
 // 長い出力は先頭と末尾を残して間を切る
 func TestRunCommandLongOutput(t *testing.T) {
-	tl := runCommand{dir: workDir(t, nil)}
+	tl := cmdIn(workDir(t, nil))
 	got, err := runCmd(t, tl, byOS(
 		"for /l %i in (1,1,3000) do @echo line %i",
 		`i=1; while [ $i -le 3000 ]; do echo line $i; i=$((i+1)); done`))
@@ -83,7 +88,7 @@ func TestRunCommandLongOutput(t *testing.T) {
 // 止めきれないと、2秒後に子プロセスが late.txt を作る
 func TestRunCommandTimeoutKillsChildren(t *testing.T) {
 	dir := workDir(t, nil)
-	tl := runCommand{dir: dir, limit: time.Second}
+	tl := runCommand{folders: folderSet(Single(dir)), limit: time.Second}
 	command := byOS(
 		`start /b cmd /c "ping -n 3 127.0.0.1 >nul & echo late> late.txt" & echo started & ping -n 30 127.0.0.1 >nul`,
 		`(sleep 2; echo late > late.txt) & echo started; sleep 30`)
@@ -105,13 +110,70 @@ func TestRunCommandTimeoutKillsChildren(t *testing.T) {
 
 // 停止(ctx を止める)でも止まり、その旨を返す
 func TestRunCommandStop(t *testing.T) {
-	tl := runCommand{dir: workDir(t, nil)}
+	tl := cmdIn(workDir(t, nil))
 	ctx, cancel := context.WithCancel(context.Background())
 	time.AfterFunc(500*time.Millisecond, cancel)
 	start := time.Now()
 	_, err := tl.Run(ctx, Args{"command": byOS("ping -n 30 127.0.0.1 >nul", "sleep 30")})
 	if err == nil || !strings.Contains(err.Error(), "停止されたため止めました") || time.Since(start) > 2*time.Second {
 		t.Errorf("停止: %v(%v)", err, time.Since(start))
+	}
+}
+
+// 先頭の「cd <絶対パス> &&」の行き先だけを読む(フォルダを選ぶため)
+func TestLeadingCd(t *testing.T) {
+	abs := byOS(`C:\Users\me\Binder Manual`, "/home/me/Binder Manual")
+	sub := byOS(`C:\work\notes`, "/work/notes")
+	for _, c := range []struct{ command, want string }{
+		{`cd "` + abs + `" && git log --all --oneline`, abs},
+		{`CD /D "` + abs + string(filepath.Separator) + `" & git status`, abs},
+		{`chdir ` + sub + `&&git log`, sub},
+		{"cd " + sub + "; ls", sub},
+		{`cd "` + abs + `"`, ""},        // cd だけ
+		{"cd frontend && npm test", ""}, // サブフォルダ(相対パス)はそのまま
+		{"git log", ""},
+		{`cd "` + abs + ` && git log`, ""}, // 引用符が閉じていない
+		{"cdx " + sub + " && ls", ""},
+	} {
+		if got := leadingCd(c.command); got != c.want {
+			t.Errorf("%q: %q(期待は %q)", c.command, got, c.want)
+		}
+	}
+}
+
+// 先頭の「cd <フォルダの名前> &&」は、その名前のサブフォルダが無ければ、確認のカードを出す前に直し方を返す
+func TestCdFolderName(t *testing.T) {
+	base := t.TempDir()
+	main := filepath.Join(base, "work")
+	notes := filepath.Join(base, "notes")
+	write(t, main, "frontend/a.txt", "")
+	write(t, notes, "memo.md", "")
+	single := runCommand{folders: one(main)}
+	multi := runCommand{folders: folderSet{{Name: "work", Path: main, Main: true, Writable: true}, {Name: "notes", Path: notes}}}
+	for _, c := range []struct {
+		tl      runCommand
+		command string
+		want    string // エラーに含む文。空ならエラーにしない
+	}{
+		{single, "cd work && go build ./...", "cd work を外して"},
+		{single, `cd /d Work\ && go test ./...`, "cd Work を外して"},
+		{single, "cd frontend && npm test", ""},      // 本当にあるサブフォルダ
+		{single, "cd notes && dir", ""},              // ワークスペースの名前ではない
+		{multi, "cd notes && dir", "folder に notes"}, // ほかのフォルダ
+		{multi, "cd work && go build ./...", "cd work を外して"},
+	} {
+		_, err := preview(t, c.tl, "command", c.command)
+		switch {
+		case c.want == "" && err != nil:
+			t.Errorf("%q: %v", c.command, err)
+		case c.want != "" && (err == nil || !strings.Contains(err.Error(), c.want)):
+			t.Errorf("%q: %v(期待は %q を含むエラー)", c.command, err, c.want)
+		}
+	}
+	// 同じ名前のサブフォルダが本当にあるなら、そこへの cd として動かす
+	write(t, main, "work/b.txt", "")
+	if _, err := preview(t, single, "command", "cd work && dir"); err != nil {
+		t.Errorf("サブフォルダ work: %v", err)
 	}
 }
 

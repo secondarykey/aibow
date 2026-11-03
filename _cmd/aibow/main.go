@@ -40,6 +40,7 @@ import (
 	"github.com/secondarykey/aibow/models"
 	"github.com/secondarykey/aibow/store"
 	"github.com/secondarykey/aibow/store/remote"
+	"github.com/secondarykey/aibow/tool"
 	"github.com/secondarykey/aibow/ui"
 	"github.com/secondarykey/aibow/web"
 
@@ -74,15 +75,17 @@ func main() {
 	// ログが書けない・前回は異常終了した、などは起動を止めず、画面のお知らせで伝える
 	cfg.notices = append(cfg.notices, logNotices...)
 	var mcpm *client.Manager
+	var mcpc *aibow.MCPConfig
 	var prefs *aibow.ToolPrefs
+	var workspaces *aibow.Workspaces
 	// 組み込みのツールは、aibow の中で自作の MCP サーバーを動かし、MCP 越しに呼ぶ(0007 の 5-4)。サーバーは要る最初のときに動かす
-	local := client.NewLocal(client.Options{Version: appVersion()})
+	local := client.NewLocal(client.Options{Version: appVersion(), Fetch: fetchOptions(cfg)})
 	defer local.Close()
 	if err == nil {
-		if mcpm = startMCP(&cfg); mcpm != nil {
-			defer mcpm.Close() // アプリを閉じたら、起動した MCP のサーバーも止める(子プロセスまで)
-		}
 		prefs = loadToolPrefs(&cfg)
+		workspaces = loadWorkspaces(&cfg)
+		mcpm, mcpc = startMCP(&cfg, prefs)
+		defer mcpm.Close() // アプリを閉じたら、起動した MCP のサーバーも止める(子プロセスまで)
 	}
 	for _, n := range cfg.notices {
 		log.Warn(n)
@@ -101,6 +104,7 @@ func main() {
 	var server *apiclient.Client // aibow-server につなぐとき(serverUrl)。生成も保存も、ここに頼む(0017 の 10-3)
 	if err == nil && cfg.serverURL != "" {
 		server, err = newServerClient(cfg)
+		conn.client = server
 	}
 	if err == nil {
 		var closeStore func()
@@ -132,7 +136,7 @@ func main() {
 		Logger: slog.Default(),
 		Services: []application.Service{
 			application.NewService(NewChatService(ui.Options{
-				Host: host, Store: st, App: settings, Initial: initial, Local: local, MCP: mcpm, Prefs: prefs,
+				Host: host, Store: st, App: settings, Initial: initial, Local: local, MCP: mcpm, MCPConfig: mcpc, Prefs: prefs, Workspaces: workspaces,
 				Version: appVersion(), Notices: cfg.notices, StartupErr: err,
 			}, conn)),
 		},
@@ -246,22 +250,31 @@ func startLog() (io.Closer, []string) {
 	return c, notices
 }
 
-// startMCP は設定ファイル(settings.json)を読み、MCP のサーバーの係(client.Manager)を作る。
-// サーバーはまだ起動しない(要る最初の送信のときに起動する)。サーバーが書いてなければ nil。
-// 設定ファイルの書き間違いは、アプリを止めずに画面のお知らせで伝え、MCP を使わずに起動する。
-func startMCP(cfg *appConfig) *client.Manager {
-	sf, err := cfg.settings, cfg.settingsErr
-	if err != nil {
-		cfg.notices = append(cfg.notices, err.Error()+"(MCP のサーバーは使わずに起動しました)")
-		return nil
+// startMCP は、mcp.json(0034)の MCP のサーバーで、MCP のサーバーの係(client.Manager)と、画面で変えたものをそこに流す係(aibow.MCPConfig)を作る。
+// settings.json に手で書いた分は、先に mcp.json へ移す(0034 の決定事項 13。移せなかった分だけ settings.json のものとして合わせる)。
+// サーバーはまだ起動しない(要る最初の送信のときに起動する)。サーバーが1つも無くても作る(画面から最初の1つを足せるように)。
+// ファイルの書き間違いは、アプリを止めずに画面のお知らせで伝え、そのファイルのサーバーを使わずに起動する。
+func startMCP(cfg *appConfig, prefs *aibow.ToolPrefs) (*client.Manager, *aibow.MCPConfig) {
+	hand := cfg.settings.MCPServers
+	if cfg.settingsErr != nil {
+		cfg.notices = append(cfg.notices, cfg.settingsErr.Error()+"(settings.json の MCP のサーバーは使わずに起動しました)")
+		hand = nil
 	}
-	if len(sf.MCPServers) == 0 {
-		log.Infof("MCP のサーバー: なし(設定ファイル: %s)", absPath(cfg.settingsPath))
-		return nil
+	file, _ := aibow.LoadMCPFile(cfg.mcpPath) // 読めなかった理由は Notices が返す
+	hand, moved := file.MoveFromSettings(cfg.settingsPath, hand)
+	cfg.notices = append(cfg.notices, moved...)
+	c := aibow.NewMCPConfig(absPath(cfg.settingsPath), hand, file, prefs)
+	cfg.notices = append(cfg.notices, c.Notices()...)
+	servers := c.Servers()
+	if len(servers) == 0 {
+		log.Infof("MCP のサーバー: なし(設定ファイル: %s・%s)", absPath(cfg.settingsPath), absPath(cfg.mcpPath))
+	} else {
+		names := slices.Sorted(maps.Keys(servers))
+		log.Infof("MCP のサーバー: %s(設定ファイル: %s・%s。要る最初の送信で起動します)", strings.Join(names, ", "), absPath(cfg.settingsPath), absPath(cfg.mcpPath))
 	}
-	names := slices.Sorted(maps.Keys(sf.MCPServers))
-	log.Infof("MCP のサーバー: %s(設定ファイル: %s。要る最初の送信で起動します)", strings.Join(names, ", "), absPath(cfg.settingsPath))
-	return client.New(sf.MCPServers, client.Options{Version: appVersion()})
+	m := client.New(servers, client.Options{Version: appVersion()})
+	c.SetManager(m)
+	return m, c
 }
 
 // noteNewServers は、settings.json に足したばかりの MCP のサーバーを、新しい会話で最初から使わないにする(tools.json に書く)。
@@ -293,6 +306,26 @@ func loadToolPrefs(cfg *appConfig) *aibow.ToolPrefs {
 		cfg.notices = append(cfg.notices, err.Error())
 	}
 	return prefs
+}
+
+// fetchOptions は、URL を読むツール(fetch_url。0036)の設定。アプリでは作業フォルダの無い会話でも出し、確認してから読む(決定事項 13・16)。
+// PC の中・社内のアドレスを許すのは settings.json の fetchAllowPrivate を書いたときだけ(決定事項 12)。
+func fetchOptions(cfg appConfig) *tool.FetchOptions {
+	if cfg.settings.FetchAllowPrivate {
+		log.Noticef("fetch_url: PC の中・社内のアドレスも読みます(%s の fetchAllowPrivate)", cfg.settingsPath)
+	}
+	return &tool.FetchOptions{AllowPrivate: cfg.settings.FetchAllowPrivate, Version: appVersion()}
+}
+
+// loadWorkspaces は、その PC のワークスペース(workspaces.json。0035)を読む。
+// aibow-server につないでいても手元のファイル(パスは PC のもの)。壊れていたら画面のお知らせで伝え、ワークスペースが無いものとして動く(書き換えない)。
+func loadWorkspaces(cfg *appConfig) *aibow.Workspaces {
+	w, err := aibow.LoadWorkspaces(cfg.wsPath)
+	if err != nil {
+		cfg.notices = append(cfg.notices, err.Error())
+	}
+	log.Noticef("ワークスペース: %s", absPath(cfg.wsPath))
+	return w
 }
 
 // newServerClient は aibow-server につなぐクライアントを作る(API キーと、自己署名の証明書を信頼するか。0017 の 10-2)。ここではまだつながない。

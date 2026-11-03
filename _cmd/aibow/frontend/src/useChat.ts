@@ -7,8 +7,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ChatService, isCancel, onChat } from "./backend";
 import type { Call } from "./backend";
 import type { ToolPolicy } from "../bindings/github.com/secondarykey/aibow";
-import type { ChatEvent, ConfirmRequest, StoredMessage } from "../bindings/github.com/secondarykey/aibow";
-import { messageItems, thinkLabel, toolCount, turnView, withConfirm } from "./transcript";
+import type { ChatEvent, ConfirmRequest, FileCheck, StoredMessage } from "../bindings/github.com/secondarykey/aibow";
+import { lastIndex, messageItems, thinkLabel, toolCount, turnView, withConfirm } from "./transcript";
 import type { AssistantView, Transcript } from "./transcript";
 import { NIL, type Conversations } from "./useConversations";
 import type { Busy } from "./useModels";
@@ -56,7 +56,7 @@ export interface Chat {
   answer(reqId: string, approved: boolean, reason: string, remember: ToolPolicy): Promise<void>; // 確認に答える(「実行する」「拒否」と、これから先の扱い)
   lastPrompt: string;          // 開いている会話で、モデルに実際に渡した文字列
   lastPromptFormat: string;    // その文字列を組み立てた書式の名前(Qwen3.5・Gemma 4。0026)
-  send(text: string): Promise<boolean>; // 発言が保存されたら true(false なら送れていないので、入力欄に文を戻す)
+  send(text: string, files: FileCheck[]): Promise<boolean>; // 発言が保存されたら true(false なら送れていないので、入力欄に文と読み込んだファイルを戻す)
   regenerate(): Promise<void>; // 最後の返事を作り直す(開いている会話。0011)
   resend(text: string): Promise<void>; // 最後の発言を直して送り直す(開いている会話。0011)
   compact(): Promise<void>;    // 今すぐ要約(開いている会話)
@@ -352,7 +352,7 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
     return { errors, userSaved };
   }, [open, reloadList, setUsage, addError, addAssistant, updateAssistant, setSaved, remove, setBusy, notify, dismissKey, onModelLoaded]);
 
-  const send = useCallback(async (text: string) => {
+  const send = useCallback(async (text: string, files: FileCheck[]) => {
     if (controller.current || starting.current) return false;
     starting.current = true;
     // 新しい会話の画面なら、送る直前に会話を作る(target)。送れなかったときに同じ下書きに戻せるよう、今の下書きを持っておく
@@ -366,8 +366,9 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
     } finally {
       starting.current = false;
     }
-    const userItemId = addUser(text);
-    const { userSaved } = await run(id, () => ChatService.Send(id, text), false, userItemId);
+    const stored = files.map(f => f.file);
+    const userItemId = addUser(text, stored);
+    const { userSaved } = await run(id, () => ChatService.Send(id, text, stored), false, userItemId);
     // 送る前に止まった(書式に未対応のモデル・会話の上限を超える、など)ときは、Go は発言を保存していない。
     // 吹き出しを消して、呼んだ側(App)が入力欄に文を戻す(保存されたように見えて、開き直すと消える、にしないため)
     // 新しい会話の画面から送ったなら、作った会話(発言の無い空の会話)も消して、新しい会話の画面に戻す
@@ -435,14 +436,17 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
     } finally {
       starting.current = false;
     }
+    // 送り直すときは、Go が元の発言のファイルを付け直すので、表示も元の発言の札を引き継ぐ(0030 の決定事項 21)
+    const last = t.items[lastIndex(t.items, it => it.kind === "user")];
+    const files = last?.kind === "user" ? last.files : undefined;
     dropLastTurn(withUser);
-    const userItemId = withUser ? addUser(text) : null;
+    const userItemId = withUser ? addUser(text, files) : null;
     const { errors } = await run(id, () => start(id), false, userItemId);
     if (errors.length && viewing.current === id) {
       await open(id).catch(err => addError(errorMessage(err)));
       errors.forEach(e => addError(e.text, e.caution));
     }
-  }, [current, flushSettings, dropLastTurn, addUser, run, open, addError]);
+  }, [current, flushSettings, t.items, dropLastTurn, addUser, run, open, addError]);
 
   const regenerate = useCallback(() => retry(false, "", id => ChatService.Regenerate(id)), [retry]);
   const resend = useCallback((text: string) => retry(true, text, id => ChatService.Resend(id, text)), [retry]);

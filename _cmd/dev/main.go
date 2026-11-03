@@ -75,6 +75,7 @@ func fail(err error) {
 // ---- server -----------------------------------------------------------------------------
 
 // runServer は vite の開発用サーバーと aibow-server を一緒に動かし、どちらかが終わったらもう片方も止める。
+// Ctrl+C のときは、vite が先に終わっても、aibow-server が後片付けをして自分で終わるのを待つ。
 func runServer(args []string) error {
 	if err := ensureDeps(); err != nil {
 		return err
@@ -83,7 +84,10 @@ func runServer(args []string) error {
 	setDefaultPaths()
 
 	// vite:AIBOW_BROWSER_DEV があるときだけ、ブラウザの印と /aibow/ の受け渡しが効く(vite.config.ts)
-	vite := npm("run", "dev", "--", "--port", strconv.Itoa(vitePort), "--strictPort")
+	vite, err := viteCommand("--port", strconv.Itoa(vitePort), "--strictPort")
+	if err != nil {
+		return err
+	}
 	vite.Env = append(os.Environ(), "AIBOW_BROWSER_DEV="+target)
 	viteTree, err := proc.Start(vite)
 	if err != nil {
@@ -103,26 +107,57 @@ func runServer(args []string) error {
 	fmt.Printf("dev: 画面は vite の開発用サーバーから配ります。ブラウザで http://127.0.0.1:%d/ を開いてください(/aibow/ の呼び出しは %s に渡します)\n", vitePort, target)
 	fmt.Printf("dev: OpenAI 互換の口(Cline など)と画面のアプリは、今までどおり %s につなぎます。止めるときは Ctrl+C\n", target)
 
-	// Ctrl+C は同じコンソールの子にも届く(aibow-server は自分で後片付けして終わる)。ここでは受け取って、子が終わるのを待つ
+	// Ctrl+C は同じコンソールの子にも届く(aibow-server は自分で後片付けして終わる)。ここでは受け取って、aibow-server が終わるのを待つ
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt)
-	done := make(chan string, 2)
-	go func() { server.Wait(); done <- "aibow-server" }()
-	go func() { vite.Wait(); done <- "vite" }()
+	serverDone := make(chan struct{})
+	viteDone := make(chan struct{})
+	go func() { server.Wait(); close(serverDone) }()
+	go func() { vite.Wait(); close(viteDone) }()
 
 	select {
-	case who := <-done:
-		fmt.Printf("dev: %s が終わったので、もう片方も止めます\n", who)
 	case <-sig:
-		// aibow-server の後片付け(生成を止める・DB を閉じる)を少し待つ
+		waitServer(serverDone)
+	case <-serverDone:
+		fmt.Println("dev: aibow-server が終わったので、vite も止めます")
+	case <-viteDone:
+		// Ctrl+C はコンソールの全部のプロセスに同時に届くので、vite のほうが先に終わって、こちらの sig が後から来ることがある。
+		// そのときに aibow-server を止めると、後片付け(DB・engine・ログを閉じる)の途中で切ってしまう(2026-11-02、ログに end here が出なかった)
 		select {
-		case <-done:
-		case <-time.After(15 * time.Second):
+		case <-sig:
+			waitServer(serverDone)
+		case <-serverDone:
+		case <-time.After(time.Second):
+			fmt.Println("dev: vite が終わったので、aibow-server も止めます")
 		}
 	}
 	serverTree.Kill()
 	viteTree.Kill()
 	return nil
+}
+
+// waitServer は、Ctrl+C を受けた aibow-server が後片付け(生成を止める・DB を閉じる)をして自分で終わるのを待つ。
+// vite が先に終わっても待ち続ける。15 秒たっても終わらなければ、呼んだ側がジョブごと止める
+func waitServer(done <-chan struct{}) {
+	select {
+	case <-done:
+	case <-time.After(15 * time.Second):
+		fmt.Println("dev: aibow-server が 15 秒たっても終わらないので止めます")
+	}
+}
+
+// viteCommand は frontend で vite を動かすコマンド。npm run dev(npm.cmd)を通さず、node で vite を直接動かす。
+// npm.cmd はバッチなので、Ctrl+C を受けた cmd.exe が「バッチ ジョブを終了しますか (Y/N)?」をコンソールに出してから終わる。
+// その行が最後に残るので、プロンプトが戻っていないように見えていた(2026-11-02 に再現)。node を直接動かせばバッチを通らず、確認も出ない
+func viteCommand(args ...string) (*exec.Cmd, error) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		return nil, errors.New("node が見つかりません。Node.js(20.19 以上)を入れてください")
+	}
+	cmd := exec.Command(node, append([]string{filepath.Join("node_modules", "vite", "bin", "vite.js")}, args...)...)
+	cmd.Dir = frontendDir
+	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+	return cmd, nil
 }
 
 // serverAddress は、vite が /aibow/ を渡す aibow-server のアドレス。引数 > 設定ファイル > 既定(aibow-server の決め方と同じ順)。

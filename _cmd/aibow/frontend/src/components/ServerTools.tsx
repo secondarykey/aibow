@@ -1,4 +1,4 @@
-// 設定の画面の「ツール」(ブラウザだけ。0024 の決定事項 21): ブラウザの会話のツールの扱いの、aibow-server 全体の既定。
+// 管理の画面の「ツール」(ブラウザだけ。0024 の決定事項 21。0032 で設定の画面から移した): ブラウザの会話のツールの扱いの、aibow-server 全体の既定。
 //
 // 組み込み(時刻・計算)と、server.json の mcpServers に書いた MCP のサーバーごとに、グループとツールの扱いを
 // 「使わない / 確認する / 確認しない」で決める(Go の server-tools.json)。ツールごとに決めたものはグループより優先する。
@@ -63,7 +63,7 @@ export function ServerTools({ servers, manage, onChanged }: {
   };
 
   const groups = [
-    { group: "", name: BUILTIN, title: "aibow-server の中で動くツール(時刻・計算)", tools: builtin, prefix: "", policy: prefs?.builtin ?? "" },
+    { group: "", name: BUILTIN, title: "aibow-server の中で動くツール(時刻・計算・URL を読む)", tools: builtin, prefix: "", policy: prefs?.builtin ?? "" },
     ...servers.map(s => ({
       group: s.name,
       name: s.name,
@@ -110,12 +110,14 @@ export function ServerTools({ servers, manage, onChanged }: {
                     const short = t.name.startsWith(g.prefix) ? t.name.slice(g.prefix.length) : t.name;
                     const own = prefs?.tools?.[t.name] ?? "";
                     const now = states[t.name]?.policy;
+                    // ツールごとに有効にするまで使えないツール(fetch_url。0036 の決定事項 14):グループの扱いに関係なく使わない
+                    const optIn = !groupOff && own === "" && states[t.name]?.from === "admin";
                     return (
                       <div key={t.name} className={"server-tool" + (now === ToolPolicy.ToolOff ? " unused" : "")} title={`${t.name}\n${t.description}`}>
                         <code>{short}</code>
                         <PolicySelect
                           value={own}
-                          unset={groupOff ? "グループのとおり(使わない)" : `グループのとおり${now ? `(${LABELS[now]})` : ""}`}
+                          unset={groupOff ? "グループのとおり(使わない)" : optIn ? "使わない(確認する・確認しないで有効にする)" : `グループのとおり${now ? `(${LABELS[now]})` : ""}`}
                           disabled={!manage || groupOff}
                           title={groupOff ? "グループごと使わない" : "このツールの扱い"}
                           onChange={p => change(ChatService.SetToolPolicy(t.name, p))}

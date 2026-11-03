@@ -4,7 +4,7 @@
 // 表示にはエラーも出すが、これは保存しない(会話を開き直すと消える)。
 // モデルの読み込みなどのお知らせは、会話の表示ではなくトースト(toast.tsx)に出す。
 import { useCallback, useRef, useState } from "react";
-import type { Compaction, Confirmation, ConfirmRequest, ReplyStats, StoredMessage } from "../bindings/github.com/secondarykey/aibow";
+import type { Compaction, Confirmation, ConfirmRequest, File as StoredFile, ReplyStats, StoredMessage } from "../bindings/github.com/secondarykey/aibow";
 import type { Arg as ToolArg } from "../bindings/github.com/secondarykey/aibow/tool";
 
 // ツールの呼び出し1つの表示(カード)。結果がまだ無ければ実行中
@@ -57,7 +57,7 @@ export interface AssistantView {
 // divider は要約した位置の区切り。開くと要約の文が読める
 // excluded は、ユーザーが選んで「モデルに渡さない」にした吹き出し(0011。返事はツールの呼び出しと結果も一緒)
 export type Item =
-  | { id: number; kind: "user"; text: string; msgId?: string; createdAt?: string; excluded?: boolean }
+  | { id: number; kind: "user"; text: string; files?: StoredFile[]; msgId?: string; createdAt?: string; excluded?: boolean }
   | { id: number; kind: "error"; text: string; caution?: boolean } // caution: 赤いエラーではなく注意(Go の ChatEvent.Caution)
   | { id: number; kind: "divider"; compaction: Compaction }
   | ({ id: number; kind: "assistant"; msgId?: string; excluded?: boolean } & AssistantView);
@@ -68,7 +68,7 @@ export type NewItem = DistributiveOmit<Item, "id">;
 
 export interface Transcript {
   items: Item[];
-  addUser(text: string): number; // 追加した発言の id を返す
+  addUser(text: string, files?: StoredFile[]): number; // 追加した発言の id を返す。files は読み込んだファイル(0030。札を出す)
   addError(text: string, caution?: boolean): void;
   addAssistant(view?: Partial<AssistantView>): number; // 追加した返事の id を返す
   updateAssistant(id: number, patch: Partial<AssistantView>): void;
@@ -77,6 +77,7 @@ export interface Transcript {
   remove(id: number): void;
   reset(items: NewItem[]): void; // 別の会話を開いたときに、表示を丸ごと入れ替える
   setExcluded(msgId: string, excluded: boolean): void; // 「モデルに渡さない」の印を付け替える(Go で変えたあと)
+  discardFile(fileId: string): void; // 送ったファイルを捨てた印を付ける(Go で捨てたあと。0030)
   // dropLastTurn は最後のユーザーの発言の後ろ(withUser なら発言も)を表示から外す(作り直す・送り直すの前。0011)
   dropLastTurn(withUser: boolean): void;
 }
@@ -93,7 +94,7 @@ export function useTranscript(): Transcript {
 
   return {
     items,
-    addUser: useCallback(text => add({ kind: "user", text }), [add]),
+    addUser: useCallback((text, files) => add({ kind: "user", text, files }), [add]),
     addError: useCallback((text, caution) => { add({ kind: "error", text, caution }); }, [add]),
     addAssistant: useCallback(
       view => add({ kind: "assistant", waiting: true, thinking: "", thinkLabel: "", content: "", ...view }),
@@ -118,6 +119,13 @@ export function useTranscript(): Transcript {
     setExcluded: useCallback((msgId, excluded) => {
       setItems(prev => prev.map(it => (
         (it.kind === "user" || it.kind === "assistant") && it.msgId === msgId ? { ...it, excluded } : it
+      )));
+    }, []),
+    discardFile: useCallback(fileId => {
+      setItems(prev => prev.map(it => (
+        it.kind === "user" && it.files?.some(f => f.id === fileId)
+          ? { ...it, files: it.files.map(f => (f.id === fileId ? { ...f, data: null, discarded: true } : f)) }
+          : it
       )));
     }, []),
     reset: useCallback(newItems => {
@@ -277,7 +285,7 @@ export function messageItems(messages: StoredMessage[], compactions: Compaction[
       continue;
     }
     flush();
-    out.push({ kind: "user", text: m.content, msgId: m.id, createdAt: m.created_at, excluded: m.excluded });
+    out.push({ kind: "user", text: m.content, files: m.files ?? undefined, msgId: m.id, createdAt: m.created_at, excluded: m.excluded });
     dividers(m);
   }
   flush();

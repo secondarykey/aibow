@@ -1,0 +1,17 @@
+<|im_start|>system
+S<|im_end|>
+<|im_start|>user
+<|vision_start|><|image_pad|><|vision_end|><|vision_start|><|image_pad|><|vision_end|>  2枚の違いは?<|im_end|>
+<|im_start|>assistant
+色が違います。<|im_end|>
+<|im_start|>user
+<|vision_start|><|image_pad|><|vision_end|><|im_end|>
+<|im_start|>assistant
+猫です。<|im_end|>
+<|im_start|>user
+ありがとう<|im_end|>
+<|im_start|>assistant
+<think>
+
+</think>
+

@@ -239,6 +239,7 @@ type templateCases struct {
 		Messages []struct {
 			Role      string `json:"role"`
 			Content   string `json:"content"`
+			Images    int    `json:"images"` // 付けた画像の数(0030。中身は比べない)
 			Thinking  string `json:"thinking"`
 			ToolCalls []struct {
 				Name string      `json:"name"`
@@ -278,6 +279,9 @@ func testPromptMatchesTemplate(t *testing.T, name string, f Format) {
 		var pending []string // まだ結果の来ていない呼び出しの名前(ツールの結果の名前にする。会話の仕組みと同じ)
 		for _, m := range c.Messages {
 			msg := Message{Role: m.Role, Content: m.Content, Thinking: m.Thinking}
+			for range m.Images {
+				msg.Images = append(msg.Images, Image{ID: "x"})
+			}
 			for _, tc := range m.ToolCalls {
 				call := ToolCall{Call: tool.Call{Name: tc.Name}}
 				for _, a := range tc.Args {
@@ -296,14 +300,18 @@ func testPromptMatchesTemplate(t *testing.T, name string, f Format) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := f.BuildPrompt(p); got != string(want) {
+		// 画像の印は、エンジン(mtmd)が始まりと終わりの印で囲んで画像の埋め込みにする。公式テンプレートの書き方にそろえて比べる
+		build := func() string {
+			return strings.ReplaceAll(f.BuildPrompt(p), ImageMarker, "<|vision_start|><|image_pad|><|vision_end|>")
+		}
+		if got := build(); got != string(want) {
 			t.Errorf("%s: テンプレートと違います\n--- got\n%s\n--- want\n%s", c.Name, got, want)
 		}
 		// ツールの結果に名前が無くても(0026 より前の会話)、書式が呼び出しと順番で組にして同じになる
 		for i := range p.Messages {
 			p.Messages[i].Name = ""
 		}
-		if got := f.BuildPrompt(p); got != string(want) {
+		if got := build(); got != string(want) {
 			t.Errorf("%s: 結果の名前が無いとき、テンプレートと違います\n--- got\n%s\n--- want\n%s", c.Name, got, want)
 		}
 	}

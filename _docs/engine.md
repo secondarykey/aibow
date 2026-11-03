@@ -8,11 +8,17 @@ LLM を動かす部分(`engine/`・`format/`・`models/` の3つのパッケー�
 | ファイル | 役割 |
 |---|---|
 | `engine/engine.go` | `engine` パッケージ。llama.cpp の呼び出し。モデルの読み込み・入れ替え、作業領域の作り直し、トークン数を数える(`CountTokens`)、KV キャッシュ再利用、decode、サンプリングの生成ループ |
+| `engine/chunks.go` | プロンプトをチャンク(文字のトークン列・画像)の列として読ませる・KV キャッシュの記録と使い回し(0030)。下の「画像を読む」 |
+| `engine/vision.go` | 画像を読む部品(mmproj)の読み込みと解放、画像の付いたプロンプトを mtmd でチャンクの列にする(0030) |
 | `engine/stream.go` | UTF-8 の切れ目の処理(文字にならないバイトは U+FFFD) |
+| `engine/sequence.go` | 作業領域の中のシーケンス(KV キャッシュの列)と、生成ごとにどのシーケンスを使うかの選び方(`pickSeq`。0023)。下の「シーケンス」 |
+| `engine/parallel.go` | シーケンスが2本以上のときの生成。decode を回す係(`schedule`)が、同時に来た生成を1回の decode にまとめて進める(0023) |
 | `models/models.go` | `models` パッケージ。モデルの一覧(`models\` の *.gguf と Ollama の保存フォルダ)。ID は `file:<ファイル名>` / `ollama:<名前>`(以前の `file:<パス>` は `IDOf` で読み替える。0018) |
 | `format/format.go` / `format/qwen35.go` / `format/gemma4.go` / `format/llama3.go` / `format/granite.go` / `format/granite42.go` / `format/parts.go` | `format` パッケージ。書式(チャットテンプレート。Qwen3.5・Gemma 4・Llama 3・Granite 4・Granite 4.2。`parts.go` は2つ以上で使う部品)。会話 → 文字列と、生成した文字列 → 思考・答え・ツール呼び出し。説明は [tools.md](tools.md) |
 | `engine/stream_test.go` / `format/qwen35_test.go` / `format/gemma4_test.go` | UTF-8 の切れ目 / 書式(公式テンプレートとの一致・思考とツール呼び出しの振り分け)のテスト。モデル不要 |
-| `models/models_test.go` | Ollama の目録のテスト。モデル不要 |
+| `models/models_test.go` | Ollama の目録(projector の層も)のテスト。モデル不要 |
+| `engine/chunks_test.go` | KV キャッシュの記録と次のプロンプトの共通の先頭(画像は ID で比べる)・マスの数と位置の数のテスト。モデル不要 |
+| `engine/sequence_test.go` | シーケンスの選び方(使える一致・空・一番古いもの)のテスト。モデル不要 |
 
 ## パッケージの分け方と依存の向き
 
@@ -45,6 +51,7 @@ LLM を動かす部分(`engine/`・`format/`・`models/` の3つのパッケー�
 - Ollama が `ollama pull` で保存したファイル(`manifests\` の目録と `blobs\` の GGUF)を aibow が直接読む。Ollama のサーバーや API は使わない
 - Ollama のモデルの一部は llama.cpp で読めない独自形式なので、読めない場合はエラーにして元のモデルに戻す
 - Ollama の保存先は Ollama と同じ環境変数 `OLLAMA_MODELS` で変えられる
+- 目録に `application/vnd.ollama.image.projector` の層があれば、その blob を画像を読む部品(mmproj)として `Entry.Projector` に持つ(qwen3.5:4b / 9b にある。中身は llama.cpp の普通の mmproj。0030 の段1)
 
 ## チャットテンプレート
 
@@ -63,7 +70,8 @@ LLM を動かす部分(`engine/`・`format/`・`models/` の3つのパッケー�
 
 ## 生成とモデルの入れ替え
 
-- 生成とモデルの入れ替えは同時に1つだけ(コンテキストが1つのため)。`Engine.mu` で排他している
+- 生成とモデルの入れ替えは同時にできない(コンテキストが1つのため)。`Engine.mu` で排他している。
+  シーケンスが1本(既定)なら生成も1つずつ。2本以上(aibow-server の `-parallel`)なら生成どうしは同時に入り、モデルの入れ替えとだけ排他する(下の「シーケンス」)
   (会話の側でも生成中の会話を1つだけ持つ。[conversations.md](conversations.md))
 - 語彙(vocab)は `Engine.vocabMu` でも守っていて、`CountTokens` は生成中でも呼べる(別の会話を開いたときのメーターのため)
 - モデルの切り替えは「今のモデルを解放 → 新しいモデルを読み込む」の順(VRAM 8GB に2つは載らないため)。失敗したら元のモデルを読み直す
@@ -78,6 +86,59 @@ LLM を動かす部分(`engine/`・`format/`・`models/` の3つのパッケー�
   作業領域の大きさの変更(`Engine.EnsureContextSize`。同じ大きさなら何もしない)はコンテキストだけを作り直し、モデルは読み直さない。
   会話ごとに大きさが違うので、会話の仕組みが送信の前に呼ぶ。画面で上限を「適用」したときも `ChatService.TryLimits` から呼び、VRAM に入るかを確かめる(0009)。
   作業領域(`n_ctx`)の決め方は [compact.md](compact.md)
+
+## シーケンス(0023)
+
+llama.cpp は1つの作業領域(コンテキスト)の中に、番号(seq_id)の付いた複数の KV キャッシュの列を持てる。aibow-server は `-parallel`(既定 1)でその数を決める
+(`engine.Config.Seqs`。作業領域を作るときの `NSeqMax`)。デスクトップのアプリは使う人が1人なので1本のまま。
+
+```
+作業領域 32768 ─ シーケンス 0(16384)─ 会話 A の KV キャッシュ
+               └ シーケンス 1(16384)─ 会話 B の KV キャッシュ   ← 同時に来たら1回の decode にまとめる
+```
+
+- **作業領域は等分される**(`KVUnified` で分け合う形は使わない)。1つの会話が使えるのは1本の大きさ(`NCtxSeq`)までで、`ModelInfo.NCtx` も1本あたりを見せる(`Seqs` に本数)。
+  VRAM は本数を変えても変わらない(KV キャッシュの合計で決まる)
+- **どのシーケンスを使うか**(`pickSeq`):プロンプトの頭が一番長く「使える形で」一致するもの → 空のもの → 一番長く使われていないもの(捨てて使う)。
+  会話の ID ではなくプロンプトで選ぶので、OpenAI 互換の口(会話の ID が無い)もブラウザの会話も同じ選び方になる(llama.cpp の server と同じ考え方)。
+  「使える一致」は、途中から巻き戻せないモデル(Qwen3.5 などハイブリッド・再帰の層を持つもの。`ModelIsHybrid`・`ModelIsRecurrent`)なら中身が丸ごとプロンプトの頭のときだけ、
+  巻き戻せるモデルでも中身の半分以上が一致するときだけ(llama.cpp の server の `--slot-prompt-similarity` の既定 0.5 と同じ。頭の数トークンだけの一致で、ほかの会話のシーケンスを奪わない)
+- **捨てる**:Qwen3.5 は途中から捨てられないが、シーケンスを丸ごとなら捨てられる(ほかのシーケンスは残る)。`NRsSeq`(再帰の状態の控え)は decode の回数分しか戻せないので使っていない
+- **decode を回す係**(`parallel.go`):2本以上のとき、作業領域に触る呼び出し(KV キャッシュを捨てる・decode・確率から選ぶ)は全部、係(goroutine 1つ)がする(llama.cpp の作業領域はスレッドセーフではない)。
+  `Generate` はプロンプトとサンプラーを係に渡し、振り分けた文字を列(`textQueue`)から受け取って画面に送る(遅い相手がいても、係はほかの人の decode を止めない)。
+  1回の decode には、生成中の人の1トークンずつと、プロンプトを読んでいる人の続き(合わせて `batchSize` まで)を入れる。画像の埋め込みは文字と混ぜられないので、画像だけで decode する
+- **batch の中はシーケンスの番号の順に並べる**:`KVUnified` なしでは、llama.cpp は batch を「番号が 1 ずつ増えるシーケンスのまとまり」で区切って計算する。
+  逆の順(1 → 0)に並べると2回に分かれ、1回の decode が倍かかった(0023 の段4。4B で 2本とも 30 tok/s → 並べ直して 64 tok/s)
+- **混ぜると答えが少し変わることがある**:混ぜると行列の形が変わって足し算の順番が変わり、logits が最大 0.5 ほど違う。上位2つが近いところで入れ替わることがある(状態が混ざるのではない)。
+  temperature 0 でも、1人のときと同じ答えになるとは限らない
+- **生成の記録**:`GenerateStats.Seq`(使ったシーケンス)・`Mixed`(この生成の decode に一番多く混ざった生成の数)。aibow-server がログに出す([api.md](api.md) の「席とシーケンス」)
+- モデルの入れ替え・層の数・降ろすは、全部の生成が終わってから(席の側で待つ。[api.md](api.md))
+
+## 画像を読む(0030)
+
+仕様と測った数は [features/0030-read-files.md](features/0030-read-files.md)(段1・段2)。今は Qwen3.5(Ollama の qwen3.5)だけ。
+
+- **画像もトークンになる**:画像エンコーダー(mmproj。`clip.projector_type = qwen3vl_merger`)が画像を「画像トークンの埋め込み」にし、文字のトークンと同じ列でモデルが読む。
+  32 ピクセル四方で 1 トークン(1024×768 は 768 トークン)。1 枚の上限は `AIBOW_IMAGE_MAX_TOKENS`(既定 1,024。大きい画像は mtmd が縮める)。ツールではなくモデル自身の機能
+- 呼び出しは llama.cpp の mtmd(`mtmd.dll`。yzma の `pkg/mtmd`。cgo なし)。`engine.New` で読み、読めなくても文字の会話は止めない(画像を送ったときに理由を出す)
+- **mmproj は最初に画像を送ったとき(数えるときも)に読み込む**(画像を使わない人の VRAM を減らさない)。GPU に載せ、載らなければ CPU で読み直す(CPU だとエンコードが 15〜30 倍遅い)。
+  読み込んだ回の `GenerateStats` に `ProjectorSec`・`ProjectorCPU` を1回だけ出す。モデルを降ろす・替えるときに一緒に解放する(`unload` → `freeProjector`)
+- **書式は印だけを書く**:`format.Message.Images` の画像の場所に `<__media__>`(`format.ImageMarker`)を書く。Qwen3.5 は発言の中で画像を文字より前に置く。
+  前後の `<|vision_start|>`・`<|vision_end|>` は mtmd が足す。画像を書ける書式は `WritesImages()` を持ち(`format.ReadsImages`)、持たない書式・mmproj の無いモデルに画像を渡すとエラー(黙って捨てない)
+- **チャンクの列**(`chunks.go`):画像があるプロンプトは mtmd の `Tokenize` で「文字のトークン列 / 画像」のチャンクの列にする。画像の中身は llama.cpp が読む(PNG・JPEG など)。
+  画像の ID には会話の仕組みが入れた中身のハッシュを使う(`BitmapSetId`)。画像が無ければ今までどおり文字のトークン列1本
+- **画像は自分で読ませる**:`EncodeChunk` → `GetOutputEmbd`(トークン数 × `ModelNEmbdInp`)→ 埋め込みの batch(`Embd`)で 512 トークンずつ decode。
+  位置は M-RoPE なら1トークンに4つを列ごとに(`pos[i]`・`pos[n+i]`・`pos[2n+i]`・`pos[3n+i]` に t・y・x・z)並べる。llama.cpp の helper と logits が一致することを段1で確かめた。
+  yzma には「チャンク1つだけ読ませる」helper が無く、KV キャッシュを使い回して途中から読ませるため、helper(`HelperEvalChunks`)は使わない
+- **位置は自分で書く**:画像を読ませたあとの KV キャッシュの位置の最大は画像の始まりの位置のままで、llama.cpp の位置の自動(最大 + 1)だと画像の後ろの文字がずれる。
+  文字も `batch.Pos` に位置を書いて読ませる(`decode`。次の位置は記録の位置の合計 `nextPos`)
+- **マスと位置は別の数**:M-RoPE の画像は、マスはトークンの数(768)使うが、位置は縦横の大きいほう(32)しか進まない。作業領域が足りるか・`PromptTokens` はマスの数、
+  KV キャッシュを途中から捨てる(`MemorySeqRm`)のは位置で指定する
+- **KV キャッシュの記録はチャンクの列**(`Engine.cached`):次のプロンプトと先頭から比べ(`common`。文字はトークン、画像は ID)、同じところまでは読み直さない。
+  Qwen3.5 は途中まで巻き戻せないので、新しい発言を足すと今までどおり全部読み直しになるが、ツールのループの中では画像も使い回せる(段2:1,383 トークン中 1,360 を再利用・画像のエンコード 0 秒)
+- 数える(`CountTokens`)ときは、画像の中身を読まず大きさだけの Bitmap(placeholder)で画像トークン数を数える(mmproj は要る)。mtmd の関数はスレッドセーフでないので、
+  mmproj を使うところは `projector.mu` でまとめて守る(数えるのは生成と同時に呼ばれることがある)
+- 記録:`GenerateStats` の `ImageTokens`(プロンプトのうち画像の分)・`EncodeSec`(今回エンコードした秒数。使い回した画像は入らない)
 
 ## UTF-8 として正しくない文字列
 

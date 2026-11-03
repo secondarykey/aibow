@@ -41,6 +41,7 @@ import (
 	"github.com/secondarykey/aibow/format"
 	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/models"
+	"github.com/secondarykey/aibow/store"
 	"github.com/secondarykey/aibow/ui"
 )
 
@@ -110,8 +111,11 @@ func run(c config, notices []string, cfgErr error, env *envReader) error {
 	cfg := engine.Config{
 		LibPath:   c.Lib,
 		NCtx:      nCtx,
+		Seqs:      c.Parallel,                       // 作業領域の中のシーケンスの数(0023)
 		GPULayers: env.int("AIBOW_GPU_LAYERS", 999), // 999 = 全部 GPU に載せる
 		LlamaLog:  os.Getenv("AIBOW_LLAMA_LOG") == "1",
+		// 画像1枚のトークン数の上限(0030 の決定事項 22)
+		ImageMaxTokens: env.int("AIBOW_IMAGE_MAX_TOKENS", engine.DefaultImageMaxTokens),
 	}
 	catalog := models.Catalog{ModelsDir: c.ModelsDir, OllamaDir: models.OllamaDir()}
 	defaults := api.Defaults{
@@ -121,8 +125,9 @@ func run(c config, notices []string, cfgErr error, env *envReader) error {
 		Think:           true,
 	}
 	initial := initialSettings(env, cfg.GPULayers)
-	if nCtx <= 0 || port <= 0 || defaults.MaxTokens <= 0 {
-		env.errs = append(env.errs, fmt.Errorf("作業領域の大きさ(ctx)・ポート(port)・AIBOW_MAX_TOKENS は 1 以上にしてください: %d / %d / %d", nCtx, port, defaults.MaxTokens))
+	if nCtx <= 0 || port <= 0 || defaults.MaxTokens <= 0 || c.Parallel <= 0 {
+		env.errs = append(env.errs, fmt.Errorf("作業領域の大きさ(ctx)・ポート(port)・AIBOW_MAX_TOKENS・シーケンスの数(parallel)は 1 以上にしてください: %d / %d / %d / %d",
+			nCtx, port, defaults.MaxTokens, c.Parallel))
 	}
 	if _, err := os.Stat(cfg.LibPath); err != nil {
 		env.errs = append(env.errs, fmt.Errorf("llama.cpp のフォルダが見つかりません: %s(相対パスはカレントフォルダが基準です。-lib・設定ファイルの lib・AIBOW_LIB で場所を指定してください)", absPath(cfg.LibPath)))
@@ -160,6 +165,12 @@ func run(c config, notices []string, cfgErr error, env *envReader) error {
 	}
 	log.Noticef("モデルを読み込みました: %s(%s・書式 %s・作業領域 %d トークン・GPU %d 層 / %d 層・%.1f 秒)",
 		info.ID, info.Desc, info.Format, info.NCtx, min(info.GPULayers, int(info.Layers)), info.Layers, info.LoadSec)
+	// シーケンスが2本以上なら、作業領域を等分した1本あたりの大きさを、画面や Cline に見せる「作業領域の大きさ」にする
+	// (1つの会話・リクエストが使えるのはそこまで。決定事項 11)
+	if c.Parallel > 1 {
+		nCtx = int(info.NCtx)
+		log.Noticef("シーケンス %d 本で、同時に %d 人まで生成します(作業領域 %d トークンを等分して1本 %d トークン)", c.Parallel, c.Parallel, c.Ctx, nCtx)
+	}
 
 	// 既定は 127.0.0.1 だけで待ち受ける(PC の外からはつなげない)。-host で広げたときは、resolve がログインを要るようにしてある(0017 の決定事項 2)
 	addr := net.JoinHostPort(c.Host, strconv.Itoa(port))
@@ -168,9 +179,20 @@ func run(c config, notices []string, cfgErr error, env *envReader) error {
 	if err != nil {
 		return err
 	}
-	srv := api.New(eng, mm, nCtx, defaults)
+	// server.db(ブラウザの会話・利用者・使用量の記録)
+	st, err := store.Open(c.DBPath)
+	if err != nil {
+		return err
+	}
+	defer st.Close() // 後に登録した closeBrowser(生成を止める)より後に閉じる
+	// 生成は記録付きの engine を通す(使用量。0033)。OpenAI 互換の口とブラウザの会話に同じものを渡し、1か所で記録する
+	gen := newRecorder(eng, st)
+	srv := api.New(gen, mm, nCtx, defaults)
+	// 順番待ちの席はシーケンスの数だけ。モデルの読み直しは、ほかの席が全部空くまで待つ(mm が席を見る。決定事項 9・16)
+	srv.SetSeats(c.Parallel)
+	mm.seat = srv.Seat()
 	// ブラウザの会話(0016)。OpenAI 互換の口と同じ engine・同じ順番待ちの席で動かす
-	browser, keys, closeBrowser, err := startBrowser(c, initial, eng, mm, nCtx, base, srv.Seat())
+	browser, keys, closeBrowser, err := startBrowser(c, initial, st, gen, mm, nCtx, base, srv.Seat())
 	if err != nil {
 		return err
 	}
@@ -181,6 +203,8 @@ func run(c config, notices []string, cfgErr error, env *envReader) error {
 	apiH := srv.Handler()
 	if c.KeysRequired() {
 		apiH = keys.RequireKey(apiH)
+	} else {
+		apiH = asLocal(apiH) // キーの要らない形では、だれでもない呼び出しを local の分として記録する(0033)
 	}
 
 	ln, err := net.Listen("tcp", addr)

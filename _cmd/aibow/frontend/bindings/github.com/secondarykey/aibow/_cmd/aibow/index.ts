@@ -7,6 +7,7 @@ export {
 };
 
 export type {
+    AccountInfo,
     ConnectRequest,
     ServerConnection
 } from "./models.js";

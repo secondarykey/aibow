@@ -9,7 +9,10 @@ package auth
 //	POST /aibow/auth/token/revoke  Authorization: Bearer <トークン> のトークンを消す(アプリのログアウト)
 //	POST /aibow/auth/link/check    本文 {"token"}。パスワードを決めるリンクの持ち主の名前(0022)。使えなければ 400
 //	POST /aibow/auth/link          本文 {"token", "password"}。リンクでパスワードを決め、そのままログインする(cookie を渡す)
-//	POST /aibow/auth/password      本文 {"current", "password"}。ログインしている本人がパスワードを変える(新しい cookie を渡す)
+//	POST /aibow/auth/password      本文 {"current", "password"}。ログインしている本人がパスワードを変える(新しい cookie を渡す。
+//	                               画面のアプリがアプリ用のトークンで呼んだときは、cookie の代わりに新しいトークン(AppLogin)を返す。0031)
+//	POST /aibow/auth/display       本文 {"display_name"}。ログインしている本人が表示名を変える(0031。空なら無し)
+//	POST /aibow/auth/email         本文 {"email"}。ログインしている本人がメールアドレスを変える(0031。空なら無し。重なれば 409)
 //
 // cookie は次の性質を付ける(どれも、ほかの人に合言葉を使われないため):
 //
@@ -81,6 +84,15 @@ type Me struct {
 	// Setup は、ログインが要るのに、ログインできる管理者がまだいないか(初めての起動など。0020 の決定事項 5)。
 	// ログインの画面が、サーバーの PC で管理者を作るよう出す。いるかどうかだけで、誰がいるかは出さない
 	Setup bool `json:"setup,omitempty"`
+	// DisplayName は表示名(0031。空ならログインの名前を出す)
+	DisplayName string `json:"display_name,omitempty"`
+	// Email は本人のメールアドレス(0031。Me は本人にだけ返すので、ほかの人には見えない)
+	Email string `json:"email,omitempty"`
+}
+
+// meOf は、ログインしている人の Me。
+func meOf(u User) Me {
+	return Me{Login: true, Name: u.Name, Admin: u.Admin, DisplayName: u.DisplayName, Email: u.Email}
 }
 
 // Handler は /aibow/auth/ の下の口を返す。required はログインが要るか(aibow-server の設定)。
@@ -91,7 +103,7 @@ func Handler(s *Sessions, required bool) http.Handler {
 	mux.HandleFunc("GET /aibow/auth/me", func(w http.ResponseWriter, r *http.Request) {
 		me := Me{Login: required}
 		if u, ok := UserFrom(r.Context()); ok && required {
-			me.Name, me.Admin = u.Name, u.Admin
+			me = meOf(u)
 		} else if required {
 			has, err := HasAdmin(r.Context(), s.store)
 			if err != nil {
@@ -134,7 +146,7 @@ func Handler(s *Sessions, required bool) http.Handler {
 		lim.ok(addr)
 		setCookie(w, r, token)
 		log.Noticef("ログインしました: %s(%s)", u.Name, addr)
-		writeJSON(w, http.StatusOK, Me{Login: true, Name: u.Name, Admin: u.Admin})
+		writeJSON(w, http.StatusOK, meOf(u))
 	})
 	mux.HandleFunc("POST /aibow/auth/logout", func(w http.ResponseWriter, r *http.Request) {
 		if c, err := r.Cookie(CookieName); err == nil {
@@ -237,7 +249,7 @@ func Handler(s *Sessions, required bool) http.Handler {
 		}
 		setCookie(w, r, session)
 		log.Noticef("リンクでパスワードを決めました: %s(%s)", u.Name, remote(r))
-		writeJSON(w, http.StatusOK, Me{Login: true, Name: u.Name, Admin: u.Admin})
+		writeJSON(w, http.StatusOK, meOf(u))
 	})
 	mux.HandleFunc("POST /aibow/auth/password", func(w http.ResponseWriter, r *http.Request) {
 		u, ok := UserFrom(r.Context())
@@ -258,6 +270,23 @@ func Handler(s *Sessions, required bool) http.Handler {
 			writeError(w, http.StatusTooManyRequests, fmt.Sprintf("パスワードを続けて間違えたので、しばらく受け付けません。%d 分ほど待ってください", int(left.Minutes())+1))
 			return
 		}
+		// 画面のアプリ(Bearer。Keys.WithBearer)から呼んだときは、cookie を渡さず、新しいアプリ用のトークンを返す
+		if key := bearerOf(r.Context()); key != "" {
+			got, err := s.ChangePasswordByKey(r.Context(), u, req.Current, req.Password, key)
+			if errors.Is(err, ErrWrongPassword) {
+				lim.fail(addr)
+				log.Warnf("パスワードを変えられませんでした(今のパスワードが違う): %s(%s。アプリから)", u.Name, addr)
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			if linkError(w, err) {
+				return
+			}
+			lim.ok(addr)
+			log.Noticef("パスワードを変えました: %s(%s。アプリから。ほかのログイン中の画面とアプリはログインし直しになります)", u.Name, addr)
+			writeJSON(w, http.StatusOK, got)
+			return
+		}
 		session, err := s.ChangePassword(r.Context(), u, req.Current, req.Password)
 		if errors.Is(err, ErrWrongPassword) {
 			lim.fail(addr)
@@ -271,7 +300,65 @@ func Handler(s *Sessions, required bool) http.Handler {
 		lim.ok(addr)
 		setCookie(w, r, session)
 		log.Noticef("パスワードを変えました: %s(%s。ほかのログイン中の画面とアプリはログインし直しになります)", u.Name, addr)
-		writeJSON(w, http.StatusOK, Me{Login: true, Name: u.Name, Admin: u.Admin})
+		writeJSON(w, http.StatusOK, meOf(u))
+	})
+	mux.HandleFunc("POST /aibow/auth/display", func(w http.ResponseWriter, r *http.Request) {
+		u, ok := UserFrom(r.Context())
+		if !required || !ok {
+			writeError(w, http.StatusUnauthorized, "ログインしてください")
+			return
+		}
+		var req struct {
+			DisplayName string `json:"display_name"`
+		}
+		if !readJSON(w, r, &req) {
+			return
+		}
+		name, err := CheckDisplayName(req.DisplayName)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if err := s.store.SetDisplayName(r.Context(), u.ID, name, s.now()); err != nil {
+			log.Errorf("表示名を変えられません: %v", err)
+			writeError(w, http.StatusInternalServerError, "表示名を変えられません: "+err.Error())
+			return
+		}
+		log.Noticef("表示名を変えました: %s(%q)", u.Name, name)
+		u.DisplayName = name
+		writeJSON(w, http.StatusOK, meOf(u))
+	})
+	mux.HandleFunc("POST /aibow/auth/email", func(w http.ResponseWriter, r *http.Request) {
+		u, ok := UserFrom(r.Context())
+		if !required || !ok {
+			writeError(w, http.StatusUnauthorized, "ログインしてください")
+			return
+		}
+		var req struct {
+			Email string `json:"email"`
+		}
+		if !readJSON(w, r, &req) {
+			return
+		}
+		email, err := CheckEmail(req.Email)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		err = s.store.SetEmail(r.Context(), u.ID, email, s.now())
+		if errors.Is(err, ErrEmailExists) {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
+		if err != nil {
+			log.Errorf("メールアドレスを変えられません: %v", err)
+			writeError(w, http.StatusInternalServerError, "メールアドレスを変えられません: "+err.Error())
+			return
+		}
+		// アドレスそのものはログに書かない(個人の連絡先なので)
+		log.Noticef("メールアドレスを変えました: %s", u.Name)
+		u.Email = email
+		writeJSON(w, http.StatusOK, meOf(u))
 	})
 	mux.HandleFunc("/aibow/auth/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "このパスはありません: "+r.Method+" "+r.URL.Path)

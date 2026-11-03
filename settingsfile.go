@@ -5,11 +5,14 @@ package aibow
 // 設定の置き場所は2つに分けている:
 //
 //	画面で変える設定 … DB(appsettings.go の app_settings と、会話ごとの conversations.settings)
-//	手で書く設定     … このファイル。MCP のサーバー(mcpServers)と、生成を頼む aibow-server のつなぎ先(serverUrl。0015)
+//	手で書く設定     … このファイル。生成を頼む aibow-server のつなぎ先(serverUrl。0015)など
 //
-// MCP のサーバーの起動のしかた(npx のパスなど)は「その PC の設定」で、会話のデータとは性格が違う。
+// その PC でどう起動するかは、会話のデータとは性格が違う。
 // 会話を別のサーバーに置く形(TODO.md のクライアント/サーバー構成の B)にしても、これは手元に残るもの。
 // 読むのは起動したときだけ。変えたらアプリを起動し直す。
+//
+// MCP のサーバー(mcpServers)も書けるが、起動したときに mcp.json へ移し、ここからは消す(置き場所を1つにして、画面から変える・消すため。
+// 0034 の決定事項 13。移すのは mcpfile.go の MoveFromSettings、消すのは removeSettingsKey)。
 
 import (
 	"bytes"
@@ -38,6 +41,9 @@ type SettingsFile struct {
 	// ServerCert は、aibow-server の証明書のファイル(自己署名の証明書で HTTPS を待ち受けているとき、サーバーの PC から写したもの)。
 	// 書けば、その証明書を信頼してつなぐ。環境変数 AIBOW_SERVER_CERT より強い
 	ServerCert string `json:"serverCert"`
+	// FetchAllowPrivate は、URL を読むツール(fetch_url)で、PC の中・社内のアドレス(127.0.0.1・192.168.x.x など)も読むか(0036 の決定事項 12)。
+	// 既定は読まない。めったに使わず、危うさを分かって書く人だけが使うので、画面からは変えない
+	FetchAllowPrivate bool `json:"fetchAllowPrivate"`
 }
 
 // LoadSettingsFile は設定ファイルを読む。ファイルが無ければ空の設定を返す(MCP を使わないだけで、エラーにしない)。
@@ -61,6 +67,67 @@ func LoadSettingsFile(path string) (SettingsFile, error) {
 		return SettingsFile{}, err
 	}
 	return s, nil
+}
+
+// removeSettingsKey は、設定ファイル path から項目 key だけを消して書き直す。
+//
+// 手で書いたファイルなので、ほかの項目は並びも値もそのまま残す(aibow が知らない項目も落とさない)。
+// SettingsFile に読んで書き戻すと、知らない項目が消え、並びも struct の順になるため、項目を1つずつ生のまま読んで並べ直す。
+// 変わるのは字下げだけ(値の中も2つの空白で揃える)。JSON にはコメントが無いので、ほかに失うものは無い。
+func removeSettingsKey(path, key string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("設定ファイル %s を読めません: %w", path, err)
+	}
+	dec := json.NewDecoder(bytes.NewReader(data))
+	if t, err := dec.Token(); err != nil || t != json.Delim('{') {
+		return fmt.Errorf("設定ファイル %s が {…} の形ではありません", path)
+	}
+	var buf bytes.Buffer
+	buf.WriteString("{")
+	n := 0
+	for dec.More() {
+		t, err := dec.Token()
+		if err != nil {
+			return fmt.Errorf("設定ファイル %s を読めません: %w", path, err)
+		}
+		var v json.RawMessage
+		if err := dec.Decode(&v); err != nil {
+			return fmt.Errorf("設定ファイル %s を読めません: %w", path, err)
+		}
+		if t == key {
+			continue
+		}
+		name, err := json.Marshal(t)
+		if err != nil {
+			return err
+		}
+		if n > 0 {
+			buf.WriteString(",")
+		}
+		buf.WriteString("\n  ")
+		buf.Write(name)
+		buf.WriteString(": ")
+		if err := json.Indent(&buf, v, "  ", "  "); err != nil {
+			return err
+		}
+		n++
+	}
+	if n > 0 {
+		buf.WriteString("\n")
+	}
+	buf.WriteString("}\n")
+
+	// 書きかけのファイルが残らないよう、一時ファイルに書いてから名前を変える(tools.json と同じ)
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, buf.Bytes(), 0o644); err != nil {
+		return fmt.Errorf("設定ファイル %s を書けません: %w", path, err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp)
+		return fmt.Errorf("設定ファイル %s を書けません: %w", path, err)
+	}
+	return nil
 }
 
 // CheckMCPServers は、設定ファイル path に書いた mcpServers を確かめる(アプリの settings.json と aibow-server の server.json で同じ。0024)。

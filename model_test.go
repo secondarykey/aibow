@@ -97,7 +97,7 @@ func TestSendFailsWhenModelCannotLoad(t *testing.T) {
 	c.Settings.Model = "ollama:gone"
 	cs.UpdateSettings(ctx, c.ID, c.Settings)
 	var errs []string
-	cs.Send(context.Background(), c.ID, "x", func(ev ChatEvent) {
+	cs.Send(context.Background(), c.ID, "x", nil, func(ev ChatEvent) {
 		if ev.Type == "error" {
 			errs = append(errs, ev.Error)
 		}
@@ -115,7 +115,7 @@ func TestSendFailsWhenModelCannotLoad(t *testing.T) {
 	// 対処まで書いてあるエラー(aibow-server につながらない、など)には、会話の仕組みの対処を書き足さない(食い違うため。0015)
 	cs.SetModelLoader(&fakeLoader{g: g, err: remedied{}})
 	errs = nil
-	cs.Send(context.Background(), c.ID, "x", func(ev ChatEvent) {
+	cs.Send(context.Background(), c.ID, "x", nil, func(ev ChatEvent) {
 		if ev.Type == "error" {
 			errs = append(errs, ev.Error)
 		}

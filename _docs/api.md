@@ -18,9 +18,11 @@ Cline など [ 会話の仕組み + 手 ] ⇄ HTTP(OpenAI 互換。127.0.0.1 だ
 | `api/chat.go` | `POST /v1/chat/completions`。順番待ち・モデルの読み直し・トークン数の確かめ・生成(まとめて / ストリーミング)・学習用のログ。`POST /apply-template`・`POST /aibow/count-tokens` も |
 | `api/models.go` | モデルの一覧と読み込み(ステップ8)。使う係の interface `Models`(本物は `_cmd/aibow-server` の `modelManager`)・`GET /models`・`POST /models/load`・`POST /aibow/gpu-layers` |
 | `api/places.go` | モデルの置き場所(`GET /aibow/places`・`POST /aibow/places/add`・`POST /aibow/places/remove`)と、表示だけのサーバーの設定(`GET /aibow/settings`。`Settings`)。8-4 |
-| `api/seat.go` | 生成の順番待ちの席(`Seat`)。ステップ9で `Server` の外に出し、ブラウザの会話(`ui`)も同じ席を通す(下の「画面用の口」) |
+| `api/seat.go` | 生成の順番待ちの席(`Seat`)。ステップ9で `Server` の外に出し、ブラウザの会話(`ui`)も同じ席を通す(下の「画面用の口」)。席の数はシーケンスの数(0023。下の「席とシーケンス」) |
 | `api/api_test.go`・`api/aibow_test.go` | 偽物の生成とモデルの係でのテスト(モデル不要) |
 | `api/client/` | aibow-server につなぐクライアント(`client` パッケージ。ステップ8)。下の「クライアント(`api/client`)」 |
+| `genlog/` | 生成の付箋(道・用途・会話・順番待ちを ctx で運ぶ)と、使用量の記録の形(`genlog` パッケージ。0033)。何にも依存しない。下の「使用量の記録」 |
+| `_cmd/aibow-server/usage.go` | 記録付きの engine(`recorder`)と、使用量を見る口(0033)。下の「使用量の記録」 |
 | `ui/web.go`・`ui/serverhost.go` | 画面用の口(`/aibow/ui/` の下)と、aibow-server の中でブラウザの会話のモデルを扱う係(`ServerHost`)。ステップ9。下の「画面用の口」 |
 | `_cmd/aibow-server/` | exe(ステップ8で `aibow-api` から名前を変えた。0015)。`config.go` は設定(強さの順は 引数 > 設定ファイル `server.json` > 環境変数 > 既定)、`models.go` はモデルの係(GPU の層数と画面で足した置き場所を `server-models.json` に覚える)、`main.go` はエンジンとモデルを用意して `api` を `127.0.0.1` で待ち受けるだけ、`browser.go` はブラウザの会話(`server.db` を開き、`ui` の会話の仕組みと画面用の口を作る。ステップ9)。`log.go` はログの出口(`aibow-server_<日付>.log`)、`version` / `appversion.go` はアプリと同じバージョン(`_cmd/aibow/version` の写し) |
 
@@ -31,11 +33,15 @@ Cline など [ 会話の仕組み + 手 ] ⇄ HTTP(OpenAI 互換。127.0.0.1 だ
 ## 1回のリクエストの流れ(`api/chat.go`)
 
 1. JSON を読み、`toPrompt` で `format.Prompt` にする。読めない発言は 400
-   - `content` は文字列か、部品の配列(`[{"type": "text", "text": "…"}]`。Cline はこちら)。文字以外の部品(画像など)は 400
+   - `content` は文字列か、部品の配列(`[{"type": "text", "text": "…"}]`。Cline はこちら)。文字と画像(`image_url`)以外の部品は 400
+   - 画像(0030):`{"type": "image_url", "image_url": {"url": "data:image/png;base64,…"}}`。**`data:` の URL(base64)だけ**を受け、`http(s)://` の URL は取りに行かずに 400
+     (サーバーから PC の中やイントラに届いてしまうため。0030 の決定事項 16)。画像を付けられるのは user の発言だけ(system・ツールの結果の画像は 400)。1 枚 10 MB まで。
+     画像の ID は中身の SHA-256(会話の仕組みが付ける ID と同じ。同じ画像が届けば KV キャッシュで同じと分かる)。
+     部品のどこにあっても、画像は発言の文より前に置く(Qwen3.5 の書式が画像を先に書く)。画像を読めないモデル・書式なら生成でエラー(500)。本文の上限は画像の分を足して約 165 MB
    - `system` と `developer`(OpenAI の新しい名前)は先頭にだけ置ける。先頭に続けて複数あれば `\n\n` でつなぐ。途中にあれば 400(Qwen3.5 の公式テンプレートが途中の system をエラーにするため)
    - `assistant` の `reasoning_content` は思考(`Thinking`)に戻す。プロンプトに入れるかは書式が決める(ツールのループの途中の返事だけ)
    - `assistant` の `tool_calls` は書式の呼び出しに、`tool` の役の発言はツールの結果に戻す(下の「ツール呼び出し」)。`tools` は `tool.Def` にしてモデルに知らせる
-2. **順番を待つ**。作業領域が1つなので生成は1つずつ。席が1つのチャンネル(`Server.turn`)で待たせ、断らない。待っている間につながりが切れたら列から外れる
+2. **順番を待つ**。同時に生成できるのは、作業領域の中のシーケンスの数(`-parallel`。既定 1)まで。席(`api.Seat`)が全部ふさがっていたら待たせ、断らない。待っている間につながりが切れたら列から外れる
 3. リクエストの `model` が読み込み中のモデルと違えば**読み直す**(ステップ8。下の「aibow 専用の口と欄」)。順番待ちの席の中で行うので、生成と取り合わない
 4. 書式を当てたトークン数を数え(`CountTokens`)、作業領域に入らなければ **400・`code: context_length_exceeded`**(OpenAI と同じ形)。compact はしない(履歴を持つのはクライアント)。
    読み直すとモデル(語彙と書式)が変わって数も変わるので、順番待ちと読み直しの後に数える(0012 では順番を待つ前に数えていた)。返事の分の空きまでは求めない(足りなくなったら止めて `finish_reason: length`)
@@ -128,8 +134,10 @@ data: [DONE]
   足した置き場所は `server-models.json` の `places` に覚え、手で書く `server.json` は書き換えない(0015 の 22)。models フォルダと Ollama の保存先は外せない(表示だけ)。
   足した置き場所が見つからなくなったら一覧から外し、見つからなくなったときに1回だけ Warn のログを出す。覚えたものからは消さない(つなぎ直せば戻る。0015 の 28)。
   置き場所を足す・外すのは作業領域を使わないので、順番を待たない
-- `/aibow/count-tokens`・`/apply-template` がモデルの状態で失敗したときは、`error.code` に `model_not_loaded`(降ろした・まだ読み込んでいない)か `unsupported_format`(書式に未対応の種類のモデル)を入れる。
-  `api/client` はこれを `engine.ErrNoModel`・`format.ErrUnsupported` に戻すので、画面のアプリは直接でも HTTP 越しでも同じに「メーターを出さない」にできる(会話を開くのは止めない)
+- `/aibow/count-tokens`・`/apply-template` がモデルの状態で失敗したときは、`error.code` に `model_not_loaded`(降ろした・まだ読み込んでいない)か `unsupported_format`(書式に未対応の種類のモデル)か
+  `no_vision`(画像の付いたプロンプトを、画像を読めないモデル・書式で数えた。0030)を入れる。
+  `api/client` はこれを `engine.ErrNoModel`・`format.ErrUnsupported`・`engine.ErrNoVision` に戻すので、画面のアプリは直接でも HTTP 越しでも同じに「メーターを出さない」にできる(会話を開くのは止めない)。
+  `/v1/chat/completions` の前の数えるところで失敗したときも同じ code を入れる
 - 画面のアプリ(`api/client` を使う側)は、`/models/unload`・`/aibow/gpu-layers`・`/aibow/places/*` を使わない。`/aibow/settings` も作業領域しか画面に渡さない(2026-10-22、ユーザーと決めた。0015 の 21)。
   これらはサーバーの PC の事情を変える口で、サーバーの PC の人が curl などで呼ぶもの。誰が呼んでよいか(管理者だけにする)はステップ10で決める
 - `/aibow/settings` は表示だけのサーバーの設定(作業領域・ポート・llama.cpp の場所・最初のモデル・設定ファイルの場所)。変えるのは `server.json` と起動し直し(0015 の 21)
@@ -139,12 +147,13 @@ data: [DONE]
 ```
 頼み   "aibow": {"return_prompt": true}                        ← 書けば aibow のクライアント。return_prompt でモデルに渡した文字列も返す
 返事   "timings": {"cache_n","prompt_n","prompt_ms","prompt_per_second","predicted_n","predicted_ms","predicted_per_second"}  ← いつも
-       "aibow": {"prompt","stop_reason","broken_tool_calls":[{"index","name","raw","error"}]}  ← aibow のクライアントだけ
+       "aibow": {"prompt","stop_reason","broken_tool_calls":[{"index","name","raw","error"}],"image_tokens","encode_sec"}  ← aibow のクライアントだけ
 履歴   assistant の "aibow": {"broken_tool_calls":[…]}         ← 返ってきたものをそのまま送り返す
 ```
 
 - `timings` は llama.cpp と同じ意味にした:`prompt_n` は今回読み込んだ(KV キャッシュを使い回せなかった)数、`cache_n` は使い回せた数。プロンプトのトークン数は足したもの
 - `stop_reason` はエンジンの細かい終了の理由(`eos`・`stop`・`length`・`context`・`cancel`)。`finish_reason` では `length` と `context` を見分けられないため
+- `image_tokens`・`encode_sec` は画像(0030)の記録(プロンプトのうち画像のトークン数・今回エンコードした秒数)。`timings` には画像の欄が無いので、aibow の欄で返す
 - `prompt` は長いので頼んだときだけ。ストリーミングなら生成の前に、`choices` が空で `aibow.prompt` だけの塊を1つ送る
 - `broken_tool_calls` の `index` は、読み取れた呼び出し(`tool_calls`)と合わせた全体の中の順番。aibow のクライアントは自分のループで「エラーとしてモデルに返して直させる」ので、答えに足さずに分けて返す。
   履歴で送り返すと、`index` の位置に混ぜ戻し、書式はモデルが書いたまま(`raw`)をプロンプトに入れる
@@ -177,6 +186,8 @@ data: [DONE]
   0026 より前は値をいつも JSON の文字列で送っていた。前の版のサーバー・クライアントと組み合わせても、書式を当てた文字列は同じになる。
   崩れた呼び出しは `aibow.broken_tool_calls` で順番つきで送り、サーバーがモデルの書いたまま(`raw`)を書式に戻す。
   `client_test.go` で、本物の `api.Server` を `httptest` で立て(生成だけ偽物)、サーバーが受け取った会話と、書式を当てた文字列が直接のときと同じになることを確かめている
+- 画像の付いた発言(0030)は、`content` を部品の配列にして送る:画像を `image_url` の `data:` の URL(`format.Image.Format` と base64)にして先に並べ、最後に文字の部品(`contentOf`)。
+  サーバーは中身の SHA-256 を画像の ID にするので、会話の仕組みが付けた ID(`File.Hash`)と同じになる。往復で会話も書式を当てた文字列も変わらないことを `TestRoundTripImages` で確かめている
 - `LoadModel` を呼ばずに生成するとき(会話のモデルが、最後に知った読み込み中のモデルと同じ)は、そのモデルを `model` で頼む。空で頼むとサーバーが今のモデルで答えるので、そのあとでほかの人が入れ替えていると、違うモデルで返事ができてしまうため
 - 停止ボタン(ctx を止める)はつながりを切る。サーバーはそれを見て生成を止める。クライアントは届いた分を `StopReason: cancel` で返す(エラーにしない。engine と同じ)
 - つながらないとき(起動していない・止めた)は `ErrUnreachable`(つなぎ先と「aibow-server を起動してください」を添える)。サーバーのエラーは `APIError`(`code` で見分けられる)
@@ -211,7 +222,7 @@ Cline など ──HTTP──→ /v1/ など → api.Server ──────�
 - SSE の `chat`(生成の途中経過)は、その会話の持ち主がつないでいる画面にだけ送る(同じ人の別のタブ・別の PC には送る。0017 の 7)。`models` は全員に送る。
   送り切れずに 1024 件溜まったら、そのつながりを切る(黙って捨てると、答えの途中が抜けたまま気づけないため)
 - **席**:送信の全体(会話のモデルの読み直し・要約・返事)の間、OpenAI 互換の口と同じ席を持つ。生成1回ごとに取り直すと、その間に Cline などがモデルを入れ替えてしまうため。
-  ふさがっていれば `notice`(「ほかの生成が終わるのを待っています…」)を送ってから待つ。入力欄の下でモデルを選んだとき(`SwitchModel`)も席を取ってから読み込む
+  ふさがっていれば `notice`(「ほかの生成が終わるのを待っています…」)を送ってから待つ。モデルのタブの「読み込む」(`SwitchModel`)も席を取ってから読み込む(入力欄の下でモデルを選んでも読み込まない。送信の前に読み直す。0014)
 - **ツールと確認の往復**(0024 の 12-1a):ブラウザの会話のツールはサーバーの PC で動く。今は組み込みの時刻・計算だけ(会話に保存した作業フォルダは使わない。`Conversations.IgnoreWorkDir`)。
   書き換えるツールなど、実行の前に確認するときは、確認のカードが SSE の `chat`(`type: confirm`)で届き、答えは `POST /aibow/ui/call/ConfirmTool` で返す。会話の仕組みは答えが来るまでループを止めて待つ(Wails の中で済んでいたことを、知らせと呼び出しに分けただけ)
   - 待っている間に送信の呼び出しが切れたら(タブを閉じた・読み直した)、停止と同じ(「停止されたため実行していません」)
@@ -307,7 +318,9 @@ aibow-server user admin <名前>(コマンドだけ)→ server.db の users.admi
   `Caller.ManagesPC()`(管理者か、サーバーの PC の上から)でなければ 403 で断り、`ServerHost` も同じことを確かめる(口の作りを間違えても漏れないように)
 - **管理者の口**(`_cmd/aibow-server/admin.go`。ブラウザでログインした管理者だけ。ほかは 401 / 403):
   `GET /aibow/admin/users`(一覧。パスワードと API キーは、あるかだけ)・`POST /aibow/admin/users`(本文 `{"name"}`。返事にパスワード)・
-  `POST /aibow/admin/users/{名前}/password`・`POST /aibow/admin/users/{名前}/key`(返事に新しいパスワード / キー。一度だけ)・`DELETE /aibow/admin/users/{名前}`(自分と `local` は消せない)。
+  `POST /aibow/admin/users/{名前}/password`・`POST /aibow/admin/users/{名前}/key`(返事に新しいパスワード / キー。一度だけ)・`DELETE /aibow/admin/users/{名前}`(自分と `local` は消せない)・
+  `POST /aibow/admin/users/{名前}/display`(本文 `{"display_name"}`。表示名。空なら無し。0031)・`POST /aibow/admin/users/{名前}/email`(本文 `{"email"}`。空なら無し。重なれば 409)。
+  一覧の1人には、表示名 `display_name`・メールアドレス `email`・最後に使った時刻 `last_used_at`(一度も使っていなければ無い)・会話の数 `conversations`・まだ使っていないリンクの期限 `link_expires_at` も入る(0031。並べ替えと絞り込みは画面がする)。
   処理は user コマンドと同じ関数(`createUser`・`renewPassword`・`renewKey`・`deleteUser`)。返事は `Cache-Control: no-store`
 - **モデルの ID**:GGUF は `file:<ファイル名>`(以前は `file:<パス>`。サーバーの PC のパスが `/v1/models` や共有した会話に出ないように。0018 の決定事項 15)。
   同じ名前のファイルは先の置き場所だけを出し、後ろは Warn のログ(`models.Catalog.Hidden`)。以前の形の ID は `models.IDOf` で読み替える
@@ -318,9 +331,51 @@ aibow-server user admin <名前>(コマンドだけ)→ server.db の users.admi
   会話の送信は注意で断る(`ChatEvent.Caution`。勝手にほかのモデルに替えない)。使えなくしたのが読み込み中のモデルなら降ろす。
   一覧の外の GGUF をパスで読み込ませるのは起動のとき(`-model` など)だけ。つないでくる人には、パスで好きなファイルを読ませない
 
+## 席とシーケンス(0023)
+
+- 席(`api.Seat`)の数は、作業領域の中のシーケンスの数(`-parallel`・`server.json` の `parallel`・`AIBOW_SERVER_PARALLEL`。既定 1)。
+  OpenAI 互換の口もブラウザの会話も同じ席を通す。席が全部ふさがっているときだけ待つ(ブラウザには「ほかの生成が終わるのを待っています」、ログには「席が全部ふさがっている…ので順番を待ちます」)。
+  どのシーケンスを使うかは engine が選ぶ([engine.md](engine.md) の「シーケンス」)
+- **作業領域の大きさは1本あたりを見せる**:`GET /models` の `n_ctx`・ブラウザの会話の確かめ(`fixedContext`)・トークン数の確かめは、`ctx` を本数で割った大きさ。
+  入らなければ今までと同じエラー(文に「`-parallel` を減らす」を足した)。既定の会話の上限 8192 + 返事の上限 8192 = 16384 は、32768 を 2 本でちょうど入る
+- **モデルの読み直しは一人で**:作業領域を作り直す操作(`modelManager` の `Load`・`Unload`・読み込み中のモデルの `SetGPULayers`・使えなくしたモデルを降ろす `SetEnabled`)は、
+  席を持った人が `Seat.Exclusive` で、ほかの席が全部空くまで待ってから行う。待っている間は新しく来た人を座らせない(いつまでも空かないことが無いように)。
+  2人が同時に一人で使おうとしても、待つ間は自分の席を空けておくので、お互いを待ち続けない。席が1つなら、持っている人がそのまま一人(今までと同じ)
+- **学習用のログ**(Info):生成のたびに `シーケンス 1:プロンプト 346 トークン(KV キャッシュの使い回し 314)… / 同じ decode に混ざった生成 最大 2 件` を出す(記録付きの engine `recorder` の中。シーケンスが1本なら出さない)
+- **使用量の GPU の秒数は重なる**:2人が同時に生成すると、それぞれの生成の秒数に同じ時間が入る(1回の decode を分け合っているため)。合計は実際に GPU を使った時間より多くなる
+
+## 使用量の記録(0033)
+
+```
+OpenAI 互換の口(api)──────────┐   付箋:道 api / app(aibow 欄)・用途と会話(アプリは aibow 欄の purpose・conversation)・順番待ち
+                                 ├→ recorder.Generate → engine.Generate
+ブラウザの会話(ui.ServerHost)──┘   付箋:道 browser(ui.Handler)・用途と会話(会話の仕組み)・順番待ち(送信の最初の生成だけ)
+                                           └→ 終わったら server.db の generation_log に1行
+```
+
+- **1か所で包む**:生成が通る2本の道の両方に書き足さず、aibow-server が engine を渡すところで包む(デコレータの形)。
+  `recorder` は `api.Generator` を満たすので、`api.New` にも `ui.NewServerHost` にも同じものを渡す(`main.go`)。トークン数・書式・読み込み中のモデルはそのまま通す
+- **付箋(`genlog`)**:包む側は「だれが・どの道で・何のために」を知らないので、呼ぶ側が ctx に付ける。道は HTTP の口(`api` の `handleChat`・`ui.Handler`)、
+  用途(`reply` / `summary`)と会話は会話の仕組み(`Conversations.generate`・`generateSummary`)。アプリの会話の仕組みは aibow-server の外で動くので、
+  `api/client` が付箋を `aibow` 欄の `purpose`・`conversation` に写して送り、`api` が読んで付け直す
+- **だれか**:`auth.UserFrom`(API キー・アプリ用のトークン・ログインの cookie)、無ければ `aibow.UserOf`(ブラウザのログインなしの形の `local`)。
+  キーの要らない形(127.0.0.1 だけでログインなし)の OpenAI 互換の口は `asLocal` で `local` にする(保存の口と同じ線)。それでも分からなければ、利用者を空にして Warn
+- **1行に持つもの**:時刻(始めた時刻)・利用者の ID と名前(写す)・道・用途・会話の ID・モデル・プロンプト / 使い回した / 生成 / 画像のトークン数・プロンプト / 生成 / エンコードの秒数・順番待ちの秒数・終了理由。
+  会話の中身は持たない。**GPU の秒数 = プロンプト + 生成 + エンコード**(モデルの読み込みは入れない)。失敗して秒数が 0 の生成は書かず、途中で失敗したものは終了理由 `error`
+- **書けなくても止めない**:記録は使えるかどうかに関わらないので、書けなければ Warn のログだけ(最後に使った日と同じ考え方)
+- **見る口**(`usage.go`。days は今日を含めた日数 1〜366、既定 7。日の区切りはサーバーの PC の時刻):
+  `GET /aibow/admin/usage?days=N`(利用者ごと。GPU の秒数の多い順。消された人は `deleted`)・`GET /aibow/admin/usage/user?id=<ID>&days=N`(1人のモデルごと・日ごと)は、
+  ログインした管理者だけ(ほかは 401 / 403)。ログインなしの形ではサーバーの PC の上から(127.0.0.1)だけ。
+  `GET /aibow/auth/usage`(自分の今日・7日・30日。`genlog.Mine`)は本人(cookie かアプリ用のトークン。`keys.WithBearer`)。アプリは `api/client` の `MyUsage` で呼ぶ
+- **KV キャッシュと使用量**:プロンプトのトークン数には使い回した分も入る。実際に計算したのは「プロンプト − 使い回した数」。同じ会話を続けると軽く、
+  毎回最初から読み直す使い方は重い、がプロンプトの秒数に出る(画面ではバルーンに使い回した数を出す)
+
 ## 会話の共有と管理者が読む(ステップ11の 11-2。0018)
 
-- 画面用の口に `SetConversationShare`・`SharedConversations`・`UserConversations`・`UserNames`・`ReadConversation`・`CopyShared` を足した(`browserMethods`)。
+- 画面用の口に `SetConversationShare`・`SharedConversations`・`UserConversations`・`Directory`(以前の `UserNames`。0031)・`ReadConversation`・`CopyShared` を足した(`browserMethods`)。
+  `SetConversationShare` と `SetProfileShare` の引数は(ID・範囲・人の名前・グループの名前)。
+  グループ(0031)の `CreateGroup`・`RenameGroup`・`DeleteGroup`・`SetGroupMember`・`SetGroupLeader` も画面用の口と保存の口に出る(管理者か・そのグループの長かは保存先が確かめる。
+  保存の口では `ErrNotGroupLeader` が `not_group_leader`(403)、`ErrGroupExists` が `group_exists`(409)になって手元の同じエラーに戻る)
   誰が読めるかは保存先(`store`)が決め、管理者かも保存先が利用者の表で確かめる(`UserConversations` は管理者だけ)
 - 保存の口(`/aibow/store/`)にも、`aibow.Store` に足した同じメソッドが出る(`store/remote` の `Client`)。画面のアプリ(serverUrl)でも、共有された会話を読む・写す・自分の会話を共有するができる
 - 管理者が共有されていない会話を読むと、`ui.Service.ReadConversation` が Notice のログに残す(誰が・誰の・どの会話を)
@@ -356,6 +411,11 @@ aibow-server user admin <名前>(コマンドだけ)→ server.db の users.admi
 |---|---|
 | `POST /aibow/auth/token` | 本文 `{"name", "password", "device"}`(JSON だけ。device は PC の名前)。合っていれば `{"token", "name", "admin", "expiresAt"}`、違えば 401。間違いの回数はブラウザのログインと一緒に数える(5回で 15 分)。ログインの要らない形では 400 |
 | `POST /aibow/auth/token/revoke` | `Authorization: Bearer <トークン>` のトークンを消す(アプリのログアウト)。無くても 200 |
+
+- **本人のアカウントの口をアプリからも**(0031 の決定事項 45):`/aibow/auth/` は `auth.Keys.WithBearer` を通すので、cookie でログインしていない呼び出しに
+  `Authorization: Bearer <アプリ用のトークンか API キー>` があれば、その持ち主として `POST /aibow/auth/display`・`email`・`password` を呼べる。
+  パスワードを変える口は、アプリ用のトークンで呼ぶと cookie の代わりに同じ PC の名前の新しいトークン(`{"token", "name", "admin", "expiresAt"}`)を返す(前のトークンは、ほかのものと一緒に消える)。
+  API キーで呼んだときは `token` が空(キーは消えない)
 
 - **トークン**:期限は作ってから 10 日で固定(ブラウザのセッションと違って延ばさない)。PC ごとに1本(利用者 + PC の名前)で、同じ PC でログインし直すと前のものは消える。server.db の `app_tokens` には SHA-256 だけ。
   パスワードを作り直すと、ブラウザのセッションと一緒に消える

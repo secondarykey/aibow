@@ -90,9 +90,22 @@ func (a Args) Int(name string, def int) int {
 	return def
 }
 
+// Bool は真偽の引数を返す。省略されていたら false。
+func (a Args) Bool(name string) bool {
+	b, _ := a[name].(bool)
+	return b
+}
+
 // Builtin は aibow に組み込みのツール。どれも何も書き換えない。
 func Builtin() []Tool {
 	return []Tool{currentTime{}, calculator{}}
+}
+
+// Folderless は、作業フォルダを使わない組み込みのツール(時刻・計算・URL を読む)。設定の画面の一覧に出す用。
+// fetch_url は設定(PC の中のアドレスを許すか)で動きが変わるので Builtin に入れず、動かす側(mcp/server の Options.Fetch)が足す。
+// 定義は設定によらないので、ここでは既定の設定で作る。
+func Folderless() []Tool {
+	return append(Builtin(), FetchURL(FetchOptions{}))
 }
 
 // Defs はツールの定義の一覧(モデルに知らせる用)。

@@ -19,6 +19,8 @@ import (
 	"fmt"
 	"slices"
 	"uuid"
+
+	"github.com/secondarykey/aibow/tool"
 )
 
 // 固定できる項目(ProfileRules.Fixed に入れる名前)。プロファイルの値(ProfileValues)の項目
@@ -230,11 +232,11 @@ func (cs *Conversations) load(ctx context.Context, id uuid.UUID) (Conversation, 
 	return c, ms, nil
 }
 
-// forUse は、使うときの設定の仕上げ。作業フォルダを使わない形(IgnoreWorkDir)なら、作業フォルダを空にする。
+// forUse は、使うときの設定の仕上げ。作業フォルダを使わない形(IgnoreWorkDir)なら、ワークスペースを空にする。
 // 資料のフォルダ(SetFolders)のパスも、ここでは入れない(画面に返す設定にパスを載せないため)。ツールを作るときに workDir で引く。
 func (cs *Conversations) forUse(s ConversationSettings) ConversationSettings {
 	if cs.noWorkDir {
-		s.WorkDir = ""
+		s.Workspace, s.WorkDir = "", ""
 	}
 	return s
 }
@@ -269,14 +271,36 @@ func (cs *Conversations) FolderName(set ConversationSettings) string {
 	return name
 }
 
-// workDir は、ツールを作るときの作業フォルダ。アプリでは会話に保存した作業フォルダ、
-// aibow-server のブラウザの会話では、プロファイルで配られた資料のフォルダ(無ければ空)。
+// workDir は、ツールを作るときの作業フォルダ。アプリでは会話のワークスペースのメインのフォルダ
+// (この PC に無いワークスペースなら空。0035)、aibow-server のブラウザの会話では、プロファイルで配られた資料のフォルダ(無ければ空)。
+// 前の作業フォルダ(WorkDir)は使わない(この PC にあるものは起動したときにワークスペースに移している。MigrateWorkDirs)。
 func (cs *Conversations) workDir(set ConversationSettings) string {
 	if cs.noWorkDir {
 		_, p := cs.folderOf(set)
 		return p
 	}
-	return set.WorkDir
+	ws, ok := cs.workspaces.Get(set.Workspace)
+	if !ok {
+		return ""
+	}
+	return ws.MainFolder().Path
+}
+
+// toolFolders は、ファイルのツールが扱うフォルダの組。アプリでは会話のワークスペースのフォルダ全部(0035 の段2)、
+// ブラウザの会話では資料のフォルダ1つ(workDir と同じ)。無ければ空。
+func (cs *Conversations) toolFolders(set ConversationSettings) []tool.Folder {
+	if cs.noWorkDir {
+		return tool.Single(cs.workDir(set))
+	}
+	ws, ok := cs.workspaces.Get(set.Workspace)
+	if !ok {
+		return nil
+	}
+	folders := make([]tool.Folder, 0, len(ws.Folders))
+	for _, f := range ws.Folders {
+		folders = append(folders, tool.Folder{Name: f.Name, Path: f.Path, Main: f.Main, Writable: f.Writable, Description: f.Description})
+	}
+	return folders
 }
 
 // groupOfTool は、ツールの名前からグループ(組み込みなら空、MCP ならサーバーの名前)を引く。

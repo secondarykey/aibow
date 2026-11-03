@@ -53,7 +53,7 @@ aibow 全体の進み具合(入口)。ルールと全体の構成は `AGENTS.md`
 | ⬜ | DeepSeek の書式(V3.x・R1。独自の区切りとツール呼び出し。大きいモデル向けで、この PC では確かめにくい) | 未作成 |
 | ⬜ | GLM の書式(4.x。独自の区切りと、Qwen とは違う XML 風の呼び出し。大きいモデル向け) | 未作成 |
 | ⬜ | Llama 4 の書式(Llama 3 とは区切りが変わっている見込み。大きいモデル向け) | 未作成 |
-| ⬜ | ファイルを読み込む(テキストのファイルと画像。画像はツールではなくモデル自身の機能) | [0030-read-files.md](_docs/features/0030-read-files.md) |
+| ✅ | ファイルを読み込む(テキストのファイルと画像。画像はツールではなくモデル自身の機能。2026-10-31 に完了。画面での確かめは別に行う) | [0030-read-files.md](_docs/features/0030-read-files.md) |
 
 ## ロードマップの外でやりたいこと
 
@@ -64,6 +64,7 @@ aibow 全体の進み具合(入口)。ルールと全体の構成は `AGENTS.md`
 | ✅ | ログの仕組み(`aibow/log`。リリース版でもログが見えるように) | [0008-log.md](_docs/features/0008-log.md) |
 | ⬜ | ログの続き(0008 のやり残し:パッケージごとのレベル・llama.cpp のログなど) | [0008-log.md](_docs/features/0008-log.md) の「やり残し」 |
 | ✅ | 設定のプロファイル化(ロードマップ2のステップ7にした) | [0014-profiles.md](_docs/features/0014-profiles.md) |
+| ✅ | モデルを決めていないプロファイルの文言を「会話を始めたときのモデル」にする・入力欄の下でモデルを選んでも読み込まない(送信するときだけ読み込む。2026-10-31 に完了。画面はユーザーが確かめた) | [0014-profiles.md](_docs/features/0014-profiles.md) の「あとから決めたこと(2026-10-31)」 |
 | ✅ | 画面の改善(要約中の文を畳む・会話の名前と ID・設定の画面のタブ) | `_docs/ui.md`・[検討メモ](_docs/backlog.md) |
 | ✅ | スクロールしたら質問を右上に出す | `_docs/ui.md` の「スクロール」・[検討メモ](_docs/backlog.md) |
 | ⬜ | 会話の検索(部分一致・全文検索・意味の近さ) | [0003-search.md](_docs/features/0003-search.md)(検討メモ) |
@@ -71,7 +72,7 @@ aibow 全体の進み具合(入口)。ルールと全体の構成は `AGENTS.md`
 | ⬜ | 画像を作る(後回し) | [検討メモ](_docs/backlog.md) |
 | ✅ | モデルを扱う画面(設定の画面の「モデル」のタブ。0015 の 8-4 で作った) | [0015-api-client.md](_docs/features/0015-api-client.md) の 8-4 |
 | ⬜ | 複数のモデルを同時に動かす | [検討メモ](_docs/backlog.md) |
-| ⬜ | 複数の人で GPU を分け合う(ステップ12より後にやる) | [0023-parallel.md](_docs/features/0023-parallel.md) |
+| ✅ | 複数の人で GPU を分け合う(aibow-server の `parallel`。2026-11-02 に完了) | [0023-parallel.md](_docs/features/0023-parallel.md) |
 | ✅ | ツールの結果が会話の上限に入らないときの立て直し(入る分だけ切って渡す・同じ失敗の繰り返しで止める) | [0025-small-reads.md](_docs/features/0025-small-reads.md) |
 | ✅ | TODO.md を短い入口にする(2026-10-26。経過は仕様へ、検討メモは `_docs/backlog.md` へ移した) | [0025-small-reads.md](_docs/features/0025-small-reads.md) |
 | ✅ | モデルごとの GPU の層数を DB からファイルに移すか(決めて済んだ) | [0017-users.md](_docs/features/0017-users.md) |
@@ -80,15 +81,23 @@ aibow 全体の進み具合(入口)。ルールと全体の構成は `AGENTS.md`
 | ✅ | aibow-server の開発とビルドの入り口(`_cmd/dev`) | [0021-server-dev.md](_docs/features/0021-server-dev.md) |
 | ✅ | パスワードは本人が決める(リンクで決める) | [0022-password-links.md](_docs/features/0022-password-links.md) |
 | ⬜ | aibow-server の中央の制御(ステップ11に入れたものの残りの候補) | [検討メモ](_docs/backlog.md) |
+| ✅ | 利用者まわりの画面(人を選ぶ部品・利用者の一覧・表示名・最後に使った日・グループとグループ長。2026-11-01 に完了。アプリ(serverUrl)の画面では確かめていない) | [0031-users-ui.md](_docs/features/0031-users-ui.md) |
+| ✅ | 利用者ごとの使用量を記録する(GPU の秒数・トークン数。管理者は全員の分、本人は自分の分を見る。上限は記録を見てから。2026-11-01 に完了。アプリ(serverUrl)の画面では確かめていない) | [0033-usage.md](_docs/features/0033-usage.md) |
+| ✅ | 管理の画面(サーバー管理者の作業を、自分の設定から分ける。2026-11-01 に完了) | [0032-admin-screen.md](_docs/features/0032-admin-screen.md) |
+| ⬜ | 利用者をまとめて作る(インポート。0031 で後回しにした) | [検討メモ](_docs/backlog.md) |
+| ⬜ | 共有の再検討(ステップ11の共有を、アプリからの閲覧・プロジェクトの概念・利用者同士の会話も含めて考え直す。2026-10-30、ユーザーの要望) | [検討メモ](_docs/backlog.md)・[0018-sharing.md](_docs/features/0018-sharing.md) |
 | ✅ | 選んだやり取りを捨てる(吹き出しごとに「モデルに渡さない」・作り直す・送り直す) | [0011-exclude-messages.md](_docs/features/0011-exclude-messages.md) |
 | ✅ | MCP のツールの信頼(「確認しない」と確認のカードの選択肢) | [0010-tool-trust.md](_docs/features/0010-tool-trust.md) |
 | ⬜ | ツールの信頼の続き(0010 のやり残し) | [0010-tool-trust.md](_docs/features/0010-tool-trust.md) の「3段目以降」 |
 | ⬜ | MCP の OAuth(ログインが要る url の MCP のサーバー) | [検討メモ](_docs/backlog.md) |
+| ✅ | MCP のサーバーを画面から足す・変える・消す(アプリの設定の画面。aibow-server の分はあとで同じ部品で) | [0034-mcp-editor.md](_docs/features/0034-mcp-editor.md) |
 | ✅ | 会話の個別設定(会話の設定の画面) | [0009-conversation-settings.md](_docs/features/0009-conversation-settings.md) |
 | ⬜ | 今の組の中の compact(古いツールの結果を省略して続ける) | [検討メモ](_docs/backlog.md) |
 | ✅ | 同じ呼び出しが成功のまま繰り返されるのを止める(続けて同じなら、ツールを外して答えさせる。モデルでの確かめはまだ) | [0028-repeated-calls.md](_docs/features/0028-repeated-calls.md) |
-| ⬜ | 会話の作業フォルダを PC ごとにする(aibow-server につなぐと、ほかの PC で開いた会話に前の PC のパスが残る) | [検討メモ](_docs/backlog.md) |
-| ⬜ | Web で調べる(fetch・検索の MCP のサーバー) | [検討メモ](_docs/backlog.md) |
+| ✅ | ワークスペース(作業フォルダを名前付きのフォルダの組にする。複数のフォルダ・読むだけ / 書く。会話の作業フォルダを PC ごとにする、も含む) | [0035-workspaces.md](_docs/features/0035-workspaces.md) |
+| ⬜ | Web で検索する(検索の MCP のサーバー。ページを読むのは組み込みの fetch。0036) | [検討メモ](_docs/backlog.md) |
+| ✅ | 組み込みの fetch(MCP のサーバーなしで URL を読む。aibow-server では管理者が有効にしたときだけ) | [0036-fetch.md](_docs/features/0036-fetch.md) |
+| ✅ | コーディングエージェント向けの組み込みのツールを足す(ファイルの中を探す・名前で探す・作業の予定。git はあと) | [0037-coding-tools.md](_docs/features/0037-coding-tools.md) |
 | ⬜ | コーディングエージェントとして洗練する(最後のほうでやる) | [検討メモ](_docs/backlog.md) |
 | ✅ | aibow-server がモデルを読み直している間の一覧 | [0016-browser.md](_docs/features/0016-browser.md) の 9-3 |
 | ⬜ | KV キャッシュの使い回しを良くする | `_docs/tuning.md` の「Cline からつないで比べる」「ファイルを読むツール」・[検討メモ](_docs/backlog.md) |

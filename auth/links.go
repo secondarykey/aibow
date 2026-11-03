@@ -106,24 +106,58 @@ func (s *Sessions) UseLink(ctx context.Context, token, password string) (session
 // ChangePassword は、ログインしている本人がパスワードを変える。今のパスワードが違えば ErrWrongPassword。
 // ほかのセッションとアプリ用のトークンは消し、今の画面には新しいセッションの合言葉を返す(ログインし直さなくてよい。決定事項 10)。
 func (s *Sessions) ChangePassword(ctx context.Context, u User, current, password string) (session string, err error) {
-	// ログインしてから変わっているかもしれないので、保存先から読み直して確かめる
-	u, err = s.store.UserByID(ctx, u.ID)
-	if err != nil {
-		return "", err
-	}
-	if !CheckPassword(u.Password, current) {
-		return "", ErrWrongPassword
-	}
-	if err := CheckNewPassword(u.Name, password); err != nil {
-		return "", err
-	}
-	if current == password {
-		return "", &ruleError{"新しいパスワードが今のパスワードと同じです"}
-	}
-	if err := s.setPassword(ctx, u, password); err != nil {
+	if u, err = s.changePassword(ctx, u, current, password); err != nil {
 		return "", err
 	}
 	return s.newSession(ctx, u)
+}
+
+// ChangePasswordByKey は、画面のアプリ(API キーかアプリ用のトークン。key)から本人がパスワードを変える(0031 の決定事項 45)。
+// ほかのセッションとアプリ用のトークンは消す(ブラウザから変えたときと同じ)。呼んだのがアプリ用のトークンなら、
+// 同じ PC の名前で新しいトークンを出して返す(変えたアプリはつながったまま。ブラウザに新しい cookie を渡すのと同じ考え方)。
+// API キーは消えないので、そのときの Token は空。
+func (s *Sessions) ChangePasswordByKey(ctx context.Context, u User, current, password, key string) (AppLogin, error) {
+	device := ""
+	if IsAppToken(key) {
+		t, err := s.store.AppToken(ctx, tokenID(key))
+		if err != nil {
+			return AppLogin{}, err
+		}
+		device = t.Device
+	}
+	u, err := s.changePassword(ctx, u, current, password)
+	if err != nil {
+		return AppLogin{}, err
+	}
+	if device == "" {
+		return AppLogin{Name: u.Name, Admin: u.Admin}, nil
+	}
+	now := s.now()
+	token := appTokenPrefix + newToken()
+	t := AppToken{ID: tokenID(token), UserID: u.ID, Device: device, CreatedAt: now, ExpiresAt: now.Add(AppTokenTTL)}
+	if err := s.store.SetAppToken(ctx, t); err != nil {
+		return AppLogin{}, err
+	}
+	return AppLogin{Token: token, Name: u.Name, Admin: u.Admin, ExpiresAt: t.ExpiresAt}, nil
+}
+
+// changePassword は、今のパスワードを確かめて新しいパスワードにする(ほかのセッションとアプリ用のトークンは消える)。
+func (s *Sessions) changePassword(ctx context.Context, u User, current, password string) (User, error) {
+	// ログインしてから変わっているかもしれないので、保存先から読み直して確かめる
+	u, err := s.store.UserByID(ctx, u.ID)
+	if err != nil {
+		return u, err
+	}
+	if !CheckPassword(u.Password, current) {
+		return u, ErrWrongPassword
+	}
+	if err := CheckNewPassword(u.Name, password); err != nil {
+		return u, err
+	}
+	if current == password {
+		return u, &ruleError{"新しいパスワードが今のパスワードと同じです"}
+	}
+	return u, s.setPassword(ctx, u, password)
 }
 
 // setPassword はパスワードを書き換え、その人のセッションとアプリ用のトークンを全部消す。
@@ -141,6 +175,7 @@ func (s *Sessions) setPassword(ctx context.Context, u User, password string) err
 // newSession はセッションを作って合言葉を返す(ログインと同じ)。
 func (s *Sessions) newSession(ctx context.Context, u User) (string, error) {
 	now := s.now()
+	markUsed(ctx, s.store, &u, now) // ログインも「使った」に数える(0031 の決定事項 21)
 	token := newToken()
 	if err := s.store.CreateSession(ctx, Session{ID: tokenID(token), UserID: u.ID, CreatedAt: now, ExpiresAt: now.Add(SessionTTL)}); err != nil {
 		return "", err

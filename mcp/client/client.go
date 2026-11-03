@@ -127,6 +127,14 @@ func (c ServerConfig) callTimeout() time.Duration {
 	return defaultCallTimeout
 }
 
+// Equal は、つなぎ方が同じか(設定を差し替えたときに、動いているサーバーを止めるかを決める。Manager.Update)。
+// 起動の上限(startupTimeout)も比べる。つながってから変えても効かないが、変えたのに止めないと「保存したのに効かない」に見えるため。
+func (c ServerConfig) Equal(o ServerConfig) bool {
+	return c.Command == o.Command && slices.Equal(c.Args, o.Args) && maps.Equal(c.Env, o.Env) &&
+		c.URL == o.URL && maps.Equal(c.Headers, o.Headers) && c.Type == o.Type &&
+		c.StartupTimeout == o.StartupTimeout && c.CallTimeout == o.CallTimeout
+}
+
 // isHTTP は url のサーバー(Streamable HTTP)か。
 func (c ServerConfig) isHTTP() bool { return c.URL != "" }
 
@@ -192,16 +200,21 @@ const (
 type Options struct {
 	// Version は、サーバーに名乗る aibow のバージョン(clientInfo)
 	Version string
+	// Fetch は、aibow の中のサーバー(Local)が出す fetch_url の設定(0036)。nil なら出さない。Manager は使わない
+	Fetch *tool.FetchOptions
 }
 
-// Manager は settings.json に書いた MCP のサーバーを起動し、そのツールを渡す。
+// Manager は settings.json(と画面から足した mcp.json)に書いた MCP のサーバーを起動し、そのツールを渡す。
 //
 // サーバーは、要る最初の送信のときに起動し(アプリの起動を遅くしないため)、アプリを閉じるまで残す。
 // 落ちていたら、次の Start で起動し直す。
+// 設定は、動いている間に差し替えられる(Update。0034)。変わったサーバーだけを止め、次に使う送信で新しい設定で起動する。
 type Manager struct {
+	opt Options
+
+	// configs と names は Update で差し替わるので、mu を持って読む(差し替えるときは新しい map とスライスを作る。読んだ側が持ち続けても壊れない)
 	configs map[string]ServerConfig
 	names   []string // 名前の順(ツールを並べる順を毎回同じにする。プロンプトが変わると KV キャッシュが効かなくなるため)
-	opt     Options
 
 	// transport はサーバーへのつなぎ方。本物は子プロセスを起動するか HTTP で話す(realTransport)。テストではプロセスを起動しないものに差し替える。
 	// stderr は、子プロセスのサーバーのエラー出力の書き先
@@ -223,22 +236,95 @@ type server struct {
 	key     serverKey
 	session *mcp.ClientSession
 	tools   []tool.Tool
+	// stop は、実行中のツールの呼び出しを打ち切る(理由はツールのエラーになる。remoteTool.stopped)
+	stop context.CancelCauseFunc
+}
+
+// close はサーバーを止める。cause が nil でなければ、実行中のツールの呼び出しをその理由で打ち切ってから止める。
+func (s *server) close(cause error) error {
+	if cause != nil {
+		s.stop(cause)
+	}
+	defer s.stop(nil)
+	return s.session.Close()
 }
 
 // New は Manager を作る(サーバーはまだ起動しない)。configs は Validate 済みのもの。
+// サーバーが1つも無くても作る(画面から最初の1つを足せるように。0034 の決定事項 15)。
 func New(configs map[string]ServerConfig, opt Options) *Manager {
-	m := &Manager{configs: configs, opt: opt, running: map[serverKey]*server{}}
-	for name := range configs {
-		m.names = append(m.names, name)
-	}
-	slices.Sort(m.names)
+	m := &Manager{opt: opt, running: map[serverKey]*server{}}
+	m.configs, m.names = sortedConfigs(configs)
 	m.transport = m.realTransport
 	return m
 }
 
-// Servers は settings.json に書いたサーバーの名前(名前の順)。
+// sortedConfigs は、設定の写しと名前の順を作る(渡した map をあとで変えられても、Manager の中が変わらないように)。
+func sortedConfigs(configs map[string]ServerConfig) (map[string]ServerConfig, []string) {
+	c := maps.Clone(configs)
+	if c == nil {
+		c = map[string]ServerConfig{}
+	}
+	return c, slices.Sorted(maps.Keys(c))
+}
+
+// current は、今の設定と名前の順(Update で差し替わるので、使うたびに読む)。
+func (m *Manager) current() (map[string]ServerConfig, []string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.configs, m.names
+}
+
+// Update は設定を差し替える(画面で MCP のサーバーを足した・変えた・消した。0034 の決定事項 6)。configs は Validate 済みのもの。
+//
+// 何が変わったら作り直すか:
+//
+//	足した       … 何もしない(次にそのサーバーを使う送信で起動する。今までと同じ)
+//	変えた・消した … 動いていれば、すぐ止める。変えたものは次に使う送信で、新しい設定で起動する
+//	変わらない   … 動いたまま(止めると、次の送信で起動し直すのを待つことになるため)
+//
+// 止めたサーバーのツールを実行中だった送信には、ツールのエラーとして返る(サーバーが落ちたときと同じ扱い。0006)。
+// 名前の順は、New と同じく名前で並べる(足したり消したりで並びが変わるのは仕方ないが、それ以外では変えない)。
+// 止めたサーバーの名前を返す(ログと画面のお知らせのため)。
+func (m *Manager) Update(configs map[string]ServerConfig) (stopped []string) {
+	next, names := sortedConfigs(configs)
+	m.mu.Lock()
+	old := m.configs
+	m.configs, m.names = next, names
+	var stop []*server
+	for k, s := range m.running {
+		cfg, ok := next[k.name]
+		if ok && cfg.Equal(old[k.name]) {
+			continue
+		}
+		delete(m.running, k)
+		stop = append(stop, s)
+		if !slices.Contains(stopped, k.name) {
+			stopped = append(stopped, k.name)
+		}
+	}
+	m.mu.Unlock()
+	slices.Sort(stopped)
+	// 止めるのは待たない(標準入力を閉じてから最大 closeWait 待つので、保存の返事を遅らせないため)
+	// 実行中のツールに返す理由は、変えたか消したかで分ける(消したサーバーは、もう起動しないため)
+	for _, s := range stop {
+		_, changed := next[s.key.name]
+		go func() {
+			if changed {
+				s.close(fmt.Errorf("MCP のサーバー %s の設定が変わったので止めました(次の送信で、新しい設定で起動します)", s.key.name))
+				log.Infof("MCP %s: 設定が変わったので止めました", s.key.name)
+			} else {
+				s.close(fmt.Errorf("MCP のサーバー %s を消したので止めました", s.key.name))
+				log.Infof("MCP %s: 消したので止めました", s.key.name)
+			}
+		}()
+	}
+	return stopped
+}
+
+// Servers は settings.json(と mcp.json)に書いたサーバーの名前(名前の順)。
 func (m *Manager) Servers() []string {
-	return slices.Clone(m.names)
+	_, names := m.current()
+	return slices.Clone(names)
 }
 
 // ServerInfo は、画面で会話ごとにサーバーを選ぶときに出す情報。
@@ -250,18 +336,19 @@ type ServerInfo struct {
 
 // Infos は settings.json に書いたサーバーの情報(名前の順)。
 func (m *Manager) Infos() []ServerInfo {
-	out := make([]ServerInfo, 0, len(m.names))
-	for _, name := range m.names {
-		c := m.configs[name]
+	configs, names := m.current()
+	out := make([]ServerInfo, 0, len(names))
+	for _, name := range names {
+		c := configs[name]
 		out = append(out, ServerInfo{Name: name, HTTP: c.isHTTP(), UsesWorkDir: c.UsesWorkDir()})
 	}
 	return out
 }
 
 // selected は、names のうち use に入っているもの(名前の順)。知らない名前(settings.json から消したサーバー)は無視する。
-func (m *Manager) selected(use []string) []string {
+func selected(names, use []string) []string {
 	var out []string
-	for _, name := range m.names {
+	for _, name := range names {
 		if slices.Contains(use, name) {
 			out = append(out, name)
 		}
@@ -273,8 +360,9 @@ func (m *Manager) selected(use []string) []string {
 // 起動したサーバーの名前と、起動できなかったサーバーのエラーを返す(起動できなくても、ほかのサーバーと会話は続けられる)。
 // workDir が空なら、${workdir} を使うサーバーは起動しない。会話で選んでいないサーバーも起動しない。
 func (m *Manager) Start(ctx context.Context, workDir string, use []string) (started []string, errs []error) {
-	for _, name := range m.selected(use) {
-		cfg := m.configs[name]
+	configs, names := m.current()
+	for _, name := range selected(names, use) {
+		cfg := configs[name]
 		k := serverKey{name: name}
 		if cfg.UsesWorkDir() {
 			if workDir == "" {
@@ -307,8 +395,16 @@ func (m *Manager) startAndKeep(ctx context.Context, k serverKey, cfg ServerConfi
 	m.mu.Lock()
 	if m.closed { // 起動している間にアプリが閉じられた
 		m.mu.Unlock()
-		s.session.Close()
+		s.close(nil)
 		return errors.New("アプリを閉じるところなので、起動をやめました")
+	}
+	if now, ok := m.configs[k.name]; !ok || !now.Equal(cfg) { // 起動している間に、画面で設定を変えた・消した(Update)
+		m.mu.Unlock()
+		s.close(nil)
+		if !ok {
+			return errors.New("起動している間にサーバーを消したので、起動をやめました")
+		}
+		return errors.New("起動している間に設定が変わったので、起動をやめました(次の送信で、新しい設定で起動します)")
 	}
 	m.running[k] = s
 	m.mu.Unlock()
@@ -326,9 +422,19 @@ func (m *Manager) startAndKeep(ctx context.Context, k serverKey, cfg ServerConfi
 // ${workdir} を使うサーバーには、空の一時フォルダを渡す(ツールの一覧はフォルダによらないため。一覧を受け取ったら消す)。
 // 動いているサーバーの一覧には入れない(会話のための起動とは別)。
 func (m *Manager) ListTools(ctx context.Context, name string) ([]tool.Tool, error) {
-	cfg, ok := m.configs[name]
+	configs, _ := m.current()
+	cfg, ok := configs[name]
 	if !ok {
-		return nil, fmt.Errorf("MCP のサーバー %s は settings.json にありません", name)
+		return nil, fmt.Errorf("MCP のサーバー %s は設定(settings.json・mcp.json)にありません", name)
+	}
+	return m.TryTools(ctx, name, cfg)
+}
+
+// TryTools は、設定 cfg のサーバーを一時的に起動してツールの一覧を受け取り、すぐ止める(ListTools と同じ動き)。
+// 設定はまだ保存していないものでよい(画面の「試しにつなぐ」。0034 の決定事項 8)。name はツールの名前の頭とログに使う。
+func (m *Manager) TryTools(ctx context.Context, name string, cfg ServerConfig) ([]tool.Tool, error) {
+	if err := cfg.Validate(); err != nil {
+		return nil, err
 	}
 	k := serverKey{name: name}
 	if cfg.UsesWorkDir() {
@@ -345,7 +451,7 @@ func (m *Manager) ListTools(ctx context.Context, name string) ([]tool.Tool, erro
 		return nil, fmt.Errorf("MCP のサーバー %s を起動できません: %w", name, err)
 	}
 	defer func() {
-		s.session.Close()
+		s.close(nil)
 		log.Infof("MCP %s: ツールの一覧を受け取ったので止めました", name)
 	}()
 	return s.tools, nil
@@ -379,12 +485,13 @@ func (m *Manager) connect(ctx context.Context, k serverKey, cfg ServerConfig) (*
 	if err != nil {
 		return nil, fail("つなげません", err)
 	}
-	s := &server{key: k, session: session}
+	stopped, stop := context.WithCancelCause(context.Background())
+	s := &server{key: k, session: session, stop: stop}
 	// つながりが切れた(サーバーが落ちた・再起動した)と分かったら、一覧から外す。次の Start でつなぎ直す
 	broken := func(err error) { m.drop(s, err) }
-	tools, err := listTools(ctx, k.name, cfg.callTimeout(), session, broken)
+	tools, err := listTools(ctx, k.name, cfg.callTimeout(), session, broken, stopped)
 	if err != nil {
-		session.Close()
+		s.close(nil)
 		return nil, fail("ツールの一覧を受け取れません", err)
 	}
 	s.tools = tools
@@ -433,7 +540,7 @@ func (m *Manager) drop(s *server, err error) {
 		return
 	}
 	log.Warnf("MCP %s: サーバーとのつながりが切れました(%v)。次の送信でつなぎ直します", s.key.name, err)
-	go s.session.Close() // 子プロセスが残っていれば止める(Wait から呼ばれたときは、もう閉じている)
+	go s.close(nil) // 子プロセスが残っていれば止める(Wait から呼ばれたときは、もう閉じている)
 }
 
 // newClient は、MCP のクライアント(サーバーにつなぐ側)を作る。settings.json のサーバーと aibow の中のサーバー(local.go)で同じもの。
@@ -452,13 +559,13 @@ func newClient(version string) *mcp.Client {
 }
 
 // listTools はサーバーのツールの一覧を受け取り、tool.Tool にする。
-func listTools(ctx context.Context, name string, limit time.Duration, session *mcp.ClientSession, broken func(error)) ([]tool.Tool, error) {
+func listTools(ctx context.Context, name string, limit time.Duration, session *mcp.ClientSession, broken func(error), stopped context.Context) ([]tool.Tool, error) {
 	var tools []tool.Tool
 	for t, err := range session.Tools(ctx, nil) { // 一覧が何ページかに分かれていても、全部たどる
 		if err != nil {
 			return nil, err
 		}
-		rt, err := newRemoteTool(name, limit, session, t, broken)
+		rt, err := newRemoteTool(name, limit, session, t, broken, stopped)
 		if err != nil {
 			return nil, err
 		}
@@ -473,7 +580,7 @@ func (m *Manager) Tools(workDir string, use []string) []tool.Tool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var tools []tool.Tool
-	for _, name := range m.selected(use) {
+	for _, name := range selected(m.names, use) {
 		k := serverKey{name: name}
 		if m.configs[name].UsesWorkDir() {
 			if workDir == "" {
@@ -505,7 +612,7 @@ func (m *Manager) Close() {
 	var wg sync.WaitGroup
 	for _, s := range servers {
 		wg.Go(func() {
-			if err := s.session.Close(); err != nil {
+			if err := s.close(nil); err != nil {
 				log.Infof("MCP %s: 止めました(%v)", s.key.name, err)
 				return
 			}

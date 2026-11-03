@@ -293,11 +293,29 @@ footer.home .composer textarea { line-height: 1.5; min-height: calc(3 * 1.5em + 
 .tool-card.confirm { border-color: #d97706; }
 .tool-card.confirm .tool-status { color: #d97706; }
 .tool-card.rejected .tool-status { color: var(--muted); }
+/* 作業の予定(update_plan。0037)のカード: 畳まずにチェックリストで出す。済みは薄く、取りかかっているものは強調する */
+.plan-card {
+  border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; margin-bottom: 6px;
+  font-size: 12.5px; color: var(--muted); background: var(--panel);
+}
+.plan-head { display: flex; align-items: center; gap: 6px; }
+.plan-head .plan-count { margin-left: auto; }
+.plan-items { list-style: none; margin: 4px 0 2px; padding: 0; }
+.plan-item { display: flex; align-items: flex-start; gap: 6px; padding: 1px 0; color: var(--text); }
+.plan-item .plan-mark { flex: none; margin-top: 2px; }
+.plan-item.done { color: var(--muted); }
+.plan-item.done span { text-decoration: line-through; }
+.plan-item.in_progress { font-weight: 600; }
+.plan-item.in_progress .plan-mark { color: var(--accent); }
 .confirm { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
 .confirm-target { display: flex; align-items: center; gap: 8px; }
 .confirm-target code { font-size: 12.5px; }
+.confirm-folder { display: inline-flex; align-items: center; gap: 4px; font-size: 12.5px; padding: 1px 6px; border: 1px solid var(--border); border-radius: 4px; }
 .confirm-note { font-size: 11.5px; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border); color: var(--muted); }
 .confirm-note.overwrite { color: #d97706; border-color: #d97706; }
+.confirm-host { font-weight: 600; }
+.confirm-url { margin: 6px 0; overflow-wrap: anywhere; }
+.confirm-url code { font-size: 12.5px; }
 .confirm .code-block { margin: 0; }
 .confirm-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .confirm-actions input {
@@ -415,6 +433,11 @@ button.user-btn:hover { background: var(--bg); color: var(--text); }
 .split-menu.up { top: auto; bottom: 100%; left: 0; right: auto; margin: 0 0 2px; }
 nav.conversations .settings.active { background: var(--bg); border-color: var(--accent); }
 nav.conversations.collapsed .settings.active { color: var(--accent); }
+/* 管理の画面の盾(0032)。歯車の左に並べ、歯車の代わりに右へ寄せる */
+nav.conversations .footer .admin { margin-left: auto; }
+nav.conversations .footer .admin + .settings { margin-left: 0; }
+nav.conversations .admin.active { background: var(--bg); border-color: var(--accent); }
+nav.conversations.collapsed .admin.active { color: var(--accent); }
 .conversation { display: flex; align-items: center; border-radius: 6px; margin-bottom: 2px; }
 .conversation:hover, .conversation.current { background: var(--bg); }
 .conversation.current .title { font-weight: 600; }
@@ -423,8 +446,19 @@ nav.conversations.collapsed .settings.active { color: var(--accent); }
   flex: 1; min-width: 0; text-align: left; padding: 7px 8px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.conversation .delete { padding: 4px 8px; color: var(--muted); visibility: hidden; }
+/* 行の右は、削除(×)と会話の印が同じ場所を使う。幅をそろえて、入れ替わっても名前の幅が動かないようにする */
+.conversation .delete, .conversation .running-mark {
+  flex-shrink: 0; width: 28px; padding: 4px 0; display: inline-flex; align-items: center; justify-content: center;
+}
+.conversation .delete { color: var(--muted); visibility: hidden; }
 .conversation:hover .delete, .conversation.current .delete { visibility: visible; }
+.conversation .delete .dot, .conversation .running-mark .dot { margin: 0; }
+/* 送信している間の印は、いつも出す(削除できない間なので、× の代わり) */
+/* 終わったあとの印も、いつも出す。マウスを乗せたときだけ × に替える */
+.conversation .delete.has-mark { visibility: visible; }
+.conversation .delete.has-mark .x { display: none; }
+.conversation:hover .delete.has-mark .dot { display: none; }
+.conversation:hover .delete.has-mark .x { display: inline; }
 .dot {
   display: inline-block; width: 10px; height: 10px; border-radius: 50%;
   background: var(--accent); margin: 0 2px 2px 0; vertical-align: middle;
@@ -480,8 +514,8 @@ nav.conversations.collapsed .settings.active { color: var(--accent); }
 .settings-view label.check { display: flex; align-items: center; gap: 6px; color: var(--text); }
 .settings-view code { font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; }
 .settings-view textarea, .settings-view input[type=range], .settings-view input[type=number], .settings-view select { width: 100%; }
-.settings-view input[type=text], .settings-view input[type=password] { width: 100%; }
-.settings-view input[type=number], .settings-view input[type=text], .settings-view input[type=password], .settings-view select {
+.settings-view input[type=text], .settings-view input[type=email], .settings-view input[type=password] { width: 100%; }
+.settings-view input[type=number], .settings-view input[type=text], .settings-view input[type=email], .settings-view input[type=password], .settings-view select {
   font: inherit; font-size: 13px; padding: 5px 6px; border-radius: 6px;
   border: 1px solid var(--border); background: var(--bg); color: var(--text);
 }
@@ -591,15 +625,63 @@ nav.conversations.collapsed .settings.active { color: var(--accent); }
 .place-add { display: flex; gap: 6px; margin-top: 8px; }
 .settings-view .place-add input[type=text] { flex: 1; width: auto; min-width: 0; }
 .place-add button { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
-/* 設定の画面の「利用者」のタブ(UserSettings.tsx。0018 の 11-0)。行は .model-row の subgrid を使う(名前 / 作った日 / 操作) */
-.user-table { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; column-gap: 12px; align-items: center; }
-.user-admin { color: var(--accent); flex-shrink: 0; }
-.user-key { color: var(--muted); flex-shrink: 0; }
+/* 設定の画面の「利用者」のタブ(UserSettings.tsx。0018 の 11-0・0031)。一覧(行は .model-row の subgrid)+ 行を押すと下に詳細 */
+.user-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 8px; }
+.user-toolbar .spacer { flex: 1; }
+.settings-view .user-toolbar input.user-search { width: 200px; }
+.user-create { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.segmented { display: inline-flex; }
+.segmented button { font-size: 12px; padding: 3px 8px; border-radius: 0; margin-left: -1px; white-space: nowrap; }
+.segmented button:first-child { border-radius: 6px 0 0 6px; margin-left: 0; }
+.segmented button:last-child { border-radius: 0 6px 6px 0; }
+.segmented button.current { background: var(--accent); color: #fff; border-color: var(--accent); position: relative; }
+.user-table { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto auto; column-gap: 12px; align-items: center; }
+.settings-view input.display-name { width: 240px; }
+/* アカウントのタブ(AccountSettings.tsx。0031) */
+.account-rows { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 16px; row-gap: 8px; align-items: center; }
+.account-rows .user-field-label { width: auto; }
+.account-name { display: flex; align-items: center; gap: 6px; }
+.segmented.user-view { margin-bottom: 8px; }
+/* 使用量(UsageSettings.tsx。0033)。表は利用者の一覧と同じ形(名前 / 回数 / GPU の秒数 / 生成トークン) */
+.usage-table { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; column-gap: 16px; align-items: center; }
+.segmented.usage-periods { margin-bottom: 8px; }
+/* グループ(GroupSettings.tsx。0031 の段4)。一覧は利用者の一覧と同じ形(名前 / 長 / 人数 / 共有) */
+.group-table { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; column-gap: 12px; align-items: center; margin-top: 8px; }
+.group-members { display: flex; flex-direction: column; gap: 6px; }
+.user-groups { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.user-groups select { width: auto; font-size: 12px; padding: 2px 4px; }
+.pick-chip.leader { border-color: var(--warn); }
+.pick-leader { display: inline-flex; padding: 1px 2px; border: none; background: transparent; color: var(--muted); opacity: .4; }
+.pick-leader.on { color: var(--warn); opacity: 1; }
+.pick-leader:hover { opacity: 1; }
+.pick-chip.leader .icon { color: var(--warn); }
+.share-confirm button.danger { color: #fff; background: var(--error); border-color: var(--error); }
+.user-sort { display: inline-flex; align-items: center; gap: 2px; border: none; background: transparent; text-align: left; cursor: pointer; }
+.user-sort.num { justify-content: flex-end; }
+.user-sort.current { color: var(--text); }
+.user-row { width: 100%; border: none; border-top: 1px solid var(--border); border-radius: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.user-row:hover { background: rgba(127, 127, 127, .08); }
+.user-row.current { background: rgba(127, 127, 127, .15); }
+.user-states { display: flex; gap: 4px; flex-wrap: wrap; }
 .user-date { color: var(--muted); font-size: 12px; }
-.user-actions { display: flex; align-items: center; gap: 4px; justify-content: flex-end; }
-.user-actions button { font-size: 12px; padding: 2px 8px; white-space: nowrap; }
-.user-actions .confirm-text { color: var(--error); font-size: 12px; margin-right: 4px; }
-.user-actions button.danger { color: #fff; background: var(--error); border-color: var(--error); }
+.user-detail { margin-top: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; }
+.user-detail-head { display: flex; align-items: center; gap: 8px; }
+.user-detail-head h2.section { margin: 0; padding-top: 0; border-top: none; }
+.user-detail-head .spacer { flex: 1; }
+.user-field { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
+.user-field-label { width: 6em; flex-shrink: 0; color: var(--muted); font-size: 13px; }
+.user-field-value { font-size: 13px; }
+.user-field-value.expired { color: var(--error); }
+.user-field button { font-size: 12px; padding: 2px 8px; }
+.user-field .confirm-text { color: var(--error); font-size: 12px; }
+.user-field button.danger, .user-remove button.danger { color: #fff; background: var(--error); border-color: var(--error); }
+.user-sub { margin: 14px 0 4px; font-size: 13px; color: var(--muted); font-weight: normal; }
+.more { align-self: flex-start; margin-top: 4px; font-size: 12px; padding: 2px 8px; }
+.user-remove { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--border); }
+.user-remove .confirm-text { color: var(--error); font-size: 13px; margin: 0 0 6px; }
+.user-remove-row { display: flex; gap: 6px; }
+.settings-view .user-remove-row input[type=text] { width: 200px; }
+button.danger-outline { color: var(--error); border-color: var(--error); background: transparent; }
 /* 作ったパスワード・API キー。今だけ出す(閉じたらもう見られない) */
 .secret-box {
   display: flex; align-items: center; gap: 8px; margin: 0 0 10px; padding: 8px 10px;
@@ -607,6 +689,47 @@ nav.conversations.collapsed .settings.active { color: var(--accent); }
 }
 .secret-label { flex-shrink: 0; color: var(--muted); font-size: 12px; }
 .secret-value { flex: 1; min-width: 0; overflow-wrap: anywhere; font-family: ui-monospace, Consolas, monospace; font-size: 12px; user-select: all; }
+/* 「MCP」のタブ(McpEditor.tsx。0034)。一覧(名前 / 種類 / つなぎ方 / 印)は利用者の一覧と同じ形で、行を押すと下にフォームを開く */
+.mcp-table { display: grid; grid-template-columns: fit-content(30%) auto minmax(0, 1fr) auto; column-gap: 12px; align-items: center; }
+.mcp-name { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mcp-summary { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, Consolas, monospace; font-size: 12px; color: var(--muted); }
+.mcp-row > span:last-child { display: flex; gap: 4px; justify-content: flex-end; }
+.mcp-row.shadowed .mcp-name, .mcp-row.shadowed .mcp-summary { opacity: .5; }
+/* 設定の画面の「ワークスペース」(0035)。一覧は MCP のタブと同じ形(名前 / メインのフォルダ / 印) */
+.workspace-table { grid-template-columns: fit-content(30%) minmax(0, 1fr) auto; }
+.origin-chip svg { vertical-align: -2px; }
+.origin-chip.warn { border-color: var(--error); color: var(--error); }
+/* フォルダの組の編集(段2)。列: メイン / モデルが呼ぶ名前 / パス / 書く / 外す。行は display: contents で表の列を共有する */
+.workspace-folders { display: grid; grid-template-columns: auto 10em minmax(0, 1fr) auto auto; column-gap: 10px; row-gap: 4px; align-items: center; }
+.workspace-folder { display: contents; }
+.settings-view .workspace-folders input.workspace-folder-name { width: 100%; padding: 2px 6px; font-size: 12.5px; }
+.settings-view .workspace-folders input.workspace-folder-description { grid-column: 2 / -1; width: 100%; padding: 2px 6px; font-size: 12.5px; margin-bottom: 4px; }
+.workspace-folder-path { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.workspace-folder.missing .mcp-summary { text-decoration: line-through; }
+.settings-view .workspace-folders input[type=radio], .settings-view .workspace-folders input[type=checkbox] { margin: 0; }
+.workspace-warn { color: var(--error); flex-shrink: 0; }
+.segmented.mcp-kind { margin-top: 12px; }
+.mcp-kv { display: flex; gap: 6px; align-items: center; margin-top: 4px; }
+.settings-view .mcp-kv input[type=text] { width: 35%; flex-shrink: 0; }
+.settings-view .mcp-kv input[type=password] { flex: 1; min-width: 0; width: auto; }
+.mcp-timeouts { display: flex; gap: 16px; }
+.settings-view .mcp-timeouts label { display: flex; align-items: center; gap: 6px; }
+.settings-view .mcp-timeouts input[type=number] { width: 72px; }
+.mcp-actions { display: flex; align-items: center; gap: 6px; margin-top: 12px; }
+.mcp-actions .spacer { flex: 1; }
+.mcp-actions button { display: inline-flex; align-items: center; gap: 4px; }
+.settings-view .mcp-actions button.apply { margin-top: 0; }
+.mcp-actions .confirm-text { color: var(--error); font-size: 12px; }
+.mcp-actions button.danger { color: #fff; background: var(--error); border-color: var(--error); }
+.mcp-actions .spin { animation: spin 1s linear infinite; }
+.mcp-tried { margin: 10px 0 0; font-size: 12px; overflow-wrap: anywhere; }
+.mcp-tried.ok { color: var(--text); }
+.settings-view .mcp-paste textarea { width: 100%; margin-top: 8px; font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+.mcp-parsed { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+.settings-view .mcp-parsed label.check { margin: 0; min-width: 0; }
+.mcp-parsed .mcp-name { flex-shrink: 0; max-width: 40%; }
+.mcp-parsed label.unused .mcp-name { color: var(--muted); }
+.mcp-parse-error { color: var(--error); font-size: 12px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* 「サーバー」のタブ(0019)。まだ信頼していない証明書の指紋と、つないだあとの様子 */
 .fingerprint-box {
   display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; padding: 8px 10px;
@@ -641,6 +764,44 @@ footer { border-top: 1px solid var(--border); background: var(--panel); padding:
   background: var(--accent); color: #fff;
 }
 .composer .send:disabled { background: var(--border); color: var(--muted); opacity: 1; }
+/* ファイルを読み込むボタン(送信ボタンの左)と、ファイルを持って入力欄の上にいるときの枠(0030) */
+.composer .attach {
+  flex-shrink: 0; width: 32px; height: 32px; padding: 0; border: none; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center; font-size: 16px;
+  background: transparent; color: var(--muted);
+}
+.composer .attach:hover { color: var(--text); }
+.composer.dragging { border-color: var(--accent); border-style: dashed; }
+/* 読み込んだファイルの札(0030)。入力欄の枠の上と、発言の吹き出しの上 */
+.composer-files { max-width: 820px; margin: 0 auto 6px; }
+.file-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.user-turn .file-chips { justify-content: flex-end; margin-bottom: 4px; }
+.file-chip {
+  display: inline-flex; align-items: center; gap: 5px; max-width: 100%; padding: 3px 8px;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--bg); font-size: 12.5px;
+}
+.file-chip .icon { flex-shrink: 0; color: var(--muted); }
+.file-name { min-width: 0; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-size { flex-shrink: 0; color: var(--muted); }
+.file-chip .file-remove {
+  display: inline-flex; padding: 0 2px; border: none; background: transparent; color: var(--muted); font-size: 13px;
+}
+.file-chip .file-remove:hover { color: var(--text); }
+/* 画像の札(0030 の決定事項 25):高さ 120px ほどの小さな表示。押すと大きく見る */
+.file-chip.image { padding: 4px; align-items: flex-end; }
+.file-thumb { display: block; padding: 0; border: none; background: transparent; cursor: zoom-in; }
+.file-thumb img { display: block; height: 120px; max-width: 240px; object-fit: contain; border-radius: 6px; }
+/* 捨てたファイルの札(0030 の決定事項 27)。名前と「消去済み」だけ。捨てるときの確かめのボタン */
+.file-chip.discarded { color: var(--muted); border-style: dashed; background: transparent; }
+.file-confirm { display: inline-flex; gap: 4px; margin-left: 2px; }
+.file-confirm button { font-size: 12px; padding: 1px 8px; white-space: nowrap; }
+.file-confirm button.danger { color: #fff; background: var(--error); border-color: var(--error); }
+/* 画像を大きく見る(画面いっぱいに重ねる。Esc か外を押すと閉じる) */
+.image-viewer {
+  position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, .75); cursor: zoom-out;
+}
+.image-viewer img { max-width: 95vw; max-height: 95vh; object-fit: contain; cursor: default; box-shadow: 0 4px 24px rgba(0, 0, 0, .4); }
 /* 作業フォルダ(入力欄の枠の上、左寄せ)。決めていないときはフォルダのアイコンだけ。
    決めたらフォルダの名前を枠付きで出し、右に外すボタン */
 .composer-top { max-width: 820px; margin: 0 auto 6px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
@@ -683,6 +844,14 @@ footer { border-top: 1px solid var(--border); background: var(--panel); padding:
 .conv-tools-item:hover { background: var(--bg); }
 .conv-tools-item.needs-dir { color: var(--muted); }
 .conv-tools-check { width: 14px; display: inline-flex; color: var(--accent); }
+/* ワークスペースを選ぶ一覧(0035)。この会話のツールと同じ形で、上に開く。最後に「フォルダから新しく作る」 */
+.workspace-menu { min-width: 220px; max-width: 360px; }
+.workspace-menu-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-menu-warn { color: var(--error); flex-shrink: 0; }
+.workspace-menu-sep { height: 1px; margin: 4px 2px; background: var(--border); }
+.workdir-bar { position: relative; }
+/* 会話のワークスペースがこの PC に無い(別の PC で選んだ・消した) */
+.workdir-bar.missing .workdir { border-color: var(--error); color: var(--error); }
 
 /* トースト: 右上(タイトルバーのすぐ下)に重ねて出す。クリックで消える */
 .toasts {
@@ -733,11 +902,6 @@ footer { border-top: 1px solid var(--border); background: var(--panel); padding:
 /* 配る(0018 の 11-1)。配っている印は色付きの枠、配った人の名前は薄く */
 .share-tag { border-color: var(--accent); color: var(--accent); }
 .profile-owner { flex-shrink: 0; font-size: 11px; color: var(--muted); }
-.profile-share { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
-.profile-share label[for] { margin: 0; }
-.profile-share select { width: auto; }
-.share-users { display: flex; flex-wrap: wrap; gap: 4px 12px; }
-.share-users .check { margin: 0; }
 .profile-received { display: flex; align-items: baseline; gap: 8px; }
 .profile-received-name { font-weight: 600; }
 .profile-readonly { border: none; padding: 0; margin: 0; min-width: 0; }
@@ -787,6 +951,14 @@ footer { border-top: 1px solid var(--border); background: var(--panel); padding:
 .shared-list { border-top: 1px solid var(--border); padding-top: 4px; max-height: 40%; overflow-y: auto; }
 .shared-head { display: flex; align-items: center; gap: 4px; width: 100%; padding: 4px 10px; border: none; background: transparent; color: var(--muted); font-size: 12px; text-align: left; }
 .shared-owner { margin-left: 6px; color: var(--muted); font-size: 11px; }
+.shared-filter { display: flex; gap: 4px; padding: 2px 8px 4px; }
+.shared-filter input, .shared-filter select {
+  min-width: 0; font: inherit; font-size: 12px; padding: 2px 6px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);
+}
+.shared-filter input { flex: 1; }
+.shared-filter select { max-width: 40%; }
+.shared-sub { padding: 4px 12px 0; color: var(--muted); font-size: 11px; }
+.shared-more { margin: 2px 12px 4px; font-size: 11px; padding: 1px 8px; }
 .admin-notice { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: var(--muted); white-space: nowrap; cursor: help; }
 .admin-notice.icon { justify-content: center; padding: 6px 0; }
 .admin-notice.row { padding: 4px 12px 0; border-top: 1px solid var(--border); }
@@ -794,13 +966,36 @@ footer { border-top: 1px solid var(--border); background: var(--panel); padding:
 .read-banner.admin { color: var(--warn); }
 .read-footer { display: flex; justify-content: center; }
 .read-footer button { display: inline-flex; align-items: center; gap: 6px; }
-.conv-share { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
-.conv-share label[for] { margin: 0; }
-.conv-share select { width: auto; }
-.share-confirm { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; width: 100%; font-size: 13px; padding: 6px 8px; border: 1px solid var(--warn); border-radius: 6px; }
-.user-name { padding: 0; border: none; background: transparent; color: inherit; font: inherit; cursor: pointer; text-decoration: underline dotted; }
-.user-name:disabled { cursor: default; text-decoration: none; }
-.user-name.current { color: var(--accent); }
+/* 人を選ぶ部品(SharePicker.tsx。0031)。会話の共有とプロファイルの配るで同じもの */
+.share-picker { margin-top: 10px; }
+.share-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.share-line label[for] { margin: 0; }
+.share-line select { width: auto; }
+.share-now { color: var(--muted); font-size: 13px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.share-edit { font-size: 12px; padding: 2px 8px; }
+.share-editor { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.share-confirm { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 13px; padding: 6px 8px; border: 1px solid var(--warn); border-radius: 6px; }
+.share-actions { display: flex; gap: 6px; }
+.pick-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.pick-chip {
+  display: inline-flex; align-items: center; gap: 3px; max-width: 100%; padding: 1px 2px 1px 8px;
+  border: 1px solid var(--border); border-radius: 999px; background: var(--bg); font-size: 12.5px;
+}
+.pick-chip.group { border-color: var(--accent); }
+.pick-chip .icon { flex-shrink: 0; color: var(--accent); }
+.pick-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pick-remove { display: inline-flex; padding: 1px 3px; border: none; border-radius: 999px; background: transparent; color: var(--muted); }
+.pick-remove:hover { color: var(--text); }
+.pick-search { position: relative; max-width: 360px; }
+.settings-view .pick-search input[type=text] { width: 100%; }
+.pick-list {
+  position: absolute; z-index: 20; left: 0; right: 0; top: 100%; margin: 2px 0 0; padding: 4px 0; list-style: none;
+  max-height: 240px; overflow-y: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 4px 12px rgba(0, 0, 0, .15);
+}
+.pick-section { padding: 4px 10px 2px; color: var(--muted); font-size: 11px; }
+.pick-item { display: flex; align-items: center; gap: 6px; width: 100%; padding: 4px 10px; border: none; border-radius: 0; background: transparent; color: inherit; text-align: left; font-size: 13px; }
+.pick-item.active { background: rgba(127, 127, 127, .15); }
+.pick-item .icon { flex-shrink: 0; color: var(--accent); }
 .user-convs { display: flex; flex-direction: column; }
 .user-conv { display: flex; justify-content: space-between; gap: 8px; padding: 5px 0; border: none; border-top: 1px solid var(--border); background: transparent; color: inherit; text-align: left; }
 .user-conv:hover { color: var(--accent); }

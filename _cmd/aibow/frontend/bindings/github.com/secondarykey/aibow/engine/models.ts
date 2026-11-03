@@ -51,7 +51,7 @@ export interface ModelInfo {
     "gpu_layers": number;
 
     /**
-     * 作業領域の大きさ(コンテキスト長)
+     * 作業領域の大きさ(コンテキスト長)。シーケンスが2本以上なら1本あたり(1つの会話が使える大きさ。0023)
      */
     "n_ctx": number;
 
@@ -59,4 +59,14 @@ export interface ModelInfo {
      * 読み込みにかかった秒数
      */
     "load_sec": number;
+
+    /**
+     * Seqs は作業領域の中のシーケンスの数(2 以上のときだけ。0023)。NCtx × Seqs が作業領域の全体
+     */
+    "n_seq"?: number;
+
+    /**
+     * Vision は画像を読めるか(書式が画像に対応していて、画像を読む部品 mmproj がある。0030)。mmproj は最初に画像を送ったときに読み込む
+     */
+    "vision"?: boolean;
 }

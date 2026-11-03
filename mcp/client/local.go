@@ -15,6 +15,7 @@ package client
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -34,14 +35,25 @@ const localGrace = 5 * time.Second
 
 // Local は、aibow の中で自作の MCP サーバーを動かし、組み込みのツールを渡す(会話の仕組みの LocalTools)。
 //
-// サーバーは作業フォルダごとに1つ(作業フォルダは起動の引数で渡すため。settings.json の ${workdir} と同じ)。
+// サーバーは作業フォルダ(ワークスペースのフォルダの組。0035)ごとに1つ(フォルダは起動の引数で渡すため。settings.json の ${workdir} と同じ)。
 // 要る最初のときにつなぎ、Close まで残す。メモリ内なので、つなぐのは一瞬(0.1 秒もかからない)。
 type Local struct {
 	opt Options
 
 	mu       sync.Mutex
-	sessions map[string]*localSession // 作業フォルダごと(作業フォルダの無い会話は "")
+	sessions map[string]*localSession // フォルダの組ごと(folderKey。作業フォルダの無い会話は "")
 	closed   bool
+}
+
+// folderKey は、フォルダの組の見分け方。名前・パス・メイン・書けるかのどれかが変われば、別のサーバーにする
+// (ワークスペースを設定の画面で変えたら、次の送信から新しい組のサーバーを使う)。
+// 説明(Description)は入れない。ツールの動きは変わらず、aibow は環境の説明を自分で書くので、説明だけ変えてもサーバーを作り直さない。
+func folderKey(folders []tool.Folder) string {
+	var b strings.Builder
+	for _, f := range folders {
+		fmt.Fprintf(&b, "%s\x00%s\x00%t\x00%t\x00", f.Name, f.Path, f.Main, f.Writable)
+	}
+	return b.String()
 }
 
 type localSession struct {
@@ -55,32 +67,33 @@ func NewLocal(opt Options) *Local {
 	return &Local{opt: opt, sessions: map[string]*localSession{}}
 }
 
-// Tools は、作業フォルダ workDir の会話で使う組み込みのツール(aibow の中のサーバー越しに呼ぶもの)。
+// Tools は、作業フォルダ(フォルダの組 folders。空なら無し)の会話で使う組み込みのツール(aibow の中のサーバー越しに呼ぶもの)。
 // サーバーにつなげなかったときは、ログに出して、tool パッケージのツールを直接呼ぶものを返す(予備。0007 の決定事項 C)。
-func (l *Local) Tools(workDir string) []tool.Tool {
+func (l *Local) Tools(folders []tool.Folder) []tool.Tool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if s, ok := l.sessions[workDir]; ok {
+	key := folderKey(folders)
+	if s, ok := l.sessions[key]; ok {
 		return s.tools
 	}
 	if l.closed {
-		return mcpserver.Tools(workDir)
+		return l.serverOptions(folders).Tools()
 	}
-	s, err := l.connect(workDir)
+	s, err := l.connect(folders)
 	if err != nil {
 		log.Errorf("MCP %s: aibow の中のサーバーにつなげないので、組み込みのツールを直接呼びます: %v", localName, err)
-		return mcpserver.Tools(workDir)
+		return l.serverOptions(folders).Tools()
 	}
-	l.sessions[workDir] = s
+	l.sessions[key] = s
 	return s.tools
 }
 
-// connect は、作業フォルダ workDir のサーバーを aibow の中で動かしてつなぎ、ツールの一覧を受け取る。
-func (l *Local) connect(workDir string) (*localSession, error) {
+// connect は、フォルダの組 folders のサーバーを aibow の中で動かしてつなぎ、ツールの一覧を受け取る。
+func (l *Local) connect(folders []tool.Folder) (*localSession, error) {
 	ctx := context.Background()
 	begin := time.Now()
 	ct, st := mcp.NewInMemoryTransports()
-	ss, err := mcpserver.New(mcpserver.Options{WorkDir: workDir, Version: l.opt.Version}).Connect(ctx, st, nil)
+	ss, err := mcpserver.New(l.serverOptions(folders)).Connect(ctx, st, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -92,7 +105,7 @@ func (l *Local) connect(workDir string) (*localSession, error) {
 		return nil, err
 	}
 	s := &localSession{server: ss, client: session}
-	originals := mcpserver.Tools(workDir) // サーバーが出しているツールの中身(扱いの決まりの既定を決めるため)
+	originals := l.serverOptions(folders).Tools() // サーバーが出しているツールの中身(扱いの決まりの既定を決めるため)
 	for mt, err := range session.Tools(ctx, nil) {
 		if err != nil {
 			s.close()
@@ -105,12 +118,20 @@ func (l *Local) connect(workDir string) (*localSession, error) {
 		}
 		s.tools = append(s.tools, newLocalTool(orig, session))
 	}
-	where := workDir
-	if where == "" {
-		where = "なし"
+	where := "なし"
+	if len(folders) > 0 {
+		where = tool.MainFolder(folders).Path
+		if n := len(folders) - 1; n > 0 {
+			where += fmt.Sprintf(" ほか %d 個", n)
+		}
 	}
 	log.Infof("MCP %s: aibow の中のサーバーにつなぎました(%.3f 秒。作業フォルダ: %s・ツール %d 個)", localName, time.Since(begin).Seconds(), where, len(s.tools))
 	return s, nil
+}
+
+// serverOptions は、フォルダの組 folders のときの、aibow の中のサーバーの設定。
+func (l *Local) serverOptions(folders []tool.Folder) mcpserver.Options {
+	return mcpserver.Options{Folders: folders, Version: l.opt.Version, Fetch: l.opt.Fetch}
 }
 
 // Close は、aibow の中のサーバーを全部止める(アプリを閉じるとき)。
@@ -135,7 +156,7 @@ func newLocalTool(orig tool.Tool, session *mcp.ClientSession) tool.Tool {
 	limit := mcpserver.TimeLimit(orig) + localGrace
 	lt := localTool{
 		orig: orig,
-		rt:   &remoteTool{server: localName, session: session, name: orig.Def().Name, limit: limit},
+		rt:   &remoteTool{server: localName, session: session, name: orig.Def().Name, limit: limit, stopped: context.Background()},
 	}
 	if ct, ok := orig.(tool.Confirmable); ok {
 		return &localConfirmTool{localTool: lt, preview: ct}

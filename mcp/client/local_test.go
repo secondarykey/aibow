@@ -28,11 +28,11 @@ func TestLocalTools(t *testing.T) {
 		slices.Sort(out)
 		return out
 	}
-	if got := names(l.Tools("")); !slices.Equal(got, []string{"calculate", "get_current_time"}) {
+	if got := names(l.Tools(nil)); !slices.Equal(got, []string{"calculate", "get_current_time"}) {
 		t.Errorf("作業フォルダが無ければ時刻と計算だけ: %v", got)
 	}
-	tools := l.Tools(dir)
-	if got := names(tools); !slices.Equal(got, []string{"calculate", "edit_file", "get_current_time", "list_files", "read_file", "run_command", "write_file"}) {
+	tools := l.Tools(tool.Single(dir))
+	if got := names(tools); !slices.Equal(got, []string{"calculate", "edit_file", "get_current_time", "list_files", "read_file", "run_command", "search_files", "update_plan", "write_file"}) {
 		t.Errorf("作業フォルダのツールも: %v", got)
 	}
 	if d := tool.Find(tools, "read_file").Def(); d.Description != tool.Find(tool.Files(dir), "read_file").Def().Description {
@@ -49,7 +49,7 @@ func TestLocalTools(t *testing.T) {
 	if got := tool.Find(tools, "run_command").(tool.TimeLimiter).TimeLimit(); got != 125*time.Second {
 		t.Errorf("run_command の上限はサーバーの上限 + 5 秒: %v", got)
 	}
-	if l.Tools(dir)[0] != tools[0] {
+	if l.Tools(tool.Single(dir))[0] != tools[0] {
 		t.Error("同じ作業フォルダなら、つなぎ直さない")
 	}
 }
@@ -59,7 +59,7 @@ func TestLocalWrite(t *testing.T) {
 	l := NewLocal(Options{Version: "test"})
 	t.Cleanup(l.Close)
 	dir := t.TempDir()
-	write := tool.Find(l.Tools(dir), "write_file").(tool.Interactive)
+	write := tool.Find(l.Tools(tool.Single(dir)), "write_file").(tool.Interactive)
 
 	var got []tool.Preview
 	out, err := write.RunInteractive(context.Background(), tool.Args{"path": "a.txt", "content": "hello\n"}, func(_ context.Context, pv tool.Preview) (tool.Answer, error) {
@@ -76,7 +76,7 @@ func TestLocalWrite(t *testing.T) {
 		t.Errorf("ファイル: %q", b)
 	}
 
-	read := tool.Find(l.Tools(dir), "read_file")
+	read := tool.Find(l.Tools(tool.Single(dir)), "read_file")
 	if out, err := read.Run(context.Background(), tool.Args{"path": "a.txt"}); err != nil || out != "1\thello" {
 		t.Errorf("読むツールは聞かずに MCP 越しに実行: %q, %v", out, err)
 	}
@@ -86,8 +86,8 @@ func TestLocalWrite(t *testing.T) {
 func TestLocalClosed(t *testing.T) {
 	l := NewLocal(Options{Version: "test"})
 	l.Close()
-	tools := l.Tools(t.TempDir())
-	if _, ok := tool.Find(tools, "write_file").(tool.SelfConfirming); ok || len(tools) != 7 {
+	tools := l.Tools(tool.Single(t.TempDir()))
+	if _, ok := tool.Find(tools, "write_file").(tool.SelfConfirming); ok || len(tools) != 9 {
 		t.Errorf("直接呼ぶツール: %v", tools)
 	}
 }

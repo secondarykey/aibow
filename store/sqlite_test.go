@@ -1,9 +1,11 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -664,5 +666,112 @@ func TestConversationLocks(t *testing.T) {
 	other := aibow.WithUser(context.Background(), uuid.NewV7())
 	if err := s.LockConversation(other, c.ID, "x", soon); !errors.Is(err, aibow.ErrNotFound) {
 		t.Errorf("ほかの人の会話: %v", err)
+	}
+}
+
+// 読み込んだファイル(版 15。0030):発言と一緒に保存して読み、発言を消すと一緒に消える。ほかの人の会話の発言には付けられない
+func TestMessageFiles(t *testing.T) {
+	s, _ := openTemp(t)
+	c := newConv(t, s, time.Now())
+	a, err := aibow.ReadFile("a.go", []byte("package a\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := aibow.ReadFile("b.txt", []byte{0xEF, 0xBB, 0xBF, 'b'})
+	user := aibow.StoredMessage{ID: uuid.NewV7(), ConversationID: c.ID, Role: "user", Content: "読んで", Files: []aibow.File{a, b}, CreatedAt: time.Now()}
+	reply := aibow.StoredMessage{ID: uuid.NewV7(), ConversationID: c.ID, Role: "assistant", Content: "読みました", CreatedAt: time.Now()}
+	for _, m := range []aibow.StoredMessage{user, reply} {
+		if err := s.AddMessage(ctx, m); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, ms, err := s.Conversation(ctx, c.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(ms[0].Files, user.Files) || ms[1].Files != nil {
+		t.Errorf("読んだファイル: %+v / %+v", ms[0].Files, ms[1].Files)
+	}
+
+	// ほかの人の会話には足せない(ファイルの行も残らない)
+	other := aibow.WithUser(context.Background(), uuid.NewV7())
+	c2, _ := aibow.ReadFile("c.txt", []byte("c"))
+	if err := s.AddMessage(other, aibow.StoredMessage{ID: uuid.NewV7(), ConversationID: c.ID, Role: "user", Files: []aibow.File{c2}, CreatedAt: time.Now()}); !errors.Is(err, aibow.ErrNotFound) {
+		t.Errorf("ほかの人の会話に足せた: %v", err)
+	}
+	count := func() (n int) {
+		s.db.QueryRow("SELECT COUNT(*) FROM files").Scan(&n)
+		return n
+	}
+	if n := count(); n != 2 {
+		t.Errorf("ファイルの行: %d", n)
+	}
+
+	// 発言を消すと(作り直す・送り直す)一緒に消える
+	if err := s.DeleteMessages(ctx, []uuid.UUID{user.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if n := count(); n != 0 {
+		t.Errorf("発言を消してもファイルが残った: %d", n)
+	}
+}
+
+// 会話を消すと、読み込んだ画像の行が消え(会話 → 発言 → ファイルの ON DELETE CASCADE)、中身のバイト列も DB ファイルに残らない(secure_delete。0030)
+func TestDeleteConversationErasesFiles(t *testing.T) {
+	s, path := openTemp(t)
+	c := newConv(t, s, time.Now())
+	marker := "SECRET-IMAGE-BYTES-0030"
+	img, err := aibow.ReadFile("a.png", []byte("\x89PNG\r\n\x1a\n"+strings.Repeat(marker, 2000)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AddMessage(ctx, aibow.StoredMessage{ID: uuid.NewV7(), ConversationID: c.ID, Role: "user", Files: []aibow.File{img}, CreatedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteConversation(ctx, c.ID); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err := s.db.QueryRow("SELECT COUNT(*) FROM files").Scan(&n); err != nil || n != 0 {
+		t.Errorf("ファイルの行が残った: %d %v", n, err)
+	}
+	s.Close()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if k := bytes.Count(raw, []byte(marker)); k != 0 {
+		t.Errorf("消した画像のバイト列が DB ファイルに %d か所残っている", k)
+	}
+}
+
+// 送ったファイルを捨てる(版 16。0030):中身が消え、印が付き、DB ファイルにも中身が残らない。ほかの人のファイルは捨てられない
+func TestDiscardFile(t *testing.T) {
+	s, path := openTemp(t)
+	c := newConv(t, s, time.Now())
+	marker := "DISCARDED-IMAGE-BYTES-0030"
+	img, _ := aibow.ReadFile("a.png", []byte("\x89PNG\r\n\x1a\n"+strings.Repeat(marker, 2000)))
+	if err := s.AddMessage(ctx, aibow.StoredMessage{ID: uuid.NewV7(), ConversationID: c.ID, Role: "user", Files: []aibow.File{img}, CreatedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	other := aibow.WithUser(context.Background(), uuid.NewV7())
+	if err := s.DiscardFile(other, img.ID); !errors.Is(err, aibow.ErrNotFound) {
+		t.Errorf("ほかの人のファイルを捨てられた: %v", err)
+	}
+	if err := s.DiscardFile(ctx, img.ID); err != nil {
+		t.Fatal(err)
+	}
+	_, ms, _ := s.Conversation(ctx, c.ID)
+	if f := ms[0].Files[0]; !f.Discarded || f.Data != nil || f.Name != "a.png" || f.Kind != aibow.FileImage {
+		t.Errorf("捨てたファイル: %+v", f)
+	}
+	// 捨てたファイルを付けた発言も足せる(送り直す・写す)
+	if err := s.AddMessage(ctx, aibow.StoredMessage{ID: uuid.NewV7(), ConversationID: c.ID, Role: "user", Files: []aibow.File{{ID: uuid.NewV7(), Kind: aibow.FileImage, Name: "a.png", Discarded: true}}, CreatedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+	raw, _ := os.ReadFile(path)
+	if k := bytes.Count(raw, []byte(marker)); k != 0 {
+		t.Errorf("捨てた画像のバイト列が DB ファイルに %d か所残っている", k)
 	}
 }

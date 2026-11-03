@@ -152,6 +152,19 @@
         ]},
         {"role": "tool", "content": "package a"}
       ]
+    },
+    {
+      "name": "images",
+      "formats": ["qwen35"],
+      "think": false,
+      "messages": [
+        {"role": "system", "content": "S"},
+        {"role": "user", "images": 2, "content": "  2枚の違いは?\n"},
+        {"role": "assistant", "content": "色が違います。"},
+        {"role": "user", "images": 1, "content": ""},
+        {"role": "assistant", "content": "猫です。"},
+        {"role": "user", "content": "ありがとう"}
+      ]
     }
   ]
 }

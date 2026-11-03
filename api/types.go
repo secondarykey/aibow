@@ -6,6 +6,9 @@ package api
 // その間の変換は、aibow の会話の仕組みと同じく format パッケージがする。ここは JSON と format.Message の間をつなぐだけ。
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -54,6 +57,10 @@ type chatRequest struct {
 type aibowRequest struct {
 	// ReturnPrompt を立てると、モデルに渡した文字列を返す(学習用に画面に出すため。長いので頼んだときだけ)
 	ReturnPrompt bool `json:"return_prompt"`
+	// Purpose と Conversation は、何のための生成か(reply / summary)と会話の ID(0033)。aibow-server の使用量の記録に書くだけで、生成は変わらない。
+	// アプリの compact の要約も、この口には普通の生成として来るので、要約かはここで知らせてもらう
+	Purpose      string `json:"purpose,omitempty"`
+	Conversation string `json:"conversation,omitempty"`
 }
 
 // aibowResult は、aibow のクライアントに返す欄(返事の "aibow")。標準の形では表せない、画面が使うもの。
@@ -65,6 +72,9 @@ type aibowResult struct {
 	// BrokenToolCalls は書式が崩れて読み取れなかった呼び出し。0012 の形では答えの文字列に足していたが、
 	// aibow のクライアントは自分のループで「エラーとしてモデルに返して直させる」ので、分けて返す
 	BrokenToolCalls []brokenCall `json:"broken_tool_calls,omitempty"`
+	// 画像(0030)。プロンプトのうち画像のトークン数と、今回エンコードした秒数(timings には画像の欄が無いので、aibow の欄で返す)
+	ImageTokens int     `json:"image_tokens,omitempty"`
+	EncodeSec   float64 `json:"encode_sec,omitempty"`
 }
 
 // brokenCall は書式が崩れた呼び出し1つ。Index は、読み取れた呼び出し(tool_calls)と合わせた全体の中での順番。
@@ -116,35 +126,81 @@ type chatMessage struct {
 
 // contentPart は Content を配列で送ってきたときの部品1つ。
 type contentPart struct {
-	Type string `json:"type"`
-	Text string `json:"text"`
+	Type     string `json:"type"`
+	Text     string `json:"text"`
+	ImageURL *struct {
+		URL string `json:"url"`
+	} `json:"image_url"` // type が image_url のとき(0030)
 }
 
-// text は Content を1本の文字列にする。部品の配列なら、文字の部品をつなぐ(画像などは扱わない)。
-func (m chatMessage) text() (string, error) {
+// maxImageBytes は image_url の画像1枚の上限(aibow の会話の画像の上限 aibow.ImageMaxBytes と同じ。api は aibow を import しない)
+const maxImageBytes = 10 << 20
+
+// content は Content を、1本の文字列と画像の列にする。部品の配列なら、文字の部品をつなぐ。
+// 画像(image_url)は data: の URL(base64)だけを受ける(0030 の決定事項 16)。
+// http(s):// の URL は取りに行かない(サーバーから PC の中やイントラに届いてしまうため。0024 の Web のツールと同じ心配)。
+// 画像は部品のどこにあっても、発言の文より前に置く(書式が画像を先に書く。決定事項 11)。
+func (m chatMessage) content() (string, []format.Image, error) {
 	raw := strings.TrimSpace(string(m.Content))
 	if raw == "" || raw == "null" {
-		return "", nil // ツール呼び出しだけの返事などは content が null
+		return "", nil, nil // ツール呼び出しだけの返事などは content が null
 	}
 	if raw[0] == '"' {
 		var s string
 		if err := json.Unmarshal(m.Content, &s); err != nil {
-			return "", fmt.Errorf("content が読めません: %w", err)
+			return "", nil, fmt.Errorf("content が読めません: %w", err)
 		}
-		return s, nil
+		return s, nil, nil
 	}
 	var parts []contentPart
 	if err := json.Unmarshal(m.Content, &parts); err != nil {
-		return "", fmt.Errorf("content は文字列か、部品の配列にしてください: %w", err)
+		return "", nil, fmt.Errorf("content は文字列か、部品の配列にしてください: %w", err)
 	}
 	var b strings.Builder
-	for _, p := range parts {
-		if p.Type != "text" {
-			return "", fmt.Errorf("content の部品の種類 %q には対応していません(文字 text だけです)", p.Type)
+	var images []format.Image
+	for k, p := range parts {
+		switch p.Type {
+		case "text":
+			b.WriteString(p.Text)
+		case "image_url":
+			if p.ImageURL == nil {
+				return "", nil, fmt.Errorf("content[%d]: image_url がありません", k)
+			}
+			img, err := imageFromURL(p.ImageURL.URL)
+			if err != nil {
+				return "", nil, fmt.Errorf("content[%d]: %w", k, err)
+			}
+			images = append(images, img)
+		default:
+			return "", nil, fmt.Errorf("content の部品の種類 %q には対応していません(文字 text と画像 image_url だけです)", p.Type)
 		}
-		b.WriteString(p.Text)
 	}
-	return b.String(), nil
+	return b.String(), images, nil
+}
+
+// imageFromURL は data:<形式>;base64,<中身> の URL を画像にする。ID は中身の SHA-256
+// (aibow の会話の仕組みが画像に付ける ID と同じ。画面のアプリから同じ画像が届けば、エンジンの KV キャッシュで同じ画像と分かる)。
+func imageFromURL(url string) (format.Image, error) {
+	if strings.HasPrefix(url, "http://") || strings.HasPrefix(url, "https://") {
+		return format.Image{}, fmt.Errorf("image_url の http(s):// の URL は読みません。画像は data: の URL(base64)で送ってください")
+	}
+	head, data, ok := strings.Cut(strings.TrimPrefix(url, "data:"), ",")
+	if !ok || !strings.HasPrefix(url, "data:") || !strings.HasSuffix(head, ";base64") {
+		return format.Image{}, fmt.Errorf("image_url は data:<形式>;base64,<中身> の形にしてください")
+	}
+	mime := strings.TrimSuffix(head, ";base64")
+	if !strings.HasPrefix(mime, "image/") {
+		return format.Image{}, fmt.Errorf("image_url の形式 %q は画像ではありません", mime)
+	}
+	b, err := base64.StdEncoding.DecodeString(data)
+	if err != nil {
+		return format.Image{}, fmt.Errorf("image_url の base64 が読めません: %w", err)
+	}
+	if len(b) == 0 || len(b) > maxImageBytes {
+		return format.Image{}, fmt.Errorf("image_url の画像は 1 枚 %d MB までです(%d バイト)", maxImageBytes>>20, len(b))
+	}
+	sum := sha256.Sum256(b)
+	return format.Image{ID: hex.EncodeToString(sum[:]), Format: mime, Data: b}, nil
 }
 
 // toPrompt はリクエストを書式の形(format.Prompt)にする。読めない発言があればエラー(400 で返す)。
@@ -167,9 +223,13 @@ func toPrompt(req chatRequest, think bool) (format.Prompt, error) {
 	var msgs []format.Message
 	names := map[string]string{} // 直前の返事の呼び出しの id → ツールの名前
 	for i, m := range req.Messages {
-		text, err := m.text()
+		text, images, err := m.content()
 		if err != nil {
 			return format.Prompt{}, fmt.Errorf("messages[%d]: %w", i, err)
+		}
+		if len(images) > 0 && m.Role != "user" {
+			// 公式テンプレートは system の画像をエラーにする。ツールの結果の画像は、まだ扱わない(0030 の「やらないこと」)
+			return format.Prompt{}, fmt.Errorf("messages[%d]: 画像を付けられるのは user の発言だけです", i)
 		}
 		switch m.Role {
 		case "system", "developer":
@@ -178,7 +238,7 @@ func toPrompt(req chatRequest, think bool) (format.Prompt, error) {
 			}
 			system = append(system, text)
 		case "user":
-			msgs = append(msgs, format.Message{Role: "user", Content: text})
+			msgs = append(msgs, format.Message{Role: "user", Content: text, Images: images})
 		case "assistant":
 			calls, err := fromRequestCalls(m.ToolCalls, defs)
 			if err == nil && m.Aibow != nil {

@@ -16,6 +16,9 @@ import (
 // ShellNote は、環境の説明(システムプロンプト)に書く、run_command のシェル。
 const ShellNote = "/bin/sh"
 
+// shellNoteSearch は、search_files も使えるときの ShellNote(/bin/sh には grep があるので、書き分けない)。
+const shellNoteSearch = ShellNote
+
 // shellCommand は、dir をカレントにして command を /bin/sh -c で動かす exec.Cmd を作る。
 // 子プロセスもまとめて止められるよう、新しいプロセスグループで起動する(Setpgid)。
 func shellCommand(dir, command string) *exec.Cmd {

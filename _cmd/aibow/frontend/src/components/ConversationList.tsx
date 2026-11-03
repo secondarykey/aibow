@@ -1,7 +1,7 @@
 // 左側: 会話の一覧(更新の新しい順)。新規作成・切り替え・名前の変更・削除。
 // 名前の変更はダブルクリックか F2(F2 は App.tsx が受けて renamingId を決める)。
 // 会話の設定の歯車は、一覧を畳んでいても開けるよう、入力欄の下(メーターの右)に置く(App.tsx)。
-// 下にアプリの名前とバージョン、右に設定の画面の開閉ボタン(アイコンだけ)。
+// 下にアプリの名前とバージョン、右に設定の画面の開閉ボタン(アイコンだけ)。管理できる人には、その左に管理の画面の盾(0032)。
 // ウィンドウの上から下までの列。上のハンバーガーで一覧を畳める。畳んだときもアイコンだけの細い列を残し、
 // ハンバーガー・新規・設定はそこに集める。上の空いているところはタイトルバーと同じくドラッグでウィンドウを動かせる。
 // 「+ 新規」は一覧の一番上の行に置く(スクロールしても隠れないよう、一覧の外に固定する)。
@@ -15,12 +15,14 @@
 // 一覧を畳んでいるときは、いちばん気にしてほしい印(確認待ち → エラー → 生成中 → 終わった)をハンバーガーに出す
 //
 // 共有(0018 の 11-2):共有した会話は名前の右に共有のアイコン。ほかの人に共有された会話は、一覧の下の「共有された会話」の欄
-// (開閉できる・持ち主の名前付き。押すと読むだけで開く)。ログインが要る aibow-server につないでいるときは、
+// (開閉できる・持ち主の名前付き。押すと読むだけで開く。「自分に共有」と「全員に共有」に分け、持ち主とタイトルで絞る。0031 の決定事項 17)。ログインが要る aibow-server につないでいるときは、
 // 一番下の名前の横に「管理者が読めます」を常に出す(決定事項 23。畳んだときは目のアイコンだけ)
 import { useEffect, useRef, useState } from "react";
-import { ChatService, logout, me } from "../backend";
+import { ChatService, me } from "../backend";
+import { canLogout, signedIn, signOut } from "./AccountSettings";
+import { showName } from "../directory";
 import type { KeyboardEvent } from "react";
-import { LuChevronDown, LuChevronRight, LuEye, LuMenu, LuPlus, LuSettings, LuShare2, LuUser } from "react-icons/lu";
+import { LuChevronDown, LuChevronRight, LuEye, LuMenu, LuPlus, LuSettings, LuShare2, LuShield, LuUser } from "react-icons/lu";
 import { useMenuDismiss } from "./SplitButton";
 import { toggleMaximiseOnDoubleClick } from "./TitleBar";
 import type { Conversation, ConversationRef } from "../../bindings/github.com/secondarykey/aibow";
@@ -42,6 +44,10 @@ interface Props {
   onEndRename(): void;
   settingsOpen: boolean;
   onToggleSettings(): void;
+  onOpenAccount(): void; // 設定の画面を「アカウント」のタブで開く(左下の名前のメニュー)
+  adminOpen: boolean;    // 管理の画面を開いているか(0032)
+  canAdmin: boolean;     // 管理の画面の盾を出すか(管理者か、サーバーの PC の上から開いたブラウザ)
+  onToggleAdmin(): void; // 歯車の隣の盾で、管理の画面を開く / 閉じる
   open: boolean; // 一覧を開いているか
   onToggleOpen(): void;
   width: number; // 開いているときの幅(px)。一覧の右の仕切り(Splitter)で変えられる
@@ -52,7 +58,7 @@ interface Props {
 
 export function ConversationList({
   list, currentId, generatingId, waitingId, ended, disabled, onOpen, onNew, onDelete, onRename, renamingId, onStartRename, onEndRename,
-  settingsOpen, onToggleSettings, open, onToggleOpen, width, shared, readingId, onOpenShared,
+  settingsOpen, onToggleSettings, onOpenAccount, adminOpen, canAdmin, onToggleAdmin, open, onToggleOpen, width, shared, readingId, onOpenShared,
 }: Props) {
   const [sharedOpen, setSharedOpen] = useState(true);
   // 削除の確認を出している会話。消すと戻せないので、もう一度押してもらう
@@ -75,6 +81,10 @@ export function ConversationList({
     </button>
   );
   const settingsCls = settingsOpen ? "settings active" : "settings";
+  // 管理の画面の入口(盾)。管理できる人にだけ、歯車の隣に出す(0032 の決定事項 5)
+  const adminBtn = canAdmin && (
+    <button className={"icon-btn admin" + (adminOpen ? " active" : "")} title="管理" onClick={onToggleAdmin}><LuShield /></button>
+  );
 
   if (!open) {
     return (
@@ -83,6 +93,7 @@ export function ConversationList({
         <button className="icon-btn" title="新しい会話" disabled={disabled} onClick={onNew}><LuPlus /></button>
         <span className="spacer" />
         {me.login && <span className="admin-notice icon" title={ADMIN_NOTICE}><LuEye /></span>}
+        {adminBtn}
         <button className={"icon-btn " + settingsCls} title="設定" onClick={onToggleSettings}><LuSettings /></button>
       </nav>
     );
@@ -131,16 +142,26 @@ export function ConversationList({
                 onClick={() => onOpen(c.id)}
                 onDoubleClick={() => onStartRename(c.id)}
               >
-                {mark && <span className={"dot " + mark} title={MARK_LABEL[mark]} />}
                 {title}
                 {c.share && <LuShare2 className="share-mark" title={c.share === "all" ? "全員に共有している" : "指定した人に共有している"} />}
               </button>
-              <button
-                className="delete"
-                title={generating ? "返事を生成中の会話は削除できません" : "削除"}
-                disabled={disabled || generating}
-                onClick={() => setConfirming(c.id)}
-              >×</button>
+              {generating && mark ? (
+                // 送信している間(生成中・確認待ち)は削除できないので、削除の場所に印を出す(2026-10-31、ユーザーの指示)
+                <span className="running-mark" title={MARK_LABEL[mark] + "(終わるまで削除できません)"}>
+                  <span className={"dot " + mark} />
+                </span>
+              ) : (
+                // 終わったあとの印(終わった・エラー)も同じ場所に出し、マウスを乗せたときだけ × に替える(削除はできるので)
+                <button
+                  className={"delete" + (mark ? " has-mark" : "")}
+                  title={mark ? `削除(${MARK_LABEL[mark]})` : "削除"}
+                  disabled={disabled}
+                  onClick={() => setConfirming(c.id)}
+                >
+                  {mark && <span className={"dot " + mark} />}
+                  <span className="x">×</span>
+                </button>
+              )}
             </li>
           );
         })}
@@ -150,31 +171,72 @@ export function ConversationList({
           <button className="shared-head" onClick={() => setSharedOpen(o => !o)} aria-expanded={sharedOpen}>
             {sharedOpen ? <LuChevronDown /> : <LuChevronRight />} 共有された会話
           </button>
-          {sharedOpen && (
-            <ul>
-              {shared.map(c => (
-                <li key={c.id} className={"conversation" + (c.id === readingId ? " current" : "")}>
-                  <button className="title" title={`${c.title || "新しい会話"}(${c.owner_name} の会話。読むだけ)`} onClick={() => onOpenShared(c.id)}>
-                    {c.title || "新しい会話"}
-                    <span className="shared-owner">{c.owner_name}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
+          {sharedOpen && <SharedList shared={shared} readingId={readingId} onOpenShared={onOpenShared} />}
         </div>
       )}
       {me.login && <div className="admin-notice row" title={ADMIN_NOTICE}><LuEye /> 管理者が読めます</div>}
       <div className="footer">
         <AppName />
-        <UserMenu />
+        <UserMenu onOpenAccount={onOpenAccount} />
+        {adminBtn}
         <button className={"icon-btn " + settingsCls} title="設定" onClick={onToggleSettings}><LuSettings /></button>
       </div>
     </nav>
   );
 }
 
-// Mark は会話の名前の左に出す印の種類(CSS の .dot.<種類>)。
+// SHARED_PAGE は、共有された会話を一度に出す数(0031 の決定事項 17)
+const SHARED_PAGE = 20;
+
+// SharedList は、ほかの人に共有された会話。「自分に共有」(指定した人・グループで共有されたもの)を上、「全員に共有」を下に分け、
+// 持ち主で絞る・タイトルで探す(0031 の決定事項 17)。それぞれ新しい 20 件から出し、「もっと見る」で足す
+function SharedList({ shared, readingId, onOpenShared }: { shared: ConversationRef[]; readingId: string | null; onOpenShared(id: string): void }) {
+  const [query, setQuery] = useState("");
+  const [owner, setOwner] = useState("");
+  // 持ち主はログインの名前で分け、見せるのは「表示名(ログインの名前)」
+  const owners = [...new Map(shared.map(c => [c.owner_name, showName(c.owner_name, c.owner_display)])).entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  const q = query.trim().toLowerCase();
+  const match = (c: ConversationRef) => (owner === "" || c.owner_name === owner) && (q === "" || (c.title || "新しい会話").toLowerCase().includes(q));
+  const toMe = shared.filter(c => c.share === "users" && match(c));
+  const toAll = shared.filter(c => c.share !== "users" && match(c));
+  return (
+    <>
+      <div className="shared-filter">
+        <input type="text" value={query} placeholder="タイトルで探す…" aria-label="共有された会話をタイトルで探す" onChange={e => setQuery(e.target.value)} />
+        <select value={owner} aria-label="持ち主で絞る" onChange={e => setOwner(e.target.value)}>
+          <option value="">全員</option>
+          {owners.map(([name, label]) => <option key={name} value={name}>{label}</option>)}
+        </select>
+      </div>
+      <SharedGroup label="自分に共有" list={toMe} readingId={readingId} onOpenShared={onOpenShared} />
+      <SharedGroup label="全員に共有" list={toAll} readingId={readingId} onOpenShared={onOpenShared} />
+    </>
+  );
+}
+
+function SharedGroup({ label, list, readingId, onOpenShared }: { label: string; list: ConversationRef[]; readingId: string | null; onOpenShared(id: string): void }) {
+  const [limit, setLimit] = useState(SHARED_PAGE);
+  if (list.length === 0) return null;
+  return (
+    <>
+      <div className="shared-sub">{label}({list.length})</div>
+      <ul>
+        {list.slice(0, limit).map(c => (
+          <li key={c.id} className={"conversation" + (c.id === readingId ? " current" : "")}>
+            <button className="title" title={`${c.title || "新しい会話"}(${showName(c.owner_name, c.owner_display)} の会話。読むだけ)`} onClick={() => onOpenShared(c.id)}>
+              {c.title || "新しい会話"}
+              <span className="shared-owner">{showName(c.owner_name, c.owner_display, true)}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      {list.length > limit && <button className="shared-more" onClick={() => setLimit(l => l + SHARED_PAGE)}>もっと見る(残り {list.length - limit} 件)</button>}
+    </>
+  );
+}
+
+// Mark は会話の印の種類(CSS の .dot.<種類>)。どれも行の右の削除の場所に出す。送信している間(生成中・確認待ち)は削除できないので印だけ、
+// 終わったあと(終わった・エラー)は印を出し、マウスを乗せたときだけ削除の × に替える。
 type Mark = "waiting" | "generating" | Ended;
 
 // MARK_ORDER は、畳んだ一覧のハンバーガーに1つだけ出すときに、どれを先に出すか(気にしてほしい順)
@@ -207,36 +269,24 @@ function AppName() {
   return <span className="app-name">AIBow{version && <span className="app-version">{version}</span>}</span>;
 }
 
-// UserMenu は、ログインしている人の名前。押すと「ログアウト」を出す(ブラウザでログインが要るときだけ。0017 の 10-1)。
-// ログアウトしたら画面を読み直す(ログインの画面になる)。
-// デスクトップのアプリが aibow-server に API キーでつないでいるときは、名前だけを出す(ログアウトは無い。0017 の 10-4)。
-function UserMenu() {
+// UserMenu は、ログインしている人の名前(表示名)。押すと上に「アカウント」(設定の画面の「アカウント」のタブ)と「ログアウト」を出す。
+// ブラウザでも、画面のアプリが aibow-server にログインしてつないでいるときも同じ形(0031 の決定事項 44・46)。
+// ログアウトしたら読み直し、ログインの画面になる。settings.json に手で書いた API キーでつないでいるときは、ログアウトを出さない。
+// ログインが要らない形・アプリの中で動かすときは出さない。
+function UserMenu({ onOpenAccount }: { onOpenAccount(): void }) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   useMenuDismiss(open, () => setOpen(false), box);
-  if (!me.login || me.name === "") return null;
-  if (me.viaKey) {
-    return (
-      <div className="user-menu">
-        <span className="user-btn" title={`API キーで ${me.name} としてつないでいます`}><LuUser /><span>{me.name}</span></span>
-      </div>
-    );
-  }
-
-  const signOut = async () => {
-    setOpen(false);
-    // 失敗しても読み直す(cookie が残っていれば、読み直した画面がそのまま使える。消えていればログインの画面になる)
-    await logout().catch(() => undefined);
-    location.reload();
-  };
+  if (!signedIn()) return null;
   return (
     <div className="user-menu" ref={box}>
-      <button className="user-btn" title={`${me.name} としてログインしています`} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(o => !o)}>
-        <LuUser /><span>{me.name}</span>
+      <button className="user-btn" title={`${showName(me.name, me.display_name)} としてログインしています`} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(o => !o)}>
+        <LuUser /><span>{showName(me.name, me.display_name, true)}</span>
       </button>
       {open && (
         <div className="split-menu up" role="menu">
-          <button role="menuitem" onClick={signOut}>ログアウト</button>
+          <button role="menuitem" onClick={() => { setOpen(false); onOpenAccount(); }}>アカウント</button>
+          {canLogout() && <button role="menuitem" onClick={() => { setOpen(false); signOut(); }}>ログアウト</button>}
         </div>
       )}
     </div>

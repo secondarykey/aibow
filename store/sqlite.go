@@ -47,7 +47,9 @@ func Open(path string) (*SQLite, error) {
 	//   foreign_keys(1) : REFERENCES を効かせる。SQLite は既定で無効なので、
 	//                     これが無いと ON DELETE CASCADE(会話を消すと発言も消える)が動かない
 	//   busy_timeout    : 別の接続が書き込み中なら、エラーにせず最大 5 秒待つ
-	db, err := sql.Open("sqlite", path+"?_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)")
+	//   secure_delete(1): 消した行の場所をゼロで上書きする。SQLite は既定では行を消しても場所に「空き」の印を付けるだけで、
+	//                     読み込んだ画像やファイル(0030)の中身が、上書きされるか VACUUM するまで DB ファイルの中に残るため
+	db, err := sql.Open("sqlite", path+"?_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)&_pragma=secure_delete(1)")
 	if err != nil {
 		return nil, fmt.Errorf("DB を開けません(%s): %w", path, err)
 	}
@@ -259,6 +261,93 @@ CREATE TABLE password_links (
 	expires_at TEXT NOT NULL             -- 出してから 1 時間
 );
 `,
+	// 版 15: 読み込んだファイル(0030)。発言に付けたファイル(テキスト。段2で画像も同じ表に入れる)。
+	// 発言とは別の表にするのは、中身(バイト列)が重いので発言の行を軽く保つため。発言を消すと一緒に消える。
+	// 持ち主は発言(を通して会話)で決まるので列を持たない
+	`
+CREATE TABLE files (
+	id         TEXT PRIMARY KEY,  -- UUIDv7。発言の中の並びもこれで決まる
+	message_id TEXT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+	kind       TEXT NOT NULL,     -- 種類: text
+	name       TEXT NOT NULL,     -- ファイル名
+	format     TEXT NOT NULL,     -- 形式(テキストは読んだときの文字コード)
+	hash       TEXT NOT NULL,     -- data の SHA-256(16進)
+	data       BLOB NOT NULL      -- 中身(テキストは UTF-8 にしたもの)
+);
+CREATE INDEX files_by_message ON files(message_id, id);
+`,
+	// 版 16: 送ったファイルを捨てる(0030 の決定事項 26〜28)。捨てたら中身を空にし、印を付ける(名前と種類は残す)
+	`
+ALTER TABLE files ADD COLUMN discarded INTEGER NOT NULL DEFAULT 0;  -- 0 / 1
+`,
+	// 版 17: 表示名と最後に使った時刻(0031 の段3)。表示名は人に見せる名前(空ならログインの名前を出す)。
+	// 最後に使った時刻は、前に書いてから1日以上たったときだけ書く(auth の used.go)。空は一度も使っていない
+	`
+ALTER TABLE users ADD COLUMN display_name TEXT NOT NULL DEFAULT '';
+ALTER TABLE users ADD COLUMN last_used_at TEXT NOT NULL DEFAULT '';
+`,
+	// 版 18: グループ(0031 の段4)。グループ user_groups(名前は UNIQUE)・メンバー user_group_members(長の印 leader を持つ。
+	// 抜けると行ごと消えるので、長でもなくなる)・会話とプロファイルの「指定したグループ」の表(グループを消すと一緒に消える)。
+	// 表の名前を groups にしないのは、SQLite の窓関数の GROUPS と重なるため
+	`
+CREATE TABLE user_groups (
+	id         TEXT PRIMARY KEY,
+	name       TEXT NOT NULL UNIQUE,
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+);
+CREATE TABLE user_group_members (
+	group_id TEXT NOT NULL REFERENCES user_groups(id) ON DELETE CASCADE,
+	user_id  TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	leader   INTEGER NOT NULL DEFAULT 0,  -- 0 / 1。グループの長(メンバーを足す・外せる)
+	PRIMARY KEY (group_id, user_id)
+);
+CREATE INDEX user_group_members_by_user ON user_group_members(user_id);
+CREATE TABLE conversation_group_shares (
+	conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+	group_id        TEXT NOT NULL REFERENCES user_groups(id) ON DELETE CASCADE,
+	PRIMARY KEY (conversation_id, group_id)
+);
+CREATE INDEX conversation_group_shares_by_group ON conversation_group_shares(group_id);
+CREATE TABLE profile_group_shares (
+	profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+	group_id   TEXT NOT NULL REFERENCES user_groups(id) ON DELETE CASCADE,
+	PRIMARY KEY (profile_id, group_id)
+);
+CREATE INDEX profile_group_shares_by_group ON profile_group_shares(group_id);
+`,
+	// 版 19: メールアドレス(0031 の決定事項 40〜43)。今は持つだけ。空でなければ1人1つ(大文字小文字は同じとみなすので lower() の索引)。
+	// 部分索引(WHERE email <> '')にするのは、空(付けていない)の人が何人いても重なりにしないため
+	`
+ALTER TABLE users ADD COLUMN email TEXT NOT NULL DEFAULT '';
+CREATE UNIQUE INDEX users_email ON users(lower(email)) WHERE email <> '';
+`,
+	// 版 20: aibow-server の生成1回ごとの記録(使用量。0033)。会話の中身は写さず、数字と、だれ・いつ・どのモデルかだけ。
+	// 利用者と会話の ID は外部キーにしない(消しても記録を残すため。決定事項 4・8)。消された人も読めるよう名前を写す。
+	// 分からない ID は ''、分からない順番待ちの秒数は NULL。集計は期間(at)で絞るので at に索引、人ごとに見るので (user_id, at) にも
+	`
+CREATE TABLE generation_log (
+	id              TEXT PRIMARY KEY,
+	at              TEXT NOT NULL,
+	user_id         TEXT NOT NULL,
+	user_name       TEXT NOT NULL,
+	route           TEXT NOT NULL,   -- browser / app / api
+	purpose         TEXT NOT NULL,   -- reply / summary
+	conversation_id TEXT NOT NULL,
+	model           TEXT NOT NULL,
+	prompt_tokens   INTEGER NOT NULL,
+	reused_tokens   INTEGER NOT NULL,
+	gen_tokens      INTEGER NOT NULL,
+	image_tokens    INTEGER NOT NULL,
+	prompt_sec      REAL NOT NULL,
+	gen_sec         REAL NOT NULL,
+	encode_sec      REAL NOT NULL,
+	wait_sec        REAL,
+	stop_reason     TEXT NOT NULL
+);
+CREATE INDEX generation_log_at ON generation_log(at);
+CREATE INDEX generation_log_user ON generation_log(user_id, at);
+`,
 }
 
 func migrate(db *sql.DB) error {
@@ -390,7 +479,7 @@ func (s *SQLite) Conversation(ctx context.Context, id uuid.UUID) (aibow.Conversa
 	if err != nil {
 		return c, nil, err
 	}
-	if c.ShareWith, err = s.shareNames(ctx, "conversation_shares", "conversation_id", c.Share, id); err != nil {
+	if c.ShareWith, c.ShareGroups, err = s.shareNames(ctx, "conversation", c.Share, id); err != nil {
 		return c, nil, err
 	}
 	ms, err := s.messages(ctx, id)
@@ -403,16 +492,29 @@ func (s *SQLite) Conversation(ctx context.Context, id uuid.UUID) (aibow.Conversa
 // 読むのは ReadConversation だけで、書くメソッド(UpdateConversation・AddMessage など)は今までどおり持ち主の行だけを触る。
 // なので、共有された人も管理者も書き込めない(決定事項 1・2)。
 
-// conversationShared は、:me に共有されたほかの人の会話(全員か、:me が相手)
+// conversationShared は、:me に共有されたほかの人の会話(全員か、:me が相手か、:me がメンバーのグループが相手。0031 の決定事項 27)。
+// グループは「そのときのメンバー」に広げて覚えず、読むたびにメンバーの表を引く(あとから入った人にも見え、抜けた人には見えなくなる。決定事項 26)
 const conversationShared = `(conversations.owner <> :me AND (conversations.share = 'all'
-	OR (conversations.share = 'users' AND EXISTS (SELECT 1 FROM conversation_shares s WHERE s.conversation_id = conversations.id AND s.user_id = :me))))`
+	OR (conversations.share = 'users' AND (
+		EXISTS (SELECT 1 FROM conversation_shares s WHERE s.conversation_id = conversations.id AND s.user_id = :me)
+		OR EXISTS (SELECT 1 FROM conversation_group_shares g JOIN user_group_members m ON m.group_id = g.group_id
+			WHERE g.conversation_id = conversations.id AND m.user_id = :me)))))`
 
-// shareNames は、共有の相手(指定した人)の名前。範囲が users でなければ nil。
-func (s *SQLite) shareNames(ctx context.Context, table, column, share string, id uuid.UUID) ([]string, error) {
+// shareNames は、共有の相手(指定した人とグループ)の名前。kind は conversation か profile(表の名前の頭)。範囲が users でなければ nil。
+func (s *SQLite) shareNames(ctx context.Context, kind, share string, id uuid.UUID) (users, groups []string, err error) {
 	if share != aibow.ShareUsers {
-		return nil, nil
+		return nil, nil, nil
 	}
-	rows, err := s.db.QueryContext(ctx, "SELECT u.name FROM "+table+" s JOIN users u ON u.id = s.user_id WHERE s."+column+" = ? ORDER BY u.name", id.String())
+	if users, err = s.names(ctx, "SELECT u.name FROM "+kind+"_shares s JOIN users u ON u.id = s.user_id WHERE s."+kind+"_id = ? ORDER BY u.name", id.String()); err != nil {
+		return nil, nil, err
+	}
+	groups, err = s.names(ctx, "SELECT g.name FROM "+kind+"_group_shares s JOIN user_groups g ON g.id = s.group_id WHERE s."+kind+"_id = ? ORDER BY g.name", id.String())
+	return users, groups, err
+}
+
+// names は、名前の1列を読む(空でも nil ではなく [])。
+func (s *SQLite) names(ctx context.Context, query string, args ...any) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -428,8 +530,48 @@ func (s *SQLite) shareNames(ctx context.Context, table, column, share string, id
 	return out, rows.Err()
 }
 
-// SetConversationShare は、自分の会話の共有の範囲と相手を変える。相手は名前で受け取り、いない名前ならエラー。自分は相手にしない。
-func (s *SQLite) SetConversationShare(ctx context.Context, id uuid.UUID, share string, with []string) error {
+// setShareTargets は、共有の相手(人とグループ)を入れ直す。kind は conversation か profile、what はエラーの文の「共有の相手」「配る相手」。
+// 相手は名前で受け取り、いない名前ならエラー。me(自分)は相手にしない(自分のもの・管理者は相手でなくても見える)。
+func setShareTargets(ctx context.Context, tx *sql.Tx, kind, what string, id uuid.UUID, me string, with, groups []string) error {
+	for _, table := range []string{kind + "_shares", kind + "_group_shares"} {
+		if _, err := tx.ExecContext(ctx, "DELETE FROM "+table+" WHERE "+kind+"_id = ?", id.String()); err != nil {
+			return err
+		}
+	}
+	for _, n := range with {
+		var uid string
+		err := tx.QueryRowContext(ctx, "SELECT id FROM users WHERE name = ?", n).Scan(&uid)
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("%s %q という利用者はいません", what, n)
+		}
+		if err != nil {
+			return err
+		}
+		if uid == me {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, "INSERT OR IGNORE INTO "+kind+"_shares ("+kind+"_id, user_id) VALUES (?, ?)", id.String(), uid); err != nil {
+			return err
+		}
+	}
+	for _, n := range groups {
+		var gid string
+		err := tx.QueryRowContext(ctx, "SELECT id FROM user_groups WHERE name = ?", n).Scan(&gid)
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("%sのグループ %q はありません", what, n)
+		}
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, "INSERT OR IGNORE INTO "+kind+"_group_shares ("+kind+"_id, group_id) VALUES (?, ?)", id.String(), gid); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// SetConversationShare は、自分の会話の共有の範囲と相手(人とグループ)を変える。相手は名前で受け取り、いない名前ならエラー。自分は相手にしない。
+func (s *SQLite) SetConversationShare(ctx context.Context, id uuid.UUID, share string, with, groups []string) error {
 	owner, err := s.owner(ctx)
 	if err != nil {
 		return err
@@ -448,33 +590,18 @@ func (s *SQLite) SetConversationShare(ctx context.Context, id uuid.UUID, share s
 	if err := notFoundIfNone(res, err, aibow.ErrNotFound); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, "DELETE FROM conversation_shares WHERE conversation_id = ?", id.String()); err != nil {
-		return err
+	if share != aibow.ShareUsers {
+		with, groups = nil, nil // 相手の表は空にする
 	}
-	if share == aibow.ShareUsers {
-		for _, n := range with {
-			var uid string
-			err := tx.QueryRowContext(ctx, "SELECT id FROM users WHERE name = ?", n).Scan(&uid)
-			if errors.Is(err, sql.ErrNoRows) {
-				return fmt.Errorf("共有の相手 %q という利用者はいません", n)
-			}
-			if err != nil {
-				return err
-			}
-			if uid == owner {
-				continue
-			}
-			if _, err := tx.ExecContext(ctx, "INSERT OR IGNORE INTO conversation_shares (conversation_id, user_id) VALUES (?, ?)", id.String(), uid); err != nil {
-				return err
-			}
-		}
+	if err := setShareTargets(ctx, tx, "conversation", "共有の相手", id, owner, with, groups); err != nil {
+		return err
 	}
 	return tx.Commit()
 }
 
 // conversationRefs は、ほかの人の会話の一覧(持ち主の名前付き)を where の条件で読む。
 func (s *SQLite) conversationRefs(ctx context.Context, where string, args ...any) ([]aibow.ConversationRef, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT conversations.id, conversations.title, COALESCE(u.name, ''), conversations.updated_at
+	rows, err := s.db.QueryContext(ctx, `SELECT conversations.id, conversations.title, COALESCE(u.name, ''), COALESCE(u.display_name, ''), conversations.updated_at, conversations.share
 		FROM conversations LEFT JOIN users u ON u.id = conversations.owner WHERE `+where+` ORDER BY conversations.updated_at DESC, conversations.id DESC`, args...)
 	if err != nil {
 		return nil, err
@@ -484,7 +611,7 @@ func (s *SQLite) conversationRefs(ctx context.Context, where string, args ...any
 	for rows.Next() {
 		var r aibow.ConversationRef
 		var id, updated string
-		if err := rows.Scan(&id, &r.Title, &r.OwnerName, &updated); err != nil {
+		if err := rows.Scan(&id, &r.Title, &r.OwnerName, &r.OwnerDisplay, &updated, &r.Share); err != nil {
 			return nil, err
 		}
 		if r.ID, err = parseID(id); err != nil {
@@ -526,9 +653,9 @@ func (s *SQLite) ReadConversation(ctx context.Context, id uuid.UUID) (aibow.Shar
 	var r aibow.SharedRead
 	var owner string
 	var shared bool
-	err = s.db.QueryRowContext(ctx, "SELECT conversations.owner, COALESCE(u.name, ''), "+conversationShared+
+	err = s.db.QueryRowContext(ctx, "SELECT conversations.owner, COALESCE(u.name, ''), COALESCE(u.display_name, ''), "+conversationShared+
 		" FROM conversations LEFT JOIN users u ON u.id = conversations.owner WHERE conversations.id = :id",
-		sql.Named("me", me), sql.Named("id", id.String())).Scan(&owner, &r.OwnerName, &shared)
+		sql.Named("me", me), sql.Named("id", id.String())).Scan(&owner, &r.OwnerName, &r.OwnerDisplay, &shared)
 	if errors.Is(err, sql.ErrNoRows) {
 		return r, aibow.ErrNotFound
 	}
@@ -542,7 +669,7 @@ func (s *SQLite) ReadConversation(ctx context.Context, id uuid.UUID) (aibow.Shar
 	if r.Conversation, err = scanConversation(s.db.QueryRowContext(ctx, conversationSelect+" WHERE id = ?", id.String())); err != nil {
 		return r, err
 	}
-	r.Conversation.Settings.WorkDir = "" // 持ち主の PC のパスは見せない
+	r.Conversation.Settings.Workspace, r.Conversation.Settings.WorkDir = "", "" // 持ち主の PC のフォルダは見せない(0035)
 	if r.Messages, err = s.messages(ctx, id); err != nil {
 		return r, err
 	}
@@ -556,24 +683,34 @@ func (s *SQLite) ReadConversation(ctx context.Context, id uuid.UUID) (aibow.Shar
 	return r, nil
 }
 
-func (s *SQLite) UserNames(ctx context.Context) ([]string, error) {
+func (s *SQLite) Directory(ctx context.Context) (aibow.Directory, error) {
+	d := aibow.Directory{Users: []aibow.UserRef{}}
 	if _, err := s.owner(ctx); err != nil {
-		return nil, err
+		return d, err
 	}
-	rows, err := s.db.QueryContext(ctx, "SELECT name FROM users WHERE id <> ? ORDER BY name", aibow.LocalUser.String())
+	if err := s.userRefs(ctx, &d); err != nil {
+		return d, err
+	}
+	// 接続は1本なので、人の rows を閉じてからグループを読む
+	var err error
+	d.Groups, err = s.groups(ctx)
+	return d, err
+}
+
+func (s *SQLite) userRefs(ctx context.Context, d *aibow.Directory) error {
+	rows, err := s.db.QueryContext(ctx, "SELECT name, display_name FROM users WHERE id <> ? ORDER BY name", aibow.LocalUser.String())
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer rows.Close()
-	out := []string{}
 	for rows.Next() {
-		var n string
-		if err := rows.Scan(&n); err != nil {
-			return nil, err
+		var u aibow.UserRef
+		if err := rows.Scan(&u.Name, &u.DisplayName); err != nil {
+			return err
 		}
-		out = append(out, n)
+		d.Users = append(d.Users, u)
 	}
-	return out, rows.Err()
+	return rows.Err()
 }
 
 func (s *SQLite) CreateConversation(ctx context.Context, c aibow.Conversation) error {
@@ -732,7 +869,43 @@ func (s *SQLite) messages(ctx context.Context, conv uuid.UUID) ([]aibow.StoredMe
 		}
 		out = append(out, m)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	// 読み込んだファイルは、発言を読み終えてから読む(接続は1本なので、発言の rows を開いたまま別に読むと待ち続ける)
+	rows.Close()
+	return out, s.attachFiles(ctx, conv, out)
+}
+
+// attachFiles は、会話 conv の発言に、読み込んだファイル(0030)を付ける。
+func (s *SQLite) attachFiles(ctx context.Context, conv uuid.UUID, ms []aibow.StoredMessage) error {
+	rows, err := s.db.QueryContext(ctx, `SELECT f.id, f.message_id, f.kind, f.name, f.format, f.hash, f.data, f.discarded
+		FROM files f JOIN messages m ON m.id = f.message_id WHERE m.conversation_id = ? ORDER BY f.id`, conv.String())
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	at := map[string]int{}
+	for i, m := range ms {
+		at[m.ID.String()] = i
+	}
+	for rows.Next() {
+		var f aibow.File
+		var id, msg string
+		if err := rows.Scan(&id, &msg, &f.Kind, &f.Name, &f.Format, &f.Hash, &f.Data, &f.Discarded); err != nil {
+			return err
+		}
+		if len(f.Data) == 0 {
+			f.Data = nil // 捨てたファイル(空の BLOB)
+		}
+		if f.ID, err = parseID(id); err != nil {
+			return err
+		}
+		if i, ok := at[msg]; ok {
+			ms[i].Files = append(ms[i].Files, f)
+		}
+	}
+	return rows.Err()
 }
 
 func (s *SQLite) AddMessage(ctx context.Context, m aibow.StoredMessage) error {
@@ -752,12 +925,31 @@ func (s *SQLite) AddMessage(ctx context.Context, m aibow.StoredMessage) error {
 	if err != nil {
 		return err
 	}
+	// 発言と読み込んだファイル(0030)は、1つのトランザクションで足す(ファイルだけが欠けた発言を残さない)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
 	// 会話がその人のものなときだけ足す(INSERT … SELECT … WHERE で、確かめるのと足すのを1つの文にする)
-	res, err := s.db.ExecContext(ctx, `INSERT INTO messages (id, conversation_id, role, content, thinking, model, stats, tool_calls, tool_result, excluded, created_at)
+	res, err := tx.ExecContext(ctx, `INSERT INTO messages (id, conversation_id, role, content, thinking, model, stats, tool_calls, tool_result, excluded, created_at)
 		SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE `+ownConversation,
 		m.ID.String(), m.ConversationID.String(), m.Role, m.Content, m.Thinking, m.Model, stats, calls, result, m.Excluded, formatTime(m.CreatedAt),
 		m.ConversationID.String(), owner)
-	return notFoundIfNone(res, err, aibow.ErrNotFound)
+	if err := notFoundIfNone(res, err, aibow.ErrNotFound); err != nil {
+		return err
+	}
+	for _, f := range m.Files {
+		data := f.Data
+		if data == nil {
+			data = []byte{} // 捨てたファイル(送り直す・写すで付いていく)。列は NOT NULL なので、NULL ではなく空の BLOB にする
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO files (id, message_id, kind, name, format, hash, data, discarded) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			f.ID.String(), m.ID.String(), f.Kind, f.Name, f.Format, f.Hash, data, f.Discarded); err != nil {
+			return fmt.Errorf("読み込んだファイル %s を保存できません: %w", f.Name, err)
+		}
+	}
+	return tx.Commit()
 }
 
 // DeleteMessages は発言を消す。返事1つ(ツールの結果を含む)は何件かになるので、まとめて1つのトランザクションで消す。
@@ -777,6 +969,18 @@ func (s *SQLite) DeleteMessages(ctx context.Context, ids []uuid.UUID) error {
 		}
 	}
 	return tx.Commit()
+}
+
+// DiscardFile は、ファイルの中身を空にして捨てた印を付ける(0030)。中身のあった場所は secure_delete でゼロに上書きされる。
+// 自分の会話のファイルだけ(発言を通して持ち主を確かめる)。
+func (s *SQLite) DiscardFile(ctx context.Context, id uuid.UUID) error {
+	owner, err := s.owner(ctx)
+	if err != nil {
+		return err
+	}
+	res, err := s.db.ExecContext(ctx, `UPDATE files SET data = x'', discarded = 1
+		WHERE id = ? AND message_id IN (SELECT id FROM messages WHERE `+ownMessage+`)`, id.String(), owner)
+	return notFoundIfNone(res, err, aibow.ErrNotFound)
 }
 
 // SetMessagesExcluded は発言の「モデルに渡さない」の印を変える。返事1つ(ツールの結果を含む)は何件かになるので、まとめて1つのトランザクションで書く。
@@ -887,8 +1091,12 @@ const profileColumns = "id, name, settings, rules, archived, created_at, updated
 
 const (
 	// profileVisible は、me に見える(新しい会話で選べる)プロファイル
+	// (:me が指定した人に入っている、または指定したグループのメンバー。0031 の決定事項 27)
 	profileVisible = `(profiles.owner = :me OR profiles.share = 'all'
-		OR (profiles.share = 'users' AND EXISTS (SELECT 1 FROM profile_shares s WHERE s.profile_id = profiles.id AND s.user_id = :me))
+		OR (profiles.share = 'users' AND (
+			EXISTS (SELECT 1 FROM profile_shares s WHERE s.profile_id = profiles.id AND s.user_id = :me)
+			OR EXISTS (SELECT 1 FROM profile_group_shares g JOIN user_group_members m ON m.group_id = g.group_id
+				WHERE g.profile_id = profiles.id AND m.user_id = :me)))
 		OR (profiles.share <> '' AND :admin = 1))`
 	// profileUsed は、me がそのプロファイルから作った会話がある(配られなくなっても決まりを引くため。決定事項 21)
 	profileUsed = `EXISTS (SELECT 1 FROM conversations c WHERE c.profile_id = profiles.id AND c.owner = :me)`
@@ -926,25 +1134,13 @@ func (s *SQLite) fillShareWith(ctx context.Context, p *aibow.Profile) error {
 	if p.ReadOnly || p.Share != aibow.ShareUsers {
 		return nil
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT u.name FROM profile_shares s JOIN users u ON u.id = s.user_id
-		WHERE s.profile_id = ? ORDER BY u.name`, p.ID.String())
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-	p.ShareWith = []string{}
-	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
-			return err
-		}
-		p.ShareWith = append(p.ShareWith, name)
-	}
-	return rows.Err()
+	var err error
+	p.ShareWith, p.ShareGroups, err = s.shareNames(ctx, "profile", p.Share, p.ID)
+	return err
 }
 
 // SetProfileShare は、配る範囲と相手を変える(aibow.Store の約束の説明を参照)。相手は名前で受け取り、いない名前ならエラー。
-func (s *SQLite) SetProfileShare(ctx context.Context, id uuid.UUID, share string, with []string) error {
+func (s *SQLite) SetProfileShare(ctx context.Context, id uuid.UUID, share string, with, groups []string) error {
 	args, me, err := s.profileArgs(ctx)
 	if err != nil {
 		return err
@@ -980,26 +1176,12 @@ func (s *SQLite) SetProfileShare(ctx context.Context, id uuid.UUID, share string
 		share, name, formatTime(time.Now()), id.String()); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, "DELETE FROM profile_shares WHERE profile_id = ?", id.String()); err != nil {
-		return err
+	if share != aibow.ShareUsers {
+		with, groups = nil, nil // 相手の表は空にする
 	}
-	if share == aibow.ShareUsers {
-		for _, n := range with {
-			var uid string
-			err := tx.QueryRowContext(ctx, "SELECT id FROM users WHERE name = ?", n).Scan(&uid)
-			if errors.Is(err, sql.ErrNoRows) {
-				return fmt.Errorf("配る相手 %q という利用者はいません", n)
-			}
-			if err != nil {
-				return err
-			}
-			if uid == me {
-				continue // 自分には配らなくても見える
-			}
-			if _, err := tx.ExecContext(ctx, "INSERT OR IGNORE INTO profile_shares (profile_id, user_id) VALUES (?, ?)", id.String(), uid); err != nil {
-				return err
-			}
-		}
+	// 自分は相手にしない(管理者なので、配らなくても見える)
+	if err := setShareTargets(ctx, tx, "profile", "配る相手", id, me, with, groups); err != nil {
+		return err
 	}
 	return tx.Commit()
 }

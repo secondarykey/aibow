@@ -7,13 +7,15 @@
 // MCP のサーバーのツールは中身が見えないので、全部確認する。差分の代わりに、サーバーに渡す引数(JSON)を出す。
 // MCP のツールは、名前の前にサーバーの名前を小さく出す(モデルに見せる名前は「サーバーの名前__ツールの名前」なので、前の部分は外して出す)。
 // 答えると Go の待っているループに届き、実行(か拒否)の結果が届いたら、ほかのカードと同じく畳んだ1行に戻る。
+// 作業の予定(update_plan。0037)は、引数と結果ではなく、予定のチェックリストとして出す(PlanCard)。
 import { useState } from "react";
-import { LuBan, LuCheck, LuHourglass, LuLoaderCircle, LuWrench, LuX } from "react-icons/lu";
+import { LuBan, LuCheck, LuFolder, LuHourglass, LuLoaderCircle, LuWrench, LuX } from "react-icons/lu";
 import { ToolPolicy } from "../../bindings/github.com/secondarykey/aibow";
 import type { ConfirmRequest } from "../../bindings/github.com/secondarykey/aibow";
 import type { ToolView } from "../transcript";
 import { CodeBlock } from "./CodeBlock";
 import { TOOL_LABELS } from "../toolLabels";
+import { PlanCard, planOf } from "./PlanCard";
 
 interface Props {
   tool: ToolView;
@@ -22,6 +24,8 @@ interface Props {
 }
 
 export function ToolCard({ tool, generating, onAnswer }: Props) {
+  const plan = planOf(tool);
+  if (plan) return <PlanCard items={plan} />;
   // 結果がまだ無いのは実行中(停止や上限で実行しなかったときも、結果は「エラー: …」として届く)
   const running = tool.result === undefined;
   const rejected = tool.decision?.approved === false;
@@ -87,11 +91,17 @@ function Confirm({ req, onAnswer }: { req: ConfirmRequest; onAnswer: Props["onAn
   return (
     <div className="confirm">
       <div className="confirm-target">
+        {/* ワークスペースのフォルダが複数のとき(0035)は、どのフォルダかを先に出す(メインでも) */}
+        {pv.folder && <span className="confirm-folder" title="ワークスペースのフォルダ"><LuFolder /> {pv.folder}</span>}
         {pv.path && <code>{pv.path}</code>}
         {pv.server && <code>{pv.server}</code>}
+        {/* URL を読む(fetch_url。0036)は、どこへ取りに行くか(ホスト)を先に出す */}
+        {pv.url && <code className="confirm-host">{hostOf(pv.url)}</code>}
         <span className={`confirm-note ${pv.note === "上書き" ? "overwrite" : ""}`}>{pv.note}</span>
       </div>
-      {pv.command
+      {pv.url
+        ? <p className="confirm-url"><code>{pv.url}</code></p>
+        : pv.command
         ? <CodeBlock code={pv.command} lang="" closed />
         : pv.diff // MCP のサーバー(aibow-mcp)が送ってきた差分も、組み込みと同じに出す
           ? <CodeBlock code={pv.diff.replace(/\n$/, "")} lang="diff" closed />
@@ -114,4 +124,13 @@ function Confirm({ req, onAnswer }: { req: ConfirmRequest; onAnswer: Props["onAn
       </div>
     </div>
   );
+}
+
+// hostOf は URL のホスト(読めなければ URL のまま)。
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
 }

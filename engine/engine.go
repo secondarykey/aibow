@@ -15,6 +15,9 @@ package engine
 //	4. トークン列をモデルに通す(decode)→ 次のトークンの確率が出る
 //	5. 確率から1つ選ぶ(sample)→ 文字に戻し、書式で思考・答え・ツール呼び出しに振り分けて画面へ → 4 に戻る
 //
+// 画像を付けたときは、3 でトークン列の代わりに「文字のトークン列と画像のチャンクの列」にし、4 で画像を埋め込みにして読ませる
+// (0030。chunks.go・vision.go)。
+//
 // llama.cpp の呼び出しには yzma(github.com/hybridgroup/yzma)を使っている。
 // yzma は llama.cpp の C の関数を Go からほぼそのまま呼べるようにするだけの薄い層。
 
@@ -28,6 +31,7 @@ import (
 	"time"
 
 	"github.com/hybridgroup/yzma/pkg/llama"
+	"github.com/hybridgroup/yzma/pkg/mtmd"
 
 	"github.com/secondarykey/aibow/format"
 	"github.com/secondarykey/aibow/models"
@@ -40,6 +44,12 @@ type Config struct {
 	NCtx      int    // 作業領域の大きさ: 一度に扱えるトークン数(プロンプト + 返事)。会話の上限 + 返事の上限(会話ごとに違う)
 	GPULayers int    // GPU に載せる層の数。モデルの層数以上なら全部 GPU
 	LlamaLog  bool   // llama.cpp 自身のログ(GPU への割り当てなど)を表示するか
+	// ImageMaxTokens は画像1枚のトークン数の上限(0030 の決定事項 22)。0 以下なら DefaultImageMaxTokens。
+	// 大きい画像は mtmd がこのトークン数に収まるよう縮める。mmproj を読み込むときに決まる(変えたらモデルを読み直す)
+	ImageMaxTokens int
+	// Seqs は作業領域の中のシーケンス(KV キャッシュの列)の数(0023)。1 以下なら1本(今までと同じ)。
+	// 2 以上なら作業領域(NCtx)をその数で等分し、同時に来た生成を1回の decode にまとめて進める(parallel.go)。aibow-server だけが使う(決定事項 3)
+	Seqs int
 }
 
 // GenerateOptions は1回の生成の設定(サンプリングと長さ)。会話ごとの設定から作る。
@@ -64,10 +74,15 @@ type ModelInfo struct {
 	SizeGB    float64 `json:"size_gb"`    // 重みのサイズ
 	Layers    int32   `json:"layers"`     // 層の数
 	GPULayers int     `json:"gpu_layers"` // GPU に載せる層の数(指定値)
-	NCtx      uint32  `json:"n_ctx"`      // 作業領域の大きさ(コンテキスト長)
+	NCtx      uint32  `json:"n_ctx"`      // 作業領域の大きさ(コンテキスト長)。シーケンスが2本以上なら1本あたり(1つの会話が使える大きさ。0023)
 	LoadSec   float64 `json:"load_sec"`   // 読み込みにかかった秒数
+	// Seqs は作業領域の中のシーケンスの数(2 以上のときだけ。0023)。NCtx × Seqs が作業領域の全体
+	Seqs int `json:"n_seq,omitempty"`
+	// Vision は画像を読めるか(書式が画像に対応していて、画像を読む部品 mmproj がある。0030)。mmproj は最初に画像を送ったときに読み込む
+	Vision bool `json:"vision,omitempty"`
 
 	path string // GGUF ファイルの場所(読み込みに失敗したとき、元に戻すために使う)
+	proj string // mmproj の GGUF の場所(同じく)
 }
 
 // GenerateStats は1回の生成の記録。画面の統計行に出す。
@@ -79,6 +94,15 @@ type GenerateStats struct {
 	GenTokens    int     `json:"gen_tokens"`    // 生成したトークン数(思考 + 答え)
 	GenSec       float64 `json:"gen_sec"`       // 生成にかかった秒数
 	StopReason   string  `json:"stop_reason"`   // eos / length / context / cancel / stop(書式が決めた位置で止めた)
+	// シーケンスが2本以上のとき(0023)。Seq は使ったシーケンスの番号、Mixed はこの生成の decode に一番多く混ざった生成の数(自分を含む。1本なら 0)
+	Seq   int `json:"seq,omitempty"`
+	Mixed int `json:"mixed,omitempty"`
+	// 画像(0030)。ImageTokens は PromptTokens のうち画像の分、EncodeSec は今回エンコードした画像の秒数(使い回した画像は入らない)。
+	// ProjectorSec はこの回に mmproj を読み込んだ秒数(読み込んだ回だけ)、ProjectorCPU は GPU に載らず CPU に載せたか(その回だけ。画面のお知らせに使う)
+	ImageTokens  int     `json:"image_tokens,omitempty"`
+	EncodeSec    float64 `json:"encode_sec,omitempty"`
+	ProjectorSec float64 `json:"projector_sec,omitempty"`
+	ProjectorCPU bool    `json:"projector_cpu,omitempty"`
 }
 
 // Engine は llama.cpp と、今読み込んでいるモデル1つ、その作業領域(コンテキスト)を持つ。
@@ -88,8 +112,9 @@ type Engine struct {
 	Devices []string // llama.cpp が見つけた計算装置
 	HasGPU  bool     // GPU が見つかったか
 
-	// 生成とモデルの入れ替えは同時にできない(作業領域が1つしかないため)
-	mu    sync.Mutex
+	// 生成とモデルの入れ替えは同時にできない(作業領域が1つしかないため)。
+	// シーケンスが1本なら生成も Lock(1つずつ)。2本以上なら生成は RLock で同時に入り、decode は係(schedule)が1つずつ行う(parallel.go)
+	mu    sync.RWMutex
 	model llama.Model // 0 なら未読み込み
 	vocab llama.Vocab // 書き換えるときは mu と vocabMu の両方を持つ
 	// format はモデルの書式。未対応の種類のモデルなら nil。vocab と同じく mu と vocabMu の両方で守る
@@ -108,10 +133,19 @@ type Engine struct {
 	// 入れ替えの間は、前のモデルを解放してから読み込むので info が nil になる。降ろした(何も無い)のと見分けるために持つ
 	loading atomic.Pointer[string]
 
-	// cached は、今 KV キャッシュに入っているトークン列。
-	// KV キャッシュ = モデルが読み終えたトークンの計算結果の置き場。
-	// 次の質問のプロンプトが同じところから始まっていれば、そこは計算し直さずに済む。
-	cached []llama.Token
+	// seqs は作業領域の中のシーケンス(sequence.go)。1本なら seqs[0] だけ。
+	// それぞれが、今 KV キャッシュに入っているものの記録を持つ(KV キャッシュ = モデルが読み終えたトークンの計算結果の置き場)。
+	// 書き換える(作り直す)ときは mu を Lock で持つ。どれを使っているか(busy)は seqMu で守る
+	seqs  []*sequence
+	seqMu sync.Mutex
+	// rollback は、KV キャッシュを途中から捨てられるモデルか(Qwen3.5 などハイブリッド・再帰の層を持つモデルは捨てられない)。シーケンスの選び方で使う
+	rollback bool
+	// jobs は、シーケンスが2本以上のとき、decode を回す係(schedule)に生成を渡す口(parallel.go)
+	jobs chan *job
+
+	// vision は画像を読む部品(mmproj。0030)。mtmdErr は mtmd のライブラリを読めなかった理由(画像を送ったときに伝える。文字の会話は止めない)
+	vision  projector
+	mtmdErr error
 }
 
 // 一度に decode するトークン数の上限。長いプロンプトはこの単位に区切って読ませる。
@@ -131,12 +165,22 @@ func New(cfg Config) (*Engine, error) {
 	if !cfg.LlamaLog {
 		llama.LogSet(llama.LogSilent())
 	}
+	// 画像を読むライブラリ(mtmd.dll。0030)。読めなくても文字の会話はできるので、理由を覚えておき、画像を送ったときに伝える
+	mtmdErr := mtmd.Load(cfg.LibPath)
+	if mtmdErr == nil && !cfg.LlamaLog {
+		mtmd.LogSet(llama.LogSilent())
+	}
 	// Init で、lib フォルダにある計算用のバックエンド(ggml-cpu.dll / ggml-cuda.dll など)が読み込まれる
 	if err := llama.Init(); err != nil {
 		return nil, fmt.Errorf("llama.cpp の初期化に失敗しました: %w", err)
 	}
-	e := &Engine{cfg: cfg}
+	e := &Engine{cfg: cfg, mtmdErr: mtmdErr}
 	e.Devices, e.HasGPU = listDevices()
+	e.resetSeqs()
+	if e.parallel() {
+		e.jobs = make(chan *job)
+		go e.schedule()
+	}
 	return e, nil
 }
 
@@ -274,7 +318,7 @@ func (e *Engine) EnsureContextSize(n int) (bool, error) {
 	// 先に今の作業領域を解放する(VRAM に新旧2つ分は載らないことがあるため)
 	llama.Free(e.lctx)
 	e.lctx = 0
-	e.cached = nil
+	e.resetSeqs()
 
 	lctx, err := e.newContext()
 	if err != nil {
@@ -291,7 +335,7 @@ func (e *Engine) EnsureContextSize(n int) (bool, error) {
 	e.lctx = lctx
 
 	info := *e.info.Load() // 読み込み中の情報を写して、コンテキスト長だけ書き換える
-	info.NCtx = llama.NCtx(lctx)
+	info.NCtx = llama.NCtxSeq(lctx)
 	e.info.Store(&info)
 	return true, nil
 }
@@ -327,7 +371,11 @@ func (e *Engine) load(m models.Entry) (*ModelInfo, error) {
 	e.vocab = llama.ModelGetVocab(model)
 	e.format, e.arch = f, arch
 	e.vocabMu.Unlock()
-	e.cached = nil // 新しい作業領域なので KV キャッシュは空
+	e.vision.mu.Lock()
+	e.vision.path = m.Projector // mmproj は最初に画像を送ったときに読み込む(0030 の決定事項 13)
+	e.vision.mu.Unlock()
+	e.resetSeqs() // 新しい作業領域なので KV キャッシュは空
+	e.rollback = !llama.ModelIsHybrid(model) && !llama.ModelIsRecurrent(model)
 	info := &ModelInfo{
 		ID:        m.ID,
 		Name:      m.Name,
@@ -337,12 +385,17 @@ func (e *Engine) load(m models.Entry) (*ModelInfo, error) {
 		SizeGB:    float64(llama.ModelSize(model)) / (1 << 30),
 		Layers:    llama.ModelNLayer(model),
 		GPULayers: e.cfg.GPULayers,
-		NCtx:      llama.NCtx(lctx),
+		NCtx:      llama.NCtxSeq(lctx),
 		LoadSec:   time.Since(start).Seconds(),
 		path:      m.Path,
+		proj:      m.Projector,
+	}
+	if n := llama.NSeqMax(lctx); n > 1 {
+		info.Seqs = int(n)
 	}
 	if f != nil {
 		info.Format = f.Name()
+		info.Vision = m.Projector != "" && format.ReadsImages(f)
 	}
 	e.info.Store(info)
 	return info, nil
@@ -357,6 +410,8 @@ func (e *Engine) newContext() (llama.Context, error) {
 	cp.NCtx = uint32(e.cfg.NCtx)
 	cp.NBatch = batchSize
 	cp.NUbatch = batchSize
+	// シーケンスの数。作業領域は等分される(KVUnified で分け合う形は使わない。決定事項 2)
+	cp.NSeqMax = uint32(len(e.seqs))
 	lctx, err := llama.InitFromModel(e.model, cp)
 	if err != nil || lctx == 0 {
 		return 0, fmt.Errorf("コンテキスト(長さ %d)を作れません。VRAM が足りない可能性があります。"+
@@ -367,11 +422,13 @@ func (e *Engine) newContext() (llama.Context, error) {
 
 // entry は、読み込み中のモデルを読み直すための models.Entry を返す。
 func (i *ModelInfo) entry() models.Entry {
-	return models.Entry{ID: i.ID, Name: i.Name, Path: i.path}
+	return models.Entry{ID: i.ID, Name: i.Name, Path: i.path, Projector: i.proj}
 }
 
 // unload はモデルと作業領域を解放する(VRAM が空く)。e.mu を持った状態で呼ぶ。
 func (e *Engine) unload() {
+	// mmproj は本体のモデルを使うので、先に解放する
+	e.freeProjector()
 	if e.lctx != 0 {
 		llama.Free(e.lctx)
 		e.lctx = 0
@@ -385,8 +442,19 @@ func (e *Engine) unload() {
 		e.model = 0
 		e.vocabMu.Unlock()
 	}
-	e.cached = nil
+	e.resetSeqs()
 	e.info.Store(nil)
+}
+
+// parallel は、シーケンスが2本以上か(0023)。
+func (e *Engine) parallel() bool { return e.cfg.Seqs > 1 }
+
+// resetSeqs はシーケンスの記録を空にする(作業領域を作り直した・解放したとき)。mu を Lock で持った状態か、作るときに呼ぶ。
+func (e *Engine) resetSeqs() {
+	e.seqs = make([]*sequence, max(1, e.cfg.Seqs))
+	for k := range e.seqs {
+		e.seqs[k] = &sequence{id: llama.SeqId(k)}
+	}
 }
 
 // CountTokens は、p に書式を当てた文字列(= 実際にモデルに渡す文字列)のトークン数を数える。
@@ -395,6 +463,8 @@ func (e *Engine) unload() {
 // 同じ文章でも、モデル(の語彙と書式)が変わればトークン数は変わる。会話の仕組みは、上限に収まっているかを
 // この数で判断する(数を保存して使い回さず、毎回、今のモデルで数え直す)。
 // 特別なトークン(<|im_start|> など)は1トークンとして数える(Generate と同じ数え方)。
+// 画像は、KV キャッシュで使うマスの数(画像トークン数)で数える。画像の中身は読まず大きさだけで数えるが、mmproj は要る
+// (画像トークン数は mmproj の作りで決まる。0030 の決定事項 15。まだなら読み込む)。
 func (e *Engine) CountTokens(p format.Prompt) (int, error) {
 	e.vocabMu.RLock()
 	defer e.vocabMu.RUnlock()
@@ -404,7 +474,12 @@ func (e *Engine) CountTokens(p format.Prompt) (int, error) {
 	if e.format == nil {
 		return 0, format.Unsupported(e.arch)
 	}
-	return len(e.tokenize(e.format.BuildPrompt(p))), nil
+	chunks, free, err := e.input(p, e.format.BuildPrompt(p), true)
+	if err != nil {
+		return 0, err
+	}
+	free()
+	return cells(chunks), nil
 }
 
 // ApplyTemplate は、p に書式を当てた文字列(= 実際にモデルに渡す文字列)を返す。モデルが読み込まれていないと当てられない
@@ -433,6 +508,10 @@ func (e *Engine) tokenize(text string) []llama.Token {
 func (e *Engine) Close() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	if e.jobs != nil {
+		close(e.jobs) // 生成中は Close できない(mu)ので、係は何も持っていない。閉じれば係が終わる
+		e.jobs = nil
+	}
 	e.unload()
 	llama.Close()
 }
@@ -448,6 +527,9 @@ func (e *Engine) Generate(
 	onPrompt func(prompt string),
 	onThinking, onContent func(text string),
 ) (format.Output, GenerateStats, error) {
+	if e.parallel() {
+		return e.generateParallel(ctx, p, opt, onPrompt, onThinking, onContent)
+	}
 	var st GenerateStats
 	if !e.mu.TryLock() {
 		return format.Output{}, st, ErrBusy
@@ -460,26 +542,31 @@ func (e *Engine) Generate(
 		return format.Output{}, st, format.Unsupported(e.arch)
 	}
 
-	// 3. 会話 → 文字列(書式を当てる)→ トークン列
+	// 3. 会話 → 文字列(書式を当てる)→ トークン列(画像があれば、文字のトークン列と画像のチャンクの列。chunks.go)
 	prompt := e.format.BuildPrompt(p)
 	onPrompt(prompt)
-	tokens := e.tokenize(prompt)
-	st.PromptTokens = len(tokens)
+	start := time.Now()
+	input, free, err := e.input(p, prompt, false)
+	if err != nil {
+		return format.Output{}, st, err
+	}
+	defer free()
+	st.PromptTokens = cells(input)
+	st.ImageTokens = imageTokens(input)
+	st.ProjectorSec, st.ProjectorCPU = e.takeProjectorLoad()
 
-	nCtx := int(llama.NCtx(e.lctx))
-	if len(tokens) >= nCtx {
-		// 会話の仕組み(compact.go)が会話の上限に収めてから渡すので、ふつうはここに来ない
-		return format.Output{}, st, fmt.Errorf("会話が長すぎます(%d トークン / 作業領域 %d)。新しい会話で始め直すか、設定の会話の上限を増やしてください", len(tokens), nCtx)
+	nCtx := int(llama.NCtxSeq(e.lctx))
+	if err := tooLong(st.PromptTokens, nCtx); err != nil {
+		return format.Output{}, st, err
 	}
 
-	// 4. プロンプトをモデルに読ませる。KV キャッシュに残っている部分は飛ばす。
-	start := time.Now()
-	st.ReusedTokens = e.reuseCache(tokens)
-	for i := st.ReusedTokens; i < len(tokens); i += batchSize {
-		end := min(i+batchSize, len(tokens))
-		if err := e.decode(tokens[i:end]); err != nil {
-			return format.Output{}, st, err
-		}
+	// 4. プロンプトをモデルに読ませる。KV キャッシュに残っている部分(画像も)は飛ばす。
+	s := e.seqs[0]
+	from, off, reused := e.reuseCache(s, input)
+	st.ReusedTokens = reused
+	st.EncodeSec, err = e.feed(s, input, from, off)
+	if err != nil {
+		return format.Output{}, st, err
 	}
 	st.PromptSec = time.Since(start).Seconds()
 
@@ -506,7 +593,7 @@ func (e *Engine) Generate(
 			st.StopReason = "cancel"
 			break
 		}
-		if len(e.cached) >= nCtx {
+		if cells(s.cached) >= nCtx {
 			st.StopReason = "context"
 			break
 		}
@@ -530,7 +617,7 @@ func (e *Engine) Generate(
 		}
 
 		// 選んだトークンをモデルに読ませて、その次の確率を計算させる
-		if err := e.decode([]llama.Token{tok}); err != nil {
+		if err := e.decode(s, []llama.Token{tok}); err != nil {
 			return format.Output{}, st, err
 		}
 	}
@@ -540,47 +627,13 @@ func (e *Engine) Generate(
 	return parser.Result(), st, nil
 }
 
-// decode はトークン列をモデルに通し、KV キャッシュに追加する。
-func (e *Engine) decode(tokens []llama.Token) error {
-	rc, err := llama.Decode(e.lctx, llama.BatchGetOne(tokens))
-	if err != nil {
-		return err
+// tooLong は、プロンプト n トークンが作業領域(1本あたり nCtx)に入らないときのエラー。
+// 会話の仕組み(compact.go)が会話の上限に収めてから渡すので、ふつうはここに来ない
+func tooLong(n, nCtx int) error {
+	if n < nCtx {
+		return nil
 	}
-	if rc != 0 {
-		// 1 はキャッシュに空きがない、負の値はそれ以外のエラー
-		return fmt.Errorf("decode に失敗しました(戻り値 %d)。コンテキストが足りない可能性があります", rc)
-	}
-	e.cached = append(e.cached, tokens...)
-	return nil
-}
-
-// reuseCache は、KV キャッシュの中身と新しいプロンプトの共通部分を残し、
-// 残りを捨てる。再利用できたトークン数を返す。
-//
-// 例えば前回のプロンプトの続きに新しい発言が足されただけなら、前回分は計算し直さずに済む。
-// ただし Qwen3.5 は一部の層が「途中まで巻き戻せない」仕組み(線形アテンション)なので、
-// 途中から捨てられない場合は全部捨てて最初から読ませる。
-func (e *Engine) reuseCache(tokens []llama.Token) int {
-	n := 0
-	for n < len(e.cached) && n < len(tokens) && e.cached[n] == tokens[n] {
-		n++
-	}
-	// 最後の1トークンは必ず読ませ直す(そうしないと「次の確率」が計算されない)
-	n = min(n, len(tokens)-1)
-
-	mem, err := llama.GetMemory(e.lctx)
-	if err != nil {
-		return 0
-	}
-	if n < len(e.cached) {
-		ok, _ := llama.MemorySeqRm(mem, 0, llama.Pos(n), -1)
-		if !ok {
-			llama.MemoryClear(mem, true)
-			n = 0
-		}
-		e.cached = e.cached[:n]
-	}
-	return n
+	return fmt.Errorf("会話が長すぎます(%d トークン / 作業領域 %d)。新しい会話で始め直すか、設定の会話の上限を増やしてください", n, nCtx)
 }
 
 // tokenBytes はトークンを元のバイト列に戻す。

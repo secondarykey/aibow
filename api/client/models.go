@@ -208,7 +208,7 @@ func (e *ContextError) HasRemedy() bool { return true }
 
 func (e *ContextError) Error() string {
 	return fmt.Sprintf("会話の上限 + 返事の上限(%d トークン)が、aibow-server の作業領域(%d トークン)に入りません。"+
-		"会話の上限か返事の上限を下げるか、aibow-server を -ctx(設定ファイルの ctx)で大きくして起動し直してください", e.Need, e.Have)
+		"会話の上限か返事の上限を下げるか、aibow-server を -ctx(設定ファイルの ctx)で大きくするか -parallel(parallel)を減らして起動し直してください", e.Need, e.Have)
 }
 
 // IsContextError は err が ContextError か。

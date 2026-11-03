@@ -94,7 +94,7 @@ func TestFilesCannotFollowSymlinkOutside(t *testing.T) {
 		t.Fatal(err)
 	}
 	checkLinkOutside(t, dir, "out/secret.txt", "rel.txt")
-	if got, err := run(t, readFile{dir}, "path", "ok.txt"); err != nil || got != "1\tinside" {
+	if got, err := run(t, readFile{one(dir)}, "path", "ok.txt"); err != nil || got != "1\tinside" {
 		t.Errorf("中を指すリンクは読める: %q, %v", got, err)
 	}
 }
@@ -116,7 +116,7 @@ func TestFilesCannotFollowJunctionOutside(t *testing.T) {
 // checkLinkOutside は、外を指すリンク out(フォルダ)と paths を、読むことも並べることもできないのを確かめる
 func checkLinkOutside(t *testing.T, dir string, paths ...string) {
 	t.Helper()
-	read, list := readFile{dir}, listFiles{dir}
+	read, list := readFile{one(dir)}, listFiles{one(dir)}
 	for _, p := range paths {
 		if got, err := run(t, read, "path", p); err == nil || !strings.Contains(err.Error(), "作業フォルダの外") {
 			t.Errorf("read_file %s = %q, %v(外を指すリンクはエラーのはず)", p, got, err)
@@ -137,7 +137,7 @@ func TestListFiles(t *testing.T) {
 		".git/HEAD": "", "web/node_modules/m/i.js": "", "web/app.ts": "", ".gitignore": "",
 		".claude/worktrees/x/a.go": "", ".vscode/settings.json": "", ".env": "",
 	})
-	tl := listFiles{dir}
+	tl := listFiles{one(dir)}
 	// 浅い順(直下を全部 → 1つ下を全部 → …)。それぞれの中は名前の順。
 	// .git と node_modules は名前も出さない。隠しフォルダは名前だけ出して中に入らない。隠しファイルは出す
 	want := strings.Join([]string{
@@ -171,14 +171,14 @@ func TestListFilesLimit(t *testing.T) {
 	for i := range listMax + 1 {
 		files[fmt.Sprintf("f%04d.txt", i)] = ""
 	}
-	got, err := run(t, listFiles{workDir(t, files)})
+	got, err := run(t, listFiles{one(workDir(t, files))})
 	lines := strings.Split(got, "\n")
 	if err != nil || len(lines) != listMax+1 || lines[listMax-1] != fmt.Sprintf("f%04d.txt", listMax-1) || !strings.Contains(lines[listMax], "切りました") {
 		t.Errorf("%d 行(最後: %q), %v", len(lines), lines[len(lines)-1], err)
 	}
 	// ちょうど上限なら、切った旨は書かない
 	delete(files, fmt.Sprintf("f%04d.txt", listMax))
-	if got, _ := run(t, listFiles{workDir(t, files)}); strings.Contains(got, "切りました") {
+	if got, _ := run(t, listFiles{one(workDir(t, files))}); strings.Contains(got, "切りました") {
 		t.Error("ちょうど上限で「切りました」が出ています")
 	}
 
@@ -187,7 +187,7 @@ func TestListFilesLimit(t *testing.T) {
 	for i := range 100 {
 		files[fmt.Sprintf("%s%03d.txt", strings.Repeat("x", 92), i)] = "" // 改行を足して 100 文字
 	}
-	got, err = run(t, listFiles{workDir(t, files)})
+	got, err = run(t, listFiles{one(workDir(t, files))})
 	lines = strings.Split(got, "\n")
 	if err != nil || len(lines) != listMaxRunes/100+1 || !strings.Contains(lines[len(lines)-1], "切りました") {
 		t.Errorf("文字数: %d 行(最後: %q), %v", len(lines), lines[len(lines)-1], err)
@@ -210,7 +210,7 @@ func TestReadFile(t *testing.T) {
 		"sjis.txt": "\x82\xa0", // Shift_JIS の「あ」
 		"sub/":     "",
 	})
-	tl := readFile{dir}
+	tl := readFile{one(dir)}
 
 	if got, err := run(t, tl, "path", "main.go"); err != nil || got != "1\tpackage main\n2\t\n3\tfunc main() {}" {
 		t.Errorf("main.go: %q, %v", got, err)
@@ -267,8 +267,9 @@ func TestReadFile(t *testing.T) {
 func TestFilesWorkDirGone(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "gone")
 	args := map[string][]string{
-		"write_file": {"path", "a.txt", "content", "x"},
-		"edit_file":  {"path", "a.txt", "old_string", "a", "new_string", "b"},
+		"write_file":   {"path", "a.txt", "content", "x"},
+		"edit_file":    {"path", "a.txt", "old_string", "a", "new_string", "b"},
+		"search_files": {"pattern", "x"},
 	}
 	for _, tl := range Files(dir) {
 		kv, ok := args[tl.Def().Name]
@@ -290,4 +291,9 @@ func TestCheckArgsConvertsNumbers(t *testing.T) {
 	if _, err := CheckArgs(def, []Arg{{"path", "a"}, {"limit", "1.5"}}); err == nil || !strings.Contains(err.Error(), "limit") {
 		t.Errorf("整数でない: %v", err)
 	}
+}
+
+// one は、フォルダ dir 1つ(メイン・書く)の組(Files と同じ)。
+func one(dir string) folderSet {
+	return folderSet{{Name: "work", Path: dir, Main: true, Writable: true}}
 }

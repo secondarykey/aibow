@@ -29,11 +29,11 @@ const (
 )
 
 type readFile struct {
-	dir string // 作業フォルダ(絶対パス)
+	folders folderSet // 作業フォルダ(ワークスペースのフォルダの組)
 }
 
-func (readFile) Def() Def {
-	return Def{
+func (t readFile) Def() Def {
+	return t.folders.withFolder(Def{
 		Name: "read_file",
 		Description: "Read a text file in the working directory. Each line is prefixed with its line number and a tab. " +
 			"Reads at most 200 lines at a time; use offset to read the rest. Lines longer than 1000 characters are split into several numbered lines.",
@@ -41,15 +41,16 @@ func (readFile) Def() Def {
 			`"path": {"type": "string", "description": "File path relative to the working directory."}, ` +
 			`"offset": {"type": "integer", "description": "Line number to start reading from (1-based). Default 1."}, ` +
 			`"limit": {"type": "integer", "description": "Number of lines to read. Default and maximum 200."}}, "required": ["path"]}`),
-	}
+	})
 }
 
 func (t readFile) Run(ctx context.Context, args Args) (string, error) {
-	p, err := localPath(t.dir, args.String("path"))
+	tg, err := t.folders.resolve(args)
 	if err != nil {
 		return "", err
 	}
-	root, err := openRoot(t.dir)
+	p := tg.path
+	root, err := openRoot(tg.dir())
 	if err != nil {
 		return "", err
 	}
@@ -59,7 +60,7 @@ func (t readFile) Run(ctx context.Context, args Args) (string, error) {
 	case err != nil:
 		return "", err
 	case !exists:
-		return "", fmt.Errorf("%s は見つかりません。list_files で、ある場所を確かめてください", p)
+		return "", fmt.Errorf("%s は見つかりません。list_files で、ある場所を確かめてください%s", p, t.folders.elsewhere(tg, false))
 	}
 	return readLines(p, text, args.Int("offset", 1), args.Int("limit", readMaxLines))
 }

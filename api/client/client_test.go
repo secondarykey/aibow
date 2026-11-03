@@ -6,6 +6,8 @@ package client
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net"
@@ -17,10 +19,12 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"uuid"
 
 	"github.com/secondarykey/aibow/api"
 	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/format"
+	"github.com/secondarykey/aibow/genlog"
 	"github.com/secondarykey/aibow/models"
 	"github.com/secondarykey/aibow/tool"
 )
@@ -37,6 +41,7 @@ type fakeGen struct {
 	started chan struct{}
 	err     error  // nil でなければ、数えるときにこのエラーを返す
 	loading string // 入れ替えている先のモデル(Loading が返す)
+	jobs    []genlog.Job
 }
 
 func (f *fakeGen) Loading() string {
@@ -68,6 +73,7 @@ func (f *fakeGen) Generate(ctx context.Context, p format.Prompt, opt engine.Gene
 	f.mu.Lock()
 	f.prompts = append(f.prompts, p)
 	f.opts = append(f.opts, opt)
+	f.jobs = append(f.jobs, genlog.JobOf(ctx))
 	f.mu.Unlock()
 	onPrompt("<prompt>")
 	if f.started != nil {
@@ -372,11 +378,13 @@ func TestUnloadAndPlaces(t *testing.T) {
 	}
 }
 
-// モデルが無い・書式に未対応のときは、HTTP 越しでも手元と同じエラーとして見分けられる(画面はメーターを出さないだけにする)
+// モデルが無い・書式に未対応・画像を読めないときは、HTTP 越しでも手元と同じエラーとして見分けられる(画面はメーターを出さないだけにする)
 func TestModelErrors(t *testing.T) {
 	for _, tc := range []struct{ err, is error }{
 		{engine.ErrNoModel, engine.ErrNoModel},
 		{format.Unsupported("gemma4"), format.ErrUnsupported},
+		{engine.VisionError("今のモデルは画像に対応していません(書式 Gemma 4)。画像に対応したモデルに切り替えてください"), engine.ErrNoVision},
+		{engine.ErrNoVision, engine.ErrNoVision},
 	} {
 		c, _ := newServer(t, &fakeGen{err: tc.err})
 		_, err := c.CountTokens(format.Prompt{Messages: []format.Message{{Role: "user", Content: "hi"}}})
@@ -435,6 +443,27 @@ func TestGenerateAsksKnownModel(t *testing.T) {
 	}
 }
 
+// 会話の仕組みが付けた付箋(要約か・会話の ID)を aibow 欄で送り、サーバーはアプリの道として受け取る(使用量の記録。0033)
+func TestGenerateSendsJob(t *testing.T) {
+	g := &fakeGen{id: "ollama:qwen3.5:4b", st: engine.GenerateStats{StopReason: "eos"}}
+	c, _ := newServer(t, g)
+	conv := uuid.NewV7()
+	p := format.Prompt{Messages: []format.Message{{Role: "user", Content: "hi"}}}
+	nop := func(string) {}
+	for _, ctx := range []context.Context{genlog.WithPurpose(context.Background(), genlog.PurposeSummary, conv), context.Background()} {
+		if _, _, err := c.Generate(ctx, p, engine.GenerateOptions{MaxTokens: 5}, nop, nop, nop); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want := []genlog.Job{
+		{Route: genlog.RouteApp, Purpose: genlog.PurposeSummary, Conversation: conv},
+		{Route: genlog.RouteApp, Purpose: genlog.PurposeReply}, // 付箋が無ければ返事
+	}
+	if !slices.Equal(g.jobs, want) {
+		t.Errorf("サーバーが受け取った付箋: %+v(期待: %+v)", g.jobs, want)
+	}
+}
+
 // API キーを決めると、毎回のリクエストに Authorization: Bearer <キー> を付ける(0017 の 10-2)。サーバーが断れば、その理由の文がエラーになる
 func TestKey(t *testing.T) {
 	var got string
@@ -456,5 +485,32 @@ func TestKey(t *testing.T) {
 	c.SetKey(" aibow_test ")
 	if _, err := c.Models(); err != nil || got != "Bearer aibow_test" {
 		t.Errorf("キーあり: %q %v", got, err)
+	}
+}
+
+// 画像の付いた会話(0030)も、会話 → JSON(image_url の data: URL)→ 会話 で変わらない。
+// サーバーは中身の SHA-256 を ID にするので、会話の仕組みが付けた ID(File.Hash)と同じになる(サーバーの KV キャッシュで同じ画像と分かる)
+func TestRoundTripImages(t *testing.T) {
+	g := &fakeGen{st: engine.GenerateStats{StopReason: "eos"}}
+	c, _ := newServer(t, g)
+	img := func(data string) format.Image {
+		sum := sha256.Sum256([]byte(data))
+		return format.Image{ID: hex.EncodeToString(sum[:]), Format: "image/png", Data: []byte(data)}
+	}
+	p := format.Prompt{Messages: []format.Message{
+		{Role: "user", Content: "  2枚の違いは?", Images: []format.Image{img("a"), img("b")}},
+		{Role: "assistant", Content: "色"},
+		{Role: "user", Content: "", Images: []format.Image{img("c")}},
+	}}
+	if _, _, err := c.Generate(context.Background(), p, engine.GenerateOptions{MaxTokens: 10},
+		func(string) {}, func(string) {}, func(string) {}); err != nil {
+		t.Fatal(err)
+	}
+	if a, b := jsonOf(g.prompts[0].Messages), jsonOf(p.Messages); a != b {
+		t.Errorf("会話が変わった:\n got  %s\n want %s", a, b)
+	}
+	f := format.For("qwen35")
+	if a, b := f.BuildPrompt(g.prompts[0]), f.BuildPrompt(p); a != b {
+		t.Errorf("書式を当てた文字列が変わった:\n got  %q\n want %q", a, b)
 	}
 }

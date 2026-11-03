@@ -40,6 +40,50 @@ type Message struct {
 	Thinking  string     `json:"thinking,omitempty"`
 	ToolCalls []ToolCall `json:"tool_calls,omitempty"`
 	Name      string     `json:"name,omitempty"`
+	// Images は発言に付けた画像(user のみ。0030)。書式は画像の場所に印(ImageMarker)を書くだけで、バイト列は見ない。
+	// エンジンが、プロンプトの中の印の順に画像を並べて読ませる(印の順 = 発言の順 → 発言の中の Images の順)
+	Images []Image `json:"images,omitempty"`
+}
+
+// Image は発言に付けた画像1枚(0030)。
+type Image struct {
+	// ID は画像を見分ける値(中身のハッシュ)。エンジンは KV キャッシュに入っている画像と同じかを、トークンではなくこれで比べる
+	ID     string `json:"id"`
+	Format string `json:"format"` // 形式(image/png など。記録のため。読むのは llama.cpp が中身から決める)
+	Data   []byte `json:"data"`
+}
+
+// ImageMarker は、プロンプトの中で画像の場所を表す印(llama.cpp の mtmd の既定の印 mtmd_default_marker と同じ)。
+//
+// 画像の中身は文字列に入らない。エンジンが印のところを「始まりの印 + 画像の埋め込み(何百トークン分)+ 終わりの印」に置き換える
+// (Qwen3.5 は <|vision_start|> … <|vision_end|>。始まりと終わりの印は mtmd が足すので、書式は書かない)。
+// そのため、画像のあるプロンプトは、文字列とトークン列が1対1でなくなる(文字のかたまりと画像が交互に並ぶ列になる)。
+const ImageMarker = "<__media__>"
+
+// ReadsImages は、書式が画像の印を書くか(画像を付けた発言を扱えるか)。
+// 画像を書ける書式は WritesImages() bool を持つ。持たない書式で画像の付いた発言を送ったら、エンジンがエラーにする(黙って画像を捨てない。0030 の決定事項 12)。
+func ReadsImages(f Format) bool {
+	w, ok := f.(interface{ WritesImages() bool })
+	return ok && w.WritesImages()
+}
+
+// HasImages は、プロンプトに画像の付いた発言があるか。
+func HasImages(p Prompt) bool {
+	for _, m := range p.Messages {
+		if len(m.Images) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// Images は、プロンプトの画像を、書式が印を書く順(発言の順・発言の中の順)に並べたもの。
+func Images(p Prompt) []Image {
+	var out []Image
+	for _, m := range p.Messages {
+		out = append(out, m.Images...)
+	}
+	return out
 }
 
 // Prompt はモデルに渡す内容を、書式を当てる前の「構造」のまま持つ。

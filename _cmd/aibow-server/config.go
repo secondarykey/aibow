@@ -48,12 +48,16 @@ const (
 	// defaultCtx は作業領域の大きさ(プロンプト + 返事のトークン数)。アプリ(会話の上限 8192 + 返事の上限 8192)より大きいのは、
 	// Cline などのシステムプロンプトが長いため。Qwen3.5 は KV キャッシュを持たない層(線形アテンション)が多く、8GB でも載る見込み
 	defaultCtx = 32768
+	// defaultParallel は作業領域の中のシーケンスの数(同時に生成できる数。0023)。1 なら今までと同じ(1人ずつ)
+	defaultParallel = 1
 )
 
 // configFile は server.json の中身。書いていない欄は空(0)で、そのときは環境変数か既定を使う。
 type configFile struct {
-	Port      int    `json:"port"`      // 待ち受けのポート
-	Ctx       int    `json:"ctx"`       // 作業領域の大きさ
+	Port int `json:"port"` // 待ち受けのポート
+	Ctx  int `json:"ctx"`  // 作業領域の大きさ
+	// Parallel は作業領域の中のシーケンスの数(同時に生成できる数。0023)。作業領域はこの数で等分する(32768 を 2 なら1本 16384)
+	Parallel  int    `json:"parallel"`
 	Model     string `json:"model"`     // 起動のときに読み込むモデル(ID・名前・GGUF のパス)
 	Lib       string `json:"lib"`       // llama.cpp の DLL のフォルダ
 	ModelsDir string `json:"modelsDir"` // GGUF を置くフォルダ(Ollama の保存先は別に探す)
@@ -72,12 +76,16 @@ type configFile struct {
 	// Folders は資料のフォルダ(名前 → 絶対パス。0024 の 12-2)。管理者が配るプロファイルで1つ選ぶと、そのプロファイルの会話の作業フォルダになる。
 	// ブラウザには名前だけを見せる。git は管理者がサーバーで手で行う(aibow は触れない。決定事項 6)
 	Folders map[string]string `json:"folders"`
+	// FetchAllowPrivate は、ブラウザの会話の URL を読むツール(fetch_url)で、サーバーの PC の中・社内のアドレスも読むか(0036 の決定事項 12)。
+	// 既定は読まない(モデルが書いた URL で、社内のサーバーやクラウドのメタデータに届かないように)。fetch_url は管理者が「ツール」のタブで有効にするまで使えない
+	FetchAllowPrivate bool `json:"fetchAllowPrivate"`
 }
 
 // config は、強さの順で決めた設定。
 type config struct {
 	Port      int
 	Ctx       int
+	Parallel  int
 	Model     string
 	Lib       string
 	ModelsDir string
@@ -93,6 +101,8 @@ type config struct {
 	// MCPServers は、ブラウザの会話で使う MCP のサーバー、Folders は資料のフォルダ(どちらも設定ファイルにだけ書ける。0024)
 	MCPServers map[string]client.ServerConfig
 	Folders    map[string]string
+	// FetchAllowPrivate は、fetch_url で PC の中・社内のアドレスも読むか(設定ファイルにだけ書ける。0036)
+	FetchAllowPrivate bool
 
 	// File は読んだ設定ファイル(無ければ空)。StatePath は aibow-server が書くファイル(server-models.json)、
 	// DBPath はブラウザの会話の DB(server.db)、ToolsPath はツールの扱いの既定(server-tools.json)。どれも設定ファイルの隣
@@ -106,7 +116,7 @@ type config struct {
 type flags struct {
 	config, model, lib, modelsDir *string
 	host, tlsCert, tlsKey         *string
-	ctx, port                     *int
+	ctx, port, parallel           *int
 	version, debug, login         *bool
 	set                           map[string]bool
 }
@@ -117,6 +127,7 @@ func defineFlags(fs *flag.FlagSet) *flags {
 		config:    fs.String("config", "", "手で書く設定ファイル(既定 %APPDATA%\\aibow\\"+configFileName+")。aibow-server が書く "+stateFileName+" はその隣に置く"),
 		model:     fs.String("model", "", "読み込むモデル(ID・名前・GGUF のパス。例: qwen3.5:4b)。空なら一覧の先頭から、書式に対応している最初のモデル。設定ファイルの model・環境変数 AIBOW_MODEL"),
 		ctx:       fs.Int("ctx", 0, fmt.Sprintf("作業領域の大きさ(プロンプト + 返事のトークン数。既定 %d)。設定ファイルの ctx・環境変数 AIBOW_SERVER_CTX", defaultCtx)),
+		parallel:  fs.Int("parallel", 0, fmt.Sprintf("作業領域の中のシーケンスの数(同時に生成できる数。既定 %d)。作業領域(ctx)はこの数で等分する。設定ファイルの parallel・環境変数 AIBOW_SERVER_PARALLEL", defaultParallel)),
 		port:      fs.Int("port", 0, fmt.Sprintf("待ち受けのポート(127.0.0.1 だけで待ち受ける。既定 %d)。設定ファイルの port・環境変数 AIBOW_SERVER_PORT", defaultPort)),
 		lib:       fs.String("lib", "", "llama.cpp の DLL のフォルダ(既定 lib)。設定ファイルの lib・環境変数 AIBOW_LIB"),
 		modelsDir: fs.String("models", "", "GGUF を置くフォルダ(既定 models)。設定ファイルの modelsDir・環境変数 AIBOW_MODELS_DIR"),
@@ -153,12 +164,13 @@ func resolve(fs *flag.FlagSet, f *flags, env *envReader) (config, []string, erro
 
 	dir := filepath.Dir(path)
 	c := config{StatePath: filepath.Join(dir, stateFileName), DBPath: filepath.Join(dir, dbFileName), ToolsPath: filepath.Join(dir, toolsFileName),
-		MCPServers: file.MCPServers, Folders: file.Folders}
+		MCPServers: file.MCPServers, Folders: file.Folders, FetchAllowPrivate: file.FetchAllowPrivate}
 	if found {
 		c.File = path
 	}
 	c.Port = pick(f.set["port"], *f.port, file.Port, env.int("AIBOW_SERVER_PORT", 0), defaultPort)
 	c.Ctx = pick(f.set["ctx"], *f.ctx, file.Ctx, env.int("AIBOW_SERVER_CTX", 0), defaultCtx)
+	c.Parallel = pick(f.set["parallel"], *f.parallel, file.Parallel, env.int("AIBOW_SERVER_PARALLEL", 0), defaultParallel)
 	c.Model = pick(f.set["model"], *f.model, file.Model, os.Getenv("AIBOW_MODEL"), "")
 	c.Lib = pick(f.set["lib"], *f.lib, file.Lib, os.Getenv("AIBOW_LIB"), "lib")
 	c.ModelsDir = pick(f.set["models"], *f.modelsDir, file.ModelsDir, os.Getenv("AIBOW_MODELS_DIR"), "models")
