@@ -70,11 +70,11 @@ func addWorktree(t *testing.T, repo string) (wt, base string) {
 		t.Fatal(err)
 	}
 	wt = filepath.Join(repo, ".aibow", "worktrees", "test")
-	base, _, err := Add(ctx, repo, wt, "aibow/test")
+	ref, err := Add(ctx, repo, wt, "aibow/test")
 	if err != nil {
 		t.Fatal(err)
 	}
-	return wt, base
+	return wt, ref.Commit
 }
 
 // 作る → 書き換える → 差分 → 選んで当てる → 取り込み済み → 消す、の流れ。
@@ -217,7 +217,7 @@ func TestAddWithoutCommit(t *testing.T) {
 	}
 	dir := t.TempDir()
 	mustRun(t, dir, "init", "-q")
-	_, _, err := Add(context.Background(), dir, filepath.Join(dir, ".aibow", "worktrees", "x"), "aibow/x")
+	_, err := Add(context.Background(), dir, filepath.Join(dir, ".aibow", "worktrees", "x"), "aibow/x")
 	if err == nil || !strings.Contains(err.Error(), "コミットが無い") {
 		t.Fatalf("err = %v", err)
 	}
@@ -320,15 +320,15 @@ func TestHead(t *testing.T) {
 	ctx := context.Background()
 	repo := newRepo(t, map[string]string{"a.txt": "a\n"})
 	head := strings.TrimSpace(mustRun(t, repo, "rev-parse", "HEAD"))
-	if branch, commit, err := Head(ctx, repo); err != nil || branch != "main" || commit != head {
-		t.Fatalf("Head = %q %q %v, want main %s", branch, commit, err, head)
+	want := Ref{Branch: "main", Commit: head, Subject: "first"}
+	if got, err := Head(ctx, repo); err != nil || got != want {
+		t.Fatalf("Head = %+v %v, want %+v", got, err, want)
 	}
-	base, baseBranch, err := Add(ctx, repo, filepath.Join(repo, ".aibow", "worktrees", "x"), "aibow/x")
-	if err != nil || base != head || baseBranch != "main" {
-		t.Fatalf("Add = %q %q %v", base, baseBranch, err)
+	if got, err := Add(ctx, repo, filepath.Join(repo, ".aibow", "worktrees", "x"), "aibow/x"); err != nil || got != want {
+		t.Fatalf("Add = %+v %v, want %+v", got, err, want)
 	}
 	mustRun(t, repo, "checkout", "-q", "--detach")
-	if branch, commit, err := Head(ctx, repo); err != nil || branch != "" || commit != head {
-		t.Fatalf("detached の Head = %q %q %v", branch, commit, err)
+	if got, err := Head(ctx, repo); err != nil || got.Branch != "" || got.Commit != head {
+		t.Fatalf("detached の Head = %+v %v", got, err)
 	}
 }

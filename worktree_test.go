@@ -96,7 +96,7 @@ func TestWorktreeWritesGoToWorktree(t *testing.T) {
 		t.Fatal("worktree の結び付けがありません")
 	}
 	short := strings.ReplaceAll(c.ID.String(), "-", "")[:8]
-	if want := filepath.Join(repo, ".aibow", "worktrees", short); wt.Path != want || wt.Branch != "aibow/"+short || wt.Repo != repo || wt.Base == "" {
+	if want := filepath.Join(repo, ".aibow", "worktrees", short); wt.Path != want || wt.Branch != "aibow/"+short || wt.Repo != repo || wt.Base == "" || wt.BaseBranch != "main" || wt.BaseSubject != "first" {
 		t.Errorf("worktree = %+v(path は %s のはず)", wt, want)
 	}
 	if fileText(t, repo, "main.go") != "package main\n" || fileText(t, repo, "new.txt") != "(無い)" {
@@ -289,7 +289,7 @@ func TestWorktreeConfirmDefaults(t *testing.T) {
 	}
 	// 作る前は、本体の今のブランチとコミット(作るときの元)を添える。切り替えを入れていなければ添えない(git を呼ばない)
 	head := strings.TrimSpace(gitIn(t, repo, "rev-parse", "HEAD"))
-	if st := cs.WorktreeStateOf(ctx, c.ID, conv.Settings); !st.Usable || st.Active || st.BaseBranch != "main" || st.Base != head {
+	if st := cs.WorktreeStateOf(ctx, c.ID, conv.Settings); !st.Usable || st.Active || st.BaseBranch != "main" || st.Base != head || st.BaseSubject != "first" {
 		t.Errorf("作る前の状態: %+v(元は main の %s のはず)", st, head)
 	}
 	off := conv.Settings

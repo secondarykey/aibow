@@ -61,6 +61,8 @@ type WorktreeState struct {
 	// 画面は切り替えに「ブランチ コミット(短く)」と出す(どのコミットから始まるかが見えるように。2026-11-04、ユーザーと決めた)。ブランチから外れていればブランチは空
 	Base       string `json:"base,omitempty"`
 	BaseBranch string `json:"base_branch,omitempty"`
+	// BaseSubject は、元のコミットの件名(吹き出しに「"件名" から worktree を作る」と出す。2026-11-04、ユーザーと決めた)
+	BaseSubject string `json:"base_subject,omitempty"`
 }
 
 // WorktreeChange は、差分の画面に出すファイル1つ。
@@ -122,7 +124,7 @@ func (cs *Conversations) worktreeMode(set ConversationSettings) bool {
 func (cs *Conversations) WorktreeStateOf(ctx context.Context, id uuid.UUID, set ConversationSettings) WorktreeState {
 	set.conv = id
 	if wt, ok := cs.worktreeOf(set); ok {
-		return WorktreeState{Usable: true, Active: true, Path: wt.Path, Branch: wt.Branch, Base: wt.Base, BaseBranch: wt.BaseBranch}
+		return WorktreeState{Usable: true, Active: true, Path: wt.Path, Branch: wt.Branch, Base: wt.Base, BaseBranch: wt.BaseBranch, BaseSubject: wt.BaseSubject}
 	}
 	if err := cs.worktreeUsable(set); err != nil {
 		return WorktreeState{Reason: err.Error()}
@@ -131,8 +133,8 @@ func (cs *Conversations) WorktreeStateOf(ctx context.Context, id uuid.UUID, set 
 	if set.Worktree {
 		ws, _ := cs.workspaces.Get(set.Workspace)
 		// まだコミットが無いリポジトリでは取れない(作るときに理由のエラーになる)。そのときは元を出さない
-		if branch, commit, err := git.Head(ctx, ws.MainFolder().Path); err == nil {
-			st.BaseBranch, st.Base = branch, commit
+		if head, err := git.Head(ctx, ws.MainFolder().Path); err == nil {
+			st.BaseBranch, st.Base, st.BaseSubject = head.Branch, head.Commit, head.Subject
 		}
 	}
 	return st
@@ -182,11 +184,12 @@ func (cs *Conversations) ensureWorktree(ctx context.Context, set ConversationSet
 	if err != nil {
 		return "", fmt.Errorf("worktree を作れないため、実行していません: %w", err)
 	}
-	base, baseBranch, err := git.Add(ctx, repo, path, branch)
+	base, err := git.Add(ctx, repo, path, branch)
 	if err != nil {
 		return "", fmt.Errorf("worktree を作れないため、実行していません: %w", err)
 	}
-	wt := WorkspaceWorktree{Conversation: set.conv.String(), Repo: repo, Path: path, Branch: branch, Base: base, BaseBranch: baseBranch}
+	wt := WorkspaceWorktree{Conversation: set.conv.String(), Repo: repo, Path: path, Branch: branch,
+		Base: base.Commit, BaseBranch: base.Branch, BaseSubject: base.Subject}
 	if err := cs.workspaces.addWorktree(ws.ID, wt); err != nil {
 		// 結び付けを書けなければ、作った worktree を消しておく(どの会話のものか分からないまま残さない)
 		if rerr := git.Remove(context.WithoutCancel(ctx), repo, path, branch); rerr != nil {
@@ -194,8 +197,8 @@ func (cs *Conversations) ensureWorktree(ctx context.Context, set ConversationSet
 		}
 		return "", fmt.Errorf("worktree を作りましたが、結び付けを保存できないため消しました(実行していません): %w", err)
 	}
-	log.Noticef("会話 %s の worktree を作りました: %s(ブランチ %s。%s から)", set.conv, path, branch, baseLabel(baseBranch, base))
-	note := worktreeNote(path, baseBranch, base, uncommitted)
+	log.Noticef("会話 %s の worktree を作りました: %s(ブランチ %s。%s から)", set.conv, path, branch, baseLabel(base.Branch, base.Commit))
+	note := worktreeNote(path, base.Branch, base.Commit, uncommitted)
 	emit(ChatEvent{ConversationID: set.conv, Type: "worktree", Text: note})
 	return note, nil
 }

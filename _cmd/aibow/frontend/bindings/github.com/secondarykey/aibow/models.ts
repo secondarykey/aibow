@@ -1221,6 +1221,11 @@ export interface WorkspaceWorktree {
      * BaseBranch は、作ったときに本体がいたブランチの名前(画面に出す。ブランチから外れていたら空)。差分には使わない(ブランチはあとで進むため)
      */
     "base_branch"?: string;
+
+    /**
+     * BaseSubject は、作ったときのコミットの件名(メッセージの1行目。画面の吹き出しに出すだけ)
+     */
+    "base_subject"?: string;
 }
 
 /**
@@ -1275,4 +1280,9 @@ export interface WorktreeState {
      */
     "base"?: string;
     "base_branch"?: string;
+
+    /**
+     * BaseSubject は、元のコミットの件名(吹き出しに「"件名" から worktree を作る」と出す。2026-11-04、ユーザーと決めた)
+     */
+    "base_subject"?: string;
 }

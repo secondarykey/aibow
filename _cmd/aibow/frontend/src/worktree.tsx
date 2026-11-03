@@ -82,6 +82,12 @@ export function baseText(st: WorktreeState): string {
   return st.base_branch ? `${st.base_branch} の ${commit}` : `コミット ${commit}`;
 }
 
+// fromText は、どこから作るか(作ったか)の文。件名があれば「「件名」から」、無ければ(件名を覚える前に作った worktree)「main の 1a2b3c4 から」。
+// 吹き出しに出す(件名のほうが、どのコミットかが分かりやすい。2026-11-04、ユーザーと決めた)
+export function fromText(st: WorktreeState): string {
+  return st.base_subject ? `「${st.base_subject}」から` : `${baseText(st)} から`;
+}
+
 // BaseLabel は、元のブランチとコミット(短く)の表示。ブランチから外れていればコミットだけ
 export function BaseLabel({ state }: { state: WorktreeState }) {
   return (

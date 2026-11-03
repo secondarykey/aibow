@@ -55,6 +55,8 @@ type WorkspaceWorktree struct {
 	Base         string `json:"base"`         // 作ったときのコミット。差分はいつもこれと比べる
 	// BaseBranch は、作ったときに本体がいたブランチの名前(画面に出す。ブランチから外れていたら空)。差分には使わない(ブランチはあとで進むため)
 	BaseBranch string `json:"base_branch,omitempty"`
+	// BaseSubject は、作ったときのコミットの件名(メッセージの1行目。画面の吹き出しに出すだけ)
+	BaseSubject string `json:"base_subject,omitempty"`
 }
 
 // WorkspaceFolder はワークスペースのフォルダ1つ。
