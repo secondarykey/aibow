@@ -10,7 +10,7 @@
 // 「worktree」という言葉ではなく、ブランチとコミット(短く)を出す。どのコミットから始まるかが見えるように(2026-11-04、ユーザーと決めた)
 import { LuFileDiff, LuGitBranch } from "react-icons/lu";
 import type { WorktreeChange, WorktreeState } from "../../bindings/github.com/secondarykey/aibow";
-import { BaseLabel, baseText, fromText } from "../worktree";
+import { BaseLabel, fromText } from "../worktree";
 
 interface Props {
   state: WorktreeState;
@@ -25,7 +25,7 @@ export function WorktreeBar({ state, on, changes, onToggle, onOpenDiff }: Props)
     const pending = changes.filter(c => !c.applied).length;
     return (
       <div className="worktree-bar active">
-        <span className="worktree-label" title={`${fromText(state)}作成した worktree${state.base_subject ? `(${baseText(state)})` : ""}\n${state.path ?? ""}\nブランチ ${state.branch ?? ""}`}>
+        <span className="worktree-label" title={`${fromText(state)}作成した worktree\n${state.path ?? ""}\nブランチ ${state.branch ?? ""}`}>
           <LuGitBranch />
           <BaseLabel state={state} />
         </span>
@@ -40,7 +40,7 @@ export function WorktreeBar({ state, on, changes, onToggle, onOpenDiff }: Props)
   // 使えないときは灰色にする。ただ、入れたまま使えなくなった(フォルダを変えた・git を消した)ときは外せるようにする
   const disabled = !state.usable && !on;
   const title = !state.usable ? state.reason
-    : on ? (state.base ? `${fromText(state)} worktree を作成(${baseText(state)}。最初に書き換えるときに作る)` : "worktree で作業する(最初に書き換えるときに作る)")
+    : on && state.base ? `${fromText(state)} worktree を作成` // ブランチとコミットはトグルに出ているので、吹き出しには書かない
     : "worktree で作業する";
   return (
     // 押せないボタンには吹き出しが出ないことがあるので、理由は外側に付ける
