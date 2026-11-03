@@ -67,6 +67,7 @@ OpenAI 互換のクライアント(Cline など)⇄ HTTP(S)(既定は 127.0.0.1�
 | `_cmd/aibow-server/` | aibow のサーバーの exe(OpenAI 互換の API。既定は `127.0.0.1` で待ち受け、`-host` で広げるとログインと API キーが要る。HTTPS と自己署名の証明書(`cert`)・利用者のコマンド(`user`)もここ。ステップ10。ステップ8で `aibow-api` から名前を変えた)。引数・設定ファイル(`server.json`)・環境変数を読み、モデルを読み込んで `api` を動かす。ブラウザの会話(`ui` と `server.db`)も同じポートに載せる(ステップ9)。ルートのモジュールに入れている |
 | `_cmd/dev/` | aibow-server を開発で動かす(`go run ./_cmd/dev server`。画面を vite の開発用サーバーから配り、aibow-server を `go run` で動かす)・exe を作る(`build`。画面をビルドしてから `go build`)スクリプト(0021)。画面のビルドを忘れて古い画面が埋め込まれる、をなくす。ルートのモジュールに入れている |
 | `_cmd/aibow-mcp/` | MCP のサーバーの exe(標準入出力)。引数を読んで `mcp/server` を起動するだけ。ルートのモジュールに入れている(Wails を使わないため) |
+| `.github/` | GitHub Actions(確認の `ci.yml`・main への push で版を上げてタグを打つ `versionup.yml`・3つの OS の zip でリリースの下書きを作る `release.yml`)と、CI が使う Wails の版(`variables`)。仕組みは [_docs/deploy.md](_docs/deploy.md) |
 | `_docs/` | 仕組みごとの説明(下の表)と、機能の仕様(`_docs/features/`)。利用者向けの手順は `setup.md`(準備と起動)・`usage.md`(使い方と設定)・`structure.md`(構成とファイル) |
 | `README.md` / `DEVELOPMENT.md` | 使ってみる人の入口(ビルドして使う・aibow-server を始める)/ 開発する人の入口(しくみ・開発モード・確かめ方・local:deploy・ロードマップ) |
 | `TODO.md` | 全体の進み具合とロードマップ(入口。行は「状態・一言・仕様へのリンク」だけ。0025) |
@@ -89,7 +90,7 @@ OpenAI 互換のクライアント(Cline など)⇄ HTTP(S)(既定は 127.0.0.1�
 | アプリの起動・`ChatService`・環境変数の読み込み・Go と画面のやり取り | [_cmd/aibow/AGENTS.md](_cmd/aibow/AGENTS.md) |
 | 画面(配置・会話の一覧・発言と返事の操作・フォーカス・スクロール・ウィンドウの移動とリサイズ・IME) | [_docs/ui.md](_docs/ui.md) |
 | 返事の表示(Markdown・コードの色付け・mermaid の図と書き出し) | [_docs/rendering.md](_docs/rendering.md) |
-| バージョン・ローカルデプロイ | [_docs/deploy.md](_docs/deploy.md) |
+| バージョン・ローカルデプロイ・リリースと CI(GitHub Actions) | [_docs/deploy.md](_docs/deploy.md) |
 | 利用者向けの説明(README・準備と起動・使い方と設定・ファイル構成)・開発する人向けの説明(DEVELOPMENT.md)を直す | README は使ってみたい人が最初に読む入口で、**いちばん小さい形(この PC の中でモデルを動かすデスクトップのアプリ)を動かすところまで**を書く:要るもの・取ってくる・llama.cpp(版も)・モデル・ビルドして起動(配布用の exe が無いので `wails3 build` まで)。組織で使うこと(aibow-server・利用者の管理・HTTPS・ほかの PC から)は「できること」で**何ができるかが分かれば足り、やり方は README に書かず** [_docs/setup.md](_docs/setup.md) に書いて案内する(初めて起動したときは管理者がいない、のような最初につまずくことは、案内の1行で触れる)(2026-10-29、ユーザーの指示。2026-10-26 の「セットアップに絡むことは必ず README に書く」をこう改めた)。**開発の話(`wails3 dev`・worktree・確かめ方・local:deploy・しくみ・ロードマップ)は README と setup.md に書かず [DEVELOPMENT.md](DEVELOPMENT.md) に書く**(使ってみて、気に入ったら開発へ進む、の順。2026-10-29、ユーザーの指示)。詳しい説明は [_docs/setup.md](_docs/setup.md)・[_docs/usage.md](_docs/usage.md)・[_docs/structure.md](_docs/structure.md) に書く。いちばん小さい形の動かし方が変わる機能を足したら README も直す |
 | アプリを起動して動作を確かめる(共通の手順と確認する項目) | [_docs/testing.md](_docs/testing.md) |
 | ユーザーの Windows 環境(worktree)で起動して確かめる | [_docs/env-windows.md](_docs/env-windows.md) |

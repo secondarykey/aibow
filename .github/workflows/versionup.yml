@@ -1,0 +1,125 @@
+# 正式なリリース:main に push したら、版を決めてビルド情報をコミットし、v+バージョンのタグを打ってリリースを作る。
+#
+# 版の決め方は local:deploy と同じ go run _cmd/version.go -auto。
+# v+今のバージョンのタグがあれば(= リリース済み)patch を上げ、無ければ今のバージョンのまま出す。
+# local:deploy はタグを打たないので、手元で何度 deploy しても、タグが付くのはここで出した版だけ。
+#
+# コミットとタグの push は GITHUB_TOKEN で行う。GITHUB_TOKEN の push はワークフローを起動しないので、
+#   - ここで push したコミットで、このワークフローがもう一度動くことはない
+#   - タグの push では release.yml が起動しないので、最後のジョブで呼ぶ(PAT は要らない)
+name: VersionUp
+
+on:
+  push:
+    branches: [ main ]
+
+# 続けて push したときに、2つが同時に版を上げてタグを取り合わないよう、1つずつ動かす
+concurrency:
+  group: versionup
+  cancel-in-progress: false
+
+jobs:
+
+  versionup:
+
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # ビルド情報のコミットとタグを push するため
+    outputs:
+      tag: ${{ steps.versioning.outputs.tag }}
+
+    steps:
+
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0   # タグを見て版を決めるので、全部取ってくる
+
+      - name: Install Linux dependencies
+        # wails3 の CLI は Linux では WebKitGTK を cgo で調べる(internal/operatingsystem)ので、入れないと go install が通らない
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-4-dev \
+            libwebkitgtk-6.0-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+
+      - name: Load variables
+        run: cat .github/variables >> $GITHUB_ENV
+
+      - name: Install Wails CLI
+        # .github/variables で固定した版を使う(@latest は使わない)
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@${{ env.WAILS_VERSION }}
+
+      - name: Determine version
+        id: versioning
+        run: |
+          go run _cmd/version.go -auto
+          VERSION=$(go run _cmd/version.go -print)
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "tag=v$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Sync package-lock.json
+        # package-lock.json のバージョンを package.json にそろえる(local:deploy の sync-lock と同じ)。
+        # npm は版で lockfile の書き方が違う(npm 10 は libc の欄を消す)ので、手元と同じ npm 11 を使う(_cmd/aibow/AGENTS.md)
+        working-directory: ./_cmd/aibow/frontend
+        run: npx -y npm@11.20.0 install --package-lock-only --ignore-scripts --no-audit --no-fund
+
+      - name: Update build assets
+        # -name / -binaryname は config.yml から読まれず、省略すると空になる。Taskfile.yml の APP_NAME と一致させる(wails3 スキルの pitfalls 13)
+        working-directory: ./_cmd/aibow
+        run: wails3 update build-assets -name "aibow" -binaryname "aibow" -config build/config.yml -dir build
+
+      - name: Commit build info
+        # local:deploy の BUILD_INFO_FILES と同じファイルだけをコミットする。手元で deploy 済みなら変更は無い
+        working-directory: ./_cmd/aibow
+        run: |
+          FILES="version
+            ../aibow-mcp/version
+            ../aibow-server/version
+            build/config.yml
+            build/darwin/Info.plist
+            build/darwin/Info.dev.plist
+            build/darwin/icons.icns
+            build/linux/desktop
+            build/linux/nfpm/nfpm.yaml
+            build/windows/info.json
+            build/windows/icon.ico
+            build/windows/nsis/wails_tools.nsh
+            build/windows/wails.exe.manifest
+            frontend/package.json
+            frontend/package-lock.json"
+          if git diff --quiet HEAD -- $FILES; then
+            echo "build info: no changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore: aibow $VERSION のビルド情報を反映する" -m "Glory to mankind." -- $FILES
+          git push origin HEAD:main
+
+      - name: Tag
+        run: |
+          TAG="v$VERSION"
+          git tag "$TAG"
+          git push origin "$TAG"
+
+  release:
+
+    needs: versionup
+    permissions:
+      contents: write   # release.yml がリリースを作るため
+    uses: ./.github/workflows/release.yml
+    with:
+      tag: ${{ needs.versionup.outputs.tag }}

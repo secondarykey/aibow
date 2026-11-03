@@ -10,7 +10,7 @@
 //	go run _cmd/version.go 1.2.3    バージョンを指定して書き換える
 //	go run _cmd/version.go -bump    patch / minor / major を選んで上げる
 //	go run _cmd/version.go -print   今のバージョンを表示するだけ
-//	go run _cmd/version.go -auto    v+今のバージョンのタグがあれば(デプロイ済みなら)patch を上げる。local:deploy から使う
+//	go run _cmd/version.go -auto    v+今のバージョンのタグがあれば(リリース済みなら)patch を上げる。local:deploy と GitHub Actions の versionup から使う
 //
 // _cmd/aibow とは別の、このファイルだけで動くプログラム(リポジトリのルートのモジュールに属し、標準ライブラリだけを使う)。
 package main

@@ -1,0 +1,178 @@
+# リリース:v+バージョンのタグで、3つの OS の exe を zip にし、GitHub のリリースの下書きを作る。
+#
+# 動くのは次の2つのとき:
+#   - versionup.yml が main への push でタグを打ったあと、このワークフローを呼ぶ(workflow_call)
+#   - 手でタグを push したとき(push: tags)
+# versionup.yml から呼ぶのは、GITHUB_TOKEN で push したタグではほかのワークフローが起動しないため
+# (wails3 スキルの「PAT が必要な理由」。呼び出しにすれば PAT を用意しなくてよい)。
+#
+# zip に入れるのは aibow(画面のアプリ)・aibow-server・aibow-mcp の3つ。llama.cpp の DLL(lib)は入れない
+# (GPU に合う版を各自が README の手順で取ってくるため)。
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_call:
+    inputs:
+      tag:
+        description: リリースするタグ(v0.8.1 など)
+        required: true
+        type: string
+
+env:
+  # workflow_call では github.ref が main を指すので、渡されたタグを使う
+  TAG: ${{ inputs.tag || github.ref_name }}
+
+jobs:
+
+  build:
+
+    # v0.8.1-rc1 や v0.8.1+dev のような記号の付いたタグはリリースしない
+    if: |
+      startsWith(inputs.tag || github.ref_name, 'v') &&
+      !contains(inputs.tag || github.ref_name, '-') &&
+      !contains(inputs.tag || github.ref_name, '+')
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # Linux は対応をうたう最古のディストリに固定する(glibc。wails3 スキルの pitfalls 16)。
+        # macos-latest は Apple Silicon(arm64)なので、成果物は arm64 専用(Intel の Mac では起動しない)
+        os: [windows-latest, ubuntu-24.04, macos-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+
+      - name: Keep LF on Windows
+        if: runner.os == 'Windows'
+        run: git config --global core.autocrlf false
+
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TAG }}
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-4-dev \
+            libwebkitgtk-6.0-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+
+      - name: Load variables
+        # matrix に Windows が入るので shell: bash が要る(既定の pwsh では $GITHUB_ENV に書けない)
+        shell: bash
+        run: |
+          cat .github/variables >> $GITHUB_ENV
+          echo "VERSION=$(cat _cmd/aibow/version | xargs)" >> $GITHUB_ENV
+          echo "GOOS=$(go env GOOS)" >> $GITHUB_ENV
+          echo "GOARCH=$(go env GOARCH)" >> $GITHUB_ENV
+          echo "GOEXE=$(go env GOEXE)" >> $GITHUB_ENV
+
+      - name: Check tag and version
+        # タグと version がずれていると、exe が名乗る版と zip の名前が食い違う
+        shell: bash
+        run: |
+          if [ "$TAG" != "v$VERSION" ]; then
+            echo "タグ $TAG と _cmd/aibow/version の $VERSION が合いません"
+            exit 1
+          fi
+
+      - name: Install Wails CLI
+        # .github/variables で固定した版を使う(@latest は使わない)
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@${{ env.WAILS_VERSION }}
+
+      - name: Wails doctor
+        run: |
+          wails3 version
+          wails3 doctor
+
+      # ⚠️ macOS: wails3 package は ad-hoc 署名しかしない。ダウンロードした Mac では
+      #    Gatekeeper が「壊れているため開けません」で止める(署名と notarize はしていない。wails3 スキルの macos-distribution)
+      - name: Build desktop app
+        working-directory: ./_cmd/aibow
+        shell: bash
+        run: |
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            wails3 package
+          else
+            wails3 build
+          fi
+
+      - name: Build aibow-server and aibow-mcp
+        # aibow-server は上で作った画面(web/dist/app)を埋め込むので、画面のアプリの後に作る。
+        # local:deploy と同じく、C コンパイラなしで -trimpath -ldflags="-w -s"(コンソールのアプリなので -H windowsgui は付けない)
+        shell: bash
+        env:
+          CGO_ENABLED: '0'
+        run: go build -trimpath -buildvcs=false -ldflags="-w -s" -o _cmd/aibow/bin/ ./_cmd/aibow-server ./_cmd/aibow-mcp
+
+      - name: Archive build results
+        shell: bash
+        run: |
+          ZIP_NAME="aibow-${VERSION}_${GOOS}_${GOARCH}.zip"
+          BIN=_cmd/aibow/bin
+          mkdir -p _archive
+          cp "$BIN/aibow-server$GOEXE" "$BIN/aibow-mcp$GOEXE" _archive/
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            # .app は拡張属性・シンボリックリンク・署名を保つため cp / zip ではなく ditto を使う
+            ditto "$BIN/aibow.app" _archive/aibow.app
+            ditto -c -k --sequesterRsrc _archive "$ZIP_NAME"
+          else
+            cp "$BIN/aibow$GOEXE" _archive/
+            cd _archive
+            if [ "${{ runner.os }}" = "Windows" ]; then
+              7z a "../$ZIP_NAME" ./*
+            else
+              zip -r "../$ZIP_NAME" ./*
+            fi
+          fi
+          echo "ZIP_PATH=$ZIP_NAME" >> $GITHUB_ENV
+
+      - name: Upload artifact
+        # upload は v7、download は v8 が対(番号のずれは書き間違いではない。wails3 スキルの versioning)
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.os }}-asset
+          path: ${{ env.ZIP_PATH }}
+
+  release:
+
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # リリースを作るため
+
+    steps:
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: ./all-zips
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        # 下書きで作る。中身を確かめてから GitHub の画面で公開する
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ env.TAG }}
+          name: aibow ${{ env.TAG }}
+          files: ./all-zips/*.zip
+          generate_release_notes: true
+          draft: true
+          prerelease: false

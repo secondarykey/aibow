@@ -129,14 +129,15 @@ wails3 task local:deploy
 
 1. 起動中の aibow と、インストール先から起動している aibow-server・aibow-mcp を終了する(起動中の exe は上書きできないため。
    aibow-server・aibow-mcp は、`go run` や worktree で動かしているものまで止めないよう、exe の場所で絞る)
-2. 前回インストールしたバージョンのままなら、patch を1つ上げる(0.1.0 → 0.1.1)
+2. そのバージョンがリリース済み(`v0.1.0` のタグがある)なら、patch を1つ上げる(0.1.0 → 0.1.1)
 3. `version` の値を、`build/config.yml`・`frontend/package.json`・`frontend/package-lock.json`・exe に焼き込むバージョン情報(`build/windows/info.json` など)に反映する
    (`go run _cmd/version.go` → `npm install --package-lock-only` → `wails3 update build-assets -name aibow -binaryname aibow`)
 4. `wails3 build`(画面も `web/dist/app` にビルドされる)
 5. `aibow-server.exe`(4 の画面を埋め込む)と `aibow-mcp.exe` を `go build` で `bin\` に作る
 6. 3 で変わったファイルだけをコミットする(作業中の他の変更は巻き込まない)
-7. コミットに `v0.1.1` のようなタグを打つ(push はしない)。どのコミットをインストールしたかが分かる
-8. `bin\` の exe(`aibow.exe`・`aibow-server.exe`・`aibow-mcp.exe`)と `lib\` をインストール先へコピーする(`lib\` は変わったファイルだけ)
+7. `bin\` の exe(`aibow.exe`・`aibow-server.exe`・`aibow-mcp.exe`)と `lib\` をインストール先へコピーする(`lib\` は変わったファイルだけ)
+
+タグは打ちません。`v0.1.1` のようなタグは、正式にリリースしたときに GitHub Actions が打ちます(次の「リリースする」)。
 
 インストール先の `aibow.exe` を起動すると、隣の `lib\` を使います(`aibow-server.exe` も同じ)。モデルは Ollama のものが使えます。
 GGUF を自分で置く場合は、インストール先に `models\` を作って置くか、`AIBOW_MODELS_DIR` で指定します。
@@ -154,6 +155,19 @@ wails3 task local:deploy DEPLOY_DEST="D:/tmp/aibow"
 ```
 
 バージョンの扱いの詳しいことは [_docs/deploy.md](_docs/deploy.md) にあります。
+
+## リリースする(GitHub Actions)
+
+`main` に push すると、それが正式なリリースになります。
+
+1. `versionup.yml`:版を決め(リリース済みなら patch を1つ上げる)、ビルド情報をコミットして `main` に push し、`v0.1.1` のようなタグを打つ
+2. `release.yml`:Windows・Linux・macOS で aibow・aibow-server・aibow-mcp を作って zip にし、GitHub のリリースの**下書き**を作る
+3. 下書きの zip を確かめてから、GitHub の画面で公開する
+
+versionup がコミットとタグを足すので、push したあとは手元の `main` が1つ遅れます。`git fetch` で取ってきてください(タグも一緒に来て、次の `local:deploy` から次の版になります)。
+zip に llama.cpp の DLL は入れていません。Linux 版・macOS 版の注意は [_docs/deploy.md](_docs/deploy.md) にあります。
+
+`main`・`features` への push と PR では、`ci.yml` が3つの OS でテストとビルドを確かめます。
 
 ## 落ちたときの調べ方
 
