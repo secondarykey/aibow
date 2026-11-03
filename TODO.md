@@ -90,14 +90,14 @@ aibow 全体の進み具合(入口)。ルールと全体の構成は `AGENTS.md`
 | ✅ | MCP のツールの信頼(「確認しない」と確認のカードの選択肢) | [0010-tool-trust.md](_docs/features/0010-tool-trust.md) |
 | ⬜ | ツールの信頼の続き(0010 のやり残し) | [0010-tool-trust.md](_docs/features/0010-tool-trust.md) の「3段目以降」 |
 | ⬜ | MCP の OAuth(ログインが要る url の MCP のサーバー) | [検討メモ](_docs/backlog.md) |
-| 🔧 | MCP のサーバーを画面から足す・変える・消す(アプリの設定の画面。aibow-server の分はあとで同じ部品で) | [0034-mcp-editor.md](_docs/features/0034-mcp-editor.md) |
+| ✅ | MCP のサーバーを画面から足す・変える・消す(アプリの設定の画面。aibow-server の分はあとで同じ部品で) | [0034-mcp-editor.md](_docs/features/0034-mcp-editor.md) |
 | ✅ | 会話の個別設定(会話の設定の画面) | [0009-conversation-settings.md](_docs/features/0009-conversation-settings.md) |
 | ⬜ | 今の組の中の compact(古いツールの結果を省略して続ける) | [検討メモ](_docs/backlog.md) |
 | ✅ | 同じ呼び出しが成功のまま繰り返されるのを止める(続けて同じなら、ツールを外して答えさせる。モデルでの確かめはまだ) | [0028-repeated-calls.md](_docs/features/0028-repeated-calls.md) |
-| 🔧 | ワークスペース(作業フォルダを名前付きのフォルダの組にする。複数のフォルダ・読むだけ / 書く。会話の作業フォルダを PC ごとにする、も含む) | [0035-workspaces.md](_docs/features/0035-workspaces.md) |
+| ✅ | ワークスペース(作業フォルダを名前付きのフォルダの組にする。複数のフォルダ・読むだけ / 書く。会話の作業フォルダを PC ごとにする、も含む) | [0035-workspaces.md](_docs/features/0035-workspaces.md) |
 | ⬜ | Web で検索する(検索の MCP のサーバー。ページを読むのは組み込みの fetch。0036) | [検討メモ](_docs/backlog.md) |
-| 🔧 | 組み込みの fetch(MCP のサーバーなしで URL を読む。aibow-server では管理者が有効にしたときだけ) | [0036-fetch.md](_docs/features/0036-fetch.md) |
-| 🔧 | コーディングエージェント向けの組み込みのツールを足す(ファイルの中を探す・名前で探す・作業の予定。git はあと) | [0037-coding-tools.md](_docs/features/0037-coding-tools.md) |
+| ✅ | 組み込みの fetch(MCP のサーバーなしで URL を読む。aibow-server では管理者が有効にしたときだけ。モデルでの確かめはまだ) | [0036-fetch.md](_docs/features/0036-fetch.md) |
+| ✅ | コーディングエージェント向けの組み込みのツールを足す(ファイルの中を探す・名前で探す・作業の予定。git はあと。モデルでの確かめはまだ) | [0037-coding-tools.md](_docs/features/0037-coding-tools.md) |
 | ⬜ | コーディングエージェントとして洗練する(最後のほうでやる) | [検討メモ](_docs/backlog.md) |
 | ✅ | aibow-server がモデルを読み直している間の一覧 | [0016-browser.md](_docs/features/0016-browser.md) の 9-3 |
 | ⬜ | KV キャッシュの使い回しを良くする | `_docs/tuning.md` の「Cline からつないで比べる」「ファイルを読むツール」・[検討メモ](_docs/backlog.md) |
