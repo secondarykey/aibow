@@ -33,6 +33,7 @@ import { toggleMaximiseOnDoubleClick } from "./TitleBar";
 import type { Conversation, ConversationRef } from "../../bindings/github.com/secondarykey/aibow";
 import type { WorkspaceView } from "../../bindings/github.com/secondarykey/aibow/ui";
 import { groupByWorkspace, LIST_GROUPINGS, useClosedGroups, useListGrouping } from "../conversationGroups";
+import { unappliedCount } from "../worktree";
 import type { ConversationGroup, ListGrouping } from "../conversationGroups";
 import type { Ended } from "../useChat";
 
@@ -75,6 +76,13 @@ export function ConversationList({
   const [sharedOpen, setSharedOpen] = useState(true);
   // 削除の確認を出している会話。消すと戻せないので、もう一度押してもらう
   const [confirming, setConfirming] = useState<string | null>(null);
+  // 消そうとしている会話の worktree の、まだ本体に取り込んでいないファイルの数(0039。消すと worktree ごと消えるので、確認の文に出す)
+  const [unapplied, setUnapplied] = useState(0);
+  const startConfirm = (c: Conversation) => {
+    setConfirming(c.id);
+    setUnapplied(0);
+    if (c.settings?.worktree) unappliedCount(c.id).then(n => setUnapplied(n));
+  };
 
   const markOf = (id: string): Mark | null =>
     id === generatingId ? (id === waitingId ? "waiting" : "generating") : ended[id] ?? null;
@@ -144,7 +152,9 @@ export function ConversationList({
     if (confirming === c.id) {
       return (
         <li key={c.id} className={cls + " confirming"}>
-          <span className="confirm-text">削除しますか?</span>
+          <span className="confirm-text" title={unapplied > 0 ? "この会話の worktree とブランチも消える" : undefined}>
+            {unapplied > 0 ? `取り込んでいない差分(${unapplied} ファイル)も消えます。削除しますか?` : "削除しますか?"}
+          </span>
           <button className="danger" onClick={() => { setConfirming(null); onDelete(c.id); }}>削除</button>
           <button onClick={() => setConfirming(null)}>やめる</button>
         </li>
@@ -173,7 +183,7 @@ export function ConversationList({
             className={"delete" + (mark ? " has-mark" : "")}
             title={mark ? `削除(${MARK_LABEL[mark]})` : "削除"}
             disabled={disabled}
-            onClick={() => setConfirming(c.id)}
+            onClick={() => startConfirm(c)}
           >
             {mark && <span className={"dot " + mark} />}
             <span className="x">×</span>

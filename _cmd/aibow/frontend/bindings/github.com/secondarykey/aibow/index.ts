@@ -43,5 +43,8 @@ export type {
     UserRef,
     Workspace,
     WorkspaceFolder,
-    WorkspaceSettings
+    WorkspaceSettings,
+    WorkspaceWorktree,
+    WorktreeChange,
+    WorktreeState
 } from "./models.js";

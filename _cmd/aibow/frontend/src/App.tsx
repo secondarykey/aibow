@@ -42,6 +42,9 @@ import { Composer } from "./components/Composer";
 import { FolderBar, WorkspaceBar } from "./components/WorkspaceBar";
 import { mainFolder, useWorkspaces } from "./workspaces";
 import { ToolBar } from "./components/ToolBar";
+import { WorktreeBar } from "./components/WorktreeBar";
+import { WorktreeDiff } from "./components/WorktreeDiff";
+import { useWorktree } from "./worktree";
 import { LuSettings } from "react-icons/lu";
 import { ChatService, isBrowser, me, onReconnect, onWindowFocus } from "./backend";
 import { showName } from "./directory";
@@ -75,6 +78,7 @@ export default function App() {
   const [settingsTab, setSettingsTab] = useState<{ tab: SettingsTab; n: number }>({ tab: "basic", n: 0 });
   // 会話の設定の画面を開いているか。開いている会話の設定を出す
   const [convSettingsOpen, setConvSettingsOpen] = useState(false);
+  const [diffOpen, setDiffOpen] = useState(false); // worktree の差分の画面(0039)
   // 設定の画面(か会話の設定の画面)を開いたときの、表示の最後の id。これより後に出たエラー(設定の適用の失敗など)はその画面にも出す
   const [settingsFrom, setSettingsFrom] = useState(0);
   // 入力欄に打っている文。設定の画面を開くと入力欄は消えるので、戻ったときに続きを打てるようにここで持つ
@@ -302,6 +306,9 @@ export default function App() {
   const canSend = busy === "idle" && (convs.current !== null || convs.draft !== null);
   // 開いている会話の設定(新しい会話の画面では、これから作る会話の設定 = 選んだプロファイルの写し)
   const settings = convs.current?.conversation.settings ?? convs.draft;
+  // worktree で作業するか(0039)。アプリだけ。作るのは送信の途中なので、状態は Go の知らせで取り直す(worktree.ts)
+  const worktree = useWorktree(convs.current?.conversation.id ?? null, isBrowser ? null : settings ?? null, addError);
+  useEffect(() => setDiffOpen(false), [currentId]); // 別の会話を開いたら差分の画面を閉じる
   // 開いている会話のプロファイル(新しい会話の画面では、選んだプロファイル)。固定・使えないを画面に出すため(0014)
   const profile = convs.current ? convs.current.profile : convs.profiles.find(i => i.profile.id === convs.draftProfile)?.profile ?? null;
   const lock = lockOf(profile);
@@ -345,6 +352,18 @@ export default function App() {
                 }}
                 onCreated={reloadWorkspaces}
                 onError={addError}
+              />
+            )}
+            {!isBrowser && settings.workspace && worktree.state && (
+              <WorktreeBar
+                state={worktree.state}
+                on={!!settings.worktree}
+                changes={worktree.changes}
+                onToggle={on => {
+                  convs.updateSettings({ worktree: on });
+                  focusInput();
+                }}
+                onOpenDiff={() => setDiffOpen(true)}
               />
             )}
             <ToolBar
@@ -768,6 +787,21 @@ export default function App() {
         </div>
       )}
       <Toasts toasts={toasts.toasts} onDismiss={toasts.dismiss} />
+      {diffOpen && convs.current && worktree.state?.active && (
+        <WorktreeDiff
+          id={convs.current.conversation.id}
+          state={worktree.state}
+          generating={chat.generatingId === convs.current.conversation.id}
+          onClose={() => { setDiffOpen(false); focusInput(); }}
+          onChanged={worktree.reload}
+          onDiscarded={() => {
+            // Go は会話の切り替えも外している。画面の会話の設定もそれに合わせる(保存し直しても同じ値)
+            convs.updateSettings({ worktree: false });
+            worktree.reload();
+          }}
+          onNotice={text => toasts.notify(text, { ms: 8000 })}
+        />
+      )}
       <ImeFocusRelay />
     </ServerContext.Provider>
   );

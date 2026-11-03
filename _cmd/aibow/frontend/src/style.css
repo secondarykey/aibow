@@ -879,6 +879,68 @@ footer { border-top: 1px solid var(--border); background: var(--panel); padding:
 /* 会話のワークスペースがこの PC に無い(別の PC で選んだ・消した) */
 .workdir-bar.missing .workdir { border-color: var(--error); color: var(--error); }
 
+/* worktree で作業する(0039)。ワークスペースの隣のトグル。入れたら枠付き、作ったあとは「worktree」と「差分(n ファイル)」 */
+.worktree-bar { display: flex; align-items: center; gap: 2px; font-size: 12.5px; color: var(--muted); }
+.worktree-bar button {
+  display: inline-flex; align-items: center; gap: 5px; font-size: inherit; padding: 2px 7px;
+  border-color: transparent; background: transparent; color: inherit;
+}
+.worktree-bar button:hover:not(:disabled) { color: var(--text); }
+.worktree-bar.set .worktree-toggle { border-color: var(--accent); background: var(--bg); color: var(--accent); }
+.worktree-bar.unusable { opacity: .5; }
+.worktree-bar.unusable button:disabled { cursor: default; }
+.worktree-bar.active .worktree-label {
+  display: inline-flex; align-items: center; gap: 5px; padding: 2px 7px; border-radius: 6px;
+  border: 1px solid var(--accent); background: var(--bg); color: var(--accent);
+}
+.worktree-bar.active .worktree-diff { border-color: var(--border); background: var(--bg); color: var(--text); }
+
+/* worktree の差分の画面(0039)。左にファイルの一覧、右に選んだファイルの差分 */
+.worktree-overlay {
+  position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, .32);
+}
+.worktree-dialog {
+  width: min(1100px, calc(100vw - 48px)); height: min(760px, calc(100vh - 80px));
+  display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--panel); box-shadow: 0 8px 32px rgba(0, 0, 0, .3); overflow: hidden;
+}
+.worktree-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+.worktree-title { font-weight: 600; }
+.worktree-base { color: var(--muted); font-size: 12.5px; flex: 1; }
+.worktree-body { flex: 1; min-height: 0; display: flex; }
+.worktree-files {
+  width: 300px; flex-shrink: 0; margin: 0; padding: 6px; list-style: none; overflow-y: auto;
+  border-right: 1px solid var(--border); font-size: 13px;
+}
+.worktree-files li { display: flex; align-items: center; gap: 4px; border-radius: 5px; padding-left: 4px; }
+.worktree-files li.current { background: var(--bg); }
+.worktree-file {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; padding: 4px 6px;
+  border: none; background: transparent; color: var(--text); text-align: left; font-size: inherit;
+}
+.worktree-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.worktree-files li.deleted .worktree-path { text-decoration: line-through; color: var(--muted); }
+.worktree-files li.applied .worktree-path { color: var(--muted); }
+.worktree-status { display: inline-flex; flex-shrink: 0; }
+.worktree-status.added { color: var(--hl-add); }
+.worktree-status.modified { color: var(--accent); }
+.worktree-status.deleted { color: var(--hl-del); }
+.worktree-applied { display: inline-flex; align-items: center; gap: 2px; flex-shrink: 0; font-size: 11px; color: var(--muted); }
+.worktree-empty { color: var(--muted); padding: 8px; }
+.worktree-diff-text { flex: 1; min-width: 0; overflow: auto; padding: 8px 12px; }
+.worktree-diff-text .code-block pre { max-height: none; }
+.worktree-error { margin: 0; padding: 6px 12px; color: var(--error); font-size: 13px; border-top: 1px solid var(--border); white-space: pre-wrap; }
+.worktree-foot { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-top: 1px solid var(--border); }
+.worktree-foot .confirm-text { flex: 1; font-size: 13px; }
+.worktree-spacer { flex: 1; }
+.worktree-foot button.danger { color: var(--error); border-color: var(--error); background: transparent; }
+.worktree-foot .confirm-text + button.danger { color: #fff; background: var(--error); }
+
+/* ツールのカードの、実行の前にアプリがしたことのお知らせ(worktree を作った、など) */
+.tool-notice { display: flex; align-items: flex-start; gap: 5px; margin: 6px 0 0; color: var(--accent); font-size: 12px; }
+.tool-notice svg { flex-shrink: 0; margin-top: 2px; }
+
 /* トースト: 右上(タイトルバーのすぐ下)に重ねて出す。クリックで消える */
 .toasts {
   position: fixed; top: 44px; right: 12px; z-index: 50;

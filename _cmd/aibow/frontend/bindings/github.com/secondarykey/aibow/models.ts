@@ -383,6 +383,14 @@ export interface ConversationSettings {
     "workspace"?: string;
 
     /**
+     * Worktree は、ワークスペースのメインのフォルダ(Git のリポジトリのとき)を、会話ごとの worktree で書き換えるか(0039)。
+     * 入力欄の上の切り替えで選ぶ。入れた会話では、最初に書き換えるツールを実行する前に worktree を作り、
+     * メインのフォルダをそこに置き換える。作った worktree との結び付けは PC の手元(workspaces.json)に持つ。
+     * 新しい会話の既定には入れない(ワークスペースと同じく、会話ごとに選ぶ)
+     */
+    "worktree"?: boolean;
+
+    /**
      * WorkDir は、ワークスペースより前の作業フォルダ(絶対パス)。もう使わない。
      * 起動したときに、この PC にあるパスならワークスペースに移して空にする(Conversations.MigrateWorkDirs)。
      * この PC に無いパスは、そのまま残す(そのパスのある PC で起動したときに、そちらで移せるように)。画面からは変えられない
@@ -1026,6 +1034,12 @@ export interface ToolResult {
      * MCP のサーバーのツールなら、そのサーバーの名前(settings.json の名前)。組み込みのツールは空
      */
     "server"?: string;
+
+    /**
+     * Notice は、このツールを実行する前にアプリがしたことのお知らせ(画面のカードに出す。モデルには渡さない)。
+     * worktree を作ったこと・本体のコミットしていない変更や Git に入っていないものは入らないこと(0039)
+     */
+    "notice"?: string;
 }
 
 /**
@@ -1110,6 +1124,13 @@ export interface Workspace {
      * Folders はフォルダの組。メイン(Main)はちょうど1つ
      */
     "folders": WorkspaceFolder[] | null;
+
+    /**
+     * Worktrees は、このワークスペースで worktree を作って作業している会話(0039)。会話との結び付けは PC の手元に持つ
+     * (worktree は PC のフォルダなので。会話の DB には「worktree で作業する」の切り替えだけを置く)。
+     * 設定の画面からは変えない(Update は今の値を残す)。作る・捨てるのは会話の仕組み(worktree.go)
+     */
+    "worktrees"?: WorkspaceWorktree[] | null;
 }
 
 /**
@@ -1165,4 +1186,86 @@ export interface WorkspaceSettings {
      * 載せられる層の数はモデルの大きさと PC の VRAM で決まるので、モデルごとにこの PC に覚える(プロファイルには入れない。0014 の 4)
      */
     "model_gpu_layers": { [_ in string]?: number } | null;
+}
+
+/**
+ * WorkspaceWorktree は、会話1つの worktree(0039)。
+ */
+export interface WorkspaceWorktree {
+    /**
+     * 会話の ID
+     */
+    "conversation": string;
+
+    /**
+     * 本体(作ったときのメインのフォルダ)。差分を当てる先・消すときに git を動かす場所
+     */
+    "repo": string;
+
+    /**
+     * worktree のフォルダ(本体の .aibow/worktrees/<短い ID>)
+     */
+    "path": string;
+
+    /**
+     * worktree のブランチ(aibow/<短い ID>)
+     */
+    "branch": string;
+
+    /**
+     * 作ったときのコミット。差分はいつもこれと比べる
+     */
+    "base": string;
+}
+
+/**
+ * WorktreeChange は、差分の画面に出すファイル1つ。
+ */
+export interface WorktreeChange {
+    /**
+     * リポジトリの中の相対パス(/ 区切り。git の書き方のまま)
+     */
+    "path": string;
+
+    /**
+     * added / modified / deleted
+     */
+    "status": string;
+
+    /**
+     * 本体の作業ツリーに同じ中身がある(取り込み済み)
+     */
+    "applied": boolean;
+}
+
+/**
+ * WorktreeState は、会話の worktree の状態(入力欄の上の切り替えに出す)。
+ */
+export interface WorktreeState {
+    /**
+     * Usable は、切り替えを入れられるか(ワークスペースのメインのフォルダが Git のリポジトリで、git が使える)。
+     * 入れられなければ Reason に理由(画面は切り替えを灰色にして、理由を出す)
+     */
+    "usable": boolean;
+    "reason"?: string;
+
+    /**
+     * Active は、worktree を作って作業しているか(作ったあとは切り替えられない。捨てると外れる)
+     */
+    "active": boolean;
+
+    /**
+     * worktree のフォルダ
+     */
+    "path"?: string;
+
+    /**
+     * worktree のブランチ
+     */
+    "branch"?: string;
+
+    /**
+     * 作ったときのコミット
+     */
+    "base"?: string;
 }

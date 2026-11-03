@@ -9,7 +9,7 @@
 // 答えると Go の待っているループに届き、実行(か拒否)の結果が届いたら、ほかのカードと同じく畳んだ1行に戻る。
 // 作業の予定(update_plan。0037)は、引数と結果ではなく、予定のチェックリストとして出す(PlanCard)。
 import { useState } from "react";
-import { LuBan, LuCheck, LuFolder, LuHourglass, LuLoaderCircle, LuWrench, LuX } from "react-icons/lu";
+import { LuBan, LuCheck, LuFolder, LuGitBranch, LuHourglass, LuLoaderCircle, LuWrench, LuX } from "react-icons/lu";
 import { ToolPolicy } from "../../bindings/github.com/secondarykey/aibow";
 import type { ConfirmRequest } from "../../bindings/github.com/secondarykey/aibow";
 import type { ToolView } from "../transcript";
@@ -66,6 +66,10 @@ export function ToolCard({ tool, generating, onAnswer }: Props) {
               <pre>{tool.args.map(a => `${a.name}: ${a.value}`).join("\n")}</pre>
             )}
           </>
+        )}
+        {tool.notice && (
+          // アプリが実行の前にしたこと(worktree を作った、など)。モデルには渡していない
+          <p className="tool-notice"><LuGitBranch /> {tool.notice}</p>
         )}
         {!running && (
           <>
