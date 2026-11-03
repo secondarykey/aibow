@@ -11,6 +11,10 @@ export const STORED_LIST_WIDTH = "aibow.listWidth";
 export const STORED_LIST_OPEN = "aibow.listOpen";
 export const STORED_LAST_CONVERSATION = "aibow.lastConversation";
 export const STORED_THEME = "aibow.theme";
+// 会話の一覧の並べ方と、ワークスペースごとのときに畳んでいるまとまり(0038。conversationGroups.ts)。
+// ワークスペースは PC のものなので、並べ方も PC ごとに覚える
+export const STORED_LIST_GROUPING = "aibow.listGrouping";
+export const STORED_LIST_GROUPS_CLOSED = "aibow.listGroupsClosed";
 
 export function loadStored(key: string): string | null {
   try {

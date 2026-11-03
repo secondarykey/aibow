@@ -13,7 +13,8 @@
 | `useModels.ts` / `useConversations.ts` / `useChat.ts` / `useAppSettings.ts` | Go とのやり取り |
 | `transcript.ts` | 会話の表示(吹き出し・ツールのカード・エラー・区切り)の持ち方。保存された発言から表示を作る |
 | `components/` | 表示。`ConversationList` / `Splitter` / `TitleBar` / `ChatView` / `ToolCard` / `Composer` / `WorkspaceBar` / `WorkspaceSettings` / `ModelBar` / `Meter` / `NewChat` / `SettingsView` / `ConversationSettingsView` / `ConversationSettingsForm` / `ProfileSettings` / `ProfileTools` / `ConversationTools` / `ConfirmChip` / `CopyButton` など。返事の中身は [rendering.md](rendering.md) |
-| `stored.ts` | 画面の見た目の好み(一覧の幅・一覧を開いているか・最後に開いていた会話)を localStorage に覚える |
+| `stored.ts` | 画面の見た目の好み(一覧の幅・一覧を開いているか・最後に開いていた会話・一覧の並べ方)を localStorage に覚える |
+| `conversationGroups.ts` | 会話の一覧の並べ方(新しい順 / ワークスペースごと。0038)。まとめ方の計算と、並べ方・畳んだまとまりを一覧の部品の外に1つだけ持つ係([下](#会話の一覧)) |
 | `mediaQuery.ts` | 画面の幅を見る(`useMediaQuery`。狭いウィンドウの境目 `NARROW_QUERY`) |
 | `theme.ts` | 画面の明るさ(ライト / ダーク)を決めて `<html data-theme>` に書く([下](#明るさライト--ダーク)) |
 | `stickToBottom.ts` | 「一番下にいるときだけ追いかける」スクロール |
@@ -125,6 +126,16 @@ aibow-server につないでいるときは、**モデルの一覧(名前・書�
   - 一覧が閉じていたら開いて入力欄にし、決めるか取り消したら閉じて元に戻す。自分で開いていた一覧は開いたまま(入力欄の Esc は取り消すだけで、重ねて出した一覧を閉じない)
 - 「+ 新規」は一覧の一番上の行(スクロールしても隠れない)。開いているときも閉じたときも同じアイコン(`LuPlus`)を使い、開いているときだけ文字を添える(設定と同じ)
 - 右の仕切り(`Splitter.tsx`)で幅を変えられ、幅は localStorage に覚える
+- **並べ方**(0038):一覧の上の右端(ハンバーガーの反対側)のメニューで、「新しい順」と「ワークスペースごと」を選ぶ。ボタンは今の並べ方のアイコン(`LuList` / `LuFolderTree`)。
+  プロジェクト(まだ無い)ができたら、同じメニューに並べ方を足す(切り替えのボタン1つにしないのはそのため。`conversationGroups.ts` の `LIST_GROUPINGS`)
+  - ワークスペースごと:この PC のワークスペース(中のいちばん新しい会話の順。会話の無いものも名前の順で後ろに)→「ワークスペースなし」→「この PC に無いワークスペース」(別の PC で選んだ・消したもの。名前はその PC にしか無いので1つにまとめる)。後ろの2つは会話があるときだけ出す
+  - まとまりの見出しを押すと開け閉めする。畳んだ見出しには、中の会話のいちばん気にしてほしい印(ハンバーガーと同じ順)を出す
+  - 見出しの右の「+」で、そのワークスペースを選んだ新しい会話の画面に移る。上の「+ 新規」はワークスペースを選ばない(0035)。新しい会話の画面で「+ 新規」を押したときも、選んでいたワークスペースを外す
+  - 開いた会話・生成を始めた会話のまとまりは自動で開く(会話を開いた・生成を始めた・F2 で名前を変え始めた・開いている会話のワークスペースを変えたときの1回だけ。そのあと畳めば畳んだまま)
+  - 開いている会話のワークスペースを入力欄の上で変えると、一覧を読み直す前に、すぐそのまとまりへ移す(`App.tsx` が開いている会話のワークスペースを渡す)
+  - 並べ方と畳んだまとまりは PC ごとに localStorage に覚える(ワークスペースが PC のものなので。下の「次の起動で戻すもの」)。
+    狭いときは一覧の部品が2つ描かれるので、部品の外に1つだけ持ち(`useSyncExternalStore`)、両方が同じものを見る
+  - ブラウザ(aibow-server)では出さず、いつも新しい順(ブラウザの会話はワークスペースを使わない。0024)。一覧を畳んだ細い列は並べ方によらず同じ
 - ウィンドウが狭い(720px 以下)ときは、一覧を開くと会話を押しのけず、会話の上に重ねて出す(`App.tsx` の overlay。後ろの会話には影)
   - 影を押す・Esc・会話を選ぶ・「+ 新規」・「設定」で閉じる
   - 狭くなったときに一覧が開いていたら自動で閉じ、狭いウィンドウで起動したときは閉じた状態から始める
@@ -338,6 +349,7 @@ aibow-server につないでいるときは、**モデルの一覧(名前・書�
 | 一覧を開いているか | localStorage `aibow.listOpen`(`App.tsx`) | 広いときに、ハンバーガーで自分で開け閉めしたとき |
 | 最後に開いていた会話 | localStorage `aibow.lastConversation`(`App.tsx`) | 開いている会話が変わったとき(新しい会話の画面なら消す) |
 | 明るさの設定の写し | localStorage `aibow.theme`(`theme.ts`)。設定そのものは DB | Go から設定が届いたとき・設定の画面で選んだとき |
+| 一覧の並べ方・畳んだまとまり | localStorage `aibow.listGrouping`・`aibow.listGroupsClosed`(`conversationGroups.ts`。0038) | メニューで選んだとき・見出しで開け閉めしたとき(自動で開いたときも) |
 
 - ウィンドウの位置と大きさは、ウィンドウを作る前に Go が知る必要があるのでファイルに、ほかは画面だけの好みなので localStorage に置く。どれも会話の DB には入れない(その PC の画面の都合で、会話をサーバーに置く形にしても手元に残るもの)
 - 位置と大きさは DIP(拡大率で割った値)。作るときのオプション(`X`・`Y`・`Width`・`Height` と `InitialPosition: WindowXY`)で渡す(`SetPosition` / `SetSize` は `Run` の前だと無視される。wails3 スキルの window-state.md)

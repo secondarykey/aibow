@@ -31,7 +31,7 @@ const (
 //
 // 実行する前に、いつも確認する(tool.Confirmable)。中身が見えないので、読むだけのツールかどうかは分からない。
 // サーバーは「読むだけ」(readOnlyHint)などの印を付けられるが、MCP の仕様でも「信じてはいけないヒント」とされている。
-// 信頼して確認を省く仕組みは、あとで作る(TODO.md のロードマップの外)。
+// 信頼して確認を省く仕組みは、あとで作る(TODO.md の「ツールの信頼の続き」)。
 type remoteTool struct {
 	server  string
 	session *mcp.ClientSession
@@ -256,7 +256,8 @@ func answeredByServer(err error) bool {
 }
 
 // resultText は、結果の content(文章・画像など、いくつかの部分)を、モデルに渡す1つの文章にする。
-// aibow のモデルは画像を読めない(ロードマップの外の「画像を読む」)ので、文章以外は種類だけを書く。
+// 画像を読めるモデルでも、ツールの結果の画像はモデルに見せない(画像は発言に付けたものだけ。0030 の「やらないこと」)ので、
+// 文章以外は種類だけを書く。
 func resultText(content []mcp.Content) string {
 	parts := make([]string, 0, len(content))
 	for _, c := range content {

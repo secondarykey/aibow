@@ -121,7 +121,9 @@ export function useConversations(onError: (text: string) => void): Conversations
     const settings = await ChatService.ProfileDefaults(id || NIL);
     if (currentRef.current) return; // 選んでいる間に会話を開いた
     setDraftProfile(id);
-    setDraft({ ...settings });
+    // ワークスペースはプロファイルに入らない(0035)ので、選び直しても、この画面で選んだものを残す
+    // (一覧のまとまりの「+」で選んでから、プロファイルを変えたときに外れないように。0038)
+    setDraft({ ...settings, workspace: draftRef.current?.workspace || settings.workspace });
   }, [setDraft, setDraftProfile]);
 
   const adopt = useCallback((c: Conversation) => {
