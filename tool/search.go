@@ -46,7 +46,8 @@ func (t searchFiles) Def() Def {
 		Name: "search_files",
 		Description: "Search text files in the working directory for lines matching a regular expression (Go RE2 syntax). " +
 			"Returns matching lines as path:line: text, at most 100. Use read_file with offset to see the lines around a match. " +
-			"Skips .git, node_modules, hidden folders (unless given as path) and binary files.",
+			"Skips .git, node_modules, hidden folders (unless given as path) and binary files. " +
+			"It searches inside files; to find files by name, use list_files with pattern.",
 		Parameters: json.RawMessage(`{"type": "object", "properties": {` +
 			`"pattern": {"type": "string", "description": "Regular expression to search for, such as func main or TODO\\(.*\\)."}, ` +
 			`"path": {"type": "string", "description": "Folder or file to search, relative to the working directory. Omit to search the whole working directory."}, ` +

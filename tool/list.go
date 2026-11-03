@@ -48,7 +48,8 @@ func (t listFiles) Def() Def {
 	return t.folders.withFolder(Def{
 		Name: "list_files",
 		Description: "List files and folders in the working directory recursively, shallower ones first. Folder names end with /. " +
-			"Skips .git and node_modules, and does not go into hidden folders (names starting with .) unless you pass one as path.",
+			"Skips .git and node_modules, and does not go into hidden folders (names starting with .) unless you pass one as path. " +
+			"To find files by name, pass pattern.",
 		Parameters: json.RawMessage(`{"type": "object", "properties": {"path": {"type": "string", ` +
 			`"description": "Folder to list, relative to the working directory. Omit to list the whole working directory."}, ` +
 			`"pattern": {"type": "string", "description": "Only list files matching this glob, such as *.go, **/*_test.go or cmd/**/main.go. ` +
