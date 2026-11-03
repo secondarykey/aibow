@@ -30,6 +30,8 @@
 | `internal/proc/` | 子プロセスまでまとめて止める仕組み(Windows はジョブオブジェクト、それ以外はプロセスグループ)。`run_command` と MCP のサーバーで使う(0006 で `tool` から移した) |
 | `tool/confirm.go` | 実行前に確認が要るツールの印(`Confirmable`)と、確認の画面に出す内容(`Preview`: パス・上書きか・差分)。差分は `github.com/pkg/diff` |
 | `agent.go` | エージェントループ(`runTurn`)とツールの実行(10 秒の上限・20 回の上限・停止・会話の上限に入らない結果・実行前の確認の待ち) |
+| `worktree.go` | worktree で作業する会話(0039)。最初の書き換えの前に作る(`ensureWorktree`)・確認の既定・差分・取り込む・捨てる・会話を消したときの片付け。下の「worktree で作業する」 |
+| `git/git.go` / `git/worktree.go` | `git` パッケージ。アプリが行う Git の操作(`git` の exe を `os/exec` で呼ぶ)。worktree を作る・本体の状態・差分・`git apply` で当てる・取り込み済みか・消す。ルートの `aibow`・`tool` を import しない |
 | `format/qwen35_test.go` / `format/gemma4_test.go` / `format/llama3_test.go` / `format/granite_test.go` / `format/granite42_test.go` | 書式のテスト。プロンプトは公式テンプレートを jinja2 で通した期待値と1文字まで比べる(`testPromptMatchesTemplate`。書式によらない。ツールの結果の名前が無いときも比べる) |
 | `format/testdata/` | 書式のテストの会話(`cases.json`。書式をまたいで共通)と、期待値を作るスクリプト(`gen_expected.py`)。期待値は書式ごとのフォルダ(`qwen35/*.txt`・`gemma4/*.txt`・`llama3/*.txt`・`granite4/*.txt`・`granite42/*.txt`。Granite 4.0 は `granite40/*.txt`) |
 | `tool/tool_test.go` / `tool/files_test.go` / `tool/write_test.go` / `agent_test.go` / `workdir_test.go` / `confirm_test.go` | ツール(外に出られないこと・読み方の切り方を含む)とループ・作業フォルダのテスト(偽物の生成器を使う。モデル不要) |
@@ -410,6 +412,39 @@ Each command starts in the main folder "aibow" unless you pass folder; a cd does
   - 前後の行数の合計が 5,000 を超えたら差分を作らない(丸ごと書き直した大きなファイルは計算に時間がかかるため)
   - 共通の行が1つも無いと、`pkg/diff` は「消す」と「足す」を別の `@@` に分けて書く(`@@ -1,1 +0,0 @@` と `@@ -0,0 +1,1 @@`)。行の中身は正しいので、そのまま出している
   - `diff.Text` は文字列の代わりに nil を渡すとファイル名からファイルを読むので、必ず文字列を渡す(作業フォルダの外を読ませない)
+
+### worktree で作業する(0039)
+
+会話ごとに Git の worktree を作ってそこで書き換えさせ、最後に本体との差分を見て、取り込む / 捨てる形(仕様は [features/0039-worktree.md](features/0039-worktree.md))。
+**Git の操作はアプリが決まった手順で行い、モデルには普通の作業フォルダとして見せるだけ**。モデルには worktree だと伝えない(プロンプトは1文字も増えない)。
+
+- **切り替え**:会話の設定の `worktree`(入力欄の上のトグル。会話の DB)。使えるのは、ワークスペースのメインのフォルダが Git のリポジトリ(直下に `.git`)で、`git` が PATH にあるときだけ(`worktreeUsable`。使えなければ画面は灰色にして理由を出す)
+- **作る時**:切り替えを入れた会話で、組み込みの `write_file`・`edit_file`・`run_command` がメインのフォルダを扱う(`folder` を省いたか、メインの名前)前に作る(`needsWorktree` → `ensureWorktree`。`runTool` の中)。読むだけなら作らない。
+  `run_command` も入れるのは、コマンドもファイルを書き換えうるから(作る前に本体で動かすと、本体が変わってしまう)。MCP のサーバーのツールでは作らない(どこを書き換えるかが分からない)
+- **作り方**(`git` パッケージ。呼んだコマンドは Info のログに出る):
+  1. 本体の `.git/info/exclude` に `/.aibow/` を足す(`git.Exclude`。場所は `rev-parse --git-path info/exclude` で聞く。本体の `git status` に出ないように。Git に入っているファイルは書き換えない)
+  2. 本体のコミットしていない変更を数える(`git.Uncommitted`。`status --porcelain`)
+  3. `git worktree add -b aibow/<短い ID> <本体>/.aibow/worktrees/<短い ID> <HEAD のコミット>`(`git.Add`)。作ったときのコミット(`base`)を覚える。
+     短い ID は会話の ID の先頭 8 文字(UUIDv7 は先頭が時刻なので、近い時刻に作った会話と重なりうる。重なれば 4 文字ずつ延ばす)
+  4. 結び付け(会話・本体・パス・ブランチ・base)を `workspaces.json` のワークスペースの `worktrees` に書く(書けなければ worktree を消す)
+- **作ったあと**:その会話のメインのフォルダのパスを worktree にする(`toolFolders`・`workDir`)。ファイルのツール・`run_command`・`${workdir}` の MCP・環境の説明がすべて worktree を指す。
+  フォルダの名前(モデルが呼ぶ名前)は変えない。フォルダが1つの環境の説明の「"<名前>" refers to the working directory itself.」も本体のフォルダの名前のまま(`mainPath`)。
+  作った回の環境の説明はパスが変わるので、KV キャッシュはそこから作り直しになる
+- **お知らせ**:作ったことと、本体のコミットしていない変更 n 件・Git に入っていないもの(`node_modules` など)は worktree に無いことを、そのツールの結果の `ToolResult.Notice` に入れる(画面のカードに出す。モデルに渡す結果の文には入れない)。あわせて `worktree` の chat イベントを送る(画面は入力欄の上を取り直す)
+- **確認の既定**:worktree で作業する会話では、`write_file`・`edit_file` の決まりの既定を「確認しない」にする(`Conversations.defaultPolicy`。書き換えは worktree に入り、取り込む前に差分で見られるため)。
+  会話・PC で「確認する」にしていればそちらが勝つ(`policyOf` の順のまま)。`run_command` は確認する(コマンドは worktree の外にも書けるため)。
+  切り替えを入れていても、作れない状態(リポジトリでない・git が無い)なら本体を直接書くので、確認する
+- **差分**(`git.Changes` / `git.Diff`):worktree の中を全部ステージして(`add -A`。worktree の索引はアプリのもの)、索引と `base` を比べる(`diff --cached --no-renames`)。新しいファイル・消したファイルも入る。名前を変えたファイルは「消した」と「足した」の2つ(ファイルごとに選べるように)。
+  画面に出す差分は `--binary` を付けない(バイナリは「Binary files … differ」の1行)、当てる差分は付ける
+- **取り込む**(`git.Apply`):選んだファイルの差分を本体の作業ツリーに `git apply`(`--3way` なし)。全部当たるか、何も変えないか。本体の索引には触れない。コミットはユーザーがする。
+  当たらなければ、git のエラーの文(`LC_ALL=C` で英語に固定)から当たらないファイルを読み取って返す。取り込んだあとも worktree は残す(会話を続けられる)
+- **取り込み済みか**(`git.Applied`):覚えておかず、そのつど本体を見る。消したファイルは本体に無いか、足した・変えたファイルは本体のハッシュ(`hash-object`。改行の変換を当ててから計算する)が worktree のものと同じか。
+  変えたファイルで中身が違えば、そのファイルの差分を本体に逆向きに当てられるか(`apply --check -R`)。本体の同じファイルの別の行にコミットしていない変更があっても、取り込んだものが分かる
+- **捨てる・消す**:`git worktree remove --force` と `git branch -D`(`git.Remove`。フォルダを手で消してあれば `worktree prune`)。捨てると結び付けを消し、会話の切り替えも外す(本体のフォルダに戻る)。
+  会話を消したら一緒に消す(この PC に結び付けの無い会話なら何もしない)。生成中は捨てられない
+- **守り**:作ったあとは切り替えを外せない(捨てるのは差分の画面)・ワークスペースを変えられない(`keepWorktree`)。worktree のある会話が残っているワークスペースは消せない(結び付けが消えると片付けられなくなるため)
+- 作るのは画面のアプリだけ(aibow-server の資料のフォルダでは作らない。`noWorkDir` のときは何もしない)。画面の口(`ui/worktree.go`)もブラウザには出さない
+- テスト:`git/worktree_test.go`(一時リポジトリを `git init` で作る。当たらないとき・autocrlf・同じファイルの別の変更・git が無いとき)、`worktree_test.go`(会話から:作る時・確認の既定・取り込む・捨てる・会話を消す)。git が無ければ飛ばす
 
 ## 保存
 

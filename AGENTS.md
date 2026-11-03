@@ -59,6 +59,7 @@ OpenAI 互換のクライアント(Cline など)⇄ HTTP(S)(既定は 127.0.0.1�
 | `api/client/` | aibow-server につなぐクライアント(`client` パッケージ。ステップ8)。会話の仕組みの `Generator` と `ModelLoader` の HTTP 版。ルートの `aibow` は import しない |
 | `ui/` | 画面向けの処理(`ui` パッケージ。ステップ9の 9-0 で `_cmd/aibow` から切り出した)。画面から呼ぶメソッド(`Service`。モデル・会話・設定・送信)と、モデルを扱う係(直接 `DirectHost`・aibow-server 越し `RemoteHost`)。ルートの `aibow` を使い、Wails を import しない。デスクトップのアプリは `ChatService` に埋め込んで Wails に渡す。ブラウザ向けには aibow-server が使う:aibow-server の engine でモデルを扱う係(`ServerHost`)と、画面用の HTTP の口(`Handler`。`/aibow/ui/call/{メソッド}` と SSE の `/aibow/ui/events`)。9-1。仕組みは [_docs/api.md](_docs/api.md) の「画面用の口」 |
 | `web/` | 画面のビルド結果(`web` パッケージ。ステップ9の 9-2)。vite が `_cmd/aibow/frontend` から `web/dist/app` に書き、デスクトップのアプリと aibow-server の両方が `web.Files()` で埋め込む(写さない)。ビルドしていなければ `web/dist/index.html`(ビルドの仕方だけのページ) |
+| `git/` | アプリが行う Git の操作(`git` パッケージ。0039)。`git` の exe を `os/exec` で呼ぶ(外部パッケージは使わない)。worktree を作る・本体の状態・差分・`git apply` で当てる・消す。ルートの `aibow`・`tool`・Wails を import しない(aibow-server からも使えるように。モデルに見せるツールは `tool`、アプリが行う Git の操作は `git`) |
 | `genlog/` | aibow-server の使用量の記録(0033)で使う形と、生成に付ける付箋(道・用途・会話・順番待ちを ctx で運ぶ)。何にも依存しない(会話の仕組み・`api`・`api/client`・`ui`・`store` から使う)。記録するのは `_cmd/aibow-server` の記録付きの engine |
 | `mcp/internal/` | MCP のクライアントとサーバーの両方で使う部分(`meta`: `_meta` の名前) |
 | `internal/proc/` | 子プロセスまでまとめて止める仕組み(`tool` の `run_command` と `mcp/client` で使う) |
@@ -126,7 +127,7 @@ OpenAI 互換のクライアント(Cline など)⇄ HTTP(S)(既定は 127.0.0.1�
 - チャットテンプレートなど、学習の対象になる仕組みはライブラリ任せにせず自分で書く
 - 設定は `AIBOW_` で始まる環境変数にし、[_docs/usage.md](_docs/usage.md) の表に追加する(今ある環境変数はその表と [_cmd/aibow/AGENTS.md](_cmd/aibow/AGENTS.md))。
   画面で変えられる設定の環境変数は「DB にまだ値が無いときの初期値」で、画面で変えたら DB の値が優先
-- 画面で変える設定は DB、手で書く設定(その PC でどう起動するか。aibow-server のつなぎ先 `serverUrl` など)は設定ファイル `settings.json`、画面で変えるがその PC の人が決めること(ツールの扱い)は `tools.json`、MCP のサーバーは `mcp.json`(画面で足す。settings.json に手で書いた `mcpServers` は起動したときにここへ移す。0034)、ワークスペース(PC のフォルダの組。会話は ID だけを持つ)は `workspaces.json`(0035)([_docs/mcp.md](_docs/mcp.md))、aibow-server のつなぎ先とアプリのログインは `connection.json`(0019。手で書いた `serverUrl` が強い)。会話をサーバーに置く形にしても手元に残るものを、会話の DB に入れない
+- 画面で変える設定は DB、手で書く設定(その PC でどう起動するか。aibow-server のつなぎ先 `serverUrl` など)は設定ファイル `settings.json`、画面で変えるがその PC の人が決めること(ツールの扱い)は `tools.json`、MCP のサーバーは `mcp.json`(画面で足す。settings.json に手で書いた `mcpServers` は起動したときにここへ移す。0034)、ワークスペース(PC のフォルダの組。会話は ID だけを持つ)と会話の worktree の結び付け(0039)は `workspaces.json`(0035)([_docs/mcp.md](_docs/mcp.md))、aibow-server のつなぎ先とアプリのログインは `connection.json`(0019。手で書いた `serverUrl` が強い)。会話をサーバーに置く形にしても手元に残るものを、会話の DB に入れない
 
 ## コードの書き方
 
