@@ -53,6 +53,8 @@ type WorkspaceWorktree struct {
 	Path         string `json:"path"`         // worktree のフォルダ(本体の .aibow/worktrees/<短い ID>)
 	Branch       string `json:"branch"`       // worktree のブランチ(aibow/<短い ID>)
 	Base         string `json:"base"`         // 作ったときのコミット。差分はいつもこれと比べる
+	// BaseBranch は、作ったときに本体がいたブランチの名前(画面に出す。ブランチから外れていたら空)。差分には使わない(ブランチはあとで進むため)
+	BaseBranch string `json:"base_branch,omitempty"`
 }
 
 // WorkspaceFolder はワークスペースのフォルダ1つ。

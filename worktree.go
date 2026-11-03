@@ -56,8 +56,11 @@ type WorktreeState struct {
 	// Active は、worktree を作って作業しているか(作ったあとは切り替えられない。捨てると外れる)
 	Active bool   `json:"active"`
 	Path   string `json:"path,omitempty"`   // worktree のフォルダ
-	Branch string `json:"branch,omitempty"` // worktree のブランチ
-	Base   string `json:"base,omitempty"`   // 作ったときのコミット
+	Branch string `json:"branch,omitempty"` // worktree のブランチ(aibow/<短い ID>)
+	// Base・BaseBranch は、どこから作るか(作る前:本体の今のコミットとブランチ。切り替えを入れているときだけ)・どこから作ったか(作ったあと)。
+	// 画面は切り替えに「ブランチ コミット(短く)」と出す(どのコミットから始まるかが見えるように。2026-11-04、ユーザーと決めた)。ブランチから外れていればブランチは空
+	Base       string `json:"base,omitempty"`
+	BaseBranch string `json:"base_branch,omitempty"`
 }
 
 // WorktreeChange は、差分の画面に出すファイル1つ。
@@ -114,15 +117,25 @@ func (cs *Conversations) worktreeMode(set ConversationSettings) bool {
 }
 
 // WorktreeStateOf は、会話 id(新しい会話の画面なら空)の、設定 set での worktree の状態。
-func (cs *Conversations) WorktreeStateOf(id uuid.UUID, set ConversationSettings) WorktreeState {
+// 切り替えを入れていてまだ作っていなければ、本体の今のブランチとコミット(作るときの元)を git に聞いて添える。
+// 作るのは最初に書き換えるときなので、そのときまでに本体のブランチを変えれば、元も変わる(画面は取り直したときに出し直す)。
+func (cs *Conversations) WorktreeStateOf(ctx context.Context, id uuid.UUID, set ConversationSettings) WorktreeState {
 	set.conv = id
 	if wt, ok := cs.worktreeOf(set); ok {
-		return WorktreeState{Usable: true, Active: true, Path: wt.Path, Branch: wt.Branch, Base: wt.Base}
+		return WorktreeState{Usable: true, Active: true, Path: wt.Path, Branch: wt.Branch, Base: wt.Base, BaseBranch: wt.BaseBranch}
 	}
 	if err := cs.worktreeUsable(set); err != nil {
 		return WorktreeState{Reason: err.Error()}
 	}
-	return WorktreeState{Usable: true}
+	st := WorktreeState{Usable: true}
+	if set.Worktree {
+		ws, _ := cs.workspaces.Get(set.Workspace)
+		// まだコミットが無いリポジトリでは取れない(作るときに理由のエラーになる)。そのときは元を出さない
+		if branch, commit, err := git.Head(ctx, ws.MainFolder().Path); err == nil {
+			st.BaseBranch, st.Base = branch, commit
+		}
+	}
+	return st
 }
 
 // needsWorktree は、ツール t を実行する前に worktree を作るか。
@@ -169,11 +182,11 @@ func (cs *Conversations) ensureWorktree(ctx context.Context, set ConversationSet
 	if err != nil {
 		return "", fmt.Errorf("worktree を作れないため、実行していません: %w", err)
 	}
-	base, err := git.Add(ctx, repo, path, branch)
+	base, baseBranch, err := git.Add(ctx, repo, path, branch)
 	if err != nil {
 		return "", fmt.Errorf("worktree を作れないため、実行していません: %w", err)
 	}
-	wt := WorkspaceWorktree{Conversation: set.conv.String(), Repo: repo, Path: path, Branch: branch, Base: base}
+	wt := WorkspaceWorktree{Conversation: set.conv.String(), Repo: repo, Path: path, Branch: branch, Base: base, BaseBranch: baseBranch}
 	if err := cs.workspaces.addWorktree(ws.ID, wt); err != nil {
 		// 結び付けを書けなければ、作った worktree を消しておく(どの会話のものか分からないまま残さない)
 		if rerr := git.Remove(context.WithoutCancel(ctx), repo, path, branch); rerr != nil {
@@ -181,21 +194,29 @@ func (cs *Conversations) ensureWorktree(ctx context.Context, set ConversationSet
 		}
 		return "", fmt.Errorf("worktree を作りましたが、結び付けを保存できないため消しました(実行していません): %w", err)
 	}
-	log.Noticef("会話 %s の worktree を作りました: %s(ブランチ %s・コミット %s から)", set.conv, path, branch, shortHash(base))
-	note := worktreeNote(path, base, uncommitted)
+	log.Noticef("会話 %s の worktree を作りました: %s(ブランチ %s。%s から)", set.conv, path, branch, baseLabel(baseBranch, base))
+	note := worktreeNote(path, baseBranch, base, uncommitted)
 	emit(ChatEvent{ConversationID: set.conv, Type: "worktree", Text: note})
 	return note, nil
 }
 
 // worktreeNote は、worktree を作ったときのお知らせ(本体のコミットしていない変更と、Git に入っていないものは入らない。決定事項 9)。
-func worktreeNote(path, base string, uncommitted int) string {
+func worktreeNote(path, baseBranch, base string, uncommitted int) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "worktree を作りました(%s。コミット %s から)。", path, shortHash(base))
+	fmt.Fprintf(&b, "worktree を作りました(%s。%s から)。", path, baseLabel(baseBranch, base))
 	if uncommitted > 0 {
 		fmt.Fprintf(&b, "本体のコミットしていない変更 %d 件は worktree に入りません。", uncommitted)
 	}
 	b.WriteString("Git に入っていないもの(node_modules など)は worktree にはありません。")
 	return b.String()
+}
+
+// baseLabel は、どこから作ったかの書き方(「main の 1a2b3c4」。ブランチから外れていれば「コミット 1a2b3c4」)。
+func baseLabel(branch, commit string) string {
+	if branch == "" {
+		return "コミット " + shortHash(commit)
+	}
+	return branch + " の " + shortHash(commit)
 }
 
 func shortHash(h string) string {

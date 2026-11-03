@@ -34,7 +34,7 @@ func newWorktreeConversation(t *testing.T, g *fakeGen) (*Conversations, Conversa
 	if err := os.Mkdir(repo, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	gitIn(t, repo, "init", "-q")
+	gitIn(t, repo, "init", "-q", "-b", "main")
 	gitIn(t, repo, "config", "user.name", "aibow test")
 	gitIn(t, repo, "config", "user.email", "test@example.com")
 	gitIn(t, repo, "config", "core.autocrlf", "false")
@@ -117,7 +117,7 @@ func TestWorktreeWritesGoToWorktree(t *testing.T) {
 		t.Error("読むだけで worktree を作りました")
 	}
 	note := rs[1].ToolResult.Notice
-	if !strings.Contains(note, "worktree を作りました") || !strings.Contains(note, "コミットしていない変更 1 件") || !strings.Contains(note, "node_modules") {
+	if !strings.Contains(note, "worktree を作りました") || !strings.Contains(note, "main の "+wt.Base[:7]+" から") || !strings.Contains(note, "コミットしていない変更 1 件") || !strings.Contains(note, "node_modules") {
 		t.Errorf("作ったときのお知らせ: %q", note)
 	}
 	if strings.Contains(rs[1].Content, "worktree") {
@@ -251,7 +251,7 @@ func TestWorktreeRemovedWithConversation(t *testing.T) {
 // 確認の既定:worktree の会話では write_file・edit_file を確認しない。会話で「確認する」にすればそちらが勝つ。
 // Git のリポジトリでないフォルダでは、切り替えを入れても本体を直接書くので、確認する(0039 の完了の条件 5)
 func TestWorktreeConfirmDefaults(t *testing.T) {
-	cs, c, _ := newWorktreeConversation(t, &fakeGen{})
+	cs, c, repo := newWorktreeConversation(t, &fakeGen{})
 	policy := func(set ConversationSettings, name string) ToolPolicy {
 		for _, g := range cs.ToolStates(set) {
 			for _, ts := range g.Tools {
@@ -284,10 +284,17 @@ func TestWorktreeConfirmDefaults(t *testing.T) {
 	if got := policy(plain, "write_file"); got != ToolAsk {
 		t.Errorf("リポジトリでないフォルダの write_file = %s", got)
 	}
-	if st := cs.WorktreeStateOf(c.ID, plain); st.Usable || !strings.Contains(st.Reason, "Git のリポジトリではありません") {
+	if st := cs.WorktreeStateOf(ctx, c.ID, plain); st.Usable || !strings.Contains(st.Reason, "Git のリポジトリではありません") {
 		t.Errorf("リポジトリでないときの状態: %+v", st)
 	}
-	if st := cs.WorktreeStateOf(c.ID, conv.Settings); !st.Usable || st.Active {
-		t.Errorf("作る前の状態: %+v", st)
+	// 作る前は、本体の今のブランチとコミット(作るときの元)を添える。切り替えを入れていなければ添えない(git を呼ばない)
+	head := strings.TrimSpace(gitIn(t, repo, "rev-parse", "HEAD"))
+	if st := cs.WorktreeStateOf(ctx, c.ID, conv.Settings); !st.Usable || st.Active || st.BaseBranch != "main" || st.Base != head {
+		t.Errorf("作る前の状態: %+v(元は main の %s のはず)", st, head)
+	}
+	off := conv.Settings
+	off.Worktree = false
+	if st := cs.WorktreeStateOf(ctx, c.ID, off); st.Base != "" || st.BaseBranch != "" {
+		t.Errorf("切り替えを入れていないのに元を添えた: %+v", st)
 	}
 }

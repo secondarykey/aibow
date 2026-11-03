@@ -894,6 +894,9 @@ footer { border-top: 1px solid var(--border); background: var(--panel); padding:
   border: 1px solid var(--accent); background: var(--bg); color: var(--accent);
 }
 .worktree-bar.active .worktree-diff { border-color: var(--border); background: var(--bg); color: var(--text); }
+/* 作る元(作った元)のブランチとコミット。ブランチの名前は長いことがあるので切る */
+.worktree-base-branch { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.worktree-base-commit { font-size: 11.5px; opacity: .8; }
 
 /* worktree の差分の画面(0039)。左にファイルの一覧、右に選んだファイルの差分 */
 .worktree-overlay {

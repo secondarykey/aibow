@@ -25,11 +25,11 @@ func (s *Service) worktreeReady() error {
 
 // WorktreeState は、会話 id(新しい会話の画面なら空の ID)の、設定 settings での worktree の状態。
 // 画面がまだ保存していない設定(選んだばかりのワークスペース)でも見られるよう、設定を受け取る。
-func (s *Service) WorktreeState(id uuid.UUID, settings aibow.ConversationSettings) aibow.WorktreeState {
+func (s *Service) WorktreeState(ctx context.Context, id uuid.UUID, settings aibow.ConversationSettings) aibow.WorktreeState {
 	if err := s.worktreeReady(); err != nil {
 		return aibow.WorktreeState{Reason: err.Error()}
 	}
-	return s.convs.WorktreeStateOf(id, settings)
+	return s.convs.WorktreeStateOf(ctx, id, settings)
 }
 
 // WorktreeChanges は、会話 id の worktree で変わったファイル(差分の画面の一覧)。

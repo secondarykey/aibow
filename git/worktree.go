@@ -39,17 +39,39 @@ type Change struct {
 }
 
 // Add は、リポジトリ repo の HEAD から、フォルダ path に新しいブランチ branch の worktree を作る。
-// 作ったときのコミット(base)を返す。差分はいつもこの base と比べる(本体の HEAD があとで進んでも、worktree で変えたものだけを取り出すため)。
-func Add(ctx context.Context, repo, path, branch string) (base string, err error) {
-	out, err := run(ctx, repo, nil, "rev-parse", "--verify", "--quiet", "HEAD^{commit}")
+// 作ったときのコミット(base)と、そのとき本体がいたブランチの名前(baseBranch。ブランチから外れていれば空)を返す。
+// 差分はいつもこの base と比べる(本体の HEAD があとで進んでも、worktree で変えたものだけを取り出すため)。
+func Add(ctx context.Context, repo, path, branch string) (base, baseBranch string, err error) {
+	if _, err := run(ctx, repo, nil, "rev-parse", "--verify", "--quiet", "HEAD^{commit}"); err != nil {
+		return "", "", fmt.Errorf("まだコミットが無いリポジトリでは worktree を作れません(最初のコミットをしてから使ってください): %w", err)
+	}
+	baseBranch, base, err = Head(ctx, repo)
 	if err != nil {
-		return "", fmt.Errorf("まだコミットが無いリポジトリでは worktree を作れません(最初のコミットをしてから使ってください): %w", err)
+		return "", "", err
 	}
-	base = strings.TrimSpace(out)
 	if _, err := run(ctx, repo, nil, "worktree", "add", "-b", branch, path, base); err != nil {
-		return "", err
+		return "", "", err
 	}
-	return base, nil
+	return base, baseBranch, nil
+}
+
+// Head は、リポジトリ repo で今チェックアウトしているブランチの名前とコミット(worktree を作るときの元。画面に出す)。
+// ブランチから外れている(detached HEAD)ときは、ブランチの名前が空。まだコミットが無ければエラー。
+func Head(ctx context.Context, repo string) (branch, commit string, err error) {
+	// --abbrev-ref はそれより後ろの引数すべてに効くので、コミットのハッシュを先に聞く
+	out, err := run(ctx, repo, nil, "rev-parse", "HEAD", "--abbrev-ref", "HEAD")
+	if err != nil {
+		return "", "", err
+	}
+	lines := strings.Fields(out)
+	if len(lines) != 2 {
+		return "", "", fmt.Errorf("git rev-parse の出力を読めません: %q", out)
+	}
+	commit, branch = lines[0], lines[1]
+	if branch == "HEAD" {
+		branch = "" // ブランチから外れているときは、--abbrev-ref が HEAD と答える
+	}
+	return branch, commit, nil
 }
 
 // Exclude は、リポジトリ repo の .git/info/exclude に pattern の行を足す(すでにあれば何もしない)。

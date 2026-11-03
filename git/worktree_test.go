@@ -70,7 +70,7 @@ func addWorktree(t *testing.T, repo string) (wt, base string) {
 		t.Fatal(err)
 	}
 	wt = filepath.Join(repo, ".aibow", "worktrees", "test")
-	base, err := Add(ctx, repo, wt, "aibow/test")
+	base, _, err := Add(ctx, repo, wt, "aibow/test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -217,7 +217,7 @@ func TestAddWithoutCommit(t *testing.T) {
 	}
 	dir := t.TempDir()
 	mustRun(t, dir, "init", "-q")
-	_, err := Add(context.Background(), dir, filepath.Join(dir, ".aibow", "worktrees", "x"), "aibow/x")
+	_, _, err := Add(context.Background(), dir, filepath.Join(dir, ".aibow", "worktrees", "x"), "aibow/x")
 	if err == nil || !strings.Contains(err.Error(), "コミットが無い") {
 		t.Fatalf("err = %v", err)
 	}
@@ -312,5 +312,23 @@ func TestAppliedWithOtherChangesInSameFile(t *testing.T) {
 	}
 	if done, err := Applied(ctx, repo, wt, base, changes); err != nil || !done[0] {
 		t.Fatalf("取り込んだあと = %v, %v(本体: %q)", done, err, read(t, filepath.Join(repo, "a.txt")))
+	}
+}
+
+// 今のブランチとコミット。ブランチから外れているときはブランチが空。作った worktree は、そのときのブランチとコミットを返す
+func TestHead(t *testing.T) {
+	ctx := context.Background()
+	repo := newRepo(t, map[string]string{"a.txt": "a\n"})
+	head := strings.TrimSpace(mustRun(t, repo, "rev-parse", "HEAD"))
+	if branch, commit, err := Head(ctx, repo); err != nil || branch != "main" || commit != head {
+		t.Fatalf("Head = %q %q %v, want main %s", branch, commit, err, head)
+	}
+	base, baseBranch, err := Add(ctx, repo, filepath.Join(repo, ".aibow", "worktrees", "x"), "aibow/x")
+	if err != nil || base != head || baseBranch != "main" {
+		t.Fatalf("Add = %q %q %v", base, baseBranch, err)
+	}
+	mustRun(t, repo, "checkout", "-q", "--detach")
+	if branch, commit, err := Head(ctx, repo); err != nil || branch != "" || commit != head {
+		t.Fatalf("detached の Head = %q %q %v", branch, commit, err)
 	}
 }

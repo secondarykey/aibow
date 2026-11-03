@@ -1216,6 +1216,11 @@ export interface WorkspaceWorktree {
      * 作ったときのコミット。差分はいつもこれと比べる
      */
     "base": string;
+
+    /**
+     * BaseBranch は、作ったときに本体がいたブランチの名前(画面に出す。ブランチから外れていたら空)。差分には使わない(ブランチはあとで進むため)
+     */
+    "base_branch"?: string;
 }
 
 /**
@@ -1260,12 +1265,14 @@ export interface WorktreeState {
     "path"?: string;
 
     /**
-     * worktree のブランチ
+     * worktree のブランチ(aibow/<短い ID>)
      */
     "branch"?: string;
 
     /**
-     * 作ったときのコミット
+     * Base・BaseBranch は、どこから作るか(作る前:本体の今のコミットとブランチ。切り替えを入れているときだけ)・どこから作ったか(作ったあと)。
+     * 画面は切り替えに「ブランチ コミット(短く)」と出す(どのコミットから始まるかが見えるように。2026-11-04、ユーザーと決めた)。ブランチから外れていればブランチは空
      */
     "base"?: string;
+    "base_branch"?: string;
 }

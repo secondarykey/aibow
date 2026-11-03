@@ -424,9 +424,10 @@ Each command starts in the main folder "aibow" unless you pass folder; a cd does
 - **作り方**(`git` パッケージ。呼んだコマンドは Info のログに出る):
   1. 本体の `.git/info/exclude` に `/.aibow/` を足す(`git.Exclude`。場所は `rev-parse --git-path info/exclude` で聞く。本体の `git status` に出ないように。Git に入っているファイルは書き換えない)
   2. 本体のコミットしていない変更を数える(`git.Uncommitted`。`status --porcelain`)
-  3. `git worktree add -b aibow/<短い ID> <本体>/.aibow/worktrees/<短い ID> <HEAD のコミット>`(`git.Add`)。作ったときのコミット(`base`)を覚える。
+  3. `git worktree add -b aibow/<短い ID> <本体>/.aibow/worktrees/<短い ID> <HEAD のコミット>`(`git.Add`)。作ったときのコミット(`base`)と、そのとき本体がいたブランチの名前(`base_branch`。画面に出すだけ。ブランチから外れていれば空)を覚える(`git.Head`。`rev-parse HEAD --abbrev-ref HEAD`)。
      短い ID は会話の ID の先頭 8 文字(UUIDv7 は先頭が時刻なので、近い時刻に作った会話と重なりうる。重なれば 4 文字ずつ延ばす)
   4. 結び付け(会話・本体・パス・ブランチ・base)を `workspaces.json` のワークスペースの `worktrees` に書く(書けなければ worktree を消す)
+- **作る元の表示**:切り替えを入れていてまだ作っていなければ、`WorktreeState` に本体の今のブランチとコミットを添える(`git.Head`。画面は「main d08244e」と出す)
 - **作ったあと**:その会話のメインのフォルダのパスを worktree にする(`toolFolders`・`workDir`)。ファイルのツール・`run_command`・`${workdir}` の MCP・環境の説明がすべて worktree を指す。
   フォルダの名前(モデルが呼ぶ名前)は変えない。フォルダが1つの環境の説明の「"<名前>" refers to the working directory itself.」も本体のフォルダの名前のまま(`mainPath`)。
   作った回の環境の説明はパスが変わるので、KV キャッシュはそこから作り直しになる

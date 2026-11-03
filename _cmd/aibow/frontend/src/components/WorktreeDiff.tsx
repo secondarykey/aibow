@@ -13,7 +13,7 @@ import { LuCheck, LuFileMinus, LuFilePen, LuFilePlus, LuGitBranch, LuX } from "r
 import type { WorktreeChange, WorktreeState } from "../../bindings/github.com/secondarykey/aibow";
 import { ChatService } from "../backend";
 import { errorMessage } from "../errors";
-import { STATUS_LABELS } from "../worktree";
+import { baseText, STATUS_LABELS } from "../worktree";
 import { CodeBlock } from "./CodeBlock";
 
 interface Props {
@@ -121,7 +121,7 @@ export function WorktreeDiff({ id, state, generating, onClose, onChanged, onDisc
         <header className="worktree-head">
           <LuGitBranch />
           <span className="worktree-title" title={state.path}>{state.branch}</span>
-          <span className="worktree-base">コミット {(state.base ?? "").slice(0, 7)} との差分</span>
+          <span className="worktree-base">{baseText(state)} との差分</span>
           <button type="button" className="icon-btn" title="閉じる" onClick={onClose} disabled={busy}><LuX /></button>
         </header>
         <div className="worktree-body">
