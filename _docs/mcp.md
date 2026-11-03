@@ -216,15 +216,23 @@ MCP のツールだけでなく、組み込みのツール(aibow の中で動く
 毎回のリクエストが、版と自分の能力を `_meta` に入れて送ります(LLM が「覚えていないので毎回全部渡す」のと同じ考え方)。
 前もって確かめたいときは `server/discover` を呼びます。SDK は新しい版で話しかけ、だめなら古い版の挨拶に戻ります。
 
-filesystem サーバー(2026-10 の `npx -y @modelcontextprotocol/server-filesystem`)は古い 2025-11-25 版で話しました。ログはこうなります。
+filesystem サーバー(2026-10 の `npx -y @modelcontextprotocol/server-filesystem`)は古い 2025-11-25 版で話しました。ログ(Debug まで出したとき)はこうなります。
+Info の行(`#id` と何を呼んだか)だけを追えば流れが分かり、JSON の中身は Debug の行にあります。
 
 ```
+MCP filesystem → #1 server/discover
 MCP filesystem → {"jsonrpc":"2.0","id":1,"method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/clientCapabilities":{},…,"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}
+MCP filesystem ← #1 server/discover のエラー -32601 Method not found
 MCP filesystem ← {"jsonrpc":"2.0","id":1,"error":{"code":-32601,"message":"Method not found"}}
+MCP filesystem → #2 initialize
 MCP filesystem → {"jsonrpc":"2.0","id":2,"method":"initialize","params":{"clientInfo":{"name":"aibow",…},"protocolVersion":"2025-11-25","capabilities":{}}}
+MCP filesystem ← #2 initialize の結果
 MCP filesystem ← {"jsonrpc":"2.0","id":2,"result":{"protocolVersion":"2025-11-25","capabilities":{"tools":{"listChanged":true}},"serverInfo":{"name":"secure-filesystem-server","version":"1.0.0"}}}
+MCP filesystem → notifications/initialized
 MCP filesystem → {"jsonrpc":"2.0","method":"notifications/initialized","params":{}}
+MCP filesystem → #3 tools/list
 MCP filesystem → {"jsonrpc":"2.0","id":3,"method":"tools/list","params":{}}
+MCP filesystem ← #3 tools/list の結果
 MCP filesystem ← {"jsonrpc":"2.0","id":3,"result":{"tools":[{"name":"read_file",…
 MCP filesystem: つながりました(10.6 秒。MCP の版 2025-11-25・サーバー secure-filesystem-server 1.0.0・ツール 14 個: …)
 ```
@@ -264,7 +272,11 @@ aibow から同じものを使うと、次のことが分かりました。
 ## ログ
 
 - 起動(コマンド)・つながったとき(かかった秒数・版・サーバーの名前・ツールの数と名前)・止めたとき
-- 送受信した JSON-RPC のメッセージ(`→` が aibow から、`←` がサーバーから。1行 400 文字まで)。SDK の `LoggingTransport` を使っている
+- 送受信した JSON-RPC のメッセージ(`→` が aibow から、`←` がサーバーから)。SDK の `LoggingTransport` を使っている。1つのメッセージを2段で出す(2026-11-03、ユーザーの指示)
+  - Info:id と何を呼んだか(`→ #3 tools/call read_file`・`← #3 tools/call read_file の結果`)。答えには、id で対応させた「何への答えか」と、
+    エラー(`のエラー -32601 Method not found`)・ツールの失敗(`の結果(ツールが失敗した)`)・確認を求める答え(`input_required`)を添える。通知は id なしで method だけ
+  - Debug:JSON そのもの(1行 400 文字まで)。ツールの定義の一覧やファイルの中身で Info のログが埋まらないよう、こちらに分けた。
+    aibow-server は `-debug`(または server.json の `logLevel: "debug"`)で出る。テスト(`go test -v`)では全部出る
 - サーバーのエラー出力(`MCP <名前> (stderr) …`)
 - MCP のツールの定義で、プロンプトが何トークン長くなるか(`ツール: 組み込み N 個 + MCP M 個。…約 K トークン長くなります`)と、名前が重なって出さなかったツール
 
@@ -323,10 +335,14 @@ MCP のクライアント(Claude Code・aibow など)── 起動する(aibow-m
 aibow のクライアント(`mcp/client`)からは、新しい 2026-07-28 版で話します(挨拶なし。`server/discover` の次にすぐ `tools/list`)。つながるまで約 0.1 秒でした。
 
 ```
+MCP aibow → #1 server/discover
 MCP aibow → {"jsonrpc":"2.0","id":1,"method":"server/discover","params":{"_meta":{…,"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}
+MCP aibow ← #1 server/discover の結果
 MCP aibow ← {"jsonrpc":"2.0","id":1,"result":{"resultType":"complete","_meta":{"io.modelcontextprotocol/serverInfo":{"name":"aibow-mcp",…}},…
+MCP aibow → #2 tools/list
 MCP aibow → {"jsonrpc":"2.0","id":2,"method":"tools/list",…
 MCP aibow: つながりました(0.1 秒。MCP の版 2026-07-28・サーバー aibow-mcp …・ツール 9 個: aibow__calculate, aibow__edit_file, …)
+MCP aibow → #3 tools/call read_file
 MCP aibow → {"jsonrpc":"2.0","id":3,"method":"tools/call",…
 MCP aibow (stderr) … [INFO  ] ツール read_file: 実行しました(0.00 秒・結果 15 文字)
 ```
@@ -388,6 +404,6 @@ aibow [ 会話の仕組み ] ⇄ MCP(メモリ内のつなぎ方。SDK の NewIn
 - **確認は1回**:書き換えるツールには「確認を自分で求める」印(`tool.SelfConfirming`)を付け、会話の仕組みは呼ぶ前に確認しない。サーバーが差分を送ってきたときに、今と同じ差分のカードで1回だけ聞く。
   aibow が自分で立てたサーバーなので、送ってきた差分を信頼してよい(`settings.json` のサーバーは、名乗りを偽れるので呼ぶ前の確認も残す)
 - 時間の上限は、サーバーの上限(10 秒・`run_command` は 120 秒。`server.TimeLimit`)に 5 秒足したもの(サーバーの「上限を超えた」の結果を受け取るため)
-- 送受信のメッセージは `MCP 組み込み → {…}` / `MCP 組み込み ← {…}` としてログに出る。サーバーのログ(`ツール write_file: ユーザーに確認を求めます` など)は同じプロセスなので、aibow のログにそのまま出る
+- 送受信のメッセージは `MCP 組み込み → #3 tools/call write_file` / `MCP 組み込み ← #3 tools/call write_file の結果` としてログ(Info)に出る(JSON の中身は Debug)。サーバーのログ(`ツール write_file: ユーザーに確認を求めます` など)は同じプロセスなので、aibow のログにそのまま出る
 - つなげなかったときは、ログに Error を出して `tool` パッケージのツールを直接呼ぶ(予備。この場合は今までどおり呼ぶ前に確認する)。`SetLocalTools` をしない(aibow をライブラリとして使う・テスト)ときも直接呼ぶ
 
