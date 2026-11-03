@@ -703,6 +703,7 @@ button.danger-outline { color: var(--error); border-color: var(--error); backgro
 .workspace-folders { display: grid; grid-template-columns: auto 10em minmax(0, 1fr) auto auto; column-gap: 10px; row-gap: 4px; align-items: center; }
 .workspace-folder { display: contents; }
 .settings-view .workspace-folders input.workspace-folder-name { width: 100%; padding: 2px 6px; font-size: 12.5px; }
+.settings-view .workspace-folders input.workspace-folder-description { grid-column: 2 / -1; width: 100%; padding: 2px 6px; font-size: 12.5px; margin-bottom: 4px; }
 .workspace-folder-path { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .workspace-folder.missing .mcp-summary { text-decoration: line-through; }
 .settings-view .workspace-folders input[type=radio], .settings-view .workspace-folders input[type=checkbox] { margin: 0; }

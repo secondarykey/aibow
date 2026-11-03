@@ -188,3 +188,16 @@ func TestListToolsFetch(t *testing.T) {
 		}
 	}
 }
+
+// フォルダが複数なら、instructions にフォルダを並べる。説明があれば行の末尾に付く(2026-11-03)
+func TestInstructionsFolders(t *testing.T) {
+	got := instructions([]tool.Folder{
+		{Name: "app", Path: "/work/app", Main: true, Writable: true},
+		{Name: "マニュアル", Path: "/work/manual", Description: "ユーザー向けのマニュアル"},
+	})
+	for _, want := range []string{"  - app (main, writable): /work/app\n", "  - マニュアル (read-only): /work/manual — ユーザー向けのマニュアル\n"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("%q が無い:\n%s", want, got)
+		}
+	}
+}

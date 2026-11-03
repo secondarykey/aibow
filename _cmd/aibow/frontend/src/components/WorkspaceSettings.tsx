@@ -91,6 +91,9 @@ export function WorkspaceSettings({ list, reload }: Props) {
   );
 }
 
+// FOLDER_DESCRIPTION_MAX は、フォルダの説明の長さの上限(Go の folderDescriptionMax と同じ。送信のたびにモデルに渡すので短く保つ)
+const FOLDER_DESCRIPTION_MAX = 100;
+
 // Draft は、編集中のフォルダ1つ(画面に出す印は、保存してある間だけ持つ)。
 type Draft = Omit<FolderView, "missing" | "git"> & { missing?: boolean; git?: boolean };
 
@@ -107,7 +110,8 @@ function WorkspaceForm({ workspace, locked, onClose, onSaved, onDeleted }: {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const plain = (fs: Draft[]) => fs.map(({ path, name, main, writable }) => ({ path, name, main: !!main, writable: !!writable }));
+  const plain = (fs: Draft[]) =>
+    fs.map(({ path, name, main, writable, description }) => ({ path, name, main: !!main, writable: !!writable, description: description ?? "" }));
   const changed = name.trim() !== workspace.name || JSON.stringify(plain(folders)) !== JSON.stringify(plain(workspace.folders ?? []));
   const multi = folders.length > 1;
 
@@ -189,6 +193,18 @@ function WorkspaceForm({ workspace, locked, onClose, onSaved, onDeleted }: {
             </span>
             <span><input type="checkbox" checked={!!f.writable} disabled={locked} onChange={e => set(i, { writable: e.target.checked })} title={f.writable ? "書ける" : "読むだけ"} /></span>
             <button type="button" className="place-remove" disabled={locked || folders.length === 1} onClick={() => remove(i)} title="このフォルダを外す(フォルダそのものは消さない)"><LuX /></button>
+            {/* 説明は名前の下の行に置く(名前・パスと同じ行だと、パスの欄が狭くなる) */}
+            <span />
+            <input
+              type="text"
+              className="workspace-folder-description"
+              value={f.description ?? ""}
+              maxLength={FOLDER_DESCRIPTION_MAX}
+              placeholder="説明"
+              disabled={locked || !multi}
+              onChange={e => set(i, { description: e.target.value })}
+              title={multi ? "フォルダの中身の短い説明。モデルに渡す環境の説明で、このフォルダの行の末尾に付ける(名前と違う言葉で呼んでも、どのフォルダかを当てやすくなる)" : "フォルダが1つのときは使わない"}
+            />
           </div>
         ))}
       </div>

@@ -47,6 +47,7 @@ type Local struct {
 
 // folderKey は、フォルダの組の見分け方。名前・パス・メイン・書けるかのどれかが変われば、別のサーバーにする
 // (ワークスペースを設定の画面で変えたら、次の送信から新しい組のサーバーを使う)。
+// 説明(Description)は入れない。ツールの動きは変わらず、aibow は環境の説明を自分で書くので、説明だけ変えてもサーバーを作り直さない。
 func folderKey(folders []tool.Folder) string {
 	var b strings.Builder
 	for _, f := range folders {

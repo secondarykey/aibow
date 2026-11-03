@@ -30,6 +30,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"unicode/utf8"
 	"uuid"
 )
 
@@ -50,7 +51,13 @@ type WorkspaceFolder struct {
 	Main bool `json:"main,omitempty"`
 	// Writable は、ファイルのツールで書けるか(false なら読むだけ。write_file・edit_file を受け付けない)
 	Writable bool `json:"writable,omitempty"`
+	// Description は、フォルダの中身の短い説明(1行。folderDescriptionMax 文字まで)。環境の説明の、そのフォルダの行の末尾に付ける(2026-11-03)。
+	// ユーザーが「マニュアルを直して」のように名前と違う言葉で呼んでも、モデルがどのフォルダかを当てる手がかりにする
+	Description string `json:"description,omitempty"`
 }
+
+// folderDescriptionMax は、フォルダの説明の長さの上限(文字数)。説明は送信のたびにシステムプロンプトに入り、会話の上限を使うので、短く保つ
+const folderDescriptionMax = 100
 
 // MainFolder はメインのフォルダ(無ければ空)。
 func (w Workspace) MainFolder() WorkspaceFolder {
@@ -204,6 +211,11 @@ func (w *Workspaces) Update(ws Workspace) error {
 		f.Path = filepath.Clean(f.Path)
 		if f.Name = strings.TrimSpace(f.Name); f.Name == "" {
 			f.Name = folderName(f.Path)
+		}
+		// 説明は環境の説明の1行に入るので、改行や続く空白を1つの空白にする
+		f.Description = strings.Join(strings.Fields(f.Description), " ")
+		if n := utf8.RuneCountInString(f.Description); n > folderDescriptionMax {
+			return fmt.Errorf("フォルダ %s の説明が長すぎます(%d 文字。%d 文字までにしてください。説明は送信のたびにモデルに渡すため)", f.Name, n, folderDescriptionMax)
 		}
 		ws.Folders[i] = f
 	}

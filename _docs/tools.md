@@ -286,13 +286,14 @@ Commands already run inside the working directory, so do not cd into it. "exampl
 `search_files` を使う会話では、Windows の行で findstr を案内せず `search_files` に向ける(0037 の決定事項 8。4B が `run_command` で findstr を呼び、確認が挟まるのを防ぐ)。
 `search_files` を「使わない」にした会話では、前の行(`use dir, type, findstr; …`)のまま。aibow-mcp の instructions は、フォルダがあればいつも `search_files` を出すので、いつも新しい行
 
-ワークスペースのフォルダが複数なら、フォルダを名前・印・パスで並べる(`foldersEnvironment`。印は main / writable か read-only / git。git は `.git` があるか):
+ワークスペースのフォルダが複数なら、フォルダを名前・印・パス・説明で並べる(`foldersEnvironment`・`tool.FolderLine`。印は main / writable か read-only / git。git は `.git` があるか。
+説明はユーザーが設定の画面で書いたもの(1行・100 文字まで。無ければパスで終わる)を、日本語のまま ` — ` の後ろに付ける):
 
 ```
 # Environment
 Folders (pass the folder argument; omit it for the main folder):
 - aibow (main, writable, git): D:\Go\Projects\aibow
-- notes (read-only): D:\Docs\notes
+- notes (read-only): D:\Docs\notes — 会議のメモ
 OS: windows
 Shell for run_command: cmd.exe (use dir and type; ls, cat and grep are not available. To search inside files, use search_files instead of findstr)
 Use paths relative to the folder.
@@ -323,6 +324,10 @@ Each command starts in the main folder "aibow" unless you pass folder; a cd does
 - それでもモデルは `folder` を渡さずに `cd "C:\...\B" && git log` と書く。cmd.exe の `cd` は `/d` が無いと別のドライブへ移らず成功扱いなので、
   メイン(D:)で動いて別のリポジトリのログが返った(2026-11-03、ユーザーの報告)。そこで、**先頭の `cd <絶対パス> &&` の行き先がワークスペースのフォルダ(の中)なら、
   そのフォルダをカレントにする**(`tool.leadingCd`。`folder` より強い)。コマンドは書き換えず、確認のカードにはそのフォルダの名前が出る
+- **フォルダの説明**(`WorkspaceFolder.Description`・`tool.Folder.Description`。2026-11-03、ユーザーと決めた):ユーザーが「マニュアルを直して」のように名前と違う言葉で呼んでも、
+  モデルがどのフォルダかを当てる手がかりとして、環境の説明(と `aibow-mcp` の instructions)のフォルダの行の末尾に付ける。ツールの動きには使わない(守りは読むだけの印と確認)。
+  送信のたびにシステムプロンプトに入るので、1行・100 文字まで(`folderDescriptionMax`。保存のときに改行と続く空白を1つの空白にし、長ければ断る)。
+  説明だけ変えても aibow の中の MCP サーバーは作り直さない(`folderKey` に入れない)。フォルダが1つのときは使わない(段1の形を変えない)。4B での効き目はまだ試していない
 - 確認のカードには、**フォルダが複数なら、メインでもそのフォルダの名前を出す**(`tool.Preview.Folder`。ファイルのツールも `run_command` も。フォルダが1つなら出さない)。
   以前はメイン以外のときだけ出していたが、それだと上の取り違えでメインで動くことにカードで気づけないので、そろえた(2026-11-02、ユーザーと決めた)
 - aibow の中の MCP サーバー(`mcp/client` の `Local`)は、フォルダの組ごと(名前・パス・メイン・書けるかの組。`folderKey`)に1つ。設定の画面で組を変えたら、次の送信から新しい組のサーバーを使う

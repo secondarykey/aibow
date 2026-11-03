@@ -298,7 +298,7 @@ func (cs *Conversations) toolFolders(set ConversationSettings) []tool.Folder {
 	}
 	folders := make([]tool.Folder, 0, len(ws.Folders))
 	for _, f := range ws.Folders {
-		folders = append(folders, tool.Folder{Name: f.Name, Path: f.Path, Main: f.Main, Writable: f.Writable})
+		folders = append(folders, tool.Folder{Name: f.Name, Path: f.Path, Main: f.Main, Writable: f.Writable, Description: f.Description})
 	}
 	return folders
 }

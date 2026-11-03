@@ -36,6 +36,8 @@ type Folder struct {
 	Path     string // 絶対パス
 	Main     bool   // メイン(folder を省いたときのフォルダ)
 	Writable bool   // 書けるか(false なら読むだけ。write_file・edit_file を受け付けない)
+	// Description は、フォルダの中身の短い説明(ユーザーが書く。環境の説明でフォルダの行の末尾に付ける。ツールの動きには使わない)
+	Description string
 }
 
 // Files は、作業フォルダ dir の中を扱うツール。dir は絶対パス。
@@ -67,6 +69,16 @@ func FolderMarks(f Folder, git bool) string {
 		marks = append(marks, "git")
 	}
 	return strings.Join(marks, ", ")
+}
+
+// FolderLine は、環境の説明に並べるフォルダ1行(「名前 (印): パス — 説明」。説明が無ければパスまで)。
+// 説明はユーザーの言葉のまま(日本語でも)付ける。ユーザーが名前と違う言葉でフォルダを呼んだとき、モデルが当てる手がかりにする(2026-11-03)
+func FolderLine(f Folder, git bool) string {
+	line := fmt.Sprintf("%s (%s): %s", f.Name, FolderMarks(f, git), f.Path)
+	if d := strings.Join(strings.Fields(f.Description), " "); d != "" {
+		line += " — " + d
+	}
+	return line
 }
 
 // FilesIn は、フォルダの組 folders の中を扱うツール。メインはちょうど1つにしておく(無ければ先頭をメインにする)。

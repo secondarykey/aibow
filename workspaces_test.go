@@ -52,6 +52,16 @@ func TestWorkspacesFile(t *testing.T) {
 	if err := w.Update(renamed); err == nil {
 		t.Error("空の名前はエラーのはず")
 	}
+	// フォルダの説明は上限(folderDescriptionMax 文字)まで。日本語も1文字と数える
+	renamed.Name = "サンプル"
+	renamed.Folders = []WorkspaceFolder{{Path: dir, Name: "example", Main: true, Writable: true, Description: strings.Repeat("あ", folderDescriptionMax)}}
+	if err := w.Update(renamed); err != nil {
+		t.Errorf("上限ちょうどの説明: %v", err)
+	}
+	renamed.Folders[0].Description += "い"
+	if err := w.Update(renamed); err == nil || !strings.Contains(err.Error(), "説明が長すぎます") {
+		t.Errorf("長すぎる説明: %v", err)
+	}
 	if err := w.Delete(ws.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -184,7 +194,7 @@ func newFoldersConversation(t *testing.T, g *fakeGen) (*Conversations, Conversat
 	ws, _ := cs.workspaces.Get(c.Settings.Workspace)
 	ws.Folders = []WorkspaceFolder{
 		{Path: main, Name: "app", Main: true, Writable: true},
-		{Path: notes, Name: "notes"},
+		{Path: notes, Name: "notes", Description: " 会議の\n  メモ "}, // 説明の改行と続く空白は1つの空白になる
 	}
 	if err := cs.workspaces.Update(ws); err != nil {
 		t.Fatal(err)
@@ -225,12 +235,12 @@ func TestWorkspaceFolders(t *testing.T) {
 		if b, _ := os.ReadFile(filepath.Join(notes, "memo.md")); string(b) != "# メモ\n" {
 			t.Errorf("MCP %v: 読むだけのフォルダが書き換わった: %q", viaMCP, b)
 		}
-		// モデルに知らせた定義には folder(名前の enum)があり、環境の説明にフォルダが並ぶ
+		// モデルに知らせた定義には folder(名前の enum)があり、環境の説明にフォルダが並ぶ(説明があれば行の末尾に付く)
 		call := g.calls[0]
 		if d := tool.ArgTypesFor(call.tools, "read_file"); d["folder"] != "string" {
 			t.Errorf("MCP %v: read_file に folder が無い: %v", viaMCP, d)
 		}
-		for _, want := range []string{"Folders (pass the folder argument; omit it for the main folder):\n- app (main, writable): ", "\n- notes (read-only): " + notes + "\n", "Each command starts in the main folder \"app\" unless you pass folder; a cd does not carry over to the next command. To run in another folder of the list, pass folder instead of cd."} {
+		for _, want := range []string{"Folders (pass the folder argument; omit it for the main folder):\n- app (main, writable): ", "\n- notes (read-only): " + notes + " — 会議の メモ\n", "Each command starts in the main folder \"app\" unless you pass folder; a cd does not carry over to the next command. To run in another folder of the list, pass folder instead of cd."} {
 			if !strings.Contains(call.prompt, want) {
 				t.Errorf("MCP %v: 環境の説明に %q が無い:\n%s", viaMCP, want, call.prompt)
 			}

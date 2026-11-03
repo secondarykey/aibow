@@ -1135,6 +1135,12 @@ export interface WorkspaceFolder {
      * Writable は、ファイルのツールで書けるか(false なら読むだけ。write_file・edit_file を受け付けない)
      */
     "writable"?: boolean;
+
+    /**
+     * Description は、フォルダの中身の短い説明(1行。folderDescriptionMax 文字まで)。環境の説明の、そのフォルダの行の末尾に付ける(2026-11-03)。
+     * ユーザーが「マニュアルを直して」のように名前と違う言葉で呼んでも、モデルがどのフォルダかを当てる手がかりにする
+     */
+    "description"?: string;
 }
 
 /**

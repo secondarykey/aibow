@@ -102,7 +102,7 @@ func instructions(folders []tool.Folder) string {
 	var b strings.Builder
 	b.WriteString("# Environment\n- Folders (file tools and run_command take a folder argument; omit it for the main folder. File paths are relative to the folder):\n")
 	for _, f := range folders {
-		fmt.Fprintf(&b, "  - %s (%s): %s\n", f.Name, tool.FolderMarks(f, false), f.Path)
+		b.WriteString("  - " + tool.FolderLine(f, false) + "\n")
 	}
 	b.WriteString("- Shell for run_command: " + tool.ShellNoteFor(true) + " (each call starts a new shell in the chosen folder; a cd does not carry over. Pass folder instead of cd to use another folder)\n")
 	return b.String()
