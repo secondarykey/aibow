@@ -459,6 +459,32 @@ nav.conversations.collapsed .admin.active { color: var(--accent); }
 .conversation .delete.has-mark .x { display: none; }
 .conversation:hover .delete.has-mark .dot { display: none; }
 .conversation:hover .delete.has-mark .x { display: inline; }
+/* 会話の一覧の並べ方(0038。ConversationList.tsx の GroupingMenu)。一覧の上の右端に、今の並べ方のアイコン。押すと下に並べ方を選ぶメニュー */
+.grouping-menu { position: relative; margin-left: auto; }
+.grouping-menu .icon-btn { width: 28px; height: 28px; font-size: 16px; color: var(--muted); }
+.grouping-menu .icon-btn:hover:not(:disabled) { color: var(--text); }
+.grouping-menu .split-menu button { display: flex; align-items: center; gap: 6px; }
+.grouping-check { width: 14px; display: inline-flex; flex-shrink: 0; }
+/* ワークスペースごとのときの、まとまりの見出し(押すと開け閉め・右の + でそのワークスペースの新しい会話)。中の会話は少し下げる */
+.conv-group-head { display: flex; align-items: center; margin: 8px 0 2px; }
+.conv-group-head:first-child { margin-top: 0; }
+.conv-group-toggle {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px; padding: 3px 4px;
+  border: none; border-radius: 4px; background: transparent; color: var(--muted); font-size: 12px; text-align: left;
+}
+.conv-group-toggle:hover { background: var(--bg); color: var(--text); }
+.conv-group-toggle svg { flex-shrink: 0; }
+.conv-group-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+/* 「ワークスペースなし」「この PC に無いワークスペース」は、ワークスペースの名前と見分けられるよう太字にしない */
+.conv-group-head.other .conv-group-name { font-weight: 400; }
+.conv-group-count { flex-shrink: 0; font-size: 11px; }
+.conv-group-toggle .dot { flex-shrink: 0; width: 8px; height: 8px; margin: 0 0 0 4px; }
+.conv-group-new {
+  flex-shrink: 0; width: 28px; padding: 3px 0; display: inline-flex; align-items: center; justify-content: center;
+  border: none; border-radius: 4px; background: transparent; color: var(--muted);
+}
+.conv-group-new:hover:not(:disabled) { background: var(--bg); color: var(--text); }
+nav.conversations ul.grouped .conversation { margin-left: 12px; }
 .dot {
   display: inline-block; width: 10px; height: 10px; border-radius: 50%;
   background: var(--accent); margin: 0 2px 2px 0; vertical-align: middle;

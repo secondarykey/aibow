@@ -268,10 +268,27 @@ export default function App() {
       return;
     }
     if (home) {
-      focusInput(); // すでに新しい会話の画面なら、入力欄に戻すだけ
+      // すでに新しい会話の画面なら、入力欄に戻すだけ。ただしワークスペースは外す
+      // (「+ 新規」はワークスペースを選ばない。0035。一覧のまとまりの「+」で選んでいたときも、ここでは外す。0038)
+      if (convs.draft?.workspace) convs.updateSettings({ workspace: "" });
+      focusInput();
       return;
     }
     convs.goHome().then(focusInput, err => addError(errorMessage(err)));
+  };
+  // 一覧のまとまりの「+」(並べ方がワークスペースごとのとき。0038): そのワークスペースを選んだ新しい会話の画面に移る。
+  // 上の「+ 新規」と違い、利用者がワークスペースを選んで押しているので、選んでおいてよい(0035 の「前回のワークスペースを選ばない」とは別)
+  const onNewIn = (workspace: string) => {
+    closeOverlay();
+    setSettingsOpen(false);
+    setConvSettingsOpen(false);
+    const wasReading = reading !== null;
+    if (wasReading) setReading(null);
+    const ready = home && !wasReading ? Promise.resolve() : convs.goHome();
+    ready.then(() => {
+      convs.updateSettings({ workspace });
+      focusInput();
+    }, err => addError(errorMessage(err)));
   };
 
   // 送信できない理由。別の会話で生成中なら、会話を読むことはできるが送信はできない
@@ -724,6 +741,9 @@ export default function App() {
     shared,
     readingId: reading?.conversation.id ?? null,
     onOpenShared,
+    workspaces: workspaces.workspaces ?? [],
+    currentWorkspace: convs.current ? convs.current.conversation.settings.workspace ?? "" : null,
+    onNewIn,
   };
 
   // aibow-server につないでいるか(上限の欄の説明を変える。0015)
