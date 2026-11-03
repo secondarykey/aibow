@@ -425,8 +425,15 @@ Each command starts in the main folder "aibow" unless you pass folder; a cd does
   1. 本体の `.git/info/exclude` に `/.aibow/` を足す(`git.Exclude`。場所は `rev-parse --git-path info/exclude` で聞く。本体の `git status` に出ないように。Git に入っているファイルは書き換えない)
   2. 本体のコミットしていない変更を数える(`git.Uncommitted`。`status --porcelain`)
   3. `git worktree add -b aibow/<短い ID> <本体>/.aibow/worktrees/<短い ID> <HEAD のコミット>`(`git.Add`)。作ったときのコミット(`base`)と、そのとき本体がいたブランチの名前(`base_branch`。ブランチから外れていれば空)・コミットの件名(`base_subject`)を覚える(どちらも画面に出すだけ。`git.Head`。`log -1 --format=%H%x00%s` と `rev-parse --abbrev-ref HEAD`)。
-     短い ID は会話の ID の先頭 8 文字(UUIDv7 は先頭が時刻なので、近い時刻に作った会話と重なりうる。重なれば 4 文字ずつ延ばす)
+     短い ID は「<worktree の名前>-<会話の ID の末尾 4 文字>」、名前が無ければ「<末尾 8 文字>」(`shortWorktreeID`)。
+     末尾を使うのは、UUIDv7 の後ろ半分がランダムだから(先頭 12 文字は作った時刻のミリ秒で、上から 8 文字は約 65 秒ごとにしか変わらず、近い時刻に作った会話と重なる)。重なれば 4 文字ずつ延ばす
   4. 結び付け(会話・本体・パス・ブランチ・base)を `workspaces.json` のワークスペースの `worktrees` に書く(書けなければ worktree を消す)
+- **worktree の名前**(`worktreename.go`):ブランチとフォルダの名前に使う英語の短い名前(`fix-login-error` など。会話の設定の `worktree_name`)。
+  会話の最初の送信で、返事を書かせる前に1回だけモデルに書かせる(`nameWorktree`。ツールを見せない・思考なし・上限 24 トークン。頼みは英語で「2〜4語の英小文字を - でつないだ名前だけ」)。
+  最初の送信にするのは、作業領域(KV キャッシュ)が1つだから:途中で別の頼みを挟むとその会話のキャッシュが崩れ、次の生成でプロンプトを丸ごと読み直すが、最初ならその会話のキャッシュはまだほとんど無い。
+  書かせるのは、メインのフォルダが Git のリポジトリのワークスペースの会話だけ(切り替えを入れていなくても。あとで入れたときのため)。返ってきた文は `slugify` で英小文字・数字・`-` だけにする(何も残らなければ名前なし)。
+  マルチバイトは使わない(会話のタイトルは使わない)。使用量の記録では返事に数える。
+  会話の設定の画面で直せる(`SetWorktreeName`。作る前だけ。`UpdateSettings` では変えない:画面が持っている古い設定で、最初の送信で作った名前を消さないため)
 - **作る元の表示**:切り替えを入れていてまだ作っていなければ、`WorktreeState` に本体の今のブランチ・コミット・件名を添える(`git.Head`。画面は「main d08244e」と出し、吹き出しに件名)
 - **作ったあと**:その会話のメインのフォルダのパスを worktree にする(`toolFolders`・`workDir`)。ファイルのツール・`run_command`・`${workdir}` の MCP・環境の説明がすべて worktree を指す。
   フォルダの名前(モデルが呼ぶ名前)は変えない。フォルダが1つの環境の説明の「"<名前>" refers to the working directory itself.」も本体のフォルダの名前のまま(`mainPath`)。

@@ -60,6 +60,14 @@ func (s *Service) ApplyWorktree(ctx context.Context, id uuid.UUID, paths []strin
 	return s.convs.ApplyWorktree(ctx, id, paths)
 }
 
+// SetWorktreeName は、会話 id の worktree の名前を変える(会話の設定の画面。作る前だけ)。
+func (s *Service) SetWorktreeName(ctx context.Context, id uuid.UUID, name string) error {
+	if err := s.worktreeReady(); err != nil {
+		return err
+	}
+	return s.convs.SetWorktreeName(ctx, id, name)
+}
+
 // DiscardWorktree は、会話 id の worktree とブランチを消し、会話を本体のフォルダに戻す。
 func (s *Service) DiscardWorktree(ctx context.Context, id uuid.UUID) error {
 	if err := s.worktreeReady(); err != nil {

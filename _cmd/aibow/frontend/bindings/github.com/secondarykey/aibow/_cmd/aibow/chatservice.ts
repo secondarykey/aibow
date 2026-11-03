@@ -591,6 +591,13 @@ export function SetToolPolicy(name: string, policy: aibow$0.ToolPolicy): $Cancel
 }
 
 /**
+ * SetWorktreeName は、会話 id の worktree の名前を変える(会話の設定の画面。作る前だけ)。
+ */
+export function SetWorktreeName(id: uuid$0.UUID, name: string): $CancellablePromise<void> {
+    return $Call.ByID(160092071, id, name);
+}
+
+/**
  * ShareCopy は、プロファイルを写して、そのまま配る(管理の画面の「写して配る」。0032 の段3)。管理者だけ(保存先が確かめる)。
  * 配るプロファイルのモデルは、使えるモデルから(0018 の決定事項 13。SetProfileShare と同じ)。
  */

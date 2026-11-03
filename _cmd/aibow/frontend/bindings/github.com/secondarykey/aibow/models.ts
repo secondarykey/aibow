@@ -391,6 +391,13 @@ export interface ConversationSettings {
     "worktree"?: boolean;
 
     /**
+     * WorktreeName は、worktree のブランチとフォルダの名前に使う英語の短い名前(fix-login-error など。0039)。
+     * 最初の送信でモデルに書かせて残し、会話の設定の画面で直せる(worktreename.go)。空なら会話の ID の末尾だけを使う。
+     * 変えるのは SetWorktreeName だけ(UpdateSettings は保存してある値のままにする)
+     */
+    "worktree_name"?: string;
+
+    /**
      * WorkDir は、ワークスペースより前の作業フォルダ(絶対パス)。もう使わない。
      * 起動したときに、この PC にあるパスならワークスペースに移して空にする(Conversations.MigrateWorkDirs)。
      * この PC に無いパスは、そのまま残す(そのパスのある PC で起動したときに、そちらで移せるように)。画面からは変えられない
@@ -1285,4 +1292,9 @@ export interface WorktreeState {
      * BaseSubject は、元のコミットの件名(吹き出しに「"件名" から worktree を作る」と出す。2026-11-04、ユーザーと決めた)
      */
     "base_subject"?: string;
+
+    /**
+     * Name は、worktree の名前(会話の設定の worktree_name。保存してある値。会話の設定の画面で見せて直す)
+     */
+    "name"?: string;
 }

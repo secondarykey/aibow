@@ -58,6 +58,7 @@ func newWorktreeConversation(t *testing.T, g *fakeGen) (*Conversations, Conversa
 // write_file・edit_file は確認せず、run_command は確認する。本体の git status に .aibow/ は出ない(0039 の完了の条件 1・2・3・5)
 func TestWorktreeWritesGoToWorktree(t *testing.T) {
 	g := &fakeGen{replies: []fakeReply{
+		{content: "Greet to Hi"}, // 最初の送信で worktree の名前を書かせる1回(worktreename.go)
 		{toolCalls: []format.ToolCall{toolCall("read_file", "path", "main.go")}},
 		{toolCalls: []format.ToolCall{toolCall("write_file", "path", "new.txt", "content", "new\n")}},
 		{toolCalls: []format.ToolCall{toolCall("edit_file", "path", "main.go", "old_string", "package main", "new_string", "package app")}},
@@ -95,7 +96,8 @@ func TestWorktreeWritesGoToWorktree(t *testing.T) {
 	if !ok {
 		t.Fatal("worktree の結び付けがありません")
 	}
-	short := strings.ReplaceAll(c.ID.String(), "-", "")[:8]
+	hex := strings.ReplaceAll(c.ID.String(), "-", "")
+	short := "greet-to-hi-" + hex[len(hex)-4:] // 名前 + 会話の ID の末尾 4 文字
 	if want := filepath.Join(repo, ".aibow", "worktrees", short); wt.Path != want || wt.Branch != "aibow/"+short || wt.Repo != repo || wt.Base == "" || wt.BaseBranch != "main" || wt.BaseSubject != "first" {
 		t.Errorf("worktree = %+v(path は %s のはず)", wt, want)
 	}
@@ -137,6 +139,7 @@ func TestWorktreeWritesGoToWorktree(t *testing.T) {
 // 差分の一覧・選んだファイルだけを取り込む・取り込み済みの印・捨てる(0039 の完了の条件 6・7・8)
 func TestWorktreeApplyAndDiscard(t *testing.T) {
 	g := &fakeGen{replies: []fakeReply{
+		{content: "Greet to Hi"}, // 最初の送信で worktree の名前を書かせる1回(worktreename.go)
 		{toolCalls: []format.ToolCall{
 			toolCall("write_file", "path", "new.txt", "content", "new\n"),
 			toolCall("edit_file", "path", "main.go", "old_string", "package main", "new_string", "package app"),
@@ -225,6 +228,7 @@ func TestWorktreeApplyAndDiscard(t *testing.T) {
 // 会話を消すと worktree とブランチも消える
 func TestWorktreeRemovedWithConversation(t *testing.T) {
 	g := &fakeGen{replies: []fakeReply{
+		{content: "Greet to Hi"}, // 最初の送信で worktree の名前を書かせる1回(worktreename.go)
 		{toolCalls: []format.ToolCall{toolCall("write_file", "path", "new.txt", "content", "new\n")}},
 		{content: "書きました"},
 	}}
@@ -296,5 +300,93 @@ func TestWorktreeConfirmDefaults(t *testing.T) {
 	off.Worktree = false
 	if st := cs.WorktreeStateOf(ctx, c.ID, off); st.Base != "" || st.BaseBranch != "" {
 		t.Errorf("切り替えを入れていないのに元を添えた: %+v", st)
+	}
+}
+
+// 名前を書かせる頼みは最初の送信の1回だけで、ツールを見せない短い生成。2回目の送信では書かせない
+func TestWorktreeNameOnFirstSend(t *testing.T) {
+	g := &fakeGen{replies: []fakeReply{{content: "fix-login-error\n"}, {content: "はい"}, {content: "はい"}}}
+	cs, c, _ := newWorktreeConversation(t, g)
+	send(t, cs, c, "ログインのエラーを直して")
+	send(t, cs, c, "ありがとう")
+	if len(g.calls) != 3 {
+		t.Fatalf("生成は %d 回(名前 1 + 返事 2 のはず)", len(g.calls))
+	}
+	if len(g.calls[0].tools) != 0 || !strings.Contains(g.calls[0].prompt, "git branch name") || !strings.Contains(g.calls[0].prompt, "ログインのエラーを直して") {
+		t.Errorf("名前の頼み: %q", g.calls[0].prompt)
+	}
+	got, _, _ := cs.Get(ctx, c.ID)
+	if got.Settings.WorktreeName != "fix-login-error" {
+		t.Errorf("名前 = %q", got.Settings.WorktreeName)
+	}
+	if st := cs.WorktreeStateOf(ctx, c.ID, ConversationSettings{Workspace: got.Settings.Workspace}); st.Name != "fix-login-error" {
+		t.Errorf("状態の名前 = %q(保存してある値を読むはず)", st.Name)
+	}
+
+	// 画面の古い設定(名前なし)で保存しても、名前は消えない。変えるのは SetWorktreeName だけ
+	stale := got.Settings
+	stale.WorktreeName = ""
+	if err := cs.UpdateSettings(ctx, c.ID, stale); err != nil {
+		t.Fatal(err)
+	}
+	if again, _, _ := cs.Get(ctx, c.ID); again.Settings.WorktreeName != "fix-login-error" {
+		t.Errorf("古い設定で名前が消えた: %q", again.Settings.WorktreeName)
+	}
+	if err := cs.SetWorktreeName(ctx, c.ID, "日本語"); err == nil {
+		t.Error("マルチバイトの名前を受け付けた")
+	}
+	if err := cs.SetWorktreeName(ctx, c.ID, "login-fix"); err != nil {
+		t.Fatal(err)
+	}
+	if again, _, _ := cs.Get(ctx, c.ID); again.Settings.WorktreeName != "login-fix" {
+		t.Errorf("直した名前 = %q", again.Settings.WorktreeName)
+	}
+}
+
+// Git のリポジトリでないワークスペース・ワークスペースの無い会話では、名前を書かせない(生成を挟まない)
+func TestWorktreeNameOnlyForGit(t *testing.T) {
+	g := &fakeGen{content: "はい"}
+	cs, _, c := newToolConversation(t, g)
+	c.Settings.Workspace = workspaceFor(t, cs, t.TempDir())
+	if err := cs.UpdateSettings(ctx, c.ID, c.Settings); err != nil {
+		t.Fatal(err)
+	}
+	send(t, cs, c, "こんにちは")
+	if len(g.calls) != 1 {
+		t.Errorf("生成は %d 回(返事 1 のはず)", len(g.calls))
+	}
+}
+
+// 作ったあとは名前を変えられない
+func TestWorktreeNameFixedAfterCreate(t *testing.T) {
+	g := &fakeGen{replies: []fakeReply{
+		{content: "add-readme"},
+		{toolCalls: []format.ToolCall{toolCall("write_file", "path", "README.md", "content", "# greet\n")}},
+		{content: "書きました"},
+	}}
+	cs, c, repo := newWorktreeConversation(t, g)
+	send(t, cs, c, "README を作って")
+	wt, _, ok := cs.workspaces.Worktree(c.ID.String())
+	hex := strings.ReplaceAll(c.ID.String(), "-", "")
+	if !ok || wt.Branch != "aibow/add-readme-"+hex[len(hex)-4:] || wt.Path != filepath.Join(repo, ".aibow", "worktrees", "add-readme-"+hex[len(hex)-4:]) {
+		t.Fatalf("worktree = %+v", wt)
+	}
+	if err := cs.SetWorktreeName(ctx, c.ID, "other"); err == nil {
+		t.Error("作ったあとに名前を変えられた")
+	}
+}
+
+// モデルが書いた名前を、ブランチに使える形に整える
+func TestSlugify(t *testing.T) {
+	for in, want := range map[string]string{
+		"fix-login-error":                           "fix-login-error",
+		"  Fix Login Error.\nmore text":             "fix-login-error",
+		"`add_readme`":                              "add-readme",
+		"ログインを直す":                                   "",
+		"very-long-branch-name-that-goes-on-and-on": "very-long-branch-name-that-goes",
+	} {
+		if got := slugify(in); got != want {
+			t.Errorf("slugify(%q) = %q, want %q", in, got, want)
+		}
 	}
 }

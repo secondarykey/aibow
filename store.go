@@ -213,6 +213,10 @@ type ConversationSettings struct {
 	// メインのフォルダをそこに置き換える。作った worktree との結び付けは PC の手元(workspaces.json)に持つ。
 	// 新しい会話の既定には入れない(ワークスペースと同じく、会話ごとに選ぶ)
 	Worktree bool `json:"worktree,omitempty"`
+	// WorktreeName は、worktree のブランチとフォルダの名前に使う英語の短い名前(fix-login-error など。0039)。
+	// 最初の送信でモデルに書かせて残し、会話の設定の画面で直せる(worktreename.go)。空なら会話の ID の末尾だけを使う。
+	// 変えるのは SetWorktreeName だけ(UpdateSettings は保存してある値のままにする)
+	WorktreeName string `json:"worktree_name,omitempty"`
 	// WorkDir は、ワークスペースより前の作業フォルダ(絶対パス)。もう使わない。
 	// 起動したときに、この PC にあるパスならワークスペースに移して空にする(Conversations.MigrateWorkDirs)。
 	// この PC に無いパスは、そのまま残す(そのパスのある PC で起動したときに、そちらで移せるように)。画面からは変えられない
@@ -268,7 +272,7 @@ func (s ConversationSettings) normalized() ConversationSettings {
 // 使う MCP のサーバーと組み込みのツールを使うかも外す(新しい会話で最初から使うものは、設定の画面の「ツール」で決める。Conversations.Defaults)。
 func (s ConversationSettings) asDefaults() ConversationSettings {
 	s = s.normalized()
-	s.Workspace, s.WorkDir, s.Worktree = "", "", false
+	s.Workspace, s.WorkDir, s.Worktree, s.WorktreeName = "", "", false, ""
 	s.ToolPolicies = nil
 	s.MCPServers = []string{}
 	s.BuiltinOff = false
@@ -280,6 +284,9 @@ func (s ConversationSettings) validate() error {
 	// 作業フォルダは画面のダイアログで選ぶので、ふつうは絶対パス。相対パスだと、アプリを起動した場所で意味が変わってしまう
 	if s.WorkDir != "" && !filepath.IsAbs(s.WorkDir) {
 		return fmt.Errorf("作業フォルダは絶対パスで指定してください(%s)", s.WorkDir)
+	}
+	if err := checkWorktreeName(s.WorktreeName); err != nil {
+		return err
 	}
 	if s.HistoryTokens < 0 || s.ReplyTokens < 0 {
 		return fmt.Errorf("会話の上限と返事の上限は 1 以上にしてください(%d / %d)", s.HistoryTokens, s.ReplyTokens)

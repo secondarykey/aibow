@@ -434,7 +434,7 @@ func (cs *Conversations) CopyShared(ctx context.Context, id uuid.UUID) (Conversa
 		profile = def.ID
 	}
 	s := src.Conversation.Settings.normalized()
-	s.Workspace, s.WorkDir, s.Worktree, s.profile = "", "", false, nil // ワークスペースは渡さない(PC のもの。0018・0035・0039)
+	s.Workspace, s.WorkDir, s.Worktree, s.WorktreeName, s.profile = "", "", false, "", nil // ワークスペースは渡さない(PC のもの。0018・0035・0039)
 	now := time.Now()
 	c := Conversation{ID: uuid.NewV7(), Title: src.Conversation.Title + "(写し)", Settings: s, ProfileID: profile, CreatedAt: now, UpdatedAt: now}
 	if err := cs.store.CreateConversation(ctx, c); err != nil {
@@ -567,6 +567,7 @@ func (cs *Conversations) UpdateSettings(ctx context.Context, id uuid.UUID, s Con
 	if cs.noWorkDir {
 		s.Workspace, s.Worktree = stored.Workspace, stored.Worktree // 決めも消しもしない(画面には空で見せているため)
 	}
+	s.WorktreeName = stored.WorktreeName // worktree の名前は SetWorktreeName だけで変える(画面の古い設定で、最初の送信で作った名前を消さない)
 	if err := cs.keepWorktree(id, stored, &s); err != nil {
 		return err
 	}
@@ -773,6 +774,8 @@ func (cs *Conversations) turn(ctx context.Context, id uuid.UUID, text string, fi
 
 	// 2. 返事を生成して保存する。モデルに渡す内容は毎回、会話の上限に収めてから決める(compact.go)。
 	// ツールを呼んだら、実行して結果を渡し、ツールを呼ばなくなるまで生成を繰り返す(agent.go)
+	// 最初の送信なら、返事の前に worktree の名前を作っておく(作業領域にまだこの会話のキャッシュが無いうちに。worktreename.go)
+	cs.nameWorktree(ctx, conv, saved, text)
 	reply, err = cs.runTurn(ctx, conv, history, emit)
 	if err != nil {
 		fail(err)

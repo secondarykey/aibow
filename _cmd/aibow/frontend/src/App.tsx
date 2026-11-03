@@ -633,6 +633,14 @@ export default function App() {
           focusInput();
         }}
         onChange={convs.updateSettings}
+        worktree={worktree.state}
+        onRenameWorktree={name =>
+          ChatService.SetWorktreeName(convs.current!.conversation.id, name)
+            .catch(err => {
+              addError(errorMessage(err));
+              throw err;
+            })
+            .finally(worktree.reload)}
         profile={convs.current.profile}
         folder={folder}
         workDir={workDir}

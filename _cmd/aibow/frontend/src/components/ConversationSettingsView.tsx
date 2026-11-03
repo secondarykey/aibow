@@ -5,7 +5,7 @@
 // 「会話に戻る」・一覧で会話を選ぶ・「+ 新規」・一覧の下の歯車で閉じる。
 import { useEffect, useRef, useState } from "react";
 import { LuArrowLeft } from "react-icons/lu";
-import type { ConversationSettings, Profile } from "../../bindings/github.com/secondarykey/aibow";
+import type { ConversationSettings, Profile, WorktreeState } from "../../bindings/github.com/secondarykey/aibow";
 import type { ServerInfo } from "../../bindings/github.com/secondarykey/aibow/mcp/client";
 // Go の models パッケージ。"…/aibow/models" と書くと aibow パッケージの models.ts が選ばれるので、index まで書く
 import type { Entry as ModelEntry } from "../../bindings/github.com/secondarykey/aibow/models/index";
@@ -40,6 +40,8 @@ interface Props {
   shareWith: string[];      // 共有の相手(名前)
   shareGroups: string[];    // 共有の相手のグループ(名前。0031)
   onShare(share: string, users: string[], groups: string[]): void;
+  worktree: WorktreeState | null;           // worktree の状態(0039。アプリだけ。名前の欄に使う)
+  onRenameWorktree(name: string): Promise<void>; // worktree の名前を変える(作る前だけ)。断られたら reject
 }
 
 // TitleField は会話の名前の入力欄。打っている間は保存せず、Enter か欄を離れたときに保存する(一覧の名前の変更と同じ)。
@@ -81,8 +83,60 @@ function TitleField({ title, onRename }: { title: string; onRename(title: string
   );
 }
 
+// WorktreeNameField は、worktree の名前(ブランチとフォルダの名前に使う英語の短い名前。0039)。
+// 最初の送信でモデルが書いたものが入る。作る前なら直せる(Enter か欄を離れたときに保存。Esc で戻す)。作ったあとは実際のブランチ名を出すだけ
+function WorktreeNameField({ state, onRename }: { state: WorktreeState; onRename(name: string): Promise<void> }) {
+  const name = state.name ?? "";
+  const [value, setValue] = useState(name);
+  useEffect(() => setValue(name), [name]);
+  const cancelled = useRef(false);
+  const label = (
+    <label htmlFor="conv-worktree-name" title="worktree のブランチ(aibow/<名前>-<会話の ID の末尾>)とフォルダの名前。英小文字・数字を - でつなぐ">
+      worktree の名前
+    </label>
+  );
+  if (state.active) {
+    return (
+      <>
+        {label}
+        <div className="conv-profile"><code>{state.branch}</code></div>
+      </>
+    );
+  }
+  const commit = () => {
+    if (cancelled.current) {
+      cancelled.current = false;
+      return;
+    }
+    const v = value.trim();
+    if (v !== name) onRename(v).catch(() => setValue(name)); // 断られたら(使えない文字など)、保存してある名前に戻す。理由はエラーに出る
+  };
+  return (
+    <>
+      {label}
+      <input
+        id="conv-worktree-name"
+        type="text"
+        value={value}
+        spellCheck={false}
+        onChange={e => setValue(e.target.value)}
+        onBlur={commit}
+        onKeyDown={e => {
+          if (e.nativeEvent.isComposing) return;
+          if (e.key === "Enter") e.currentTarget.blur();
+          if (e.key === "Escape") {
+            cancelled.current = true;
+            setValue(name);
+            e.currentTarget.blur();
+          }
+        }}
+      />
+    </>
+  );
+}
+
 export function ConversationSettingsView({ id, title, onRename, settings, models, errors, onClose, onChange, profile, folder, workDir, onSaveToProfile, onSaveAsProfile, lastPrompt, lastPromptFormat, servers, limitsDisabled, onApplyLimits,
-  share, shareWith, shareGroups, onShare,
+  share, shareWith, shareGroups, onShare, worktree, onRenameWorktree,
 }: Props) {
   const lock = lockOf(profile);
   return (
@@ -112,6 +166,7 @@ export function ConversationSettingsView({ id, title, onRename, settings, models
             <div className="conv-profile">{folder || "(なし)"}</div>
           </>
         )}
+        {!isBrowser && worktree && <WorktreeNameField state={worktree} onRename={onRenameWorktree} />}
         {me.login && <ShareField share={share} shareWith={shareWith} shareGroups={shareGroups} onShare={onShare} />}
 
         <ConversationSettingsForm settings={settings} models={models} lock={lock} onChange={onChange} />
