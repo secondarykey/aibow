@@ -9,7 +9,6 @@
 | `_cmd/aibow-mcp/version` / `appversion.go`(`_cmd/aibow-server` も同じ) | MCP のサーバー(aibow-mcp)と OpenAI 互換 API(aibow-server)のバージョン。`_cmd/aibow/version` の写しで、手で書き換えない(`//go:embed` は自分のフォルダの下しか埋め込めないため写しを置く)。exe(`go build`・`go install`)は `version` のまま、`go run` で起動したものは patch を1つ上げて `+dev`(自分の exe が `go-build…` の一時フォルダにあるかで見分ける) |
 | `_cmd/aibow/appversion.go` / `build_dev.go` / `build_production.go` | 画面・ウィンドウの名前・ログに出すバージョン。`wails3 dev` で起動したものは patch を1つ上げて `+dev` を付ける(`0.3.1` なら `0.3.2+dev`。まだデプロイしていない次のバージョンを作っている途中のため)。リリースのビルドは `version` のまま。見分けは、Taskfile がリリースのビルドにだけ付ける `production` のビルドタグ(Taskfile は変えない) |
 | `_cmd/aibow/Taskfile.local.yml` | ローカルデプロイ(`wails3 task local:deploy`)。各自が持つ個人用のファイルで、**Git に入れない(ひな形もコミットしない)**。`Taskfile.yml` から optional で読む |
-| `.github/workflows/ci.yml` | 確認。`main`・`features` への push と PR で、Windows・Linux(ubuntu-24.04)・macOS の3つで gofmt・go vet・go test・`wails3 build`・aibow-server と aibow-mcp の `go build` を流す |
 | `.github/workflows/versionup.yml` | 正式なリリース。`main` への push で版を決め、ビルド情報をコミットして `v`+バージョンのタグを打ち、`release.yml` を呼ぶ |
 | `.github/workflows/release.yml` | 3つの OS で aibow・aibow-server・aibow-mcp を作って zip にし、GitHub のリリースの**下書き**を作る。`versionup.yml` から呼ばれるほか、手で `v` のタグを push しても動く |
 | `.github/variables` | CI が使う Wails の CLI の版(`WAILS_VERSION`)。`_cmd/aibow/go.mod` の Wails と同じ版にする。`KEY=VALUE` の行だけを書く(コメントがあると CI が落ちる) |
@@ -25,6 +24,8 @@
 - versionup はコミットとタグを `GITHUB_TOKEN` で push する。`GITHUB_TOKEN` の push はワークフローを起動しないので、自分の push で versionup がもう一度動くことはなく、
   タグの push で release.yml も起動しない。そのため versionup の最後のジョブが release.yml を呼ぶ(`workflow_call`。wails3 スキルの標準は PAT でタグを push する形だが、PAT を用意しなくてよいこちらにした)
 - zip に llama.cpp の DLL(`lib`)は入れない(GPU に合う版を各自が README の手順で取ってくるため)
+- push や PR のたびにテストを流す CI(ci.yml)は置かない。3つの OS で毎回 wails3 build まで流すのは重すぎるため(2026-11-03、ユーザーと決めた)。
+  テストは push の前に手元で AGENTS.md の「確認方法」を流す。ほかの OS で壊れていれば、main に push したときの release.yml のビルドで分かる
 
 ### CI で気を付けていること(wails3 スキルの注意事項)
 

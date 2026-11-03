@@ -167,7 +167,7 @@ wails3 task local:deploy DEPLOY_DEST="D:/tmp/aibow"
 versionup がコミットとタグを足すので、push したあとは手元の `main` が1つ遅れます。`git fetch` で取ってきてください(タグも一緒に来て、次の `local:deploy` から次の版になります)。
 zip に llama.cpp の DLL は入れていません。Linux 版・macOS 版の注意は [_docs/deploy.md](_docs/deploy.md) にあります。
 
-`main`・`features` への push と PR では、`ci.yml` が3つの OS でテストとビルドを確かめます。
+push のたびにテストを流す CI はありません。テストは push の前に手元で流します(上の「確かめ方」)。
 
 ## 落ちたときの調べ方
 
