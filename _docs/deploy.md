@@ -11,6 +11,10 @@
 | `_cmd/aibow/Taskfile.local.yml` | ローカルデプロイ(`wails3 task local:deploy`)。各自が持つ個人用のファイルで、**Git に入れない(ひな形もコミットしない)**。`Taskfile.yml` から optional で読む |
 
 - CI でビルドしないので、`wails3 task local:deploy` が CI の代わり。バージョンの反映 → ビルド → ビルド情報だけのコミット → `v`+バージョンのタグ → インストールまでを行う
+- deploy は画面のアプリ(`aibow.exe`)と一緒に `aibow-server.exe` と `aibow-mcp.exe` も作ってインストールする(`Taskfile.local.yml` の `build-tools`)。
+  aibow-server は画面(`web/dist/app`)を埋め込むので、`wails3 build` が画面をビルドした後に `go build` する。
+  どちらも `CGO_ENABLED=0`・`-trimpath -ldflags="-w -s"` で、コンソールのアプリなので `-H windowsgui` は付けない。`go build` なので版は `version` のまま(`+dev` が付かない)
+- 起動中の exe は上書きできないので、deploy は最初に止める。aibow は名前で、aibow-server と aibow-mcp はインストール先から起動しているものだけを止める(`stop-tools`。`go run` や worktree で動かしているものを巻き込まない)
 - バージョンを手で config.yml などに書かない。`_cmd/aibow/version` だけを変え、`go run _cmd/version.go` で書き写す(deploy は自動で行う)
 - `v`+今のバージョンのタグがある(= デプロイ済み)なら、deploy が patch を自動で上げる。minor / major は `go run _cmd/version.go -bump`
 - `Taskfile.local.yml` とそのひな形・コピーはコミットしない(インストール先などローカルの設定をリポジトリに残さないため。ユーザーの方針)

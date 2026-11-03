@@ -127,16 +127,18 @@ wails3 task local:deploy
 ```
 `_cmd/aibow` で実行します。`Taskfile.local.yml` の `local:deploy` は、次のことを順に行う作りにしています。
 
-1. 起動中の aibow を終了する(起動中の exe は上書きできないため)
+1. 起動中の aibow と、インストール先から起動している aibow-server・aibow-mcp を終了する(起動中の exe は上書きできないため。
+   aibow-server・aibow-mcp は、`go run` や worktree で動かしているものまで止めないよう、exe の場所で絞る)
 2. 前回インストールしたバージョンのままなら、patch を1つ上げる(0.1.0 → 0.1.1)
 3. `version` の値を、`build/config.yml`・`frontend/package.json`・`frontend/package-lock.json`・exe に焼き込むバージョン情報(`build/windows/info.json` など)に反映する
    (`go run _cmd/version.go` → `npm install --package-lock-only` → `wails3 update build-assets -name aibow -binaryname aibow`)
-4. `wails3 build`
-5. 3 で変わったファイルだけをコミットする(作業中の他の変更は巻き込まない)
-6. コミットに `v0.1.1` のようなタグを打つ(push はしない)。どのコミットをインストールしたかが分かる
-7. `bin\aibow.exe` と `lib\` をインストール先へコピーする(`lib\` は変わったファイルだけ)
+4. `wails3 build`(画面も `web/dist/app` にビルドされる)
+5. `aibow-server.exe`(4 の画面を埋め込む)と `aibow-mcp.exe` を `go build` で `bin\` に作る
+6. 3 で変わったファイルだけをコミットする(作業中の他の変更は巻き込まない)
+7. コミットに `v0.1.1` のようなタグを打つ(push はしない)。どのコミットをインストールしたかが分かる
+8. `bin\` の exe(`aibow.exe`・`aibow-server.exe`・`aibow-mcp.exe`)と `lib\` をインストール先へコピーする(`lib\` は変わったファイルだけ)
 
-インストール先の `aibow.exe` を起動すると、隣の `lib\` を使います。モデルは Ollama のものが使えます。
+インストール先の `aibow.exe` を起動すると、隣の `lib\` を使います(`aibow-server.exe` も同じ)。モデルは Ollama のものが使えます。
 GGUF を自分で置く場合は、インストール先に `models\` を作って置くか、`AIBOW_MODELS_DIR` で指定します。
 
 ```bash
