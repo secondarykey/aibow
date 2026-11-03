@@ -11,7 +11,7 @@
 | `_cmd/aibow/Taskfile.local.yml` | ローカルデプロイ(`wails3 task local:deploy`)。各自が持つ個人用のファイルで、**Git に入れない(ひな形もコミットしない)**。`Taskfile.yml` から optional で読む |
 | `.github/workflows/versionup.yml` | 正式なリリース。`main` への push で版を決め、ビルド情報をコミットして `v`+バージョンのタグを打ち、`release.yml` を呼ぶ |
 | `.github/workflows/release.yml` | 3つの OS で aibow・aibow-server・aibow-mcp を作って zip にし、GitHub のリリースの**下書き**を作る。`versionup.yml` から呼ばれるほか、手で `v` のタグを push しても動く |
-| `.github/variables` | CI が使う Wails の CLI の版(`WAILS_VERSION`)。`_cmd/aibow/go.mod` の Wails と同じ版にする。`KEY=VALUE` の行だけを書く(コメントがあると CI が落ちる) |
+| `.github/variables` | CI が使う Go の版(`GO_VERSION`)と Wails の CLI の版(`WAILS_VERSION`)。Go は手元の `go version` と、Wails は `_cmd/aibow/go.mod` と同じ版にする(手元で Go や Wails を上げたら、ここも上げる)。`KEY=VALUE` の行だけを書く(コメントがあると CI が落ちる) |
 
 ### ローカルデプロイと正式なリリースの分け方
 
@@ -29,7 +29,8 @@
 
 ### CI で気を付けていること(wails3 スキルの注意事項)
 
-- Wails の CLI は `.github/variables` の版で入れる(`@latest` は使わない)。読み込むステップは `shell: bash`(Windows の既定の pwsh では `$GITHUB_ENV` に書けない)
+- Go と Wails の CLI は `.github/variables` の版で入れる(`@latest` は使わない)。Go の版を使う Setup Go より前に読み込む。読み込むステップは `shell: bash`(Windows の既定の pwsh では `$GITHUB_ENV` に書けない)。
+  Go を `go.mod`(`go-version-file`)から取らないのは、`go.mod` の `go` の行は「最低限の版」で、CI で使う版とは役目が違うため(上げると、使う人に新しい Go を求めることになる)
 - Linux のランナーは `ubuntu-24.04` に固定する。`ubuntu-latest` は glibc が新しく、そこで作った exe は古いディストリで起動しない。Linux 版を動かすには、使う PC に `libgtk-4-1` と `libwebkitgtk-6.0-4` が要る(zip では依存を伝えられない)
 - macOS 版は `wails3 package` の ad-hoc 署名だけで、署名と notarize をしていない。ダウンロードした Mac では Gatekeeper が止める。`macos-latest` は arm64 なので Intel の Mac では起動しない
 - `build/appicon.icon` はコミットしてある(無いと macOS 26 のランナーで `actool` が失敗する)

@@ -35,6 +35,10 @@ jobs:
         with:
           fetch-depth: 0   # タグを見て版を決めるので、全部取ってくる
 
+      - name: Load variables
+        # Go と Wails の版(.github/variables)。Setup Go で使うので、その前に読む
+        run: cat .github/variables >> $GITHUB_ENV
+
       - name: Install Linux dependencies
         # wails3 の CLI は Linux では WebKitGTK を cgo で調べる(internal/operatingsystem)ので、入れないと go install が通らない
         run: |
@@ -48,15 +52,12 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v7
         with:
-          go-version-file: go.mod
+          go-version: ${{ env.GO_VERSION }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
           node-version: '24'
-
-      - name: Load variables
-        run: cat .github/variables >> $GITHUB_ENV
 
       - name: Install Wails CLI
         # .github/variables で固定した版を使う(@latest は使わない)
