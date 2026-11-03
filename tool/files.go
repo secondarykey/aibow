@@ -149,12 +149,21 @@ func (set folderSet) resolve(args Args) (target, error) {
 // その形はメインの中のサブフォルダと見分けられないので受け付けない(決定事項 3)。メインの中にその名前のものが無いときだけ、
 // folder と path に分けて書くよう返す(あるなら、メインの中のサブフォルダとしてそのまま扱う)。
 // write_file で、メインの中に同じ名前のフォルダを新しく作ってしまうのも、これで防ぐ。
+//
+// 選んだフォルダ自身の名前を先頭に付けた書き方(aibow/agent.go)も同じように返す。フォルダが1つでも、4B はこう書いた
+// (環境の説明の「"aibow" refers to the working directory itself.」は効かなかった。_docs/tuning.md の「コーディング向けのツールと fetch_url を 4B で試す」)。
 func (set folderSet) prefixed(tg target) error {
-	if !set.multi() {
-		return nil
-	}
 	first, rest, ok := strings.Cut(tg.path, "/")
 	if !ok || rest == "" {
+		return nil
+	}
+	if strings.EqualFold(tg.folder.Name, first) {
+		if _, err := os.Stat(filepath.Join(tg.folder.Path, filepath.FromSlash(first))); err == nil {
+			return nil // 同じ名前のサブフォルダが本当にある
+		}
+		return fmt.Errorf("%s は、このフォルダそのものの名前です。パスの先頭に付けず、path に %s と書いてください", first, rest)
+	}
+	if !set.multi() {
 		return nil
 	}
 	for _, f := range set {

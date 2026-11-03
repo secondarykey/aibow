@@ -123,6 +123,44 @@ func TestEditFileChangedWhileWaiting(t *testing.T) {
 	}
 }
 
+// old_string の字下げだけが違う(タブが1つ多い・少ない)なら、ファイルの字下げに合わせて置き換える(editmatch.go)
+func TestEditFileIndent(t *testing.T) {
+	const src = "func f() {\n\tif x {\n\t\treturn 1\n\t}\n}\n\nfunc g() {\n\tif y {\n\t\treturn 1\n\t}\n}\n"
+	cases := []struct {
+		name, old, repl, want string
+	}{
+		{"1つ多い", "\t\tif x {\n\t\t\treturn 1", "\t\tif x {\n\t\t\treturn 2", strings.Replace(src, "x {\n\t\treturn 1", "x {\n\t\treturn 2", 1)},
+		{"1つ少ない", "if x {\n\treturn 1\n", "if x {\n\treturn 2\n\t// 済み\n", strings.Replace(src, "x {\n\t\treturn 1\n", "x {\n\t\treturn 2\n\t\t// 済み\n", 1)},
+		{"空の行をはさむ", "\t}\n\n\tfunc g() {\n\t\tif y {", "\t}\n\n\tfunc h() {\n\t\tif y {", strings.Replace(src, "func g()", "func h()", 1)},
+	}
+	for _, c := range cases {
+		dir := workDir(t, map[string]string{"f.go": src})
+		got, err := run(t, editFile{one(dir)}, "path", "f.go", "old_string", c.old, "new_string", c.repl)
+		if err != nil || !strings.Contains(got, "字下げに合わせました") {
+			t.Errorf("%s: %q, %v", c.name, got, err)
+		}
+		if b := readBack(t, dir, "f.go"); b != c.want {
+			t.Errorf("%s: 中身\n%s", c.name, b)
+		}
+	}
+
+	// 合わせないもの:行ごとにずれ方が違う・2か所に合う・行の途中で終わる・本文が違う
+	dir := workDir(t, map[string]string{"f.go": src})
+	for name, old := range map[string]string{
+		"ずれ方が違う": "\t\tif x {\n\t\treturn 1",
+		"2か所":    "\t\t\treturn 1",
+		"行の途中":   "\t\tif x {\n\t\t\treturn",
+		"本文が違う":  "\t\tif x {\n\t\t\treturn 9",
+	} {
+		if _, err := run(t, editFile{one(dir)}, "path", "f.go", "old_string", old, "new_string", "z"); err == nil || !strings.Contains(err.Error(), "見つかりません") {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	if readBack(t, dir, "f.go") != src {
+		t.Error("合わせないはずのものを書き換えています")
+	}
+}
+
 // 大きいファイルを丸ごと書き直すときは、差分を作らない(時間がかかるため)
 func TestDiffTooLarge(t *testing.T) {
 	big := strings.Repeat("a\n", diffMaxLines)

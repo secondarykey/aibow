@@ -86,7 +86,8 @@ func (t listFiles) Run(ctx context.Context, args Args) (string, error) {
 		}
 		l.glob, l.pattern = &g, pattern
 	}
-	err = walk(ctx, root.FS(), p, l.add, func() bool { return l.full })
+	// pattern のときは、上限で切ったあとも数えるだけはしてたどりきる(全部で何件かを書くため。4B は並んだ名前を数え間違える)
+	err = walk(ctx, root.FS(), p, l.add, func() bool { return l.full && l.glob == nil })
 	if err != nil {
 		return "", err
 	}
@@ -134,6 +135,7 @@ type lister struct {
 
 	b      strings.Builder
 	count  int  // 並べた件数
+	total  int  // pattern に合ったファイルの全部の件数(並べなかったものも)
 	runes  int  // 並べた文字数
 	full   bool // 上限に達して切った
 	hidden bool // 中を省略した隠しフォルダがある
@@ -151,6 +153,10 @@ func (l *lister) add(name string, d fs.DirEntry) bool {
 			return !hiddenDir
 		}
 		if !l.glob.match(name) {
+			return false
+		}
+		l.total++
+		if l.full {
 			return false
 		}
 		hiddenDir = false
@@ -190,7 +196,13 @@ func (l *lister) result(p string) string {
 	if l.hidden {
 		l.b.WriteString("(「中は省略」は隠しフォルダです。中を見るには path に指定してください)\n")
 	}
-	if l.full {
+	switch {
+	case l.glob != nil && l.full:
+		fmt.Fprintf(&l.b, "(pattern %s に合うファイルは全部で %d 件あり、%d 件までを並べました。path に下のフォルダを指定すると、その中だけを並べられます)\n", l.pattern, l.total, l.count)
+	case l.glob != nil:
+		// 小さなモデルは並んだ名前を数え間違える(75 件を 63・56 と答えた。tuning.md)ので、数を書いておく
+		fmt.Fprintf(&l.b, "(pattern %s に合うファイルは全部で %d 件です)\n", l.pattern, l.total)
+	case l.full:
 		fmt.Fprintf(&l.b, "(%d 件か %d 文字を超えるため、ここで切りました。path に下のフォルダを指定すると、その中だけを並べられます)\n", listMax, listMaxRunes)
 	}
 	return strings.TrimSuffix(l.b.String(), "\n")

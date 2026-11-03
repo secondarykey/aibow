@@ -141,6 +141,42 @@ func TestLeadingCd(t *testing.T) {
 	}
 }
 
+// 先頭の「cd <フォルダの名前> &&」は、その名前のサブフォルダが無ければ、確認のカードを出す前に直し方を返す
+func TestCdFolderName(t *testing.T) {
+	base := t.TempDir()
+	main := filepath.Join(base, "work")
+	notes := filepath.Join(base, "notes")
+	write(t, main, "frontend/a.txt", "")
+	write(t, notes, "memo.md", "")
+	single := runCommand{folders: one(main)}
+	multi := runCommand{folders: folderSet{{Name: "work", Path: main, Main: true, Writable: true}, {Name: "notes", Path: notes}}}
+	for _, c := range []struct {
+		tl      runCommand
+		command string
+		want    string // エラーに含む文。空ならエラーにしない
+	}{
+		{single, "cd work && go build ./...", "cd work を外して"},
+		{single, `cd /d Work\ && go test ./...`, "cd Work を外して"},
+		{single, "cd frontend && npm test", ""},      // 本当にあるサブフォルダ
+		{single, "cd notes && dir", ""},              // ワークスペースの名前ではない
+		{multi, "cd notes && dir", "folder に notes"}, // ほかのフォルダ
+		{multi, "cd work && go build ./...", "cd work を外して"},
+	} {
+		_, err := preview(t, c.tl, "command", c.command)
+		switch {
+		case c.want == "" && err != nil:
+			t.Errorf("%q: %v", c.command, err)
+		case c.want != "" && (err == nil || !strings.Contains(err.Error(), c.want)):
+			t.Errorf("%q: %v(期待は %q を含むエラー)", c.command, err, c.want)
+		}
+	}
+	// 同じ名前のサブフォルダが本当にあるなら、そこへの cd として動かす
+	write(t, main, "work/b.txt", "")
+	if _, err := preview(t, single, "command", "cd work && dir"); err != nil {
+		t.Errorf("サブフォルダ work: %v", err)
+	}
+}
+
 // 出力を残す部分の切れ目で、日本語(3バイト)の途中を切らない
 func TestOutputBufferCutsAtRunes(t *testing.T) {
 	var o outputBuffer

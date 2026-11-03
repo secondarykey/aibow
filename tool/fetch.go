@@ -291,11 +291,78 @@ func cutText(p *fetched, text string, start int) (string, int, error) {
 	b.WriteString(string(runes[start:end]))
 	if end < total {
 		fmt.Fprintf(&b, "\n\n(全体は %d 文字です。続きは start_index=%d で読めます)", total, end)
+		b.WriteString(headingIndex(runes, end))
 	}
 	if p.cut {
 		fmt.Fprintf(&b, "\n\n(ページが %d MB を超えたので、先頭の %d MB だけを読みました)", fetchMaxBytes>>20, fetchMaxBytes>>20)
 	}
 	return b.String(), end - start, nil
+}
+
+// 目次に並べる見出しの数と、見出しの文字数の上限
+const (
+	indexMaxHeadings = 30
+	indexMaxTitle    = 60
+)
+
+// headingIndex は、from 文字目より後ろの見出し(Markdown の # の行)を、start_index と一緒に並べた目次を返す(無ければ空)。
+//
+// 10 万文字のページの後ろの節を聞くと、4B は start_index を 5,000 ずつ進めて頭から読み、会話の上限(8192)を使い切って届かなかった。
+// 1回は「その節はありません」と誤って答えた(_docs/tuning.md の「コーディング向けのツールと fetch_url を 4B で試す」)。
+// どこに何があるかが分かれば、その位置から読める。目次の分だけ結果は長くなるので、大きい見出し(## まで。無ければ ### まで)だけにし、
+// 渡した範囲より後ろのものだけを並べる(読み進めるほど短くなる)。コードブロックの中の # の行は見出しではないので数えない。
+func headingIndex(runes []rune, from int) string {
+	type heading struct {
+		level, at int
+		title     string
+	}
+	var hs []heading
+	fence := false
+	at := 0
+	for _, line := range strings.SplitAfter(string(runes), "\n") {
+		n := utf8.RuneCountInString(line)
+		t := strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(t, "```"):
+			fence = !fence
+		case !fence && at >= from && strings.HasPrefix(t, "#"):
+			level := len(t) - len(strings.TrimLeft(t, "#"))
+			if title := strings.TrimSpace(t[level:]); level <= 6 && title != "" && t[level] == ' ' {
+				hs = append(hs, heading{level, at, title})
+			}
+		}
+		at += n
+	}
+	for _, maxLevel := range []int{2, 3} {
+		var b strings.Builder
+		count := 0
+		for _, h := range hs {
+			if h.level > maxLevel {
+				continue
+			}
+			if count < indexMaxHeadings {
+				fmt.Fprintf(&b, "\n- %s %s: %d", strings.Repeat("#", h.level), clipRunes(h.title, indexMaxTitle), h.at)
+			}
+			count++
+		}
+		if count == 0 {
+			continue
+		}
+		if count > indexMaxHeadings {
+			fmt.Fprintf(&b, "\n- …ほかに %d 個", count-indexMaxHeadings)
+		}
+		return "\n\n(この先の見出しと、その start_index:" + b.String() + ")"
+	}
+	return ""
+}
+
+// clipRunes は s を n 文字までにする(切ったら … を付ける)。
+func clipRunes(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n]) + "…"
 }
 
 // dialContext は、本物のつなぎ方。名前を引くのは net.Dialer に任せ、引いた結果のアドレスごとに、つなぐ直前に control が確かめる。

@@ -182,6 +182,23 @@ func TestFolderHints(t *testing.T) {
 	}
 }
 
+// フォルダが1つでも、そのフォルダ自身の名前をパスの先頭に付けた書き方(work/a.txt)は、直し方の分かるエラーにする
+func TestOwnNamePrefixed(t *testing.T) {
+	dir := workDir(t, map[string]string{"a.txt": "a\n"})
+	read := readFile{one(dir)}
+	if _, err := run(t, read, "path", "work/a.txt"); err == nil || !strings.Contains(err.Error(), "work は、このフォルダそのものの名前です。パスの先頭に付けず、path に a.txt と書いてください") {
+		t.Errorf("自分の名前: %v", err)
+	}
+	if got, err := run(t, read, "path", "a.txt"); err != nil || got != "1\ta" {
+		t.Errorf("名前を付けない: %q, %v", got, err)
+	}
+	// 同じ名前のサブフォルダが本当にあれば、そのまま使う
+	write(t, dir, "work/b.txt", "b\n")
+	if got, err := run(t, read, "path", "work/b.txt"); err != nil || got != "1\tb" {
+		t.Errorf("サブフォルダ work: %q, %v", got, err)
+	}
+}
+
 // run_command も folder でカレントを選び、省けばメイン。読むだけのフォルダでも動かせ、確認のカードにそう出す(2026-11-02)
 func TestRunCommandFolder(t *testing.T) {
 	main, notes, _ := twoFolders(t)

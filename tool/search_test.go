@@ -62,10 +62,11 @@ func TestListFilesPattern(t *testing.T) {
 	})
 	tl := listFiles{one(dir)}
 	cases := map[string]string{
-		// 浅い順・名前の順は pattern が無いときと同じ。フォルダは並べない。.git・node_modules・隠しフォルダの中は見ない
-		"*.go":           "main.go\ncmd/main.go\ntool/list.go\ntool/list_test.go\ncmd/aibow/main.go",
-		"**/*_test.go":   "tool/list_test.go",
-		"cmd/**/main.go": "cmd/main.go\ncmd/aibow/main.go",
+		// 浅い順・名前の順は pattern が無いときと同じ。フォルダは並べない。.git・node_modules・隠しフォルダの中は見ない。
+		// 最後に全部の件数を書く(4B は並んだ名前を数え間違えるため)
+		"*.go":           "main.go\ncmd/main.go\ntool/list.go\ntool/list_test.go\ncmd/aibow/main.go\n(pattern *.go に合うファイルは全部で 5 件です)",
+		"**/*_test.go":   "tool/list_test.go\n(pattern **/*_test.go に合うファイルは全部で 1 件です)",
+		"cmd/**/main.go": "cmd/main.go\ncmd/aibow/main.go\n(pattern cmd/**/main.go に合うファイルは全部で 2 件です)",
 		"*.ts":           "(pattern *.ts に合うファイルはありません)",
 	}
 	for pattern, want := range cases {
@@ -74,15 +75,26 @@ func TestListFilesPattern(t *testing.T) {
 		}
 	}
 	// path と一緒に使うと、その下だけ。パスはいつも作業フォルダから
-	if got, err := run(t, tl, "path", "cmd", "pattern", "*.go"); err != nil || got != "cmd/main.go\ncmd/aibow/main.go" {
+	if got, err := run(t, tl, "path", "cmd", "pattern", "*.go"); err != nil || got != "cmd/main.go\ncmd/aibow/main.go\n(pattern *.go に合うファイルは全部で 2 件です)" {
 		t.Errorf("path=cmd: %q, %v", got, err)
 	}
 	// 隠しフォルダも path に指定すれば探す
-	if got, err := run(t, tl, "path", ".claude", "pattern", "*.go"); err != nil || got != ".claude/w/a.go" {
+	if got, err := run(t, tl, "path", ".claude", "pattern", "*.go"); err != nil || got != ".claude/w/a.go\n(pattern *.go に合うファイルは全部で 1 件です)" {
 		t.Errorf("path=.claude: %q, %v", got, err)
 	}
 	if _, err := run(t, tl, "pattern", "[x"); err == nil || !strings.Contains(err.Error(), "読めません") {
 		t.Errorf("読めないパターン: %v", err)
+	}
+
+	// 上限で切っても、全部の件数は数えきって書く
+	many := map[string]string{}
+	for i := range listMax + 5 {
+		many[fmt.Sprintf("d/f%03d.go", i)] = ""
+	}
+	got, err := run(t, listFiles{one(workDir(t, many))}, "pattern", "*.go")
+	want := fmt.Sprintf("(pattern *.go に合うファイルは全部で %d 件あり、%d 件までを並べました。", listMax+5, listMax)
+	if err != nil || !strings.Contains(got, want) {
+		t.Errorf("上限で切ったとき: %v\n%s", err, got[max(0, len(got)-200):])
 	}
 }
 

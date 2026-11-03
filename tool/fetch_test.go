@@ -174,6 +174,37 @@ func TestFetchContinue(t *testing.T) {
 	}
 }
 
+// 切ったときは、渡した範囲より後ろの大きい見出しを start_index と一緒に並べる(コードブロックの中の # は数えない)
+func TestHeadingIndex(t *testing.T) {
+	pad := strings.Repeat("あ", fetchMaxRunes)
+	text := "# 題\n\n## 前の節\n" + pad + "\n## Concurrency\n本文\n### Goroutines\n```\n# コメント\n```\n## Errors\n終わり\n"
+	runes := []rune(text)
+	at := func(s string) int { return len([]rune(text[:strings.Index(text, s)])) }
+	got, _, err := cutText(&fetched{url: "https://example.test/", status: "200 OK", mediaType: "text/html"}, text, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := fmt.Sprintf("(この先の見出しと、その start_index:\n- ## Concurrency: %d\n- ## Errors: %d)", at("## Concurrency"), at("## Errors"))
+	if !strings.HasSuffix(got, want) {
+		t.Errorf("目次が違います:\n%s\n期待:\n%s", got[len(got)-200:], want)
+	}
+	// 目次の位置から読むと、その見出しから始まる
+	if s := string(runes[at("## Concurrency"):]); !strings.HasPrefix(s, "## Concurrency") {
+		t.Errorf("位置がずれています: %q", s[:20])
+	}
+	// ## が無ければ ### まで。多すぎれば数だけ
+	var b strings.Builder
+	for i := range indexMaxHeadings + 3 {
+		fmt.Fprintf(&b, "### 節 %d\n", i)
+	}
+	if got := headingIndex([]rune(b.String()), 0); !strings.Contains(got, "\n- ### 節 0: 0\n") || !strings.HasSuffix(got, "\n- …ほかに 3 個)") {
+		t.Errorf("### の目次:\n%s", got)
+	}
+	if got := headingIndex([]rune("本文だけ\n"), 0); got != "" {
+		t.Errorf("見出しが無いのに %q", got)
+	}
+}
+
 func TestFetchErrors(t *testing.T) {
 	s := testServer(t)
 	f := fetchURL{opt: FetchOptions{AllowPrivate: true}}

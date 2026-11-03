@@ -10,6 +10,7 @@ package tool
 //	             その代わり、古い文字列をファイルの中身と1文字違わず書けないと失敗する(小さいモデルは行番号や字下げを間違えやすい)
 //
 // 古い文字列がファイルの中に1か所だけのときだけ置き換える。2か所以上あると、どれを直したいのか分からないため。
+// そのままでは見つからず、行頭の空白(字下げ)だけが違うときは、字下げを合わせて置き換える(editmatch.go)。
 
 import (
 	"context"
@@ -115,6 +116,10 @@ func (t editFile) Run(ctx context.Context, args Args) (string, error) {
 	if err := writeText(e.dir(), e.path, e.after); err != nil {
 		return "", err
 	}
+	if e.reindented {
+		// 合わせたことを伝える(次の old_string で、また同じ字下げを書かないように)
+		return fmt.Sprintf("%s の %d 行目からを書き換えました(old_string の字下げがファイルと違ったので、ファイルの字下げに合わせました)", e.path, e.line), nil
+	}
 	return fmt.Sprintf("%s の %d 行目からを書き換えました", e.path, e.line), nil
 }
 
@@ -123,6 +128,7 @@ type edit struct {
 	target               // 書き換えるフォルダとパス
 	before, after string // 書き換える前と後の、ファイルの中身全体
 	line          int    // 書き換える場所の行番号(1 始まり)
+	reindented    bool   // 行頭の空白を合わせて置き換えたか(looseMatch)
 }
 
 // plan は、引数とファイルの今の中身から、書き換えた後の中身を作る。置き換える場所が1か所に決まらなければエラー。
@@ -160,6 +166,17 @@ func (t editFile) plan(args Args) (edit, error) {
 	}
 	switch n := strings.Count(before, old); n {
 	case 0:
+		// 小さなモデルは字下げのタブを1つ多く(少なく)写しやすい(read_file の行番号の後ろのタブまで写す。tuning.md)。
+		// 行頭の空白だけが違い、1か所に決まるなら、ファイルの字下げに合わせて置き換える。確認のカードの差分に実際の変更が出る
+		if m, ok := looseMatch(before, old); ok {
+			return edit{
+				target:     tg,
+				before:     before,
+				after:      before[:m.start] + m.reindent(repl) + before[m.end:],
+				line:       strings.Count(before[:m.start], "\n") + 1,
+				reindented: true,
+			}, nil
+		}
 		return edit{}, fmt.Errorf("old_string が %s の中に見つかりません(read_file で今の中身を確かめてください。行番号と、その後ろのタブは含めません)", p)
 	case 1:
 	default:

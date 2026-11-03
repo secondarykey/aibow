@@ -118,7 +118,36 @@ func (t runCommand) check(args Args) (string, Folder, error) {
 	if st, err := os.Stat(f.Path); err != nil || !st.IsDir() {
 		return "", Folder{}, fmt.Errorf("作業フォルダ %s がありません(消えたか、名前が変わった可能性があります)", f.Path)
 	}
+	if err := t.folders.cdName(leadingCdPath(command), f); err != nil {
+		return "", Folder{}, err
+	}
 	return command, f, nil
+}
+
+// cdName は、先頭の cd の行き先がワークスペースのフォルダの名前(相対パス)のときに、直し方の分かるエラーにする。
+//
+// Qwen3.5 4B は、フォルダが1つでも「cd aibow && go build ./...」のように、作業フォルダの名前をサブフォルダとして書いた
+// (環境の説明の「"aibow" refers to the working directory itself.」は効かなかった。_docs/tuning.md)。
+// cmd.exe は「The system cannot find the path specified.」と返すだけで、モデルは /d を付けるなどして同じ失敗を繰り返したので、
+// 確認のカードを出す前に、どう書けばよいかを返す。カレントのフォルダの中にその名前のものが本当にあるなら、サブフォルダとしてそのまま動かす。
+func (set folderSet) cdName(p string, cur Folder) error {
+	p = strings.TrimRight(p, `/\`)
+	if p == "" || filepath.IsAbs(p) || strings.ContainsAny(p, `/\`) {
+		return nil
+	}
+	for _, f := range set {
+		if !strings.EqualFold(f.Name, p) {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(cur.Path, p)); err == nil {
+			return nil // カレントの中に本当にある(サブフォルダ)
+		}
+		if f.Path == cur.Path {
+			return fmt.Errorf("%s は作業フォルダそのものの名前で、コマンドはもうその中で動きます。cd %s を外して、続きだけを書いてください", p, p)
+		}
+		return fmt.Errorf("%s はワークスペースのフォルダの名前です。cd でなく、folder に %s を書いてください", p, f.Name)
+	}
+	return nil
 }
 
 // leadingCd は、コマンドの先頭の「cd <絶対パス> &&」の行き先(無ければ空)。
@@ -130,6 +159,15 @@ func (t runCommand) check(args Args) (string, Folder, error) {
 // 確認のカードにも、cd の行き先のフォルダの名前が出る。
 // 読むのは先頭の1つだけ(cd /d・chdir も)。引用符の無いパスは空白か & ; までにする(空白を含むパスは引用符で書かれる)。
 func leadingCd(command string) string {
+	p := leadingCdPath(command)
+	if !filepath.IsAbs(p) {
+		return ""
+	}
+	return filepath.Clean(p)
+}
+
+// leadingCdPath は、コマンドの先頭の「cd <パス> &&」の行き先を、書いてあるまま返す(相対パスも。無ければ空)。
+func leadingCdPath(command string) string {
 	word, rest, _ := strings.Cut(command, " ")
 	if !strings.EqualFold(word, "cd") && !strings.EqualFold(word, "chdir") {
 		return ""
@@ -154,10 +192,10 @@ func leadingCd(command string) string {
 	}
 	// cd だけのコマンド(後ろに続きが無い)は、その場所で動かす意味が無いので読まない
 	rest = strings.TrimSpace(rest)
-	if !strings.HasPrefix(rest, "&") && !strings.HasPrefix(rest, ";") || !filepath.IsAbs(p) {
+	if !strings.HasPrefix(rest, "&") && !strings.HasPrefix(rest, ";") {
 		return ""
 	}
-	return filepath.Clean(p)
+	return p
 }
 
 func (t runCommand) Run(ctx context.Context, args Args) (string, error) {
