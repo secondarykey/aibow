@@ -1,10 +1,7 @@
 # リリース:v+バージョンのタグで、3つの OS の exe を zip にし、GitHub のリリースの下書きを作る。
 #
-# 動くのは次の2つのとき:
-#   - versionup.yml が main への push でタグを打ったあと、このワークフローを呼ぶ(workflow_call)
-#   - 手でタグを push したとき(push: tags)
-# versionup.yml から呼ぶのは、GITHUB_TOKEN で push したタグではほかのワークフローが起動しないため
-# (wails3 スキルの「PAT が必要な理由」。呼び出しにすれば PAT を用意しなくてよい)。
+# 動くのは、versionup.yml が PAT でタグを push したとき(手でタグを push しても動く)。
+# GITHUB_TOKEN で push したタグではほかのワークフローが起動しないので、versionup.yml は PAT で push する(wails3 スキルの「PAT が必要な理由」)。
 #
 # zip に入れるのは aibow(画面のアプリ)・aibow-server・aibow-mcp の3つ。llama.cpp の DLL(lib)は入れない
 # (GPU に合う版を各自が README の手順で取ってくるため)。
@@ -14,16 +11,9 @@ on:
   push:
     tags:
       - 'v*'
-  workflow_call:
-    inputs:
-      tag:
-        description: リリースするタグ(v0.8.1 など)
-        required: true
-        type: string
 
 env:
-  # workflow_call では github.ref が main を指すので、渡されたタグを使う
-  TAG: ${{ inputs.tag || github.ref_name }}
+  TAG: ${{ github.ref_name }}
 
 jobs:
 
@@ -31,9 +21,8 @@ jobs:
 
     # v0.8.1-rc1 や v0.8.1+dev のような記号の付いたタグはリリースしない
     if: |
-      startsWith(inputs.tag || github.ref_name, 'v') &&
-      !contains(inputs.tag || github.ref_name, '-') &&
-      !contains(inputs.tag || github.ref_name, '+')
+      !contains(github.ref_name, '-') &&
+      !contains(github.ref_name, '+')
 
     strategy:
       fail-fast: false

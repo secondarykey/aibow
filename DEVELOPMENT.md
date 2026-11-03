@@ -158,13 +158,14 @@ wails3 task local:deploy DEPLOY_DEST="D:/tmp/aibow"
 
 ## リリースする(GitHub Actions)
 
-`main` に push すると、それが正式なリリースになります。
+`main` への PR をマージすると、それが正式なリリースになります(main は保護して、PR でしか入れないようにします)。
 
-1. `versionup.yml`:版を決め(リリース済みなら patch を1つ上げる)、ビルド情報をコミットして `main` に push し、`v0.1.1` のようなタグを打つ
-2. `release.yml`:Windows・Linux・macOS で aibow・aibow-server・aibow-mcp を作って zip にし、GitHub のリリースの**下書き**を作る
+1. `versionup.yml`:版を決め(リリース済みなら patch を1つ上げる)、ビルド情報が変われば `chore: version …` の PR を作ってマージし、`v0.1.1` のようなタグを打つ
+2. `release.yml`:タグの push で動き、Windows・Linux・macOS で aibow・aibow-server・aibow-mcp を作って zip にし、GitHub のリリースの**下書き**を作る
 3. 下書きの zip を確かめてから、GitHub の画面で公開する
 
-versionup がコミットとタグを足すので、push したあとは手元の `main` が1つ遅れます。`git fetch` で取ってきてください(タグも一緒に来て、次の `local:deploy` から次の版になります)。
+先に PAT をリポジトリの secret `MY_GITHUB_TOKEN` に登録しておきます(手順は [_docs/deploy.md](_docs/deploy.md) の「PAT を用意する」)。
+マージのあとは `git fetch` で main とタグを取ってきてください(次の `local:deploy` から次の版になります)。
 zip に llama.cpp の DLL は入れていません。Linux 版・macOS 版の注意は [_docs/deploy.md](_docs/deploy.md) にあります。
 
 push のたびにテストを流す CI はありません。テストは push の前に手元で流します(上の「確かめ方」)。
