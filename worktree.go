@@ -261,7 +261,7 @@ func (cs *Conversations) WorktreeChanges(ctx context.Context, id uuid.UUID) ([]W
 	if err != nil {
 		return nil, err
 	}
-	applied, err := git.Applied(ctx, wt.Repo, changes)
+	applied, err := git.Applied(ctx, wt.Repo, wt.Path, wt.Base, changes)
 	if err != nil {
 		return nil, err
 	}

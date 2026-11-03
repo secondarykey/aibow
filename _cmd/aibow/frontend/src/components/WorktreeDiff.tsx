@@ -37,13 +37,15 @@ export function WorktreeDiff({ id, state, generating, onClose, onChanged, onDisc
   const [busy, setBusy] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
 
-  // 一覧を取り直す。チェックは、まだ取り込んでいないものにだけ付ける(取り込み済みをもう一度当てると、当たらずに失敗するため)
-  const load = useCallback(async (keepSelected: boolean) => {
+  // 一覧を取り直す。チェックは、まだ取り込んでいないものにだけ付ける(取り込み済みをもう一度当てると、当たらずに失敗するため)。
+  // 取り込んだあとに取り直すときは、外していたチェックをそのままにする(取り込まなかったものに付け直さない)
+  const load = useCallback(async (keep: boolean) => {
     try {
       const list = (await ChatService.WorktreeChanges(id)) ?? [];
       setChanges(list);
-      setChecked(new Set(list.filter(c => !c.applied).map(c => c.path)));
-      setSelected(cur => keepSelected && list.some(c => c.path === cur) ? cur : list[0]?.path ?? "");
+      const pending = list.filter(c => !c.applied).map(c => c.path);
+      setChecked(cur => new Set(keep ? pending.filter(p => cur.has(p)) : pending));
+      setSelected(cur => keep && list.some(c => c.path === cur) ? cur : list[0]?.path ?? "");
     } catch (err) {
       setError(errorMessage(err));
     }

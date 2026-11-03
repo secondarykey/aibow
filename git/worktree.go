@@ -172,12 +172,17 @@ func Diff(ctx context.Context, wt, base string, binary bool, paths ...string) (s
 	return run(ctx, wt, nil, args...)
 }
 
-// Applied は、changes のそれぞれが、リポジトリ repo の作業ツリーにすでに入っているか(取り込み済みか)。
+// Applied は、changes のそれぞれが、リポジトリ repo の作業ツリーにすでに入っているか(取り込み済みか)。wt・base は worktree とそのコミット。
 //
-// 覚えておくのではなく、そのつど中身を比べる:足した・変えたファイルは、本体のファイルのハッシュが worktree のもの(Blob)と同じか、
-// 消したファイルは、本体に無いか。ハッシュは git に計算させる(hash-object。改行の変換などの決まりを当ててから計算するので、
-// Windows の改行(core.autocrlf)でも、同じ中身なら同じになる)。取り込んだあとに本体で書き換えれば、取り込み済みでなくなる。
-func Applied(ctx context.Context, repo string, changes []Change) ([]bool, error) {
+// 覚えておくのではなく、そのつど本体を見て決める(取り込んだあとに本体で書き換えれば、取り込み済みでなくなる):
+//
+//   - 消したファイルは、本体に無いか
+//   - 足した・変えたファイルは、まず本体のファイルのハッシュが worktree のもの(Blob)と同じか。ハッシュは git に計算させる
+//     (hash-object。改行の変換などの決まりを当ててから計算するので、Windows の改行(core.autocrlf)でも、同じ中身なら同じになる)
+//   - 変えたファイルで中身が違えば、そのファイルの差分を本体に逆向きに当てられるか(apply --check -R。何も変えずに確かめるだけ)。
+//     本体の同じファイルの別の行にコミットしていない変更があっても、取り込んだ変更が入っていれば当てられる
+//     (中身の比べ方だけだと、そのとき取り込み済みにならなかった。2026-11-04、実際の画面で試して分かった)
+func Applied(ctx context.Context, repo, wt, base string, changes []Change) ([]bool, error) {
 	done := make([]bool, len(changes))
 	var paths []string
 	var idx []int
@@ -204,10 +209,62 @@ func Applied(ctx context.Context, repo string, changes []Change) ([]bool, error)
 	if len(hashes) != len(paths) {
 		return nil, fmt.Errorf("git hash-object の出力の数が合いません(%d 件に %d 行)", len(paths), len(hashes))
 	}
+	var differ []string // 中身の違う、変えたファイル(逆向きに当てて確かめる)
 	for k, i := range idx {
 		done[i] = hashes[k] == changes[i].Blob
+		if !done[i] && changes[i].Status == Modified {
+			differ = append(differ, changes[i].Path)
+		}
+	}
+	if len(differ) == 0 {
+		return done, nil
+	}
+	patch, err := Diff(ctx, wt, base, true, differ...)
+	if err != nil {
+		return nil, err
+	}
+	sections := splitPatch(patch)
+	for i, c := range changes {
+		sec, ok := sections[c.Path]
+		if !ok || done[i] || c.Status != Modified {
+			continue
+		}
+		if _, err := run(ctx, repo, []byte(sec), "apply", "--check", "-R", "-"); err == nil {
+			done[i] = true
+		}
 	}
 	return done, nil
+}
+
+// splitPatch は、git diff の出力をファイルごとに分ける(パス → そのファイルの差分)。
+// 名前を変えたものは無い(--no-renames)ので、見出し「diff --git a/X b/X」の X は前と後ろで同じ。
+// 引用符で囲まれたパス(改行などを含む)は分けない(取り込み済みかを、中身の比べ方だけで決める)。
+func splitPatch(patch string) map[string]string {
+	out := map[string]string{}
+	const head = "diff --git a/"
+	var path string
+	var b strings.Builder
+	flush := func() {
+		if path != "" {
+			out[path] = b.String()
+		}
+		path = ""
+		b.Reset()
+	}
+	for line := range strings.Lines(patch) {
+		if strings.HasPrefix(line, head) {
+			flush()
+			rest := strings.TrimRight(strings.TrimPrefix(line, head), "\r\n")
+			if n := len(rest) - len(" b/"); n > 0 && n%2 == 0 && rest[n/2:n/2+3] == " b/" {
+				path = rest[:n/2]
+			}
+		}
+		if path != "" {
+			b.WriteString(line)
+		}
+	}
+	flush()
+	return out
 }
 
 // ApplyError は、パッチが当たらなかったときのエラー。何も変えていない(git apply は全部当たるか、何も変えないか)。

@@ -116,7 +116,7 @@ func TestWorktreeFlow(t *testing.T) {
 	if !slices.Equal(got, want) {
 		t.Fatalf("変わったファイル = %v, want %v", got, want)
 	}
-	done, err := Applied(ctx, repo, changes)
+	done, err := Applied(ctx, repo, wt, base, changes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +148,7 @@ func TestWorktreeFlow(t *testing.T) {
 	if after := mustRun(t, repo, "diff", "--cached", "--name-only"); after != indexBefore {
 		t.Fatalf("当てたら本体の索引が変わった: %q → %q", indexBefore, after)
 	}
-	done, err = Applied(ctx, repo, changes)
+	done, err = Applied(ctx, repo, wt, base, changes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -262,7 +262,7 @@ func TestAppliedWithAutoCRLF(t *testing.T) {
 	if err := Apply(ctx, repo, []byte(patch)); err != nil {
 		t.Fatal(err)
 	}
-	done, err := Applied(ctx, repo, changes)
+	done, err := Applied(ctx, repo, wt, base, changes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -285,5 +285,32 @@ func TestAvailableWithoutGit(t *testing.T) {
 	t.Setenv("PATH", "")
 	if err := Available(); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("Available = %v, want ErrNotFound", err)
+	}
+}
+
+// 本体の同じファイルの別の行にコミットしていない変更があっても、取り込んだ変更が入っていれば取り込み済みになる
+// (中身は本体と違うので、逆向きに当てられるかで決める。2026-11-04、実際の画面で試して分かった)
+func TestAppliedWithOtherChangesInSameFile(t *testing.T) {
+	ctx := context.Background()
+	repo := newRepo(t, map[string]string{"a.txt": "one\ntwo\nthree\nfour\nfive\nsix\n"})
+	wt, base := addWorktree(t, repo)
+	write(t, filepath.Join(wt, "a.txt"), "one\nTWO\nthree\nfour\nfive\nsix\n")
+	write(t, filepath.Join(repo, "a.txt"), "one\ntwo\nthree\nfour\nfive\nsix\nmine\n") // 本体の別の行
+	changes, err := Changes(ctx, wt, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if done, err := Applied(ctx, repo, wt, base, changes); err != nil || done[0] {
+		t.Fatalf("取り込む前 = %v, %v", done, err)
+	}
+	patch, err := Diff(ctx, wt, base, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Apply(ctx, repo, []byte(patch)); err != nil {
+		t.Fatal(err)
+	}
+	if done, err := Applied(ctx, repo, wt, base, changes); err != nil || !done[0] {
+		t.Fatalf("取り込んだあと = %v, %v(本体: %q)", done, err, read(t, filepath.Join(repo, "a.txt")))
 	}
 }
