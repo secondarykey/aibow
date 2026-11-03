@@ -256,7 +256,8 @@ func answeredByServer(err error) bool {
 }
 
 // resultText は、結果の content(文章・画像など、いくつかの部分)を、モデルに渡す1つの文章にする。
-// aibow のモデルは画像を読めない(ロードマップの外の「画像を読む」)ので、文章以外は種類だけを書く。
+// 画像を読めるモデルでも、ツールの結果の画像はモデルに見せない(画像は発言に付けたものだけ。0030 の「やらないこと」)ので、
+// 文章以外は種類だけを書く。
 func resultText(content []mcp.Content) string {
 	parts := make([]string, 0, len(content))
 	for _, c := range content {
