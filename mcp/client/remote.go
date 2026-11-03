@@ -31,7 +31,7 @@ const (
 //
 // 実行する前に、いつも確認する(tool.Confirmable)。中身が見えないので、読むだけのツールかどうかは分からない。
 // サーバーは「読むだけ」(readOnlyHint)などの印を付けられるが、MCP の仕様でも「信じてはいけないヒント」とされている。
-// 信頼して確認を省く仕組みは、あとで作る(TODO.md のロードマップの外)。
+// 信頼して確認を省く仕組みは、あとで作る(TODO.md の「ツールの信頼の続き」)。
 type remoteTool struct {
 	server  string
 	session *mcp.ClientSession
