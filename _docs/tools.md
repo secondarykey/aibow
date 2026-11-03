@@ -24,6 +24,7 @@
 | `tool/plan.go` | 作業の予定を書く `update_plan`(0037)と、履歴の呼び出しから予定を読む `PlanFromCall` |
 | `plan.go` | compact で渡さなくなった部分の最後の予定を、システムの文の最後に残す(`lastPlan`・`planNote`・`withPlan`。0037) |
 | `tool/write.go` | 書き換えるツール `write_file`(丸ごと書く)/ `edit_file`(1か所だけ置き換える)。どちらも実行前に確認する |
+| `tool/editmatch.go` | `edit_file` の `old_string` が字下げだけ違うときに、ファイルの字下げに合わせて見つける(`looseMatch`) |
 | `tool/command.go` | コマンドのツール `run_command`(時間の上限 120 秒・出力の切り方・結果の書き方)。実行前に確認する |
 | `tool/shell_windows.go` / `tool/shell_unix.go` | どのシェルで動かすか(cmd.exe / `/bin/sh`) |
 | `internal/proc/` | 子プロセスまでまとめて止める仕組み(Windows はジョブオブジェクト、それ以外はプロセスグループ)。`run_command` と MCP のサーバーで使う(0006 で `tool` から移した) |
@@ -261,7 +262,8 @@ tool ── 何も知らない
   - **浅い順に並べる**(直下を全部 → 1つ下を全部 → …。それぞれの中は名前の順)。切ったときも全体の形が残るように。奥までたどる順だと、最初の大きなフォルダで上限に達する
   - **隠しフォルダ(`.` で始まる)は名前だけ出して中に入らない**(「(中は省略)」と書く)。path に指定すれば中を並べる。`.gitignore` は読まない
   - **`pattern`(0037)を付けると、名前の形に合うファイルだけを並べる**(フォルダは並べない。たどり方・上限・順は同じ)。`/` を含まない形(`*.go`)は名前だけと、
-    含む形(`**/*_test.go`・`cmd/**/main.go`)は作業フォルダからの相対パスと比べる。`**` は0段以上(`path.Match` に無いので `glob.go` で自分で合わせる)。`\` は区切りに直さず、記号をそのまま合わせる印(`*\.go` は `main.go` に合う)。新しいツールにしないのは、小さなモデルのプロンプトを増やさないため
+    含む形(`**/*_test.go`・`cmd/**/main.go`)は作業フォルダからの相対パスと比べる。`**` は0段以上(`path.Match` に無いので `glob.go` で自分で合わせる)。`\` は区切りに直さず、記号をそのまま合わせる印(`*\.go` は `main.go` に合う)。新しいツールにしないのは、小さなモデルのプロンプトを増やさないため。
+    最後に「pattern … に合うファイルは全部で N 件です」と書く(上限で切っても数えきる。4B は並んだ名前を数え間違えた。2026-11-03、[tuning.md](tuning.md))
 - `search_files`(0037):正規表現(Go の RE2)に合う行を `パス:行番号: 行` で返す。たどり方は `list_files` と同じ `walk`。
   100 件か 8,000 文字で切り、数えるのは最後まで続けて「一致は全部で N 件(M ファイル)」を書く。1 行は 300 文字で切る。
   NUL を含む・UTF-8 でない・1MB を超えるファイルは黙って飛ばし、数だけを最後に書く。読むだけなので確認しない
@@ -308,7 +310,8 @@ Each command starts in the main folder "aibow" unless you pass folder; a cd does
 - **フォルダが1つなら `folder` を出さない**(定義は段1・`tool.Files` と同じ。4B のプロンプトを増やさない。`withFolder`)
 - 見つからないパスがほかのフォルダにあれば、エラーに「folder に <名前> を書いて」と添える(`elsewhere`。書き換えるツールでは読むだけのフォルダを案内しない)。
   パスの先頭にほかのフォルダの名前を付けた書き方(`spec/a.md`)は、メインにその名前のものが無ければ「folder と path に分けて」のエラーにする(`prefixed`)。
-  どちらも Qwen3.5 4B で試して足した([tuning.md](tuning.md))
+  選んだフォルダ自身の名前を付けた書き方(`aibow/agent.go`)も、同じ名前のサブフォルダが無ければ「パスの先頭に付けず」のエラーにする(フォルダが1つでも。2026-11-03)。
+  どれも Qwen3.5 4B で試して足した([tuning.md](tuning.md))
 - 絶対パスは、どのフォルダの中かを見て振り分ける(入れ子なら深いほう)。`folder` を書いたのにそのフォルダの外を指していれば「食い違い」のエラー
 - **読むだけのフォルダ**には `write_file`・`edit_file` を向けられない。`Preview` の前(`filePath`)で「<名前> は読むだけのフォルダなので、書き換えられません。ほかのフォルダに写しを作らず、書き換えられないことをユーザーに伝えて、ここで止まってください」を返すので、確認のカードは出ない
   (止まるよう促すのは、4B が書けるフォルダに写しを作ることがあったため。[tuning.md](tuning.md))
@@ -324,6 +327,9 @@ Each command starts in the main folder "aibow" unless you pass folder; a cd does
 - それでもモデルは `folder` を渡さずに `cd "C:\...\B" && git log` と書く。cmd.exe の `cd` は `/d` が無いと別のドライブへ移らず成功扱いなので、
   メイン(D:)で動いて別のリポジトリのログが返った(2026-11-03、ユーザーの報告)。そこで、**先頭の `cd <絶対パス> &&` の行き先がワークスペースのフォルダ(の中)なら、
   そのフォルダをカレントにする**(`tool.leadingCd`。`folder` より強い)。コマンドは書き換えず、確認のカードにはそのフォルダの名前が出る
+- 先頭の `cd` の行き先が**ワークスペースのフォルダの名前**(`cd aibow && go build ./...` のような相対パス)で、カレントにその名前のサブフォルダが無ければ、
+  確認のカードを出す前にエラーで直し方を返す(カレントのフォルダ自身なら「cd を外して」、ほかのフォルダなら「folder に <名前>」。`cdName`。フォルダが1つでも)。
+  4B は「"aibow" refers to the working directory itself.」と書いてもこう書き、cmd.exe の「The system cannot find the path specified.」を見て `/d` を足すなどして繰り返した(2026-11-03、[tuning.md](tuning.md))
 - **フォルダの説明**(`WorkspaceFolder.Description`・`tool.Folder.Description`。2026-11-03、ユーザーと決めた):ユーザーが「マニュアルを直して」のように名前と違う言葉で呼んでも、
   モデルがどのフォルダかを当てる手がかりとして、環境の説明(と `aibow-mcp` の instructions)のフォルダの行の末尾に付ける。ツールの動きには使わない(守りは読むだけの印と確認)。
   送信のたびにシステムプロンプトに入るので、1行・100 文字まで(`folderDescriptionMax`。保存のときに改行と続く空白を1つの空白にし、長ければ断る)。
@@ -335,7 +341,9 @@ Each command starts in the main folder "aibow" unless you pass folder; a cd does
 ### URL を読むツール(0036)
 
 - `fetch_url`(`tool/fetch.go`・`tool/fetchhtml.go`):URL のページを取ってきて、本文を返す。引数は `url` と `start_index`(0 から)。返す長さはモデルに選ばせず 5,000 文字(`fetchMaxRunes`)。
-  結果は1行目に `URL: <最終的な URL>(<状態>・<種類>)`、空行をはさんで本文、切ったときは最後に「全体は N 文字です。続きは start_index=M で読めます」(`read_file` の offset と同じ考え方。0025)。読むたびにページを取り直す(保存・キャッシュはしない)
+  結果は1行目に `URL: <最終的な URL>(<状態>・<種類>)`、空行をはさんで本文、切ったときは最後に「全体は N 文字です。続きは start_index=M で読めます」(`read_file` の offset と同じ考え方。0025)。読むたびにページを取り直す(保存・キャッシュはしない)。
+  切ったときは、渡した範囲より後ろの大きい見出し(`##` まで。無ければ `###` まで。30 個まで)を start_index と一緒に並べる(`headingIndex`)。
+  10 万文字のページの後ろの節を、4B が頭から 5,000 文字ずつ読んで会話の上限を使い切ったため(2026-11-03、[tuning.md](tuning.md))
 - 設定で動きが変わる(PC の中のアドレスを許すか・User-Agent の版)ので `tool.Builtin` には入れず、動かす側が `mcp/server` の `Options.Fetch` で足す。
   アプリと aibow-server は aibow の中のサーバー(`mcp/client` の `Options.Fetch`)で出し、aibow-mcp は `-fetch` のときだけ出す。設定の画面の一覧は `tool.Folderless`(時刻・計算・URL を読む)。
   `SetLocalTools` をしない会話の仕組み(テストの直接の形)には入らない
@@ -379,7 +387,9 @@ Each command starts in the main folder "aibow" unless you pass folder; a cd does
 - `write_file`: 新しく作るか、丸ごと上書きする。親のフォルダが無ければ作る。すでにあるファイルはパーミッションを引き継ぐ
 - `edit_file`: `old_string` がファイルの中に1か所だけなら `new_string` に置き換える。0 か所なら「見つかりません(read_file で…。行番号と、その後ろのタブは含めません)」、
   2 か所以上なら「N か所あります。前後の行を含めて…」のエラー。改行が CRLF のファイルは、LF で書かれた `old_string` / `new_string` をファイルに合わせてから探す
-  (`read_file` は CR を見せないので、合わせないと複数行がいつまでも見つからない)
+  (`read_file` は CR を見せないので、合わせないと複数行がいつまでも見つからない)。
+  0 か所でも、**行頭の空白(字下げ)だけが違い、どの行も同じだけずれていて、1か所に決まるなら、ファイルの字下げに合わせて置き換える**(`new_string` も同じだけずらす。`tool/editmatch.go`)。
+  結果の文で「字下げを合わせました」と伝え、確認のカードの差分には実際の変更が出る。4B は read_file の行番号の後ろのタブまで写して、タブを1つ多く書くことが多かった(7 回のうち 4 回。2026-11-03、[tuning.md](tuning.md))
 - どちらも UTF-8 のテキストだけ(読むのと同じ `readText` の確かめ)。作業フォルダの外には `os.Root` で出られない
 - **確認**: 書き換えるツールは `tool.Confirmable`(`Tool` + `Preview`)。エージェントループは実行の前に `Preview` で確認の内容(パス・「上書き」「新しく作る」「書き換え」・差分)を作り、
   `confirm` イベント(`ConfirmRequest`: ID・呼び出し・内容)で画面に送り、`Conversations.Confirm`(画面からは `ChatService.ConfirmTool`)の答えをチャネルで待つ
