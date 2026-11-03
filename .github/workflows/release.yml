@@ -147,7 +147,8 @@ jobs:
   release:
 
     needs: build
-    runs-on: ubuntu-latest
+    # Linux のランナーは全部 ubuntu-24.04 にそろえる(ubuntu-latest は Ubuntu 26 に移っていて、ジョブごとに OS が変わるため)
+    runs-on: ubuntu-24.04
     permissions:
       contents: write   # リリースを作るため
 

@@ -43,7 +43,7 @@ main の保護(ブランチの保護かルールセット)で「マージの前�
 
 - Go と Wails の CLI は `.github/variables` の版で入れる(`@latest` は使わない)。Go の版を使う Setup Go より前に読み込む。読み込むステップは `shell: bash`(Windows の既定の pwsh では `$GITHUB_ENV` に書けない)。
   Go を `go.mod`(`go-version-file`)から取らないのは、`go.mod` の `go` の行は「最低限の版」で、CI で使う版とは役目が違うため(上げると、使う人に新しい Go を求めることになる)
-- Linux のランナーは `ubuntu-24.04` に固定する。`ubuntu-latest` は glibc が新しく、そこで作った exe は古いディストリで起動しない。Linux 版を動かすには、使う PC に `libgtk-4-1` と `libwebkitgtk-6.0-4` が要る(zip では依存を伝えられない)
+- Linux のランナーは、exe を作らないジョブ(versionup・release の下書きを作るジョブ)も含めて全部 `ubuntu-24.04` に固定する(`ubuntu-latest` は使わない)。`ubuntu-latest` は 2026-10-19 から Ubuntu 26 に移っていて glibc が新しく、そこで作った exe は古いディストリで起動しない。ジョブごとに OS が違うと、apt で入れるパッケージの名前なども食い違う。Linux 版を動かすには、使う PC に `libgtk-4-1` と `libwebkitgtk-6.0-4` が要る(zip では依存を伝えられない)
 - macOS 版は `wails3 package` の ad-hoc 署名だけで、署名と notarize をしていない。ダウンロードした Mac では Gatekeeper が止める。`macos-latest` は arm64 なので Intel の Mac では起動しない
 - `build/appicon.icon` はコミットしてある(無いと macOS 26 のランナーで `actool` が失敗する)
 - Windows のランナーは `core.autocrlf=true` なので、checkout の前に `false` にする(CRLF になると gofmt -l に全部出る)

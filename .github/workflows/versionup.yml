@@ -29,7 +29,8 @@ jobs:
       github.event.pull_request.merged == true &&
       !startsWith(github.event.pull_request.title, 'chore: version')
 
-    runs-on: ubuntu-latest
+    # Linux のランナーは全部 ubuntu-24.04 にそろえる(release.yml のビルドと同じ OS で、apt で入れるパッケージの名前も同じになる)
+    runs-on: ubuntu-24.04
 
     steps:
 
