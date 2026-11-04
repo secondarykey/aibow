@@ -153,7 +153,11 @@ export function ConversationSettingsView({ id, title, onRename, settings, models
         <div className="settings-header">
           <h1>
             会話の設定
-            <span className="settings-target">{title}</span>
+            {/* 会話の ID は見出しの後ろに(以前は「ID」の欄。名前は下の欄にあるので、見出しには出さない。2026-11-04、ユーザーの指示) */}
+            <span className="settings-target conv-head-id" title="会話の ID(UUIDv7)。ログの「会話 …」や DB(conversations の id)と同じ値で、調べるときの手がかりになる">
+              (<code>{id}</code>)
+            </span>
+            <CopyButton text={id} />
           </h1>
           <button className="back" onClick={onClose} title="会話の設定を閉じて、会話に戻る"><LuArrowLeft /> 会話に戻る</button>
         </div>
@@ -161,11 +165,6 @@ export function ConversationSettingsView({ id, title, onRename, settings, models
 
         <TitleField title={title} onRename={onRename} />
         {!isBrowser && worktree && <WorktreeName state={worktree} onRename={onRenameWorktree} />}
-        <label title="会話の ID(UUIDv7)。ログの「会話 …」や DB(conversations の id)と同じ値で、調べるときの手がかりになる">ID</label>
-        <div className="conv-id">
-          <code>{id}</code>
-          <CopyButton text={id} />
-        </div>
 
         <label title="この会話を作ったプロファイル。固定した項目と使えないツールは、このプロファイルの決まりで決まる">プロファイル</label>
         <div className="conv-profile">{profile ? profile.name : "(プロファイルを持たない会話)"}</div>

@@ -358,9 +358,8 @@ footer.home .composer textarea { line-height: 1.5; min-height: calc(3 * 1.5em + 
   font-size: 20px; border: none; border-radius: 6px; background: transparent; color: var(--error);
 }
 .stop-row button.stop:hover:not(:disabled) { background: color-mix(in srgb, var(--error) 12%, transparent); }
-/* 会話の ID と、返事の詳細の発言の ID。選んでコピーもでき、横のボタンでもコピーできる */
-.conv-id { display: flex; align-items: center; gap: 4px; }
-.conv-id code { user-select: all; }
+/* 会話の設定の画面の見出しの後ろの会話の ID(選んでコピーもでき、横のボタンでもコピーできる) */
+.conv-head-id code { user-select: all; }
 /* worktree の名前(0039)。会話の名前の欄の下に小さく。作る前はダブルクリックで直す */
 .conv-worktree-name { display: flex; align-items: center; gap: 4px; margin-top: 4px; font-size: 12px; color: var(--muted); }
 .conv-worktree-name code { font-size: 12px; }
