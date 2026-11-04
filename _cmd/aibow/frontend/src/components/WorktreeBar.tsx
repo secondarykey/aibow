@@ -5,12 +5,13 @@
 //
 //   作る前    … ブランチのアイコンのトグル。入れると枠付きで、作るときの元(本体の今のブランチとコミット)
 //   使えない  … 灰色(メインのフォルダが Git のリポジトリでない・git が PATH に無い)。理由は吹き出しに出す
-//   作ったあと … 作ったときの元の表示(切り替えられない)と、「差分(n ファイル)」。押すと差分の画面を開く
+//   作ったあと … worktree のブランチ名(切り替えられない)と、「差分(n ファイル)」。押すと差分の画面を開く。元のコミットは吹き出しに出す
 //
-// 「worktree」という言葉ではなく、ブランチとコミット(短く)を出す。どのコミットから始まるかが見えるように(2026-11-04、ユーザーと決めた)
+// 「worktree」という言葉ではなく、作る前はブランチとコミット(短く)を出す。どのコミットから始まるかが見えるように。
+// 作ったあとは、どこで作業しているかが分かるよう worktree のブランチ名にする(2026-11-04、ユーザーと決めた)
 import { LuFileDiff, LuGitBranch } from "react-icons/lu";
 import type { WorktreeChange, WorktreeState } from "../../bindings/github.com/secondarykey/aibow";
-import { BaseLabel, fromText } from "../worktree";
+import { BaseLabel, baseText, fromText } from "../worktree";
 
 interface Props {
   state: WorktreeState;
@@ -25,9 +26,9 @@ export function WorktreeBar({ state, on, changes, onToggle, onOpenDiff }: Props)
     const pending = changes.filter(c => !c.applied).length;
     return (
       <div className="worktree-bar active">
-        <span className="worktree-label" title={`${fromText(state)}作成した worktree\n${state.path ?? ""}\nブランチ ${state.branch ?? ""}`}>
+        <span className="worktree-label" title={`${fromText(state)}作成した worktree${state.base_subject ? `(${baseText(state)})` : ""}\n${state.path ?? ""}`}>
           <LuGitBranch />
-          <BaseLabel state={state} />
+          <span className="worktree-branch">{state.branch}</span>
         </span>
         <button type="button" className="worktree-diff" onClick={onOpenDiff}
           title={pending < changes.length ? `取り込んでいない ${pending} ファイル` : undefined}>

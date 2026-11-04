@@ -896,6 +896,8 @@ footer { border-top: 1px solid var(--border); background: var(--panel); padding:
 /* 作る元(作った元)のブランチとコミット。ブランチの名前は長いことがあるので切る */
 .worktree-base-branch { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .worktree-base-commit { font-size: 11.5px; opacity: .8; }
+/* 作ったあとの worktree のブランチ名。名前が長いことがあるので切る(全部は差分の画面の上に出る) */
+.worktree-branch { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* worktree の差分の画面(0039)。左にファイルの一覧、右に選んだファイルの差分 */
 .worktree-overlay {
