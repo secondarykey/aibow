@@ -841,7 +841,6 @@ footer { border-top: 1px solid var(--border); background: var(--panel); padding:
 }
 .workdir-bar button:hover { color: var(--text); }
 .workdir-bar.set .workdir { border-color: var(--border); background: var(--bg); color: var(--text); }
-.workdir-bar .workdir-clear { padding: 2px 4px; }
 .workdir-name { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* 資料のフォルダ(ブラウザ。押せない)。作業フォルダを決めたときの枠と同じ見た目にする */
 .workdir-bar .folder-fixed {

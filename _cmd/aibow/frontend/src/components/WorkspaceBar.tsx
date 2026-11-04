@@ -2,11 +2,12 @@
 //
 // 新しい会話の既定には入らないので、会話ごとに毎回選ぶ(前の会話のフォルダを引き継いで、別のフォルダを触らせないため)。
 // どのフォルダを触らせているかがいつも見えるよう、設定の画面ではなく入力欄の上に出す。
-// 決めていないときはフォルダのアイコンだけ、決めたら名前と ×。押すとワークスペースの一覧が上に開き、
-// 最後の「フォルダから新しく作る」で、フォルダを選ぶダイアログ(Go の ChatService.ChooseWorkDir)から1つ作って選ぶ。
+// 決めていないときはフォルダのアイコンだけ、決めたら名前。押すとワークスペースの一覧が上に開き、
+// 「フォルダから新しく作る」で、フォルダを選ぶダイアログ(Go の ChatService.ChooseWorkDir)から1つ作って選ぶ。
+// 外すのは一覧の最後の「なし」(以前は名前の右の ×。隣の worktree の切り替えを押すつもりで外してしまうので、一覧に移した。2026-11-04、ユーザーの指示)。
 // 会話の ID のワークスペースがこの PC に無い(別の PC で選んだ・消した)ときは、そのことを出して選び直せるようにする。
 import { useEffect, useRef, useState } from "react";
-import { LuCheck, LuFolder, LuFolderPlus, LuTriangleAlert, LuX } from "react-icons/lu";
+import { LuCheck, LuFolder, LuFolderPlus, LuTriangleAlert } from "react-icons/lu";
 import type { WorkspaceView } from "../../bindings/github.com/secondarykey/aibow/ui";
 import { errorMessage } from "../errors";
 import { createFromFolder, mainFolder } from "../workspaces";
@@ -56,11 +57,6 @@ export function WorkspaceBar({ workspaces, selected, onChange, onCreated, onErro
         {current && <span className="workdir-name">{current.name}</span>}
         {missing && <span className="workdir-name">この PC にはこのワークスペースがありません</span>}
       </button>
-      {selected && (
-        <button className="workdir-clear" type="button" onClick={() => onChange("")} title="ワークスペースを外す">
-          <LuX />
-        </button>
-      )}
       {open && (
         <div className="conv-tools-menu workspace-menu">
           {workspaces.map(w => (
@@ -74,6 +70,10 @@ export function WorkspaceBar({ workspaces, selected, onChange, onCreated, onErro
           <button type="button" className="conv-tools-item" onClick={create} title="フォルダを選んで、そのフォルダ1つのワークスペースを作る">
             <span className="conv-tools-check"><LuFolderPlus /></span>
             フォルダから新しく作る
+          </button>
+          <button type="button" className="conv-tools-item" onClick={() => { setOpen(false); if (selected) onChange(""); }} title="ワークスペースを外す">
+            <span className="conv-tools-check">{!selected && <LuCheck />}</span>
+            なし
           </button>
         </div>
       )}
