@@ -4,7 +4,7 @@
 // 会話は「新しい会話の既定」(設定の画面)の写しから始まり、ここで変えた設定はこの会話にだけ効く。
 // 「会話に戻る」・一覧で会話を選ぶ・「+ 新規」・一覧の下の歯車で閉じる。
 import { useEffect, useRef, useState } from "react";
-import { LuArrowLeft } from "react-icons/lu";
+import { LuArrowLeft, LuGitBranch } from "react-icons/lu";
 import type { ConversationSettings, Profile, WorktreeState } from "../../bindings/github.com/secondarykey/aibow";
 import type { ServerInfo } from "../../bindings/github.com/secondarykey/aibow/mcp/client";
 // Go の models パッケージ。"…/aibow/models" と書くと aibow パッケージの models.ts が選ばれるので、index まで書く
@@ -83,40 +83,49 @@ function TitleField({ title, onRename }: { title: string; onRename(title: string
   );
 }
 
-// WorktreeNameField は、worktree の名前(ブランチとフォルダの名前に使う英語の短い名前。0039)。
-// 最初の送信でモデルが書いたものが入る。作る前なら直せる(Enter か欄を離れたときに保存。Esc で戻す)。作ったあとは実際のブランチ名を出すだけ
-function WorktreeNameField({ state, onRename }: { state: WorktreeState; onRename(name: string): Promise<void> }) {
+// WorktreeName は、worktree の名前(ブランチとフォルダの名前に使う英語の短い名前。0039)。会話の名前の欄の下に小さく出す。
+// 使わない人が気にしなくてよいよう、欄としては出さない(2026-11-04、ユーザーの指示)。
+// 出すのは、名前があるか worktree を作れる会話(Git のリポジトリのワークスペース)だけ。
+// 作る前はダブルクリックで直せる(Enter か離れたときに保存、Esc で戻す。断られたら保存してある名前に戻し、理由はエラーに出る)。
+// 作ったあとは、実際のブランチ名を出すだけ(変えられない)
+function WorktreeName({ state, onRename }: { state: WorktreeState; onRename(name: string): Promise<void> }) {
   const name = state.name ?? "";
+  const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(name);
   useEffect(() => setValue(name), [name]);
   const cancelled = useRef(false);
-  const label = (
-    <label htmlFor="conv-worktree-name" title="worktree のブランチ(aibow/<名前>-<会話の ID の末尾>)とフォルダの名前。英小文字・数字を - でつなぐ">
-      worktree の名前
-    </label>
-  );
+  if (!state.active && !name && !state.usable) return null;
   if (state.active) {
     return (
-      <>
-        {label}
-        <div className="conv-profile"><code>{state.branch}</code></div>
-      </>
+      <div className="conv-worktree-name" title="worktree のブランチ(作ったあとは名前を変えられない)">
+        <LuGitBranch /> <code>{state.branch}</code>
+      </div>
+    );
+  }
+  if (!editing) {
+    return (
+      <div className="conv-worktree-name" onDoubleClick={() => setEditing(true)}
+        title="worktree のブランチとフォルダの名前(aibow/<名前>-<会話の ID の末尾>)。ダブルクリックで直す。英小文字・数字を - でつなぐ">
+        <LuGitBranch /> {name ? <code>{name}</code> : <span className="conv-worktree-none">(名前なし)</span>}
+      </div>
     );
   }
   const commit = () => {
+    setEditing(false);
     if (cancelled.current) {
       cancelled.current = false;
+      setValue(name);
       return;
     }
     const v = value.trim();
-    if (v !== name) onRename(v).catch(() => setValue(name)); // 断られたら(使えない文字など)、保存してある名前に戻す。理由はエラーに出る
+    if (v !== name) onRename(v).catch(() => setValue(name));
   };
   return (
-    <>
-      {label}
+    <div className="conv-worktree-name editing">
+      <LuGitBranch />
       <input
-        id="conv-worktree-name"
         type="text"
+        autoFocus
         value={value}
         spellCheck={false}
         onChange={e => setValue(e.target.value)}
@@ -126,12 +135,11 @@ function WorktreeNameField({ state, onRename }: { state: WorktreeState; onRename
           if (e.key === "Enter") e.currentTarget.blur();
           if (e.key === "Escape") {
             cancelled.current = true;
-            setValue(name);
             e.currentTarget.blur();
           }
         }}
       />
-    </>
+    </div>
   );
 }
 
@@ -152,6 +160,7 @@ export function ConversationSettingsView({ id, title, onRename, settings, models
         {errors.map(e => <div key={e.id} className="msg error">{e.text}</div>)}
 
         <TitleField title={title} onRename={onRename} />
+        {!isBrowser && worktree && <WorktreeName state={worktree} onRename={onRenameWorktree} />}
         <label title="会話の ID(UUIDv7)。ログの「会話 …」や DB(conversations の id)と同じ値で、調べるときの手がかりになる">ID</label>
         <div className="conv-id">
           <code>{id}</code>
@@ -166,7 +175,6 @@ export function ConversationSettingsView({ id, title, onRename, settings, models
             <div className="conv-profile">{folder || "(なし)"}</div>
           </>
         )}
-        {!isBrowser && worktree && <WorktreeNameField state={worktree} onRename={onRenameWorktree} />}
         {me.login && <ShareField share={share} shareWith={shareWith} shareGroups={shareGroups} onShare={onShare} />}
 
         <ConversationSettingsForm settings={settings} models={models} lock={lock} onChange={onChange} />
