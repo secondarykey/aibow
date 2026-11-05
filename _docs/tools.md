@@ -25,13 +25,15 @@
 | `plan.go` | compact で渡さなくなった部分の最後の予定を、システムの文の最後に残す(`lastPlan`・`planNote`・`withPlan`。0037) |
 | `tool/write.go` | 書き換えるツール `write_file`(丸ごと書く)/ `edit_file`(1か所だけ置き換える)。どちらも実行前に確認する |
 | `tool/editmatch.go` | `edit_file` の `old_string` が字下げだけ違うときに、ファイルの字下げに合わせて見つける(`looseMatch`) |
+| `tool/git.go` | 読むだけの Git のツール `git_status` / `git_diff`(0041 の段2。リポジトリで git があるときだけ出す `GitIn`)。確認しない |
 | `tool/command.go` | コマンドのツール `run_command`(時間の上限 120 秒・出力の切り方・結果の書き方)。実行前に確認する |
 | `tool/shell_windows.go` / `tool/shell_unix.go` | どのシェルで動かすか(cmd.exe / `/bin/sh`) |
 | `internal/proc/` | 子プロセスまでまとめて止める仕組み(Windows はジョブオブジェクト、それ以外はプロセスグループ)。`run_command` と MCP のサーバーで使う(0006 で `tool` から移した) |
 | `tool/confirm.go` | 実行前に確認が要るツールの印(`Confirmable`)と、確認の画面に出す内容(`Preview`: パス・上書きか・差分)。差分は `github.com/pkg/diff` |
 | `agent.go` | エージェントループ(`runTurn`)とツールの実行(10 秒の上限・20 回の上限・停止・会話の上限に入らない結果・実行前の確認の待ち) |
+| `workrules.go` | 作業の決まり(`# Working rules`。0041)。作業フォルダと書き換えるツールがある会話のシステムプロンプトに足す。下の「作業の決まり」 |
 | `worktree.go` | worktree で作業する会話(0039)。最初の書き換えの前に作る(`ensureWorktree`)・確認の既定・差分・取り込む・捨てる・会話を消したときの片付け。下の「worktree で作業する」 |
-| `git/git.go` / `git/worktree.go` | `git` パッケージ。アプリが行う Git の操作(`git` の exe を `os/exec` で呼ぶ)。worktree を作る・本体の状態・差分・`git apply` で当てる・取り込み済みか・消す。ルートの `aibow`・`tool` を import しない |
+| `git/git.go` / `git/worktree.go` / `git/read.go` | `git` パッケージ。アプリが行う Git の操作(`git` の exe を `os/exec` で呼ぶ)。worktree を作る・本体の状態・差分・`git apply` で当てる・取り込み済みか・消す。読むだけの `Status`・`WorkDiff`(`git_status`・`git_diff` が中で呼ぶ。索引を変えない。0041)。ルートの `aibow`・`tool` を import しない |
 | `format/qwen35_test.go` / `format/gemma4_test.go` / `format/llama3_test.go` / `format/granite_test.go` / `format/granite42_test.go` | 書式のテスト。プロンプトは公式テンプレートを jinja2 で通した期待値と1文字まで比べる(`testPromptMatchesTemplate`。書式によらない。ツールの結果の名前が無いときも比べる) |
 | `format/testdata/` | 書式のテストの会話(`cases.json`。書式をまたいで共通)と、期待値を作るスクリプト(`gen_expected.py`)。期待値は書式ごとのフォルダ(`qwen35/*.txt`・`gemma4/*.txt`・`llama3/*.txt`・`granite4/*.txt`・`granite42/*.txt`。Granite 4.0 は `granite40/*.txt`) |
 | `tool/tool_test.go` / `tool/files_test.go` / `tool/write_test.go` / `agent_test.go` / `workdir_test.go` / `confirm_test.go` | ツール(外に出られないこと・読み方の切り方を含む)とループ・作業フォルダのテスト(偽物の生成器を使う。モデル不要) |
@@ -306,6 +308,27 @@ Use paths relative to the folder.
 Each command starts in the main folder "aibow" unless you pass folder; a cd does not carry over to the next command. To run in another folder of the list, pass folder instead of cd. Each folder name refers to that folder itself, not to a subfolder.
 ```
 
+### 作業の決まり(0041)
+
+作業フォルダがあり、書き換えるツール(`edit_file`・`write_file`)がある会話では、環境の説明の後ろ(要約より前)に `# Working rules` を足す(`workingRules`)。
+どこまで続けるか・何を変えてよいか・最後に確かめるか、を短い英語で書く(1行ずつ、試しで見えた失敗に当てている。[features/0041-agent-prompt.md](features/0041-agent-prompt.md))。
+
+```
+# Working rules
+- Keep working with tools until the task is done. A reply without a tool call ends your turn, so do not stop halfway to report progress.
+- Read the code before you change it. Change the code the task is about; do not edit tests to make them pass unless the user asks.
+- If you think no change is needed, quote the line you read that shows it.
+- When a tool returns an error, read it and change the call. Do not repeat a call that failed.
+- After you change files, check your work before you answer: run the test or build the user mentioned (or the usual one for the project) with run_command, and fix what fails. You can review your changes with git_diff.
+- End with a short answer: what you changed and the result of the check.
+```
+
+- 会話の設定のシステムプロンプト(ユーザーが書くもの)には入れず、コードが組み立てる。ツールの有無で書き分けるため・既定の文を変えると今までの会話や配ったプロファイルとずれるため
+- 書き換えるツールが無い会話(読むだけ・質問だけ)には付けない。システムプロンプトは決まりを足す前と1文字も変わらない
+- 確かめる行(5行目)は `run_command` があるときだけ。無いときは最後の行も「what you changed.」まで(確かめた結果を求めない)。「You can review your changes with git_diff.」は `git_diff` があるときだけ
+- 送信ごとに、環境の説明と作業の決まりが何トークンかを Info のログに出す(`logSystemParts`)。Qwen3.5 で決まりは約 167 トークン
+- aibow-mcp・OpenAI 互換の口(Cline など)には足さない(ほかのクライアントは自分の決まりを持っている)
+
 ### フォルダが複数のワークスペース(0035 の段2)
 
 - ファイルのツール(`list_files`・`read_file`・`search_files`・`write_file`・`edit_file`)に引数 `folder`(省略可。名前を JSON Schema の `enum` で並べる)を足す。省けばメイン。
@@ -370,6 +393,17 @@ Each command starts in the main folder "aibow" unless you pass folder; a cd does
 - 予定は別に保存しない。「今の予定」は履歴の最後の、成功した `update_plan` の呼び出しの引数(`lastPlan`)。
   compact で呼び出しを含む発言をモデルに渡さなくなったら、渡さない部分の最後の予定を、システムの文の最後(要約の後ろ / truncate なら残した発言の前)に英語で足す(`passFrom` → `withPlan`。[compact.md](compact.md))
 - 画面では、`update_plan` のカードを引数と結果ではなくチェックリストで出す(`PlanCard.tsx`。済みは打ち消し線、取りかかっているものは太字)。エラーの呼び出しはふつうのカード
+
+### 読むだけの Git のツール(0041 の段2)
+
+- `git_status`:作業ツリーの変わったファイルを「`modified: tool/glob.go`」の形で並べる(`added` / `modified` / `deleted` / `untracked`。ステージしたかは区別しない。無視しているファイルは出ない)
+- `git_diff`:`HEAD` との差分(`git diff HEAD`。ステージしたものもしていないものも)。引数 `path` で絞れる。Git に入っていないファイルは含まない(そう説明に書き、`git_status` に向ける)。
+  8,000 文字で行の切れ目で切り、入りきらなかったファイルの名前と「path で絞って」を添える
+- どちらも索引を変えない(`status` と `diff` だけ)。worktree の差分の画面(`git.Changes`・`git.Diff`)は先に `add -A` でステージするが、こちらはユーザーの本体のフォルダでも動くため
+- 出す条件:どれかのフォルダが Git のリポジトリ(`.git` がある)で、`git` の exe が PATH にあるとき(0039 の worktree と同じ見分け方)。読むだけなので確認しない。
+  フォルダが複数なら引数 `folder` で選ぶ(リポジトリでないフォルダを選ぶとエラー)。パスの決め方はファイルのツールと同じ(`resolve`)
+- worktree の会話では worktree の中で動く。`HEAD` は worktree を作ったときのコミットなので、会話で変えたものだけが出る(本体のコミットしていない変更は出ない)
+- モデルに Git を書き換える操作(commit・push・branch)はさせない(0039 と同じ)。aibow-mcp にも出る(ツールの一覧は aibow の中のサーバーと同じ)
 
 ### コマンドのツール(0005 の 3-3)
 
