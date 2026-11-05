@@ -32,26 +32,29 @@ func workingRules(tools []tool.Tool) string {
 	command := tool.Find(tools, "run_command") != nil
 	lines := []string{
 		// 直したところで止めて「直しました」と報告する(0012 の 6-3)。ツールを呼ばない返事で終わることを書く
-		"Keep working with tools until the task is done. A reply without a tool call ends your turn, so do not stop halfway to report progress.",
-		// テストのファイルのほうを書き換えて「直した」と答えた(0040 の試しで1回)
-		"Read the code before you change it. Change the code the task is about; do not edit tests to make them pass unless the user asks.",
+		"Keep using tools until the task is done. A reply without a tool call ends your turn, so do not stop to report progress.",
+		// テストのファイルのほうを書き換えて「直した」と答えた(0040 の試しで1回)。
+		// 書き換えるなとだけ書いたら、代わりに頼まれていないテストのファイルを新しく作った(段1 の試しで 3/8。作ったテストを通そうとして上限まで続けた回も)ので、作ることも止める
+		"Read the code before you change it. Change only the code the task is about; unless asked, do not edit tests to make them pass or create new test files.",
 		// 「もう書いてある」と答えて直さなかった(0040 の試しで1回)。根拠の行を見せさせる
 		"If you think no change is needed, quote the line you read that shows it.",
-		// search_files を同じ形で続けて呼び、同じエラーの繰り返しで止まった(0040 の試しで1回。0025 の止める仕組みに頼る前に)
-		"When a tool returns an error, read it and change the call. Do not repeat a call that failed.",
+		// search_files を同じ形で続けて呼び、同じエラーの繰り返しで止まった(0040 の試しで1回・段2 の試しで 2/8。0025 の止める仕組みに頼る前に)。
+		// 「呼び方を変えて」では、どこを変えるかが伝わらなかった。エラーが名指しした引数を直す、と書く
+		"When a tool returns an error, fix the argument it names. Never repeat a failed call with the same arguments.",
 	}
 	if command {
 		// 確かめずに終える。確かめる道具(run_command)があるときだけ書く(aibow-server の資料のフォルダには無い。決定事項 4)
-		check := "After you change files, check your work before you answer: run the test or build the user mentioned (or the usual one for the project) with run_command, and fix what fails."
+		// 「テストが通るか確かめて」と頼まれて go build で済ませた(段2 の試しで 2/8)。頼まれたテストを先に書く
+		check := "After you change files, check your work: run the tests the user asked for (or the usual test or build) with run_command, and fix what fails."
 		if tool.Find(tools, "git_diff") != nil {
 			check += " You can review your changes with git_diff." // 読むだけの Git のツールがあるときだけ(段2。決定事項 14)
 		}
 		lines = append(lines, check)
-		// 答えが空・まとめの間違い
-		lines = append(lines, "End with a short answer: what you changed and the result of the check.")
+		// 答えが空・まとめの間違い。まとめを思考の中に書いて、答えを空のまま終えた(段1 の試しで 2/8)ので、答えとして書くことをはっきり書く
+		lines = append(lines, "Then answer in a normal reply, not only in your thinking: what you changed and the result of the check.")
 	} else {
 		// 確かめる道具が無いときは、確かめた結果を求めない(できないことを頼むと、小さなモデルは結果を作って書く)
-		lines = append(lines, "End with a short answer: what you changed.")
+		lines = append(lines, "Then answer in a normal reply, not only in your thinking: what you changed.")
 	}
 	return "# Working rules\n- " + strings.Join(lines, "\n- ")
 }

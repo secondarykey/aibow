@@ -315,18 +315,18 @@ Each command starts in the main folder "aibow" unless you pass folder; a cd does
 
 ```
 # Working rules
-- Keep working with tools until the task is done. A reply without a tool call ends your turn, so do not stop halfway to report progress.
-- Read the code before you change it. Change the code the task is about; do not edit tests to make them pass unless the user asks.
+- Keep using tools until the task is done. A reply without a tool call ends your turn, so do not stop to report progress.
+- Read the code before you change it. Change only the code the task is about; unless asked, do not edit tests to make them pass or create new test files.
 - If you think no change is needed, quote the line you read that shows it.
-- When a tool returns an error, read it and change the call. Do not repeat a call that failed.
-- After you change files, check your work before you answer: run the test or build the user mentioned (or the usual one for the project) with run_command, and fix what fails. You can review your changes with git_diff.
-- End with a short answer: what you changed and the result of the check.
+- When a tool returns an error, fix the argument it names. Never repeat a failed call with the same arguments.
+- After you change files, check your work: run the tests the user asked for (or the usual test or build) with run_command, and fix what fails. You can review your changes with git_diff.
+- Then answer in a normal reply, not only in your thinking: what you changed and the result of the check.
 ```
 
 - 会話の設定のシステムプロンプト(ユーザーが書くもの)には入れず、コードが組み立てる。ツールの有無で書き分けるため・既定の文を変えると今までの会話や配ったプロファイルとずれるため
 - 書き換えるツールが無い会話(読むだけ・質問だけ)には付けない。システムプロンプトは決まりを足す前と1文字も変わらない
 - 確かめる行(5行目)は `run_command` があるときだけ。無いときは最後の行も「what you changed.」まで(確かめた結果を求めない)。「You can review your changes with git_diff.」は `git_diff` があるときだけ
-- 送信ごとに、環境の説明と作業の決まりが何トークンかを Info のログに出す(`logSystemParts`)。Qwen3.5 で決まりは約 167 トークン
+- 送信ごとに、環境の説明と作業の決まりが何トークンかを Info のログに出す(`logSystemParts`)。行は段1・段2 の 4B の試しで直した(tuning.md)
 - aibow-mcp・OpenAI 互換の口(Cline など)には足さない(ほかのクライアントは自分の決まりを持っている)
 
 ### フォルダが複数のワークスペース(0035 の段2)

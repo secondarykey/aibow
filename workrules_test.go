@@ -21,7 +21,7 @@ func TestWorkingRulesOnlyWithEditTools(t *testing.T) {
 	prefs := &ToolPrefs{}
 	cs.SetToolPrefs(prefs)
 
-	const check = "with run_command, and fix what fails."
+	const check = "check your work: run the tests the user asked for"
 	steps := []struct {
 		name      string
 		workDir   string
@@ -50,7 +50,7 @@ func TestWorkingRulesOnlyWithEditTools(t *testing.T) {
 		if got := strings.Contains(prompt, check); got != s.wantCheck {
 			t.Errorf("%s: 確かめる行 %v(期待: %v)", s.name, got, s.wantCheck)
 		}
-		if s.wantRules && !s.wantCheck && (!strings.Contains(prompt, "- End with a short answer: what you changed.") || strings.Contains(prompt, "result of the check")) {
+		if s.wantRules && !s.wantCheck && (!strings.Contains(prompt, "not only in your thinking: what you changed.") || strings.Contains(prompt, "result of the check")) {
 			t.Errorf("%s: 確かめる道具が無いのに、確かめた結果を求めています\n%s", s.name, prompt)
 		}
 
