@@ -42,7 +42,11 @@ func workingRules(tools []tool.Tool) string {
 	}
 	if command {
 		// 確かめずに終える。確かめる道具(run_command)があるときだけ書く(aibow-server の資料のフォルダには無い。決定事項 4)
-		lines = append(lines, "After you change files, check your work before you answer: run the test or build the user mentioned (or the usual one for the project) with run_command, and fix what fails.")
+		check := "After you change files, check your work before you answer: run the test or build the user mentioned (or the usual one for the project) with run_command, and fix what fails."
+		if tool.Find(tools, "git_diff") != nil {
+			check += " You can review your changes with git_diff." // 読むだけの Git のツールがあるときだけ(段2。決定事項 14)
+		}
+		lines = append(lines, check)
 		// 答えが空・まとめの間違い
 		lines = append(lines, "End with a short answer: what you changed and the result of the check.")
 	} else {

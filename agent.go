@@ -970,7 +970,8 @@ func (cs *Conversations) localTools(set ConversationSettings) []tool.Tool {
 		return cs.tools
 	}
 	// 作業の予定(update_plan。0037)もフォルダのある会話だけで出す(mcp/server の ToolsIn と同じ並び)
-	return append(append(slices.Clip(cs.tools), tool.FilesIn(folders)...), tool.UpdatePlan(), tool.RunCommandIn(folders))
+	tools := append(append(slices.Clip(cs.tools), tool.FilesIn(folders)...), tool.UpdatePlan(), tool.RunCommandIn(folders))
+	return append(tools, tool.GitIn(folders)...) // 読むだけの Git のツール(0041)
 }
 
 // RemoteTools は、aibow の外のプログラムが実行するツールの置き場(MCP のサーバー。本物は mcp/client の Manager)。
@@ -1003,7 +1004,8 @@ func (cs *Conversations) LoadToolList(ctx context.Context, server string) error 
 // 作業フォルダのツールも入れる(作業フォルダを決めた会話でだけ使える)。定義は作業フォルダによらないので、仮のフォルダで作る。
 func BuiltinTools() []KnownTool {
 	tools := append(tool.Folderless(), tool.Files(".")...)
-	return knownTools(append(tools, tool.UpdatePlan(), tool.RunCommand(".")))
+	tools = append(tools, tool.UpdatePlan(), tool.RunCommand("."))
+	return knownTools(append(tools, tool.GitTools()...)) // Git のツールはリポジトリの会話でだけ出るが、扱いは前もって決められるように並べる
 }
 
 // knownTools は、設定の画面に出すツールの一覧(名前と説明の1行目)。

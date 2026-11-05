@@ -1,8 +1,13 @@
 package aibow
 
 import (
+	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/secondarykey/aibow/format"
 )
 
 // 作業の決まり(0041)は、作業フォルダがあり書き換えるツールがある会話にだけ付き、
@@ -72,5 +77,47 @@ func TestWorkingRulesAreShort(t *testing.T) {
 	rules := workingRules(cs.toolsFor(set))
 	if n := len(rules); n == 0 || n > 150*5 {
 		t.Errorf("作業の決まりが %d 文字です:\n%s", n, rules)
+	}
+}
+
+// リポジトリのワークスペースでは、読むだけの Git のツールが出て、決まりの確かめる行に git_diff の一文が付く(0041 の段2)。
+// worktree の会話では、git_diff は worktree の中で動き、会話で変えたものだけが出る(本体のコミットしていない変更は出ない。決定事項 13)
+func TestGitToolsInWorktreeConversation(t *testing.T) {
+	g := &fakeGen{replies: []fakeReply{
+		{content: "Greet to Hi"}, // worktree の名前を書かせる1回
+		{toolCalls: []format.ToolCall{toolCall("edit_file", "path", "main.go", "old_string", "package main", "new_string", "package app")}},
+		{toolCalls: []format.ToolCall{toolCall("git_diff")}},
+		{toolCalls: []format.ToolCall{toolCall("git_status")}},
+		{content: "直しました"},
+	}}
+	cs, c, repo := newWorktreeConversation(t, g)
+	if err := os.WriteFile(filepath.Join(repo, "memo.txt"), []byte("本体だけのメモ\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	evs := sendAnswering(cs, ctx, c, "直して", func(r *ConfirmRequest) bool { return cs.Confirm(ctx, c.ID, r.ID, true, "") == nil })
+	if errs := errorsOf(evs); len(errs) != 0 {
+		t.Fatalf("エラー: %v", errs)
+	}
+
+	first := g.calls[1] // 名前を書かせる回の次が、最初の返事の生成
+	if names := toolNamesOf(first.tools); !slices.Contains(names, "git_status") || !slices.Contains(names, "git_diff") {
+		t.Errorf("Git のツールがありません: %v", names)
+	}
+	if !strings.Contains(first.prompt, "and fix what fails. You can review your changes with git_diff.") {
+		t.Errorf("決まりに git_diff の一文がありません:\n%s", first.prompt)
+	}
+
+	rs := toolResults(t, cs, c)
+	if len(rs) != 3 {
+		t.Fatalf("結果 %d 件", len(rs))
+	}
+	if d := rs[1].Content; !strings.Contains(d, "+package app") || strings.Contains(d, "memo.txt") {
+		t.Errorf("git_diff の結果:\n%s", d)
+	}
+	if s := rs[2].Content; s != "modified: main.go" {
+		t.Errorf("git_status の結果: %q(worktree の中だけのはず)", s)
+	}
+	if rs[1].ToolResult.Confirm != nil || rs[2].ToolResult.Confirm != nil {
+		t.Error("読むだけの Git のツールで確認しました")
 	}
 }

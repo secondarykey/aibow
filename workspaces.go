@@ -32,6 +32,8 @@ import (
 	"sync"
 	"unicode/utf8"
 	"uuid"
+
+	"github.com/secondarykey/aibow/git"
 )
 
 // Workspace はワークスペース1つ。
@@ -436,8 +438,7 @@ func samePath(a, b string) bool {
 
 // IsGitRepo は、フォルダがリポジトリ(.git がある)か。worktree では .git がファイルなので、ある・なしだけを見る(決定事項 2)。
 func IsGitRepo(path string) bool {
-	_, err := os.Stat(filepath.Join(path, ".git"))
-	return err == nil
+	return git.IsRepo(path) // 見分け方は git にまとめた(モデルに見せる Git のツールを出すかも同じ見分け方で決める。0041)
 }
 
 // SetWorkspaces は、その PC のワークスペース(workspaces.json)を決める(アプリの起動時に1回)。
