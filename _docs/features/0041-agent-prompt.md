@@ -148,3 +148,15 @@ Cline はシステムプロンプトに「最後に必ず確かめる」「終�
 - 段1:決まりを当てた失敗(テストの書き換え・「もう書いてある」・同じエラーの繰り返し)は起きなかった。代わりに、頼まれていないテストのファイルを作る・ツールの 20 回の上限まで続ける・まとめを思考に書いて答えが空、が出た
 - 段2:**4B は git_status・git_diff を1度も使わなかった**。成績は段1 より悪いが、8 回の組のばらつき(0037)を超える差かは分からない
 - 課題 A(質問だけ):2回とも `run_command` を動かさずに答えた(未決事項の3つ目は、副作用なし)
+
+### 決まりを直して試す(2026-11-06、ユーザーの指示で Code が直した)
+
+段1・段2 の試しで出た失敗に合わせて4行を直し、短くした(約 182 トークン)。直した理由は `workrules.go` の各行のコメント。
+
+- 2行目:「unless asked, do not edit tests to make them pass or create new test files」(新しいテストのファイルを作った 3/8)
+- 4行目:「fix the argument it names. Never repeat a failed call with the same arguments」(同じエラーの繰り返し 段2 で 2/8)
+- 5行目:「run the tests the user asked for (or the usual test or build)」(go build で済ませた 段2 で 2/8)
+- 最後の行:「Then answer in a normal reply, not only in your thinking」(答えが空 段1 で 2/8)
+
+課題 C を 8 回:直せた 6/8・`go test` 7→6/8・既にあるテストの書き換え 1(頼みの読み違え)・新しいテストのファイル 1・同じエラーの繰り返し 0・ツール 20 回 0・答えが空 2・git_diff を使った 1。
+新しいテストのファイル・上限・繰り返し・go build は減ったが、答えが空は減らなかった。課題 A は2回ともコマンドを動かさなかった。詳しくは `_docs/tuning.md`
