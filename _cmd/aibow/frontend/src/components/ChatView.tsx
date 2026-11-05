@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ToolPolicy } from "../../bindings/github.com/secondarykey/aibow";
 import type { MouseEvent, ReactNode } from "react";
-import { LuChevronDown, LuChevronRight, LuCircleStop, LuEye, LuEyeOff, LuListFilter, LuPencil, LuRefreshCw, LuTriangleAlert } from "react-icons/lu";
+import { LuChevronDown, LuChevronRight, LuCircleStop, LuEye, LuEyeOff, LuInfo, LuListFilter, LuPencil, LuRefreshCw, LuTriangleAlert } from "react-icons/lu";
 import { CopyButton } from "./CopyButton";
 import type { Compaction } from "../../bindings/github.com/secondarykey/aibow";
 import { compactionSize, compactionStats, lastIndex } from "../transcript";
@@ -212,6 +212,7 @@ function AssistantMessage({ view, msgId, faded, onStop, onAnswer, excludeButton,
     >
       {view.summarizing && <Summarizing text={view.summary ?? ""} />}
       {view.compactNote && <CompactNote note={view.compactNote} draft={view.compactDraft} />}
+      {view.elideNote && <div className="compact-note info"><LuInfo className="icon" /><div>{view.elideNote}</div></div>}
       {view.steps?.length ? (
         // ツールを使った送信: 答えより前(各回の思考 → 途中の答え → カード、最後の回の思考)を1つの枠にまとめて畳む
         // 確認を待っているカードがあれば、枠を開いたままにする(畳んでいると、待っていることに気づけない)

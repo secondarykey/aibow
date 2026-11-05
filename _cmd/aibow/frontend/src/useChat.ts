@@ -234,6 +234,11 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
           return;
         case "compact": {
           const c = ev.compact;
+          if (c?.method === "elide") {
+            // 今の組の中の compact(0040)。送信の途中で起きるので、要約の知らせと同じ吹き出しの中に出す
+            show({ elideNote: elideText(c.dropped, c.before_tokens, c.after_tokens) });
+            return;
+          }
           if (!c || c.method !== "summary") return; // truncate は、メーターと薄い表示で分かる
           // 失敗したときは、途中まで書いた要約の文を残す(畳んで出す。なぜ失敗したかを見られるように)
           show({
@@ -452,4 +457,10 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
   const resend = useCallback((text: string) => retry(true, text, id => ChatService.Resend(id, text)), [retry]);
 
   return { generatingId, ended, confirmingId, answer, lastPrompt, lastPromptFormat, send, regenerate, resend, compact, stop, resync };
+}
+
+// elideText は、古い一歩を省略して渡したお知らせの文(0040)。results は札にした結果の数(思考だけを空にした一歩は数えない)
+function elideText(results: number, before: number, after: number): string {
+  const tokens = `(${before.toLocaleString()} → ${after.toLocaleString()} トークン)`;
+  return results > 0 ? `古いツールの結果 ${results} 件を省略して渡しました${tokens}` : `古い一歩の思考を省略して渡しました${tokens}`;
 }
