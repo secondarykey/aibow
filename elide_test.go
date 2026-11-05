@@ -193,6 +193,35 @@ func TestElideNotInNone(t *testing.T) {
 	}
 }
 
+// 縮められるだけ縮めても水位(3/4)を下回らないなら、縮めない(印も付けない・知らせない)。
+// 例外の「縮めれば上限に入る」は TestElideWithSummaryAndPlan で起きる(18,060 → 13,380。上限 17,376・水位 13,032)。
+// Qwen3.5 は縮めるたびに全部を読み直すので、少ししか減らない省略は損になる(2026-11-06、ユーザーと決めた)
+func TestElideSkipsWhenStillAboveHigh(t *testing.T) {
+	// 古い一歩は短い思考と短い結果(計算)だけ。最後に大きい結果(新しい 2 歩に入るので縮めない)で水位を超える
+	g := &fakeGen{replies: []fakeReply{
+		{thinking: strings.Repeat("考", 30), toolCalls: []format.ToolCall{calc("1+1")}},
+		{thinking: strings.Repeat("考", 30), toolCalls: []format.ToolCall{calc("2+2")}},
+		{thinking: strings.Repeat("考", 30), toolCalls: []format.ToolCall{calc("3+3")}},
+		{thinking: strings.Repeat("思", 30), toolCalls: []format.ToolCall{toolCall("big", "x", "4")}},
+		{content: "読み終えました"},
+	}}
+	cs, st, c := elideConversation(t, g, CompactTruncate, 3000, false)
+	evs := sendRaw(cs, c, "読んで")
+	if errs := errorsOf(evs); len(errs) != 0 {
+		t.Fatalf("エラー: %v", errs)
+	}
+	u, _ := cs.Usage(ctx, c.ID)
+	if u.Tokens <= elideHigh(c.Settings.HistoryTokens) {
+		t.Fatalf("テストの前提: 水位を超えていない(%d / %d)", u.Tokens, c.Settings.HistoryTokens)
+	}
+	if len(compacts(evs)) != 0 || slices.ContainsFunc(st.messages, func(m StoredMessage) bool { return m.Elided }) {
+		t.Errorf("減りが小さいので縮めない: %+v", compacts(evs))
+	}
+	if steps := stepsOf(g.calls[len(g.calls)-1].messages); steps[0][0].Thinking == "" || strings.Contains(steps[3][1].Content, "ここで切りました") {
+		t.Error("思考も結果もそのまま渡す(上限には入っている)")
+	}
+}
+
 // 縮めた組も、summary では今までどおり要約に入る(結果は先頭 200 文字。縮めた結果も同じ扱い)。
 // 縮めた一歩に update_plan があれば、呼び出しの引数に予定が残る(完了の条件 2)
 func TestElideWithSummaryAndPlan(t *testing.T) {

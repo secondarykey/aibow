@@ -106,8 +106,12 @@ func (s step) gains(history []StoredMessage) bool {
 // 縮めたら compact イベント(Method: elide)で知らせ、印を付けた history(写し)を返す。縮めなければ history をそのまま返す。
 //
 // 縮めるのは truncate / summary の会話だけ(none は「何もしない」なので、今までどおり上限で止める)。
-// 新しい 2 歩(elideKeepSteps)は縮めない。全部縮めても 1/2 まで下がらなければ、縮められるだけ縮める
-// (それでも入らない結果は、呼ぶ側が今までどおり切る(fitResult)・止める)。
+// 新しい 2 歩(elideKeepSteps)は縮めない。全部縮めても 1/2 まで下がらなければ、縮められるだけ縮める。
+// ただし、縮められるだけ縮めても水位(3/4)を下回らないなら、縮めない(2026-11-06、ユーザーと決めた)。
+// Qwen3.5 は縮めるたびにプロンプトを全部読み直すので、少ししか減らない省略は損になる(4B の試しで、思考だけを空にして 13・27 トークンしか減らない省略があった)。
+// そのときは、呼ぶ側が今までどおり切る(fitResult)・止める。
+// 例外は、このままでは会話の上限を超える(結果を切るか止めるしかない)が、縮めれば上限に入るとき。そのときは水位を下回らなくても縮める
+// (縮めずに結果を切ると、切った分が失われたうえ、次の回で結局縮めて読み直すことになるため。fakeGen の試しで起きた)。
 func (cs *Conversations) elideOld(ctx context.Context, conv Conversation, history []StoredMessage, next []StoredMessage, emit func(ChatEvent)) ([]StoredMessage, error) {
 	set := conv.Settings
 	if set.Compact != CompactTruncate && set.Compact != CompactSummary {
@@ -147,6 +151,10 @@ func (cs *Conversations) elideOld(ctx context.Context, conv Conversation, histor
 		}
 	}
 	if len(done) == 0 {
+		return history, nil
+	}
+	if fits := before > limit && after <= limit; after > elideHigh(limit) && !fits {
+		log.Infof("今の組の古い一歩 %d 個を縮めても水位 %d を下回らないので、縮めません(%d → %d トークン)", len(done), elideHigh(limit), before, after)
 		return history, nil
 	}
 
