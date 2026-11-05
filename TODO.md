@@ -69,3 +69,4 @@ aibow に残っている課題の一覧(入口)。ルールと全体の構成は
 | ⬜ | アプリのログイン:トークンの期限切れ・証明書を作り直したときの画面(テストだけ) | [0019-app-login.md](_docs/features/0019-app-login.md) |
 | ⬜ | アプリの中で動かすときのモデルのタブ(管理の画面を分けたあと) | [0032-admin-screen.md](_docs/features/0032-admin-screen.md) |
 | ⬜ | 同じ呼び出しの繰り返しを止める仕組みを、llama3.2:3b で | [0028-repeated-calls.md](_docs/features/0028-repeated-calls.md) |
+| ⬜ | 今の組の中の compact の画面(吹き出しの「省略して渡しました」・カードの札)と、水位を下回らない省略を見送る形を 4B で | [0040-compact-in-turn.md](_docs/features/0040-compact-in-turn.md) |
