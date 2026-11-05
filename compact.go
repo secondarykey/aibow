@@ -42,10 +42,10 @@ type Usage struct {
 
 // CompactInfo は compact したことの知らせ(chat イベントの compact)。ログと画面に使う。
 type CompactInfo struct {
-	Method       string      `json:"method"`               // truncate / summary
+	Method       string      `json:"method"`               // truncate / summary / elide(今の組の古い一歩を省略した。0040)
 	BeforeTokens int         `json:"before_tokens"`        // compact する前の、モデルに渡す文字列のトークン数
 	AfterTokens  int         `json:"after_tokens"`         // compact したあとの、モデルに渡す文字列のトークン数
-	Dropped      int         `json:"dropped"`              // モデルに渡さなかった(truncate)/ 要約に入れた(summary)発言の数
+	Dropped      int         `json:"dropped"`              // モデルに渡さなかった(truncate)/ 要約に入れた(summary)発言の数・札にした結果の数(elide)
 	Sec          float64     `json:"sec"`                  // かかった秒数
 	Compaction   *Compaction `json:"compaction,omitempty"` // summary: 保存した要約
 	Error        string      `json:"error,omitempty"`      // summary: 要約を作れなかった理由(保存していない)

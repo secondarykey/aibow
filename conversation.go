@@ -999,6 +999,7 @@ func promptMessages(system, summary string, history []StoredMessage) []format.Me
 			// ツールの結果には、元の呼び出しの名前を付ける(Gemma 4 は結果に名前を書く。0026 の決定事項 5)
 			fm.Name = m.ToolResult.Call.Name
 		}
+		elideForModel(m, &fm) // 今の組の中の compact で省略した一歩は、結果を札に・思考を空にする(0040。elide.go)
 		out = append(out, fm)
 	}
 	return out

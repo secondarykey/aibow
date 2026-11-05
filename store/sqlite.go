@@ -348,6 +348,10 @@ CREATE TABLE generation_log (
 CREATE INDEX generation_log_at ON generation_log(at);
 CREATE INDEX generation_log_user ON generation_log(user_id, at);
 `,
+	// 版 21: 今の組の中の compact(0040)で省略して渡す発言の印。今までの発言は省略しない(0)
+	`
+ALTER TABLE messages ADD COLUMN elided INTEGER NOT NULL DEFAULT 0;
+`,
 }
 
 func migrate(db *sql.DB) error {
@@ -830,7 +834,7 @@ func nullID(id uuid.UUID) sql.NullString {
 // messages は会話 conv の発言。持ち主は呼ぶ側(Conversation)が確かめてある。
 func (s *SQLite) messages(ctx context.Context, conv uuid.UUID) ([]aibow.StoredMessage, error) {
 	// UUIDv7 は先頭が作成時刻なので、ID の文字列順 = 作った順になる。順番用の列はいらない
-	rows, err := s.db.QueryContext(ctx, `SELECT id, role, content, thinking, model, stats, tool_calls, tool_result, excluded, created_at
+	rows, err := s.db.QueryContext(ctx, `SELECT id, role, content, thinking, model, stats, tool_calls, tool_result, excluded, elided, created_at
 		FROM messages WHERE conversation_id = ? ORDER BY id`, conv.String())
 	if err != nil {
 		return nil, err
@@ -841,7 +845,7 @@ func (s *SQLite) messages(ctx context.Context, conv uuid.UUID) ([]aibow.StoredMe
 		m := aibow.StoredMessage{ConversationID: conv}
 		var id, created string
 		var stats, calls, result sql.NullString // NULL が入りうる列は Null〜 で受ける
-		if err := rows.Scan(&id, &m.Role, &m.Content, &m.Thinking, &m.Model, &stats, &calls, &result, &m.Excluded, &created); err != nil {
+		if err := rows.Scan(&id, &m.Role, &m.Content, &m.Thinking, &m.Model, &stats, &calls, &result, &m.Excluded, &m.Elided, &created); err != nil {
 			return nil, err
 		}
 		if m.ID, err = parseID(id); err != nil {
@@ -932,9 +936,9 @@ func (s *SQLite) AddMessage(ctx context.Context, m aibow.StoredMessage) error {
 	}
 	defer tx.Rollback()
 	// 会話がその人のものなときだけ足す(INSERT … SELECT … WHERE で、確かめるのと足すのを1つの文にする)
-	res, err := tx.ExecContext(ctx, `INSERT INTO messages (id, conversation_id, role, content, thinking, model, stats, tool_calls, tool_result, excluded, created_at)
-		SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE `+ownConversation,
-		m.ID.String(), m.ConversationID.String(), m.Role, m.Content, m.Thinking, m.Model, stats, calls, result, m.Excluded, formatTime(m.CreatedAt),
+	res, err := tx.ExecContext(ctx, `INSERT INTO messages (id, conversation_id, role, content, thinking, model, stats, tool_calls, tool_result, excluded, elided, created_at)
+		SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE `+ownConversation,
+		m.ID.String(), m.ConversationID.String(), m.Role, m.Content, m.Thinking, m.Model, stats, calls, result, m.Excluded, m.Elided, formatTime(m.CreatedAt),
 		m.ConversationID.String(), owner)
 	if err := notFoundIfNone(res, err, aibow.ErrNotFound); err != nil {
 		return err
@@ -997,6 +1001,25 @@ func (s *SQLite) SetMessagesExcluded(ctx context.Context, ids []uuid.UUID, exclu
 	for _, id := range ids {
 		if _, err := tx.ExecContext(ctx, `UPDATE messages SET excluded = ? WHERE id = ? AND `+ownMessage, excluded, id.String(), owner); err != nil {
 			return fmt.Errorf("発言 %s の印を変えられません: %w", id, err)
+		}
+	}
+	return tx.Commit()
+}
+
+// SetMessagesElided は発言に「省略して渡す」の印を付ける(0040)。一歩(返事とその結果)は何件かになるので、まとめて1つのトランザクションで書く。
+func (s *SQLite) SetMessagesElided(ctx context.Context, ids []uuid.UUID) error {
+	owner, err := s.owner(ctx)
+	if err != nil {
+		return err
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, id := range ids {
+		if _, err := tx.ExecContext(ctx, `UPDATE messages SET elided = 1 WHERE id = ? AND `+ownMessage, id.String(), owner); err != nil {
+			return fmt.Errorf("発言 %s に省略の印を付けられません: %w", id, err)
 		}
 	}
 	return tx.Commit()

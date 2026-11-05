@@ -90,6 +90,10 @@ func (c *Client) SetMessagesExcluded(ctx context.Context, ids []uuid.UUID, exclu
 	return c.call(ctx, "SetMessagesExcluded", []any{ids, excluded})
 }
 
+func (c *Client) SetMessagesElided(ctx context.Context, ids []uuid.UUID) error {
+	return c.call(ctx, "SetMessagesElided", []any{ids})
+}
+
 func (c *Client) DeleteMessages(ctx context.Context, ids []uuid.UUID) error {
 	return c.call(ctx, "DeleteMessages", []any{ids})
 }

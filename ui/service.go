@@ -1683,6 +1683,8 @@ func logCompact(c *aibow.CompactInfo) {
 	case aibow.CompactTruncate:
 		log.Infof("compact(truncate): %d → %d トークン(古い発言 %d 件をモデルに渡しません)",
 			c.BeforeTokens, c.AfterTokens, c.Dropped)
+	case aibow.CompactElide:
+		// 縮めた一歩の数と、思考と結果のどちらが効いたかは、会話の仕組み(elide.go)がログに出している
 	case aibow.CompactSummary:
 		if c.Error != "" {
 			log.Warnf("compact(summary): %s", c.Error)

@@ -6,7 +6,8 @@ package aibow
 // アプリがそれを読み取って実行し、結果を発言として足して、もう一度モデルに続きを書かせる。
 // これを、モデルがツールを呼ばずに答えを書き終えるまで繰り返すのが「エージェント」の中身:
 //
-//	1. 生成する(毎回、会話の上限に収める準備 = compact を通す。ツールの結果でプロンプトが伸びるため)
+//	1. 生成する(毎回、会話の上限に収める準備 = compact を通す。ツールの結果でプロンプトが伸びるため。
+//	   今の組の中の古い一歩も、水位を超えたら縮める。elide.go)
 //	2. 返事(答え・思考・ツール呼び出し・統計)を保存する
 //	3. ツール呼び出しが無ければ終わり
 //	4. あれば順に実行し、結果を role tool の発言として保存する
@@ -80,8 +81,13 @@ func (cs *Conversations) runTurn(ctx context.Context, conv Conversation, history
 	// 会話の上限の残りが無い(0025 の決定事項 11)・同じ呼び出しが続いた(0028)
 	finish := keepGoing
 	for round := 1; ; round++ {
-		// 1. モデルに渡す内容を決める。2回目からは、ツールの結果を足しても収まるかを先に確かめる
+		// 1. モデルに渡す内容を決める。2回目からは、ツールの結果を足しても収まるかを先に確かめる。
+		// その前に、今の組が水位を超えていれば古い一歩を縮める(0040。elide.go)
 		if round > 1 {
+			var err error
+			if history, err = cs.elideOld(ctx, conv, history, nil, emit); err != nil {
+				return last, err
+			}
 			if err := cs.checkFits(conv.Settings, history); err != nil {
 				return last, fmt.Errorf("ツールの結果を足すと会話の上限を超えるため、ここで止めました。%w", err)
 			}
@@ -141,6 +147,10 @@ func (cs *Conversations) runTurn(ctx context.Context, conv Conversation, history
 				res = cs.runTool(ctx, conv, c, emit)
 				var full bool
 				var err error
+				// 結果を足すと水位を超えるなら、先に古い一歩を縮める(0040)→ それでも入らなければ切る(fitResult)→ それでも駄目なら渡さない(noRoomLeft)
+				if history, err = cs.elideOld(ctx, conv, history, []StoredMessage{res}, emit); err != nil {
+					return last, err
+				}
 				if res, full, err = cs.fitResult(conv.Settings, history, res); err != nil {
 					return last, err
 				}

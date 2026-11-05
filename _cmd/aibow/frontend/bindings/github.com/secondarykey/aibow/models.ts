@@ -81,7 +81,7 @@ export interface ChatEvent {
  */
 export interface CompactInfo {
     /**
-     * truncate / summary
+     * truncate / summary / elide(今の組の古い一歩を省略した。0040)
      */
     "method": string;
 
@@ -96,7 +96,7 @@ export interface CompactInfo {
     "after_tokens": number;
 
     /**
-     * モデルに渡さなかった(truncate)/ 要約に入れた(summary)発言の数
+     * モデルに渡さなかった(truncate)/ 要約に入れた(summary)発言の数・札にした結果の数(elide)
      */
     "dropped": number;
 
@@ -924,6 +924,12 @@ export interface StoredMessage {
      * Excluded は、ユーザーが選んで「モデルに渡さない」にした発言(0011)。画面には薄く残し、モデルに渡す履歴からは外す(Conversations.forModel)
      */
     "excluded"?: boolean;
+
+    /**
+     * Elided は、今の組の中の compact(0040)で省略して渡すことにした発言(elide.go)。一歩(返事とその呼び出しの結果)の単位で付く。
+     * tool は結果の代わりに短い札を、assistant は思考を空にして渡す(promptMessages)。DB の文と思考はそのまま(画面には全部残す)
+     */
+    "elided"?: boolean;
 
     /**
      * Files は、発言に付けて読み込んだファイル(user のみ。0030)。保存は発言とは別の表。
