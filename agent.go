@@ -99,6 +99,9 @@ func (cs *Conversations) runTurn(ctx context.Context, conv Conversation, history
 			}
 			return last, err
 		}
+		if round == 1 {
+			cs.logSystemParts(conv) // 送信ごとに1回(モデルが読み込めているのが分かってから数える)
+		}
 		cs.emitUsage(emit, conv.ID, p.usage(history, cs.limitsOf(conv.Settings).history))
 
 		// 2. 生成して保存する
