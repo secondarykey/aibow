@@ -206,14 +206,14 @@ AIBOW_LLAMA_LOG=1 wails3 dev 2>&1 | tee aibow.log
 | 11. 共有 ✅ | 管理者・会話の公開範囲・共有の作業 |
 | 12. サーバーの上で動かすツール ✅ | ブラウザの会話で Web のツールと資料のフォルダを使う |
 
-進み具合と、ロードマップの外でやりたいことは [TODO.md](TODO.md) にあります。
+ロードマップのステップは全部済みました。残っている課題は [TODO.md](TODO.md) にあります。
 
 ## ドキュメント
 
 | 読むもの | 内容 |
 |---|---|
 | [AGENTS.md](AGENTS.md) | 方針・技術の決まりごと・作業の進め方・作業内容ごとに読むもの |
-| [TODO.md](TODO.md) | 進み具合とロードマップ(入口) |
+| [TODO.md](TODO.md) | 残っている課題(入口) |
 | [_docs/structure.md](_docs/structure.md) | 全体の構成とファイルの役割 |
 | [_docs/](_docs/) | 仕組みごとの説明(エンジン・会話・compact・ツール・MCP・API・画面など) |
 | [_docs/features/](_docs/features/) | 機能ごとの仕様(決めたこと・やらないこと・経過) |

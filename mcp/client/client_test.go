@@ -104,8 +104,9 @@ func newAskServer() *mcp.Server {
 
 // logs は、このパッケージが aibow/log に出したログのメッセージを集める slog のハンドラ。
 type logs struct {
-	mu    sync.Mutex
-	lines []string
+	mu     sync.Mutex
+	lines  []string
+	levels []slog.Level // lines と同じ順の、ログのレベル
 }
 
 // captureLogs は、テストのあいだだけログの出し先を logs にする(終わったら slog.Default() に戻す)。
@@ -126,6 +127,7 @@ func (l *logs) Handle(_ context.Context, r slog.Record) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.lines = append(l.lines, r.Message)
+	l.levels = append(l.levels, r.Level)
 	return nil
 }
 
@@ -740,12 +742,56 @@ func TestResultText(t *testing.T) {
 }
 
 func TestLineLogger(t *testing.T) {
+	// サーバーのエラー出力(rpc でない)は、行に分けてそのまま Info で出す
 	l := captureLogs(t)
-	w := &lineLogger{prefix: "MCP x "}
-	fmt.Fprint(w, "write: {\"a\":1}\nread: {\"b\"")
-	fmt.Fprint(w, ":2}\r\n\nplain\n")
-	want := []string{`MCP x → {"a":1}`, `MCP x ← {"b":2}`, "MCP x plain"}
+	w := &lineLogger{prefix: "MCP x (stderr) "}
+	fmt.Fprint(w, "first\nsec")
+	fmt.Fprint(w, "ond\r\n\nwrite: {}\n")
+	want := []string{"MCP x (stderr) first", "MCP x (stderr) second", "MCP x (stderr) write: {}"}
 	if !slices.Equal(l.lines, want) {
 		t.Errorf("%q", l.lines)
+	}
+}
+
+// 送受信の行は、Info に id と何を呼んだか、Debug に JSON そのものを出す。答えには、何への答えかを添える
+func TestLineLoggerRPC(t *testing.T) {
+	l := captureLogs(t)
+	w := &lineLogger{prefix: "MCP x ", rpc: true}
+	call := `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"read_file","arguments":{"path":"a.txt"}}}`
+	fmt.Fprint(w, "write: "+call+"\nread: {\"jsonrpc\":\"2.0\",\"id\":3,")
+	fmt.Fprint(w, "\"result\":{\"content\":[],\"isError\":true}}\r\n")
+	fmt.Fprint(w, "write: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\",\"params\":{}}\n")
+	fmt.Fprint(w, "write: {\"jsonrpc\":\"2.0\",\"id\":\"a\",\"method\":\"server/discover\"}\n")
+	fmt.Fprint(w, "read: {\"jsonrpc\":\"2.0\",\"id\":\"a\",\"error\":{\"code\":-32601,\"message\":\"Method not found\"}}\n")
+	fmt.Fprint(w, "read: {\"jsonrpc\":\"2.0\",\"id\":9,\"result\":{}}\n") // 覚えていない id への答え
+	fmt.Fprint(w, "read: [1,2]\nplain\n")                                 // 読めない形とそれ以外は、そのまま Info
+
+	var info, debug []string
+	for i, line := range l.lines {
+		switch l.levels[i] {
+		case log.LevelInfo:
+			info = append(info, line)
+		case log.LevelDebug:
+			debug = append(debug, line)
+		}
+	}
+	wantInfo := []string{
+		"MCP x → #3 tools/call read_file",
+		"MCP x ← #3 tools/call read_file の結果(ツールが失敗した)",
+		"MCP x → notifications/initialized",
+		"MCP x → #a server/discover",
+		"MCP x ← #a server/discover のエラー -32601 Method not found",
+		"MCP x ← #9 結果",
+		"MCP x ← [1,2]",
+		"MCP x plain",
+	}
+	if !slices.Equal(info, wantInfo) {
+		t.Errorf("Info: %q", info)
+	}
+	if len(debug) != 6 || debug[0] != "MCP x → "+call {
+		t.Errorf("Debug: %q", debug)
+	}
+	if len(w.pending) != 0 {
+		t.Errorf("答えが来たリクエストは忘れる: %v", w.pending)
 	}
 }

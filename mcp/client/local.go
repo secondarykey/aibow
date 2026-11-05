@@ -98,7 +98,7 @@ func (l *Local) connect(folders []tool.Folder) (*localSession, error) {
 		return nil, err
 	}
 	// 送受信した JSON-RPC のメッセージを、settings.json のサーバーと同じくログに出す
-	t := &mcp.LoggingTransport{Transport: ct, Writer: &lineLogger{prefix: "MCP " + localName + " "}}
+	t := &mcp.LoggingTransport{Transport: ct, Writer: &lineLogger{prefix: "MCP " + localName + " ", rpc: true}}
 	session, err := newClient(l.opt.Version).Connect(ctx, t, nil)
 	if err != nil {
 		ss.Close()

@@ -52,7 +52,7 @@ type ServerConfig struct {
 
 	URL string `json:"url,omitempty"`
 	// Headers は、url のサーバーへのリクエストに毎回付ける HTTP ヘッダー(API キーなど)。
-	// OAuth(ブラウザでのログイン)には、まだ対応していない(TODO.md のロードマップの外)
+	// OAuth(ブラウザでのログイン)には、まだ対応していない(TODO.md の「MCP の OAuth」)
 	Headers map[string]string `json:"headers,omitempty"`
 
 	// Type はトランスポートの種類。書かなくてよい(command か url で決まる)。
@@ -478,8 +478,8 @@ func (m *Manager) connect(ctx context.Context, k serverKey, cfg ServerConfig) (*
 	fail := func(what string, err error) error {
 		return startFailure(ctx, what, hint, limit, stderr, err)
 	}
-	// 送受信した JSON-RPC のメッセージを、そのままログに出す(SDK の LoggingTransport)。MCP の正体が見える
-	t = &mcp.LoggingTransport{Transport: t, Writer: &lineLogger{prefix: "MCP " + k.name + " "}}
+	// 送受信した JSON-RPC のメッセージをログに出す(SDK の LoggingTransport)。Info に id と何を呼んだか、Debug に JSON そのもの。MCP の正体が見える
+	t = &mcp.LoggingTransport{Transport: t, Writer: &lineLogger{prefix: "MCP " + k.name + " ", rpc: true}}
 
 	session, err := newClient(m.opt.Version).Connect(ctx, t, nil)
 	if err != nil {

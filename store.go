@@ -208,6 +208,15 @@ type ConversationSettings struct {
 	// パスは PC のものなので会話には置かず、ID だけを持つ(別の PC で開くと、その ID が無いのでフォルダのツールを出さない)。
 	// 新しい会話の既定には入れない(前の会話のフォルダを引き継いで、別のフォルダを書き換えてしまうのを防ぐため)
 	Workspace string `json:"workspace,omitempty"`
+	// Worktree は、ワークスペースのメインのフォルダ(Git のリポジトリのとき)を、会話ごとの worktree で書き換えるか(0039)。
+	// 入力欄の上の切り替えで選ぶ。入れた会話では、最初に書き換えるツールを実行する前に worktree を作り、
+	// メインのフォルダをそこに置き換える。作った worktree との結び付けは PC の手元(workspaces.json)に持つ。
+	// 新しい会話の既定には入れない(ワークスペースと同じく、会話ごとに選ぶ)
+	Worktree bool `json:"worktree,omitempty"`
+	// WorktreeName は、worktree のブランチとフォルダの名前に使う英語の短い名前(fix-login-error など。0039)。
+	// 最初の送信でモデルに書かせて残し、会話の設定の画面で直せる(worktreename.go)。空なら会話の ID の末尾だけを使う。
+	// 変えるのは SetWorktreeName だけ(UpdateSettings は保存してある値のままにする)
+	WorktreeName string `json:"worktree_name,omitempty"`
 	// WorkDir は、ワークスペースより前の作業フォルダ(絶対パス)。もう使わない。
 	// 起動したときに、この PC にあるパスならワークスペースに移して空にする(Conversations.MigrateWorkDirs)。
 	// この PC に無いパスは、そのまま残す(そのパスのある PC で起動したときに、そちらで移せるように)。画面からは変えられない
@@ -227,6 +236,9 @@ type ConversationSettings struct {
 	// profile は、この会話のプロファイル(決まりを引くため。0014 の 6)。保存しない(会話の仕組みが読むたびに入れる。withProfile)。
 	// nil ならプロファイルを持たない(決まり無し)
 	profile *Profile
+	// conv は、この設定の会話の ID(worktree の結び付けを引くため。0039)。保存しない(load が入れる)。
+	// 画面から来た設定・新しい会話の画面の設定では空(まだ worktree が無いので、引かなくてよい)
+	conv uuid.UUID
 }
 
 // ContextSize は確保する作業領域の大きさ(トークン数)。
@@ -260,7 +272,7 @@ func (s ConversationSettings) normalized() ConversationSettings {
 // 使う MCP のサーバーと組み込みのツールを使うかも外す(新しい会話で最初から使うものは、設定の画面の「ツール」で決める。Conversations.Defaults)。
 func (s ConversationSettings) asDefaults() ConversationSettings {
 	s = s.normalized()
-	s.Workspace, s.WorkDir = "", ""
+	s.Workspace, s.WorkDir, s.Worktree, s.WorktreeName = "", "", false, ""
 	s.ToolPolicies = nil
 	s.MCPServers = []string{}
 	s.BuiltinOff = false
@@ -272,6 +284,9 @@ func (s ConversationSettings) validate() error {
 	// 作業フォルダは画面のダイアログで選ぶので、ふつうは絶対パス。相対パスだと、アプリを起動した場所で意味が変わってしまう
 	if s.WorkDir != "" && !filepath.IsAbs(s.WorkDir) {
 		return fmt.Errorf("作業フォルダは絶対パスで指定してください(%s)", s.WorkDir)
+	}
+	if err := checkWorktreeName(s.WorktreeName); err != nil {
+		return err
 	}
 	if s.HistoryTokens < 0 || s.ReplyTokens < 0 {
 		return fmt.Errorf("会話の上限と返事の上限は 1 以上にしてください(%d / %d)", s.HistoryTokens, s.ReplyTokens)
@@ -317,6 +332,9 @@ type ToolResult struct {
 	Sec     float64         `json:"sec"`               // 実行にかかった秒数(確認を待った時間は入らない)
 	Confirm *Confirmation   `json:"confirm,omitempty"` // 実行前の確認の結果。確認が要らないツール・確認する前に止まった呼び出しは nil
 	Server  string          `json:"server,omitempty"`  // MCP のサーバーのツールなら、そのサーバーの名前(settings.json の名前)。組み込みのツールは空
+	// Notice は、このツールを実行する前にアプリがしたことのお知らせ(画面のカードに出す。モデルには渡さない)。
+	// worktree を作ったこと・本体のコミットしていない変更や Git に入っていないものは入らないこと(0039)
+	Notice string `json:"notice,omitempty"`
 }
 
 // Confirmation は、実行前の確認(書き換えるツール)へのユーザーの答え。再起動しても見えるよう、結果と一緒に保存する。

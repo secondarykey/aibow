@@ -4,8 +4,8 @@
 // 会話は「新しい会話の既定」(設定の画面)の写しから始まり、ここで変えた設定はこの会話にだけ効く。
 // 「会話に戻る」・一覧で会話を選ぶ・「+ 新規」・一覧の下の歯車で閉じる。
 import { useEffect, useRef, useState } from "react";
-import { LuArrowLeft } from "react-icons/lu";
-import type { ConversationSettings, Profile } from "../../bindings/github.com/secondarykey/aibow";
+import { LuArrowLeft, LuGitBranch } from "react-icons/lu";
+import type { ConversationSettings, Profile, WorktreeState } from "../../bindings/github.com/secondarykey/aibow";
 import type { ServerInfo } from "../../bindings/github.com/secondarykey/aibow/mcp/client";
 // Go の models パッケージ。"…/aibow/models" と書くと aibow パッケージの models.ts が選ばれるので、index まで書く
 import type { Entry as ModelEntry } from "../../bindings/github.com/secondarykey/aibow/models/index";
@@ -40,6 +40,8 @@ interface Props {
   shareWith: string[];      // 共有の相手(名前)
   shareGroups: string[];    // 共有の相手のグループ(名前。0031)
   onShare(share: string, users: string[], groups: string[]): void;
+  worktree: WorktreeState | null;           // worktree の状態(0039。アプリだけ。名前の欄に使う)
+  onRenameWorktree(name: string): Promise<void>; // worktree の名前を変える(作る前だけ)。断られたら reject
 }
 
 // TitleField は会話の名前の入力欄。打っている間は保存せず、Enter か欄を離れたときに保存する(一覧の名前の変更と同じ)。
@@ -81,8 +83,68 @@ function TitleField({ title, onRename }: { title: string; onRename(title: string
   );
 }
 
+// WorktreeName は、worktree の名前(ブランチとフォルダの名前に使う英語の短い名前。0039)。会話の名前の欄の下に小さく出す。
+// 使わない人が気にしなくてよいよう、欄としては出さない(2026-11-04、ユーザーの指示)。
+// 出すのは、名前があるか worktree を作れる会話(Git のリポジトリのワークスペース)だけ。
+// 作る前はダブルクリックで直せる(Enter か離れたときに保存、Esc で戻す。断られたら保存してある名前に戻し、理由はエラーに出る)。
+// 作ったあとは、実際のブランチ名を出すだけ(変えられない)
+function WorktreeName({ state, onRename }: { state: WorktreeState; onRename(name: string): Promise<void> }) {
+  const name = state.name ?? "";
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(name);
+  useEffect(() => setValue(name), [name]);
+  const cancelled = useRef(false);
+  if (!state.active && !name && !state.usable) return null;
+  if (state.active) {
+    return (
+      <div className="conv-worktree-name" title="worktree のブランチ(作ったあとは名前を変えられない)">
+        <LuGitBranch /> <code>{state.branch}</code>
+      </div>
+    );
+  }
+  if (!editing) {
+    return (
+      <div className="conv-worktree-name" onDoubleClick={() => setEditing(true)}
+        title="worktree のブランチとフォルダの名前(aibow/<名前>-<会話の ID の末尾>)。ダブルクリックで直す。英小文字・数字を - でつなぐ">
+        <LuGitBranch /> {name ? <code>{name}</code> : <span className="conv-worktree-none">(名前なし)</span>}
+      </div>
+    );
+  }
+  const commit = () => {
+    setEditing(false);
+    if (cancelled.current) {
+      cancelled.current = false;
+      setValue(name);
+      return;
+    }
+    const v = value.trim();
+    if (v !== name) onRename(v).catch(() => setValue(name));
+  };
+  return (
+    <div className="conv-worktree-name editing">
+      <LuGitBranch />
+      <input
+        type="text"
+        autoFocus
+        value={value}
+        spellCheck={false}
+        onChange={e => setValue(e.target.value)}
+        onBlur={commit}
+        onKeyDown={e => {
+          if (e.nativeEvent.isComposing) return;
+          if (e.key === "Enter") e.currentTarget.blur();
+          if (e.key === "Escape") {
+            cancelled.current = true;
+            e.currentTarget.blur();
+          }
+        }}
+      />
+    </div>
+  );
+}
+
 export function ConversationSettingsView({ id, title, onRename, settings, models, errors, onClose, onChange, profile, folder, workDir, onSaveToProfile, onSaveAsProfile, lastPrompt, lastPromptFormat, servers, limitsDisabled, onApplyLimits,
-  share, shareWith, shareGroups, onShare,
+  share, shareWith, shareGroups, onShare, worktree, onRenameWorktree,
 }: Props) {
   const lock = lockOf(profile);
   return (
@@ -91,18 +153,18 @@ export function ConversationSettingsView({ id, title, onRename, settings, models
         <div className="settings-header">
           <h1>
             会話の設定
-            <span className="settings-target">{title}</span>
+            {/* 会話の ID は見出しの後ろに(以前は「ID」の欄。名前は下の欄にあるので、見出しには出さない。2026-11-04、ユーザーの指示) */}
+            <span className="settings-target conv-head-id" title="会話の ID(UUIDv7)。ログの「会話 …」や DB(conversations の id)と同じ値で、調べるときの手がかりになる">
+              (<code>{id}</code>)
+            </span>
+            <CopyButton text={id} />
           </h1>
           <button className="back" onClick={onClose} title="会話の設定を閉じて、会話に戻る"><LuArrowLeft /> 会話に戻る</button>
         </div>
         {errors.map(e => <div key={e.id} className="msg error">{e.text}</div>)}
 
         <TitleField title={title} onRename={onRename} />
-        <label title="会話の ID(UUIDv7)。ログの「会話 …」や DB(conversations の id)と同じ値で、調べるときの手がかりになる">ID</label>
-        <div className="conv-id">
-          <code>{id}</code>
-          <CopyButton text={id} />
-        </div>
+        {!isBrowser && worktree && <WorktreeName state={worktree} onRename={onRenameWorktree} />}
 
         <label title="この会話を作ったプロファイル。固定した項目と使えないツールは、このプロファイルの決まりで決まる">プロファイル</label>
         <div className="conv-profile">{profile ? profile.name : "(プロファイルを持たない会話)"}</div>

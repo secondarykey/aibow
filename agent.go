@@ -213,10 +213,22 @@ func (cs *Conversations) runTool(ctx context.Context, conv Conversation, c forma
 	if err != nil {
 		return toolMessage(conv.ID, c, errorPrefix+err.Error(), true, 0)
 	}
+	// worktree で作業する会話で、初めてメインのフォルダを書き換えるなら、その前に worktree を作る(0039)。
+	// 作ったらツールを作り直す(メインのフォルダのパスが worktree に変わるため)
+	var notice string
+	if cs.needsWorktree(conv.Settings, t, args) {
+		if notice, err = cs.ensureWorktree(ctx, conv.Settings, emit); err != nil {
+			return toolMessage(conv.ID, c, errorPrefix+err.Error(), true, 0)
+		}
+		if t, args, err = cs.lookupTool(conv.Settings, c); err != nil {
+			return toolMessage(conv.ID, c, errorPrefix+err.Error(), true, 0)
+		}
+	}
 	res := cs.runFound(ctx, conv, c, t, args, emit)
 	if r, ok := t.(tool.Remote); ok {
 		res.ToolResult.Server = r.Server() // どの MCP のサーバーが実行したか(画面のカードに出す)
 	}
+	res.ToolResult.Notice = notice
 	return res
 }
 
@@ -798,12 +810,22 @@ func (cs *Conversations) policyOf(set ConversationSettings, group, name string, 
 		if c, cok := cs.prefs.confirmPolicy(group, name); cok {
 			return c, PolicyFromConversation
 		}
-		return defaultPolicy(group, confirmable), PolicyFromConversation
+		return cs.defaultPolicy(set, group, name, confirmable), PolicyFromConversation
 	}
 	if p, ok := cs.prefs.policy(group, name); ok {
 		return p, PolicyFromPC
 	}
-	return defaultPolicy(group, confirmable), PolicyFromDefault
+	return cs.defaultPolicy(set, group, name, confirmable), PolicyFromDefault
+}
+
+// defaultPolicy は、会話の設定 set での決まりの既定。worktree で作業する会話では、ファイルを書き換えるツールを確認しない
+// (書き換えは worktree に入り、本体に入れる前に差分の画面でまとめて見られるため。0039)。
+// run_command は確認する(コマンドは worktree の外にも書けるため)。会話・PC で「確認する」にしていれば、そちらが先に効く(policyOf)。
+func (cs *Conversations) defaultPolicy(set ConversationSettings, group, name string, confirmable bool) ToolPolicy {
+	if group == "" && worktreeWrites[name] && cs.worktreeMode(set) {
+		return ToolAllow
+	}
+	return defaultPolicy(group, confirmable)
 }
 
 // defaultPolicy は決まりの既定: MCP のツールは確認する。組み込みのツールは、書き換えるツール・コマンドは確認する、読むだけのツールは確認しない。
@@ -838,7 +860,9 @@ func (cs *Conversations) ToolStates(set ConversationSettings) []ToolGroupState {
 	add := func(t tool.Tool, needsWorkDir bool) {
 		_, confirmable := t.(tool.Confirmable)
 		p, from := cs.policyOf(set, "", t.Def().Name, confirmable)
-		def, _ := cs.policyOf(ConversationSettings{profile: set.profile}, "", t.Def().Name, confirmable)
+		// 会話の上書きを外したときの扱い。worktree で作業する会話かで既定が変わるので、それは残す(0039)
+		bare := ConversationSettings{profile: set.profile, Workspace: set.Workspace, Worktree: set.Worktree, conv: set.conv}
+		def, _ := cs.policyOf(bare, "", t.Def().Name, confirmable)
 		builtin.Tools = append(builtin.Tools, ToolState{
 			Name: t.Def().Name, Description: firstLine(t.Def().Description), Policy: p, From: from, Default: def, NeedsWorkDir: needsWorkDir,
 		})

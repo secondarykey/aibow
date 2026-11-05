@@ -14,18 +14,27 @@
 //   終わった … 青(点滅しない。ほかの会話を見ている間に返事が終わった。その会話を開くと消える)
 // 一覧を畳んでいるときは、いちばん気にしてほしい印(確認待ち → エラー → 生成中 → 終わった)をハンバーガーに出す
 //
+// 並べ方(0038):一覧の上(ハンバーガーの右端)のメニューで、新しい順とワークスペースごとを切り替える(アプリだけ。conversationGroups.ts)。
+// ワークスペースごとのときは、まとまりの見出しで開け閉めでき(PC ごとに覚える)、見出しの「+」でそのワークスペースを選んだ新しい会話を始める。
+// 開いた会話・生成中の会話のまとまりは自動で開く(畳んだまとまりの中に隠れないように)。畳んだ見出しには、中の会話のいちばん気にしてほしい印を出す。
+// 上の「+ 新規」は今までどおりワークスペースを選ばない(0035:前の会話のフォルダを引き継がせない)
+//
 // 共有(0018 の 11-2):共有した会話は名前の右に共有のアイコン。ほかの人に共有された会話は、一覧の下の「共有された会話」の欄
 // (開閉できる・持ち主の名前付き。押すと読むだけで開く。「自分に共有」と「全員に共有」に分け、持ち主とタイトルで絞る。0031 の決定事項 17)。ログインが要る aibow-server につないでいるときは、
 // 一番下の名前の横に「管理者が読めます」を常に出す(決定事項 23。畳んだときは目のアイコンだけ)
-import { useEffect, useRef, useState } from "react";
-import { ChatService, me } from "../backend";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ChatService, isBrowser, me } from "../backend";
 import { canLogout, signedIn, signOut } from "./AccountSettings";
 import { showName } from "../directory";
 import type { KeyboardEvent } from "react";
-import { LuChevronDown, LuChevronRight, LuEye, LuMenu, LuPlus, LuSettings, LuShare2, LuShield, LuUser } from "react-icons/lu";
+import { LuCheck, LuChevronDown, LuChevronRight, LuEye, LuFolderTree, LuList, LuMenu, LuPlus, LuSettings, LuShare2, LuShield, LuUser } from "react-icons/lu";
 import { useMenuDismiss } from "./SplitButton";
 import { toggleMaximiseOnDoubleClick } from "./TitleBar";
 import type { Conversation, ConversationRef } from "../../bindings/github.com/secondarykey/aibow";
+import type { WorkspaceView } from "../../bindings/github.com/secondarykey/aibow/ui";
+import { groupByWorkspace, LIST_GROUPINGS, useClosedGroups, useListGrouping } from "../conversationGroups";
+import { unappliedCount } from "../worktree";
+import type { ConversationGroup, ListGrouping } from "../conversationGroups";
 import type { Ended } from "../useChat";
 
 interface Props {
@@ -54,15 +63,26 @@ interface Props {
   shared: ConversationRef[]; // ほかの人に共有された会話(0018 の 11-2)
   readingId: string | null;  // 読むだけで開いているほかの人の会話
   onOpenShared(id: string): void;
+  workspaces: WorkspaceView[]; // この PC のワークスペース(並べ方がワークスペースごとのとき。0038)
+  currentWorkspace: string | null; // 開いている会話のワークスペース(一覧を読み直す前に変えたときも、すぐにまとまりを移すため)
+  onNewIn(workspace: string): void; // まとまりの「+」:そのワークスペースを選んだ新しい会話の画面に移る
 }
 
 export function ConversationList({
   list, currentId, generatingId, waitingId, ended, disabled, onOpen, onNew, onDelete, onRename, renamingId, onStartRename, onEndRename,
   settingsOpen, onToggleSettings, onOpenAccount, adminOpen, canAdmin, onToggleAdmin, open, onToggleOpen, width, shared, readingId, onOpenShared,
+  workspaces, currentWorkspace, onNewIn,
 }: Props) {
   const [sharedOpen, setSharedOpen] = useState(true);
   // 削除の確認を出している会話。消すと戻せないので、もう一度押してもらう
   const [confirming, setConfirming] = useState<string | null>(null);
+  // 消そうとしている会話の worktree の、まだ本体に取り込んでいないファイルの数(0039。消すと worktree ごと消えるので、確認の文に出す)
+  const [unapplied, setUnapplied] = useState(0);
+  const startConfirm = (c: Conversation) => {
+    setConfirming(c.id);
+    setUnapplied(0);
+    if (c.settings?.worktree) unappliedCount(c.id).then(n => setUnapplied(n));
+  };
 
   const markOf = (id: string): Mark | null =>
     id === generatingId ? (id === waitingId ? "waiting" : "generating") : ended[id] ?? null;
@@ -80,6 +100,17 @@ export function ConversationList({
       {menuMark && <span className={"dot badge " + menuMark} />}
     </button>
   );
+  // 並べ方(0038)。ワークスペースごとのときだけ、まとまりを作る
+  const [grouping, setGrouping] = useListGrouping();
+  const groups = useMemo(
+    () => grouping === "workspace"
+      ? groupByWorkspace(list, workspaces, currentId !== null && currentWorkspace !== null ? { id: currentId, workspace: currentWorkspace } : undefined)
+      : [],
+    [grouping, list, workspaces, currentId, currentWorkspace],
+  );
+  const [closed, setClosed] = useClosedGroups();
+  useRevealGroups(groups, currentId, generatingId, renamingId, currentWorkspace, closed, setClosed);
+
   const settingsCls = settingsOpen ? "settings active" : "settings";
   // 管理の画面の入口(盾)。管理できる人にだけ、歯車の隣に出す(0032 の決定事項 5)
   const adminBtn = canAdmin && (
@@ -99,72 +130,108 @@ export function ConversationList({
     );
   }
 
+  // row は会話の1行(名前・印・削除)。新しい順でも、ワークスペースごとのまとまりの中でも同じもの
+  const row = (c: Conversation) => {
+    const title = c.title || "新しい会話";
+    const generating = c.id === generatingId;
+    const mark = markOf(c.id);
+    const cls = ["conversation", c.id === currentId && "current", generating && "generating"].filter(Boolean).join(" ");
+    if (renamingId === c.id) {
+      return (
+        <li key={c.id} className={cls + " editing"}>
+          <TitleInput
+            initial={c.title}
+            onDone={title => {
+              onEndRename();
+              if (title !== null && title.trim() && title.trim() !== c.title) onRename(c.id, title);
+            }}
+          />
+        </li>
+      );
+    }
+    if (confirming === c.id) {
+      return (
+        <li key={c.id} className={cls + " confirming"}>
+          <span className="confirm-text" title={unapplied > 0 ? "この会話の worktree とブランチも消える" : undefined}>
+            {unapplied > 0 ? `取り込んでいない差分(${unapplied} ファイル)も消えます。削除しますか?` : "削除しますか?"}
+          </span>
+          <button className="danger" onClick={() => { setConfirming(null); onDelete(c.id); }}>削除</button>
+          <button onClick={() => setConfirming(null)}>やめる</button>
+        </li>
+      );
+    }
+    return (
+      <li key={c.id} className={cls}>
+        <button
+          className="title"
+          title={`${title}(ダブルクリックか F2 で名前を変更)`}
+          disabled={disabled}
+          onClick={() => onOpen(c.id)}
+          onDoubleClick={() => onStartRename(c.id)}
+        >
+          {title}
+          {c.share && <LuShare2 className="share-mark" title={c.share === "all" ? "全員に共有している" : "指定した人に共有している"} />}
+        </button>
+        {generating && mark ? (
+          // 送信している間(生成中・確認待ち)は削除できないので、削除の場所に印を出す(2026-10-31、ユーザーの指示)
+          <span className="running-mark" title={MARK_LABEL[mark] + "(終わるまで削除できません)"}>
+            <span className={"dot " + mark} />
+          </span>
+        ) : (
+          // 終わったあとの印(終わった・エラー)も同じ場所に出し、マウスを乗せたときだけ × に替える(削除はできるので)
+          <button
+            className={"delete" + (mark ? " has-mark" : "")}
+            title={mark ? `削除(${MARK_LABEL[mark]})` : "削除"}
+            disabled={disabled}
+            onClick={() => startConfirm(c)}
+          >
+            {mark && <span className={"dot " + mark} />}
+            <span className="x">×</span>
+          </button>
+        )}
+      </li>
+    );
+  };
+
+  // groupHead はワークスペースごとのときのまとまりの見出し。押すと開け閉めする。右の「+」でそのワークスペースの新しい会話を始める。
+  // 畳んでいるときは、中の会話のいちばん気にしてほしい印を出す(ハンバーガーの印と同じ考え方)
+  const groupHead = (g: ConversationGroup) => {
+    const isClosed = closed.has(g.key);
+    const groupMark = isClosed ? MARK_ORDER.find(m => g.list.some(c => markOf(c.id) === m)) ?? null : null;
+    return (
+      <li key={"group:" + g.key} className={"conv-group-head" + (g.key === "missing" || g.key === "none" ? " other" : "")}>
+        <button
+          className="conv-group-toggle"
+          title={g.title}
+          aria-expanded={!isClosed}
+          onClick={() => setClosed(g.key, !isClosed)}
+        >
+          {isClosed ? <LuChevronRight /> : <LuChevronDown />}
+          <span className="conv-group-name">{g.label}</span>
+          <span className="conv-group-count">{g.list.length}</span>
+          {groupMark && <span className={"dot " + groupMark} title={MARK_BADGE_LABEL[groupMark]} />}
+        </button>
+        {g.workspace && (
+          <button className="conv-group-new" title={`「${g.label}」で新しい会話`} disabled={disabled} onClick={() => onNewIn(g.workspace)}>
+            <LuPlus />
+          </button>
+        )}
+      </li>
+    );
+  };
+
   return (
     <nav className="conversations" style={{ width }}>
       <div className="nav-top" onDoubleClick={toggleMaximiseOnDoubleClick}>
         {menu}
+        {/* 並べ方はワークスペースでまとめるためのもの。ブラウザの会話はワークスペースを使わないので出さない(0038) */}
+        {!isBrowser && <GroupingMenu value={grouping} onChange={setGrouping} />}
       </div>
       <button className="new" title="新しい会話" disabled={disabled} onClick={onNew}><LuPlus /> 新規</button>
-      <ul>
-        {list.map(c => {
-          const title = c.title || "新しい会話";
-          const generating = c.id === generatingId;
-          const mark = markOf(c.id);
-          const cls = ["conversation", c.id === currentId && "current", generating && "generating"].filter(Boolean).join(" ");
-          if (renamingId === c.id) {
-            return (
-              <li key={c.id} className={cls + " editing"}>
-                <TitleInput
-                  initial={c.title}
-                  onDone={title => {
-                    onEndRename();
-                    if (title !== null && title.trim() && title.trim() !== c.title) onRename(c.id, title);
-                  }}
-                />
-              </li>
-            );
-          }
-          if (confirming === c.id) {
-            return (
-              <li key={c.id} className={cls + " confirming"}>
-                <span className="confirm-text">削除しますか?</span>
-                <button className="danger" onClick={() => { setConfirming(null); onDelete(c.id); }}>削除</button>
-                <button onClick={() => setConfirming(null)}>やめる</button>
-              </li>
-            );
-          }
-          return (
-            <li key={c.id} className={cls}>
-              <button
-                className="title"
-                title={`${title}(ダブルクリックか F2 で名前を変更)`}
-                disabled={disabled}
-                onClick={() => onOpen(c.id)}
-                onDoubleClick={() => onStartRename(c.id)}
-              >
-                {title}
-                {c.share && <LuShare2 className="share-mark" title={c.share === "all" ? "全員に共有している" : "指定した人に共有している"} />}
-              </button>
-              {generating && mark ? (
-                // 送信している間(生成中・確認待ち)は削除できないので、削除の場所に印を出す(2026-10-31、ユーザーの指示)
-                <span className="running-mark" title={MARK_LABEL[mark] + "(終わるまで削除できません)"}>
-                  <span className={"dot " + mark} />
-                </span>
-              ) : (
-                // 終わったあとの印(終わった・エラー)も同じ場所に出し、マウスを乗せたときだけ × に替える(削除はできるので)
-                <button
-                  className={"delete" + (mark ? " has-mark" : "")}
-                  title={mark ? `削除(${MARK_LABEL[mark]})` : "削除"}
-                  disabled={disabled}
-                  onClick={() => setConfirming(c.id)}
-                >
-                  {mark && <span className={"dot " + mark} />}
-                  <span className="x">×</span>
-                </button>
-              )}
-            </li>
-          );
-        })}
+      <ul className={grouping === "workspace" ? "grouped" : undefined}>
+        {grouping === "workspace"
+          ? groups.flatMap(g => [groupHead(g), ...(closed.has(g.key) ? [] : g.list.map(row))])
+          : list.map(row)}
       </ul>
       {shared.length > 0 && (
         <div className="shared-list">
@@ -183,6 +250,61 @@ export function ConversationList({
       </div>
     </nav>
   );
+}
+
+// GroupingMenu は、一覧の並べ方を選ぶメニュー(0038)。ボタンは今の並べ方のアイコン。押すと下に並べ方の一覧を出す
+// (2つだけでも切り替えのボタンにしないのは、プロジェクトごとの表示などを足せるようにするため)
+function GroupingMenu({ value, onChange }: { value: ListGrouping; onChange(g: ListGrouping): void }) {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  useMenuDismiss(open, () => setOpen(false), box);
+  const label = LIST_GROUPINGS.find(g => g.value === value)?.label ?? "";
+  return (
+    <div className="grouping-menu" ref={box}>
+      <button className="icon-btn" title={`会話の並べ方: ${label}`} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(o => !o)}>
+        {value === "workspace" ? <LuFolderTree /> : <LuList />}
+      </button>
+      {open && (
+        <div className="split-menu" role="menu">
+          {LIST_GROUPINGS.map(g => (
+            <button key={g.value} role="menuitemradio" aria-checked={g.value === value} onClick={() => { setOpen(false); onChange(g.value); }}>
+              <span className="grouping-check">{g.value === value && <LuCheck />}</span>
+              {g.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// useRevealGroups は、開いた会話・生成を始めた会話のまとまりを開く(畳んだまとまりの中に隠れないように。0038)。
+// 開くのは、会話を開いた・生成を始めた・名前を変え始めた(F2)・開いている会話のワークスペースを変えたときの1回だけ。そのあとで畳めば、畳んだままにする。
+// 作ったばかりの会話は一覧を読み直すまでまとまりに入っていないので、見つかるまで覚えておく
+function useRevealGroups(
+  groups: ConversationGroup[], currentId: string | null, generatingId: string | null, renamingId: string | null, currentWorkspace: string | null,
+  closed: ReadonlySet<string>, setClosed: (key: string, close: boolean) => void,
+) {
+  const pending = useRef(new Set<string>());
+  useEffect(() => {
+    if (currentId) pending.current.add(currentId);
+  }, [currentId, currentWorkspace]);
+  useEffect(() => {
+    if (generatingId) pending.current.add(generatingId);
+  }, [generatingId]);
+  useEffect(() => {
+    if (renamingId) pending.current.add(renamingId);
+  }, [renamingId]);
+  // 描くたびに見る(探すのは覚えている会話だけなので軽い)。並べ方が新しい順の間は groups が空なので、ワークスペースごとにしたときに開く
+  useEffect(() => {
+    if (pending.current.size === 0) return;
+    for (const g of groups) {
+      const found = g.list.filter(c => pending.current.has(c.id));
+      if (found.length === 0) continue;
+      for (const c of found) pending.current.delete(c.id);
+      if (closed.has(g.key)) setClosed(g.key, false);
+    }
+  });
 }
 
 // SHARED_PAGE は、共有された会話を一度に出す数(0031 の決定事項 17)

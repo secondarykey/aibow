@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 	"unicode/utf8"
+	"uuid"
 
 	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/format"
@@ -529,9 +530,10 @@ func TestChangesDuringGenerationAreKept(t *testing.T) {
 }
 
 // sameSettings は会話の設定を比べる(使う MCP のサーバーの「空」と「無し」は同じとみなす。保存すると空の配列になるため)。
-// 会話のプロファイル(保存しない欄)は比べない。
+// 会話のプロファイルと会話の ID(保存しない欄)は比べない。
 func sameSettings(a, b ConversationSettings) bool {
 	a.profile, b.profile = nil, nil
+	a.conv, b.conv = uuid.UUID{}, uuid.UUID{}
 	return reflect.DeepEqual(a.normalized(), b.normalized())
 }
 

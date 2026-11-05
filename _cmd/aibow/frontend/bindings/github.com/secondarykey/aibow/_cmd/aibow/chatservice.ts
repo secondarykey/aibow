@@ -76,6 +76,13 @@ export function AppSettings(): $CancellablePromise<aibow$0.AppSettings> {
 }
 
 /**
+ * ApplyWorktree は、会話 id の worktree の、選んだファイル paths の差分を本体の作業ツリーに当てる。
+ */
+export function ApplyWorktree(id: uuid$0.UUID, paths: string[] | null): $CancellablePromise<void> {
+    return $Call.ByID(2707371256, id, paths);
+}
+
+/**
  * BuiltinTools は組み込みのツール(aibow の中で動くツール)の一覧(設定の画面の「ツール」に出す)。
  * ブラウザでは、コマンドのツールを出さない。資料のフォルダが無ければ、作業フォルダを使わないツール(時刻・計算・URL を読む)だけ(0024 の決定事項 5・17)。
  */
@@ -252,6 +259,13 @@ export function Directory(): $CancellablePromise<aibow$0.Directory> {
  */
 export function DiscardFile(id: uuid$0.UUID, fileID: uuid$0.UUID): $CancellablePromise<void> {
     return $Call.ByID(3031380289, id, fileID);
+}
+
+/**
+ * DiscardWorktree は、会話 id の worktree とブランチを消し、会話を本体のフォルダに戻す。
+ */
+export function DiscardWorktree(id: uuid$0.UUID): $CancellablePromise<void> {
+    return $Call.ByID(1393867222, id);
 }
 
 /**
@@ -577,6 +591,13 @@ export function SetToolPolicy(name: string, policy: aibow$0.ToolPolicy): $Cancel
 }
 
 /**
+ * SetWorktreeName は、会話 id の worktree の名前を変える(会話の設定の画面。作る前だけ)。
+ */
+export function SetWorktreeName(id: uuid$0.UUID, name: string): $CancellablePromise<void> {
+    return $Call.ByID(160092071, id, name);
+}
+
+/**
  * ShareCopy は、プロファイルを写して、そのまま配る(管理の画面の「写して配る」。0032 の段3)。管理者だけ(保存先が確かめる)。
  * 配るプロファイルのモデルは、使えるモデルから(0018 の決定事項 13。SetProfileShare と同じ)。
  */
@@ -726,4 +747,26 @@ export function Version(): $CancellablePromise<string> {
  */
 export function Workspaces(): $CancellablePromise<ui$0.WorkspaceList> {
     return $Call.ByID(501863521);
+}
+
+/**
+ * WorktreeChanges は、会話 id の worktree で変わったファイル(差分の画面の一覧)。
+ */
+export function WorktreeChanges(id: uuid$0.UUID): $CancellablePromise<aibow$0.WorktreeChange[] | null> {
+    return $Call.ByID(515446431, id);
+}
+
+/**
+ * WorktreeDiff は、会話 id の worktree の、ファイル path の差分の文(差分の画面で選んだファイル)。
+ */
+export function WorktreeDiff(id: uuid$0.UUID, path: string): $CancellablePromise<string> {
+    return $Call.ByID(3247741785, id, path);
+}
+
+/**
+ * WorktreeState は、会話 id(新しい会話の画面なら空の ID)の、設定 settings での worktree の状態。
+ * 画面がまだ保存していない設定(選んだばかりのワークスペース)でも見られるよう、設定を受け取る。
+ */
+export function WorktreeState(id: uuid$0.UUID, settings: aibow$0.ConversationSettings): $CancellablePromise<aibow$0.WorktreeState> {
+    return $Call.ByID(448817735, id, settings);
 }

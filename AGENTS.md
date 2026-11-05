@@ -59,6 +59,7 @@ OpenAI 互換のクライアント(Cline など)⇄ HTTP(S)(既定は 127.0.0.1�
 | `api/client/` | aibow-server につなぐクライアント(`client` パッケージ。ステップ8)。会話の仕組みの `Generator` と `ModelLoader` の HTTP 版。ルートの `aibow` は import しない |
 | `ui/` | 画面向けの処理(`ui` パッケージ。ステップ9の 9-0 で `_cmd/aibow` から切り出した)。画面から呼ぶメソッド(`Service`。モデル・会話・設定・送信)と、モデルを扱う係(直接 `DirectHost`・aibow-server 越し `RemoteHost`)。ルートの `aibow` を使い、Wails を import しない。デスクトップのアプリは `ChatService` に埋め込んで Wails に渡す。ブラウザ向けには aibow-server が使う:aibow-server の engine でモデルを扱う係(`ServerHost`)と、画面用の HTTP の口(`Handler`。`/aibow/ui/call/{メソッド}` と SSE の `/aibow/ui/events`)。9-1。仕組みは [_docs/api.md](_docs/api.md) の「画面用の口」 |
 | `web/` | 画面のビルド結果(`web` パッケージ。ステップ9の 9-2)。vite が `_cmd/aibow/frontend` から `web/dist/app` に書き、デスクトップのアプリと aibow-server の両方が `web.Files()` で埋め込む(写さない)。ビルドしていなければ `web/dist/index.html`(ビルドの仕方だけのページ) |
+| `git/` | アプリが行う Git の操作(`git` パッケージ。0039)。`git` の exe を `os/exec` で呼ぶ(外部パッケージは使わない)。worktree を作る・本体の状態・差分・`git apply` で当てる・消す。ルートの `aibow`・`tool`・Wails を import しない(aibow-server からも使えるように。モデルに見せるツールは `tool`、アプリが行う Git の操作は `git`) |
 | `genlog/` | aibow-server の使用量の記録(0033)で使う形と、生成に付ける付箋(道・用途・会話・順番待ちを ctx で運ぶ)。何にも依存しない(会話の仕組み・`api`・`api/client`・`ui`・`store` から使う)。記録するのは `_cmd/aibow-server` の記録付きの engine |
 | `mcp/internal/` | MCP のクライアントとサーバーの両方で使う部分(`meta`: `_meta` の名前) |
 | `internal/proc/` | 子プロセスまでまとめて止める仕組み(`tool` の `run_command` と `mcp/client` で使う) |
@@ -70,8 +71,8 @@ OpenAI 互換のクライアント(Cline など)⇄ HTTP(S)(既定は 127.0.0.1�
 | `.github/` | GitHub Actions(main への PR のマージで版を上げてタグを打つ `versionup.yml`・タグの push で3つの OS の zip からリリースの下書きを作る `release.yml`)と、CI が使う Go と Wails の版(`variables`)。仕組みは [_docs/deploy.md](_docs/deploy.md) |
 | `_docs/` | 仕組みごとの説明(下の表)と、機能の仕様(`_docs/features/`)。利用者向けの手順は `setup.md`(準備と起動)・`usage.md`(使い方と設定)・`structure.md`(構成とファイル) |
 | `README.md` / `DEVELOPMENT.md` | 使ってみる人の入口(ビルドして使う・aibow-server を始める)/ 開発する人の入口(しくみ・開発モード・確かめ方・local:deploy・ロードマップ) |
-| `TODO.md` | 全体の進み具合とロードマップ(入口。行は「状態・一言・仕様へのリンク」だけ。0025) |
-| `_docs/backlog.md` | ロードマップの外の、まだ仕様の無い検討メモ(TODO.md の行の中身) |
+| `TODO.md` | 残っている課題の一覧(入口。済んだものは載せない。行は「状態・一言・資料へのリンク」だけ。0025) |
+| `_docs/backlog.md` | まだ仕様の無い課題の検討メモ(TODO.md の行の中身) |
 
 ## 作業内容ごとに読むもの
 
@@ -100,12 +101,14 @@ OpenAI 互換のクライアント(Cline など)⇄ HTTP(S)(既定は 127.0.0.1�
 
 ## 作業の進め方
 
-- 全体の進み具合とロードマップは `TODO.md`、1つ1つの機能の仕様は `_docs/features/<番号>-<名前>.md` にある。作業を始める前に両方を読む
+- 残っている課題は `TODO.md`、1つ1つの機能の仕様は `_docs/features/<番号>-<名前>.md` にある。作業を始める前に両方を読む
 - 機能の仕様は、ユーザーが Chat で相談して決めたものを書いた「発注書」。書かれている決定事項に従い、「やらないこと」は先回りして作らない
 - 仕様の「未決事項」は勝手に決めず、案を示してユーザーに確認する。作業中に新しく決めたことは、その仕様のファイルに書き足す
-- 着手したら仕様の「状態」と `TODO.md` を 🔧 作業中に、完了の条件を満たしたら ✅ 完了にする
+- 着手したら仕様の「状態」と `TODO.md` の行を 🔧 作業中にする。完了の条件を満たしたら、仕様の「状態」を ✅ 完了にし、`TODO.md` からは行を消す(済んだものは載せない。2026-11-03、ユーザーの指示)。
+  確かめずに完了にしたことがあれば、`TODO.md` の「確かめていないこと」に1行足す
 - `TODO.md` の行は短く保つ(ローカルのモデルも読む入口なので。0025)。段ごとの経過と決めたことは仕様のファイルに書き、TODO.md の行には書き足さない
-- ステップは順番に進める。先のステップの機能を先回りして入れない
+- 仕様にした課題は `_docs/backlog.md` から節を消す。済んだことを backlog.md に残さない(経過は仕様に書く)
+- 先の課題の機能を先回りして入れない
 - 仕組みの詳細を書き足すときは、該当する `_docs/*.md` かパッケージの `AGENTS.md` に書く。このファイルには、全体に関わることと読む場所の案内だけを足す
 
 ## 技術方針
@@ -124,7 +127,7 @@ OpenAI 互換のクライアント(Cline など)⇄ HTTP(S)(既定は 127.0.0.1�
 - チャットテンプレートなど、学習の対象になる仕組みはライブラリ任せにせず自分で書く
 - 設定は `AIBOW_` で始まる環境変数にし、[_docs/usage.md](_docs/usage.md) の表に追加する(今ある環境変数はその表と [_cmd/aibow/AGENTS.md](_cmd/aibow/AGENTS.md))。
   画面で変えられる設定の環境変数は「DB にまだ値が無いときの初期値」で、画面で変えたら DB の値が優先
-- 画面で変える設定は DB、手で書く設定(その PC でどう起動するか。aibow-server のつなぎ先 `serverUrl` など)は設定ファイル `settings.json`、画面で変えるがその PC の人が決めること(ツールの扱い)は `tools.json`、MCP のサーバーは `mcp.json`(画面で足す。settings.json に手で書いた `mcpServers` は起動したときにここへ移す。0034)、ワークスペース(PC のフォルダの組。会話は ID だけを持つ)は `workspaces.json`(0035)([_docs/mcp.md](_docs/mcp.md))、aibow-server のつなぎ先とアプリのログインは `connection.json`(0019。手で書いた `serverUrl` が強い)。会話をサーバーに置く形にしても手元に残るものを、会話の DB に入れない
+- 画面で変える設定は DB、手で書く設定(その PC でどう起動するか。aibow-server のつなぎ先 `serverUrl` など)は設定ファイル `settings.json`、画面で変えるがその PC の人が決めること(ツールの扱い)は `tools.json`、MCP のサーバーは `mcp.json`(画面で足す。settings.json に手で書いた `mcpServers` は起動したときにここへ移す。0034)、ワークスペース(PC のフォルダの組。会話は ID だけを持つ)と会話の worktree の結び付け(0039)は `workspaces.json`(0035)([_docs/mcp.md](_docs/mcp.md))、aibow-server のつなぎ先とアプリのログインは `connection.json`(0019。手で書いた `serverUrl` が強い)。会話をサーバーに置く形にしても手元に残るものを、会話の DB に入れない
 
 ## コードの書き方
 

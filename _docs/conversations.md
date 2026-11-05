@@ -96,6 +96,10 @@
 - 会話ごとの設定(システムプロンプト・temperature・思考・presence penalty・compact の方式・ワークスペース・使う MCP のサーバー)は `conversations.settings`(JSON)
   - `workspace`(ワークスペースの ID。0035)は**新しい会話の既定に入れない**(`asDefaults` で外す)。パスは会話に置かず、その PC の `workspaces.json` で引く(`Conversations.workDir`・`toolFolders`)。
     この PC に無い ID なら作業フォルダが無いものとして扱う。共有で読む・写すときは渡さない
+  - `worktree`(0039)は、メインのフォルダを会話ごとの worktree で書き換えるか(入力欄の上のトグル)。`workspace` と同じく新しい会話の既定に入れず、共有で読む・写すときは渡さない。
+    作った worktree との結び付け(本体・パス・ブランチ・作ったときのコミット)は会話の DB ではなく、その PC の `workspaces.json` のワークスペースの `worktrees` に置く(PC のフォルダなので)。
+    作ったあとは外せず(捨てるのは差分の画面)、ワークスペースも変えられない(`keepWorktree`)。
+    `worktree_name` は worktree のブランチとフォルダの名前に使う英語の短い名前。最初の送信でモデルに書かせて残す。変えるのは `SetWorktreeName` だけで、`UpdateSettings` は保存してある値のままにする。会話を消すと worktree とブランチも消す。仕組みは [tools.md](tools.md) の「worktree で作業する」
   - `work_dir` はワークスペースより前の作業フォルダ(絶対パス)。もう使わず、画面からも書けない(`CreateIn`・`UpdateSettings` が保存してある値のままにする)。
     起動したときに、そのパスがこの PC にある会話だけ、パスごとに1つのワークスペース(フォルダ1つ・メイン・書く)に移して空にする(`MigrateWorkDirs`)。
     無いパスは残し、その PC では使わない(そのパスのある PC で起動したときに、そちらで移す)。aibow-server につないでいるときの会話(server.db)も、つないでいる PC で同じように移す

@@ -73,7 +73,7 @@ Ollama の保存先は Ollama と同じ `OLLAMA_MODELS`。意味と既定値は 
 - Go → 画面は Wails のイベント(`ui.Notifier` を `wailsNotifier` が Wails のイベントにする。画面は `backend.ts` の `onChat` / `onModelLoaded` で受け取る)。`chat` イベントは `RegisterEvent[aibow.ChatEvent]` で型を登録してあり、画面では `ev.data` が `ChatEvent` 型になる。
   `type` は `user`(保存したユーザーの発言。画面は ID を表示に付ける)/ `summarizing` / `summary`(要約の断片)/ `compact`(compact した・要約に失敗した)/
   `usage`(メーター)/ `prompt` / `thinking` / `content` / `reply`(返事を1件保存した。ツールを使うと1回の送信で何回も来る)/
-  `tool_start` / `confirm`(ツールの実行前の確認を待っている)/ `tool_result`(ツールの結果を保存した)/ `notice`(お知らせ。画面はトースト)/ `error` / `done`
+  `tool_start` / `confirm`(ツールの実行前の確認を待っている)/ `tool_result`(ツールの結果を保存した)/ `notice`(お知らせ。画面はトースト)/ `worktree`(会話の worktree を作った。0039)/ `error` / `done`
 - `conversation_id` が付いていて、画面は表示中の会話のものだけを出す。`done` には Go が保存した最後の返事(`reply`)が入る。
   画面は `reply` / `tool_result` で届いた保存済みの発言から吹き出しを作る([_docs/tools.md](../../_docs/tools.md))
 - `Send` の戻り値とイベントは別経路で届き順序が保証されないので、終わりは必ず `done` イベントで判定する(`Compact` も同じ)
@@ -85,7 +85,7 @@ Ollama の保存先は Ollama と同じ `OLLAMA_MODELS`。意味と既定値は 
 - 吹き出しを「モデルに渡さない」にする / 戻すのは `ChatService.SetExcluded(会話の ID, 吹き出しの中の発言の ID, 渡さないか)`(0011)
 - 送信は `ChatService.Send(会話の ID, 文, 読み込んだファイル)`。ファイルは入力欄で読み込むたびに `ChatService.CheckFile(会話の ID, 新しい会話の画面の設定, 名前, 中身, もう付けている数, そのトークン数の合計)` で確かめたもの(0030。中身は base64。画像も同じ)。送ったファイルを捨てるのは `ChatService.DiscardFile(会話の ID, ファイルの ID)`
 - 最後の返事を作り直すのは `ChatService.Regenerate(会話の ID)`、最後の発言を直して送り直すのは `ChatService.Resend(会話の ID, 文)`(0011)。どちらも `Send` と同じく chat イベントで途中経過を送り、`done` で終わる(作り直すでは `user` イベントは来ない)
-- ツールの実行前の確認には `ChatService.ConfirmTool(会話の ID, confirm イベントの ID, 実行するか, 理由, これから先の扱い)` で答える(これから先の扱いは `ToolPolicy` の値。空ならこの1回だけ。0010)。ワークスペース(0035)は一覧 `Workspaces`・フォルダから作る `CreateWorkspace`(フォルダは `ChatService.ChooseWorkDir` のダイアログで選ぶ)・名前とフォルダの組を変える `UpdateWorkspace`・消す `DeleteWorkspace`(どれもデスクトップだけ。`ui/workspaces.go`)。`tools.json` を読むのは `loadToolPrefs`、`workspaces.json` は `loadWorkspaces`
+- ツールの実行前の確認には `ChatService.ConfirmTool(会話の ID, confirm イベントの ID, 実行するか, 理由, これから先の扱い)` で答える(これから先の扱いは `ToolPolicy` の値。空ならこの1回だけ。0010)。ワークスペース(0035)は一覧 `Workspaces`・フォルダから作る `CreateWorkspace`(フォルダは `ChatService.ChooseWorkDir` のダイアログで選ぶ)・名前とフォルダの組を変える `UpdateWorkspace`・消す `DeleteWorkspace`(どれもデスクトップだけ。`ui/workspaces.go`)。worktree(0039)は状態 `WorktreeState`・変わったファイル `WorktreeChanges`・ファイルの差分 `WorktreeDiff`・取り込む `ApplyWorktree`・捨てる `DiscardWorktree`(デスクトップだけ。`ui/worktree.go`)。`tools.json` を読むのは `loadToolPrefs`、`workspaces.json` は `loadWorkspaces`
 - ツールと MCP:会話で選べる MCP のサーバーは `MCPServers`(設定の画面は `AllMCPServers`)、組み込みのツールの一覧は `BuiltinTools`、ツールの扱いの PC の既定(`tools.json`)は `ToolPrefs` / `SetToolPolicy`(新しい会話で最初から使うグループはプロファイルの値。`UpdateProfile` で変える)、MCP のサーバーのツールの一覧を受け取り直すのは `LoadToolList`、会話の設定の画面に出す会話でのツールの扱いは `ToolStates`(会話の ID と設定を渡す。プロファイルで使えないものは `from: "profile"`)、設定の画面に出す PC での扱いは `ToolDefaults`、グループごとまとめて確認しないは `SetGroupPolicy`。仕組みは [_docs/mcp.md](../../_docs/mcp.md)
 - 左下に出すバージョンは `ChatService.Version`(`wails3 dev` では patch +1 と `+dev`。`appversion.go`)
 - IME の問題のため、Go が `events.Windows.WindowSetFocus` で `aibow:window:focus` を送っている([_docs/ui.md](../../_docs/ui.md))

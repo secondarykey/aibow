@@ -189,5 +189,12 @@ export interface WorkspaceView {
      * 画面に出す名前
      */
     "name": string;
+
+    /**
+     * Worktrees は、このワークスペースで worktree を作って作業している会話(0039)。会話との結び付けは PC の手元に持つ
+     * (worktree は PC のフォルダなので。会話の DB には「worktree で作業する」の切り替えだけを置く)。
+     * 設定の画面からは変えない(Update は今の値を残す)。作る・捨てるのは会話の仕組み(worktree.go)
+     */
+    "worktrees"?: aibow$0.WorkspaceWorktree[] | null;
     "folders": FolderView[] | null;
 }
