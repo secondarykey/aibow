@@ -17,7 +17,11 @@ function browserMarker(): Plugin {
 }
 
 // https://vitejs.dev/config/
-export default defineConfig({
+export default defineConfig(({ command }) => ({
+  // ビルドした index.html は、画面のファイル(assets/…)を相対パスで指す(0042)。aibow-server を -base /aibow で動かす・
+  // リバースプロキシで /aibow/ の下に出すと、画面は /aibow/ に置かれるので、/assets/… と書くと届かない。
+  // デスクトップのアプリ(Wails は / に置く)でも相対パスで同じものに届く。開発用サーバーは / で配る(vite は相対の base を開発では / として扱う)
+  base: command === "build" ? "./" : "/",
   server: {
     host: "127.0.0.1",
     port: Number(process.env.WAILS_VITE_PORT) || 9245,
@@ -33,4 +37,4 @@ export default defineConfig({
     outDir: "../../../web/dist/app",
     emptyOutDir: true,
   },
-});
+}));

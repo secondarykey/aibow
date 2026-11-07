@@ -244,3 +244,26 @@ func routes(apiH, browser, screen http.Handler) http.Handler {
 	mux.Handle("/", apiH)
 	return mux
 }
+
+// mount は、全部の道を base(-base。0042)の下に載せる。base が空なら何もしない(今までどおり / の下)。
+//
+//	/aibow/          → 画面(routes の /)
+//	/aibow/v1/…      → OpenAI 互換の口(routes の /v1/…)
+//	/aibow/aibow/ui/… → 画面用の口(routes の /aibow/ui/…。画面は自分の場所からの相対パスで呼ぶので、頭が2つ重なる)
+//
+// 中の道は base を知らない(http.StripPrefix が頭を外してから渡す)。リバースプロキシ(nginx など)で
+// https://example.com/aibow/ を aibow-server に渡すとき、頭を残したまま渡せるようにするためのもの。
+// 頭の付いていない道は、どこで待ち受けているかを書いた 404 にする(古いつなぎ先のままの Cline などが、理由の分からない 404 にならないように)。
+func mount(base string, h http.Handler) http.Handler {
+	if base == "" {
+		return h
+	}
+	mux := http.NewServeMux()
+	// base+"/" の形で登録すると、/aibow(最後の / なし)は ServeMux が /aibow/ に転送する。
+	// 画面は自分の場所からの相対パスで口を呼ぶので、/aibow のまま開くと /aibow/ui/… を呼んでしまう。転送はそれを防ぐ
+	mux.Handle(base+"/", http.StripPrefix(base, h))
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "aibow-server は "+base+"/ の下で待ち受けています(-base・設定ファイルの base)。画面は "+base+"/、OpenAI 互換の口は "+base+"/v1 です", http.StatusNotFound)
+	})
+	return mux
+}

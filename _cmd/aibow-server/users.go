@@ -341,7 +341,8 @@ func linkBase(c config) linkURL {
 		host = "127.0.0.1"
 		note = "ほかの PC で開くときは、127.0.0.1 をこの PC のアドレス(IP アドレスか名前)に置き換えてください"
 	}
-	return linkURL{base: c.Scheme() + "://" + net.JoinHostPort(host, strconv.Itoa(c.Port)), note: note}
+	// 道の頭(base。0042)も付ける。画面は base の下にあるので、付けないとリンクが 404 になる
+	return linkURL{base: c.Scheme() + "://" + net.JoinHostPort(host, strconv.Itoa(c.Port)) + c.Base, note: note}
 }
 
 // printLink は、パスワードを決めるリンクを標準出力にだけ出す(ログには残さない。持っている人なら誰でもパスワードを決められるため)。

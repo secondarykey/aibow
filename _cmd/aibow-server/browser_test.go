@@ -56,3 +56,36 @@ func TestRoutes(t *testing.T) {
 		t.Errorf("GET /assets/ の無いファイル: %d %q", code, body)
 	}
 }
+
+// base を付けると、全部の道がその下に載る。中の道は頭を外したパスを受け取る。頭の無い道は、どこで待ち受けているかを書いた 404(0042)
+func TestMount(t *testing.T) {
+	path := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, r.URL.Path) })
+	if mount("", path) == nil {
+		t.Fatal("base が空なら、そのまま返す")
+	}
+	h := mount("/aibow", path)
+	get := func(p string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest("GET", p, nil))
+		return rec
+	}
+	for p, want := range map[string]string{
+		"/aibow/":                  "/",
+		"/aibow/v1/models":         "/v1/models",
+		"/aibow/aibow/ui/events":   "/aibow/ui/events",
+		"/aibow/assets/index-x.js": "/assets/index-x.js",
+	} {
+		if rec := get(p); rec.Code != http.StatusOK || rec.Body.String() != want {
+			t.Errorf("GET %s: %d %q(want %q)", p, rec.Code, rec.Body.String(), want)
+		}
+	}
+	// 最後の / が無いと、画面の相対パスがずれるので / 付きへ転送する
+	if rec := get("/aibow"); rec.Code/100 != 3 || rec.Header().Get("Location") != "/aibow/" {
+		t.Errorf("GET /aibow: %d %q", rec.Code, rec.Header().Get("Location"))
+	}
+	for _, p := range []string{"/", "/v1/models", "/aibowx/"} {
+		if rec := get(p); rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "/aibow/ の下") {
+			t.Errorf("GET %s: %d %q", p, rec.Code, rec.Body.String())
+		}
+	}
+}

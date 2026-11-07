@@ -8,6 +8,10 @@
 //	ログイン         … POST /aibow/auth/login で cookie を受け取る(0017 の 10-1)。以後の fetch と EventSource には、ブラウザが cookie を付ける
 //
 // ブラウザには OS のウィンドウもクリップボードの Go 側の書き込みも無いので、そこはブラウザの仕組みを使う(0016 の 17)。
+//
+// 口のパスは、画面の場所からの相対パス(先頭に / を付けない "aibow/ui/…")で書く(0042)。
+// aibow-server を -base /aibow で動かす・リバースプロキシで /aibow/ の下に出すと、画面は /aibow/ に、口は /aibow/aibow/ui/… になる。
+// 相対パスなら、画面がどこに置かれていても、画面と同じ頭の下の口を呼ぶ。
 import type { ChatEvent } from "../bindings/github.com/secondarykey/aibow";
 import type { AdminAPI, Backend, Call, ChatAPI, Me, MyUsage } from "./backend";
 import { errorMessage } from "./errors";
@@ -23,7 +27,7 @@ function call<T>(method: string, args: unknown[]): Call<T> {
   const ac = new AbortController();
   const p = (async () => {
     try {
-      const res = await fetch(`/aibow/ui/call/${method}`, {
+      const res = await fetch(`aibow/ui/call/${method}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(args),
@@ -63,7 +67,7 @@ const reconnected = new Set<() => void>();
 
 function events(): EventSource {
   if (!source) {
-    source = new EventSource("/aibow/ui/events");
+    source = new EventSource("aibow/ui/events");
     source.addEventListener("open", () => {
       if (opened) reconnected.forEach(f => f());
       opened = true;
@@ -83,7 +87,7 @@ function on(name: string, f: (data: string) => void): () => void {
 async function auth(method: "GET" | "POST", path: string, body?: unknown): Promise<Me> {
   let res: Response;
   try {
-    res = await fetch(`/aibow/auth/${path}`, {
+    res = await fetch(`aibow/auth/${path}`, {
       method,
       headers: body === undefined ? {} : { "Content-Type": "application/json" },
       body: body === undefined ? undefined : JSON.stringify(body),
@@ -100,7 +104,7 @@ async function auth(method: "GET" | "POST", path: string, body?: unknown): Promi
 async function adminCall<T>(method: "GET" | "POST" | "DELETE", path: string, body?: unknown): Promise<T> {
   let res: Response;
   try {
-    res = await fetch(`/aibow/admin/${path}`, {
+    res = await fetch(`aibow/admin/${path}`, {
       method,
       headers: body === undefined ? {} : { "Content-Type": "application/json" },
       body: body === undefined ? undefined : JSON.stringify(body),

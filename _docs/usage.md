@@ -316,13 +316,13 @@ go run ./_cmd/dev server
 開発で動かすときはこちらです。画面を vite の開発用サーバー(`http://127.0.0.1:9246/`)から配り、aibow-server を `go run` で動かします。
 ブラウザは 9246 のほうを開きます(画面のソースを保存すると、すぐ出ます)。vite は `/aibow/` の呼び出しを aibow-server に渡し、ブラウザの印を足します。
 
-- 後ろに aibow-server の引数を付けられます(例: `go run ./_cmd/dev server -config D:/tmp/server.json -port 18089`)。渡す先のアドレスは、引数か設定ファイルの `port`・`host`・`tlsCert` から決めます
+- 後ろに aibow-server の引数を付けられます(例: `go run ./_cmd/dev server -config D:/tmp/server.json -port 18089`)。渡す先のアドレスは、引数か設定ファイルの `port`・`host`・`addr`・`base`・`tlsCert` から決めます(`base` があれば、vite はその下に渡します)
 - `lib`・`models` をどこにも書いていなければ、`_cmd/aibow/lib`・`_cmd/aibow/models` を使います
 - OpenAI 互換の口(Cline など)と画面のアプリは、今までどおり aibow-server(既定 `:8089`)につなぎます
 - Ctrl+C で両方止まります。Go のコードを変えたら、止めて打ち直します。Go のメソッドを変えたときのバインディングは、今までどおり `wails3 generate bindings` で作り直します
 
 ```
-aibow-server [-model モデル] [-ctx 作業領域の大きさ] [-parallel 同時に生成できる数] [-port ポート] [-host アドレス] [-tls-cert 証明書 -tls-key 秘密鍵] [-lib llama.cpp のフォルダ] [-models GGUF のフォルダ] [-config 設定ファイル] [-login=false] [-debug]
+aibow-server [-model モデル] [-ctx 作業領域の大きさ] [-parallel 同時に生成できる数] [-port ポート] [-host アドレス] [-addr アドレス:ポート] [-base パス] [-tls-cert 証明書 -tls-key 秘密鍵] [-lib llama.cpp のフォルダ] [-models GGUF のフォルダ] [-config 設定ファイル] [-login=false] [-debug]
 aibow-server [-config 設定ファイル] user list|add|passwd|remove|key|admin|unadmin [名前]
 aibow-server [-config 設定ファイル] user display <名前> [表示名]
 aibow-server [-config 設定ファイル] user email <名前> [アドレス]
@@ -341,6 +341,12 @@ aibow-server [-config 設定ファイル] cert <ホスト名か IP アドレス>
   会話ごとに KV キャッシュが残ります(2人が交互に使っても読み直しが減る)。そのかわり作業領域を等分するので、1つの会話・リクエストが使えるのは `ctx` ÷ `parallel`(32768 を 2 なら 16384)までです。
   VRAM は変わりません。1人あたりの生成の速さは 1 割ほど落ちます(Qwen3.5 4B で 1人 68 tok/s → 2人同時でそれぞれ 58 tok/s。[tuning.md](tuning.md))
 - `-port` は待ち受けのポート(既定 8089。`AIBOW_SERVER_PORT`)。待ち受けは既定で `127.0.0.1` だけで、PC の外からはつなげません(広げるときは下の「ほかの PC から使う」)
+- `-addr` は `-host` と `-port` をまとめて書く形です(例 `-addr 0.0.0.0:8089`。設定ファイルの `addr`・`AIBOW_SERVER_ADDR`。0042)。書いた所の `host`・`port` の代わりになり、強さの順は同じです(引数の `-port` は設定ファイルの `addr` のポートより強い)。
+  同じ所に `addr` と `host`・`port` の両方を書くとエラーで止まります。アドレスを書かない `:8089` はポートだけを決めたことになり、アドレスは `127.0.0.1` のままです(全部のネットワークにするなら `0.0.0.0:8089` と書く)
+- `-base` は全部の道の頭に付けるパスです(例 `-base /aibow`。設定ファイルの `base`・`AIBOW_SERVER_BASE`。既定は頭なし。0042)。
+  付けると画面は `http://127.0.0.1:8089/aibow/`、OpenAI 互換のクライアントの Base URL は `…/aibow/v1`、画面のアプリのつなぎ先は `…/aibow` になります(起動のときのログにそのまま出ます)。
+  頭の無い道は「`/aibow/` の下で待ち受けています」の 404 を返します。使い道は下の「リバースプロキシの後ろに置く」。
+  **Git Bash では `-base aibow` と先頭の `/` なしで書きます**(Git Bash は引数の `/aibow` を `C:/Program Files/Git/aibow` に書き換えて渡すため。書き換えられたときは、そう言って止まります。設定ファイルの `base` は書き換えられません)
 - `-lib`・`-models` は llama.cpp の DLL のフォルダと GGUF を置くフォルダ(既定はカレントフォルダの `lib`・`models`。`AIBOW_LIB`・`AIBOW_MODELS_DIR`)。
   リポジトリのフォルダで起動するときは `aibow-server -lib _cmd/aibow/lib -models _cmd/aibow/models` のように指定します
 - GPU の層数・返事の上限の既定・presence penalty は、アプリと同じ環境変数(下の表)で決めます。画面の設定(DB)は読みません
@@ -677,6 +683,17 @@ aibow-server は、生成1回ごとに「だれが・いつ・どのモデルで
 - Cline など:Base URL を `https://…/v1`、API Key を作ったキーにします。Node.js で動くものは、環境変数 `NODE_EXTRA_CA_CERTS` に写した証明書のファイルを書くと、自己署名の証明書を信頼します
 - モデルを降ろす・GPU の層数・モデルの置き場所は、サーバーの PC からか管理者だけが変えられます(ほかの人は「aibow-server を動かしている PC からか、管理者だけができます」と断ります)
 
+### リバースプロキシの後ろに置く(base。0042)
+
+nginx・IIS などのリバースプロキシで、ほかのサイトと同じアドレスの `/aibow/` の下に aibow-server を出すときは、`-base /aibow`(設定ファイルの `"base": "/aibow"`)で起動し、
+プロキシは `/aibow/` をパスを変えずに aibow-server へ渡します(nginx なら `location /aibow/ { proxy_pass http://127.0.0.1:8089; }`。`proxy_pass` の後ろにパスを書かない)。
+画面は自分の場所からの相対パスで口を呼ぶので、プロキシが頭を外して渡す形(base なしの aibow-server に `/aibow/` を `/` として渡す)でも動きます。
+
+- 画面の SSE(`/aibow/aibow/ui/events`)と返事の生成は長くつながったままなので、プロキシの読み込みの時間切れ・バッファを切ります(nginx なら `proxy_buffering off;` と長い `proxy_read_timeout`)
+- **同じ PC のプロキシを通った呼び出しは、外からでもサーバーの PC の上(`127.0.0.1`)から来たように見えます**。aibow-server は接続の相手のアドレスしか見ないので、
+  サーバーの PC からだけ許している操作(モデルを降ろす・GPU の層数・置き場所・全員の使用量)が誰にでもでき、`login: false` ならログインもなくなります。
+  base を付けて `127.0.0.1` で待ち受けると、起動のときに注意が出ます。信用できる人だけが使う網に限ってください(`X-Forwarded-For` を見るかは 0042 の未決事項)
+
 ## 設定の変更
 
 設定は2つの画面に分かれています。どちらも、チャットの代わりに会話の場所に開きます。
@@ -762,6 +779,8 @@ aibow-server は、生成1回ごとに「だれが・いつ・どのモデルで
 | `AIBOW_SERVER_PARALLEL` | `1` | `aibow-server` で同時に生成できる数(作業領域の中のシーケンスの数。作業領域はこの数で等分する。0023)。引数の `-parallel`・設定ファイルの `parallel` が優先 |
 | `AIBOW_SERVER_LOGIN` | `1` | `0` にすると、`aibow-server` をログインなしにする(127.0.0.1 だけで待ち受けるとき。0020 で既定を要るにした)。引数の `-login`・設定ファイルの `login` が優先 |
 | `AIBOW_SERVER_HOST` | `127.0.0.1` | `aibow-server` の待ち受けのアドレス(`0.0.0.0` で全部のネットワーク。外ではログインと API キーが要る)。引数の `-host`・設定ファイルの `host` が優先 |
+| `AIBOW_SERVER_ADDR` | なし | `aibow-server` の待ち受けのアドレスとポートをまとめて書く形(`0.0.0.0:8089`。0042)。`AIBOW_SERVER_HOST`・`AIBOW_SERVER_PORT` と一緒には決められない。引数の `-addr`(`-host`・`-port`)・設定ファイルの `addr`(`host`・`port`)が優先 |
+| `AIBOW_SERVER_BASE` | なし | `aibow-server` の全部の道の頭に付けるパス(`/aibow`。0042)。引数の `-base`・設定ファイルの `base` が優先 |
 | `AIBOW_SERVER_TLS_CERT`・`AIBOW_SERVER_TLS_KEY` | なし | `aibow-server` の HTTPS の証明書と秘密鍵のファイル(`aibow-server cert` で作れる)。引数の `-tls-cert`・`-tls-key`・設定ファイルの `tlsCert`・`tlsKey` が優先 |
 | `AIBOW_SERVER_PORT` | `8089` | `aibow-server` の待ち受けのポート。引数の `-port`・設定ファイルの `port` が優先。以前の `AIBOW_API_PORT` は使わなくなった |
 | `AIBOW_IMAGE_MAX_TOKENS` | `1024` | 画像1枚のトークン数の上限(0030)。画像は 32 ピクセル四方で 1 トークンで、大きい画像はこの数に収まるよう縮める。画像を読む部品(mmproj)を読み込むときに効く(変えたらモデルを読み直す) |

@@ -225,9 +225,10 @@ export async function setEmail(email: string): Promise<Me> {
   return me;
 }
 
-// linkURL は、リンクの合言葉を URL にする(管理者が開いている画面のアドレス。0022 の決定事項 11)
+// linkURL は、リンクの合言葉を URL にする(管理者が開いている画面のアドレス。0022 の決定事項 11)。
+// 画面が /aibow/ の下にあるとき(-base・リバースプロキシ。0042)もそこを指すよう、パスまで含める
 export function linkURL(token: string): string {
-  return `${location.origin}/#reset=${token}`;
+  return `${location.origin}${location.pathname}#reset=${token}`;
 }
 
 export const admin: AdminAPI = {

@@ -168,12 +168,14 @@ func serverAddress(args []string) string {
 	config := fs.String("config", "", "")
 	port := fs.Int("port", 0, "")
 	host := fs.String("host", "", "")
+	addr := fs.String("addr", "", "")
+	base := fs.String("base", "", "")
 	tlsCert := fs.String("tls-cert", "", "")
 	// aibow-server のほかの引数は読み飛ばす(値を取るものも、取らないものもある)
 	for _, name := range []string{"model", "lib", "models", "tls-key"} {
 		fs.String(name, "", "")
 	}
-	for _, name := range []string{"ctx"} {
+	for _, name := range []string{"ctx", "parallel"} {
 		fs.Int(name, 0, "")
 	}
 	for _, name := range []string{"login", "debug", "version"} {
@@ -184,6 +186,8 @@ func serverAddress(args []string) string {
 	var file struct {
 		Port    int    `json:"port"`
 		Host    string `json:"host"`
+		Addr    string `json:"addr"`
+		Base    string `json:"base"`
 		TLSCert string `json:"tlsCert"`
 	}
 	path := *config
@@ -196,8 +200,13 @@ func serverAddress(args []string) string {
 		json.Unmarshal(data, &file) // 読めなければ aibow-server が理由を出して止まる
 	}
 	envPort, _ := strconv.Atoi(os.Getenv("AIBOW_SERVER_PORT"))
+	envHost := os.Getenv("AIBOW_SERVER_HOST")
+	// addr は host と port をまとめて書く形(0042)。書いた所の host・port の代わりにする(読めなければ aibow-server が理由を出して止まる)
+	*host, *port = splitAddr(*addr, *host, *port)
+	file.Host, file.Port = splitAddr(file.Addr, file.Host, file.Port)
+	envHost, envPort = splitAddr(os.Getenv("AIBOW_SERVER_ADDR"), envHost, envPort)
 	p := cmp.Or(*port, file.Port, envPort, 8089)
-	h := cmp.Or(*host, file.Host, os.Getenv("AIBOW_SERVER_HOST"), "127.0.0.1")
+	h := cmp.Or(*host, file.Host, envHost, "127.0.0.1")
 	if ip := net.ParseIP(h); ip != nil && ip.IsUnspecified() {
 		h = "127.0.0.1"
 	}
@@ -205,7 +214,25 @@ func serverAddress(args []string) string {
 	if cmp.Or(*tlsCert, file.TLSCert, os.Getenv("AIBOW_SERVER_TLS_CERT")) != "" {
 		scheme = "https"
 	}
-	return scheme + "://" + net.JoinHostPort(h, strconv.Itoa(p))
+	// 道の頭(base。0042)も付ける。vite は渡す先のパスを頭に足すので、画面の /aibow/ui/… は aibow-server の <base>/aibow/ui/… に届く
+	b := strings.Trim(cmp.Or(*base, file.Base, os.Getenv("AIBOW_SERVER_BASE")), "/")
+	if b != "" {
+		b = "/" + b
+	}
+	return scheme + "://" + net.JoinHostPort(h, strconv.Itoa(p)) + b
+}
+
+// splitAddr は addr("アドレス:ポート")が書かれていれば分けて返し、無ければ host・port をそのまま返す。
+func splitAddr(addr, host string, port int) (string, int) {
+	if addr == "" {
+		return host, port
+	}
+	h, ps, err := net.SplitHostPort(addr)
+	if err != nil {
+		return host, port
+	}
+	p, _ := strconv.Atoi(ps)
+	return h, p
 }
 
 type nopWriter struct{}

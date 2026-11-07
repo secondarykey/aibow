@@ -294,7 +294,11 @@ Cline・画面のアプリ ─ Authorization: Bearer aibow_… ─→ auth.Keys.
 - **サーバーの PC か管理者だけの口**:`POST /models/unload`・`/aibow/gpu-layers`・`/aibow/places/add`・`/aibow/places/remove` は、`127.0.0.1`・`::1` からの呼び出しと、
   管理者の API キーの呼び出しだけ(ほかは 403・`code: local_only`。`api` の `pcSide`)。サーバーの PC と、ほかの人が使っているモデルに関わるため。
   管理者は 0018 の 11-0 で足した(下の「管理者」)
-- **待ち受けのアドレス**:`-host`(既定 `127.0.0.1`)。ループバックの外ならログインを必ず要るようにする(認証が無いまま LAN に出さない)
+- **待ち受けのアドレス**:`-host`(既定 `127.0.0.1`)。ループバックの外ならログインを必ず要るようにする(認証が無いまま LAN に出さない)。
+  `-addr アドレス:ポート` は `-host`・`-port` をまとめて書く形(0042)
+- **道の頭(base。0042)**:`-base /aibow` で、全部の道(画面・`/v1/…`・`/aibow/ui/…` など)を `/aibow/` の下に載せる(`_cmd/aibow-server` の `mount`。`http.StripPrefix` で頭を外してから中の道に渡すので、`api`・`ui`・`auth` は base を知らない)。
+  画面は自分の場所からの相対パス(`aibow/ui/call/…`)で口を呼び、ビルドした index.html も `./assets/…` を指すので、頭が付いても・プロキシが頭を外しても同じ画面で動く。
+  リバースプロキシの後ろに置くための形で、同じ PC のプロキシ越しの呼び出しは `api.IsLocal` が `127.0.0.1` からと見なす(usage.md の「リバースプロキシの後ろに置く」)
 - **HTTPS**:`tlsCert`・`tlsKey` を書くと `ServeTLS`(TLS 1.2 以上)。証明書なしで外に出すときは、警告して HTTP で動かす。ログインの cookie には `Secure` が付く
 - **自己署名の証明書**(`aibow-server cert`):誰も保証していない証明書なので、つなぐ側が「この証明書を信頼する」と決める。
   アプリは `serverCert`(`api/client` の `TrustCert`。OS の認証局に足すだけなので、ほかの証明書のサーバーにはつながらない)、curl は `--cacert`、Node.js は `NODE_EXTRA_CA_CERTS`、ブラウザは警告の画面で先へ進む
