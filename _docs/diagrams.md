@@ -73,7 +73,7 @@ flowchart LR
   subgraph SRV["サーバーの PC：aibow-server"]
     AUTH["aibow/auth（ログイン・アプリ用トークン）"]
     API["aibow/api（OpenAI 互換＋aibow 専用の口）"] <--> SEAT{{"順番待ちの席 api.Seat"}} <--> ENG["aibow/engine → llama.cpp → GPU"]
-    STO["/aibow/store/"] <--> SDB[("server.db")]
+    STO["/_aibow/store/"] <--> SDB[("server.db")]
   end
 
   APIC <-->|"HTTP(S)・トークン"| API
@@ -96,7 +96,7 @@ flowchart LR
   BR["ブラウザ<br/>（aibow/web の同じ画面）"]
 
   subgraph SRV["サーバーの PC：aibow-server"]
-    H["画面用の口 ui.Handler<br/>/aibow/ui/call/{メソッド}・SSE /aibow/ui/events"]
+    H["画面用の口 ui.Handler<br/>/_aibow/ui/call/{メソッド}・SSE /_aibow/ui/events"]
     H <--> SVC["aibow/ui（ServerHost・Browser）"]
     SVC <--> CONV["aibow（会話の仕組み）<br/>IgnoreWorkDir・利用者は ctx"]
     CONV <--> SEAT{{"api.Seat（OpenAI 互換の口と共有）"}} <--> ENG["engine → llama.cpp → GPU"]

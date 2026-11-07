@@ -9,13 +9,13 @@
 // 標準の OpenAI 互換の形(/v1/chat/completions)に、aibow 専用の口と欄(api.md の「aibow 専用の口と欄」)を足して使う:
 //
 //	生成            POST /v1/chat/completions(ストリーミング。"aibow": {"return_prompt": true} を付ける)
-//	トークン数      POST /aibow/count-tokens
+//	トークン数      POST /_aibow/count-tokens
 //	モデルの一覧    GET  /models
 //	読み込む        POST /models/load
 //	降ろす          POST /models/unload
-//	GPU の層数      POST /aibow/gpu-layers
-//	置き場所        GET /aibow/places・POST /aibow/places/add・POST /aibow/places/remove
-//	サーバーの設定  GET /aibow/settings(表示だけ)
+//	GPU の層数      POST /_aibow/gpu-layers
+//	置き場所        GET /_aibow/places・POST /_aibow/places/add・POST /_aibow/places/remove
+//	サーバーの設定  GET /_aibow/settings(表示だけ)
 //
 // 書式(チャットテンプレート)はサーバーが当てる。ここは会話を JSON にして送るだけで、書式を知らない(0015 の 5)。
 // 会話 → JSON → 会話 の往復で1文字も変えない(KV キャッシュを今と同じだけ使い回すため。0015 の 8)ことを、テストで確かめている。
@@ -272,14 +272,14 @@ func (c *Client) Post(ctx context.Context, path string, body, out any) error {
 // storeTimeout は、保存の口の1回のやり取りの上限(保存は生成と違って、すぐ終わるはずなので)。
 const storeTimeout = 30 * time.Second
 
-// Me は、API キーの持ち主の名前(GET /aibow/auth/key。0017 の 10-4)。aibow-server がキーの要らない形なら login が false(誰でもない)。
+// Me は、API キーの持ち主の名前(GET /_aibow/auth/key。0017 の 10-4)。aibow-server がキーの要らない形なら login が false(誰でもない)。
 // 画面のアプリが、誰としてつないでいるかを画面に出すのに使う。
 func (c *Client) Me() (name string, login bool, err error) {
 	var me struct {
 		Login bool   `json:"login"`
 		Name  string `json:"name"`
 	}
-	if err := c.call(http.MethodGet, "/aibow/auth/key", nil, &me, shortTimeout); err != nil {
+	if err := c.call(http.MethodGet, "/_aibow/auth/key", nil, &me, shortTimeout); err != nil {
 		return "", false, err
 	}
 	return me.Name, me.Login, nil

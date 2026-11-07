@@ -4,7 +4,7 @@
 // 実行する場所に頼ることを、ここだけを通して使う。中身は2つあり、起動のとき(main.tsx の initBackend)にどちらかを読み込む:
 //
 //	デスクトップのアプリ(Wails)… backendWails.ts。Wails のバインディングとランタイムをそのまま渡す
-//	ブラウザ(aibow-server)    … backendWeb.ts。fetch(POST /aibow/ui/call/{メソッド})と SSE(GET /aibow/ui/events)
+//	ブラウザ(aibow-server)    … backendWeb.ts。fetch(POST /_aibow/ui/call/{メソッド})と SSE(GET /_aibow/ui/events)
 //
 // ブラウザでは @wailsio/runtime を読み込まない(読み込むと、ページ全体の右クリックのメニューを消すなどの動きが入るため)。
 // そのため、どちらも import() であとから読み込み、ここは型と、読み込んだほうへの受け渡しだけを持つ。
@@ -126,7 +126,7 @@ export interface MyUsage {
   month: UsageTotal;
 }
 
-// AdminAPI は、利用者の管理の口(aibow-server の /aibow/admin/)。リンクの合言葉と API キーは返事でだけ受け取れる
+// AdminAPI は、利用者の管理の口(aibow-server の /_aibow/admin/)。リンクの合言葉と API キーは返事でだけ受け取れる
 export interface AdminAPI {
   users(): Promise<AdminUser[]>;
   create(name: string): Promise<Link>;          // 作って、招待のリンク

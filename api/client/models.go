@@ -33,7 +33,7 @@ type serverModels struct {
 	Loading string            `json:"loading"` // サーバーが入れ替えている先のモデル(入れ替えていなければ空)
 }
 
-// loadResult は POST /models/load と POST /aibow/gpu-layers の返事。
+// loadResult は POST /models/load と POST /_aibow/gpu-layers の返事。
 type loadResult struct {
 	Model *engine.ModelInfo `json:"model"`
 }
@@ -88,7 +88,7 @@ func (c *Client) LoadModel(id string) (*engine.ModelInfo, error) {
 func (c *Client) SetGPULayers(id string, n int) (*engine.ModelInfo, error) {
 	var r loadResult
 	body := map[string]any{"model": id, "n_gpu_layers": n}
-	if err := c.call(http.MethodPost, "/aibow/gpu-layers", body, &r, loadTimeout); err != nil {
+	if err := c.call(http.MethodPost, "/_aibow/gpu-layers", body, &r, loadTimeout); err != nil {
 		return nil, err
 	}
 	if r.Model != nil {
@@ -114,7 +114,7 @@ func (c *Client) UnloadModel() error {
 // Places は、サーバーのモデルの置き場所(パスはサーバーの PC のもの)。
 func (c *Client) Places() ([]models.Place, error) {
 	var r placeList
-	if err := c.call(http.MethodGet, "/aibow/places", nil, &r, shortTimeout); err != nil {
+	if err := c.call(http.MethodGet, "/_aibow/places", nil, &r, shortTimeout); err != nil {
 		return nil, err
 	}
 	return r.Places, nil
@@ -123,7 +123,7 @@ func (c *Client) Places() ([]models.Place, error) {
 // AddPlace は、サーバーの PC の path を置き場所に足させる。サーバーが、そのパスがあるかを確かめる(0015 の 31)。返事は足したあとの一覧。
 func (c *Client) AddPlace(path string) ([]models.Place, error) {
 	var r placeList
-	if err := c.call(http.MethodPost, "/aibow/places/add", map[string]string{"path": path}, &r, shortTimeout); err != nil {
+	if err := c.call(http.MethodPost, "/_aibow/places/add", map[string]string{"path": path}, &r, shortTimeout); err != nil {
 		return nil, err
 	}
 	return r.Places, nil
@@ -132,13 +132,13 @@ func (c *Client) AddPlace(path string) ([]models.Place, error) {
 // RemovePlace は、足した置き場所を外させる。返事は外したあとの一覧。
 func (c *Client) RemovePlace(path string) ([]models.Place, error) {
 	var r placeList
-	if err := c.call(http.MethodPost, "/aibow/places/remove", map[string]string{"path": path}, &r, shortTimeout); err != nil {
+	if err := c.call(http.MethodPost, "/_aibow/places/remove", map[string]string{"path": path}, &r, shortTimeout); err != nil {
 		return nil, err
 	}
 	return r.Places, nil
 }
 
-// placeList は /aibow/places の返事。
+// placeList は /_aibow/places の返事。
 type placeList struct {
 	Places []models.Place `json:"places"`
 }
@@ -159,7 +159,7 @@ type ServerSettings struct {
 // Settings は、表示だけのサーバーの設定を聞く。
 func (c *Client) Settings() (ServerSettings, error) {
 	var r ServerSettings
-	err := c.call(http.MethodGet, "/aibow/settings", nil, &r, shortTimeout)
+	err := c.call(http.MethodGet, "/_aibow/settings", nil, &r, shortTimeout)
 	return r, err
 }
 
@@ -227,7 +227,7 @@ func (c *Client) CountTokens(p format.Prompt) (int, error) {
 	var r struct {
 		NTokens int `json:"n_tokens"`
 	}
-	if err := c.call(http.MethodPost, "/aibow/count-tokens", req, &r, shortTimeout); err != nil {
+	if err := c.call(http.MethodPost, "/_aibow/count-tokens", req, &r, shortTimeout); err != nil {
 		return 0, err
 	}
 	return r.NTokens, nil

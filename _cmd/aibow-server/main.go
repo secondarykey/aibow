@@ -14,7 +14,7 @@
 // 画面のアプリをここにつないでいるとき(settings.json の serverUrl。0015)は、アプリは GPU を使わないので同時に動かせる。
 //
 // ステップ9(0016)で、ブラウザの会話も持つようにした(browser.go)。会話の仕組みと保存(server.db)をここで動かし、
-// 画面用の口(/aibow/ui/)で出す。生成は同じ engine を使い、OpenAI 互換の口と同じ順番待ちの席を通す。
+// 画面用の口(/_aibow/ui/)で出す。生成は同じ engine を使い、OpenAI 互換の口と同じ順番待ちの席を通す。
 package main
 
 import (

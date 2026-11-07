@@ -28,7 +28,7 @@ aibow の組み込みのツール: 会話の仕組み ⇄ aibow/mcp/client の L
 OpenAI 互換のクライアント(Cline など)⇄ HTTP(S)(既定は 127.0.0.1。外では API キー)⇄ aibow-server(_cmd/aibow-server)= aibow/api ⇄ aibow/engine
 画面のアプリを aibow-server につなぐとき(settings.json の serverUrl。ステップ8・10):aibow ⇄ aibow/api/client(生成)・aibow/store/remote(保存)⇄ HTTP ⇄ aibow-server(アプリは llama.cpp を読み込まず、会話は server.db。
   つながないとき(既定)は上の図のとおりアプリの中で動かし、そのときは aibow-server と同時に使わない)
-ブラウザ(http://127.0.0.1:8089/。ステップ9)⇄ HTTP(S)(画面と /aibow/ui/ の呼び出しと SSE。ログインは cookie のセッション。ステップ10)⇄ aibow-server = aibow/ui ⇄ aibow(ツールはサーバーの PC で動く。配るプロファイルで選んだ資料のフォルダを読み書きする。ステップ12)⇄ aibow/engine
+ブラウザ(http://127.0.0.1:8089/。ステップ9)⇄ HTTP(S)(画面と /_aibow/ui/ の呼び出しと SSE。ログインは cookie のセッション。ステップ10)⇄ aibow-server = aibow/ui ⇄ aibow(ツールはサーバーの PC で動く。配るプロファイルで選んだ資料のフォルダを読み書きする。ステップ12)⇄ aibow/engine
   (画面は aibow/web に埋め込んだもので、デスクトップのアプリと同じ。会話は aibow-server の server.db。生成は OpenAI 互換の口と同じ engine・同じ順番待ちの席 api.Seat)
 利用者(ステップ10):aibow-server の server.db に利用者・セッション・API キー(aibow/auth)。会話・プロファイル・表示の設定は持ち主で分かれ、誰のものかは ctx で運ぶ(aibow.WithUser)。
   既定でログインと API キーが要る(0020。login: false で 127.0.0.1 だけならログインなし(利用者 local))。-host で外に出すと、書いた値によらず要る([_docs/usage.md](_docs/usage.md) の「ほかの PC から使う」)
@@ -51,13 +51,13 @@ OpenAI 互換のクライアント(Cline など)⇄ HTTP(S)(既定は 127.0.0.1�
 | `format/` | 書式(`format` パッケージ。チャットテンプレートと、会話の仕組みとエンジンの間で受け渡す形 `Message` / `Prompt` / `Output` / `ToolCall`)。`tool` だけを使う |
 | `models/` | 使えるモデルの一覧(`models` パッケージ。GGUF と Ollama の目録と、画面で足した置き場所。ステップ8)と、GGUF の先頭からモデルの種類だけを読む `Arch`。何にも依存しない |
 | `tool/` | ツール(`tool` パッケージ)。ツールの形と組み込みのツール・作業フォルダのツール。LLM・書式・会話・保存を import しない(MCP でツールだけを使うため) |
-| `store/` | 会話の保存先(SQLite)と、利用者・セッション・API キー(`auth.Store`)。`store/remote/` は会話の保存を HTTP 越しに使う口(aibow-server の `/aibow/store/`)とその HTTP 版(アプリの側。0017 の 10-3) |
+| `store/` | 会話の保存先(SQLite)と、利用者・セッション・API キー(`auth.Store`)。`store/remote/` は会話の保存を HTTP 越しに使う口(aibow-server の `/_aibow/store/`)とその HTTP 版(アプリの側。0017 の 10-3) |
 | `mcp/client/` | MCP のクライアント(`client` パッケージ。SDK のパッケージ名 `mcp` と重ならないよう `mcp/` の下に置く。サーバーは `mcp/server/` に並べる)。`settings.json` の MCP のサーバーを起動し、そのツールを `tool.Tool` として見せる。aibow の中で `mcp/server` を動かし、組み込みのツールを MCP 越しに渡す(`Local`)。`tool` と `mcp/server` を import し、ルートの `aibow` は import しない |
 | `mcp/server/` | MCP のサーバー(`server` パッケージ。ステップ5)。`tool` のツールを MCP のツールとして出す。書き換えるツールはサーバーからユーザーに確かめる(MRTR)。`tool` と SDK だけを使い、ルートの `aibow` は import しない |
 | `api/` | OpenAI 互換の API(`api` パッケージ。ステップ6)。`engine` で生成だけを使い、ルートの `aibow`(会話の仕組み)は import しない。HTTP は標準の `net/http`。ステップ8で aibow 専用の口と欄(モデルの一覧・読み込み・トークン数など)を足した。生成の順番待ちの席 `Seat` はブラウザの会話(`ui`)と分け合う(ステップ9) |
-| `auth/` | aibow-server の利用者とログイン(`auth` パッケージ。ステップ10の 10-1)。パスワードのハッシュ(`crypto/pbkdf2`)・cookie のセッション・ログインの口(`/aibow/auth/`)・アプリ用のトークン(0019)・パスワードを決めるリンク(0022)・証明書のフィンガープリント。認証だけを受け持ち、ルートの `aibow` は import しない。保存は `store`(server.db) |
+| `auth/` | aibow-server の利用者とログイン(`auth` パッケージ。ステップ10の 10-1)。パスワードのハッシュ(`crypto/pbkdf2`)・cookie のセッション・ログインの口(`/_aibow/auth/`)・アプリ用のトークン(0019)・パスワードを決めるリンク(0022)・証明書のフィンガープリント。認証だけを受け持ち、ルートの `aibow` は import しない。保存は `store`(server.db) |
 | `api/client/` | aibow-server につなぐクライアント(`client` パッケージ。ステップ8)。会話の仕組みの `Generator` と `ModelLoader` の HTTP 版。ルートの `aibow` は import しない |
-| `ui/` | 画面向けの処理(`ui` パッケージ。ステップ9の 9-0 で `_cmd/aibow` から切り出した)。画面から呼ぶメソッド(`Service`。モデル・会話・設定・送信)と、モデルを扱う係(直接 `DirectHost`・aibow-server 越し `RemoteHost`)。ルートの `aibow` を使い、Wails を import しない。デスクトップのアプリは `ChatService` に埋め込んで Wails に渡す。ブラウザ向けには aibow-server が使う:aibow-server の engine でモデルを扱う係(`ServerHost`)と、画面用の HTTP の口(`Handler`。`/aibow/ui/call/{メソッド}` と SSE の `/aibow/ui/events`)。9-1。仕組みは [_docs/api.md](_docs/api.md) の「画面用の口」 |
+| `ui/` | 画面向けの処理(`ui` パッケージ。ステップ9の 9-0 で `_cmd/aibow` から切り出した)。画面から呼ぶメソッド(`Service`。モデル・会話・設定・送信)と、モデルを扱う係(直接 `DirectHost`・aibow-server 越し `RemoteHost`)。ルートの `aibow` を使い、Wails を import しない。デスクトップのアプリは `ChatService` に埋め込んで Wails に渡す。ブラウザ向けには aibow-server が使う:aibow-server の engine でモデルを扱う係(`ServerHost`)と、画面用の HTTP の口(`Handler`。`/_aibow/ui/call/{メソッド}` と SSE の `/_aibow/ui/events`)。9-1。仕組みは [_docs/api.md](_docs/api.md) の「画面用の口」 |
 | `web/` | 画面のビルド結果(`web` パッケージ。ステップ9の 9-2)。vite が `_cmd/aibow/frontend` から `web/dist/app` に書き、デスクトップのアプリと aibow-server の両方が `web.Files()` で埋め込む(写さない)。ビルドしていなければ `web/dist/index.html`(ビルドの仕方だけのページ) |
 | `git/` | アプリが行う Git の操作(`git` パッケージ。0039)。`git` の exe を `os/exec` で呼ぶ(外部パッケージは使わない)。worktree を作る・本体の状態・差分・`git apply` で当てる・消す。ルートの `aibow`・`tool`・Wails を import しない(aibow-server からも使えるように。モデルに見せるツールは `tool`、アプリが行う Git の操作は `git`) |
 | `genlog/` | aibow-server の使用量の記録(0033)で使う形と、生成に付ける付箋(道・用途・会話・順番待ちを ctx で運ぶ)。何にも依存しない(会話の仕組み・`api`・`api/client`・`ui`・`store` から使う)。記録するのは `_cmd/aibow-server` の記録付きの engine |

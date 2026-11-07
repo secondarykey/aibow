@@ -8,7 +8,7 @@
 //
 // 形は画面用の口(ui/web.go)にそろえた:
 //
-//	POST /aibow/store/{メソッド}   本文は引数の JSON の配列(ctx は除く)。返事は戻り値(error を除く)の JSON の配列
+//	POST /_aibow/store/{メソッド}   本文は引数の JSON の配列(ctx は除く)。返事は戻り値(error を除く)の JSON の配列
 //	エラー                         {"error": {"message", "type", "code"}}。code で ErrNotFound などを見分け、Client が同じエラーに戻す
 //
 // 誰のものかは、サーバーが API キー(か、ログインなしの形ならログインなしの形の利用者)で決める。Client は ctx の利用者を送らない(偽れないように)。

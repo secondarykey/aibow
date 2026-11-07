@@ -125,7 +125,7 @@ func jobContext(ctx context.Context, a *aibowRequest, wait time.Duration) contex
 }
 
 // readChatRequest は本文を読み、書式の形にする。読めなければ 400 を返して false。
-// /v1/chat/completions のほか、同じ本文を受け取る POST /apply-template・POST /aibow/count-tokens でも使う。
+// /v1/chat/completions のほか、同じ本文を受け取る POST /apply-template・POST /_aibow/count-tokens でも使う。
 func readChatRequest(w http.ResponseWriter, r *http.Request, defaultThink bool) (chatRequest, format.Prompt, bool) {
 	var req chatRequest
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBody)).Decode(&req); err != nil {
@@ -420,7 +420,7 @@ type templateResult struct {
 	Prompt string `json:"prompt"`
 }
 
-// countResult は POST /aibow/count-tokens の返事。
+// countResult は POST /_aibow/count-tokens の返事。
 type countResult struct {
 	NTokens int `json:"n_tokens"`
 }
@@ -440,7 +440,7 @@ func (s *Server) handleApplyTemplate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, templateResult{Prompt: prompt})
 }
 
-// handleCountTokens は POST /aibow/count-tokens。本文は /apply-template と同じで、書式を当てた文字列のトークン数を返す。
+// handleCountTokens は POST /_aibow/count-tokens。本文は /apply-template と同じで、書式を当てた文字列のトークン数を返す。
 // 画面のメーターと compact の判断に使う(会話の仕組みの CountTokens)。llama.cpp の /tokenize は文字列を受け取るので、
 // 書式を当てる分まで1回で済むように別の口にした(文字列を往復させずに済む)。
 // 数えるのは生成中でもできる(engine の vocabMu)ので、順番は待たない。

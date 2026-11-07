@@ -2,9 +2,9 @@ package main
 
 // browser.go: ブラウザの会話(ステップ9。0016)。
 //
-// 会話の仕組み(ルートの aibow)と保存(SQLite)を aibow-server の中で動かし、画面用の口(ui.Handler。/aibow/ui/ の下)で出す。
+// 会話の仕組み(ルートの aibow)と保存(SQLite)を aibow-server の中で動かし、画面用の口(ui.Handler。/_aibow/ui/ の下)で出す。
 //
-//	ブラウザ ──HTTP──→ /aibow/ui/  → ui.Service → 会話の仕組み → engine ┐
+//	ブラウザ ──HTTP──→ /_aibow/ui/  → ui.Service → 会話の仕組み → engine ┐
 //	Cline など ──HTTP──→ /v1/ など → api ─────────────────────→ engine ┴─ 順番待ちの席は1つ(api.Seat)
 //
 // 生成は同じ engine を直接使い、OpenAI 互換の口と同じ席を通す(HTTP で自分自身に頼まない。0016 の 11)。
@@ -13,8 +13,8 @@ package main
 // 会話は server.db に保存し、画面のアプリの aibow.db とは別にする(0016 の 13)。
 //
 // 誰の会話かは、ここ(who)だけで決める(0017 の 12)。ログインが要る設定なら cookie のセッションの人(auth)、要らなければログインなしの形の利用者。
-// ログインの口は /aibow/auth/ の下(auth.Handler)。
-// 画面のアプリの保存の口(/aibow/store/。0017 の 10-3)も同じ server.db に載せる(アプリで作った会話をブラウザで開けるように)。
+// ログインの口は /_aibow/auth/ の下(auth.Handler)。
+// 画面のアプリの保存の口(/_aibow/store/。0017 の 10-3)も同じ server.db に載せる(アプリで作った会話をブラウザで開けるように)。
 
 import (
 	"context"
@@ -43,7 +43,7 @@ import (
 // startBrowser は、ブラウザの会話の会話の仕組みと画面用の口を作る。st は server.db(main が開いて閉じる。使用量の記録にも使うため。0033)。
 // initial は DB にまだ値が無いときの設定、url は aibow-server のアドレス(画面の「つなぎ先」に出す)。
 // gen は生成の係(記録付きの engine。OpenAI 互換の口と同じもの)。
-// 戻り値の handler は /aibow/ui/・/aibow/auth/・/aibow/store/・/aibow/admin/ の下を受け持つ。keys は API キーの係(利用者は同じ server.db にいるので、ここで作る)。
+// 戻り値の handler は /_aibow/ui/・/_aibow/auth/・/_aibow/store/・/_aibow/admin/ の下を受け持つ。keys は API キーの係(利用者は同じ server.db にいるので、ここで作る)。
 // close は終了のときに呼ぶ(生成を止める)。
 func startBrowser(c config, initial aibow.AppSettings, st *store.SQLite, gen ui.ServerEngine, mm *modelManager, nCtx int, url string, seat *api.Seat) (http.Handler, *auth.Keys, func(), error) {
 	log.Noticef("ブラウザの会話の保存先: %s", absPath(c.DBPath))
@@ -87,24 +87,24 @@ func startBrowser(c config, initial aibow.AppSettings, st *store.SQLite, gen ui.
 
 	sessions := auth.NewSessions(st)
 	mux := http.NewServeMux()
-	mux.Handle("/aibow/ui/", ui.Handler(svc, events, who(c.Login)))
+	mux.Handle("/_aibow/ui/", ui.Handler(svc, events, who(c.Login)))
 	keys := auth.NewKeys(st)
 	// 本人が自分の表示名・メールアドレス・パスワードを変える口は、画面のアプリからもアプリ用のトークンで呼べる(0031 の決定事項 45)
-	mux.Handle("/aibow/auth/", keys.WithBearer(auth.Handler(sessions, c.Login)))
+	mux.Handle("/_aibow/auth/", keys.WithBearer(auth.Handler(sessions, c.Login)))
 	// 保存の口は、API キーが要る形ならキーの持ち主、要らない形(127.0.0.1 だけでログインなし)ならログインなしの形の利用者
 	var storeH http.Handler = remote.Handler(st, func(*http.Request) (uuid.UUID, error) { return aibow.LocalUser, nil })
 	if c.KeysRequired() {
 		storeH = keys.RequireKey(remote.Handler(st, keyUser))
 	}
-	mux.Handle("/aibow/store/", storeH)
-	// 画面のアプリが、誰としてつないでいるかを聞く口(API キーの持ち主の名前。ブラウザの /aibow/auth/me にあたる)
-	mux.Handle("GET /aibow/auth/key", keys.MeHandler(c.KeysRequired()))
+	mux.Handle("/_aibow/store/", storeH)
+	// 画面のアプリが、誰としてつないでいるかを聞く口(API キーの持ち主の名前。ブラウザの /_aibow/auth/me にあたる)
+	mux.Handle("GET /_aibow/auth/key", keys.MeHandler(c.KeysRequired()))
 	// 管理者の画面の口(利用者の管理。0018 の決定事項 7)。ブラウザでログインした管理者だけ
-	mux.Handle("/aibow/admin/", adminHandler(st, initial))
+	mux.Handle("/_aibow/admin/", adminHandler(st, initial))
 	// 使用量(0033)。全員の分は管理者だけ(ログインなしの形ではサーバーの PC の上の画面)、自分の分はブラウザとアプリ(アプリ用のトークン)から
-	mux.Handle("/aibow/admin/usage", adminUsageHandler(st, c.Login, time.Now))
-	mux.Handle("/aibow/admin/usage/", adminUsageHandler(st, c.Login, time.Now))
-	mux.Handle("GET /aibow/auth/usage", keys.WithBearer(myUsageHandler(st, c.Login, time.Now)))
+	mux.Handle("/_aibow/admin/usage", adminUsageHandler(st, c.Login, time.Now))
+	mux.Handle("/_aibow/admin/usage/", adminUsageHandler(st, c.Login, time.Now))
+	mux.Handle("GET /_aibow/auth/usage", keys.WithBearer(myUsageHandler(st, c.Login, time.Now)))
 	stop := func() {
 		life.Stop()
 		if mcpm != nil {
@@ -229,18 +229,18 @@ func screen() http.Handler {
 	return mux
 }
 
-// routes は aibow-server の道筋。画面(/ と /assets/)・画面用の口(/aibow/ui/)とログインの口(/aibow/auth/)・保存の口(/aibow/store/)・
-// 管理者の口(/aibow/admin/)・それ以外(OpenAI 互換の口と aibow 専用の口)。
+// routes は aibow-server の道筋。画面(/ と /assets/)・画面用の口(/_aibow/ui/)とログインの口(/_aibow/auth/)・保存の口(/_aibow/store/)・
+// 管理者の口(/_aibow/admin/)・それ以外(OpenAI 互換の口と aibow 専用の口)。
 // 長いほうのパスが先に当たるので、画面の2つ以外はこれまでどおり api が受け取る(知らないパスの 404 も api の形)。
 func routes(apiH, browser, screen http.Handler) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("GET /{$}", screen)
 	mux.Handle("GET /assets/", screen)
 	mux.Handle("GET /favicon.ico", screen)
-	mux.Handle("/aibow/ui/", browser)
-	mux.Handle("/aibow/auth/", browser)
-	mux.Handle("/aibow/store/", browser)
-	mux.Handle("/aibow/admin/", browser)
+	mux.Handle("/_aibow/ui/", browser)
+	mux.Handle("/_aibow/auth/", browser)
+	mux.Handle("/_aibow/store/", browser)
+	mux.Handle("/_aibow/admin/", browser)
 	mux.Handle("/", apiH)
 	return mux
 }
@@ -249,7 +249,7 @@ func routes(apiH, browser, screen http.Handler) http.Handler {
 //
 //	/aibow/          → 画面(routes の /)
 //	/aibow/v1/…      → OpenAI 互換の口(routes の /v1/…)
-//	/aibow/aibow/ui/… → 画面用の口(routes の /aibow/ui/…。画面は自分の場所からの相対パスで呼ぶので、頭が2つ重なる)
+//	/aibow/_aibow/ui/… → 画面用の口(routes の /_aibow/ui/…。中の道は _aibow で base と重ならない)
 //
 // 中の道は base を知らない(http.StripPrefix が頭を外してから渡す)。リバースプロキシ(nginx など)で
 // https://example.com/aibow/ を aibow-server に渡すとき、頭を残したまま渡せるようにするためのもの。
@@ -260,7 +260,7 @@ func mount(base string, h http.Handler) http.Handler {
 	}
 	mux := http.NewServeMux()
 	// base+"/" の形で登録すると、/aibow(最後の / なし)は ServeMux が /aibow/ に転送する。
-	// 画面は自分の場所からの相対パスで口を呼ぶので、/aibow のまま開くと /aibow/ui/… を呼んでしまう。転送はそれを防ぐ
+	// 画面は自分の場所からの相対パスで口を呼ぶので、/aibow のまま開くと /_aibow/ui/… を呼んでしまう。転送はそれを防ぐ
 	mux.Handle(base+"/", http.StripPrefix(base, h))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "aibow-server は "+base+"/ の下で待ち受けています(-base・設定ファイルの base)。画面は "+base+"/、OpenAI 互換の口は "+base+"/v1 です", http.StatusNotFound)

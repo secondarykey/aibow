@@ -2,17 +2,17 @@ package auth
 
 // http.go: ログインの HTTP の口と、cookie からログインした人を決める係。
 //
-//	POST /aibow/auth/login   本文 {"name", "password"}。合っていれば cookie を渡して {"name"}、違えば 401。続けて間違えると 429(limiter.go)
-//	POST /aibow/auth/logout  セッションを消して、cookie を消す
-//	GET  /aibow/auth/me      {"login": ログインが要るか, "name": ログインしている人の名前(していなければ空)}。画面が最初に聞く
-//	POST /aibow/auth/token   本文 {"name", "password", "device"}。アプリのログイン(0019)。合っていればアプリ用のトークン(AppLogin)。間違いの数え方はログインと同じ
-//	POST /aibow/auth/token/revoke  Authorization: Bearer <トークン> のトークンを消す(アプリのログアウト)
-//	POST /aibow/auth/link/check    本文 {"token"}。パスワードを決めるリンクの持ち主の名前(0022)。使えなければ 400
-//	POST /aibow/auth/link          本文 {"token", "password"}。リンクでパスワードを決め、そのままログインする(cookie を渡す)
-//	POST /aibow/auth/password      本文 {"current", "password"}。ログインしている本人がパスワードを変える(新しい cookie を渡す。
+//	POST /_aibow/auth/login   本文 {"name", "password"}。合っていれば cookie を渡して {"name"}、違えば 401。続けて間違えると 429(limiter.go)
+//	POST /_aibow/auth/logout  セッションを消して、cookie を消す
+//	GET  /_aibow/auth/me      {"login": ログインが要るか, "name": ログインしている人の名前(していなければ空)}。画面が最初に聞く
+//	POST /_aibow/auth/token   本文 {"name", "password", "device"}。アプリのログイン(0019)。合っていればアプリ用のトークン(AppLogin)。間違いの数え方はログインと同じ
+//	POST /_aibow/auth/token/revoke  Authorization: Bearer <トークン> のトークンを消す(アプリのログアウト)
+//	POST /_aibow/auth/link/check    本文 {"token"}。パスワードを決めるリンクの持ち主の名前(0022)。使えなければ 400
+//	POST /_aibow/auth/link          本文 {"token", "password"}。リンクでパスワードを決め、そのままログインする(cookie を渡す)
+//	POST /_aibow/auth/password      本文 {"current", "password"}。ログインしている本人がパスワードを変える(新しい cookie を渡す。
 //	                               画面のアプリがアプリ用のトークンで呼んだときは、cookie の代わりに新しいトークン(AppLogin)を返す。0031)
-//	POST /aibow/auth/display       本文 {"display_name"}。ログインしている本人が表示名を変える(0031。空なら無し)
-//	POST /aibow/auth/email         本文 {"email"}。ログインしている本人がメールアドレスを変える(0031。空なら無し。重なれば 409)
+//	POST /_aibow/auth/display       本文 {"display_name"}。ログインしている本人が表示名を変える(0031。空なら無し)
+//	POST /_aibow/auth/email         本文 {"email"}。ログインしている本人がメールアドレスを変える(0031。空なら無し。重なれば 409)
 //
 // cookie は次の性質を付ける(どれも、ほかの人に合言葉を使われないため):
 //
@@ -75,7 +75,7 @@ func (s *Sessions) Middleware(next http.Handler) http.Handler {
 	})
 }
 
-// Me は GET /aibow/auth/me の返事。
+// Me は GET /_aibow/auth/me の返事。
 type Me struct {
 	Login bool   `json:"login"` // ログインが要るか(要らない形なら、画面はログインもログアウトも出さない)
 	Name  string `json:"name"`  // ログインしている人の名前。していなければ空
@@ -95,12 +95,12 @@ func meOf(u User) Me {
 	return Me{Login: true, Name: u.Name, Admin: u.Admin, DisplayName: u.DisplayName, Email: u.Email}
 }
 
-// Handler は /aibow/auth/ の下の口を返す。required はログインが要るか(aibow-server の設定)。
+// Handler は /_aibow/auth/ の下の口を返す。required はログインが要るか(aibow-server の設定)。
 // Middleware の内側に置く(me と logout は、ログインしている人を使う)。
 func Handler(s *Sessions, required bool) http.Handler {
 	lim := newLimiter(func() time.Time { return s.now() })
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /aibow/auth/me", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /_aibow/auth/me", func(w http.ResponseWriter, r *http.Request) {
 		me := Me{Login: required}
 		if u, ok := UserFrom(r.Context()); ok && required {
 			me = meOf(u)
@@ -113,7 +113,7 @@ func Handler(s *Sessions, required bool) http.Handler {
 		}
 		writeJSON(w, http.StatusOK, me)
 	})
-	mux.HandleFunc("POST /aibow/auth/login", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /_aibow/auth/login", func(w http.ResponseWriter, r *http.Request) {
 		if !required {
 			writeError(w, http.StatusBadRequest, "この aibow-server はログインなしで使う設定です")
 			return
@@ -148,7 +148,7 @@ func Handler(s *Sessions, required bool) http.Handler {
 		log.Noticef("ログインしました: %s(%s)", u.Name, addr)
 		writeJSON(w, http.StatusOK, meOf(u))
 	})
-	mux.HandleFunc("POST /aibow/auth/logout", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /_aibow/auth/logout", func(w http.ResponseWriter, r *http.Request) {
 		if c, err := r.Cookie(CookieName); err == nil {
 			if err := s.Logout(r.Context(), c.Value); err != nil {
 				log.Errorf("ログアウトできません: %v", err)
@@ -163,7 +163,7 @@ func Handler(s *Sessions, required bool) http.Handler {
 		writeJSON(w, http.StatusOK, Me{Login: required})
 	})
 	// アプリのログイン(0019)。名前とパスワードを確かめて、アプリ用のトークンを返す。間違いの回数はブラウザのログインと一緒に数える
-	mux.HandleFunc("POST /aibow/auth/token", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /_aibow/auth/token", func(w http.ResponseWriter, r *http.Request) {
 		if !required {
 			writeError(w, http.StatusBadRequest, "この aibow-server はログインなしで使う設定です(つなぐのに API キーもトークンも要りません)")
 			return
@@ -199,7 +199,7 @@ func Handler(s *Sessions, required bool) http.Handler {
 		writeJSON(w, http.StatusOK, login)
 	})
 	// アプリのログアウト。Authorization: Bearer のトークンを消す(期限が切れていても、無くても 200。消えていればよいので)
-	mux.HandleFunc("POST /aibow/auth/token/revoke", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /_aibow/auth/token/revoke", func(w http.ResponseWriter, r *http.Request) {
 		token, _ := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 		if token = strings.TrimSpace(token); !IsAppToken(token) {
 			writeError(w, http.StatusBadRequest, "消すアプリ用のトークンを Authorization: Bearer <トークン> で送ってください")
@@ -214,7 +214,7 @@ func Handler(s *Sessions, required bool) http.Handler {
 		writeJSON(w, http.StatusOK, map[string]any{})
 	})
 	// パスワードを決めるリンク(0022)。合言葉は画面が URL の # の後ろから読んで、本文で送ってくる
-	mux.HandleFunc("POST /aibow/auth/link/check", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /_aibow/auth/link/check", func(w http.ResponseWriter, r *http.Request) {
 		if !required {
 			writeError(w, http.StatusBadRequest, "この aibow-server はログインなしで使う設定なので、パスワードは使いません")
 			return
@@ -231,7 +231,7 @@ func Handler(s *Sessions, required bool) http.Handler {
 		}
 		writeJSON(w, http.StatusOK, map[string]string{"name": u.Name})
 	})
-	mux.HandleFunc("POST /aibow/auth/link", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /_aibow/auth/link", func(w http.ResponseWriter, r *http.Request) {
 		if !required {
 			writeError(w, http.StatusBadRequest, "この aibow-server はログインなしで使う設定なので、パスワードは使いません")
 			return
@@ -251,7 +251,7 @@ func Handler(s *Sessions, required bool) http.Handler {
 		log.Noticef("リンクでパスワードを決めました: %s(%s)", u.Name, remote(r))
 		writeJSON(w, http.StatusOK, meOf(u))
 	})
-	mux.HandleFunc("POST /aibow/auth/password", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /_aibow/auth/password", func(w http.ResponseWriter, r *http.Request) {
 		u, ok := UserFrom(r.Context())
 		if !required || !ok {
 			writeError(w, http.StatusUnauthorized, "ログインしてください")
@@ -302,7 +302,7 @@ func Handler(s *Sessions, required bool) http.Handler {
 		log.Noticef("パスワードを変えました: %s(%s。ほかのログイン中の画面とアプリはログインし直しになります)", u.Name, addr)
 		writeJSON(w, http.StatusOK, meOf(u))
 	})
-	mux.HandleFunc("POST /aibow/auth/display", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /_aibow/auth/display", func(w http.ResponseWriter, r *http.Request) {
 		u, ok := UserFrom(r.Context())
 		if !required || !ok {
 			writeError(w, http.StatusUnauthorized, "ログインしてください")
@@ -328,7 +328,7 @@ func Handler(s *Sessions, required bool) http.Handler {
 		u.DisplayName = name
 		writeJSON(w, http.StatusOK, meOf(u))
 	})
-	mux.HandleFunc("POST /aibow/auth/email", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /_aibow/auth/email", func(w http.ResponseWriter, r *http.Request) {
 		u, ok := UserFrom(r.Context())
 		if !required || !ok {
 			writeError(w, http.StatusUnauthorized, "ログインしてください")
@@ -360,7 +360,7 @@ func Handler(s *Sessions, required bool) http.Handler {
 		u.Email = email
 		writeJSON(w, http.StatusOK, meOf(u))
 	})
-	mux.HandleFunc("/aibow/auth/", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/_aibow/auth/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "このパスはありません: "+r.Method+" "+r.URL.Path)
 	})
 	return mux

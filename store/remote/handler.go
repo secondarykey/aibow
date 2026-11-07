@@ -1,6 +1,6 @@
 package remote
 
-// handler.go: aibow-server の保存の口(POST /aibow/store/{メソッド})。
+// handler.go: aibow-server の保存の口(POST /_aibow/store/{メソッド})。
 
 import (
 	"context"
@@ -17,7 +17,7 @@ import (
 // Who は、保存の口を呼んだ利用者を決める係(aibow-server が渡す。API キーの持ち主か、ログインなしの形の利用者)。
 type Who func(r *http.Request) (uuid.UUID, error)
 
-// Handler は保存の口(/aibow/store/ の下)を返す。呼べるのは Backend のメソッドだけ。
+// Handler は保存の口(/_aibow/store/ の下)を返す。呼べるのは Backend のメソッドだけ。
 func Handler(st Backend, who Who) http.Handler {
 	v := reflect.ValueOf(&appAsUser{st})
 	methods := map[string]reflect.Value{}
@@ -27,7 +27,7 @@ func Handler(st Backend, who Who) http.Handler {
 		methods[name] = v.MethodByName(name)
 	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /aibow/store/{method}", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /_aibow/store/{method}", func(w http.ResponseWriter, r *http.Request) {
 		name := r.PathValue("method")
 		m, ok := methods[name]
 		if !ok {
@@ -41,8 +41,8 @@ func Handler(st Backend, who Who) http.Handler {
 		}
 		call(w, r.WithContext(aibow.WithUser(r.Context(), user)), name, m)
 	})
-	mux.HandleFunc("/aibow/store/", func(w http.ResponseWriter, r *http.Request) {
-		writeError(w, http.StatusNotFound, "", "このパスはありません: "+r.Method+" "+r.URL.Path+"(あるのは POST /aibow/store/{メソッド} です)")
+	mux.HandleFunc("/_aibow/store/", func(w http.ResponseWriter, r *http.Request) {
+		writeError(w, http.StatusNotFound, "", "このパスはありません: "+r.Method+" "+r.URL.Path+"(あるのは POST /_aibow/store/{メソッド} です)")
 	})
 	return mux
 }

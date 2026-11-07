@@ -90,7 +90,7 @@ func TestAppTokenHTTP(t *testing.T) {
 	auth.SetNow(s, func() time.Time { return now })
 	auth.SetKeysNow(k, func() time.Time { return now })
 	mux := http.NewServeMux()
-	mux.Handle("/aibow/auth/", auth.Handler(s, true))
+	mux.Handle("/_aibow/auth/", auth.Handler(s, true))
 	mux.Handle("/v1/", k.RequireKey(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		who, _ := auth.UserFrom(r.Context())
 		w.Write([]byte(who.Name))
@@ -120,10 +120,10 @@ func TestAppTokenHTTP(t *testing.T) {
 		return res.StatusCode, b.String()
 	}
 
-	if code, _ := call("/aibow/auth/token", "", `{"name":"bob","password":"x","device":"pc1"}`); code != http.StatusUnauthorized {
+	if code, _ := call("/_aibow/auth/token", "", `{"name":"bob","password":"x","device":"pc1"}`); code != http.StatusUnauthorized {
 		t.Errorf("違うパスワード: %d", code)
 	}
-	code, body := call("/aibow/auth/token", "", `{"name":"bob","password":"pw","device":"pc1"}`)
+	code, body := call("/_aibow/auth/token", "", `{"name":"bob","password":"pw","device":"pc1"}`)
 	var login auth.AppLogin
 	if code != http.StatusOK || json.Unmarshal([]byte(body), &login) != nil || login.Token == "" {
 		t.Fatalf("トークン: %d %s", code, body)
@@ -135,12 +135,12 @@ func TestAppTokenHTTP(t *testing.T) {
 	if code, body := call("/v1/models", login.Token, ""); code != http.StatusUnauthorized || !strings.Contains(body, "token_expired") {
 		t.Errorf("期限切れ: %d %s", code, body)
 	}
-	code, body = call("/aibow/auth/token", "", `{"name":"bob","password":"pw","device":"pc1"}`)
+	code, body = call("/_aibow/auth/token", "", `{"name":"bob","password":"pw","device":"pc1"}`)
 	json.Unmarshal([]byte(body), &login)
-	if code, _ := call("/aibow/auth/token/revoke", "aibow_キー", ""); code != http.StatusBadRequest {
+	if code, _ := call("/_aibow/auth/token/revoke", "aibow_キー", ""); code != http.StatusBadRequest {
 		t.Errorf("API キーは revoke で消さない: %d", code)
 	}
-	if code, _ := call("/aibow/auth/token/revoke", login.Token, ""); code != http.StatusOK {
+	if code, _ := call("/_aibow/auth/token/revoke", login.Token, ""); code != http.StatusOK {
 		t.Errorf("revoke: %d", code)
 	}
 	if code, _ := call("/v1/models", login.Token, ""); code != http.StatusUnauthorized {
@@ -150,7 +150,7 @@ func TestAppTokenHTTP(t *testing.T) {
 	// ログインの要らない形では出さない
 	srv2 := httptest.NewServer(auth.Handler(s, false))
 	defer srv2.Close()
-	res, _ := http.Post(srv2.URL+"/aibow/auth/token", "application/json", strings.NewReader(`{"name":"bob","password":"pw","device":"pc1"}`))
+	res, _ := http.Post(srv2.URL+"/_aibow/auth/token", "application/json", strings.NewReader(`{"name":"bob","password":"pw","device":"pc1"}`))
 	if res.StatusCode != http.StatusBadRequest {
 		t.Errorf("ログインなしの形: %d", res.StatusCode)
 	}
@@ -173,7 +173,7 @@ func TestMeSetup(t *testing.T) {
 	me := func(required bool) auth.Me {
 		t.Helper()
 		rec := httptest.NewRecorder()
-		auth.Handler(s, required).ServeHTTP(rec, httptest.NewRequest("GET", "/aibow/auth/me", nil))
+		auth.Handler(s, required).ServeHTTP(rec, httptest.NewRequest("GET", "/_aibow/auth/me", nil))
 		var m auth.Me
 		json.NewDecoder(rec.Body).Decode(&m)
 		return m

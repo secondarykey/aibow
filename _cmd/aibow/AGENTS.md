@@ -64,7 +64,7 @@ Ollama の保存先は Ollama と同じ `OLLAMA_MODELS`。意味と既定値は 
 ## Go と画面のやり取り
 
 - 画面の部品は、Go を呼ぶ係 `frontend/src/backend.ts` だけを通して Go を呼ぶ(0016 の 9-0)。`backend.ts` は型と受け渡しだけで、中身は2つ:
-  `backendWails.ts`(デスクトップ。バインディングと `@wailsio/runtime`)と `backendWeb.ts`(ブラウザ。`POST /aibow/ui/call/{メソッド}` と SSE。0016 の 9-2)。
+  `backendWails.ts`(デスクトップ。バインディングと `@wailsio/runtime`)と `backendWeb.ts`(ブラウザ。`POST /_aibow/ui/call/{メソッド}` と SSE。0016 の 9-2)。
   `main.tsx` が最初の描画の前に `initBackend` を呼び、aibow-server が index.html に足す印(`<meta name="aibow-browser">`)があればブラウザのほうを読み込む。
   ブラウザでは `@wailsio/runtime` を読み込まない(読み込むと、ページ全体の右クリックのメニューが消えるなど、Wails の動きが入るため)。
   見た目の分かれ道は `isBrowser`(`backend.ts`)だけで決める。Go の型(バインディングの `models.ts`)は interface と enum だけなので、部品から直接 import してよい

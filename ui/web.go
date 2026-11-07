@@ -6,11 +6,11 @@ package ui
 // 何が起きているかを見比べられるように、形を Wails にそろえた:
 //
 //	                       デスクトップ(Wails)                       ブラウザ(この口)
-//	メソッドの呼び出し    ChatService.Send(id, text, files)           POST /aibow/ui/call/Send   本文 ["<id>", "<text>", null]
+//	メソッドの呼び出し    ChatService.Send(id, text, files)           POST /_aibow/ui/call/Send   本文 ["<id>", "<text>", null]
 //	                      (Wails がメソッドの名前と引数の配列を送る)   返事は戻り値の JSON。error なら 500 と {"error": {"message"}}
-//	Go からの知らせ       Wails のイベント(chat・models)              GET /aibow/ui/events(SSE。event: chat / data: ChatEvent の JSON)
+//	Go からの知らせ       Wails のイベント(chat・models)              GET /_aibow/ui/events(SSE。event: chat / data: ChatEvent の JSON)
 //	停止                  Promise の cancel() → ctx がキャンセル       fetch を止める(AbortController)→ つながりが切れて r.Context() が終わる
-//	ツールの確認          confirm のイベント → ConfirmTool             SSE の chat(confirm)→ POST /aibow/ui/call/ConfirmTool(0024 の 12-1a)
+//	ツールの確認          confirm のイベント → ConfirmTool             SSE の chat(confirm)→ POST /_aibow/ui/call/ConfirmTool(0024 の 12-1a)
 //
 // 確認のカードは、送信の長い呼び出しが返る前に届き、その答えは別の呼び出しで返す。会話の仕組みは答えが来るまでループを止めて待つ
 // (Wails の中で済んでいたことを、知らせ(SSE)と呼び出し(HTTP)に分けただけ)。送信の呼び出しが切れたら(タブを閉じた)停止と同じ。
@@ -99,7 +99,7 @@ func init() {
 // Who は、リクエストを送ってきた人を決める係(aibow-server が渡す)。決められなければエラー(401 で断る)。
 type Who func(r *http.Request) (Caller, error)
 
-// Handler は、画面用の口(/aibow/ui/ の下)を返す。ev は New に Notify として渡したもの(SSE で送る)。who は利用者を決める係。
+// Handler は、画面用の口(/_aibow/ui/ の下)を返す。ev は New に Notify として渡したもの(SSE で送る)。who は利用者を決める係。
 func Handler(s *Service, ev *Events, who Who) http.Handler {
 	methods := map[string]reflect.Value{}
 	v := reflect.ValueOf(s)
@@ -111,7 +111,7 @@ func Handler(s *Service, ev *Events, who Who) http.Handler {
 		methods[name] = m
 	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /aibow/ui/call/{method}", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /_aibow/ui/call/{method}", func(w http.ResponseWriter, r *http.Request) {
 		name := r.PathValue("method")
 		m, ok := methods[name]
 		if !ok {
@@ -132,7 +132,7 @@ func Handler(s *Service, ev *Events, who Who) http.Handler {
 		ctx := genlog.WithRoute(withCaller(aibow.WithUser(r.Context(), c.ID), c), genlog.RouteBrowser)
 		call(w, r.WithContext(ctx), name, m)
 	})
-	mux.HandleFunc("GET /aibow/ui/events", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /_aibow/ui/events", func(w http.ResponseWriter, r *http.Request) {
 		c, err := who(r)
 		if err != nil {
 			writeError(w, http.StatusUnauthorized, err.Error())
@@ -140,9 +140,9 @@ func Handler(s *Service, ev *Events, who Who) http.Handler {
 		}
 		ev.serve(w, r, c.ID)
 	})
-	mux.HandleFunc("/aibow/ui/", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/_aibow/ui/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "このパスはありません: "+r.Method+" "+r.URL.Path+
-			"(あるのは POST /aibow/ui/call/{メソッド}・GET /aibow/ui/events です)")
+			"(あるのは POST /_aibow/ui/call/{メソッド}・GET /_aibow/ui/events です)")
 	})
 	return mux
 }
@@ -295,7 +295,7 @@ func (e *Events) unsubscribe(ch chan sseEvent) {
 	log.Infof("ブラウザの知らせ(SSE)のつながりが切れました(つないでいる数: %d)", n)
 }
 
-// serve は GET /aibow/ui/events。つながりが切れるまで(ブラウザを閉じた・aibow-server を止めた)返らない。user はつないできた人。
+// serve は GET /_aibow/ui/events。つながりが切れるまで(ブラウザを閉じた・aibow-server を止めた)返らない。user はつないできた人。
 func (e *Events) serve(w http.ResponseWriter, r *http.Request, user uuid.UUID) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {

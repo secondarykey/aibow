@@ -477,7 +477,7 @@ aibow-server がログインの要る形・ほかの PC の aibow-server につ�
 - モデルの一覧と切り替えは aibow-server のもの。会話のモデルが違えば、送信の前に aibow-server が読み直します
 - 設定の画面の「モデル」のタブには、aibow-server で使えるモデル(名前・大きさ・読み込み中か)と、つなぎ先・作業領域だけが出ます。
   モデルの読み込み・降ろす・GPU の層数・置き場所は、画面からは変えません(サーバーの PC で決めることなので)。モデルは、会話を送信するときにその会話のモデルに切り替わります。
-  サーバーの PC で変えるときは、`server.json`(`modelsDir` など)か aibow-server の口を呼びます(`POST /aibow/gpu-layers`・`POST /aibow/places/add`・`POST /models/unload`。形は [api.md](api.md) の「aibow 専用の口と欄」)。
+  サーバーの PC で変えるときは、`server.json`(`modelsDir` など)か aibow-server の口を呼びます(`POST /_aibow/gpu-layers`・`POST /_aibow/places/add`・`POST /models/unload`。形は [api.md](api.md) の「aibow 専用の口と欄」)。
   覚えるのは aibow-server の PC の `server-models.json` で、アプリの中で動かすときの値とは別です
 - 作業領域の大きさは aibow-server が起動のときに決めた大きさ(`-ctx`。既定 32768)で固定です。会話の上限 + 返事の上限がこれに入らないと、「適用」したときに理由と対処を出します
 - aibow-server につながらないとき(起動していない・止めた)は、エラーのカードで伝え、入力欄の下のモデルの選択に「aibow-server につながりません」と出ます。
@@ -689,7 +689,7 @@ nginx・IIS などのリバースプロキシで、ほかのサイトと同じ�
 プロキシは `/aibow/` をパスを変えずに aibow-server へ渡します(nginx なら `location /aibow/ { proxy_pass http://127.0.0.1:8089; }`。`proxy_pass` の後ろにパスを書かない)。
 画面は自分の場所からの相対パスで口を呼ぶので、プロキシが頭を外して渡す形(base なしの aibow-server に `/aibow/` を `/` として渡す)でも動きます。
 
-- 画面の SSE(`/aibow/aibow/ui/events`)と返事の生成は長くつながったままなので、プロキシの読み込みの時間切れ・バッファを切ります(nginx なら `proxy_buffering off;` と長い `proxy_read_timeout`)
+- 画面の SSE(`/aibow/_aibow/ui/events`)と返事の生成は長くつながったままなので、プロキシの読み込みの時間切れ・バッファを切ります(nginx なら `proxy_buffering off;` と長い `proxy_read_timeout`)
 - **同じ PC のプロキシを通った呼び出しは、外からでもサーバーの PC の上(`127.0.0.1`)から来たように見えます**。aibow-server は接続の相手のアドレスしか見ないので、
   サーバーの PC からだけ許している操作(モデルを降ろす・GPU の層数・置き場所・全員の使用量)が誰にでもでき、`login: false` ならログインもなくなります。
   base を付けて `127.0.0.1` で待ち受けると、起動のときに注意が出ます。信用できる人だけが使う網に限ってください(`X-Forwarded-For` を見るかは 0042 の未決事項)

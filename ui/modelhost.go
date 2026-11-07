@@ -14,7 +14,7 @@ package ui
 // 8-4(モデルを扱う画面)で、降ろす・モデルごとの層の数・置き場所を足す / 外す・表示だけの設定を足した。
 // HTTP 越しのときは、そのどれもしない(2026-10-22、ユーザーと決めた)。降ろす・層の数・置き場所はサーバーの PC の事情で、
 // サーバーの側で決めること(中央の制御)。つないでくる側から変えるのは別の問題なので、画面のアプリは見せも変えもしない。
-// サーバーの PC の人は、aibow-server の server.json か口(POST /models/unload・/aibow/gpu-layers・/aibow/places/*)で変える。
+// サーバーの PC の人は、aibow-server の server.json か口(POST /models/unload・/_aibow/gpu-layers・/_aibow/places/*)で変える。
 
 import (
 	"context"

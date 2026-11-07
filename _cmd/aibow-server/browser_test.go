@@ -34,14 +34,14 @@ func TestRoutes(t *testing.T) {
 		{"GET", "/v1/models", "api"},
 		{"POST", "/v1/chat/completions", "api"},
 		{"GET", "/models", "api"},
-		{"POST", "/aibow/count-tokens", "api"},
+		{"POST", "/_aibow/count-tokens", "api"},
 		{"POST", "/", "api"}, // GET 以外の / は画面ではない(api の 404 の形)
 		{"GET", "/nothing", "api"},
-		{"POST", "/aibow/ui/call/Version", "ui"},
-		{"GET", "/aibow/ui/events", "ui"},
-		{"POST", "/aibow/auth/login", "ui"},              // ログインの口も、ブラウザの会話の係が受け持つ
-		{"POST", "/aibow/store/ListConversations", "ui"}, // 画面のアプリの保存の口も(同じ server.db)
-		{"GET", "/aibow/admin/users", "ui"},              // 管理者の口も(0018 の 11-0)
+		{"POST", "/_aibow/ui/call/Version", "ui"},
+		{"GET", "/_aibow/ui/events", "ui"},
+		{"POST", "/_aibow/auth/login", "ui"},              // ログインの口も、ブラウザの会話の係が受け持つ
+		{"POST", "/_aibow/store/ListConversations", "ui"}, // 画面のアプリの保存の口も(同じ server.db)
+		{"GET", "/_aibow/admin/users", "ui"},              // 管理者の口も(0018 の 11-0)
 	} {
 		if _, body := get(c.method, c.path); body != c.want {
 			t.Errorf("%s %s は %s が受け取るはず: %.80q", c.method, c.path, c.want, body)
@@ -72,7 +72,7 @@ func TestMount(t *testing.T) {
 	for p, want := range map[string]string{
 		"/aibow/":                  "/",
 		"/aibow/v1/models":         "/v1/models",
-		"/aibow/aibow/ui/events":   "/aibow/ui/events",
+		"/aibow/_aibow/ui/events":  "/_aibow/ui/events",
 		"/aibow/assets/index-x.js": "/assets/index-x.js",
 	} {
 		if rec := get(p); rec.Code != http.StatusOK || rec.Body.String() != want {

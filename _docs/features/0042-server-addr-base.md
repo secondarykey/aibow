@@ -16,9 +16,9 @@ aibow-server はこれまで `-host` と `-port` に分けて待ち受けを決�
 学ぶこと:
 
 - **道の頭を外して渡す**:`http.StripPrefix` で頭を外してから中の道に渡すと、中のハンドラは頭を知らなくてよい(`api`・`ui`・`auth` は変えていない)
-- **画面は相対パスで呼ぶ**:画面が `/` に置かれる前提で `/aibow/ui/…` と書くと、頭が付いたときに届かない。相対パス(`aibow/ui/…`)なら、画面の置き場所に付いていく。
+- **画面は相対パスで呼ぶ**:画面が `/` に置かれる前提で `/_aibow/ui/…` と書くと、頭が付いたときに届かない。相対パス(`_aibow/ui/…`)なら、画面の置き場所に付いていく。
   vite の `base: "./"` で、ビルドした index.html も `./assets/…` を指す
-- **最後の / の意味**:`/aibow` と `/aibow/` では、相対パスの基準が違う(`/aibow` からの `aibow/ui` は `/aibow/ui`)。`ServeMux` は `/aibow/` を登録すると `/aibow` を `/aibow/` へ転送する
+- **最後の / の意味**:`/aibow` と `/aibow/` では、相対パスの基準が違う(`/aibow` からの `_aibow/ui` は `/_aibow/ui`、`/aibow/` からなら `/aibow/_aibow/ui`)。`ServeMux` は `/aibow/` を登録すると `/aibow` を `/aibow/` へ転送する
 - **プロキシの後ろでは、相手のアドレスがプロキシになる**:同じ PC のプロキシ越しの呼び出しは、すべて `127.0.0.1` から来たように見える
 
 ## 決定事項
@@ -27,15 +27,20 @@ aibow-server はこれまで `-host` と `-port` に分けて待ち受けを決�
    (引数の `-port` は設定ファイルの `addr` のポートより強い)。`-host`・`-port` は残す
 2. **同じ所に addr と host・port の両方を書くとエラー**(どちらが効くかを決めておいても、書いた人が迷うため)
 3. **アドレスを書かない `:8089` はポートだけを決めたことにする**。Go の `net.Listen` では `:8089` は全部のネットワークだが、黙って PC の外に出さないよう、アドレスは `127.0.0.1` のまま。全部のネットワークは `0.0.0.0:8089` と書く
-4. **base は全部の道に付ける**(画面・`/v1/…`・`/aibow/ui/…`・`/aibow/auth/…` など)。`-base /aibow` なら画面は `/aibow/`、OpenAI 互換の口は `/aibow/v1`、画面用の口は `/aibow/aibow/ui/…`(頭が2つ重なるが、中の道を変えないため)。
+4. **base は全部の道に付ける**(画面・`/v1/…`・`/_aibow/ui/…`・`/_aibow/auth/…` など)。`-base /aibow` なら画面は `/aibow/`、OpenAI 互換の口は `/aibow/v1`、画面用の口は `/aibow/_aibow/ui/…`(中の道は base を知らない。中の道の名前は決定事項 9)。
    引数 `-base`・設定ファイルの `base`・環境変数 `AIBOW_SERVER_BASE`。既定は頭なし(今までどおり)
 5. **base の書き方**:前後の `/` はあってもなくてもよい(`aibow`・`/aibow/` も `/aibow`)。使えるのは英数字と `- _ . ~` と区切りの `/` だけ(`%`・`?`・`#`・空白は URL を壊すため)。空の段・`.`・`..` は断る。
    頭の無い道は「`/aibow/` の下で待ち受けています」の 404(古いつなぎ先のままの Cline などが、理由の分からない 404 にならないように)
-6. **画面は相対パスで口を呼ぶ**。`backendWeb.ts` の `/aibow/ui/…`・`/aibow/auth/…`・`/aibow/admin/…` を `aibow/ui/…` などにし、ビルドの vite の `base` を `"./"` にした(開発用サーバーは `/` のまま)。
+6. **画面は相対パスで口を呼ぶ**。`backendWeb.ts` の `/_aibow/ui/…`・`/_aibow/auth/…`・`/_aibow/admin/…` を `_aibow/ui/…` などにし、ビルドの vite の `base` を `"./"` にした(開発用サーバーは `/` のまま)。
    パスワードを決めるリンク(画面が作るもの)は `location.pathname` まで含める。プロキシが頭を外して渡す形(base なしの aibow-server)でも同じ画面で動く
 7. **Git Bash が `/aibow` を Windows のパスに書き換える**(`-base /aibow` が `D:/Program Files/Git/aibow` で届いた。2026-11-08 に確かめた)。
    `-base aibow`(先頭の `/` なし)と書けば書き換えられないので、Windows のパスが届いたときは、そう言って止まる
 8. **プロキシ越しの呼び出しは直さず、起動のときに注意する**。base を付けて `127.0.0.1` で待ち受けると、同じ PC のプロキシ越しに、サーバーの PC からだけの操作が外に開くことをログの注意で知らせる(下の未決事項 1)
+9. **aibow 専用の口の頭を `/aibow/` から `/_aibow/` に変える**(2026-11-08、ユーザーが決めた)。`/_aibow/ui/…`・`/_aibow/auth/…`・`/_aibow/store/…`・`/_aibow/admin/…`・
+   `/_aibow/count-tokens`・`/_aibow/gpu-layers`・`/_aibow/places`・`/_aibow/settings`。`/v1/…`・`/models…`・`/apply-template` は変えない。
+   - 理由:製品の名前の `/aibow` は base にもいちばん選ばれやすく、`-base /aibow` で `/aibow/aibow/ui/…` と重なって見えた。先頭の `_` で「中で使う道」と分かり、人が base に選ぶことはまずない
+   - 古い道(`/aibow/ui/…` など)は残さない。**今までの画面のアプリ(デスクトップ)は、新しい aibow-server につなげない**(逆も同じ)。アプリとサーバーは同じ版にそろえて使う
+   - 前の仕様(0015〜0041)に書いた `/aibow/…` は、そのときの記録として直さない。今の形は [api.md](../api.md) にある
 
 ## 作ったもの
 
@@ -46,12 +51,14 @@ aibow-server はこれまで `-host` と `-port` に分けて待ち受けを決�
 - `_cmd/dev/main.go`:vite が渡す先に addr・base を反映する(vite は渡す先のパスを頭に足す)
 - `_cmd/aibow/frontend`:`backendWeb.ts`(相対パス)・`backend.ts`(リンク)・`vite.config.ts`(`base: "./"`)
 - テスト:`TestResolveAddr`・`TestCleanBase`・`TestMount`・`TestLinkBase` に base
+- 決定事項 9:`api`・`api/client`・`auth`・`store/remote`・`ui/web.go`・`_cmd/aibow-server`・`_cmd/aibow`(テスト)・画面・vite の受け渡し・ドキュメントの `/aibow/…` を `/_aibow/…` に
 
 ## 確かめたこと(2026-11-08)
 
 - 一時フォルダの server.json(`"addr": "127.0.0.1:18089", "base": "/aibow"`)と、引数 `-addr 127.0.0.1:18089 -base aibow` の両方で起動し、ログのつなぎ先・Base URL・画面のアドレスが base 付きで出た
 - curl:`/aibow/` は画面(ブラウザの印付き)、`/aibow` は `/aibow/` へ転送、`/aibow/v1/models` はモデルの一覧、`/aibow/assets/…` は画面のファイル、`/` と `/v1/models` は 404(待ち受けている場所を書いた文)
-- ブラウザ(Chrome)で `http://127.0.0.1:18089/aibow` を開き、`/aibow/` に転送されて画面が出た。送信して返事が流れた(呼び出しは `/aibow/aibow/ui/call/…`、知らせは SSE)
+- ブラウザ(Chrome)で `http://127.0.0.1:18089/aibow` を開き、`/aibow/` に転送されて画面が出た。送信して返事が流れた(呼び出しは `/aibow/_aibow/ui/call/…`、知らせは SSE)
+- 決定事項 9 のあと:`/aibow/_aibow/auth/me`・`/aibow/_aibow/settings` は 200、古い `/aibow/aibow/auth/me` は 404。ブラウザで前の会話が開き、送信して返事が流れた(`/aibow/_aibow/ui/call/Send`)
 - `wails3 build` の index.html が `./assets/…` を指し、ビルドした JS に `/assets/`・`/aibow/` で始まる絶対パスが残っていない
 
 ## 確かめていないこと

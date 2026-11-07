@@ -2,13 +2,13 @@ package main
 
 // admin.go: 管理者の画面の口(利用者の管理。0018 の決定事項 7。11-0)。
 //
-//	GET    /aibow/admin/users                  利用者の一覧([]adminUser)
-//	POST   /aibow/admin/users                  本文 {"name"}。作って {"name", "token", "expiresAt"} を返す(招待のリンクの合言葉。0022)
-//	POST   /aibow/admin/users/{name}/password  今のパスワードを使えなくし、{"name", "token", "expiresAt"} を返す(再設定のリンク。その人のログインは切れる)。自分には使えない
-//	POST   /aibow/admin/users/{name}/key       API キーを作り直して {"name", "key"} を返す(前のキーは使えなくなる)
-//	POST   /aibow/admin/users/{name}/display   本文 {"display_name"}。表示名を変える(空なら無し。0031)
-//	POST   /aibow/admin/users/{name}/email     本文 {"email"}。メールアドレスを変える(空なら無し。重なれば 409。0031)
-//	DELETE /aibow/admin/users/{name}           利用者と、その人の会話・プロファイル・設定を消す
+//	GET    /_aibow/admin/users                  利用者の一覧([]adminUser)
+//	POST   /_aibow/admin/users                  本文 {"name"}。作って {"name", "token", "expiresAt"} を返す(招待のリンクの合言葉。0022)
+//	POST   /_aibow/admin/users/{name}/password  今のパスワードを使えなくし、{"name", "token", "expiresAt"} を返す(再設定のリンク。その人のログインは切れる)。自分には使えない
+//	POST   /_aibow/admin/users/{name}/key       API キーを作り直して {"name", "key"} を返す(前のキーは使えなくなる)
+//	POST   /_aibow/admin/users/{name}/display   本文 {"display_name"}。表示名を変える(空なら無し。0031)
+//	POST   /_aibow/admin/users/{name}/email     本文 {"email"}。メールアドレスを変える(空なら無し。重なれば 409。0031)
+//	DELETE /_aibow/admin/users/{name}           利用者と、その人の会話・プロファイル・設定を消す
 //
 // 呼べるのは、ブラウザでログインした管理者だけ(cookie のセッション。auth.Middleware がリクエストの ctx に入れた人)。
 // ログインが要らない形(127.0.0.1 だけ)では、利用者の管理はコマンドで行う(画面からはだれも呼べない)。
@@ -50,10 +50,10 @@ type adminUser struct {
 	LinkExpiresAt *time.Time `json:"link_expires_at,omitempty"`
 }
 
-// adminHandler は /aibow/admin/ の下の口。initial は新しい人のプロファイル「既定」を作るときの値(コマンドと同じ)。
+// adminHandler は /_aibow/admin/ の下の口。initial は新しい人のプロファイル「既定」を作るときの値(コマンドと同じ)。
 func adminHandler(st *store.SQLite, initial aibow.AppSettings) http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /aibow/admin/users", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /_aibow/admin/users", func(w http.ResponseWriter, r *http.Request) {
 		out, err := adminUsers(r.Context(), st)
 		if err != nil {
 			writeAdminError(w, http.StatusInternalServerError, err)
@@ -61,7 +61,7 @@ func adminHandler(st *store.SQLite, initial aibow.AppSettings) http.Handler {
 		}
 		writeAdminJSON(w, out)
 	})
-	mux.HandleFunc("POST /aibow/admin/users", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /_aibow/admin/users", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			Name string `json:"name"`
 		}
@@ -79,7 +79,7 @@ func adminHandler(st *store.SQLite, initial aibow.AppSettings) http.Handler {
 		}
 		writeAdminJSON(w, map[string]any{"name": req.Name, "token": l.Token, "expiresAt": l.ExpiresAt})
 	})
-	mux.HandleFunc("POST /aibow/admin/users/{name}/password", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /_aibow/admin/users/{name}/password", func(w http.ResponseWriter, r *http.Request) {
 		name := r.PathValue("name")
 		// 自分には使えない(使うと自分を締め出す。自分のパスワードは基本設定の「パスワードを変える」で変える。0022 の決定事項 6)
 		if me, _ := auth.UserFrom(r.Context()); me.Name == name {
@@ -93,7 +93,7 @@ func adminHandler(st *store.SQLite, initial aibow.AppSettings) http.Handler {
 		}
 		writeAdminJSON(w, map[string]any{"name": name, "token": l.Token, "expiresAt": l.ExpiresAt})
 	})
-	mux.HandleFunc("POST /aibow/admin/users/{name}/key", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /_aibow/admin/users/{name}/key", func(w http.ResponseWriter, r *http.Request) {
 		name := r.PathValue("name")
 		key, err := renewKey(r.Context(), st, name, by(r))
 		if err != nil {
@@ -102,7 +102,7 @@ func adminHandler(st *store.SQLite, initial aibow.AppSettings) http.Handler {
 		}
 		writeAdminJSON(w, map[string]string{"name": name, "key": key})
 	})
-	mux.HandleFunc("POST /aibow/admin/users/{name}/display", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /_aibow/admin/users/{name}/display", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			DisplayName string `json:"display_name"`
 		}
@@ -119,7 +119,7 @@ func adminHandler(st *store.SQLite, initial aibow.AppSettings) http.Handler {
 		}
 		writeAdminJSON(w, struct{}{})
 	})
-	mux.HandleFunc("POST /aibow/admin/users/{name}/email", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /_aibow/admin/users/{name}/email", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			Email string `json:"email"`
 		}
@@ -136,7 +136,7 @@ func adminHandler(st *store.SQLite, initial aibow.AppSettings) http.Handler {
 		}
 		writeAdminJSON(w, struct{}{})
 	})
-	mux.HandleFunc("DELETE /aibow/admin/users/{name}", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("DELETE /_aibow/admin/users/{name}", func(w http.ResponseWriter, r *http.Request) {
 		name := r.PathValue("name")
 		// 自分は消せない(画面から自分を消すと、そのまま管理者が使えなくなるため。消すならほかの管理者かコマンドで)
 		if me, _ := auth.UserFrom(r.Context()); me.Name == name {
@@ -153,7 +153,7 @@ func adminHandler(st *store.SQLite, initial aibow.AppSettings) http.Handler {
 		}
 		writeAdminJSON(w, struct{}{})
 	})
-	mux.HandleFunc("/aibow/admin/", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/_aibow/admin/", func(w http.ResponseWriter, r *http.Request) {
 		writeAdminError(w, http.StatusNotFound, errors.New("このパスはありません: "+r.Method+" "+r.URL.Path))
 	})
 	return onlyAdmin(mux)

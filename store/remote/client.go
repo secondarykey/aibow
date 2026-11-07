@@ -34,7 +34,7 @@ func (c *Client) call(ctx context.Context, name string, args []any, outs ...any)
 		args = []any{}
 	}
 	var raw []json.RawMessage
-	if err := c.c.Post(ctx, "/aibow/store/"+name, args, &raw); err != nil {
+	if err := c.c.Post(ctx, "/_aibow/store/"+name, args, &raw); err != nil {
 		var ae *apiclient.APIError
 		if errors.As(err, &ae) {
 			if known := errorOf(ae.Code); known != nil {

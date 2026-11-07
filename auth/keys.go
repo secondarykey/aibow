@@ -95,7 +95,7 @@ func (k *Keys) RequireKey(next http.Handler) http.Handler {
 type bearerKey struct{}
 
 // WithBearer は、cookie でログインしていないリクエストに Authorization: Bearer <API キーかアプリ用のトークン> があれば、
-// その持ち主をリクエストの ctx に入れる(UserFrom で読める)。本人が自分の表示名・メールアドレス・パスワードを変える口(/aibow/auth/)を、
+// その持ち主をリクエストの ctx に入れる(UserFrom で読める)。本人が自分の表示名・メールアドレス・パスワードを変える口(/_aibow/auth/)を、
 // 画面のアプリからも呼べるようにするため(0031 の決定事項 45)。違うキーは入れずに次へ渡す(断るかは受け取った側が決める)。
 // Bearer はブラウザがほかのサイトから勝手に付けて送らないので、cookie と違ってほかのサイトから使われる心配はない。
 func (k *Keys) WithBearer(next http.Handler) http.Handler {
@@ -128,8 +128,8 @@ func writeAPIError(w http.ResponseWriter, status int, code, msg string) {
 	writeJSON(w, status, map[string]any{"error": map[string]string{"message": msg, "type": typ, "code": code}})
 }
 
-// MeHandler は GET /aibow/auth/key。API キーの持ち主(画面のアプリが、誰としてつないでいるかを画面に出すため。0017 の 10-4)。
-// 返事はブラウザの /aibow/auth/me と同じ形(Me)。キーが要らない形(127.0.0.1 だけでログインなし)なら、誰でもないので {"login": false}。
+// MeHandler は GET /_aibow/auth/key。API キーの持ち主(画面のアプリが、誰としてつないでいるかを画面に出すため。0017 の 10-4)。
+// 返事はブラウザの /_aibow/auth/me と同じ形(Me)。キーが要らない形(127.0.0.1 だけでログインなし)なら、誰でもないので {"login": false}。
 // キーが無い・違うときは 401(RequireKey と同じ)。
 func (k *Keys) MeHandler(required bool) http.Handler {
 	if !required {

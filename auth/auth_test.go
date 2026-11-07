@@ -158,7 +158,7 @@ func TestHTTP(t *testing.T) {
 
 	me := func() auth.Me {
 		t.Helper()
-		res, err := c.Get(srv.URL + "/aibow/auth/me")
+		res, err := c.Get(srv.URL + "/_aibow/auth/me")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -180,13 +180,13 @@ func TestHTTP(t *testing.T) {
 	if m := me(); !m.Login || m.Name != "" {
 		t.Errorf("ログインの前: %+v", m)
 	}
-	if res := post("/aibow/auth/login", `{"name":"bob","password":"x"}`, "application/json"); res.StatusCode != http.StatusUnauthorized {
+	if res := post("/_aibow/auth/login", `{"name":"bob","password":"x"}`, "application/json"); res.StatusCode != http.StatusUnauthorized {
 		t.Errorf("違うパスワードは 401: %d", res.StatusCode)
 	}
-	if res := post("/aibow/auth/login", `{"name":"bob","password":"pw"}`, "text/plain"); res.StatusCode != http.StatusUnsupportedMediaType {
+	if res := post("/_aibow/auth/login", `{"name":"bob","password":"pw"}`, "text/plain"); res.StatusCode != http.StatusUnsupportedMediaType {
 		t.Errorf("JSON でない本文は断る: %d", res.StatusCode)
 	}
-	res := post("/aibow/auth/login", `{"name":"bob","password":"pw"}`, "application/json")
+	res := post("/_aibow/auth/login", `{"name":"bob","password":"pw"}`, "application/json")
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("ログイン: %d", res.StatusCode)
 	}
@@ -197,7 +197,7 @@ func TestHTTP(t *testing.T) {
 	if m := me(); m.Name != "bob" {
 		t.Errorf("ログインしたあと: %+v", m)
 	}
-	post("/aibow/auth/logout", "", "application/json")
+	post("/_aibow/auth/logout", "", "application/json")
 	if m := me(); m.Name != "" {
 		t.Errorf("ログアウトしたあと: %+v", m)
 	}
@@ -209,7 +209,7 @@ func TestHTTPWithoutLogin(t *testing.T) {
 	s := auth.NewSessions(st)
 	srv := httptest.NewServer(s.Middleware(auth.Handler(s, false)))
 	defer srv.Close()
-	res, err := http.Get(srv.URL + "/aibow/auth/me")
+	res, err := http.Get(srv.URL + "/_aibow/auth/me")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -219,7 +219,7 @@ func TestHTTPWithoutLogin(t *testing.T) {
 	if m.Login {
 		t.Errorf("me: %+v", m)
 	}
-	res, _ = http.Post(srv.URL+"/aibow/auth/login", "application/json", strings.NewReader(`{}`))
+	res, _ = http.Post(srv.URL+"/_aibow/auth/login", "application/json", strings.NewReader(`{}`))
 	if res.StatusCode != http.StatusBadRequest {
 		t.Errorf("login: %d", res.StatusCode)
 	}
@@ -292,7 +292,7 @@ func TestLoginLimit(t *testing.T) {
 	defer srv.Close()
 	login := func(pw string) int {
 		t.Helper()
-		res, err := http.Post(srv.URL+"/aibow/auth/login", "application/json", strings.NewReader(`{"name":"bob","password":"`+pw+`"}`))
+		res, err := http.Post(srv.URL+"/_aibow/auth/login", "application/json", strings.NewReader(`{"name":"bob","password":"`+pw+`"}`))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -313,7 +313,7 @@ func TestLoginLimit(t *testing.T) {
 	}
 }
 
-// GET /aibow/auth/key は API キーの持ち主の名前(アプリが画面に出す)。キーの要らない形なら誰でもない
+// GET /_aibow/auth/key は API キーの持ち主の名前(アプリが画面に出す)。キーの要らない形なら誰でもない
 func TestKeyMe(t *testing.T) {
 	st := openStore(t)
 	u := addUser(t, st, "bob", "pw")
@@ -331,7 +331,7 @@ func TestKeyMe(t *testing.T) {
 		{false, "", http.StatusOK, auth.Me{}},
 	} {
 		rec := httptest.NewRecorder()
-		req := httptest.NewRequest("GET", "/aibow/auth/key", nil)
+		req := httptest.NewRequest("GET", "/_aibow/auth/key", nil)
 		if c.auth != "" {
 			req.Header.Set("Authorization", c.auth)
 		}
@@ -348,7 +348,7 @@ func TestKeyMe(t *testing.T) {
 		t.Fatal(err)
 	}
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/aibow/auth/key", nil)
+	req := httptest.NewRequest("GET", "/_aibow/auth/key", nil)
 	req.Header.Set("Authorization", "Bearer "+key)
 	var admin bool
 	k.RequireKey(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { admin = auth.IsAdmin(r) })).ServeHTTP(rec, req)

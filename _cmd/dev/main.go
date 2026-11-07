@@ -6,8 +6,8 @@
 // aibow-server は画面(_cmd/aibow/frontend のビルド結果 web/dist/app)を exe に埋め込む。そのため「先に画面をビルドしてから go run / go build」の2段になり、
 // 画面のビルドを忘れると古い画面が配られる(2026-10-26、「利用者」のタブが出なかった)。この2つのコマンドは、それを1つにまとめる。
 //
-//	server … vite の開発用サーバー(127.0.0.1:9246)── /aibow/ の呼び出し ──→ aibow-server(go run。既定 127.0.0.1:8089)
-//	         ブラウザは vite のほうを開く。vite がブラウザの印を index.html に足し、/aibow/ を aibow-server に渡す(vite.config.ts。aibow-server は何も変えない)
+//	server … vite の開発用サーバー(127.0.0.1:9246)── /_aibow/ の呼び出し ──→ aibow-server(go run。既定 127.0.0.1:8089)
+//	         ブラウザは vite のほうを開く。vite がブラウザの印を index.html に足し、/_aibow/ を aibow-server に渡す(vite.config.ts。aibow-server は何も変えない)
 //	build  … npm run build(web/dist/app に出る)→ go build ./_cmd/aibow-server
 //
 // リポジトリのルートで実行する。要るのは Go と Node.js(npm)。node_modules が無ければ先に npm install する。
@@ -83,7 +83,7 @@ func runServer(args []string) error {
 	target := serverAddress(args)
 	setDefaultPaths()
 
-	// vite:AIBOW_BROWSER_DEV があるときだけ、ブラウザの印と /aibow/ の受け渡しが効く(vite.config.ts)
+	// vite:AIBOW_BROWSER_DEV があるときだけ、ブラウザの印と /_aibow/ の受け渡しが効く(vite.config.ts)
 	vite, err := viteCommand("--port", strconv.Itoa(vitePort), "--strictPort")
 	if err != nil {
 		return err
@@ -104,7 +104,7 @@ func runServer(args []string) error {
 	}
 	defer serverTree.Close()
 
-	fmt.Printf("dev: 画面は vite の開発用サーバーから配ります。ブラウザで http://127.0.0.1:%d/ を開いてください(/aibow/ の呼び出しは %s に渡します)\n", vitePort, target)
+	fmt.Printf("dev: 画面は vite の開発用サーバーから配ります。ブラウザで http://127.0.0.1:%d/ を開いてください(/_aibow/ の呼び出しは %s に渡します)\n", vitePort, target)
 	fmt.Printf("dev: OpenAI 互換の口(Cline など)と画面のアプリは、今までどおり %s につなぎます。止めるときは Ctrl+C\n", target)
 
 	// Ctrl+C は同じコンソールの子にも届く(aibow-server は自分で後片付けして終わる)。ここでは受け取って、aibow-server が終わるのを待つ
@@ -160,7 +160,7 @@ func viteCommand(args ...string) (*exec.Cmd, error) {
 	return cmd, nil
 }
 
-// serverAddress は、vite が /aibow/ を渡す aibow-server のアドレス。引数 > 設定ファイル > 既定(aibow-server の決め方と同じ順)。
+// serverAddress は、vite が /_aibow/ を渡す aibow-server のアドレス。引数 > 設定ファイル > 既定(aibow-server の決め方と同じ順)。
 // 環境変数(AIBOW_SERVER_PORT など)も見る。全部のネットワークで待ち受けるとき(0.0.0.0 など)も、渡すのはこの PC の 127.0.0.1
 func serverAddress(args []string) string {
 	fs := flag.NewFlagSet("aibow-server", flag.ContinueOnError)
@@ -214,7 +214,7 @@ func serverAddress(args []string) string {
 	if cmp.Or(*tlsCert, file.TLSCert, os.Getenv("AIBOW_SERVER_TLS_CERT")) != "" {
 		scheme = "https"
 	}
-	// 道の頭(base。0042)も付ける。vite は渡す先のパスを頭に足すので、画面の /aibow/ui/… は aibow-server の <base>/aibow/ui/… に届く
+	// 道の頭(base。0042)も付ける。vite は渡す先のパスを頭に足すので、画面の /_aibow/ui/… は aibow-server の <base>/_aibow/ui/… に届く
 	b := strings.Trim(cmp.Or(*base, file.Base, os.Getenv("AIBOW_SERVER_BASE")), "/")
 	if b != "" {
 		b = "/" + b

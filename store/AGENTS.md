@@ -9,7 +9,7 @@
 | `users.go` | 利用者とセッションの保存(`auth.Store` の実装。aibow-server の server.db だけで使う) |
 | `groups.go` | グループとグループの長(0031)。誰が変えられるかの条件 `groupEditable` もここ |
 | `usage.go` | aibow-server の生成の記録(使用量。0033)の保存と集計(利用者ごと・モデルごと・日ごと) |
-| `remote/` | 会話の保存を HTTP 越しに使う(`remote` パッケージ。0017 の 10-3)。aibow-server の保存の口(`Handler`。`/aibow/store/{メソッド}`)と、アプリの側の `aibow.Store` の HTTP 版(`Client`) |
+| `remote/` | 会話の保存を HTTP 越しに使う(`remote` パッケージ。0017 の 10-3)。aibow-server の保存の口(`Handler`。`/_aibow/store/{メソッド}`)と、アプリの側の `aibow.Store` の HTTP 版(`Client`) |
 | `sqlite_test.go` | 一時フォルダの DB を使ったテスト(マイグレーション・持ち主で分かれることを含む) |
 
 - ドライバーは `modernc.org/sqlite`(cgo 不要)。標準の `database/sql` 経由で使う。このドライバーを import するのはこのパッケージだけ。

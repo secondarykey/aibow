@@ -120,7 +120,7 @@ func (r *recorder) who(ctx context.Context, route string) (uuid.UUID, string) {
 }
 
 // asLocal は、API キーの要らない形(127.0.0.1 だけでログインなし)の OpenAI 互換の口を、ログインなしの形の利用者(local)の呼び出しにする。
-// 保存の口(/aibow/store/)がこの形で local を使うのと同じ線(使用量の記録で、だれでもない生成にしないため)。
+// 保存の口(/_aibow/store/)がこの形で local を使うのと同じ線(使用量の記録で、だれでもない生成にしないため)。
 func asLocal(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		next.ServeHTTP(w, r.WithContext(aibow.WithUser(r.Context(), aibow.LocalUser)))
@@ -129,9 +129,9 @@ func asLocal(next http.Handler) http.Handler {
 
 // ---- 使用量を見る口(0033 の段2・段3) ----------------------------------------------------
 //
-//	GET /aibow/admin/usage?days=7                  利用者ごと([]genlog.Total。GPU の秒数の多い順)
-//	GET /aibow/admin/usage/user?id=<ID>&days=7     1人のモデルごと・日ごと({"models", "days"}。id が空ならだれでもない生成の分)
-//	GET /aibow/auth/usage                          自分の今日・7日・30日(genlog.Mine)
+//	GET /_aibow/admin/usage?days=7                  利用者ごと([]genlog.Total。GPU の秒数の多い順)
+//	GET /_aibow/admin/usage/user?id=<ID>&days=7     1人のモデルごと・日ごと({"models", "days"}。id が空ならだれでもない生成の分)
+//	GET /_aibow/auth/usage                          自分の今日・7日・30日(genlog.Mine)
 //
 // days は今日を含めた日数(1〜366。書かなければ 7)。日の区切りはサーバーの PC の時刻。
 // 全員の分を見られるのは、ログインした管理者だけ(利用者のタブと同じ線)。ログインなしの形(利用者は local だけ)では、
@@ -152,10 +152,10 @@ type usageDetail struct {
 	Days   []genlog.Total `json:"days"`
 }
 
-// adminUsageHandler は、全員の使用量の口(/aibow/admin/usage の下)。now はテストで時刻を決めるため。
+// adminUsageHandler は、全員の使用量の口(/_aibow/admin/usage の下)。now はテストで時刻を決めるため。
 func adminUsageHandler(st usageStore, login bool, now func() time.Time) http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /aibow/admin/usage", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /_aibow/admin/usage", func(w http.ResponseWriter, r *http.Request) {
 		since, ok := usageSince(w, r, now())
 		if !ok {
 			return
@@ -167,7 +167,7 @@ func adminUsageHandler(st usageStore, login bool, now func() time.Time) http.Han
 		}
 		writeAdminJSON(w, out)
 	})
-	mux.HandleFunc("GET /aibow/admin/usage/user", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /_aibow/admin/usage/user", func(w http.ResponseWriter, r *http.Request) {
 		since, ok := usageSince(w, r, now())
 		if !ok {
 			return
@@ -210,7 +210,7 @@ func usageViewer(login bool, next http.Handler) http.Handler {
 	})
 }
 
-// myUsageHandler は、自分の使用量の口(GET /aibow/auth/usage)。ログインなしの形では local の分。
+// myUsageHandler は、自分の使用量の口(GET /_aibow/auth/usage)。ログインなしの形では local の分。
 func myUsageHandler(st usageStore, login bool, now func() time.Time) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := aibow.LocalUser

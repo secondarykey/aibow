@@ -202,7 +202,7 @@ func TestDisabledModel(t *testing.T) {
 	}
 }
 
-// /models/load は明示的に読み込み、/aibow/gpu-layers は層の数を覚える(読み込み中のモデルなら読み直した情報を返す)
+// /models/load は明示的に読み込み、/_aibow/gpu-layers は層の数を覚える(読み込み中のモデルなら読み直した情報を返す)
 func TestLoadAndGPULayers(t *testing.T) {
 	g := &fakeGen{nCtx: 100}
 	m := newFakeModels(g)
@@ -220,23 +220,23 @@ func TestLoadAndGPULayers(t *testing.T) {
 	}
 
 	// model を書かなければ読み込み中のモデル
-	got = decode[loadResult](t, postPath(t, ts.URL, "/aibow/gpu-layers", `{"n_gpu_layers":20}`))
+	got = decode[loadResult](t, postPath(t, ts.URL, "/_aibow/gpu-layers", `{"n_gpu_layers":20}`))
 	if !got.Success || got.Model == nil || m.layers["ollama:qwen3.5:9b"] != 20 {
 		t.Errorf("gpu-layers(読み込み中): %+v %v", got, m.layers)
 	}
 	// 読み込んでいないモデルは覚えるだけ
-	got = decode[loadResult](t, postPath(t, ts.URL, "/aibow/gpu-layers", `{"model":"qwen3.5:4b","n_gpu_layers":30}`))
+	got = decode[loadResult](t, postPath(t, ts.URL, "/_aibow/gpu-layers", `{"model":"qwen3.5:4b","n_gpu_layers":30}`))
 	if !got.Success || got.Model != nil || m.layers["ollama:qwen3.5:4b"] != 30 {
 		t.Errorf("gpu-layers(読み込んでいない): %+v %v", got, m.layers)
 	}
-	res = postPath(t, ts.URL, "/aibow/gpu-layers", `{"model":"qwen3.5:4b"}`)
+	res = postPath(t, ts.URL, "/_aibow/gpu-layers", `{"model":"qwen3.5:4b"}`)
 	res.Body.Close()
 	if res.StatusCode != 400 {
 		t.Errorf("層の数が無い: %d", res.StatusCode)
 	}
 }
 
-// /apply-template と /aibow/count-tokens は、チャットと同じ本文を読む
+// /apply-template と /_aibow/count-tokens は、チャットと同じ本文を読む
 func TestTemplateAndCount(t *testing.T) {
 	g := &fakeGen{nCtx: 100, tokens: 42}
 	ts := newTestServer(g)
@@ -245,7 +245,7 @@ func TestTemplateAndCount(t *testing.T) {
 	if got := decode[templateResult](t, postPath(t, ts.URL, "/apply-template", body)); got.Prompt != "<2 件の発言>" {
 		t.Errorf("apply-template: %+v", got)
 	}
-	if got := decode[countResult](t, postPath(t, ts.URL, "/aibow/count-tokens", body)); got.NTokens != 42 {
+	if got := decode[countResult](t, postPath(t, ts.URL, "/_aibow/count-tokens", body)); got.NTokens != 42 {
 		t.Errorf("count-tokens: %+v", got)
 	}
 }
@@ -378,24 +378,24 @@ func TestPlaces(t *testing.T) {
 	ts := httptest.NewServer(s.Handler())
 	defer ts.Close()
 
-	res := postPath(t, ts.URL, "/aibow/places/add", `{"path":"/data/models2"}`)
+	res := postPath(t, ts.URL, "/_aibow/places/add", `{"path":"/data/models2"}`)
 	if got := decode[placeList](t, res); len(got.Places) != 2 || got.Places[1].Path != `/data/models2` || got.Places[1].Origin != models.OriginAdded {
 		t.Errorf("足したあとの一覧: %+v", got)
 	}
-	res = postPath(t, ts.URL, "/aibow/places/add", `{"path":"/data/models2"}`)
+	res = postPath(t, ts.URL, "/_aibow/places/add", `{"path":"/data/models2"}`)
 	if res.StatusCode != http.StatusBadRequest {
 		t.Errorf("同じ置き場所は足せないはず: %d", res.StatusCode)
 	}
 	res.Body.Close()
-	res = postPath(t, ts.URL, "/aibow/places/remove", `{"path":"/data/models2"}`)
+	res = postPath(t, ts.URL, "/_aibow/places/remove", `{"path":"/data/models2"}`)
 	if got := decode[placeList](t, res); len(got.Places) != 1 {
 		t.Errorf("外したあとの一覧: %+v", got)
 	}
-	res, _ = http.Get(ts.URL + "/aibow/places")
+	res, _ = http.Get(ts.URL + "/_aibow/places")
 	if got := decode[placeList](t, res); len(got.Places) != 1 {
 		t.Errorf("一覧: %+v", got)
 	}
-	res, _ = http.Get(ts.URL + "/aibow/settings")
+	res, _ = http.Get(ts.URL + "/_aibow/settings")
 	if got := decode[Settings](t, res); got.NCtx != 32768 || got.Port != 8089 || got.ConfigFile != "server.json" {
 		t.Errorf("表示だけの設定: %+v", got)
 	}
