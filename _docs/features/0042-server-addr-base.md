@@ -59,11 +59,14 @@ aibow-server はこれまで `-host` と `-port` に分けて待ち受けを決�
 - curl:`/aibow/` は画面(ブラウザの印付き)、`/aibow` は `/aibow/` へ転送、`/aibow/v1/models` はモデルの一覧、`/aibow/assets/…` は画面のファイル、`/` と `/v1/models` は 404(待ち受けている場所を書いた文)
 - ブラウザ(Chrome)で `http://127.0.0.1:18089/aibow` を開き、`/aibow/` に転送されて画面が出た。送信して返事が流れた(呼び出しは `/aibow/_aibow/ui/call/…`、知らせは SSE)
 - 決定事項 9 のあと:`/aibow/_aibow/auth/me`・`/aibow/_aibow/settings` は 200、古い `/aibow/aibow/auth/me` は 404。ブラウザで前の会話が開き、送信して返事が流れた(`/aibow/_aibow/ui/call/Send`)
+- ユーザーの環境で、Windows のサービスとして動くリバースプロキシの後ろ(`/aibow`)で動いた(2026-11-08、ユーザーが確かめた)。
+  サービスは SYSTEM で動くので、`%APPDATA%`・ホームが `C:\WINDOWS\system32\config\systemprofile` になり、設定ファイル・server.db・ログ・Ollama のモデルを別の場所に探していた。
+  `-config` でいつもの server.json を指し、Ollama とログの場所は起動のときに渡して直した(usage.md の「リバースプロキシの後ろに置く」)
 - `wails3 build` の index.html が `./assets/…` を指し、ビルドした JS に `/assets/`・`/aibow/` で始まる絶対パスが残っていない
 
 ## 確かめていないこと
 
-- 本物のリバースプロキシ(nginx など)の後ろ(頭を残して渡す形・頭を外して渡す形)と、SSE の時間切れ
+- 頭を外して渡す形のリバースプロキシと、長い生成での SSE の時間切れ
 - 画面のアプリ(デスクトップ)を `serverUrl` に `http://…/aibow` を書いてつなぐ(`api/client` は `つなぎ先 + パス` で組むので動く見込み)
 - デスクトップのアプリの画面(`wails3 dev` と、ビルドした exe)が `base: "./"` のあとも今までどおり出るか
 - `go run ./_cmd/dev server -base aibow`(vite が渡す先に base を足す形)
