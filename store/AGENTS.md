@@ -9,7 +9,7 @@
 | `users.go` | 利用者とセッションの保存(`auth.Store` の実装。aibow-server の server.db だけで使う) |
 | `groups.go` | グループとグループの長(0031)。誰が変えられるかの条件 `groupEditable` もここ |
 | `usage.go` | aibow-server の生成の記録(使用量。0033)の保存と集計(利用者ごと・モデルごと・日ごと) |
-| `remote/` | 会話の保存を HTTP 越しに使う(`remote` パッケージ。0017 の 10-3)。aibow-server の保存の口(`Handler`。`/aibow/store/{メソッド}`)と、アプリの側の `aibow.Store` の HTTP 版(`Client`) |
+| `remote/` | 会話の保存を HTTP 越しに使う(`remote` パッケージ。0017 の 10-3)。aibow-server の保存の口(`Handler`。`/_aibow/store/{メソッド}`)と、アプリの側の `aibow.Store` の HTTP 版(`Client`) |
 | `sqlite_test.go` | 一時フォルダの DB を使ったテスト(マイグレーション・持ち主で分かれることを含む) |
 
 - ドライバーは `modernc.org/sqlite`(cgo 不要)。標準の `database/sql` 経由で使う。このドライバーを import するのはこのパッケージだけ。
@@ -50,6 +50,8 @@
   - 版 20: aibow-server の生成1回ごとの記録 `generation_log`(使用量。0033)。時刻・利用者の ID と写した名前・道・用途・会話の ID・モデル・トークン数と秒数・順番待ちの秒数(分からなければ NULL)・終了理由。
     会話の中身は持たない。利用者と会話の ID は外部キーにしない(消しても記録を残す。分からない ID は空の文字列)。索引は `at` と `(user_id, at)`。
     読み書きは `usage.go`(書くのは記録付きの engine、読むのは使用量の口。持ち主では絞らない)。集計は SQL(日の区切りはサーバーの PC の時刻のずれを date() に足す)
+  - 版 21: `messages` に `elided`(今の組の中の compact で、省略して渡す発言の印。0 / 1。[_docs/features/0040-compact-in-turn.md](../_docs/features/0040-compact-in-turn.md))。
+    `SetMessagesElided` で付けるだけで、外す口は無い。`AddMessage` も印をそのまま入れる(会話を写すときに付いていく)
 - 会話の共有:ほかの人の会話を読むのは `ReadConversation` だけ(条件 `conversationShared` と管理者か)。書くメソッドは持ち主の行だけなので、共有された人も管理者も書き込めない。
   自分の会話を読むときは `share`(と1つ読むときは `ShareWith`)を入れる
 - プロファイルの読み書き:見える・変えられるの判定は `sqlite.go` の `profileVisible`・`profileUsed`・`profileEditable`(名前付きの引数 `:me`・`:admin`)の1か所だけ。

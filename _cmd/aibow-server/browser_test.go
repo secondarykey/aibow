@@ -34,14 +34,14 @@ func TestRoutes(t *testing.T) {
 		{"GET", "/v1/models", "api"},
 		{"POST", "/v1/chat/completions", "api"},
 		{"GET", "/models", "api"},
-		{"POST", "/aibow/count-tokens", "api"},
+		{"POST", "/_aibow/count-tokens", "api"},
 		{"POST", "/", "api"}, // GET 以外の / は画面ではない(api の 404 の形)
 		{"GET", "/nothing", "api"},
-		{"POST", "/aibow/ui/call/Version", "ui"},
-		{"GET", "/aibow/ui/events", "ui"},
-		{"POST", "/aibow/auth/login", "ui"},              // ログインの口も、ブラウザの会話の係が受け持つ
-		{"POST", "/aibow/store/ListConversations", "ui"}, // 画面のアプリの保存の口も(同じ server.db)
-		{"GET", "/aibow/admin/users", "ui"},              // 管理者の口も(0018 の 11-0)
+		{"POST", "/_aibow/ui/call/Version", "ui"},
+		{"GET", "/_aibow/ui/events", "ui"},
+		{"POST", "/_aibow/auth/login", "ui"},              // ログインの口も、ブラウザの会話の係が受け持つ
+		{"POST", "/_aibow/store/ListConversations", "ui"}, // 画面のアプリの保存の口も(同じ server.db)
+		{"GET", "/_aibow/admin/users", "ui"},              // 管理者の口も(0018 の 11-0)
 	} {
 		if _, body := get(c.method, c.path); body != c.want {
 			t.Errorf("%s %s は %s が受け取るはず: %.80q", c.method, c.path, c.want, body)
@@ -54,5 +54,38 @@ func TestRoutes(t *testing.T) {
 	// /assets/ は画面のファイル(無いファイルは 404。api には渡さない)
 	if code, body := get("GET", "/assets/nothing.js"); code != http.StatusNotFound || body == "api" {
 		t.Errorf("GET /assets/ の無いファイル: %d %q", code, body)
+	}
+}
+
+// base を付けると、全部の道がその下に載る。中の道は頭を外したパスを受け取る。頭の無い道は、どこで待ち受けているかを書いた 404(0042)
+func TestMount(t *testing.T) {
+	path := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, r.URL.Path) })
+	if mount("", path) == nil {
+		t.Fatal("base が空なら、そのまま返す")
+	}
+	h := mount("/aibow", path)
+	get := func(p string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest("GET", p, nil))
+		return rec
+	}
+	for p, want := range map[string]string{
+		"/aibow/":                  "/",
+		"/aibow/v1/models":         "/v1/models",
+		"/aibow/_aibow/ui/events":  "/_aibow/ui/events",
+		"/aibow/assets/index-x.js": "/assets/index-x.js",
+	} {
+		if rec := get(p); rec.Code != http.StatusOK || rec.Body.String() != want {
+			t.Errorf("GET %s: %d %q(want %q)", p, rec.Code, rec.Body.String(), want)
+		}
+	}
+	// 最後の / が無いと、画面の相対パスがずれるので / 付きへ転送する
+	if rec := get("/aibow"); rec.Code/100 != 3 || rec.Header().Get("Location") != "/aibow/" {
+		t.Errorf("GET /aibow: %d %q", rec.Code, rec.Header().Get("Location"))
+	}
+	for _, p := range []string{"/", "/v1/models", "/aibowx/"} {
+		if rec := get(p); rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "/aibow/ の下") {
+			t.Errorf("GET %s: %d %q", p, rec.Code, rec.Body.String())
+		}
 	}
 }

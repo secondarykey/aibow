@@ -55,8 +55,15 @@ func TestRoundTrip(t *testing.T) {
 	if !reflect.DeepEqual(got.Settings, conv.Settings) || got.Title != "t" || !got.CreatedAt.Equal(now) {
 		t.Errorf("会話:\n got  %+v\n want %+v", got, conv)
 	}
-	if len(ms) != 1 || ms[0].Content != "答え" || *ms[0].Stats != *msg.Stats {
+	if len(ms) != 1 || ms[0].Content != "答え" || *ms[0].Stats != *msg.Stats || ms[0].Elided {
 		t.Errorf("発言: %+v", ms)
+	}
+	// 省略して渡す印(0040)も、保存の口を通して付き、読める
+	if err := c.SetMessagesElided(ctx, []uuid.UUID{msg.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if _, ms, _ := c.Conversation(ctx, conv.ID); len(ms) != 1 || !ms[0].Elided {
+		t.Errorf("省略の印: %+v", ms)
 	}
 	if v, ok, err := c.AppSetting(ctx, "last_model"); ok || err != nil {
 		t.Errorf("まだ無い設定: %q %v %v", v, ok, err)

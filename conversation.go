@@ -882,16 +882,59 @@ func (cs *Conversations) generate(ctx context.Context, conv Conversation, messag
 	return m, nil
 }
 
-// systemPrompt は、会話の設定のシステムプロンプトに、環境の説明(environment)を足したもの。
+// systemPrompt は、会話の設定のシステムプロンプトに、環境の説明(environment)と作業の決まり(workingRules。0041)を足したもの。
 func (cs *Conversations) systemPrompt(set ConversationSettings) string {
-	env := cs.environment(set)
+	env, rules := cs.systemParts(set)
 	if env == "" {
 		return set.System
 	}
-	if s := strings.TrimSpace(set.System); s != "" {
-		return s + "\n\n" + env
+	return joinSections(set.System, env, rules)
+}
+
+// systemParts は、システムプロンプトにコードが足す部分(環境の説明・作業の決まり)。
+// 作業の決まりは、環境の説明がある会話(作業フォルダを使うツールがある)にだけ付ける
+func (cs *Conversations) systemParts(set ConversationSettings) (env, rules string) {
+	env = cs.environment(set)
+	if env == "" {
+		return "", ""
 	}
-	return env
+	return env, workingRules(cs.toolsFor(set))
+}
+
+// joinSections は、空でない節を空行で区切ってつなぐ。
+func joinSections(parts ...string) string {
+	var out []string
+	for _, p := range parts {
+		if s := strings.TrimSpace(p); s != "" {
+			out = append(out, s)
+		}
+	}
+	return strings.Join(out, "\n\n")
+}
+
+// logSystemParts は、システムプロンプトのうち、環境の説明と作業の決まりがそれぞれ何トークンかをログに出す(学習用。0041 の決定事項 9)。
+// どちらも毎回プロンプトの先頭に入るので、会話の上限をその分だけ使う(_docs/tuning.md に書けるように)
+func (cs *Conversations) logSystemParts(conv Conversation) {
+	set := conv.Settings
+	env, rules := cs.systemParts(set)
+	if env == "" {
+		return
+	}
+	count := func(s string) (int, error) {
+		return cs.gen.CountTokens(format.Prompt{Messages: promptMessages(s, "", nil)})
+	}
+	base, err1 := count(set.System)
+	withEnv, err2 := count(joinSections(set.System, env))
+	withRules, err3 := count(joinSections(set.System, env, rules))
+	if err := errors.Join(err1, err2, err3); err != nil {
+		log.Warnf("会話 %s: 環境の説明と作業の決まりのトークン数を数えられません: %v", conv.ID, err)
+		return
+	}
+	if rules == "" {
+		log.Infof("会話 %s: システムプロンプトの環境の説明は約 %d トークン(書き換えるツールが無いので、作業の決まりは付けていません)", conv.ID, withEnv-base)
+		return
+	}
+	log.Infof("会話 %s: システムプロンプトの環境の説明は約 %d トークン、作業の決まりは約 %d トークン", conv.ID, withEnv-base, withRules-withEnv)
 }
 
 // environment は、作業フォルダを決めた会話で、モデルに知らせる環境の説明。
@@ -999,6 +1042,7 @@ func promptMessages(system, summary string, history []StoredMessage) []format.Me
 			// ツールの結果には、元の呼び出しの名前を付ける(Gemma 4 は結果に名前を書く。0026 の決定事項 5)
 			fm.Name = m.ToolResult.Call.Name
 		}
+		elideForModel(m, &fm) // 今の組の中の compact で省略した一歩は、結果を札に・思考を空にする(0040。elide.go)
 		out = append(out, fm)
 	}
 	return out

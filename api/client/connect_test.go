@@ -14,10 +14,10 @@ import (
 // aibow-server の代わり:ログインの要る形で、me とトークンの口だけを持つ
 func fakeAuthServer() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /aibow/auth/me", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /_aibow/auth/me", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`{"login":true,"name":""}`))
 	})
-	mux.HandleFunc("POST /aibow/auth/token", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /_aibow/auth/token", func(w http.ResponseWriter, r *http.Request) {
 		var req map[string]string
 		json.NewDecoder(r.Body).Decode(&req)
 		if req["password"] != "pw" || req["device"] == "" {

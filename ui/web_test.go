@@ -263,7 +263,7 @@ func (w *testWeb) call(t *testing.T, ctx context.Context, method string, args ..
 		args = []any{}
 	}
 	b, _ := json.Marshal(args)
-	req, _ := http.NewRequestWithContext(ctx, "POST", w.url+"/aibow/ui/call/"+method, bytes.NewReader(b))
+	req, _ := http.NewRequestWithContext(ctx, "POST", w.url+"/_aibow/ui/call/"+method, bytes.NewReader(b))
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -296,12 +296,12 @@ type sseMsg struct {
 	chat aibow.ChatEvent
 }
 
-// openEvents は GET /aibow/ui/events につなぎ、届いた知らせを流す。つながった(最初のコメント行が届いた)あとに返る。
+// openEvents は GET /_aibow/ui/events につなぎ、届いた知らせを流す。つながった(最初のコメント行が届いた)あとに返る。
 func (w *testWeb) openEvents(t *testing.T) <-chan sseMsg {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	req, _ := http.NewRequestWithContext(ctx, "GET", w.url+"/aibow/ui/events", nil)
+	req, _ := http.NewRequestWithContext(ctx, "GET", w.url+"/_aibow/ui/events", nil)
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)

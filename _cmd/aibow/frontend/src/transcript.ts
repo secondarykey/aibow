@@ -17,6 +17,7 @@ export interface ToolView {
   sec?: number;     // 実行にかかった秒数
   server?: string;  // MCP のサーバーのツールなら、そのサーバーの名前(結果に保存されている)。組み込みのツールは空
   notice?: string;  // 実行する前にアプリがしたことのお知らせ(worktree を作った、など。0039)。モデルには渡っていない
+  elided?: boolean; // 今の組の中の compact で、モデルには結果を省略して渡している(0040。札より短い結果は省略しないので付けない)
   confirm?: ConfirmRequest; // 実行前の確認を待っている(書き換えるツール)。カードに差分と「実行する / 拒否」を出す
   decision?: Confirmation;  // 確認への答え(保存されている。拒否したら状態を「拒否」にする)
 }
@@ -50,6 +51,7 @@ export interface AssistantView {
   summary?: string;      // 生成中の要約の文
   compactNote?: string;  // 要約できなかった理由など(この回は truncate で収めた)。保存はしない
   compactDraft?: string; // 要約できなかったときに、途中まで書いた要約の文(なぜ失敗したかを見るため。繰り返し・長すぎなど)。保存はしない
+  elideNote?: string;    // 送信の途中で、古い一歩の結果と思考を省略して渡したお知らせ(0040)。保存はしない
 }
 
 // msgId は保存された発言の ID(UUIDv7。文字列の順 = 作った順)。モデルに渡していない発言を薄く表示するのに使う。
@@ -153,6 +155,14 @@ const STOP_REASONS: Record<string, string> = {
 
 export const thinkLabel = (sec: number) => `思考の過程(${Math.round(sec)}秒)`;
 
+// ELIDE_MIN_RUNES は、省略して渡す結果の最低の長さ(Go の elideMinRunes と同じ。これ以下の結果は印があってもそのまま渡している)
+const ELIDE_MIN_RUNES = 200;
+
+// elidedResult は、ツールの結果をモデルには省略して(札にして)渡しているか(0040)
+function elidedResult(m: StoredMessage): boolean {
+  return !!m.elided && [...m.content].length > ELIDE_MIN_RUNES;
+}
+
 // turnView は、1回の送信で保存された返事とツールの結果(ユーザーの発言の後ろから、次のユーザーの発言の前まで)を、
 // 吹き出し1つの表示に変える。再起動して会話を開き直しても、生成中と同じ並びになる。
 export function turnView(ms: StoredMessage[]): AssistantView {
@@ -172,7 +182,7 @@ export function turnView(ms: StoredMessage[]): AssistantView {
       // 結果は呼び出しと同じ順に保存されている。まだ結果の無い最初のカードに付ける
       const card = steps[steps.length - 1]?.tools.find(t => t.result === undefined);
       if (card) {
-        Object.assign(card, { result: m.content, error: m.tool_result?.error, sec: m.tool_result?.sec, decision: m.tool_result?.confirm ?? undefined, server: m.tool_result?.server || undefined, notice: m.tool_result?.notice || undefined });
+        Object.assign(card, { result: m.content, error: m.tool_result?.error, sec: m.tool_result?.sec, decision: m.tool_result?.confirm ?? undefined, server: m.tool_result?.server || undefined, notice: m.tool_result?.notice || undefined, elided: elidedResult(m) || undefined });
       }
     }
   }

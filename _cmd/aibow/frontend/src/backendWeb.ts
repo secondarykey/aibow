@@ -2,12 +2,16 @@
 //
 // デスクトップで Wails がしていることを、aibow-server の画面用の口(ui/web.go)に向けて自分で書いたもの:
 //
-//	メソッドの呼び出し … POST /aibow/ui/call/{メソッド}。本文は引数の JSON の配列、返事は戻り値の JSON(Wails の呼び出しと同じ形)
-//	Go からの知らせ   … GET /aibow/ui/events(SSE)を EventSource で受け取る。event の名前は Wails のイベントと同じ(chat・models)
+//	メソッドの呼び出し … POST /_aibow/ui/call/{メソッド}。本文は引数の JSON の配列、返事は戻り値の JSON(Wails の呼び出しと同じ形)
+//	Go からの知らせ   … GET /_aibow/ui/events(SSE)を EventSource で受け取る。event の名前は Wails のイベントと同じ(chat・models)
 //	停止             … fetch を AbortController で止める。つながりが切れて、Go の ctx がキャンセルされる
-//	ログイン         … POST /aibow/auth/login で cookie を受け取る(0017 の 10-1)。以後の fetch と EventSource には、ブラウザが cookie を付ける
+//	ログイン         … POST /_aibow/auth/login で cookie を受け取る(0017 の 10-1)。以後の fetch と EventSource には、ブラウザが cookie を付ける
 //
 // ブラウザには OS のウィンドウもクリップボードの Go 側の書き込みも無いので、そこはブラウザの仕組みを使う(0016 の 17)。
+//
+// 口のパスは、画面の場所からの相対パス(先頭に / を付けない "_aibow/ui/…")で書く(0042)。
+// aibow-server を -base /aibow で動かす・リバースプロキシで /aibow/ の下に出すと、画面は /aibow/ に、口は /aibow/_aibow/ui/… になる。
+// 相対パスなら、画面がどこに置かれていても、画面と同じ頭の下の口を呼ぶ。
 import type { ChatEvent } from "../bindings/github.com/secondarykey/aibow";
 import type { AdminAPI, Backend, Call, ChatAPI, Me, MyUsage } from "./backend";
 import { errorMessage } from "./errors";
@@ -23,7 +27,7 @@ function call<T>(method: string, args: unknown[]): Call<T> {
   const ac = new AbortController();
   const p = (async () => {
     try {
-      const res = await fetch(`/aibow/ui/call/${method}`, {
+      const res = await fetch(`_aibow/ui/call/${method}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(args),
@@ -63,7 +67,7 @@ const reconnected = new Set<() => void>();
 
 function events(): EventSource {
   if (!source) {
-    source = new EventSource("/aibow/ui/events");
+    source = new EventSource("_aibow/ui/events");
     source.addEventListener("open", () => {
       if (opened) reconnected.forEach(f => f());
       opened = true;
@@ -79,11 +83,11 @@ function on(name: string, f: (data: string) => void): () => void {
   return () => s.removeEventListener(name, handler);
 }
 
-// auth は、ログインの口(/aibow/auth/)を呼ぶ。返事は auth.Me。エラーは call と同じ形で読む
+// auth は、ログインの口(/_aibow/auth/)を呼ぶ。返事は auth.Me。エラーは call と同じ形で読む
 async function auth(method: "GET" | "POST", path: string, body?: unknown): Promise<Me> {
   let res: Response;
   try {
-    res = await fetch(`/aibow/auth/${path}`, {
+    res = await fetch(`_aibow/auth/${path}`, {
       method,
       headers: body === undefined ? {} : { "Content-Type": "application/json" },
       body: body === undefined ? undefined : JSON.stringify(body),
@@ -96,11 +100,11 @@ async function auth(method: "GET" | "POST", path: string, body?: unknown): Promi
   return data as Me;
 }
 
-// adminCall は、管理者の口(/aibow/admin/。0018 の 11-0)を呼ぶ。エラーは call と同じ形で読む
+// adminCall は、管理者の口(/_aibow/admin/。0018 の 11-0)を呼ぶ。エラーは call と同じ形で読む
 async function adminCall<T>(method: "GET" | "POST" | "DELETE", path: string, body?: unknown): Promise<T> {
   let res: Response;
   try {
-    res = await fetch(`/aibow/admin/${path}`, {
+    res = await fetch(`_aibow/admin/${path}`, {
       method,
       headers: body === undefined ? {} : { "Content-Type": "application/json" },
       body: body === undefined ? undefined : JSON.stringify(body),

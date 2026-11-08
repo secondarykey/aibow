@@ -250,6 +250,17 @@ func (s *memStore) SetMessagesExcluded(_ context.Context, ids []uuid.UUID, exclu
 	return nil
 }
 
+func (s *memStore) SetMessagesElided(_ context.Context, ids []uuid.UUID) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.messages {
+		if slices.Contains(ids, s.messages[i].ID) {
+			s.messages[i].Elided = true
+		}
+	}
+	return nil
+}
+
 func (s *memStore) AppSetting(_ context.Context, key string) (string, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

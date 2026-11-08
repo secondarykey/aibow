@@ -51,6 +51,9 @@
 - システムプロンプトは発言として保存せず、会話の設定から毎回先頭に付ける
 - ユーザーが選んで「モデルに渡さない」にした発言(`StoredMessage.Excluded`。0011)は、送信・メーター・今すぐ要約で履歴を読んだところで外す(`forModel`)。
   外したあとの並びで組を数え直す。変えるのは吹き出し1つ分ずつ(`Conversations.SetExcluded`。返事はツールの呼び出しと結果も一緒)で、生成中の会話は変えられない
+- 今の組の中の compact(0040)で省略した一歩の発言には、印 `StoredMessage.Elided` が付く(messages 表の `elided`。`Store.SetMessagesElided` で付け、外さない)。
+  モデルに渡す形にするところ(`promptMessages`)で、印の付いた tool は短い札に、印の付いた assistant は思考を空にする(札より短い結果はそのまま)。
+  DB の文と思考はそのままで、画面には全部残す(省略して渡した結果のカードには「省略して渡した」の札を付ける)。会話を写す(`CopyShared`)ときは印も写る。仕組みは [compact.md](compact.md)
 - 最後の返事を作り直す(`Regenerate`)・最後の発言を直して送り直す(`Resend`)は、送信(`Send`)と入り口だけ違う(`turn`。0011)。
   消す部分(作り直すは最後の発言の後ろ、送り直すは最後の発言から後ろ)を決め、会話の上限に収まるかを確かめてから消す(`Store.DeleteMessages`)
 - 答えが空のまま終わった回(思考の途中で打ち切り・停止)は、理由の文を assistant の発言として保存する(質問が宙に浮かないように)。`conversation.go` の `noAnswerNote`。
@@ -228,9 +231,9 @@ aibow-server の管理者は、プロファイルを全員か指定した人に�
 ## 表示名と最後に使った日(0031 の段3)
 
 - **表示名**(`auth.User.DisplayName`・`users.display_name`):人に見せる名前。空ならログインの名前。見せるときは「表示名(ログインの名前)」、狭いところは表示名だけ(`directory.ts` の `showName`)。
-  決まりは `auth.CheckDisplayName`(前後の空白を削る・改行などの制御文字は断る・64 文字まで)。管理者(利用者のタブ・`user display`)と本人(「アカウント」のタブ。`POST /aibow/auth/display`)が変える。ログはログインの名前で書く
+  決まりは `auth.CheckDisplayName`(前後の空白を削る・改行などの制御文字は断る・64 文字まで)。管理者(利用者のタブ・`user display`)と本人(「アカウント」のタブ。`POST /_aibow/auth/display`)が変える。ログはログインの名前で書く
 - **メールアドレス**(`auth.User.Email`・`users.email`。0031 の決定事項 40〜43):今は持つだけで、メールを送る・メールでログインするなどの使い道は無い。
-  管理者(利用者のタブ・`user email`)と本人(「アカウント」のタブ。`POST /aibow/auth/email`)が決め、管理者と本人にだけ見せる(`Directory` には入れない)。
+  管理者(利用者のタブ・`user email`)と本人(「アカウント」のタブ。`POST /_aibow/auth/email`)が決め、管理者と本人にだけ見せる(`Directory` には入れない)。
   空でなければ1人1つ(大文字小文字は同じとみなす)。形は `auth.CheckEmail`(`net/mail` で名前の付かないアドレスとして読める・空白なし・254 文字まで)だけ確かめる。ログにはアドレスを書かない
 - **最後に使った時刻**(`auth.User.LastUsedAt`・`users.last_used_at`):ログイン・セッション・API キー・アプリ用のトークンのどれで使っても書くが、
   **前に書いてから1日以上たったときだけ**書く(`auth/used.go` の `markUsed`。セッションの期限を延ばす `extendEvery` と同じ考え方で、使うたびに DB へ書かない)

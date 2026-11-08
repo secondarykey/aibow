@@ -12,11 +12,9 @@ aibow に残っている課題の一覧(入口)。ルールと全体の構成は
 
 | | 課題 | 資料 |
 |---|---|---|
-| ⬜ | 今の組の中の compact(1回の送信の中で、古いツールの結果を省略して続ける。0037 の試しで困っていると分かった) | [検討メモ](_docs/backlog.md#今の組の中の-compact) |
-| ⬜ | コーディングエージェントとして洗練する(エージェント向けのシステムプロンプト・git のツール) | [検討メモ](_docs/backlog.md#コーディングエージェントとして洗練する) |
+| ⬜ | コーディングエージェントとして洗練する(worktree の続き・テストで落ちたら直すループなど) | [検討メモ](_docs/backlog.md#コーディングエージェントとして洗練する) |
 | ⬜ | 裏で要約する(返事を書き終えたあと、次に備えて2つ目の作業領域で要約しておく) | [検討メモ](_docs/backlog.md#裏で要約する) |
 | ⬜ | 会話の検索(部分一致・全文検索・意味の近さ) | [0003-search.md](_docs/features/0003-search.md)(検討メモ) |
-| 🔧 | 会話の一覧の並べ方(新しい順 / ワークスペースごと。作った。ユーザーの確認待ち) | [0038-list-grouping.md](_docs/features/0038-list-grouping.md) |
 | ⬜ | KV キャッシュの使い回しを良くする | [検討メモ](_docs/backlog.md#kv-キャッシュの使い回しを良くする) |
 
 ## ツールと MCP
@@ -71,3 +69,6 @@ aibow に残っている課題の一覧(入口)。ルールと全体の構成は
 | ⬜ | アプリのログイン:トークンの期限切れ・証明書を作り直したときの画面(テストだけ) | [0019-app-login.md](_docs/features/0019-app-login.md) |
 | ⬜ | アプリの中で動かすときのモデルのタブ(管理の画面を分けたあと) | [0032-admin-screen.md](_docs/features/0032-admin-screen.md) |
 | ⬜ | 同じ呼び出しの繰り返しを止める仕組みを、llama3.2:3b で | [0028-repeated-calls.md](_docs/features/0028-repeated-calls.md) |
+| ⬜ | aibow-mcp の `git_status`・`git_diff` を、Claude Code などほかのクライアントから | [0041-agent-prompt.md](_docs/features/0041-agent-prompt.md) |
+| ⬜ | aibow-server の base:頭を外すプロキシ・アプリの serverUrl に /aibow・デスクトップの画面(vite の base) | [0042-server-addr-base.md](_docs/features/0042-server-addr-base.md) |
+| ⬜ | 今の組の中の compact の画面(吹き出しの「省略して渡しました」・カードの札)と、水位を下回らない省略を見送る形を 4B で | [0040-compact-in-turn.md](_docs/features/0040-compact-in-turn.md) |

@@ -4,8 +4,8 @@ package client
 //
 //	Probe       … つなぎ先を確かめる:つながるか・ログインが要るか・HTTPS なら証明書(OS が信頼しているか、自己署名なら指紋)
 //	PinCert     … 人が指紋で確かめた証明書を信頼する(TOFU。覚えた指紋と違う証明書を出すサーバーにはつながない)
-//	AppLogin    … 名前とパスワードでアプリ用のトークンをもらう(POST /aibow/auth/token)
-//	RevokeToken … アプリ用のトークンを消す(POST /aibow/auth/token/revoke)
+//	AppLogin    … 名前とパスワードでアプリ用のトークンをもらう(POST /_aibow/auth/token)
+//	RevokeToken … アプリ用のトークンを消す(POST /_aibow/auth/token/revoke)
 //
 // 自己署名の証明書は、どの認証局も保証していないので、ふつうの確かめ方(OS が信頼する認証局までたどる)では断られる。
 // そこで、初めてつなぐときは証明書の中身を確かめずに受け取って指紋だけを見せ(この時点では何も送らない)、
@@ -119,7 +119,7 @@ func ProbeServer(ctx context.Context, rawURL, pinned string) (Probe, error) {
 	var me struct {
 		Login *bool `json:"login"`
 	}
-	if err := c.call(http.MethodGet, "/aibow/auth/me", nil, &me, shortTimeout); err != nil {
+	if err := c.call(http.MethodGet, "/_aibow/auth/me", nil, &me, shortTimeout); err != nil {
 		var ae *APIError
 		if errors.As(err, &ae) && ae.Status == http.StatusNotFound {
 			return p, fmt.Errorf("%s は aibow-server ではないか、ログインの口の無い古い aibow-server です", c.base)
@@ -158,7 +158,7 @@ func peerCerts(ctx context.Context, u *url.URL) ([]*x509.Certificate, error) {
 func (c *Client) AppLogin(name, password, device string) (auth.AppLogin, error) {
 	var out auth.AppLogin
 	body := map[string]string{"name": name, "password": password, "device": device}
-	if err := c.call(http.MethodPost, "/aibow/auth/token", body, &out, shortTimeout); err != nil {
+	if err := c.call(http.MethodPost, "/_aibow/auth/token", body, &out, shortTimeout); err != nil {
 		return auth.AppLogin{}, err
 	}
 	if out.Token == "" {
@@ -172,5 +172,5 @@ func (c *Client) RevokeToken() error {
 	if !auth.IsAppToken(c.Key()) {
 		return nil // 手で書いた API キーは消さない(Cline などでも使っているかもしれないので)
 	}
-	return c.call(http.MethodPost, "/aibow/auth/token/revoke", nil, nil, shortTimeout)
+	return c.call(http.MethodPost, "/_aibow/auth/token/revoke", nil, nil, shortTimeout)
 }

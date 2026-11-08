@@ -4,7 +4,7 @@ import wails from "@wailsio/runtime/plugins/vite";
 
 // aibow-server を開発で動かすとき(go run ./_cmd/dev server。0021)は、スクリプトが AIBOW_BROWSER_DEV に aibow-server のアドレスを入れて vite を起動する。
 // そのときだけ、この開発用サーバーがブラウザの画面を配る:
-//   - /aibow/ の呼び出し(画面用の口・ログイン・SSE・管理者の口)を aibow-server に渡す(proxy)
+//   - /_aibow/ の呼び出し(画面用の口・ログイン・SSE・管理者の口)を aibow-server に渡す(proxy)
 //   - index.html に、ブラウザの印を足す(本番では aibow-server が足すもの。_cmd/aibow-server の browser.go の browserMarker と同じ)
 // aibow-server には開発のためのコードを入れない(決定事項 5)。wails3 dev の画面(AIBOW_BROWSER_DEV が無い)には効かない。
 const browserDev = process.env.AIBOW_BROWSER_DEV;
@@ -17,13 +17,17 @@ function browserMarker(): Plugin {
 }
 
 // https://vitejs.dev/config/
-export default defineConfig({
+export default defineConfig(({ command }) => ({
+  // ビルドした index.html は、画面のファイル(assets/…)を相対パスで指す(0042)。aibow-server を -base /aibow で動かす・
+  // リバースプロキシで /aibow/ の下に出すと、画面は /aibow/ に置かれるので、/assets/… と書くと届かない。
+  // デスクトップのアプリ(Wails は / に置く)でも相対パスで同じものに届く。開発用サーバーは / で配る(vite は相対の base を開発では / として扱う)
+  base: command === "build" ? "./" : "/",
   server: {
     host: "127.0.0.1",
     port: Number(process.env.WAILS_VITE_PORT) || 9245,
     strictPort: true,
     // 自己署名の証明書の aibow-server にも渡せるよう、証明書は確かめない(開発の PC の中だけで使うため)
-    proxy: browserDev ? { "/aibow": { target: browserDev, secure: false } } : undefined,
+    proxy: browserDev ? { "/_aibow": { target: browserDev, secure: false } } : undefined,
   },
   plugins: [react(), wails("./bindings"), ...(browserDev ? [browserMarker()] : [])],
   build: {
@@ -33,4 +37,4 @@ export default defineConfig({
     outDir: "../../../web/dist/app",
     emptyOutDir: true,
   },
-});
+}));

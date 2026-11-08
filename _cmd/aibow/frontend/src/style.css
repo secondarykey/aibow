@@ -342,6 +342,9 @@ footer.home .composer textarea { line-height: 1.5; min-height: calc(3 * 1.5em + 
 .compact-note .icon { flex-shrink: 0; margin-top: 3px; color: var(--warn); }
 .compact-note details { margin-top: 4px; color: var(--muted); white-space: normal; }
 .compact-note summary { cursor: pointer; }
+/* 古い一歩を省略して渡したお知らせ(0040)。失敗ではないので、注意の色ではなく目立たない色にする */
+.compact-note.info { background: var(--think); border-left-color: var(--border); color: var(--muted); }
+.compact-note.info .icon { color: var(--muted); }
 .divider { font-size: 12.5px; color: var(--muted); }
 .divider summary {
   cursor: pointer; text-align: center; list-style: none; display: flex; align-items: center; gap: 10px;

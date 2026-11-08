@@ -33,7 +33,7 @@ const (
 // ErrTokenExpired は、アプリ用のトークンの期限が切れたときのエラー(401。code は token_expired)。
 var ErrTokenExpired = errors.New("アプリのログインの期限(10 日)が切れました。設定の画面の「サーバー」で、もう一度ログインしてください")
 
-// AppLogin は、アプリでログインしたときの返事(POST /aibow/auth/token)。
+// AppLogin は、アプリでログインしたときの返事(POST /_aibow/auth/token)。
 type AppLogin struct {
 	Token     string    `json:"token"`
 	Name      string    `json:"name"`

@@ -285,9 +285,9 @@ func TestUsageHandlers(t *testing.T) {
 	}
 	clock := func() time.Time { return now }
 	mux := http.NewServeMux()
-	mux.Handle("/aibow/admin/usage", adminUsageHandler(st, true, clock))
-	mux.Handle("/aibow/admin/usage/", adminUsageHandler(st, true, clock))
-	mux.Handle("GET /aibow/auth/usage", myUsageHandler(st, true, clock))
+	mux.Handle("/_aibow/admin/usage", adminUsageHandler(st, true, clock))
+	mux.Handle("/_aibow/admin/usage/", adminUsageHandler(st, true, clock))
+	mux.Handle("GET /_aibow/auth/usage", myUsageHandler(st, true, clock))
 	srv := httptest.NewServer(sessions.Middleware(mux))
 	defer srv.Close()
 
@@ -311,43 +311,43 @@ func TestUsageHandlers(t *testing.T) {
 	}
 
 	var all []genlog.Total
-	if code := get("alice", "/aibow/admin/usage?days=7", &all); code != http.StatusOK || len(all) != 2 || all[0].Name != "bob" || all[0].Count != 2 || all[0].GPUSec != 4 {
+	if code := get("alice", "/_aibow/admin/usage?days=7", &all); code != http.StatusOK || len(all) != 2 || all[0].Name != "bob" || all[0].Count != 2 || all[0].GPUSec != 4 {
 		t.Errorf("管理者が見る全員の分: %d %+v", code, all)
 	}
-	if code := get("alice", "/aibow/admin/usage?days=1", &all); code != http.StatusOK || len(all) != 2 || all[0].Count != 1 {
+	if code := get("alice", "/_aibow/admin/usage?days=1", &all); code != http.StatusOK || len(all) != 2 || all[0].Count != 1 {
 		t.Errorf("今日の分: %d %+v", code, all)
 	}
 	var d usageDetail
-	if code := get("alice", "/aibow/admin/usage/user?days=7&id="+users["bob"].ID.String(), &d); code != http.StatusOK ||
+	if code := get("alice", "/_aibow/admin/usage/user?days=7&id="+users["bob"].ID.String(), &d); code != http.StatusOK ||
 		len(d.Models) != 1 || d.Models[0].Count != 2 || len(d.Days) != 2 {
 		t.Errorf("bob の内訳: %d %+v", code, d)
 	}
-	if code := get("alice", "/aibow/admin/usage?days=0", nil); code != http.StatusBadRequest {
+	if code := get("alice", "/_aibow/admin/usage?days=0", nil); code != http.StatusBadRequest {
 		t.Errorf("days=0: %d", code)
 	}
 	// 管理者でない人・ログインしていない人には、全員の分を見せない
-	if code := get("bob", "/aibow/admin/usage", nil); code != http.StatusForbidden {
+	if code := get("bob", "/_aibow/admin/usage", nil); code != http.StatusForbidden {
 		t.Errorf("管理者でない人: %d", code)
 	}
-	if code := get("bob", "/aibow/admin/usage/user?id="+users["alice"].ID.String(), nil); code != http.StatusForbidden {
+	if code := get("bob", "/_aibow/admin/usage/user?id="+users["alice"].ID.String(), nil); code != http.StatusForbidden {
 		t.Errorf("管理者でない人がほかの人の内訳: %d", code)
 	}
-	if code := get("", "/aibow/admin/usage", nil); code != http.StatusUnauthorized {
+	if code := get("", "/_aibow/admin/usage", nil); code != http.StatusUnauthorized {
 		t.Errorf("ログインしていない人: %d", code)
 	}
 	// 自分の分は本人のものだけ
 	var mine genlog.Mine
-	if code := get("bob", "/aibow/auth/usage", &mine); code != http.StatusOK || mine.Today.Count != 1 || mine.Week.Count != 2 || mine.Month.Count != 2 || mine.Week.Key != users["bob"].ID.String() {
+	if code := get("bob", "/_aibow/auth/usage", &mine); code != http.StatusOK || mine.Today.Count != 1 || mine.Week.Count != 2 || mine.Month.Count != 2 || mine.Week.Key != users["bob"].ID.String() {
 		t.Errorf("bob の自分の分: %d %+v", code, mine)
 	}
-	if code := get("", "/aibow/auth/usage", nil); code != http.StatusUnauthorized {
+	if code := get("", "/_aibow/auth/usage", nil); code != http.StatusUnauthorized {
 		t.Errorf("ログインしていない人の自分の分: %d", code)
 	}
 
 	// ログインなしの形:全員の分はサーバーの PC の上からだけ。自分の分は local
 	local := adminUsageHandler(st, false, clock)
 	for addr, want := range map[string]int{"127.0.0.1:5000": http.StatusOK, "192.168.0.10:5000": http.StatusForbidden} {
-		req := httptest.NewRequest(http.MethodGet, "/aibow/admin/usage", nil)
+		req := httptest.NewRequest(http.MethodGet, "/_aibow/admin/usage", nil)
 		req.RemoteAddr = addr
 		w := httptest.NewRecorder()
 		local.ServeHTTP(w, req)

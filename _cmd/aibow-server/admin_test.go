@@ -71,74 +71,74 @@ func TestAdminUsers(t *testing.T) {
 		return res.StatusCode, string(b)
 	}
 
-	if code, _ := do("", "GET", "/aibow/admin/users", ""); code != http.StatusUnauthorized {
+	if code, _ := do("", "GET", "/_aibow/admin/users", ""); code != http.StatusUnauthorized {
 		t.Errorf("ログインしていない: %d", code)
 	}
-	if code, _ := do(bob, "GET", "/aibow/admin/users", ""); code != http.StatusForbidden {
+	if code, _ := do(bob, "GET", "/_aibow/admin/users", ""); code != http.StatusForbidden {
 		t.Errorf("管理者でない: %d", code)
 	}
 
-	code, body := do(alice, "GET", "/aibow/admin/users", "")
+	code, body := do(alice, "GET", "/_aibow/admin/users", "")
 	var list []adminUser
 	json.Unmarshal([]byte(body), &list)
 	if code != http.StatusOK || len(list) != 3 || list[0].Name != "local" || !list[0].Local || !list[1].Admin || list[2].Admin || !list[2].Password {
 		t.Fatalf("一覧: %d %s", code, body)
 	}
 
-	code, body = do(alice, "POST", "/aibow/admin/users", `{"name":"carol"}`)
+	code, body = do(alice, "POST", "/_aibow/admin/users", `{"name":"carol"}`)
 	var made map[string]string
 	json.Unmarshal([]byte(body), &made)
 	if code != http.StatusOK || made["name"] != "carol" || made["token"] == "" || strings.Contains(body, "password") {
 		t.Fatalf("作る: %d %s", code, body)
 	}
 	// 招待中の人には、まだ使っていないリンクの期限が付く(0031 の決定事項 14)
-	_, body = do(alice, "GET", "/aibow/admin/users", "")
+	_, body = do(alice, "GET", "/_aibow/admin/users", "")
 	list = nil
 	json.Unmarshal([]byte(body), &list)
 	if c := list[len(list)-1]; c.Name != "carol" || c.Password || c.LinkExpiresAt == nil || c.Conversations != 0 {
 		t.Errorf("招待中の人: %s", body)
 	}
 	// 表示名(0031)。制御文字は断る
-	if code, body := do(alice, "POST", "/aibow/admin/users/carol/display", `{"display_name":" 佐藤 花子 "}`); code != http.StatusOK {
+	if code, body := do(alice, "POST", "/_aibow/admin/users/carol/display", `{"display_name":" 佐藤 花子 "}`); code != http.StatusOK {
 		t.Errorf("表示名: %d %s", code, body)
 	}
-	if code, _ := do(alice, "POST", "/aibow/admin/users/carol/display", `{"display_name":"a\nb"}`); code != http.StatusBadRequest {
+	if code, _ := do(alice, "POST", "/_aibow/admin/users/carol/display", `{"display_name":"a\nb"}`); code != http.StatusBadRequest {
 		t.Errorf("制御文字の表示名: %d", code)
 	}
-	if code, _ := do(alice, "POST", "/aibow/admin/users/nobody/display", `{"display_name":"x"}`); code != http.StatusNotFound {
+	if code, _ := do(alice, "POST", "/_aibow/admin/users/nobody/display", `{"display_name":"x"}`); code != http.StatusNotFound {
 		t.Errorf("いない人の表示名: %d", code)
 	}
 	if u, _ := st.UserByName(ctx, "carol"); u.DisplayName != "佐藤 花子" {
 		t.Errorf("表示名が入らない: %+v", u)
 	}
 	// メールアドレス(0031)。重なりは 409
-	if code, body := do(alice, "POST", "/aibow/admin/users/carol/email", `{"email":"carol@example.com"}`); code != http.StatusOK {
+	if code, body := do(alice, "POST", "/_aibow/admin/users/carol/email", `{"email":"carol@example.com"}`); code != http.StatusOK {
 		t.Errorf("メールアドレス: %d %s", code, body)
 	}
-	if code, _ := do(alice, "POST", "/aibow/admin/users/alice/email", `{"email":"Carol@Example.com"}`); code != http.StatusConflict {
+	if code, _ := do(alice, "POST", "/_aibow/admin/users/alice/email", `{"email":"Carol@Example.com"}`); code != http.StatusConflict {
 		t.Errorf("重なるメールアドレス: %d", code)
 	}
-	if code, _ := do(alice, "POST", "/aibow/admin/users/carol/email", `{"email":"carol"}`); code != http.StatusBadRequest {
+	if code, _ := do(alice, "POST", "/_aibow/admin/users/carol/email", `{"email":"carol"}`); code != http.StatusBadRequest {
 		t.Errorf("形でないメールアドレス: %d", code)
 	}
-	if _, body := do(alice, "GET", "/aibow/admin/users", ""); !strings.Contains(body, `"email":"carol@example.com"`) {
+	if _, body := do(alice, "GET", "/_aibow/admin/users", ""); !strings.Contains(body, `"email":"carol@example.com"`) {
 		t.Errorf("一覧にメールアドレスが無い: %s", body)
 	}
 	if _, _, err := sessions.UseLink(ctx, made["token"], "carol-password"); err != nil {
 		t.Errorf("返したリンクでパスワードを決められない: %v", err)
 	}
-	if code, _ := do(alice, "POST", "/aibow/admin/users", `{"name":"carol"}`); code != http.StatusConflict {
+	if code, _ := do(alice, "POST", "/_aibow/admin/users", `{"name":"carol"}`); code != http.StatusConflict {
 		t.Errorf("同じ名前: %d", code)
 	}
-	if code, _ := do(alice, "POST", "/aibow/admin/users", `{"name":"a b"}`); code != http.StatusBadRequest {
+	if code, _ := do(alice, "POST", "/_aibow/admin/users", `{"name":"a b"}`); code != http.StatusBadRequest {
 		t.Errorf("使えない名前: %d", code)
 	}
-	if code, _ := do(alice, "POST", "/aibow/admin/users", ""); code != http.StatusUnsupportedMediaType {
+	if code, _ := do(alice, "POST", "/_aibow/admin/users", ""); code != http.StatusUnsupportedMediaType {
 		t.Errorf("JSON でない本文: %d", code)
 	}
 
 	// 再設定のリンクを出すと、その時点で今のパスワードは使えず、その人のログインは切れる(0022 の決定事項 3)
-	code, body = do(alice, "POST", "/aibow/admin/users/bob/password", "")
+	code, body = do(alice, "POST", "/_aibow/admin/users/bob/password", "")
 	if code != http.StatusOK || !strings.Contains(body, `"token"`) {
 		t.Fatalf("再設定のリンク: %d %s", code, body)
 	}
@@ -149,11 +149,11 @@ func TestAdminUsers(t *testing.T) {
 		t.Error("再設定のリンクを出しても、前のパスワードでログインできる")
 	}
 	// 自分には使えない(自分を締め出さないように。決定事項 6)
-	if code, _ := do(alice, "POST", "/aibow/admin/users/alice/password", ""); code != http.StatusBadRequest {
+	if code, _ := do(alice, "POST", "/_aibow/admin/users/alice/password", ""); code != http.StatusBadRequest {
 		t.Errorf("自分の再設定: %d", code)
 	}
 
-	code, body = do(alice, "POST", "/aibow/admin/users/carol/key", "")
+	code, body = do(alice, "POST", "/_aibow/admin/users/carol/key", "")
 	var key map[string]string
 	json.Unmarshal([]byte(body), &key)
 	if code != http.StatusOK || !strings.HasPrefix(key["key"], "aibow_") {
@@ -162,16 +162,16 @@ func TestAdminUsers(t *testing.T) {
 	if u, err := auth.NewKeys(st).User(ctx, key["key"]); err != nil || u.Name != "carol" {
 		t.Errorf("返したキーで carol にならない: %+v %v", u, err)
 	}
-	if code, _ := do(alice, "POST", "/aibow/admin/users/nobody/key", ""); code != http.StatusNotFound {
+	if code, _ := do(alice, "POST", "/_aibow/admin/users/nobody/key", ""); code != http.StatusNotFound {
 		t.Errorf("いない人: %d", code)
 	}
 
 	for _, name := range []string{"alice", "local"} {
-		if code, _ := do(alice, "DELETE", "/aibow/admin/users/"+name, ""); code != http.StatusBadRequest {
+		if code, _ := do(alice, "DELETE", "/_aibow/admin/users/"+name, ""); code != http.StatusBadRequest {
 			t.Errorf("%s は消せないはず: %d", name, code)
 		}
 	}
-	if code, body := do(alice, "DELETE", "/aibow/admin/users/carol", ""); code != http.StatusOK {
+	if code, body := do(alice, "DELETE", "/_aibow/admin/users/carol", ""); code != http.StatusOK {
 		t.Errorf("消す: %d %s", code, body)
 	}
 	if _, err := st.UserByName(ctx, "carol"); err == nil {

@@ -6,8 +6,8 @@
 // aibow-server は画面(_cmd/aibow/frontend のビルド結果 web/dist/app)を exe に埋め込む。そのため「先に画面をビルドしてから go run / go build」の2段になり、
 // 画面のビルドを忘れると古い画面が配られる(2026-10-26、「利用者」のタブが出なかった)。この2つのコマンドは、それを1つにまとめる。
 //
-//	server … vite の開発用サーバー(127.0.0.1:9246)── /aibow/ の呼び出し ──→ aibow-server(go run。既定 127.0.0.1:8089)
-//	         ブラウザは vite のほうを開く。vite がブラウザの印を index.html に足し、/aibow/ を aibow-server に渡す(vite.config.ts。aibow-server は何も変えない)
+//	server … vite の開発用サーバー(127.0.0.1:9246)── /_aibow/ の呼び出し ──→ aibow-server(go run。既定 127.0.0.1:8089)
+//	         ブラウザは vite のほうを開く。vite がブラウザの印を index.html に足し、/_aibow/ を aibow-server に渡す(vite.config.ts。aibow-server は何も変えない)
 //	build  … npm run build(web/dist/app に出る)→ go build ./_cmd/aibow-server
 //
 // リポジトリのルートで実行する。要るのは Go と Node.js(npm)。node_modules が無ければ先に npm install する。
@@ -83,7 +83,7 @@ func runServer(args []string) error {
 	target := serverAddress(args)
 	setDefaultPaths()
 
-	// vite:AIBOW_BROWSER_DEV があるときだけ、ブラウザの印と /aibow/ の受け渡しが効く(vite.config.ts)
+	// vite:AIBOW_BROWSER_DEV があるときだけ、ブラウザの印と /_aibow/ の受け渡しが効く(vite.config.ts)
 	vite, err := viteCommand("--port", strconv.Itoa(vitePort), "--strictPort")
 	if err != nil {
 		return err
@@ -104,7 +104,7 @@ func runServer(args []string) error {
 	}
 	defer serverTree.Close()
 
-	fmt.Printf("dev: 画面は vite の開発用サーバーから配ります。ブラウザで http://127.0.0.1:%d/ を開いてください(/aibow/ の呼び出しは %s に渡します)\n", vitePort, target)
+	fmt.Printf("dev: 画面は vite の開発用サーバーから配ります。ブラウザで http://127.0.0.1:%d/ を開いてください(/_aibow/ の呼び出しは %s に渡します)\n", vitePort, target)
 	fmt.Printf("dev: OpenAI 互換の口(Cline など)と画面のアプリは、今までどおり %s につなぎます。止めるときは Ctrl+C\n", target)
 
 	// Ctrl+C は同じコンソールの子にも届く(aibow-server は自分で後片付けして終わる)。ここでは受け取って、aibow-server が終わるのを待つ
@@ -160,7 +160,7 @@ func viteCommand(args ...string) (*exec.Cmd, error) {
 	return cmd, nil
 }
 
-// serverAddress は、vite が /aibow/ を渡す aibow-server のアドレス。引数 > 設定ファイル > 既定(aibow-server の決め方と同じ順)。
+// serverAddress は、vite が /_aibow/ を渡す aibow-server のアドレス。引数 > 設定ファイル > 既定(aibow-server の決め方と同じ順)。
 // 環境変数(AIBOW_SERVER_PORT など)も見る。全部のネットワークで待ち受けるとき(0.0.0.0 など)も、渡すのはこの PC の 127.0.0.1
 func serverAddress(args []string) string {
 	fs := flag.NewFlagSet("aibow-server", flag.ContinueOnError)
@@ -168,12 +168,14 @@ func serverAddress(args []string) string {
 	config := fs.String("config", "", "")
 	port := fs.Int("port", 0, "")
 	host := fs.String("host", "", "")
+	addr := fs.String("addr", "", "")
+	base := fs.String("base", "", "")
 	tlsCert := fs.String("tls-cert", "", "")
 	// aibow-server のほかの引数は読み飛ばす(値を取るものも、取らないものもある)
 	for _, name := range []string{"model", "lib", "models", "tls-key"} {
 		fs.String(name, "", "")
 	}
-	for _, name := range []string{"ctx"} {
+	for _, name := range []string{"ctx", "parallel"} {
 		fs.Int(name, 0, "")
 	}
 	for _, name := range []string{"login", "debug", "version"} {
@@ -184,6 +186,8 @@ func serverAddress(args []string) string {
 	var file struct {
 		Port    int    `json:"port"`
 		Host    string `json:"host"`
+		Addr    string `json:"addr"`
+		Base    string `json:"base"`
 		TLSCert string `json:"tlsCert"`
 	}
 	path := *config
@@ -196,8 +200,13 @@ func serverAddress(args []string) string {
 		json.Unmarshal(data, &file) // 読めなければ aibow-server が理由を出して止まる
 	}
 	envPort, _ := strconv.Atoi(os.Getenv("AIBOW_SERVER_PORT"))
+	envHost := os.Getenv("AIBOW_SERVER_HOST")
+	// addr は host と port をまとめて書く形(0042)。書いた所の host・port の代わりにする(読めなければ aibow-server が理由を出して止まる)
+	*host, *port = splitAddr(*addr, *host, *port)
+	file.Host, file.Port = splitAddr(file.Addr, file.Host, file.Port)
+	envHost, envPort = splitAddr(os.Getenv("AIBOW_SERVER_ADDR"), envHost, envPort)
 	p := cmp.Or(*port, file.Port, envPort, 8089)
-	h := cmp.Or(*host, file.Host, os.Getenv("AIBOW_SERVER_HOST"), "127.0.0.1")
+	h := cmp.Or(*host, file.Host, envHost, "127.0.0.1")
 	if ip := net.ParseIP(h); ip != nil && ip.IsUnspecified() {
 		h = "127.0.0.1"
 	}
@@ -205,7 +214,25 @@ func serverAddress(args []string) string {
 	if cmp.Or(*tlsCert, file.TLSCert, os.Getenv("AIBOW_SERVER_TLS_CERT")) != "" {
 		scheme = "https"
 	}
-	return scheme + "://" + net.JoinHostPort(h, strconv.Itoa(p))
+	// 道の頭(base。0042)も付ける。vite は渡す先のパスを頭に足すので、画面の /_aibow/ui/… は aibow-server の <base>/_aibow/ui/… に届く
+	b := strings.Trim(cmp.Or(*base, file.Base, os.Getenv("AIBOW_SERVER_BASE")), "/")
+	if b != "" {
+		b = "/" + b
+	}
+	return scheme + "://" + net.JoinHostPort(h, strconv.Itoa(p)) + b
+}
+
+// splitAddr は addr("アドレス:ポート")が書かれていれば分けて返し、無ければ host・port をそのまま返す。
+func splitAddr(addr, host string, port int) (string, int) {
+	if addr == "" {
+		return host, port
+	}
+	h, ps, err := net.SplitHostPort(addr)
+	if err != nil {
+		return host, port
+	}
+	p, _ := strconv.Atoi(ps)
+	return h, p
 }
 
 type nopWriter struct{}

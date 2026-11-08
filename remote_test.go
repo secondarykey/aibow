@@ -353,7 +353,8 @@ func TestLocalToolPolicy(t *testing.T) {
 	if cs.toolPolicy(set, read) != ToolAsk {
 		t.Error("会話の上書きが一番優先")
 	}
-	if names := BuiltinTools(); len(names) != 10 || names[0].Name != "get_current_time" || names[2].Name != "fetch_url" || names[8].Name != "update_plan" || names[9].Name != "run_command" {
+	if names := BuiltinTools(); len(names) != 12 || names[0].Name != "get_current_time" || names[2].Name != "fetch_url" || names[8].Name != "update_plan" || names[9].Name != "run_command" ||
+		names[10].Name != "git_status" || names[11].Name != "git_diff" { // Git のツール(0041)は、リポジトリの会話でだけ出るが一覧には並べる
 		t.Errorf("組み込みのツールの一覧: %+v", names)
 	}
 }

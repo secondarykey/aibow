@@ -11,10 +11,10 @@ import (
 )
 
 // 信頼したつなぎ先は、確かめただけでも覚え(次の起動でつなぐ先にはしない)、ログアウトしても残る(2026-10-29、ユーザーと決めた)。
-// 相手は、ログインの要らない aibow-server のふりをする HTTP のサーバー(/aibow/auth/me だけ答える)
+// 相手は、ログインの要らない aibow-server のふりをする HTTP のサーバー(/_aibow/auth/me だけ答える)
 func TestConnectionKeepsKnownServer(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/aibow/auth/me" {
+		if r.URL.Path != "/_aibow/auth/me" {
 			http.NotFound(w, r)
 			return
 		}

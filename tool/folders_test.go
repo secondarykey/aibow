@@ -115,8 +115,16 @@ func TestFolderDefs(t *testing.T) {
 			t.Errorf("%s: フォルダ1つで folder がある", b.Name)
 		}
 	}
-	_, _, multi := twoFolders(t)
+	main, notes, multi := twoFolders(t)
+	// folder を足すツールは全部見る。引数の無いもの(git_status。properties が {})も含める:
+	// 以前は後ろにカンマが残って壊れた JSON になり、MCP の SDK の AddTool が panic した
+	set := folderSet{{Name: "app", Path: main, Main: true, Writable: true}, {Name: "notes", Path: notes}}
+	multi = append(multi, runCommand{folders: set}, searchFiles{set}, gitStatus{set}, gitDiff{set})
 	for _, tl := range multi {
+		if !json.Valid(tl.Def().Parameters) {
+			t.Errorf("%s: 引数の定義が JSON として読めない: %s", tl.Def().Name, tl.Def().Parameters)
+			continue
+		}
 		var schema struct {
 			Properties map[string]struct {
 				Enum []string `json:"enum"`

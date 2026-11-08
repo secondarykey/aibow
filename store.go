@@ -43,6 +43,8 @@ type Store interface {
 	AddMessage(ctx context.Context, m StoredMessage) error
 	// SetMessagesExcluded は発言の「モデルに渡さない」の印を変える(0011)。会話の中の発言の ID を渡す
 	SetMessagesExcluded(ctx context.Context, ids []uuid.UUID, excluded bool) error
+	// SetMessagesElided は発言に「省略して渡す」の印を付ける(今の組の中の compact。0040)。会話の中の発言の ID を渡す。印は外さない
+	SetMessagesElided(ctx context.Context, ids []uuid.UUID) error
 	// DeleteMessages は発言を消す(最後の返事を作り直す・最後の発言を直して送り直す。0011)
 	DeleteMessages(ctx context.Context, ids []uuid.UUID) error
 	// DiscardFile は、発言に付けたファイルの中身を消し、捨てた印を付ける(名前と種類は残す。0030 の決定事項 27)。
@@ -319,6 +321,9 @@ type StoredMessage struct {
 	ToolResult     *ToolResult       `json:"tool_result,omitempty"` // どの呼び出しの結果か(tool のみ)
 	// Excluded は、ユーザーが選んで「モデルに渡さない」にした発言(0011)。画面には薄く残し、モデルに渡す履歴からは外す(Conversations.forModel)
 	Excluded bool `json:"excluded,omitempty"`
+	// Elided は、今の組の中の compact(0040)で省略して渡すことにした発言(elide.go)。一歩(返事とその呼び出しの結果)の単位で付く。
+	// tool は結果の代わりに短い札を、assistant は思考を空にして渡す(promptMessages)。DB の文と思考はそのまま(画面には全部残す)
+	Elided bool `json:"elided,omitempty"`
 	// Files は、発言に付けて読み込んだファイル(user のみ。0030)。保存は発言とは別の表。
 	// モデルに渡すときに、テキストのファイルは発言の文の前に展開する(files.go の withFiles)
 	Files     []File    `json:"files,omitempty"`

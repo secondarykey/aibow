@@ -124,6 +124,16 @@ func TestConversationsAndMessagesPersist(t *testing.T) {
 	if _, again, _ := s.Conversation(ctx, c.ID); again[0].Excluded || !again[1].Excluded {
 		t.Errorf("印を付けた発言だけ: %v %v", again[0].Excluded, again[1].Excluded)
 	}
+	// 省略して渡す印(版 21。0040)
+	if ms[0].Elided || ms[1].Elided {
+		t.Errorf("省略の印は最初は付いていない")
+	}
+	if err := s.SetMessagesElided(ctx, []uuid.UUID{reply.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if _, again, _ := s.Conversation(ctx, c.ID); again[0].Elided || !again[1].Elided || again[1].Thinking != reply.Thinking {
+		t.Errorf("省略の印を付けた発言だけ(文と思考はそのまま): %+v", again)
+	}
 	defer func() {
 		// 発言を消す(作り直す・送り直す。0011)。ほかのテストの確かめが済んでから
 		if err := s.DeleteMessages(ctx, []uuid.UUID{reply.ID}); err != nil {
@@ -497,6 +507,9 @@ func TestOwnersAreSeparate(t *testing.T) {
 	if err := s.SetMessagesExcluded(other, []uuid.UUID{msg.ID}, true); err != nil {
 		t.Fatal(err)
 	}
+	if err := s.SetMessagesElided(other, []uuid.UUID{msg.ID}); err != nil {
+		t.Fatal(err)
+	}
 	if err := s.DeleteMessages(other, []uuid.UUID{msg.ID}); err != nil {
 		t.Fatal(err)
 	}
@@ -510,7 +523,7 @@ func TestOwnersAreSeparate(t *testing.T) {
 		t.Errorf("ほかの人のプロファイルを消せる: %v", err)
 	}
 	c, ms, err := s.Conversation(ctx, mine.ID)
-	if err != nil || c.Title != "" || len(ms) != 1 || ms[0].Excluded {
+	if err != nil || c.Title != "" || len(ms) != 1 || ms[0].Excluded || ms[0].Elided {
 		t.Errorf("ほかの人の操作で自分の会話が変わった: %+v %+v %v", c, ms, err)
 	}
 	if _, err := s.Profile(ctx, p.ID); err != nil {

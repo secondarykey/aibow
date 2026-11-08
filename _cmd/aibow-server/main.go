@@ -1,7 +1,7 @@
 // aibow-server は、aibow の「頭」(llama.cpp で動かすモデルと書式)を OpenAI 互換の HTTP の API として出すプログラム(ステップ6。0012)。
 // ステップ8(0015)で aibow-api から名前を変えた。モデルの一覧・切り替え・GPU の層数も持ち、画面のアプリもここにつなげる。
 //
-//	aibow-server [-model モデル] [-ctx 作業領域の大きさ] [-port ポート] [-config 設定ファイル] [-login]
+//	aibow-server [-model モデル] [-ctx 作業領域の大きさ] [-port ポート | -addr アドレス:ポート] [-base /aibow] [-config 設定ファイル] [-login]
 //	aibow-server [-config 設定ファイル] user list|add|passwd|remove|key|admin|unadmin [名前]   … 利用者を扱う(users.go。ステップ10)
 //
 // Cline などの既製のツールから http://127.0.0.1:8089/v1 につなぐ。待ち受けは既定で 127.0.0.1 だけ(PC の外からはつなげない)。
@@ -14,7 +14,7 @@
 // 画面のアプリをここにつないでいるとき(settings.json の serverUrl。0015)は、アプリは GPU を使わないので同時に動かせる。
 //
 // ステップ9(0016)で、ブラウザの会話も持つようにした(browser.go)。会話の仕組みと保存(server.db)をここで動かし、
-// 画面用の口(/aibow/ui/)で出す。生成は同じ engine を使い、OpenAI 互換の口と同じ順番待ちの席を通す。
+// 画面用の口(/_aibow/ui/)で出す。生成は同じ engine を使い、OpenAI 互換の口と同じ順番待ちの席を通す。
 package main
 
 import (
@@ -48,7 +48,7 @@ import (
 func main() {
 	f := defineFlags(flag.CommandLine)
 	flag.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(), "使い方: %s [-model モデル] [-ctx 作業領域] [-port ポート] [-config 設定ファイル] [-login] [-debug]\n", filepath.Base(os.Args[0]))
+		fmt.Fprintf(flag.CommandLine.Output(), "使い方: %s [-model モデル] [-ctx 作業領域] [-port ポート | -addr アドレス:ポート] [-base パス] [-config 設定ファイル] [-login] [-debug]\n", filepath.Base(os.Args[0]))
 		fmt.Fprintf(flag.CommandLine.Output(), "        %s [-config 設定ファイル] user list|add|passwd|remove|key|admin|unadmin [名前]\n\n", filepath.Base(os.Args[0]))
 		fmt.Fprintln(flag.CommandLine.Output(), "aibow のモデルを OpenAI 互換の API(/v1/models・/v1/chat/completions)として出します。")
 		fmt.Fprintln(flag.CommandLine.Output(), "強さの順は 引数 > 設定ファイル > 環境変数 > 既定 です。")
@@ -104,7 +104,7 @@ func run(c config, notices []string, cfgErr error, env *envReader) error {
 		log.Noticef("設定ファイル: %s", absPath(c.File))
 	}
 	// 待ち受けるアドレスは、モデルを読み込む前に出しておく(読み込みに失敗しても、どこで待ち受けるつもりだったかが分かるように)
-	log.Noticef("待ち受けるアドレス: %s://%s(llama.cpp とモデルを読み込んでから待ち受けます)", c.Scheme(), net.JoinHostPort(c.Host, strconv.Itoa(c.Port)))
+	log.Noticef("待ち受けるアドレス: %s(llama.cpp とモデルを読み込んでから待ち受けます)", c.URL())
 	// llama.cpp・モデルの場所は設定(引数・設定ファイル・環境変数)、GPU の層数・返事の既定はアプリと同じ環境変数で決める
 	// (画面の DB は読まない。DB はアプリのもの)
 	nCtx, port := c.Ctx, c.Port
@@ -174,7 +174,8 @@ func run(c config, notices []string, cfgErr error, env *envReader) error {
 
 	// 既定は 127.0.0.1 だけで待ち受ける(PC の外からはつなげない)。-host で広げたときは、resolve がログインを要るようにしてある(0017 の決定事項 2)
 	addr := net.JoinHostPort(c.Host, strconv.Itoa(port))
-	base := c.Scheme() + "://" + addr
+	// base はつなぐ側が書くアドレス。道の頭(-base。0042)まで含める(http://127.0.0.1:8089/aibow)
+	base := c.URL()
 	tlsConfig, err := loadTLS(c)
 	if err != nil {
 		return err
@@ -222,7 +223,7 @@ func run(c config, notices []string, cfgErr error, env *envReader) error {
 		StateFile: absPath(c.StatePath),
 	})
 	hs := &http.Server{
-		Handler:           routes(apiH, browser, screen()),
+		Handler:           mount(c.Base, routes(apiH, browser, screen())),
 		ReadHeaderTimeout: 10 * time.Second,
 		TLSConfig:         tlsConfig,
 		// 書き込みの時間の上限(WriteTimeout)は付けない。返事の生成は数十秒〜数分かかることがあるため
@@ -281,6 +282,14 @@ func logAddresses(c config, base string) {
 	log.Noticef("画面のアプリのつなぎ先(設定の画面の「サーバー」か、settings.json の serverUrl / AIBOW_SERVER_URL): %s", base)
 	log.Noticef("OpenAI 互換のクライアント(Cline など)の Base URL: %s/v1", base)
 	log.Noticef("ブラウザで開く画面: %s/(会話は %s に保存します)", base, absPath(c.DBPath))
+	if c.Base != "" && c.Local() {
+		// base はリバースプロキシ(nginx など)の後ろに置くときに使うことが多い。同じ PC のプロキシを通った呼び出しは、
+		// 外からでも 127.0.0.1 から来たように見える(api.IsLocal は接続の相手のアドレスしか見ない)。
+		// サーバーの PC の上からだけ許している操作が外に開くので、起動のときに知らせる(0042。直すかは未決事項)
+		log.Warnf("base(%s)を付けて 127.0.0.1 で待ち受けます。同じ PC のリバースプロキシから外に出すと、プロキシを通った呼び出しも"+
+			"サーバーの PC の上からに見え、その人だけに許している操作(モデルを降ろす・GPU の層数・置き場所・全員の使用量)を誰でもできます。"+
+			"信用できる人だけが使う網に限ってください", c.Base)
+	}
 	if c.Login {
 		log.Notice("ブラウザの画面はログインが要ります(利用者は aibow-server user add <名前> で作ります)")
 	} else {

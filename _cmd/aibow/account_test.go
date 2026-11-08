@@ -31,8 +31,8 @@ func TestAppAccount(t *testing.T) {
 	}
 	sessions, keys := auth.NewSessions(st), auth.NewKeys(st)
 	mux := http.NewServeMux()
-	mux.Handle("/aibow/auth/", keys.WithBearer(auth.Handler(sessions, true)))
-	mux.Handle("GET /aibow/auth/key", keys.MeHandler(true))
+	mux.Handle("/_aibow/auth/", keys.WithBearer(auth.Handler(sessions, true)))
+	mux.Handle("GET /_aibow/auth/key", keys.MeHandler(true))
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 

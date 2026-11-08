@@ -34,7 +34,7 @@ func (c *Client) call(ctx context.Context, name string, args []any, outs ...any)
 		args = []any{}
 	}
 	var raw []json.RawMessage
-	if err := c.c.Post(ctx, "/aibow/store/"+name, args, &raw); err != nil {
+	if err := c.c.Post(ctx, "/_aibow/store/"+name, args, &raw); err != nil {
 		var ae *apiclient.APIError
 		if errors.As(err, &ae) {
 			if known := errorOf(ae.Code); known != nil {
@@ -88,6 +88,10 @@ func (c *Client) AddMessage(ctx context.Context, m aibow.StoredMessage) error {
 
 func (c *Client) SetMessagesExcluded(ctx context.Context, ids []uuid.UUID, excluded bool) error {
 	return c.call(ctx, "SetMessagesExcluded", []any{ids, excluded})
+}
+
+func (c *Client) SetMessagesElided(ctx context.Context, ids []uuid.UUID) error {
+	return c.call(ctx, "SetMessagesElided", []any{ids})
 }
 
 func (c *Client) DeleteMessages(ctx context.Context, ids []uuid.UUID) error {

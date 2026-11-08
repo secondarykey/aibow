@@ -117,7 +117,7 @@ func TestCheckEmail(t *testing.T) {
 	}
 }
 
-// 本人が表示名を変える(POST /aibow/auth/display)。me に表示名が入る
+// 本人が表示名を変える(POST /_aibow/auth/display)。me に表示名が入る
 func TestDisplayNameHTTP(t *testing.T) {
 	st := openStore(t)
 	addUser(t, st, "bob", "pw")
@@ -137,34 +137,34 @@ func TestDisplayNameHTTP(t *testing.T) {
 		json.NewDecoder(res.Body).Decode(&m)
 		return res.StatusCode, m
 	}
-	if code, _ := post("/aibow/auth/display", `{"display_name":"佐藤"}`); code != http.StatusUnauthorized {
+	if code, _ := post("/_aibow/auth/display", `{"display_name":"佐藤"}`); code != http.StatusUnauthorized {
 		t.Errorf("ログインの前: %d", code)
 	}
-	post("/aibow/auth/login", `{"name":"bob","password":"pw"}`)
-	if code, m := post("/aibow/auth/display", `{"display_name":" 佐藤 花子 "}`); code != http.StatusOK || m.DisplayName != "佐藤 花子" {
+	post("/_aibow/auth/login", `{"name":"bob","password":"pw"}`)
+	if code, m := post("/_aibow/auth/display", `{"display_name":" 佐藤 花子 "}`); code != http.StatusOK || m.DisplayName != "佐藤 花子" {
 		t.Errorf("変える: %d %+v", code, m)
 	}
-	if code, _ := post("/aibow/auth/display", `{"display_name":"a\nb"}`); code != http.StatusBadRequest {
+	if code, _ := post("/_aibow/auth/display", `{"display_name":"a\nb"}`); code != http.StatusBadRequest {
 		t.Errorf("制御文字: %d", code)
 	}
 	// メールアドレス(0031)。本人の me にだけ入る。ほかの人と重なれば 409(大文字小文字は同じとみなす)
-	if code, m := post("/aibow/auth/email", `{"email":" Bob@Example.com "}`); code != http.StatusOK || m.Email != "Bob@Example.com" {
+	if code, m := post("/_aibow/auth/email", `{"email":" Bob@Example.com "}`); code != http.StatusOK || m.Email != "Bob@Example.com" {
 		t.Errorf("メールアドレス: %d %+v", code, m)
 	}
-	if code, _ := post("/aibow/auth/email", `{"email":"bob"}`); code != http.StatusBadRequest {
+	if code, _ := post("/_aibow/auth/email", `{"email":"bob"}`); code != http.StatusBadRequest {
 		t.Errorf("形でないアドレス: %d", code)
 	}
 	carol := addUser(t, st, "carol", "pw")
 	if err := st.SetEmail(ctx, carol.ID, "carol@example.com", time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	if code, _ := post("/aibow/auth/email", `{"email":"CAROL@example.com"}`); code != http.StatusConflict {
+	if code, _ := post("/_aibow/auth/email", `{"email":"CAROL@example.com"}`); code != http.StatusConflict {
 		t.Errorf("ほかの人と重なる: %d", code)
 	}
 	if err := st.SetEmail(ctx, carol.ID, "", time.Now()); err != nil {
 		t.Errorf("空は何人いても重ならない: %v", err)
 	}
-	res, err := c.Get(srv.URL + "/aibow/auth/me")
+	res, err := c.Get(srv.URL + "/_aibow/auth/me")
 	if err != nil {
 		t.Fatal(err)
 	}

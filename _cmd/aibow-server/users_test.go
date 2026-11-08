@@ -97,4 +97,8 @@ func TestLinkBase(t *testing.T) {
 	if b := linkBase(config{Host: "0.0.0.0", Port: 18089, TLSCert: "c.pem"}); b.base != "https://127.0.0.1:18089" || b.note == "" {
 		t.Errorf("0.0.0.0: %+v", b)
 	}
+	// 道の頭(base。0042)も付く。画面は base の下にあるため
+	if b := linkBase(config{Host: "127.0.0.1", Port: 8089, Base: "/aibow"}); b.base != "http://127.0.0.1:8089/aibow" {
+		t.Errorf("base: %+v", b)
+	}
 }

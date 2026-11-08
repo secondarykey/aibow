@@ -82,6 +82,7 @@ func TestEnvironmentPlacement(t *testing.T) {
 	want := testDefaults.System + "\n\n# Environment\nWorking directory: " + work + "\nOS: " + runtime.GOOS +
 		"\nShell for run_command: " + tool.ShellNoteFor(true) + "\nUse paths relative to the working directory.\n" +
 		"Commands already run inside the working directory, so do not cd into it. \"example\" refers to the working directory itself.\n\n" +
+		workingRules(cs.toolsFor(set)) + "\n\n" + // 作業の決まり(0041)も環境の説明に続けて、要約より前
 		summaryHeading + "\n- 要約"
 	if len(msgs) != 1 || msgs[0].Content != want {
 		t.Errorf("system:\n%s\n期待:\n%s", msgs[0].Content, want)

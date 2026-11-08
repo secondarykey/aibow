@@ -2,12 +2,12 @@ package api
 
 // places.go: モデルの置き場所と、表示だけのサーバーの設定(0015 の 8-4)。
 //
-// llama.cpp の server には無い口なので /aibow/ の下に置く(0015 の 30):
+// llama.cpp の server には無い口なので /_aibow/ の下に置く(0015 の 30):
 //
-//	GET  /aibow/places          置き場所の一覧(models フォルダ・Ollama・足した置き場所)
-//	POST /aibow/places/add      {"path"} 置き場所(フォルダか GGUF のファイル)を足す。返事は足したあとの一覧
-//	POST /aibow/places/remove   {"path"} 足した置き場所を外す。返事は外したあとの一覧
-//	GET  /aibow/settings        表示だけのサーバーの設定(作業領域・ポート・llama.cpp の場所・最初のモデル・設定ファイル)
+//	GET  /_aibow/places          置き場所の一覧(models フォルダ・Ollama・足した置き場所)
+//	POST /_aibow/places/add      {"path"} 置き場所(フォルダか GGUF のファイル)を足す。返事は足したあとの一覧
+//	POST /_aibow/places/remove   {"path"} 足した置き場所を外す。返事は外したあとの一覧
+//	GET  /_aibow/settings        表示だけのサーバーの設定(作業領域・ポート・llama.cpp の場所・最初のモデル・設定ファイル)
 //
 // パスはサーバーの PC のもの。足すときはサーバーがそのパスがあるかを確かめ、無ければ理由を書いたエラーを返す(0015 の 31)。
 // 足した置き場所は server-models.json(サーバーが書くファイル)に覚え、手で書く server.json は書き換えない(0015 の 22)。
@@ -45,17 +45,17 @@ func (s *Server) SetSettings(v Settings) {
 	s.settings = v
 }
 
-// placeList は /aibow/places の返事。
+// placeList は /_aibow/places の返事。
 type placeList struct {
 	Places []models.Place `json:"places"`
 }
 
-// placeRequest は /aibow/places/add・/aibow/places/remove の本文。
+// placeRequest は /_aibow/places/add・/_aibow/places/remove の本文。
 type placeRequest struct {
 	Path string `json:"path"`
 }
 
-// handlePlaces は GET /aibow/places。
+// handlePlaces は GET /_aibow/places。
 func (s *Server) handlePlaces(w http.ResponseWriter, r *http.Request) {
 	if s.models == nil {
 		writeError(w, http.StatusNotFound, "invalid_request_error", "", "このサーバーはモデルの置き場所を持っていません")
@@ -64,7 +64,7 @@ func (s *Server) handlePlaces(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, placeList{Places: s.models.Places()})
 }
 
-// handleAddPlace は POST /aibow/places/add。
+// handleAddPlace は POST /_aibow/places/add。
 func (s *Server) handleAddPlace(w http.ResponseWriter, r *http.Request) {
 	req, ok := s.readPlaceRequest(w, r)
 	if !ok {
@@ -78,7 +78,7 @@ func (s *Server) handleAddPlace(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, placeList{Places: s.models.Places()})
 }
 
-// handleRemovePlace は POST /aibow/places/remove。
+// handleRemovePlace は POST /_aibow/places/remove。
 func (s *Server) handleRemovePlace(w http.ResponseWriter, r *http.Request) {
 	req, ok := s.readPlaceRequest(w, r)
 	if !ok {
@@ -106,7 +106,7 @@ func (s *Server) readPlaceRequest(w http.ResponseWriter, r *http.Request) (place
 	return req, true
 }
 
-// handleSettings は GET /aibow/settings。
+// handleSettings は GET /_aibow/settings。
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	v := s.settings
 	v.NCtx = s.nCtx

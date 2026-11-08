@@ -6,13 +6,13 @@ package api
 // ステップ8で画面のアプリもここにつなぐので、会話ごとのモデル(0014 の 3)に合わせて、
 // リクエストの model が読み込み中のモデルと違えば読み直すようにした。
 //
-// 口は、意味が同じものは llama.cpp の server(router モード)の名前にそろえ、無いものだけ /aibow/ の下に置く(0015。2026-10-21 にユーザーと決めた):
+// 口は、意味が同じものは llama.cpp の server(router モード)の名前にそろえ、無いものだけ /_aibow/ の下に置く(0015。2026-10-21 にユーザーと決めた):
 //
 //	GET  /models              使えるモデルの一覧(読み込み中か・GPU の層数つき)。llama.cpp と同じく status.value で状態を返す。
 //	                          入れ替えの途中は current が null になるので、入れ替えている先を loading で知らせる(降ろしたのと見分けるため)
 //	POST /models/load         {"model"} を明示的に読み込む(送信の前に読み込んで、読み込み中のお知らせとログを出すため)
 //	POST /models/unload       {"model"} 読み込み中のモデルを降ろす(VRAM を空ける。8-4)
-//	POST /aibow/gpu-layers    {"model", "n_gpu_layers"} モデルごとの GPU の層数を変えて覚える(読み込み中のモデルなら読み直す)
+//	POST /_aibow/gpu-layers    {"model", "n_gpu_layers"} モデルごとの GPU の層数を変えて覚える(読み込み中のモデルなら読み直す)
 //
 // モデルの置き場所と、表示だけのサーバーの設定の口は places.go(8-4)。
 //
@@ -83,13 +83,13 @@ type modelStatus struct {
 	Value string `json:"value"`
 }
 
-// loadRequest は POST /models/load と POST /aibow/gpu-layers の本文。
+// loadRequest は POST /models/load と POST /_aibow/gpu-layers の本文。
 type loadRequest struct {
 	Model      string `json:"model"`
-	NGPULayers *int   `json:"n_gpu_layers"` // /aibow/gpu-layers だけで使う
+	NGPULayers *int   `json:"n_gpu_layers"` // /_aibow/gpu-layers だけで使う
 }
 
-// loadResult は POST /models/load と POST /aibow/gpu-layers の返事。llama.cpp と同じ success に、読み込んだモデルの情報を足す。
+// loadResult は POST /models/load と POST /_aibow/gpu-layers の返事。llama.cpp と同じ success に、読み込んだモデルの情報を足す。
 type loadResult struct {
 	Success bool              `json:"success"`
 	Model   *engine.ModelInfo `json:"model"` // 読み込んだ(読み直した)モデル。層の数を覚えただけなら null
@@ -180,7 +180,7 @@ func (s *Server) handleUnload(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, loadResult{Success: true})
 }
 
-// handleGPULayers は POST /aibow/gpu-layers。model が空なら読み込み中のモデル。
+// handleGPULayers は POST /_aibow/gpu-layers。model が空なら読み込み中のモデル。
 // GPU の層数は「その PC の人が決めること」なので、サーバーの PC に覚える(0015 の 9)。
 func (s *Server) handleGPULayers(w http.ResponseWriter, r *http.Request) {
 	req, ok := s.readLoadRequest(w, r)

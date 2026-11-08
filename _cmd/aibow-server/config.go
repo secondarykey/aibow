@@ -67,6 +67,10 @@ type configFile struct {
 	Login *bool `json:"login"`
 	// Host は待ち受けるアドレス(0017 の 10-2)。既定は 127.0.0.1(この PC からだけ)。0.0.0.0 なら全部のネットワーク
 	Host string `json:"host"`
+	// Addr は host と port をまとめて書く形("0.0.0.0:8089"。0042)。同じファイルに host・port と一緒には書けない
+	Addr string `json:"addr"`
+	// Base は、全部の道の頭に付けるパス("/aibow"。0042)。書かなければ "/"(今までどおり)
+	Base string `json:"base"`
 	// TLSCert・TLSKey は HTTPS の証明書と秘密鍵のファイル(aibow-server cert で作れる)。両方書けば HTTPS で待ち受ける
 	TLSCert string `json:"tlsCert"`
 	TLSKey  string `json:"tlsKey"`
@@ -97,6 +101,8 @@ type config struct {
 	// Host は待ち受けるアドレス(既定 127.0.0.1)。TLSCert・TLSKey は HTTPS の証明書と秘密鍵(どちらも空なら HTTP)
 	Host            string
 	TLSCert, TLSKey string
+	// Base は全部の道の頭に付けるパス(0042)。"/aibow" の形(最後の / なし)。空なら頭に何も付けない(今までどおり "/" の下)
+	Base string
 
 	// MCPServers は、ブラウザの会話で使う MCP のサーバー、Folders は資料のフォルダ(どちらも設定ファイルにだけ書ける。0024)
 	MCPServers map[string]client.ServerConfig
@@ -115,7 +121,8 @@ type config struct {
 // flags は起動の引数。書かれたかどうかは set で見る(書かれていない引数は、設定ファイル・環境変数より弱いため)。
 type flags struct {
 	config, model, lib, modelsDir *string
-	host, tlsCert, tlsKey         *string
+	host, addr, base              *string
+	tlsCert, tlsKey               *string
 	ctx, port, parallel           *int
 	version, debug, login         *bool
 	set                           map[string]bool
@@ -135,6 +142,8 @@ func defineFlags(fs *flag.FlagSet) *flags {
 		debug:     fs.Bool("debug", false, "ログを Debug レベルまで出す(設定ファイルの logLevel より強い。どちらも無ければ go run は Info、exe は Notice)"),
 		login:     fs.Bool("login", false, "ログインを要るようにする(既定で要る。-login=false なら、127.0.0.1 だけで待ち受けるときにログインなし。利用者は aibow-server user add で作る)。設定ファイルの login・環境変数 AIBOW_SERVER_LOGIN"),
 		host:      fs.String("host", "", "待ち受けるアドレス(既定 127.0.0.1。0.0.0.0 なら全部のネットワーク。127.0.0.1 の外ではログインと API キーが要る)。設定ファイルの host・環境変数 AIBOW_SERVER_HOST"),
+		addr:      fs.String("addr", "", "待ち受けるアドレスとポートをまとめて書く(例 0.0.0.0:8089。:8089 はポートだけを決め、アドレスは 127.0.0.1 のまま)。-host・-port と一緒には書けない。設定ファイルの addr・環境変数 AIBOW_SERVER_ADDR"),
+		base:      fs.String("base", "", "全部の道の頭に付けるパス(例 /aibow なら、画面は /aibow/・OpenAI 互換の口は /aibow/v1。既定 /)。設定ファイルの base・環境変数 AIBOW_SERVER_BASE"),
 		tlsCert:   fs.String("tls-cert", "", "HTTPS の証明書のファイル(aibow-server cert で作れる)。設定ファイルの tlsCert・環境変数 AIBOW_SERVER_TLS_CERT"),
 		tlsKey:    fs.String("tls-key", "", "HTTPS の秘密鍵のファイル。設定ファイルの tlsKey・環境変数 AIBOW_SERVER_TLS_KEY"),
 	}
@@ -168,7 +177,12 @@ func resolve(fs *flag.FlagSet, f *flags, env *envReader) (config, []string, erro
 	if found {
 		c.File = path
 	}
-	c.Port = pick(f.set["port"], *f.port, file.Port, env.int("AIBOW_SERVER_PORT", 0), defaultPort)
+	// 待ち受けるアドレスとポートは、host・port に分けても、addr にまとめても書ける(0042)。どちらで書いても、書いた所の強さで効く
+	l, err := listenLevels(f, file, path, env)
+	if err != nil {
+		return config{}, nil, err
+	}
+	c.Port = pick(l[0].portSet, l[0].port, l[1].port, l[2].port, defaultPort)
 	c.Ctx = pick(f.set["ctx"], *f.ctx, file.Ctx, env.int("AIBOW_SERVER_CTX", 0), defaultCtx)
 	c.Parallel = pick(f.set["parallel"], *f.parallel, file.Parallel, env.int("AIBOW_SERVER_PARALLEL", 0), defaultParallel)
 	c.Model = pick(f.set["model"], *f.model, file.Model, os.Getenv("AIBOW_MODEL"), "")
@@ -183,7 +197,11 @@ func resolve(fs *flag.FlagSet, f *flags, env *envReader) (config, []string, erro
 	default:
 		c.Login = env.bool("AIBOW_SERVER_LOGIN", true) // 何も書かなければ要る(0020)
 	}
-	c.Host = pick(f.set["host"], *f.host, file.Host, os.Getenv("AIBOW_SERVER_HOST"), "127.0.0.1")
+	c.Host = pick(l[0].hostSet, l[0].host, l[1].host, l[2].host, "127.0.0.1")
+	base := pick(f.set["base"], *f.base, file.Base, os.Getenv("AIBOW_SERVER_BASE"), "")
+	if c.Base, err = cleanBase(base); err != nil {
+		return config{}, nil, err
+	}
 	c.TLSCert = pick(f.set["tls-cert"], *f.tlsCert, file.TLSCert, os.Getenv("AIBOW_SERVER_TLS_CERT"), "")
 	c.TLSKey = pick(f.set["tls-key"], *f.tlsKey, file.TLSKey, os.Getenv("AIBOW_SERVER_TLS_KEY"), "")
 	if (c.TLSCert == "") != (c.TLSKey == "") {
@@ -204,6 +222,108 @@ func resolve(fs *flag.FlagSet, f *flags, env *envReader) (config, []string, erro
 		}
 	}
 	return c, notices, nil
+}
+
+// listen は、1つの所(引数・設定ファイル・環境変数)に書かれた待ち受けるアドレスとポート。
+// hostSet・portSet は引数のときだけ使う(引数は「書いたかどうか」で決める。ほかの所は空(0)が「書いていない」)。
+type listen struct {
+	host             string
+	port             int
+	hostSet, portSet bool
+}
+
+// listenLevels は、引数・設定ファイル・環境変数の順に、待ち受けるアドレスとポートを読む(0042)。
+// addr は host と port をまとめて書く形で、書いた所の host・port の代わりになる。同じ所に addr と host・port の両方を書くとエラー
+// (どちらが効くのかを決めておいても、書いた人が迷うだけなので)。
+func listenLevels(f *flags, file configFile, path string, env *envReader) ([3]listen, error) {
+	var l [3]listen
+	// 引数
+	if f.set["addr"] {
+		if f.set["host"] || f.set["port"] {
+			return l, errors.New("-addr と -host・-port は一緒に書けません。どちらかにしてください")
+		}
+		h, p, err := splitAddr("-addr", *f.addr)
+		if err != nil {
+			return l, err
+		}
+		l[0] = listen{host: h, port: p, hostSet: h != "", portSet: true}
+	} else {
+		l[0] = listen{host: *f.host, port: *f.port, hostSet: f.set["host"], portSet: f.set["port"]}
+	}
+	// 設定ファイル
+	if file.Addr != "" {
+		if file.Host != "" || file.Port != 0 {
+			return l, fmt.Errorf("設定ファイル %s に addr と host・port の両方が書かれています。どちらかにしてください", path)
+		}
+		h, p, err := splitAddr("設定ファイル "+path+" の addr", file.Addr)
+		if err != nil {
+			return l, err
+		}
+		l[1] = listen{host: h, port: p}
+	} else {
+		l[1] = listen{host: file.Host, port: file.Port}
+	}
+	// 環境変数
+	if v := os.Getenv("AIBOW_SERVER_ADDR"); v != "" {
+		if os.Getenv("AIBOW_SERVER_HOST") != "" || os.Getenv("AIBOW_SERVER_PORT") != "" {
+			return l, errors.New("環境変数 AIBOW_SERVER_ADDR と AIBOW_SERVER_HOST・AIBOW_SERVER_PORT は一緒に決められません。どちらかにしてください")
+		}
+		h, p, err := splitAddr("環境変数 AIBOW_SERVER_ADDR", v)
+		if err != nil {
+			return l, err
+		}
+		l[2] = listen{host: h, port: p}
+	} else {
+		l[2] = listen{host: os.Getenv("AIBOW_SERVER_HOST"), port: env.int("AIBOW_SERVER_PORT", 0)}
+	}
+	return l, nil
+}
+
+// splitAddr は "アドレス:ポート" を分ける。アドレスを書かない ":8089" はポートだけを決めたことにする
+// (Go の net.Listen では ":8089" は全部のネットワークだが、ここでは黙って PC の外に出さないよう、アドレスは 127.0.0.1 のまま。
+// 全部のネットワークにするなら 0.0.0.0:8089 と書く)。where はエラーに出す、どこに書いた値か。
+func splitAddr(where, addr string) (host string, port int, err error) {
+	h, p, err := net.SplitHostPort(addr)
+	if err != nil {
+		return "", 0, fmt.Errorf("%s は アドレス:ポート の形で書いてください(例 0.0.0.0:8089・127.0.0.1:8089・[::1]:8089): %q", where, addr)
+	}
+	port, err = strconv.Atoi(p)
+	if err != nil || port <= 0 || port > 65535 {
+		return "", 0, fmt.Errorf("%s のポートは 1〜65535 の数にしてください: %q", where, addr)
+	}
+	return h, port, nil
+}
+
+// cleanBase は、道の頭に付けるパス(base。0042)を "/aibow" の形にそろえる。"" と "/" は頭なし(空)。
+// 前後の / は書いても書かなくてもよい("aibow"・"/aibow/" も "/aibow")。
+// 使えるのは英数字と - _ . ~ と、区切りの / だけ(URL のまま書ける文字。%・?・# や空白を入れると、画面やリンクの URL が壊れるため)。
+func cleanBase(base string) (string, error) {
+	b := strings.Trim(strings.TrimSpace(base), "/")
+	if b == "" {
+		return "", nil
+	}
+	// Git Bash(MSYS)は、引数の /aibow を Windows のパス(C:/Program Files/Git/aibow)に書き換えてから渡す(2026-11-08 に確かめた)。
+	// 書いた人には /aibow と書いたようにしか見えないので、何が起きたかを言う。先頭の / を書かなければ書き換えられない
+	if len(b) >= 2 && b[1] == ':' {
+		return "", fmt.Errorf("base が Windows のパスになっています: %q。Git Bash は引数の /aibow をパスに書き換えるので、-base aibow と先頭の / なしで書いてください(設定ファイルの base は書き換えられません)", base)
+	}
+	for seg := range strings.SplitSeq(b, "/") {
+		if seg == "" || seg == "." || seg == ".." {
+			return "", fmt.Errorf("base は /aibow のようなパスで書いてください(空の段・. ・.. は使えません): %q", base)
+		}
+		if strings.IndexFunc(seg, func(r rune) bool {
+			return !('a' <= r && r <= 'z' || 'A' <= r && r <= 'Z' || '0' <= r && r <= '9' || strings.ContainsRune("-_.~", r))
+		}) >= 0 {
+			return "", fmt.Errorf("base に使えるのは英数字と - _ . ~ と区切りの / だけです: %q", base)
+		}
+	}
+	return "/" + b, nil
+}
+
+// URL は、つなぐ側が書く aibow-server のアドレス(http://127.0.0.1:8089/aibow など。最後の / なし)。
+// 全部のネットワークで待ち受けるとき(0.0.0.0 など)も、書いたアドレスのまま(ほかの PC からの書き方は logAddresses が添える)。
+func (c config) URL() string {
+	return c.Scheme() + "://" + net.JoinHostPort(c.Host, strconv.Itoa(c.Port)) + c.Base
 }
 
 // Local は、この PC からだけ(ループバックのアドレス)で待ち受けるか。

@@ -82,6 +82,7 @@ func (o Options) Tools() []tool.Tool {
 		tools = append(tools, tool.FilesIn(folders)...)
 		tools = append(tools, tool.UpdatePlan()) // 作業の予定(0037)。フォルダのある会話だけで出す(決定事項 14)
 		tools = append(tools, tool.RunCommandIn(folders))
+		tools = append(tools, tool.GitIn(folders)...) // 読むだけの Git のツール(0041)。リポジトリで git があるときだけ
 	}
 	return tools
 }
