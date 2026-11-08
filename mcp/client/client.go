@@ -223,6 +223,11 @@ type Manager struct {
 	mu      sync.Mutex
 	running map[serverKey]*server
 	closed  bool
+
+	// dropping は、つながりが切れて一覧から外したサーバーを止めている途中のもの(drop)。
+	// Close はこれも待つ。待たないと、アプリを閉じたあとに子プロセスが残ったり、
+	// 止める途中のログ(SDK の「read error: EOF」など)が Close の後から出たりする
+	dropping sync.WaitGroup
 }
 
 // serverKey は起動したサーバーの見分け方。${workdir} を使わないサーバーは workDir が空(全部の会話で1つを共有する)。
@@ -530,17 +535,24 @@ func startFailure(ctx context.Context, what, hint string, limit time.Duration, s
 // すでに外していたら(閉じた・つなぎ直した後なら)何もしない。
 func (m *Manager) drop(s *server, err error) {
 	m.mu.Lock()
-	gone := m.running[s.key] == s
+	gone := m.running[s.key] == s && !m.closed
 	if gone {
 		delete(m.running, s.key)
+		// Add は mu を持ったまま、closed でないときだけ行う(Close が closed を立ててから Wait するので、Wait より後に Add が来ない)
+		m.dropping.Add(1)
 	}
-	closed := m.closed
 	m.mu.Unlock()
-	if !gone || closed {
+	if !gone {
 		return
 	}
 	log.Warnf("MCP %s: サーバーとのつながりが切れました(%v)。次の送信でつなぎ直します", s.key.name, err)
-	go s.close(nil) // 子プロセスが残っていれば止める(Wait から呼ばれたときは、もう閉じている)
+	// 子プロセスが残っていれば止める(Wait から呼ばれたときは、もう閉じている)。
+	// 呼び出したツールを待たせないよう別の goroutine で止め、Close がその終わりを待つ
+	go func() {
+		defer m.dropping.Done()
+		s.close(nil)
+		log.Infof("MCP %s: つながりが切れたサーバーを止めました", s.key.name)
+	}()
 }
 
 // newClient は、MCP のクライアント(サーバーにつなぐ側)を作る。settings.json のサーバーと aibow の中のサーバー(local.go)で同じもの。
@@ -620,6 +632,7 @@ func (m *Manager) Close() {
 		})
 	}
 	wg.Wait()
+	m.dropping.Wait() // つながりが切れて止めている途中のサーバーも、止め終わるまで待つ
 }
 
 // realTransport は本物のつなぎ方。command のサーバーは子プロセスとして起動し、url のサーバーには HTTP で話しかける。
