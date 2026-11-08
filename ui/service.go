@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/secondarykey/aibow"
+	"github.com/secondarykey/aibow/config"
 	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/mcp/client"
 	"github.com/secondarykey/aibow/models"
@@ -74,11 +75,11 @@ type Options struct {
 	// Local は組み込みのツール、MCP は settings.json の MCP のサーバー(書いてなければ nil)、Prefs はツールの扱いの PC の既定(tools.json)
 	Local *client.Local
 	MCP   *client.Manager
-	Prefs *aibow.ToolPrefs
+	Prefs *config.ToolPrefs
 	// MCPConfig は、画面から MCP のサーバーを足す・変える・消す係(mcp.json。0034)。デスクトップのアプリだけで、ブラウザでは nil
-	MCPConfig *aibow.MCPConfig
+	MCPConfig *config.MCPConfig
 	// Workspaces は、その PC のワークスペース(workspaces.json。0035)。デスクトップのアプリだけで、ブラウザでは nil
-	Workspaces *aibow.Workspaces
+	Workspaces *config.Workspaces
 	// Version はアプリのバージョン(画面の左下に出す)
 	Version string
 	// Notices は起動時に画面のトーストで伝えること。StartupErr は起動に失敗した理由(画面に表示する)
@@ -123,11 +124,11 @@ type Service struct {
 
 	// mcp は settings.json の MCP のサーバー(書いてなければ nil)。prefs はツールの扱いの PC の既定(tools.json)
 	mcp   *client.Manager
-	prefs *aibow.ToolPrefs
+	prefs *config.ToolPrefs
 	// mcpConfig は、画面から MCP のサーバーを変える係(デスクトップのアプリだけ。ブラウザでは nil。mcpedit.go)
-	mcpConfig *aibow.MCPConfig
+	mcpConfig *config.MCPConfig
 	// workspaces は、その PC のワークスペース(デスクトップのアプリだけ。ブラウザでは nil。workspaces.go)
-	workspaces *aibow.Workspaces
+	workspaces *config.Workspaces
 
 	// version はアプリのバージョン(_cmd/aibow/version。画面の左下に出す)
 	version string

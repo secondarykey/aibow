@@ -5,7 +5,7 @@ package config
 // 読むのは起動したときだけ。変えたらアプリを起動し直す。
 //
 // MCP のサーバー(mcpServers)も書けるが、起動したときに mcp.json へ移し、ここからは消す(置き場所を1つにして、画面から変える・消すため。
-// 0034 の決定事項 13。移すのはルートの aibow の mcpfile.go の MoveFromSettings、消すのは RemoveSettingsKey)。
+// 0034 の決定事項 13。移すのは mcp.go の MoveFromSettings、消すのは RemoveSettingsKey)。
 
 import (
 	"bytes"

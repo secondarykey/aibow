@@ -1,6 +1,6 @@
 // 会話の表示: 吹き出し(ツールのカードを含む)・エラー・要約の区切り
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ToolPolicy } from "../../bindings/github.com/secondarykey/aibow";
+import type { ToolPolicy } from "../../bindings/github.com/secondarykey/aibow/config";
 import type { MouseEvent, ReactNode } from "react";
 import { LuChevronDown, LuChevronRight, LuCircleStop, LuEye, LuEyeOff, LuInfo, LuListFilter, LuPencil, LuRefreshCw, LuTriangleAlert } from "react-icons/lu";
 import { CopyButton } from "./CopyButton";

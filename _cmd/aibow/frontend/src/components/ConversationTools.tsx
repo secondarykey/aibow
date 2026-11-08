@@ -14,7 +14,7 @@
 import { useEffect, useState } from "react";
 import { LuChevronDown, LuChevronRight } from "react-icons/lu";
 import { ChatService, isBrowser } from "../backend";
-import { ToolPolicy } from "../../bindings/github.com/secondarykey/aibow";
+import { ToolPolicy } from "../../bindings/github.com/secondarykey/aibow/config";
 import type { ConversationSettings, Profile, ToolGroupState, ToolState } from "../../bindings/github.com/secondarykey/aibow";
 import type { ServerInfo } from "../../bindings/github.com/secondarykey/aibow/mcp/client";
 import { errorMessage } from "../errors";

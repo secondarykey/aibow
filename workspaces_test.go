@@ -9,120 +9,17 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/secondarykey/aibow/config"
 	"github.com/secondarykey/aibow/format"
 	"github.com/secondarykey/aibow/mcp/client"
 	"github.com/secondarykey/aibow/tool"
 )
 
-// ワークスペースを作る・名前を変える・消すと workspaces.json に書き、読み直すと同じものが戻る(0035 の完了の条件 1)
-func TestWorkspacesFile(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "workspaces.json")
-	w, err := LoadWorkspaces(path)
-	if err != nil || len(w.List()) != 0 {
-		t.Fatalf("ファイルが無いときは空: %v, %v", w.List(), err)
-	}
-	dir := filepath.Join(t.TempDir(), "example")
-	if err := os.Mkdir(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	ws, err := w.CreateFromFolder(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if ws.Name != "example" || len(ws.Folders) != 1 || ws.MainFolder() != (WorkspaceFolder{Path: dir, Name: "example", Main: true, Writable: true}) {
-		t.Errorf("フォルダから作ったワークスペース: %+v", ws)
-	}
-	// 同じフォルダ1つだけのワークスペースは、新しく作らずに今あるものを返す
-	if again, err := w.CreateFromFolder(dir); err != nil || again.ID != ws.ID || len(w.List()) != 1 {
-		t.Errorf("同じフォルダ: %+v(一覧 %d), %v", again, len(w.List()), err)
-	}
-	renamed := ws
-	renamed.Name = "  サンプル  "
-	if err := w.Update(renamed); err != nil {
-		t.Fatal(err)
-	}
-	r, err := LoadWorkspaces(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got, ok := r.Get(ws.ID); !ok || got.Name != "サンプル" || got.MainFolder().Path != dir {
-		t.Errorf("読み直したワークスペース: %+v, %v", got, ok)
-	}
-	renamed.Name = " "
-	if err := w.Update(renamed); err == nil {
-		t.Error("空の名前はエラーのはず")
-	}
-	// フォルダの説明は上限(folderDescriptionMax 文字)まで。日本語も1文字と数える
-	renamed.Name = "サンプル"
-	renamed.Folders = []WorkspaceFolder{{Path: dir, Name: "example", Main: true, Writable: true, Description: strings.Repeat("あ", folderDescriptionMax)}}
-	if err := w.Update(renamed); err != nil {
-		t.Errorf("上限ちょうどの説明: %v", err)
-	}
-	renamed.Folders[0].Description += "い"
-	if err := w.Update(renamed); err == nil || !strings.Contains(err.Error(), "説明が長すぎます") {
-		t.Errorf("長すぎる説明: %v", err)
-	}
-	if err := w.Delete(ws.ID); err != nil {
-		t.Fatal(err)
-	}
-	if r, _ = LoadWorkspaces(path); len(r.List()) != 0 {
-		t.Errorf("消したあと: %+v", r.List())
-	}
-	// 無いフォルダ・相対パスからは作らない
-	for _, p := range []string{filepath.Join(dir, "none"), "relative"} {
-		if _, err := w.CreateFromFolder(p); err == nil {
-			t.Errorf("%s から作れてしまった", p)
-		}
-	}
-}
-
-// 壊れた workspaces.json は書き換えない(ワークスペースが無いものとして動く)
-func TestWorkspacesBrokenFile(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "workspaces.json")
-	for _, body := range []string{"{", `{"workspaces":[{"id":"a","name":"x","folders":[{"path":"/a","name":"a"}]}]}`} {
-		os.WriteFile(path, []byte(body), 0o644)
-		w, err := LoadWorkspaces(path)
-		if err == nil || w == nil || len(w.List()) != 0 {
-			t.Fatalf("%s: 壊れたファイルはエラーのはず: %v", body, err)
-		}
-		if _, err := w.CreateFromFolder(t.TempDir()); err == nil {
-			t.Errorf("%s: 読めなかったファイルに書いてしまう", body)
-		}
-		if b, _ := os.ReadFile(path); string(b) != body {
-			t.Errorf("%s: ファイルが書き換わった: %s", body, b)
-		}
-	}
-}
-
-// フォルダの組の決まり(メインはちょうど1つ・名前は重ならない・パスに見える名前は使わない)
-func TestWorkspaceValidate(t *testing.T) {
-	abs := t.TempDir()
-	ok := WorkspaceFolder{Path: abs, Name: "main", Main: true, Writable: true}
-	cases := []struct {
-		name    string
-		folders []WorkspaceFolder
-		want    string // エラーに含まれる文字(空なら通る)
-	}{
-		{"メイン1つ", []WorkspaceFolder{ok, {Path: abs, Name: "notes"}}, ""},
-		{"メインなし", []WorkspaceFolder{{Path: abs, Name: "a"}}, "メイン"},
-		{"メイン2つ", []WorkspaceFolder{ok, {Path: abs, Name: "b", Main: true}}, "メイン"},
-		{"名前が重なる", []WorkspaceFolder{ok, {Path: abs, Name: "MAIN"}}, "2つ"},
-		{"パスに見える名前", []WorkspaceFolder{ok, {Path: abs, Name: "a/b"}}, "使えません"},
-		{"相対パス", []WorkspaceFolder{ok, {Path: "rel", Name: "rel"}}, "絶対パス"},
-	}
-	for _, c := range cases {
-		err := Workspace{ID: "x", Name: "w", Folders: c.folders}.validate()
-		if c.want == "" && err != nil || c.want != "" && (err == nil || !strings.Contains(err.Error(), c.want)) {
-			t.Errorf("%s: %v", c.name, err)
-		}
-	}
-}
-
 // 今ある会話の work_dir は、この PC にあるパスならワークスペースに移り、無いパスはそのまま残って使われない(0035 の完了の条件 3)
 func TestMigrateWorkDirs(t *testing.T) {
 	g := &fakeGen{content: "はい"}
 	cs, st, _ := newToolConversation(t, g)
-	cs.workspaces, _ = LoadWorkspaces(filepath.Join(t.TempDir(), "workspaces.json"))
+	cs.workspaces, _ = config.LoadWorkspaces(filepath.Join(t.TempDir(), "workspaces.json"))
 	here := t.TempDir()
 	gone := filepath.Join(t.TempDir(), "other-pc")
 	var convs []Conversation
@@ -177,7 +74,7 @@ func TestMissingWorkspace(t *testing.T) {
 	if got := toolNamesOf(g.calls[0].tools); !slices.Contains(got, "read_file") {
 		t.Fatalf("ワークスペースのある会話: %v", got)
 	}
-	cs.workspaces, _ = LoadWorkspaces("") // 別の PC(何も登録していない)
+	cs.workspaces, _ = config.LoadWorkspaces("") // 別の PC(何も登録していない)
 	send(t, cs, c, "質問")
 	call := g.calls[1]
 	if got := toolNamesOf(call.tools); !slices.Equal(got, []string{"get_current_time", "calculate"}) || strings.Contains(call.prompt, "# Environment") {
@@ -192,7 +89,7 @@ func newFoldersConversation(t *testing.T, g *fakeGen) (*Conversations, Conversat
 	notes := t.TempDir()
 	os.WriteFile(filepath.Join(notes, "memo.md"), []byte("# メモ\n"), 0o644)
 	ws, _ := cs.workspaces.Get(c.Settings.Workspace)
-	ws.Folders = []WorkspaceFolder{
+	ws.Folders = []config.WorkspaceFolder{
 		{Path: main, Name: "app", Main: true, Writable: true},
 		{Path: notes, Name: "notes", Description: " 会議の\n  メモ "}, // 説明の改行と続く空白は1つの空白になる
 	}

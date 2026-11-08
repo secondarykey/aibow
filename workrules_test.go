@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/secondarykey/aibow/config"
 	"github.com/secondarykey/aibow/format"
 )
 
@@ -18,7 +19,7 @@ func TestWorkingRulesOnlyWithEditTools(t *testing.T) {
 	g := &fakeGen{content: "はい"}
 	cs, _, c := newToolConversation(t, g)
 	set := c.Settings
-	prefs := &ToolPrefs{}
+	prefs := &config.ToolPrefs{}
 	cs.SetToolPrefs(prefs)
 
 	const check = "check your work: run the tests the user asked for"
@@ -31,10 +32,10 @@ func TestWorkingRulesOnlyWithEditTools(t *testing.T) {
 	}{
 		{"作業フォルダなし", "", func() {}, false, false},
 		{"作業フォルダあり", dir, func() {}, true, true},
-		{"run_command を使わない", dir, func() { prefs.SetToolPolicy("run_command", ToolOff) }, true, false},
-		{"write_file だけ使わない", dir, func() { prefs.SetToolPolicy("write_file", ToolOff) }, true, false},
-		{"書き換えるツールを使わない(読むだけ)", dir, func() { prefs.SetToolPolicy("edit_file", ToolOff) }, false, false},
-		{"組み込みのツールを使わない", dir, func() { prefs.SetBuiltinPolicy(ToolOff) }, false, false},
+		{"run_command を使わない", dir, func() { prefs.SetToolPolicy("run_command", config.ToolOff) }, true, false},
+		{"write_file だけ使わない", dir, func() { prefs.SetToolPolicy("write_file", config.ToolOff) }, true, false},
+		{"書き換えるツールを使わない(読むだけ)", dir, func() { prefs.SetToolPolicy("edit_file", config.ToolOff) }, false, false},
+		{"組み込みのツールを使わない", dir, func() { prefs.SetBuiltinPolicy(config.ToolOff) }, false, false},
 	}
 	for i, s := range steps {
 		set.Workspace = workspaceFor(t, cs, s.workDir)

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/secondarykey/aibow/config"
 	"github.com/secondarykey/aibow/format"
 	"github.com/secondarykey/aibow/mcp/client"
 )
@@ -51,8 +52,8 @@ func TestLocalToolsAllowed(t *testing.T) {
 	l := client.NewLocal(client.Options{Version: "test"})
 	t.Cleanup(l.Close)
 	cs.SetLocalTools(l)
-	prefs := &ToolPrefs{}
-	prefs.SetToolPolicy("write_file", ToolAllow)
+	prefs := &config.ToolPrefs{}
+	prefs.SetToolPolicy("write_file", config.ToolAllow)
 	cs.SetToolPrefs(prefs)
 
 	asked := 0

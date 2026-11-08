@@ -21,6 +21,7 @@ import (
 	"github.com/secondarykey/aibow"
 	"github.com/secondarykey/aibow/api"
 	"github.com/secondarykey/aibow/auth"
+	"github.com/secondarykey/aibow/config"
 	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/format"
 	"github.com/secondarykey/aibow/mcp/client"
@@ -226,7 +227,7 @@ func newTestWeb(t *testing.T, opts ...func(*Options)) *testWeb {
 	local := client.NewLocal(client.Options{Version: "0.0.1-test", Fetch: &tool.FetchOptions{}}) // aibow-server と同じく fetch_url も出す(管理者が有効にするまで使えない)
 	t.Cleanup(local.Close)
 	// ツールの扱いの既定も aibow-server と同じく管理者の既定(禁止がある形)にする
-	prefs, err := aibow.LoadServerToolPrefs(filepath.Join(t.TempDir(), "server-tools.json"))
+	prefs, err := config.LoadServerToolPrefs(filepath.Join(t.TempDir(), "server-tools.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

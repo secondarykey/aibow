@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/secondarykey/aibow/config"
 	"github.com/secondarykey/aibow/format"
 	"github.com/secondarykey/aibow/tool"
 )
@@ -293,8 +294,8 @@ func TestToolsOffLeavesToolsOutOfThePrompt(t *testing.T) {
 		t.Errorf("ON: ツールの定義が入っていません")
 	}
 
-	prefs := &ToolPrefs{}
-	prefs.SetBuiltinPolicy(ToolOff) // 設定の画面の「ツール」で、組み込みのグループを使わないにした
+	prefs := &config.ToolPrefs{}
+	prefs.SetBuiltinPolicy(config.ToolOff) // 設定の画面の「ツール」で、組み込みのグループを使わないにした
 	cs.SetToolPrefs(prefs)
 	send(t, cs, c, "もう一度")
 	off, _ := cs.Usage(ctx, c.ID)

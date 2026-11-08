@@ -9,7 +9,7 @@
 // 名前は変えられない(会話の設定と tools.json のキーのため。決定事項 11)。
 import { useCallback, useEffect, useState } from "react";
 import { LuClipboardPaste, LuLoaderCircle, LuPlug, LuPlus, LuTrash2, LuX } from "react-icons/lu";
-import type { KnownTool, MCPServerEntry, MCPServerInput, MCPServerList, ParsedMCPServer } from "../../bindings/github.com/secondarykey/aibow";
+import type { KnownTool, MCPServerEntry, MCPServerInput, MCPServerList, ParsedMCPServer } from "../../bindings/github.com/secondarykey/aibow/config";
 import type { ServerConfig } from "../../bindings/github.com/secondarykey/aibow/mcp/client";
 import { errorMessage } from "../errors";
 

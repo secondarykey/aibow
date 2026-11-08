@@ -13,6 +13,9 @@ import * as aibow$0 from "../../models.js";
 import * as client$1 from "../../api/client/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as config$0 from "../../config/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as engine$0 from "../../engine/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -46,7 +49,7 @@ export function Account(): $CancellablePromise<$models.AccountInfo> {
  * AddMCPServers は、MCP のサーバーを mcp.json に足す(フォームの1つか、貼った JSON のいくつか)。画面のお知らせに出す文を返す。
  * 足したサーバーは、新しい会話で最初から使わない(0034 の決定事項 12)。
  */
-export function AddMCPServers(servers: aibow$0.MCPServerInput[] | null): $CancellablePromise<string[] | null> {
+export function AddMCPServers(servers: config$0.MCPServerInput[] | null): $CancellablePromise<string[] | null> {
     return $Call.ByID(3611279202, servers);
 }
 
@@ -86,7 +89,7 @@ export function ApplyWorktree(id: uuid$0.UUID, paths: string[] | null): $Cancell
  * BuiltinTools は組み込みのツール(aibow の中で動くツール)の一覧(設定の画面の「ツール」に出す)。
  * ブラウザでは、コマンドのツールを出さない。資料のフォルダが無ければ、作業フォルダを使わないツール(時刻・計算・URL を読む)だけ(0024 の決定事項 5・17)。
  */
-export function BuiltinTools(): $CancellablePromise<aibow$0.KnownTool[] | null> {
+export function BuiltinTools(): $CancellablePromise<config$0.KnownTool[] | null> {
     return $Call.ByID(704771653);
 }
 
@@ -149,7 +152,7 @@ export function Compact(id: uuid$0.UUID): $CancellablePromise<void> {
  * reqID は confirm イベントの ID。拒否するときの reason は空でもよい(モデルには「理由: (書かれていません)」と渡る)。
  * remember は、このツールのこの会話でのこれから先の扱い(空ならこの1回だけ。allow = この会話では今後聞かない、off = 今後許可しない。0010)。
  */
-export function ConfirmTool(id: uuid$0.UUID, reqID: string, approved: boolean, reason: string, remember: aibow$0.ToolPolicy): $CancellablePromise<void> {
+export function ConfirmTool(id: uuid$0.UUID, reqID: string, approved: boolean, reason: string, remember: config$0.ToolPolicy): $CancellablePromise<void> {
     return $Call.ByID(665849895, id, reqID, approved, reason, remember);
 }
 
@@ -207,7 +210,7 @@ export function CreateProfile(name: string, values: aibow$0.ProfileValues, rules
  * CreateWorkspace は、フォルダ path 1つのワークスペースを作る(入力欄の上の「フォルダから新しく作る」・設定の画面)。
  * 同じフォルダ1つだけのワークスペースがあれば、それを返す。
  */
-export function CreateWorkspace(path: string): $CancellablePromise<aibow$0.Workspace> {
+export function CreateWorkspace(path: string): $CancellablePromise<config$0.Workspace> {
     return $Call.ByID(1897882904, path);
 }
 
@@ -312,7 +315,7 @@ export function Logout(): $CancellablePromise<void> {
 /**
  * MCPServerList は、設定の画面の「MCP」に出す一覧(settings.json と mcp.json のサーバー。env・headers の値は伏せる)。
  */
-export function MCPServerList(): $CancellablePromise<aibow$0.MCPServerList> {
+export function MCPServerList(): $CancellablePromise<config$0.MCPServerList> {
     return $Call.ByID(1577104562);
 }
 
@@ -367,7 +370,7 @@ export function NewConversation(profile: uuid$0.UUID, settings: aibow$0.Conversa
 /**
  * ParseMCPJSON は、貼った JSON から足すサーバーを読み取る(足すのは AddMCPServers)。
  */
-export function ParseMCPJSON(text: string): $CancellablePromise<aibow$0.ParsedMCPServer[] | null> {
+export function ParseMCPJSON(text: string): $CancellablePromise<config$0.ParsedMCPServer[] | null> {
     return $Call.ByID(507244092, text);
 }
 
@@ -533,7 +536,7 @@ export function SetGroupMember(id: uuid$0.UUID, user: string, member: boolean): 
  * (確認する ask / 確認しない allow / 決めていない 空。tools.json に書く)。
  * ブラウザでは aibow-server の管理者だけが変えられ(server-tools.json に書く)、使わない(off。禁止)も決められる(0024 の決定事項 21・22)。
  */
-export function SetGroupPolicy(group: string, policy: aibow$0.ToolPolicy): $CancellablePromise<void> {
+export function SetGroupPolicy(group: string, policy: config$0.ToolPolicy): $CancellablePromise<void> {
     return $Call.ByID(2609014370, group, policy);
 }
 
@@ -586,7 +589,7 @@ export function SetProfileShare(id: uuid$0.UUID, share: string, $with: string[] 
  * 次の送信から効く(プロンプトに入るツールが変わるので、画面はメーターを数え直す)。
  * ブラウザでは aibow-server の管理者だけが変えられる(server-tools.json に書く。使わないは禁止。0024 の決定事項 21・22)。
  */
-export function SetToolPolicy(name: string, policy: aibow$0.ToolPolicy): $CancellablePromise<void> {
+export function SetToolPolicy(name: string, policy: config$0.ToolPolicy): $CancellablePromise<void> {
     return $Call.ByID(1851266373, name, policy);
 }
 
@@ -649,7 +652,7 @@ export function ToolDefaults(): $CancellablePromise<aibow$0.ToolGroupState[] | n
  * 新しい会話で最初から使うグループはプロファイルの値なので、設定の画面はプロファイルから出す(ここの notDefault は引き継ぐ前の値)。
  * ブラウザでは aibow-server の管理者の既定。ファイルの場所(サーバーの PC のパス)は管理者にだけ見せる(0024 の決定事項 25)。
  */
-export function ToolPrefs(): $CancellablePromise<aibow$0.ToolPrefsView> {
+export function ToolPrefs(): $CancellablePromise<config$0.ToolPrefsView> {
     return $Call.ByID(2378033441);
 }
 
@@ -677,7 +680,7 @@ export function TryLimits(history: number, reply: number): $CancellablePromise<b
  * TryMCPServer は、保存する前の設定で一時的に起動してツールの一覧を受け取り、止める(何も書かない)。
  * add が false なら今あるサーバー name を変えるときで、env・headers の空の値は前の値で試す。
  */
-export function TryMCPServer(name: string, config: client$0.ServerConfig, add: boolean): $CancellablePromise<aibow$0.KnownTool[] | null> {
+export function TryMCPServer(name: string, config: client$0.ServerConfig, add: boolean): $CancellablePromise<config$0.KnownTool[] | null> {
     return $Call.ByID(1773410707, name, config, add);
 }
 
@@ -715,7 +718,7 @@ export function UpdateProfile(p: aibow$0.Profile): $CancellablePromise<void> {
  * UpdateWorkspace は、ワークスペース ws.ID の名前とフォルダの組を変える(設定の画面の「ワークスペース」)。
  * 次の送信から効く(ツールは送信のたびにワークスペースから作るため)。
  */
-export function UpdateWorkspace(ws: aibow$0.Workspace): $CancellablePromise<void> {
+export function UpdateWorkspace(ws: config$0.Workspace): $CancellablePromise<void> {
     return $Call.ByID(4012031331, ws);
 }
 

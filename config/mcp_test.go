@@ -1,4 +1,4 @@
-package aibow
+package config
 
 import (
 	"context"
@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/secondarykey/aibow/config"
 	"github.com/secondarykey/aibow/mcp/client"
 	"github.com/secondarykey/aibow/tool"
 )
@@ -102,7 +101,7 @@ func TestMoveFromSettings(t *testing.T) {
 	path := filepath.Join(dir, "mcp.json")
 	os.WriteFile(path, []byte(`{"mcpServers": {"a": {"command": "screen-a"}, "c": {"command": "screen-c"}}}`), 0o644)
 
-	s, err := config.LoadSettingsFile(settings)
+	s, err := LoadSettingsFile(settings)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +127,7 @@ func TestMoveFromSettings(t *testing.T) {
 	if strings.Contains(string(b), "mcpServers") || strings.Index(string(b), "serverUrl") > strings.Index(string(b), "custom") || !jsonEqual(a, w) {
 		t.Errorf("settings.json:\n%s", b)
 	}
-	if s, err := config.LoadSettingsFile(settings); err != nil || s.ServerURL != "http://127.0.0.1:8089" || len(s.MCPServers) != 0 {
+	if s, err := LoadSettingsFile(settings); err != nil || s.ServerURL != "http://127.0.0.1:8089" || len(s.MCPServers) != 0 {
 		t.Errorf("書き直した settings.json を読める: %+v %v", s, err)
 	}
 

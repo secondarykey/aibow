@@ -9,6 +9,7 @@ import (
 	"uuid"
 
 	"github.com/secondarykey/aibow"
+	"github.com/secondarykey/aibow/config"
 	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/format"
 	"github.com/secondarykey/aibow/log"
@@ -170,12 +171,12 @@ func (s *Service) UpdateConversationSettings(ctx context.Context, id uuid.UUID, 
 // noNewAllow は、ブラウザの利用者が、会話の設定でツールを「確認しない」にしていないかを確かめる(0024 の決定事項 3・18)。
 // 確認しないで実行するかの既定は管理者が決める。利用者が「確認しない」にできるのは、確認のカードの「この会話では今後聞かない」だけ
 // (そのツールの呼び出しを一度見てから決めることになる)。もう「確認しない」にしてあるツールは、そのまま残せる。
-func (s *Service) noNewAllow(old, next map[string]aibow.ToolPolicy) error {
+func (s *Service) noNewAllow(old, next map[string]config.ToolPolicy) error {
 	if !s.browser {
 		return nil
 	}
 	for name, p := range next {
-		if p == aibow.ToolAllow && old[name] != aibow.ToolAllow {
+		if p == config.ToolAllow && old[name] != config.ToolAllow {
 			return fmt.Errorf("ツール %s を「確認しない」にできるのは、確認のカードの「この会話では今後聞かない」からだけです", name)
 		}
 	}

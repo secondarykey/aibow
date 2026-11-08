@@ -23,6 +23,7 @@ import (
 	"unicode"
 	"uuid"
 
+	"github.com/secondarykey/aibow/config"
 	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/format"
 	"github.com/secondarykey/aibow/log"
@@ -103,7 +104,7 @@ type Conversations struct {
 	// remote は MCP のサーバーのツール(nil なら使わない)。設定ファイルにサーバーが書いてあるときだけ、アプリが渡す(SetRemoteTools)
 	remote RemoteTools
 	// prefs はツールの扱いの PC の既定(tools.json)。nil なら何も決めていない扱い(SetToolPrefs)
-	prefs *ToolPrefs
+	prefs *config.ToolPrefs
 	// models は、会話のモデルを読み込む係(SetModelLoader)。nil なら読み直さず、読み込んでいるモデルで生成する
 	models ModelLoader
 
@@ -129,7 +130,7 @@ type Conversations struct {
 	// noWorkDir は、会話に保存した作業フォルダ(ワークスペース)を使わないか(IgnoreWorkDir)
 	noWorkDir bool
 	// workspaces は、その PC のワークスペース(workspaces.json。0035)。nil なら何も登録していない扱い(SetWorkspaces)
-	workspaces *Workspaces
+	workspaces *config.Workspaces
 	// folders は aibow-server の資料のフォルダ(名前 → 絶対パス。SetFolders)
 	folders map[string]string
 }

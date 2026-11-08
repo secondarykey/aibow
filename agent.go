@@ -32,6 +32,7 @@ import (
 	"unicode/utf8"
 	"uuid"
 
+	"github.com/secondarykey/aibow/config"
 	"github.com/secondarykey/aibow/format"
 	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/tool"
@@ -259,7 +260,7 @@ func (cs *Conversations) runFound(ctx context.Context, conv Conversation, c form
 		}
 		if !conf.Approved {
 			text := tool.RejectedText(conf.Reason)
-			if conf.Remember == ToolOff {
+			if conf.Remember == config.ToolOff {
 				// 「今後許可しない」: 次の送信からはモデルに見せないが、この送信の間は見えているので、呼び直さないように伝える
 				text += "。この会話では、このツールは今後使えません"
 			}
@@ -285,7 +286,7 @@ func (cs *Conversations) runFound(ctx context.Context, conv Conversation, c form
 		text, err = cs.execute(ctx, t, args)
 	}
 	sec := (time.Since(start) - waited).Seconds()
-	if err == nil && conf != nil && !conf.Approved && conf.Remember == ToolOff {
+	if err == nil && conf != nil && !conf.Approved && conf.Remember == config.ToolOff {
 		text += "。この会話では、このツールは今後使えません" // サーバーからの確認を「今後許可しない」で拒否した(上と同じ)
 	}
 	res := toolMessage(conv.ID, c, text, false, sec)
@@ -309,7 +310,7 @@ func (cs *Conversations) askFor(sendCtx context.Context, conv Conversation, c fo
 		if fresh, _, err := cs.load(sendCtx, conv.ID); err == nil {
 			set = fresh.Settings
 		}
-		if cs.toolPolicy(set, t) == ToolAllow {
+		if cs.toolPolicy(set, t) == config.ToolAllow {
 			log.Noticef("ツール %s: サーバーからの確認を、「確認しない」の扱いなので聞かずに受け入れます", t.Def().Name)
 			return tool.Answer{Approved: true}, nil
 		}
@@ -357,7 +358,7 @@ func (cs *Conversations) needsConfirm(conv uuid.UUID, set ConversationSettings, 
 		// 確認は、実行の途中でツール(aibow の中の自作の MCP サーバー)が差分を送ってきたときに1回だけ聞く(askFor。聞くかは扱いで決める)
 		return false
 	}
-	if cs.toolPolicy(set, t) != ToolAllow {
+	if cs.toolPolicy(set, t) != config.ToolAllow {
 		return true
 	}
 	_, confirmable := t.(tool.Confirmable)
@@ -454,7 +455,7 @@ func (cs *Conversations) Confirm(ctx context.Context, conv uuid.UUID, id string,
 // Answer は、確認を待っているツールに答える。a.Remember があれば、そのツールのこの会話でのこれから先の扱いにする(0010)。
 // 扱いは答えを渡す前に保存する(返ったときには保存済みなので、画面はすぐ会話の設定を読み直せる)。保存できなければ答えずにエラーを返す。
 func (cs *Conversations) Answer(ctx context.Context, conv uuid.UUID, id string, a Confirmation) error {
-	if a.Remember != "" && !a.Remember.validInConversation() {
+	if a.Remember != "" && !a.Remember.ValidInConversation() {
 		return fmt.Errorf("これから先の扱い %q は知らない値です", a.Remember)
 	}
 	cs.confirmMu.Lock()
@@ -477,8 +478,8 @@ func (cs *Conversations) Answer(ctx context.Context, conv uuid.UUID, id string, 
 
 // SetToolPolicy は、会話のツールの扱いの上書きを1つだけ変えて保存する(policy が空なら上書きを消す)。
 // 会話の設定を丸ごと書き戻さないので、画面が持っている設定と関係なく、すぐ効く(確認のカードから使う。0010)。
-func (cs *Conversations) SetToolPolicy(ctx context.Context, id uuid.UUID, name string, policy ToolPolicy) error {
-	if policy != "" && !policy.validInConversation() {
+func (cs *Conversations) SetToolPolicy(ctx context.Context, id uuid.UUID, name string, policy config.ToolPolicy) error {
+	if policy != "" && !policy.ValidInConversation() {
 		return fmt.Errorf("ツール %s の扱い %q は知らない値です", name, policy)
 	}
 	c, _, err := cs.store.Conversation(ctx, id)
@@ -499,7 +500,7 @@ func (cs *Conversations) SetToolPolicy(ctx context.Context, id uuid.UUID, name s
 		delete(set.ToolPolicies, name)
 	} else {
 		if set.ToolPolicies == nil {
-			set.ToolPolicies = map[string]ToolPolicy{}
+			set.ToolPolicies = map[string]config.ToolPolicy{}
 		}
 		set.ToolPolicies[name] = policy
 	}

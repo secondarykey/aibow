@@ -31,6 +31,7 @@ import (
 	"github.com/secondarykey/aibow"
 	"github.com/secondarykey/aibow/api"
 	"github.com/secondarykey/aibow/auth"
+	"github.com/secondarykey/aibow/config"
 	"github.com/secondarykey/aibow/internal/appversion"
 	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/mcp/client"
@@ -119,8 +120,8 @@ func startBrowser(c serverConfig, initial aibow.AppSettings, st *store.SQLite, g
 // startServerTools は、ブラウザの会話で使う MCP のサーバー(server.json の mcpServers)と、ツールの扱いの既定(server-tools.json)を用意する(0024 の 12-1b)。
 // MCP のサーバーはここでは起動しない。そのサーバーを使う会話で最初に送信したときに起動し、aibow-server を止めるまで全員で1つを使う(決定事項 9・20)。
 // 既定のファイルが壊れていたら、決まりの既定で動き、ファイルは書き換えない(アプリの tools.json と同じ)。
-func startServerTools(c serverConfig) (*client.Manager, *aibow.ToolPrefs) {
-	prefs, err := aibow.LoadServerToolPrefs(c.ToolsPath)
+func startServerTools(c serverConfig) (*client.Manager, *config.ToolPrefs) {
+	prefs, err := config.LoadServerToolPrefs(c.ToolsPath)
 	if err != nil {
 		log.Error(err.Error())
 	}

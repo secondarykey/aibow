@@ -148,7 +148,7 @@ func run(c serverConfig, notices []string, cfgErr error, env *config.Env) error 
 		log.Warn("GPU が見つかりません。CPU で動かすので、生成はかなり遅くなります")
 	}
 
-	state, err := loadState(c.StatePath)
+	state, err := config.LoadServerModels(c.StatePath)
 	if err != nil {
 		return err
 	}
@@ -342,7 +342,7 @@ func firstModel(mm *modelManager, arg string) (models.Entry, error) {
 	disabled := slices.ContainsFunc(mm.ListAll(), func(e models.Entry) bool { return e.Disabled })
 	if len(list) == 0 {
 		if disabled {
-			return models.Entry{}, fmt.Errorf("使えるモデルが1つもありません(管理者が使えないようにしました)。%s の disabled から、使うモデルの ID を外してください", absPath(mm.state.path))
+			return models.Entry{}, fmt.Errorf("使えるモデルが1つもありません(管理者が使えないようにしました)。%s の disabled から、使うモデルの ID を外してください", absPath(mm.state.Path()))
 		}
 		return models.Entry{}, fmt.Errorf("モデルが1つも見つかりません。-models(AIBOW_MODELS_DIR)のフォルダに GGUF を置くか、ollama pull してください")
 	}
@@ -354,7 +354,7 @@ func firstModel(mm *modelManager, arg string) (models.Entry, error) {
 		log.Infof("モデル %s の書式(種類: %s)には未対応なので、起動のときのモデルにしません", m.Name, cmp.Or(arch, "読めない"))
 	}
 	if disabled {
-		return models.Entry{}, fmt.Errorf("書式に対応している使えるモデル(%s)がありません。管理者が使えないようにしたモデルを使うなら、%s の disabled から ID を外してください", format.Supported(), absPath(mm.state.path))
+		return models.Entry{}, fmt.Errorf("書式に対応している使えるモデル(%s)がありません。管理者が使えないようにしたモデルを使うなら、%s の disabled から ID を外してください", format.Supported(), absPath(mm.state.Path()))
 	}
 	return models.Entry{}, fmt.Errorf("書式に対応しているモデル(%s)が見つかりません。-models(AIBOW_MODELS_DIR)のフォルダに GGUF を置くか、ollama pull してください", format.Supported())
 }

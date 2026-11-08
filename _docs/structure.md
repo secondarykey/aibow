@@ -45,10 +45,8 @@ Ollama が保存したファイルを aibow が直接読むので、Ollama は�
 | `internal/secret/` | 手元に置くアプリ用のトークンを、Windows の DPAPI で包む(標準の `syscall` で `crypt32.dll` を呼ぶ。Windows 以外は包まない。0019) |
 | `internal/appversion/` | aibow-mcp と aibow-server が名乗るバージョン。`_cmd/aibow/version` の写し(`version`。`go run _cmd/version.go` が書き写す)を埋め込み、`go run` で起動したものは patch を1つ上げて `+dev` を付ける |
 | `log/` | aibow のログ。aibow のコードはここからログを出す。aibow をライブラリとして使う人は `log.SetLogger` で aibow のログの出し先(`*slog.Logger`)を決められる(決めなければ `slog.Default()`) |
-| `config/` | アプリと aibow-server の設定ファイルと環境変数を読む部分。アプリの設定ファイル `settings.json`(手で書く設定。aibow-server のつなぎ先など)の読み込みと、MCP のサーバーを移したあとに `mcpServers` を消す書き直し(`settings.go`)・設定の画面の「サーバー」で決めた aibow-server のつなぎ先 `connection.json` の読み書き(`connection.go`。アプリ用のトークンは `internal/secret` で包む。0019)・aibow-server の設定ファイル `server.json` の読み込み(`server.go`)・`AIBOW_` の環境変数の読み方(`env.go`。誤りをまとめて返す) |
-| `workspaces.go` | ワークスペース(名前を付けたフォルダの組。0035)の `workspaces.json` の読み書きと、前の作業フォルダ(`work_dir`)を移す `MigrateWorkDirs` |
-| `toolprefs.go` | ツールの扱い(使わない / 確認する / 確認しない)と、その PC の既定 `tools.json` の読み書き |
-| `mcpfile.go` | 設定の画面の「MCP」から足した MCP のサーバー `mcp.json` の読み書きと、`settings.json` に手で書いた分を起動したときに移す係 |
+| `config/` | アプリと aibow-server の設定ファイルと環境変数を読む部分。アプリの設定ファイル `settings.json`(手で書く設定。aibow-server のつなぎ先など)の読み込みと、MCP のサーバーを移したあとに `mcpServers` を消す書き直し(`settings.go`)・設定の画面の「サーバー」で決めた aibow-server のつなぎ先 `connection.json` の読み書き(`connection.go`。アプリ用のトークンは `internal/secret` で包む。0019)・aibow-server の設定ファイル `server.json` の読み込み(`server.go`)・`AIBOW_` の環境変数の読み方(`env.go`。誤りをまとめて返す)・ツールの扱いとその PC の既定 `tools.json`(`toolprefs.go`)・設定の画面の「MCP」から足した MCP のサーバー `mcp.json` と `settings.json` に手で書いた分を移す係(`mcp.go`)・ワークスペースの `workspaces.json`(`workspaces.go`)・aibow-server が書く `server-models.json`(`servermodels.go`) |
+| `workspacedirs.go` | 会話の仕組みとワークスペースのつなぎ(`SetWorkspaces`)と、前の作業フォルダ(`work_dir`)を移す `MigrateWorkDirs`。`workspaces.json` の読み書きは `config/workspaces.go` |
 | `compact.go` | 長くなった会話を「会話の上限」に収める仕組み(古い発言を捨てる / 要約する)と、メーターの計算 |
 | `store.go` | 会話の保存先の約束(interface)と、会話・発言・要約の形。会話の仕組みは保存先が SQLite かどうかを知らない |
 | `appsettings.go` | アプリの設定(GPU の層数・最後に使ったモデル・画面の設定)と新しい会話の既定の設定(会話の上限・返事の上限も入る) |

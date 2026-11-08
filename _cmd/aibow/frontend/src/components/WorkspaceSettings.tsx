@@ -6,7 +6,7 @@
 import { useState } from "react";
 import { LuFolderPlus, LuGitBranch, LuPlus, LuTriangleAlert, LuX } from "react-icons/lu";
 import type { FolderView, WorkspaceList, WorkspaceView } from "../../bindings/github.com/secondarykey/aibow/ui";
-import type { Workspace } from "../../bindings/github.com/secondarykey/aibow";
+import type { Workspace } from "../../bindings/github.com/secondarykey/aibow/config";
 import { ChatService } from "../backend";
 import { errorMessage } from "../errors";
 import { createFromFolder, mainFolder } from "../workspaces";

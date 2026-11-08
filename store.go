@@ -17,6 +17,7 @@ import (
 	"time"
 	"uuid"
 
+	"github.com/secondarykey/aibow/config"
 	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/format"
 )
@@ -231,9 +232,9 @@ type ConversationSettings struct {
 	// 入力欄の上の「この会話のツール」で外したとき。新しい会話では使う(設定の画面の「ツール」で組み込みを使うにしていれば)
 	BuiltinOff bool `json:"builtin_off,omitempty"`
 	// ToolPolicies は、この会話だけのツールの扱いの上書き(ツールのモデルに見せる名前 → 使う / 使わない / 確認する / 確認しない)。
-	// PC の既定(tools.json)より優先する。会話を消せば一緒に消える(toolprefs.go)。
+	// PC の既定(tools.json)より優先する。会話を消せば一緒に消える(config の toolprefs.go)。
 	// 画面(会話の設定の画面の「ツール」)で変えるのは、使う(on)/ 使わない(off)だけ
-	ToolPolicies map[string]ToolPolicy `json:"tool_policies,omitempty"`
+	ToolPolicies map[string]config.ToolPolicy `json:"tool_policies,omitempty"`
 
 	// profile は、この会話のプロファイル(決まりを引くため。0014 の 6)。保存しない(会話の仕組みが読むたびに入れる。withProfile)。
 	// nil ならプロファイルを持たない(決まり無し)
@@ -294,7 +295,7 @@ func (s ConversationSettings) validate() error {
 		return fmt.Errorf("会話の上限と返事の上限は 1 以上にしてください(%d / %d)", s.HistoryTokens, s.ReplyTokens)
 	}
 	for name, p := range s.ToolPolicies {
-		if !p.validInConversation() {
+		if !p.ValidInConversation() {
 			return fmt.Errorf("ツール %s の扱い %q は知らない値です(on / off / ask / allow)", name, p)
 		}
 	}
@@ -349,7 +350,7 @@ type Confirmation struct {
 	// Remember は、このツールのこれから先の扱い(会話の上書きに書く ToolPolicy の値)。空ならこの1回だけ。
 	// 確認のカードの「この会話では今後聞かない」(allow)・「今後許可しない」(off)など(0010)。
 	// 真偽値ではなく値で持つのは、操作を足すときに値を足すだけで済むようにするため
-	Remember ToolPolicy `json:"remember,omitempty"`
+	Remember config.ToolPolicy `json:"remember,omitempty"`
 }
 
 // Compaction は要約1件(compact の summary)。

@@ -12,6 +12,7 @@ import (
 	"uuid"
 
 	"github.com/secondarykey/aibow"
+	"github.com/secondarykey/aibow/config"
 	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/mcp/client"
 	"github.com/secondarykey/aibow/tool"
@@ -44,10 +45,10 @@ func (s *Service) AllMCPServers() []client.ServerInfo {
 
 // BuiltinTools は組み込みのツール(aibow の中で動くツール)の一覧(設定の画面の「ツール」に出す)。
 // ブラウザでは、コマンドのツールを出さない。資料のフォルダが無ければ、作業フォルダを使わないツール(時刻・計算・URL を読む)だけ(0024 の決定事項 5・17)。
-func (s *Service) BuiltinTools() []aibow.KnownTool {
+func (s *Service) BuiltinTools() []config.KnownTool {
 	l := aibow.BuiltinTools()
 	if s.browser {
-		l = slices.DeleteFunc(l, func(k aibow.KnownTool) bool {
+		l = slices.DeleteFunc(l, func(k config.KnownTool) bool {
 			return k.Name == "run_command" || len(s.folders) == 0 && tool.Find(tool.Folderless(), k.Name) == nil
 		})
 	}
@@ -66,7 +67,7 @@ func (s *Service) ToolDefaults() ([]aibow.ToolGroupState, error) {
 // SetGroupPolicy は、グループ(空なら組み込み、そうでなければ MCP のサーバー)の全部のツールの確認の扱いの PC の既定を変える
 // (確認する ask / 確認しない allow / 決めていない 空。tools.json に書く)。
 // ブラウザでは aibow-server の管理者だけが変えられ(server-tools.json に書く)、使わない(off。禁止)も決められる(0024 の決定事項 21・22)。
-func (s *Service) SetGroupPolicy(ctx context.Context, group string, policy aibow.ToolPolicy) error {
+func (s *Service) SetGroupPolicy(ctx context.Context, group string, policy config.ToolPolicy) error {
 	if err := s.canSetTools(ctx); err != nil {
 		return err
 	}
@@ -131,7 +132,7 @@ func (s *Service) checkFolder(ctx context.Context, old, folder string) error {
 // ToolPrefs は、ツールの扱いの PC の既定(tools.json)と、サーバーを起動したときに見えたツールの一覧。
 // 新しい会話で最初から使うグループはプロファイルの値なので、設定の画面はプロファイルから出す(ここの notDefault は引き継ぐ前の値)。
 // ブラウザでは aibow-server の管理者の既定。ファイルの場所(サーバーの PC のパス)は管理者にだけ見せる(0024 の決定事項 25)。
-func (s *Service) ToolPrefs(ctx context.Context) aibow.ToolPrefsView {
+func (s *Service) ToolPrefs(ctx context.Context) config.ToolPrefsView {
 	v := s.prefs.View()
 	if s.browser && !managesPC(ctx) {
 		v.Path = ""
@@ -154,7 +155,7 @@ func (s *Service) LoadToolList(ctx context.Context, server string) error {
 // SetToolPolicy は、ツールの扱いの PC の既定を変える(tools.json に書く)。policy が空なら決めていない状態に戻す。
 // 次の送信から効く(プロンプトに入るツールが変わるので、画面はメーターを数え直す)。
 // ブラウザでは aibow-server の管理者だけが変えられる(server-tools.json に書く。使わないは禁止。0024 の決定事項 21・22)。
-func (s *Service) SetToolPolicy(ctx context.Context, name string, policy aibow.ToolPolicy) error {
+func (s *Service) SetToolPolicy(ctx context.Context, name string, policy config.ToolPolicy) error {
 	if err := s.canSetTools(ctx); err != nil {
 		return err
 	}
@@ -182,15 +183,15 @@ func (s *Service) prefsName(ctx context.Context) string {
 	return " PC の既定"
 }
 
-func policyLabel(p aibow.ToolPolicy) string {
+func policyLabel(p config.ToolPolicy) string {
 	switch p {
-	case aibow.ToolOff:
+	case config.ToolOff:
 		return "使わない"
-	case aibow.ToolAsk:
+	case config.ToolAsk:
 		return "確認する"
-	case aibow.ToolAllow:
+	case config.ToolAllow:
 		return "確認しない"
-	case aibow.ToolOn:
+	case config.ToolOn:
 		return "使う"
 	}
 	return "決めていない"

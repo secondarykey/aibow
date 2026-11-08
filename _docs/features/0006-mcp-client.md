@@ -162,7 +162,7 @@ MCP(Model Context Protocol)は、ツールやデータを AI アプリにつな�
 
 - **会話ごとの選択とツールの扱い(決定事項 6・7)の実装**:
   - 会話の設定に `mcp_servers`(使うサーバー)と `tool_policies`(会話だけの上書き)を足した。`mcp_servers` と `tool_policies` は、保存する新しい会話の既定に入れない(新しい会話の `mcp_servers` は「ツール」から決める。決定事項 10)
-  - PC の既定は `toolprefs.go` の `ToolPrefs`(`tools.json`。場所は `AIBOW_TOOLS`)。ツールごと(キーはモデルに見せる名前)とサーバーごとの既定、起動したときに見えたツールの一覧(`known`)を持つ
+  - PC の既定は `toolprefs.go`(今は `config/toolprefs.go`)の `ToolPrefs`(`tools.json`。場所は `AIBOW_TOOLS`)。ツールごと(キーはモデルに見せる名前)とサーバーごとの既定、起動したときに見えたツールの一覧(`known`)を持つ
   - 扱いを決めるのは `Conversations.toolPolicy` の1か所(会話の上書き → PC のツールごと → PC のサーバーごと → 確認する)。「使わない」は `toolsFor` で外し、「確認しない」は `needsConfirm` で確認を飛ばす
   - 「確認しない」は画面から選べないが、`tools.json` を手で書けば効く(仕組みを確かめられるように。ログに出す)
   - `tools.json` が壊れていたら、お知らせで伝えて決まりの既定で動き、ファイルは書き換えない

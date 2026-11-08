@@ -28,6 +28,7 @@ import (
 	"strings"
 	"uuid"
 
+	"github.com/secondarykey/aibow/config"
 	"github.com/secondarykey/aibow/git"
 	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/tool"
@@ -74,9 +75,9 @@ type WorktreeChange struct {
 }
 
 // worktreeOf は、会話の設定 set の会話の worktree(この PC で作っていれば)。
-func (cs *Conversations) worktreeOf(set ConversationSettings) (WorkspaceWorktree, bool) {
+func (cs *Conversations) worktreeOf(set ConversationSettings) (config.WorkspaceWorktree, bool) {
 	if cs.noWorkDir || set.conv == (uuid.UUID{}) {
-		return WorkspaceWorktree{}, false
+		return config.WorkspaceWorktree{}, false
 	}
 	wt, _, ok := cs.workspaces.Worktree(set.conv.String())
 	return wt, ok
@@ -105,7 +106,7 @@ func (cs *Conversations) worktreeUsable(set ConversationSettings) error {
 	if !ok {
 		return errors.New("この PC にはこのワークスペースがありません")
 	}
-	if !IsGitRepo(ws.MainFolder().Path) {
+	if !config.IsGitRepo(ws.MainFolder().Path) {
 		return fmt.Errorf("メインのフォルダ %s が Git のリポジトリではありません(直下に .git がありません)", ws.MainFolder().Name)
 	}
 	return git.Available()
@@ -197,9 +198,9 @@ func (cs *Conversations) ensureWorktree(ctx context.Context, set ConversationSet
 	if err != nil {
 		return "", fmt.Errorf("worktree を作れないため、実行していません: %w", err)
 	}
-	wt := WorkspaceWorktree{Conversation: set.conv.String(), Repo: repo, Path: path, Branch: branch,
+	wt := config.WorkspaceWorktree{Conversation: set.conv.String(), Repo: repo, Path: path, Branch: branch,
 		Base: base.Commit, BaseBranch: base.Branch, BaseSubject: base.Subject}
-	if err := cs.workspaces.addWorktree(ws.ID, wt); err != nil {
+	if err := cs.workspaces.AddWorktree(ws.ID, wt); err != nil {
 		// 結び付けを書けなければ、作った worktree を消しておく(どの会話のものか分からないまま残さない)
 		if rerr := git.Remove(context.WithoutCancel(ctx), repo, path, branch); rerr != nil {
 			log.Warnf("worktree %s を片付けられません: %v", path, rerr)
@@ -292,13 +293,13 @@ func (cs *Conversations) keepWorktree(id uuid.UUID, stored ConversationSettings,
 }
 
 // worktreeFor は、会話 id の worktree(作っていなければエラー)。
-func (cs *Conversations) worktreeFor(ctx context.Context, id uuid.UUID) (WorkspaceWorktree, error) {
+func (cs *Conversations) worktreeFor(ctx context.Context, id uuid.UUID) (config.WorkspaceWorktree, error) {
 	if _, _, err := cs.store.Conversation(ctx, id); err != nil {
-		return WorkspaceWorktree{}, err // ほかの人の会話は扱わない(保存先で確かめる)
+		return config.WorkspaceWorktree{}, err // ほかの人の会話は扱わない(保存先で確かめる)
 	}
 	wt, _, ok := cs.workspaces.Worktree(id.String())
 	if !ok || cs.noWorkDir {
-		return WorkspaceWorktree{}, errors.New("この会話は、この PC で worktree を作っていません")
+		return config.WorkspaceWorktree{}, errors.New("この会話は、この PC で worktree を作っていません")
 	}
 	return wt, nil
 }
@@ -367,7 +368,7 @@ func (cs *Conversations) DiscardWorktree(ctx context.Context, id uuid.UUID) erro
 	if err := git.Remove(ctx, wt.Repo, wt.Path, wt.Branch); err != nil {
 		return err
 	}
-	if err := cs.workspaces.removeWorktree(id.String()); err != nil {
+	if err := cs.workspaces.RemoveWorktree(id.String()); err != nil {
 		return fmt.Errorf("worktree は消しましたが、結び付けを消せません: %w", err)
 	}
 	log.Noticef("会話 %s の worktree を捨てました: %s(ブランチ %s)", id, wt.Path, wt.Branch)
@@ -394,7 +395,7 @@ func (cs *Conversations) removeWorktreeOf(ctx context.Context, id uuid.UUID) {
 		log.Warnf("消した会話 %s の worktree %s を消せません(手で git worktree remove してください): %v", id, wt.Path, err)
 		return
 	}
-	if err := cs.workspaces.removeWorktree(id.String()); err != nil {
+	if err := cs.workspaces.RemoveWorktree(id.String()); err != nil {
 		log.Warnf("消した会話 %s の worktree の結び付けを消せません: %v", id, err)
 		return
 	}

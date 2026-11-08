@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/secondarykey/aibow/config"
 	"github.com/secondarykey/aibow/format"
 	"github.com/secondarykey/aibow/tool"
 )
@@ -29,7 +30,7 @@ func TestWorkDirAddsFileToolsAndEnvironment(t *testing.T) {
 	cs, _, c := newToolConversation(t, g)
 
 	set := c.Settings
-	prefs := &ToolPrefs{}
+	prefs := &config.ToolPrefs{}
 	cs.SetToolPrefs(prefs)
 	steps := []struct {
 		name      string
@@ -41,9 +42,9 @@ func TestWorkDirAddsFileToolsAndEnvironment(t *testing.T) {
 	}{
 		{"作業フォルダなし", "", func() {}, []string{"get_current_time", "calculate"}, false, false},
 		{"作業フォルダあり", dir, func() {}, []string{"get_current_time", "calculate", "list_files", "read_file", "search_files", "write_file", "edit_file", "update_plan", "run_command"}, true, true},
-		{"run_command を使わない", dir, func() { prefs.SetToolPolicy("run_command", ToolOff) },
+		{"run_command を使わない", dir, func() { prefs.SetToolPolicy("run_command", config.ToolOff) },
 			[]string{"get_current_time", "calculate", "list_files", "read_file", "search_files", "write_file", "edit_file", "update_plan"}, true, false},
-		{"組み込みのツールを使わない", dir, func() { prefs.SetBuiltinPolicy(ToolOff) }, nil, false, false},
+		{"組み込みのツールを使わない", dir, func() { prefs.SetBuiltinPolicy(config.ToolOff) }, nil, false, false},
 	}
 	for i, s := range steps {
 		set.Workspace = workspaceFor(t, cs, s.workDir)
@@ -173,7 +174,7 @@ func workspaceFor(t *testing.T, cs *Conversations, dir string) string {
 		return ""
 	}
 	if cs.workspaces == nil {
-		cs.workspaces, _ = LoadWorkspaces("")
+		cs.workspaces, _ = config.LoadWorkspaces("")
 	}
 	ws, err := cs.workspaces.CreateFromFolder(dir)
 	if err != nil {

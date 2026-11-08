@@ -21,6 +21,8 @@ import (
 	"strings"
 	"time"
 	"uuid"
+
+	"github.com/secondarykey/aibow/config"
 )
 
 // DefaultProfileName は、今までの「新しい会話の既定」から引き継いで作るプロファイルの名前。
@@ -113,20 +115,8 @@ func valuesOf(s ConversationSettings) ProfileValues {
 		System: s.System, Temperature: s.Temperature, Think: s.Think, PresencePenalty: s.PresencePenalty, Compact: s.Compact,
 		HistoryTokens: s.HistoryTokens, ReplyTokens: s.ReplyTokens,
 		BuiltinOff: s.BuiltinOff, MCPServers: slices.Clone(s.MCPServers),
-		ToolsOff: toolsOff(s.ToolPolicies),
+		ToolsOff: config.OffNames(s.ToolPolicies),
 	}
-}
-
-// toolsOff は、会話の上書きのうち「使わない」(off)にしたツールの名前(名前の順)。
-func toolsOff(policies map[string]ToolPolicy) []string {
-	var out []string
-	for name, p := range policies {
-		if p == ToolOff {
-			out = append(out, name)
-		}
-	}
-	slices.Sort(out)
-	return out
 }
 
 // settings は、プロファイルの値を会話の設定の形にする(会話を作るときの写しの元)。
@@ -141,13 +131,13 @@ func (v ProfileValues) settings() ConversationSettings {
 }
 
 // offPolicies は、最初は使わないツールを、会話の上書き(off)の形にする。無ければ nil。
-func offPolicies(names []string) map[string]ToolPolicy {
+func offPolicies(names []string) map[string]config.ToolPolicy {
 	if len(names) == 0 {
 		return nil
 	}
-	m := make(map[string]ToolPolicy, len(names))
+	m := make(map[string]config.ToolPolicy, len(names))
 	for _, n := range names {
-		m[n] = ToolOff
+		m[n] = config.ToolOff
 	}
 	return m
 }
@@ -205,7 +195,7 @@ func (cs *Conversations) PrepareProfiles(ctx context.Context) ([]string, error) 
 //   - 今ある会話は、上書きが無ければ「使わない」(off)の上書きを足す(PC の既定から外したあとも、今までどおり使わない)
 //   - 移したら tools.json から消す(確認する・確認しないは PC の既定のまま残る)
 func (cs *Conversations) moveToolsOff(ctx context.Context) (string, error) {
-	names := cs.prefs.offTools()
+	names := cs.prefs.OffTools()
 	if len(names) == 0 {
 		return "", nil
 	}
@@ -230,9 +220,9 @@ func (cs *Conversations) moveToolsOff(ctx context.Context) (string, error) {
 				continue
 			}
 			if c.Settings.ToolPolicies == nil {
-				c.Settings.ToolPolicies = map[string]ToolPolicy{}
+				c.Settings.ToolPolicies = map[string]config.ToolPolicy{}
 			}
-			c.Settings.ToolPolicies[n] = ToolOff
+			c.Settings.ToolPolicies[n] = config.ToolOff
 			changed = true
 		}
 		if !changed {
@@ -242,7 +232,7 @@ func (cs *Conversations) moveToolsOff(ctx context.Context) (string, error) {
 			return "", fmt.Errorf("会話 %s に「使わない」のツールを写せません: %w", c.ID, err)
 		}
 	}
-	if err := cs.prefs.clearOff(names); err != nil {
+	if err := cs.prefs.ClearOff(names); err != nil {
 		return "", err
 	}
 	return fmt.Sprintf("この PC の既定で使わないにしていたツール %d 個(%s)を、プロファイルの「最初は使わない」に移しました",
@@ -254,11 +244,11 @@ func (cs *Conversations) moveToolsOff(ctx context.Context) (string, error) {
 // これより後は、グループのチェックもプロファイルに書く(Conversations.SetDefaultGroup)。
 func (cs *Conversations) migrateDefaults(ctx context.Context) (Profile, error) {
 	v := cs.initial.Values
-	v.BuiltinOff = !cs.prefs.groupDefault("")
+	v.BuiltinOff = !cs.prefs.GroupDefault("")
 	v.MCPServers = []string{}
 	if cs.remote != nil {
 		for _, name := range cs.remote.Servers() {
-			if cs.prefs.groupDefault(name) {
+			if cs.prefs.GroupDefault(name) {
 				v.MCPServers = append(v.MCPServers, name)
 			}
 		}

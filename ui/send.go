@@ -13,6 +13,7 @@ import (
 	"uuid"
 
 	"github.com/secondarykey/aibow"
+	"github.com/secondarykey/aibow/config"
 	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/usage"
@@ -89,7 +90,7 @@ func (s *Service) Compact(ctx context.Context, id uuid.UUID) {
 // ConfirmTool は、実行前の確認を待っているツールに答える(カードの「実行する」「拒否」)。
 // reqID は confirm イベントの ID。拒否するときの reason は空でもよい(モデルには「理由: (書かれていません)」と渡る)。
 // remember は、このツールのこの会話でのこれから先の扱い(空ならこの1回だけ。allow = この会話では今後聞かない、off = 今後許可しない。0010)。
-func (s *Service) ConfirmTool(ctx context.Context, id uuid.UUID, reqID string, approved bool, reason string, remember aibow.ToolPolicy) error {
+func (s *Service) ConfirmTool(ctx context.Context, id uuid.UUID, reqID string, approved bool, reason string, remember config.ToolPolicy) error {
 	if s.startupErr != nil {
 		return s.startupErr
 	}

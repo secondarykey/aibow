@@ -3,7 +3,7 @@ package aibow
 // tools.go: 会話で使うツール。並べる(toolsFor)・使わない / 確認する / 確認しないの決め方(toolPolicy・policyOf)・設定の画面に出す状態(ToolStates)・
 // 組み込みのツールと MCP のサーバーのツールの受け取りと起動(LocalTools・RemoteTools)。
 //
-// エージェントループ(agent.go)は、ここで決めた「使えるツール」と「扱い」を見て実行するだけ。扱いの既定(その PC の tools.json)は toolprefs.go。
+// エージェントループ(agent.go)は、ここで決めた「使えるツール」と「扱い」を見て実行するだけ。扱いの既定(その PC の tools.json)は config の toolprefs.go。
 
 import (
 	"context"
@@ -12,6 +12,7 @@ import (
 	"strings"
 	"uuid"
 
+	"github.com/secondarykey/aibow/config"
 	"github.com/secondarykey/aibow/format"
 	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/tool"
@@ -24,7 +25,7 @@ func (cs *Conversations) toolsFor(set ConversationSettings) []tool.Tool {
 	// 組み込みのツールは、この会話で外していなければ(入力欄の上の「この会話のツール」)
 	var tools []tool.Tool
 	for _, t := range cs.localTools(set) {
-		if !set.BuiltinOff && cs.toolPolicy(set, t) != ToolOff {
+		if !set.BuiltinOff && cs.toolPolicy(set, t) != config.ToolOff {
 			tools = append(tools, t)
 		}
 	}
@@ -32,7 +33,7 @@ func (cs *Conversations) toolsFor(set ConversationSettings) []tool.Tool {
 		return tools
 	}
 	for _, t := range cs.remote.Tools(cs.workDir(set), cs.usableServers(set)) {
-		if cs.toolPolicy(set, t) == ToolOff {
+		if cs.toolPolicy(set, t) == config.ToolOff {
 			continue
 		}
 		// MCP のツールの名前にはサーバーの名前が前に付いている(filesystem__read_file。mcp/client の ToolName)ので、ふつうは重ならない。
@@ -56,7 +57,7 @@ func (cs *Conversations) toolsFor(set ConversationSettings) []tool.Tool {
 //     組み込みのツールは、書き換えるツール・コマンド(tool.Confirmable)は確認する、読むだけのツールは確認しない(今までの動き)
 //
 // の順に見て、最初に決めてあったものを使う。
-func (cs *Conversations) toolPolicy(set ConversationSettings, t tool.Tool) ToolPolicy {
+func (cs *Conversations) toolPolicy(set ConversationSettings, t tool.Tool) config.ToolPolicy {
 	group := "" // 組み込みのツール
 	if r, ok := t.(tool.Remote); ok {
 		group = r.Server()
@@ -79,25 +80,25 @@ const (
 // グループ・名前・書き換えるツールか(tool.Confirmable)で受け取り、どこで決まったかも返す。
 //
 // 返す扱いは off / ask / allow のどれか(on は返さない。使うことにしたうえで、確認するかを返す)。
-func (cs *Conversations) policyOf(set ConversationSettings, group, name string, confirmable bool) (ToolPolicy, string) {
+func (cs *Conversations) policyOf(set ConversationSettings, group, name string, confirmable bool) (config.ToolPolicy, string) {
 	if set.profile != nil && set.profile.Rules.offTool(group, name) {
-		return ToolOff, PolicyFromProfile
+		return config.ToolOff, PolicyFromProfile
 	}
-	if cs.prefs.banned(group, name) {
-		return ToolOff, PolicyFromAdmin // aibow-server の管理者が禁止した(会話の上書きでも使えない。0024 の決定事項 22)
+	if cs.prefs.Banned(group, name) {
+		return config.ToolOff, PolicyFromAdmin // aibow-server の管理者が禁止した(会話の上書きでも使えない。0024 の決定事項 22)
 	}
 	p, ok := set.ToolPolicies[name]
-	if ok && p != ToolOn {
+	if ok && p != config.ToolOn {
 		return p, PolicyFromConversation
 	}
 	if ok {
 		// この会話では使う。PC の既定の「使わない」は「既定では使わない」の意味なので打ち消し、確認するかだけを PC の既定から取る
-		if c, cok := cs.prefs.confirmPolicy(group, name); cok {
+		if c, cok := cs.prefs.ConfirmPolicy(group, name); cok {
 			return c, PolicyFromConversation
 		}
 		return cs.defaultPolicy(set, group, name, confirmable), PolicyFromConversation
 	}
-	if p, ok := cs.prefs.policy(group, name); ok {
+	if p, ok := cs.prefs.Policy(group, name); ok {
 		return p, PolicyFromPC
 	}
 	return cs.defaultPolicy(set, group, name, confirmable), PolicyFromDefault
@@ -106,19 +107,19 @@ func (cs *Conversations) policyOf(set ConversationSettings, group, name string, 
 // defaultPolicy は、会話の設定 set での決まりの既定。worktree で作業する会話では、ファイルを書き換えるツールを確認しない
 // (書き換えは worktree に入り、本体に入れる前に差分の画面でまとめて見られるため。0039)。
 // run_command は確認する(コマンドは worktree の外にも書けるため)。会話・PC で「確認する」にしていれば、そちらが先に効く(policyOf)。
-func (cs *Conversations) defaultPolicy(set ConversationSettings, group, name string, confirmable bool) ToolPolicy {
+func (cs *Conversations) defaultPolicy(set ConversationSettings, group, name string, confirmable bool) config.ToolPolicy {
 	if group == "" && worktreeWrites[name] && cs.worktreeMode(set) {
-		return ToolAllow
+		return config.ToolAllow
 	}
 	return defaultPolicy(group, confirmable)
 }
 
 // defaultPolicy は決まりの既定: MCP のツールは確認する。組み込みのツールは、書き換えるツール・コマンドは確認する、読むだけのツールは確認しない。
-func defaultPolicy(group string, confirmable bool) ToolPolicy {
+func defaultPolicy(group string, confirmable bool) config.ToolPolicy {
 	if !confirmable && group == "" {
-		return ToolAllow
+		return config.ToolAllow
 	}
-	return ToolAsk
+	return config.ToolAsk
 }
 
 // ToolGroupState は、会話の設定の画面に出すツールのグループ1つ(組み込み / MCP のサーバー1つ)。
@@ -129,12 +130,12 @@ type ToolGroupState struct {
 
 // ToolState は、会話でのツール1つの扱い。
 type ToolState struct {
-	Name         string     `json:"name"`           // モデルに見せる名前
-	Description  string     `json:"description"`    // 説明の1行目
-	Policy       ToolPolicy `json:"policy"`         // 使わない / 確認する / 確認しない(toolPolicy と同じ決め方)
-	From         string     `json:"from"`           // どこで決まったか(PolicyFrom…)
-	Default      ToolPolicy `json:"default"`        // 会話の上書きが無いときの扱い(PC の既定か決まりの既定)。画面は、これと同じにするなら上書きを消す
-	NeedsWorkDir bool       `json:"needs_work_dir"` // 作業フォルダを決めた会話でだけ使える(組み込みのファイル・コマンドのツール)
+	Name         string            `json:"name"`           // モデルに見せる名前
+	Description  string            `json:"description"`    // 説明の1行目
+	Policy       config.ToolPolicy `json:"policy"`         // 使わない / 確認する / 確認しない(toolPolicy と同じ決め方)
+	From         string            `json:"from"`           // どこで決まったか(PolicyFrom…)
+	Default      config.ToolPolicy `json:"default"`        // 会話の上書きが無いときの扱い(PC の既定か決まりの既定)。画面は、これと同じにするなら上書きを消す
+	NeedsWorkDir bool              `json:"needs_work_dir"` // 作業フォルダを決めた会話でだけ使える(組み込みのファイル・コマンドのツール)
 }
 
 // ToolStates は、会話の設定 set でのツールの扱いを、グループごとに返す(会話の設定の画面に出す)。
@@ -209,7 +210,7 @@ func (cs *Conversations) usableServers(set ConversationSettings) []string {
 		if set.profile != nil && set.profile.Rules.offGroup(name) {
 			continue
 		}
-		if p, ok := cs.prefs.groupPolicy(name); !ok || p != ToolOff {
+		if p, ok := cs.prefs.GroupPolicy(name); !ok || p != config.ToolOff {
 			out = append(out, name)
 		}
 	}
@@ -269,28 +270,19 @@ func (cs *Conversations) LoadToolList(ctx context.Context, server string) error 
 	if err != nil {
 		return err
 	}
-	return cs.prefs.setKnown(server, knownTools(tools))
+	return cs.prefs.SetKnown(server, config.KnownTools(tools))
 }
 
 // BuiltinTools は、組み込みのツール(aibow の中で動くツール)の一覧(設定の画面に出す)。
 // 作業フォルダのツールも入れる(作業フォルダを決めた会話でだけ使える)。定義は作業フォルダによらないので、仮のフォルダで作る。
-func BuiltinTools() []KnownTool {
+func BuiltinTools() []config.KnownTool {
 	tools := append(tool.Folderless(), tool.Files(".")...)
 	tools = append(tools, tool.UpdatePlan(), tool.RunCommand("."))
-	return knownTools(append(tools, tool.GitTools()...)) // Git のツールはリポジトリの会話でだけ出るが、扱いは前もって決められるように並べる
-}
-
-// knownTools は、設定の画面に出すツールの一覧(名前と説明の1行目)。
-func knownTools(tools []tool.Tool) []KnownTool {
-	known := make([]KnownTool, 0, len(tools))
-	for _, t := range tools {
-		known = append(known, KnownTool{Name: t.Def().Name, Description: firstLine(t.Def().Description)})
-	}
-	return known
+	return config.KnownTools(append(tools, tool.GitTools()...)) // Git のツールはリポジトリの会話でだけ出るが、扱いは前もって決められるように並べる
 }
 
 // SetToolPrefs は、ツールの扱いの PC の既定(tools.json)を使えるようにする(アプリの起動時に1回)。
-func (cs *Conversations) SetToolPrefs(p *ToolPrefs) {
+func (cs *Conversations) SetToolPrefs(p *config.ToolPrefs) {
 	cs.prefs = p
 }
 
@@ -321,7 +313,7 @@ func (cs *Conversations) startRemote(ctx context.Context, conv Conversation, emi
 // 設定の画面で、サーバーを起動していなくてもツールの一覧を出して、使う / 使わないを決められるようにするため。
 func (cs *Conversations) rememberTools(set ConversationSettings, started []string) {
 	for _, server := range started {
-		if err := cs.prefs.setKnown(server, knownTools(cs.remote.Tools(cs.workDir(set), []string{server}))); err != nil {
+		if err := cs.prefs.SetKnown(server, config.KnownTools(cs.remote.Tools(cs.workDir(set), []string{server}))); err != nil {
 			log.Warnf("MCP のサーバー %s のツールの一覧を覚えられません: %v", server, err)
 		}
 	}
@@ -348,4 +340,13 @@ func (cs *Conversations) logRemoteTools(set ConversationSettings) {
 	if len(skipped) > 0 {
 		log.Warnf("MCP のツールのうち、組み込みのツールと名前が重なる %s は出しません", strings.Join(skipped, ", "))
 	}
+}
+
+// firstLine は説明の1行目(画面の一覧に出す。長い説明を全部出すと読めないため)。
+func firstLine(s string) string {
+	s = strings.TrimSpace(s)
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		s = strings.TrimSpace(s[:i])
+	}
+	return s
 }

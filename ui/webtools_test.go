@@ -10,6 +10,7 @@ import (
 
 	"github.com/secondarykey/aibow"
 	"github.com/secondarykey/aibow/auth"
+	"github.com/secondarykey/aibow/config"
 	"github.com/secondarykey/aibow/format"
 	"github.com/secondarykey/aibow/tool"
 )
@@ -25,7 +26,7 @@ func calcCall(expr string) []format.ToolCall {
 func (w *testWeb) askCalc(t *testing.T, c aibow.Conversation) {
 	t.Helper()
 	s := c.Settings
-	s.ToolPolicies = map[string]aibow.ToolPolicy{"calculate": aibow.ToolAsk}
+	s.ToolPolicies = map[string]config.ToolPolicy{"calculate": config.ToolAsk}
 	w.mustCall(t, nil, "UpdateConversationSettings", c.ID, s)
 }
 
@@ -93,7 +94,7 @@ func TestWebConfirm(t *testing.T) {
 		t.Fatal("確認を待っている間に席が空いている")
 	}
 
-	w.mustCall(t, nil, "ConfirmTool", c.ID, req.ID, true, "", aibow.ToolAllow)
+	w.mustCall(t, nil, "ConfirmTool", c.ID, req.ID, true, "", config.ToolAllow)
 	got = until(t, events, "tool_result")
 	if m := got[len(got)-1].Message; m == nil || m.Content != "3" || m.ToolResult.Confirm == nil || !m.ToolResult.Confirm.Approved {
 		t.Fatalf("計算の結果: %+v", got[len(got)-1].Message)
@@ -117,7 +118,7 @@ func TestWebConfirm(t *testing.T) {
 	}
 	var d ConversationDetail
 	w.mustCall(t, &d, "Conversation", c.ID)
-	if d.Conversation.Settings.ToolPolicies["calculate"] != aibow.ToolAllow {
+	if d.Conversation.Settings.ToolPolicies["calculate"] != config.ToolAllow {
 		t.Errorf("カードからの「今後聞かない」が会話に残るはず: %+v", d.Conversation.Settings.ToolPolicies)
 	}
 	// カードで決めた「確認しない」は、会話の設定を保存し直しても残せる
@@ -316,7 +317,7 @@ func TestWebNoNewAllow(t *testing.T) {
 	w := newTestWeb(t)
 	c := w.newConversation(t)
 	s := c.Settings
-	s.ToolPolicies = map[string]aibow.ToolPolicy{"calculate": aibow.ToolAllow}
+	s.ToolPolicies = map[string]config.ToolPolicy{"calculate": config.ToolAllow}
 	status, body := w.call(t, context.Background(), "UpdateConversationSettings", c.ID, s)
 	if status == http.StatusOK || !strings.Contains(string(body), "確認のカード") {
 		t.Errorf("確認しないを足せた: %d %s", status, body)
@@ -326,6 +327,6 @@ func TestWebNoNewAllow(t *testing.T) {
 		t.Errorf("確認しないの会話を作れた: %s", body)
 	}
 	// 使わない・確認するは足せる
-	s.ToolPolicies = map[string]aibow.ToolPolicy{"calculate": aibow.ToolAsk, "get_current_time": aibow.ToolOff}
+	s.ToolPolicies = map[string]config.ToolPolicy{"calculate": config.ToolAsk, "get_current_time": config.ToolOff}
 	w.mustCall(t, nil, "UpdateConversationSettings", c.ID, s)
 }

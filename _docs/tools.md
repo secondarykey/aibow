@@ -253,7 +253,7 @@ tool ── 何も知らない
 ### 作業フォルダのツール(0005 の 3-1)
 
 - 作業フォルダは、会話が選んだ**ワークスペース**(その PC の `workspaces.json` に登録した、名前付きのフォルダの組。0035)。
-  会話の設定はワークスペースの ID(`ConversationSettings.Workspace`)だけを持ち、パスは PC の手元に置く(`aibow.Workspaces`。`workspaces.go`)。
+  会話の設定はワークスペースの ID(`ConversationSettings.Workspace`)だけを持ち、パスは PC の手元に置く(`config.Workspaces`。`config/workspaces.go`)。
   この PC に無い ID(別の PC で選んだ・消した)なら、作業フォルダが無いものとして扱う(フォルダのツール・`${workdir}` の MCP・環境の説明を出さない)
 - ツールはフォルダの組を持った値として、送信のたびに `tool.FilesIn(folders)` で作る(`Conversations.toolFolders` → `localTools`)。
   `Tool` の interface は作業フォルダを知らない。MCP のサーバー(`mcp/server` の `Options.Folders`)も、渡されたフォルダの組で同じツールを作る

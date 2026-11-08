@@ -1,6 +1,6 @@
-package aibow
+package config
 
-// mcpfile.go: MCP のサーバーの置き場所 mcp.json と、手で settings.json に書いた分の扱い(0034)。
+// mcp.go: MCP のサーバーの置き場所 mcp.json と、手で settings.json に書いた分の扱い(0034)。
 //
 // MCP のサーバーは mcp.json で管理する(画面から足す・変える・消す。aibow が書く。tools.json・connection.json と同じ考え方)。
 // settings.json に手で書いた mcpServers は、起動したときに mcp.json へ移し、settings.json からは消す(MoveFromSettings。0034 の決定事項 13)。
@@ -25,7 +25,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/secondarykey/aibow/config"
 	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/mcp/client"
 	"github.com/secondarykey/aibow/tool"
@@ -56,11 +55,11 @@ func LoadMCPFile(path string) (*MCPFile, error) {
 	var d mcpFileData
 	if err == nil {
 		if err = json.Unmarshal(data, &d); err != nil {
-			err = fmt.Errorf("%s: %w", config.JSONErrorLine(data, err), err)
+			err = fmt.Errorf("%s: %w", JSONErrorLine(data, err), err)
 		}
 	}
 	if err == nil {
-		err = config.CheckMCPServers(path, d.MCPServers)
+		err = CheckMCPServers(path, d.MCPServers)
 	}
 	if err != nil {
 		f.broken = fmt.Errorf("画面から足した MCP のサーバーのファイル %s を読めません(このファイルのサーバーは使わず、書き換えません。直すか消してから、アプリを起動し直してください): %w", path, err)
@@ -136,13 +135,13 @@ func (f *MCPFile) MoveFromSettings(settingsPath string, hand map[string]client.S
 	slices.Sort(replaced)
 	names := strings.Join(slices.Sorted(maps.Keys(hand)), ", ")
 
-	if err := config.CheckMCPServers(f.path, next); err != nil {
+	if err := CheckMCPServers(f.path, next); err != nil {
 		return hand, f.moveFailed(names, err)
 	}
 	if err := f.save(next); err != nil {
 		return hand, f.moveFailed(names, err)
 	}
-	if err := config.RemoveSettingsKey(settingsPath, "mcpServers"); err != nil {
+	if err := RemoveSettingsKey(settingsPath, "mcpServers"); err != nil {
 		// mcp.json には書けた。settings.json にも残るので、settings.json の分として持ち続ける(画面で変えても、次の起動で戻ってしまうため)
 		n := fmt.Sprintf("MCP のサーバー %s を mcp.json(%s)に写しましたが、settings.json から mcpServers を消せませんでした(settings.json のものとして使います。mcpServers を手で消して、アプリを起動し直してください): %v",
 			names, f.path, err)
@@ -437,7 +436,7 @@ func (c *MCPConfig) change(edit func(next map[string]client.ServerConfig) error)
 		return nil, err
 	}
 	merged, _ := MergeMCPServers(c.hand, next)
-	if err := config.CheckMCPServers(c.file.Path(), merged); err != nil {
+	if err := CheckMCPServers(c.file.Path(), merged); err != nil {
 		return nil, err
 	}
 	if err := c.file.save(next); err != nil {
@@ -446,7 +445,7 @@ func (c *MCPConfig) change(edit func(next map[string]client.ServerConfig) error)
 	// 試しにつないだのと同じ設定で保存したなら、そのとき受け取ったツールの一覧を覚える
 	for name, t := range c.tried {
 		if cfg, ok := next[name]; ok && cfg.Equal(t.cfg) {
-			if err := c.prefs.setKnown(name, t.tools); err != nil {
+			if err := c.prefs.SetKnown(name, t.tools); err != nil {
 				log.Warnf("MCP のサーバー %s のツールの一覧を覚えられません: %v", name, err)
 			}
 		}
@@ -502,7 +501,7 @@ func (c *MCPConfig) Try(ctx context.Context, name string, cfg client.ServerConfi
 	if err != nil {
 		return nil, err
 	}
-	known := knownTools(tools)
+	known := KnownTools(tools)
 	c.mu.Lock()
 	c.tried[name] = triedServer{cfg: cfg, tools: known}
 	c.mu.Unlock()
@@ -538,7 +537,7 @@ func (c *MCPConfig) ParseMCPJSON(text string) ([]ParsedMCPServer, error) {
 		}
 	}
 	if err != nil {
-		return nil, fmt.Errorf("JSON として読めません(%s): %w", config.JSONErrorLine([]byte(text), err), err)
+		return nil, fmt.Errorf("JSON として読めません(%s): %w", JSONErrorLine([]byte(text), err), err)
 	}
 	servers := map[string]json.RawMessage{}
 	switch {

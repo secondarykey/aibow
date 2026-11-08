@@ -117,7 +117,7 @@ aibow-server(`server.json`)の分は、あとで同じ部品で作る(今回は�
 
 ### 2026-11-02(段1〜段4。Code)
 
-- 段1:`mcpfile.go`(`MCPFile`・`MergeMCPServers`・`MCPConfig`)。`Manager` は設定を差し替えられるようにした(`Update`・`TryTools`・`ServerConfig.Equal`)。テストは `mcpfile_test.go` と `mcp/client` の `TestUpdate`・`TestUpdateFromEmpty`・`TestTryTools`
+- 段1:`mcpfile.go`(今は `config/mcp.go`。`MCPFile`・`MergeMCPServers`・`MCPConfig`)。`Manager` は設定を差し替えられるようにした(`Update`・`TryTools`・`ServerConfig.Equal`)。テストは `mcpfile_test.go` と `mcp/client` の `TestUpdate`・`TestUpdateFromEmpty`・`TestTryTools`
 - 段2:`ui/mcpedit.go`(`MCPServerList`・`AddMCPServers`・`UpdateMCPServer`・`DeleteMCPServer`・`TryMCPServer`・`ParseMCPJSON`)。ブラウザの口(`browserMethods`)には載せず、`mcpConfig` が無ければ断る
 - 段3:設定の画面のタブ「MCP」と `McpEditor.tsx`(呼ぶ口 `McpEditorAPI` を外から渡す)
 - 段4:`_docs/mcp.md` の「画面から足す」・`_docs/usage.md`(MCP のサーバー・`AIBOW_MCP`)・`_docs/ui.md`・`_docs/structure.md`

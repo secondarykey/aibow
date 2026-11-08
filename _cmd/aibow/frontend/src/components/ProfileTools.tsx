@@ -15,8 +15,9 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
 import { LuChevronDown, LuChevronRight, LuLoaderCircle, LuLock, LuLockOpen, LuRefreshCw } from "react-icons/lu";
 import { ChatService, isBrowser } from "../backend";
-import { ToolPolicy } from "../../bindings/github.com/secondarykey/aibow";
-import type { KnownTool, Profile, ToolPrefsView, ToolState } from "../../bindings/github.com/secondarykey/aibow";
+import { ToolPolicy } from "../../bindings/github.com/secondarykey/aibow/config";
+import type { Profile, ToolState } from "../../bindings/github.com/secondarykey/aibow";
+import type { KnownTool, ToolPrefsView } from "../../bindings/github.com/secondarykey/aibow/config";
 import type { ServerInfo } from "../../bindings/github.com/secondarykey/aibow/mcp/client";
 import { errorMessage } from "../errors";
 import { FIX, type Lock } from "../profileRules";

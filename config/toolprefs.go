@@ -1,4 +1,4 @@
-package aibow
+package config
 
 // toolprefs.go: ツールの扱い(使わない / 確認する / 確認しない)と、その PC の既定(tools.json)。
 //
@@ -26,6 +26,8 @@ import (
 	"slices"
 	"strings"
 	"sync"
+
+	"github.com/secondarykey/aibow/tool"
 )
 
 // ToolPolicy はツールの扱い。真偽値の組み合わせではなく値で持つ(あとで動きを足すときは値を1つ足す。0010)。
@@ -41,13 +43,13 @@ const (
 	ToolOn ToolPolicy = "on"
 )
 
-func (p ToolPolicy) valid() bool {
+func (p ToolPolicy) Valid() bool {
 	return p == ToolOff || p == ToolAsk || p == ToolAllow
 }
 
-// validInConversation は、会話の上書きに置ける値か(on は会話だけ)。
-func (p ToolPolicy) validInConversation() bool {
-	return p.valid() || p == ToolOn
+// ValidInConversation は、会話の上書きに置ける値か(on は会話だけ)。
+func (p ToolPolicy) ValidInConversation() bool {
+	return p.Valid() || p == ToolOn
 }
 
 // KnownTool は、サーバーを起動したときに見えたツール1つ(画面の設定に一覧を出すため。ツールの扱いには使わない)。
@@ -222,12 +224,12 @@ func (f *toolsFile) moveGroupOff() {
 }
 
 func (f toolsFile) validate() error {
-	if f.Builtin != "" && !f.Builtin.valid() {
+	if f.Builtin != "" && !f.Builtin.Valid() {
 		return fmt.Errorf("builtin の扱い %q は知らない値です(off / ask / allow)", f.Builtin)
 	}
 	for _, m := range []map[string]ToolPolicy{f.Servers, f.Tools} {
 		for k, v := range m {
-			if !v.valid() {
+			if !v.Valid() {
 				return fmt.Errorf("%s の扱い %q は知らない値です(off / ask / allow)", k, v)
 			}
 		}
@@ -235,13 +237,13 @@ func (f toolsFile) validate() error {
 	return nil
 }
 
-// policy は PC の既定でのツールの扱い。決めていなければ ok が false。
+// Policy は PC の既定でのツールの扱い。決めていなければ ok が false。
 // group は、組み込みのツールなら空、MCP のツールならサーバーの名前。
 //
 // グループごと「使わない」なら、ツールごとの扱いにかかわらず使わない(画面でグループを使わないにすると、ツールの一覧ごと畳むため)。
 // そうでなければ、ツールごと → グループごと、の順に見る。
-func (p *ToolPrefs) policy(group, name string) (ToolPolicy, bool) {
-	g, gok := p.groupPolicy(group)
+func (p *ToolPrefs) Policy(group, name string) (ToolPolicy, bool) {
+	g, gok := p.GroupPolicy(group)
 	if gok && g == ToolOff {
 		return ToolOff, true
 	}
@@ -257,19 +259,31 @@ func (p *ToolPrefs) policy(group, name string) (ToolPolicy, bool) {
 	return g, gok
 }
 
-// offTools は、ツールごとに「既定で使わない」(off)にしてあるツールの名前(名前の順)。
+// OffTools は、ツールごとに「既定で使わない」(off)にしてあるツールの名前(名前の順)。
 // プロファイルの値に移すため(Conversations.moveToolsOff)だけに読む。
-func (p *ToolPrefs) offTools() []string {
+func (p *ToolPrefs) OffTools() []string {
 	if p == nil {
 		return nil
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return toolsOff(p.data.Tools)
+	return OffNames(p.data.Tools)
 }
 
-// clearOff は、names の「既定で使わない」を tools.json から消す(プロファイルに移したあと)。
-func (p *ToolPrefs) clearOff(names []string) error {
+// OffNames は、ツールの扱いの組(会話の上書きや tools.json)のうち「使わない」(off)にしたツールの名前(名前の順)。
+func OffNames(policies map[string]ToolPolicy) []string {
+	var out []string
+	for name, p := range policies {
+		if p == ToolOff {
+			out = append(out, name)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
+// ClearOff は、names の「既定で使わない」を tools.json から消す(プロファイルに移したあと)。
+func (p *ToolPrefs) ClearOff(names []string) error {
 	if p == nil || p.readOnly {
 		return nil
 	}
@@ -282,16 +296,16 @@ func (p *ToolPrefs) clearOff(names []string) error {
 	}, "")
 }
 
-// banned は、ツールが禁止されているか(aibow-server の管理者が、ツールかグループを「使わない」にした。LoadServerToolPrefs)。
+// Banned は、ツールが禁止されているか(aibow-server の管理者が、ツールかグループを「使わない」にした。LoadServerToolPrefs)。
 // アプリの PC の既定では、いつも false(「使わない」は「既定では使わない」なので)。
 //
 // 管理者が有効にするまで使えない組み込みのツール(optIn)は、ツールごとに「確認する」か「確認しない」にしてあるときだけ使える。
 // グループ(組み込み)の扱いでは有効にならない(時刻・計算のために組み込みを「確認しない」にしたら、URL を読むツールまで聞かずに動く、をなくすため)。
-func (p *ToolPrefs) banned(group, name string) bool {
+func (p *ToolPrefs) Banned(group, name string) bool {
 	if p == nil || !p.ban {
 		return false
 	}
-	v, ok := p.policy(group, name)
+	v, ok := p.Policy(group, name)
 	if group == "" && optIn[name] {
 		p.mu.Lock()
 		own, set := p.data.Tools[name]
@@ -308,9 +322,9 @@ var optIn = map[string]bool{"fetch_url": true}
 // Bans は、「使わない」を禁止として扱うか(aibow-server の管理者の既定)。
 func (p *ToolPrefs) Bans() bool { return p != nil && p.ban }
 
-// confirmPolicy は、会話で「使う」(ToolOn)にしたツールの、PC の既定での確認の扱い。決めていなければ ok が false。
+// ConfirmPolicy は、会話で「使う」(ToolOn)にしたツールの、PC の既定での確認の扱い。決めていなければ ok が false。
 // 「使わない」は会話の「使う」で打ち消されるので飛ばし、ツールごと → グループごと、の順に見る。
-func (p *ToolPrefs) confirmPolicy(group, name string) (ToolPolicy, bool) {
+func (p *ToolPrefs) ConfirmPolicy(group, name string) (ToolPolicy, bool) {
 	if p == nil {
 		return "", false
 	}
@@ -320,14 +334,14 @@ func (p *ToolPrefs) confirmPolicy(group, name string) (ToolPolicy, bool) {
 	if ok && v != ToolOff {
 		return v, true
 	}
-	if g, ok := p.groupPolicy(group); ok && g != ToolOff {
+	if g, ok := p.GroupPolicy(group); ok && g != ToolOff {
 		return g, true
 	}
 	return "", false
 }
 
-// groupPolicy はグループ(組み込みなら空、MCP ならサーバーの名前)全部の扱い。決めていなければ ok が false。
-func (p *ToolPrefs) groupPolicy(group string) (ToolPolicy, bool) {
+// GroupPolicy はグループ(組み込みなら空、MCP ならサーバーの名前)全部の扱い。決めていなければ ok が false。
+func (p *ToolPrefs) GroupPolicy(group string) (ToolPolicy, bool) {
 	if p == nil {
 		return "", false
 	}
@@ -380,9 +394,9 @@ func setPolicy(m map[string]ToolPolicy, key string, policy ToolPolicy) map[strin
 	return m
 }
 
-// groupDefault は、グループを新しい会話で最初から選ぶか(決めていなければ選ぶ)。
+// GroupDefault は、グループを新しい会話で最初から選ぶか(決めていなければ選ぶ)。
 // プロファイルより前の値で、プロファイル「既定」への引き継ぎ(Conversations.migrateDefaults)のためだけに読む。
-func (p *ToolPrefs) groupDefault(group string) bool {
+func (p *ToolPrefs) GroupDefault(group string) bool {
 	if p == nil {
 		return true
 	}
@@ -394,8 +408,8 @@ func (p *ToolPrefs) groupDefault(group string) bool {
 	return !slices.Contains(p.data.NotDefault.Servers, group)
 }
 
-// setKnown は、サーバーを起動したときに見えたツールの一覧を覚える(前の一覧と同じなら書かない)。
-func (p *ToolPrefs) setKnown(server string, tools []KnownTool) error {
+// SetKnown は、サーバーを起動したときに見えたツールの一覧を覚える(前の一覧と同じなら書かない)。
+func (p *ToolPrefs) SetKnown(server string, tools []KnownTool) error {
 	if p == nil {
 		return nil
 	}
@@ -418,7 +432,7 @@ func (p *ToolPrefs) update(change func(*toolsFile), policy ToolPolicy) error {
 	if p == nil {
 		return errors.New("ツールの扱いのファイルを使っていません")
 	}
-	if policy != "" && !policy.valid() {
+	if policy != "" && !policy.Valid() {
 		return fmt.Errorf("ツールの扱い %q は知らない値です(off / ask / allow)", policy)
 	}
 	p.mu.Lock()
@@ -503,6 +517,15 @@ func (p *ToolPrefs) View() ToolPrefsView {
 		v.Error = "ファイルを読めなかったので、書き換えません"
 	}
 	return v
+}
+
+// KnownTools は、設定の画面に出すツールの一覧(名前と説明の1行目)。
+func KnownTools(tools []tool.Tool) []KnownTool {
+	known := make([]KnownTool, 0, len(tools))
+	for _, t := range tools {
+		known = append(known, KnownTool{Name: t.Def().Name, Description: firstLine(t.Def().Description)})
+	}
+	return known
 }
 
 // firstLine は説明の1行目(画面の一覧に出す。長い説明を全部出すと読めないため)。
