@@ -24,9 +24,9 @@ import (
 	"github.com/secondarykey/aibow/api"
 	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/format"
-	"github.com/secondarykey/aibow/genlog"
 	"github.com/secondarykey/aibow/models"
 	"github.com/secondarykey/aibow/tool"
+	"github.com/secondarykey/aibow/usage"
 )
 
 // fakeGen は偽物の生成。受け取った会話を覚え、決まった返事を返す。
@@ -41,7 +41,7 @@ type fakeGen struct {
 	started chan struct{}
 	err     error  // nil でなければ、数えるときにこのエラーを返す
 	loading string // 入れ替えている先のモデル(Loading が返す)
-	jobs    []genlog.Job
+	jobs    []usage.Job
 }
 
 func (f *fakeGen) Loading() string {
@@ -73,7 +73,7 @@ func (f *fakeGen) Generate(ctx context.Context, p format.Prompt, opt engine.Gene
 	f.mu.Lock()
 	f.prompts = append(f.prompts, p)
 	f.opts = append(f.opts, opt)
-	f.jobs = append(f.jobs, genlog.JobOf(ctx))
+	f.jobs = append(f.jobs, usage.JobOf(ctx))
 	f.mu.Unlock()
 	onPrompt("<prompt>")
 	if f.started != nil {
@@ -450,14 +450,14 @@ func TestGenerateSendsJob(t *testing.T) {
 	conv := uuid.NewV7()
 	p := format.Prompt{Messages: []format.Message{{Role: "user", Content: "hi"}}}
 	nop := func(string) {}
-	for _, ctx := range []context.Context{genlog.WithPurpose(context.Background(), genlog.PurposeSummary, conv), context.Background()} {
+	for _, ctx := range []context.Context{usage.WithPurpose(context.Background(), usage.PurposeSummary, conv), context.Background()} {
 		if _, _, err := c.Generate(ctx, p, engine.GenerateOptions{MaxTokens: 5}, nop, nop, nop); err != nil {
 			t.Fatal(err)
 		}
 	}
-	want := []genlog.Job{
-		{Route: genlog.RouteApp, Purpose: genlog.PurposeSummary, Conversation: conv},
-		{Route: genlog.RouteApp, Purpose: genlog.PurposeReply}, // 付箋が無ければ返事
+	want := []usage.Job{
+		{Route: usage.RouteApp, Purpose: usage.PurposeSummary, Conversation: conv},
+		{Route: usage.RouteApp, Purpose: usage.PurposeReply}, // 付箋が無ければ返事
 	}
 	if !slices.Equal(g.jobs, want) {
 		t.Errorf("サーバーが受け取った付箋: %+v(期待: %+v)", g.jobs, want)

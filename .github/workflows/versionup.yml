@@ -104,8 +104,7 @@ jobs:
           GH_TOKEN: ${{ secrets.MY_GITHUB_TOKEN }}
         run: |
           FILES="version
-            ../aibow-mcp/version
-            ../aibow-server/version
+            ../../internal/appversion/version
             build/config.yml
             build/darwin/Info.plist
             build/darwin/Info.dev.plist

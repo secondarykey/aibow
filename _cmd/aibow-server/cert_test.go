@@ -51,7 +51,7 @@ func TestSelfSignedCert(t *testing.T) {
 // cert のコマンドは設定ファイルの隣に書き、もうあれば上書きしない
 func TestRunCert(t *testing.T) {
 	dir := t.TempDir()
-	c := config{StatePath: filepath.Join(dir, stateFileName)}
+	c := serverConfig{StatePath: filepath.Join(dir, stateFileName)}
 	if err := runCert(c, nil); err == nil {
 		t.Error("ホストが無ければ断る")
 	}

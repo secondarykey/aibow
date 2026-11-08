@@ -17,11 +17,11 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/secondarykey/aibow"
 	apiclient "github.com/secondarykey/aibow/api/client"
 	"github.com/secondarykey/aibow/auth"
-	"github.com/secondarykey/aibow/genlog"
+	"github.com/secondarykey/aibow/config"
 	"github.com/secondarykey/aibow/log"
+	"github.com/secondarykey/aibow/usage"
 )
 
 // AccountInfo は、画面のアプリの今のアカウント(設定の画面の「アカウント」のタブと、左下の名前)。
@@ -78,13 +78,13 @@ func (s *ChatService) Login(name, password string) (AccountInfo, error) {
 		c.mu.Unlock()
 		return AccountInfo{}, errors.New("つなぎ先を変えて、まだ起動し直していません。起動し直してからログインしてください")
 	}
-	f := aibow.ConnectionFile{ServerURL: c.url, Fingerprint: c.file.Fingerprint}
+	f := config.ConnectionFile{ServerURL: c.url, Fingerprint: c.file.Fingerprint}
 	token, err := login(&f, ConnectRequest{URL: c.url, Fingerprint: c.file.Fingerprint, Name: name, Password: password})
 	if err != nil {
 		c.mu.Unlock()
 		return AccountInfo{}, err
 	}
-	f.Known = &aibow.KnownServer{URL: f.ServerURL, Fingerprint: f.Fingerprint, User: f.User}
+	f.Known = &config.KnownServer{URL: f.ServerURL, Fingerprint: f.Fingerprint, User: f.User}
 	if err := f.Save(c.path); err != nil {
 		c.mu.Unlock()
 		return AccountInfo{}, err
@@ -129,9 +129,9 @@ func (s *ChatService) SetMyDisplayName(name string) (AccountInfo, error) {
 }
 
 // MyUsage は、aibow-server での自分の使用量(今日・7日・30日。設定の画面の「アカウント」のタブ。0033)。
-func (s *ChatService) MyUsage() (genlog.Mine, error) {
+func (s *ChatService) MyUsage() (usage.Mine, error) {
 	if s.conn.client == nil {
-		return genlog.Mine{}, errors.New("使用量は、aibow-server につないでいるときだけ見られます")
+		return usage.Mine{}, errors.New("使用量は、aibow-server につないでいるときだけ見られます")
 	}
 	return s.conn.client.MyUsage()
 }

@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/secondarykey/aibow/auth"
+	"github.com/secondarykey/aibow/config"
 	"github.com/secondarykey/aibow/store"
 )
 
@@ -22,7 +23,7 @@ func TestAdminUsers(t *testing.T) {
 	}
 	defer st.Close()
 	ctx := context.Background()
-	var env envReader
+	var env config.Env
 	initial := initialSettings(&env, 0)
 	sessions := auth.NewSessions(st)
 	// 作った人は、招待のリンクでパスワードを決める(0022)

@@ -111,8 +111,5 @@ VRAM 8GB に LLM と同時に載せるのは厳しく、交互に読み込むな
 ## パッケージの分け方
 
 **分ける基準**:使う相手が現れたときに分ける(0005 の決定事項 11。使う相手がいないうちに分けると、外に見せる名前の線を推測で引くことになるため)。
-これまでに分けたものは `AGENTS.md` の表(`store/`・`tool/`・`format/`・`engine/`・`models/`・`mcp/`・`api/`・`auth/`・`ui/`・`web/`・`genlog/`・`log/` など)。
+これまでに分けたものは `AGENTS.md` の表(`store/`・`tool/`・`format/`・`engine/`・`models/`・`mcp/`・`api/`・`auth/`・`ui/`・`web/`・`usage/`・`config/`・`log/` など)。
 
-残っている候補:ルートの `aibow` に、会話の仕組みと一緒に「手元に残る設定のファイル」がある(`settingsfile.go`(settings.json)・`toolprefs.go`(tools.json)・`mcpfile.go`(mcp.json)・
-`workspaces.go`(workspaces.json)・`connectionfile.go`(connection.json))。どれも、会話を aibow-server に置く形でもその PC に残るもの(2026-10-14、Chat が気づいた)。
-使う相手(会話の仕組みを使わずに、これらだけを読む側)が現れたら分ける

@@ -31,6 +31,8 @@ import (
 	"github.com/secondarykey/aibow"
 	"github.com/secondarykey/aibow/api"
 	"github.com/secondarykey/aibow/auth"
+	"github.com/secondarykey/aibow/config"
+	"github.com/secondarykey/aibow/internal/appversion"
 	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/mcp/client"
 	"github.com/secondarykey/aibow/store"
@@ -45,7 +47,7 @@ import (
 // gen は生成の係(記録付きの engine。OpenAI 互換の口と同じもの)。
 // 戻り値の handler は /_aibow/ui/・/_aibow/auth/・/_aibow/store/・/_aibow/admin/ の下を受け持つ。keys は API キーの係(利用者は同じ server.db にいるので、ここで作る)。
 // close は終了のときに呼ぶ(生成を止める)。
-func startBrowser(c config, initial aibow.AppSettings, st *store.SQLite, gen ui.ServerEngine, mm *modelManager, nCtx int, url string, seat *api.Seat) (http.Handler, *auth.Keys, func(), error) {
+func startBrowser(c serverConfig, initial aibow.AppSettings, st *store.SQLite, gen ui.ServerEngine, mm *modelManager, nCtx int, url string, seat *api.Seat) (http.Handler, *auth.Keys, func(), error) {
 	log.Noticef("ブラウザの会話の保存先: %s", absPath(c.DBPath))
 	// 起動のときに読む人ごとの設定(新しい会話の既定)は、ログインなしの形の利用者のもの(ログインは 0017 の 10-1)
 	app, notes, err := aibow.LoadAppSettings(aibow.WithUser(context.Background(), aibow.LocalUser), st, initial)
@@ -72,11 +74,11 @@ func startBrowser(c config, initial aibow.AppSettings, st *store.SQLite, gen ui.
 	if c.FetchAllowPrivate {
 		log.Noticef("fetch_url: サーバーの PC の中・社内のアドレスも読みます(server.json の fetchAllowPrivate)")
 	}
-	local := client.NewLocal(client.Options{Version: appVersion(), Fetch: &tool.FetchOptions{AllowPrivate: c.FetchAllowPrivate, Version: appVersion()}})
+	local := client.NewLocal(client.Options{Version: appversion.Version(), Fetch: &tool.FetchOptions{AllowPrivate: c.FetchAllowPrivate, Version: appversion.Version()}})
 	mcpm, prefs := startServerTools(c)
 	svc, life := ui.New(ui.Options{
 		Host:  ui.NewServerHost(gen, mm, nCtx, url),
-		Store: st, App: app, Version: appVersion(),
+		Store: st, App: app, Version: appversion.Version(),
 		Notify: events, Seat: seat, Local: local, MCP: mcpm, Prefs: prefs, Browser: true, Folders: c.Folders,
 	})
 	if len(c.Folders) > 0 {
@@ -118,8 +120,8 @@ func startBrowser(c config, initial aibow.AppSettings, st *store.SQLite, gen ui.
 // startServerTools は、ブラウザの会話で使う MCP のサーバー(server.json の mcpServers)と、ツールの扱いの既定(server-tools.json)を用意する(0024 の 12-1b)。
 // MCP のサーバーはここでは起動しない。そのサーバーを使う会話で最初に送信したときに起動し、aibow-server を止めるまで全員で1つを使う(決定事項 9・20)。
 // 既定のファイルが壊れていたら、決まりの既定で動き、ファイルは書き換えない(アプリの tools.json と同じ)。
-func startServerTools(c config) (*client.Manager, *aibow.ToolPrefs) {
-	prefs, err := aibow.LoadServerToolPrefs(c.ToolsPath)
+func startServerTools(c serverConfig) (*client.Manager, *config.ToolPrefs) {
+	prefs, err := config.LoadServerToolPrefs(c.ToolsPath)
 	if err != nil {
 		log.Error(err.Error())
 	}
@@ -130,7 +132,7 @@ func startServerTools(c config) (*client.Manager, *aibow.ToolPrefs) {
 	}
 	names := slices.Sorted(maps.Keys(c.MCPServers))
 	log.Noticef("ブラウザの会話の MCP のサーバー: %s(server.json の mcpServers。要る最初の送信で起動し、全員で1つを使います)", strings.Join(names, ", "))
-	return client.New(c.MCPServers, client.Options{Version: appVersion()}), prefs
+	return client.New(c.MCPServers, client.Options{Version: appversion.Version()}), prefs
 }
 
 // noteFirstRun は、ログインが要る形で起動したときに、まだ使い始められない様子を知らせる(0020 の決定事項 2・4)。

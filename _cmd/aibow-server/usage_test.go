@@ -19,11 +19,12 @@ import (
 	"github.com/secondarykey/aibow"
 	"github.com/secondarykey/aibow/api"
 	"github.com/secondarykey/aibow/auth"
+	"github.com/secondarykey/aibow/config"
 	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/format"
-	"github.com/secondarykey/aibow/genlog"
 	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/store"
+	"github.com/secondarykey/aibow/usage"
 )
 
 // usageGen は使用量のテストの偽物の生成。決まった記録を返す。
@@ -50,7 +51,7 @@ func (g *usageGen) Loading() string { return "" }
 // failingLog は書けない記録先(ディスクがいっぱいなど)。
 type failingLog struct{ generationLog }
 
-func (failingLog) AddGeneration(context.Context, genlog.Record) error { return errors.New("disk full") }
+func (failingLog) AddGeneration(context.Context, usage.Record) error { return errors.New("disk full") }
 
 // captureLog は aibow のログを buf に集める(Warn を確かめるため)。
 func captureLog(t *testing.T) *syncBuffer {
@@ -86,7 +87,7 @@ func TestRecorder(t *testing.T) {
 	}
 	defer st.Close()
 	ctx := context.Background()
-	var env envReader
+	var env config.Env
 	if _, err := createUser(ctx, st, initialSettings(&env, 0), "alice", ""); err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +128,7 @@ func TestRecorder(t *testing.T) {
 	// キーの要らない形は local の分
 	post(asLocal(srv.Handler()), "", `{`+msgs+`}`)
 	// ブラウザの会話:画面用の口が道を、会話の仕組みが用途と会話を、席を待った時間を付ける
-	bctx := genlog.WithWait(genlog.WithPurpose(genlog.WithRoute(aibow.WithUser(ctx, alice.ID), genlog.RouteBrowser), genlog.PurposeReply, conv), 3*time.Second)
+	bctx := usage.WithWait(usage.WithPurpose(usage.WithRoute(aibow.WithUser(ctx, alice.ID), usage.RouteBrowser), usage.PurposeReply, conv), 3*time.Second)
 	for range 2 { // ツールのループの2回目には、送信の待ち時間を付けない
 		if _, _, err := rec.Generate(bctx, format.Prompt{}, engine.GenerateOptions{}, func(string) {}, func(string) {}, func(string) {}); err != nil {
 			t.Fatal(err)
@@ -142,11 +143,11 @@ func TestRecorder(t *testing.T) {
 	}
 	three := 3.0
 	wants := []want{
-		{alice.ID.String(), "alice", genlog.RouteAPI, genlog.PurposeReply, uuid.UUID{}, ptr(0)},
-		{alice.ID.String(), "alice", genlog.RouteApp, genlog.PurposeSummary, conv, ptr(0)},
-		{aibow.LocalUser.String(), "local", genlog.RouteAPI, genlog.PurposeReply, uuid.UUID{}, ptr(0)},
-		{alice.ID.String(), "alice", genlog.RouteBrowser, genlog.PurposeReply, conv, &three},
-		{alice.ID.String(), "alice", genlog.RouteBrowser, genlog.PurposeReply, conv, nil},
+		{alice.ID.String(), "alice", usage.RouteAPI, usage.PurposeReply, uuid.UUID{}, ptr(0)},
+		{alice.ID.String(), "alice", usage.RouteApp, usage.PurposeSummary, conv, ptr(0)},
+		{aibow.LocalUser.String(), "local", usage.RouteAPI, usage.PurposeReply, uuid.UUID{}, ptr(0)},
+		{alice.ID.String(), "alice", usage.RouteBrowser, usage.PurposeReply, conv, &three},
+		{alice.ID.String(), "alice", usage.RouteBrowser, usage.PurposeReply, conv, nil},
 	}
 	if len(rows) != len(wants) {
 		t.Fatalf("%d 行(期待: %d): %+v", len(rows), len(wants), rows)
@@ -175,7 +176,7 @@ func TestRecorder(t *testing.T) {
 		buf := captureLog(t)
 		before := len(readLog(t, path))
 		// 呼んだ人が ctx に無い:利用者を空にして記録し、Warn を出す
-		if _, _, err := rec.Generate(genlog.WithRoute(ctx, genlog.RouteAPI), format.Prompt{}, engine.GenerateOptions{}, func(string) {}, func(string) {}, func(string) {}); err != nil {
+		if _, _, err := rec.Generate(usage.WithRoute(ctx, usage.RouteAPI), format.Prompt{}, engine.GenerateOptions{}, func(string) {}, func(string) {}, func(string) {}); err != nil {
 			t.Fatal(err)
 		}
 		if !strings.Contains(buf.String(), "生成を呼んだ人が分かりません") {
@@ -250,7 +251,7 @@ func TestUsageHandlers(t *testing.T) {
 	}
 	defer st.Close()
 	ctx := context.Background()
-	var env envReader
+	var env config.Env
 	initial := initialSettings(&env, 0)
 	sessions := auth.NewSessions(st)
 	users := map[string]auth.User{}
@@ -278,8 +279,8 @@ func TestUsageHandlers(t *testing.T) {
 		if i == 2 {
 			at = now.Add(-3 * 24 * time.Hour) // bob の2回目は今日の外(7日の中)
 		}
-		if err := st.AddGeneration(ctx, genlog.Record{ID: uuid.NewV7(), At: at, User: u.ID, UserName: u.Name, Route: genlog.RouteBrowser,
-			Purpose: genlog.PurposeReply, Model: "file:qwen.gguf", GenTokens: 10, GenSec: 2, StopReason: "eos"}); err != nil {
+		if err := st.AddGeneration(ctx, usage.Record{ID: uuid.NewV7(), At: at, User: u.ID, UserName: u.Name, Route: usage.RouteBrowser,
+			Purpose: usage.PurposeReply, Model: "file:qwen.gguf", GenTokens: 10, GenSec: 2, StopReason: "eos"}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -310,7 +311,7 @@ func TestUsageHandlers(t *testing.T) {
 		return res.StatusCode
 	}
 
-	var all []genlog.Total
+	var all []usage.Total
 	if code := get("alice", "/_aibow/admin/usage?days=7", &all); code != http.StatusOK || len(all) != 2 || all[0].Name != "bob" || all[0].Count != 2 || all[0].GPUSec != 4 {
 		t.Errorf("管理者が見る全員の分: %d %+v", code, all)
 	}
@@ -336,7 +337,7 @@ func TestUsageHandlers(t *testing.T) {
 		t.Errorf("ログインしていない人: %d", code)
 	}
 	// 自分の分は本人のものだけ
-	var mine genlog.Mine
+	var mine usage.Mine
 	if code := get("bob", "/_aibow/auth/usage", &mine); code != http.StatusOK || mine.Today.Count != 1 || mine.Week.Count != 2 || mine.Month.Count != 2 || mine.Week.Key != users["bob"].ID.String() {
 		t.Errorf("bob の自分の分: %d %+v", code, mine)
 	}

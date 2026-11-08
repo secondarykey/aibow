@@ -9,8 +9,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { LuChevronDown, LuChevronRight, LuLoaderCircle, LuRefreshCw } from "react-icons/lu";
 import { ChatService } from "../backend";
-import { ToolPolicy } from "../../bindings/github.com/secondarykey/aibow";
-import type { KnownTool, ToolPrefsView, ToolState } from "../../bindings/github.com/secondarykey/aibow";
+import { ToolPolicy } from "../../bindings/github.com/secondarykey/aibow/config";
+import type { ToolState } from "../../bindings/github.com/secondarykey/aibow";
+import type { KnownTool, ToolPrefsView } from "../../bindings/github.com/secondarykey/aibow/config";
 import type { ServerInfo } from "../../bindings/github.com/secondarykey/aibow/mcp/client";
 import { errorMessage } from "../errors";
 import { TOOL_LABELS } from "../toolLabels";

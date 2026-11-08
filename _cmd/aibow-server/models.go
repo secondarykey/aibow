@@ -14,18 +14,13 @@ package main
 // 管理者に見せる一覧(ListAll)にだけ、印を付けて出す。
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
-	"maps"
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
-	"sync"
 
-	"github.com/secondarykey/aibow"
 	"github.com/secondarykey/aibow/api"
+	"github.com/secondarykey/aibow/config"
 	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/models"
@@ -35,7 +30,7 @@ import (
 type modelManager struct {
 	eng           *engine.Engine
 	catalog       models.Catalog // 手で決めた置き場所(足した置き場所は state にあり、catalogNow で合わせる)
-	state         *serverState
+	state         *config.ServerModels
 	defaultLayers int // まだ覚えていないモデルの GPU の層数
 	// seat は生成の順番待ちの席(起動のときのモデルを読み込んだあとに入れる)。
 	// 作業領域を作り直す操作(読み込む・降ろす・層の数)は、席を持った人が、ほかの席が全部空いてから一人で行う(0023 の決定事項 9)。
@@ -49,7 +44,7 @@ type modelManager struct {
 // catalogNow は、手で決めた置き場所に、画面で足した置き場所を合わせた一覧の係。
 func (m *modelManager) catalogNow() models.Catalog {
 	c := m.catalog
-	c.Added = m.state.places()
+	c.Added = m.state.Places()
 	return c
 }
 
@@ -70,7 +65,7 @@ func (m *modelManager) ListAll() []models.Entry {
 	}
 	list := c.List()
 	for i := range list {
-		list[i].Disabled = m.state.disabled(list[i].ID)
+		list[i].Disabled = m.state.Disabled(list[i].ID)
 	}
 	return list
 }
@@ -120,7 +115,7 @@ func (m *modelManager) findArg(arg string) (models.Entry, error) {
 	if cerr != nil {
 		return models.Entry{}, err
 	}
-	if m.state.disabled(e.ID) {
+	if m.state.Disabled(e.ID) {
 		return models.Entry{}, &models.DisabledError{ID: e.ID}
 	}
 	log.Warnf("起動のときのモデル %s は一覧の置き場所の外にあるので、ほかのモデルに替えたあとは ID では戻れません(置き場所に足すと戻れます)", e.Path)
@@ -135,7 +130,7 @@ func (m *modelManager) SetEnabled(id string, enabled bool) (bool, error) {
 	if !slices.ContainsFunc(m.ListAll(), func(e models.Entry) bool { return e.ID == id }) {
 		return false, fmt.Errorf("モデル %q が一覧にありません", id)
 	}
-	if err := m.state.setDisabled(id, !enabled); err != nil {
+	if err := m.state.SetDisabled(id, !enabled); err != nil {
 		return false, err
 	}
 	if enabled {
@@ -167,7 +162,7 @@ func (m *modelManager) Load(e models.Entry) (*engine.ModelInfo, error) {
 }
 
 func (m *modelManager) GPULayers(id string) int {
-	if n, ok := m.state.gpuLayers(id); ok {
+	if n, ok := m.state.GPULayers(id); ok {
 		return n
 	}
 	return m.defaultLayers
@@ -184,7 +179,7 @@ func (m *modelManager) SetGPULayers(id string, n int) (*engine.ModelInfo, error)
 			return nil, err
 		}
 	}
-	if err := m.state.setGPULayers(id, n); err != nil {
+	if err := m.state.SetGPULayers(id, n); err != nil {
 		// 覚えられなくても、今の起動中は効いている。次の起動で戻ることをログに残す
 		log.Warn(err.Error())
 	}
@@ -218,7 +213,7 @@ func (m *modelManager) AddPlace(path string) error {
 	if err != nil {
 		return err
 	}
-	if err := m.state.setPlaces(append(m.state.places(), abs)); err != nil {
+	if err := m.state.SetPlaces(append(m.state.Places(), abs)); err != nil {
 		return err
 	}
 	log.Noticef("モデルの置き場所を足しました: %s", abs)
@@ -232,134 +227,9 @@ func (m *modelManager) RemovePlace(path string) error {
 	if !ok {
 		return fmt.Errorf("%s は画面で足した置き場所ではないので外せません(models フォルダと Ollama の保存先は server.json か環境変数で変えます)", path)
 	}
-	if err := m.state.setPlaces(slices.DeleteFunc(slices.Clone(c.Added), func(s string) bool { return s == p })); err != nil {
+	if err := m.state.SetPlaces(slices.DeleteFunc(slices.Clone(c.Added), func(s string) bool { return s == p })); err != nil {
 		return err
 	}
 	log.Noticef("モデルの置き場所を外しました: %s", p)
 	return nil
-}
-
-// ---- server-models.json ----------------------------------------------------------------
-
-// serverState は aibow-server が書くファイル(server-models.json)。手で書く server.json とは分ける(0015 の 19)。
-type serverState struct {
-	path string
-	mu   sync.Mutex
-	data stateData
-}
-
-// stateData はファイルの中身。
-type stateData struct {
-	// GPULayers はモデルの ID → GPU に載せる層の数
-	GPULayers map[string]int `json:"gpuLayers"`
-	// Places は画面で足したモデルの置き場所(フォルダか GGUF のファイル。サーバーの PC の絶対パス。8-4)
-	Places []string `json:"places,omitempty"`
-	// Disabled は、管理者が使えないようにしたモデルの ID(0018 の決定事項 17。置き場所に新しく増えたモデルは使える)
-	Disabled []string `json:"disabled,omitempty"`
-}
-
-// loadState はファイルを読む。無ければ空(まだ何も覚えていない)。
-func loadState(path string) (*serverState, error) {
-	s := &serverState{path: path}
-	data, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return s, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("%s を読めません: %w", path, err)
-	}
-	if err := json.Unmarshal(data, &s.data); err != nil {
-		return nil, fmt.Errorf("%s を読めません(aibow-server が書くファイルです。壊れているなら消すと、覚えた GPU の層数を忘れて起動します): %w", path, err)
-	}
-	// 以前の形のモデルの ID(file:<パス>)で覚えた層の数を、今の形(file:<ファイル名>)に書き換える(0018 の決定事項 14・15)
-	if layers := aibow.LayersByID(s.data.GPULayers); !maps.Equal(layers, s.data.GPULayers) {
-		next := s.data
-		next.GPULayers = layers
-		if err := writeJSONFile(path, next); err != nil {
-			return nil, fmt.Errorf("%s の層の数のモデルの ID を今の形に書き換えられません: %w", path, err)
-		}
-		s.data = next
-		log.Noticef("%s の層の数のモデルの ID を、今の形(file:<ファイル名>)に書き換えました", path)
-	}
-	return s, nil
-}
-
-func (s *serverState) gpuLayers(id string) (int, bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	n, ok := s.data.GPULayers[id]
-	return n, ok
-}
-
-func (s *serverState) setGPULayers(id string, n int) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	layers := maps.Clone(s.data.GPULayers)
-	if layers == nil {
-		layers = map[string]int{}
-	}
-	layers[id] = n
-	next := s.data
-	next.GPULayers = layers
-	if err := writeJSONFile(s.path, next); err != nil {
-		return fmt.Errorf("GPU の層数を %s に書けません(次の起動では覚えていません): %w", s.path, err)
-	}
-	s.data = next
-	return nil
-}
-
-func (s *serverState) disabled(id string) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return slices.Contains(s.data.Disabled, id)
-}
-
-func (s *serverState) setDisabled(id string, disabled bool) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	list := slices.DeleteFunc(slices.Clone(s.data.Disabled), func(d string) bool { return d == id })
-	if disabled {
-		list = append(list, id)
-	}
-	next := s.data
-	next.Disabled = list
-	if err := writeJSONFile(s.path, next); err != nil {
-		return fmt.Errorf("使えないモデルを %s に書けません: %w", s.path, err)
-	}
-	s.data = next
-	return nil
-}
-
-func (s *serverState) places() []string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return slices.Clone(s.data.Places)
-}
-
-func (s *serverState) setPlaces(places []string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	next := s.data
-	next.Places = places
-	if err := writeJSONFile(s.path, next); err != nil {
-		return fmt.Errorf("モデルの置き場所を %s に書けません: %w", s.path, err)
-	}
-	s.data = next
-	return nil
-}
-
-// writeJSONFile は、一時ファイルに書いてから名前を変える(書いている途中で落ちても、前のファイルが壊れないように)。
-func writeJSONFile(path string, v any) error {
-	b, err := json.MarshalIndent(v, "", "  ")
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, append(b, '\n'), 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
 }

@@ -25,7 +25,7 @@
 - ツールは `tool.Files(dir)` で会話ごとに作る。`Conversations.workDir(set)` が、アプリでは `set.WorkDir`、ブラウザ(`IgnoreWorkDir`)では資料のフォルダを返す(`rules.go`)
 - `run_command` は作業フォルダをカレントにして動く
 - `${workdir}` を使う MCP のサーバーは、作業フォルダごとに1つ起動する(`mcp/client` の `serverKey`)
-- 環境の説明(`Conversations.environment`。`conversation.go`)に `Working directory: <パス>` を1行書く
+- 環境の説明(`Conversations.environment`。今は `prompt.go`)に `Working directory: <パス>` を1行書く
 - 穴:aibow-server につないでいると `work_dir` が server.db に入り、別の PC で開くと前の PC のパスが残る(backlog「会話の作業フォルダを PC ごとにする」)
 
 ## 決定事項(ユーザーと決めたこと)
@@ -127,7 +127,7 @@ OS: windows
 
 ## 作業の経過
 
-- 2026-11-02 段1:`workspaces.json`(`aibow.Workspaces`。`workspaces.go`)・会話の設定の `workspace`・この PC に無いワークスペースではフォルダのツールを出さない・
+- 2026-11-02 段1:`workspaces.json`(`aibow.Workspaces`。`workspaces.go`。今は `config.Workspaces`)・会話の設定の `workspace`・この PC に無いワークスペースではフォルダのツールを出さない・
   起動したときの `work_dir` の移し方(`MigrateWorkDirs`)・入力欄の上の選ぶ部品(`WorkspaceBar`)・設定の画面の「ワークスペース」のタブ。完了の条件 1〜3 はテストと画面で確かめた。
   4 は `workspaces.json` を空にしたのと同じ形をテスト(`TestMissingWorkspace`)と画面(選んでいたワークスペースを消すと「この PC にはこのワークスペースがありません」)で確かめた。2台での確認はしていない
 - 2026-11-02 段2:`tool.FilesIn`(`folder` の引数・読むだけ・絶対パスの振り分け)・aibow の中の MCP サーバーにフォルダの組を渡す・環境の説明・確認のカードのフォルダ名・設定の画面のフォルダの編集。

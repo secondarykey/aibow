@@ -20,6 +20,7 @@ import (
 	"slices"
 	"uuid"
 
+	"github.com/secondarykey/aibow/config"
 	"github.com/secondarykey/aibow/tool"
 )
 
@@ -317,7 +318,7 @@ func (cs *Conversations) toolFolders(set ConversationSettings) []tool.Folder {
 // groupOfTool は、ツールの名前からグループ(組み込みなら空、MCP ならサーバーの名前)を引く。
 // MCP のツールは、起動したときに見えた一覧(tools.json の known)か、起動済みのツールから探す。見つからなければ ok=false。
 func (cs *Conversations) groupOfTool(name string) (string, bool) {
-	if slices.ContainsFunc(BuiltinTools(), func(k KnownTool) bool { return k.Name == name }) {
+	if slices.ContainsFunc(BuiltinTools(), func(k config.KnownTool) bool { return k.Name == name }) {
 		return "", true
 	}
 	if cs.remote == nil {
@@ -325,7 +326,7 @@ func (cs *Conversations) groupOfTool(name string) (string, bool) {
 	}
 	known := cs.prefs.View().Known
 	for _, server := range cs.remote.Servers() {
-		if slices.ContainsFunc(known[server], func(k KnownTool) bool { return k.Name == name }) {
+		if slices.ContainsFunc(known[server], func(k config.KnownTool) bool { return k.Name == name }) {
 			return server, true
 		}
 		for _, t := range cs.remote.Tools("", []string{server}) {

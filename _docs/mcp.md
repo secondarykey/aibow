@@ -36,11 +36,12 @@ aibow ── tools/call ──────→ 結果(content)が返る → ツ�
 | `mcp/client/remote.go` | サーバーのツールを `tool.Tool` として見せる(`remoteTool`)。`tools/call` の結果を文章にする・長い結果を切る |
 | `mcp/client/log.go` | 送受信したメッセージとサーバーのエラー出力を、1行ずつログに出す |
 | `mcp/client/client_test.go` | テスト。SDK でテスト用のサーバーを作り、プロセスを起動せずにつなぐ(`NewInMemoryTransports`)。本物の子プロセスは、テストの実行ファイル自身をサーバーとして起動して確かめる |
-| `settingsfile.go` | 設定ファイル `settings.json` の読み込み(`mcpServers`) |
-| `mcpfile.go` | 画面から足した MCP のサーバー `mcp.json` の読み書き(`MCPFile`)・settings.json との合わせ方(`MergeMCPServers`)・画面で変えたものを `Manager` に流す係(`MCPConfig`)・貼った JSON の読み取り(0034) |
+| `config/settings.go` | 設定ファイル `settings.json` の読み込み(`mcpServers`) |
+| `config/mcp.go` | 画面から足した MCP のサーバー `mcp.json` の読み書き(`MCPFile`)・settings.json との合わせ方(`MergeMCPServers`)・画面で変えたものを `Manager` に流す係(`MCPConfig`)・貼った JSON の読み取り(0034) |
 | `ui/mcpedit.go` | 設定の画面の「MCP」から呼ぶメソッド(一覧・足す・変える・消す・試す・JSON を読み取る。デスクトップのアプリだけ) |
-| `toolprefs.go` | ツールの扱い(`ToolPolicy`: 使わない / 確認する / 確認しない、会話の上書きだけの「使う」)と、その PC の既定 `tools.json`(`ToolPrefs`) |
-| `agent.go` | `RemoteTools`(会話の仕組みから見た MCP の口)・送信の前にサーバーを起動する(`startRemote`)・組み込みのツールの後ろに並べる(`toolsFor`)・ツールの扱いを決める(`toolPolicy` / `policyOf` / `needsConfirm`)・会話の設定の画面に出す扱い(`ToolStates`)・ツールの一覧を覚える(`rememberTools`) |
+| `config/toolprefs.go` | ツールの扱い(`ToolPolicy`: 使わない / 確認する / 確認しない、会話の上書きだけの「使う」)と、その PC の既定 `tools.json`(`ToolPrefs`) |
+| `tools.go` | `RemoteTools`(会話の仕組みから見た MCP の口)・送信の前にサーバーを起動する(`startRemote`)・組み込みのツールの後ろに並べる(`toolsFor`)・ツールの扱いを決める(`toolPolicy` / `policyOf`)・会話の設定の画面に出す扱い(`ToolStates`)・ツールの一覧を覚える(`rememberTools`) |
+| `agent.go` | 実行の前に確かめるか(`needsConfirm`。扱いは `tools.go` の `toolPolicy` で決めたもの) |
 | `internal/proc/` | 子プロセスまでまとめて止める仕組み(`run_command` と共有) |
 
 - `mcp/client` は `tool` を import し、ルートの `aibow`(LLM・会話の仕組み)は import しない。会話の仕組みは MCP を知らず、`RemoteTools` の interface だけを見る
@@ -68,7 +69,7 @@ MCP のサーバーは、設定の画面の「MCP」のタブ(アプリだけ)�
 
 - **置き場所は `mcp.json` の1つ**:`settings.json` に手で書いた `mcpServers` は、起動したときに `mcp.json` へ移し、`settings.json` からは `mcpServers` だけを消す(`MCPFile.MoveFromSettings`。0034 の決定事項 13。2026-11-03 に改めた)。
   置き場所が2つあると、画面から変えられないサーバーや、同じ名前で使われないサーバーができて分かりにくいため。説明にある JSON を `settings.json` に貼る今までの足し方も、次の起動で移るので使える
-  - `settings.json` のほかの項目は、並びも値もそのまま残す(`removeSettingsKey`。項目を生のまま1つずつ読んで並べ直す。aibow の知らない項目も落とさない。変わるのは字下げだけ)
+  - `settings.json` のほかの項目は、並びも値もそのまま残す(`config.RemoveSettingsKey`。項目を生のまま1つずつ読んで並べ直す。aibow の知らない項目も落とさない。変わるのは字下げだけ)
   - `mcp.json` に同じ名前があれば、`settings.json` の設定にする(それまで動いていたのは settings.json のほうなので)
   - 先に `mcp.json` を書き、そのあとで `settings.json` を書き直す。途中で失敗しても両方に同じ設定が残るだけで、次の起動でもう一度移す
 - 移せなかったとき(`mcp.json` が壊れている・合わせるとツールの名前で重なる・書けない)だけ、settings.json の分を別に持つ:お知らせで理由を伝え、一覧に「settings.json」の印を付けて出す(画面からは変えない。試しにつなぐだけできる)。
@@ -256,8 +257,8 @@ aibow から同じものを使うと、次のことが分かりました。
 
 | | アプリ | aibow-server(ブラウザの会話) |
 |---|---|---|
-| サーバーを書くところ | `settings.json` の `mcpServers` | `server.json` の `mcpServers`(確かめ方は同じ `aibow.CheckMCPServers`) |
-| 扱いの既定 | `tools.json`(その PC の人が決める) | `server-tools.json`(管理者が設定の画面の「ツール」で決める。`aibow.LoadServerToolPrefs`) |
+| サーバーを書くところ | `settings.json` の `mcpServers` | `server.json` の `mcpServers`(確かめ方は同じ `config.CheckMCPServers`) |
+| 扱いの既定 | `tools.json`(その PC の人が決める) | `server-tools.json`(管理者が設定の画面の「ツール」で決める。`config.LoadServerToolPrefs`) |
 | 「使わない」 | 既定では使わない(会話で「使う」にできる) | 禁止(会話で「使う」にできない。`ToolPrefs.banned` → `PolicyFromAdmin`) |
 | 起動 | 最初に使われたとき。アプリを閉じるまで | 最初に使われたとき。aibow-server を止めるまで全員で1つ |
 | `${workdir}` | 作業フォルダごとに1つ | 資料のフォルダのある会話でだけ。フォルダごとに1つ(12-2。フォルダが1つも無ければ出さない) |
@@ -326,8 +327,8 @@ MCP のクライアント(Claude Code・aibow など)── 起動する(aibow-m
   起動(版・作業フォルダ・ツール)は Notice、ツールの実行(名前・秒数・結果の文字数・失敗の理由)は Info。aibow から起動すると、aibow のログにも `MCP <名前> (stderr) …` として入る
   (ただし aibow の exe は Notice 以上しかファイルに残さないので、サーバーの行はサーバー自身のファイルで見る)。
   作業フォルダごとに複数のプロセスが同じ日のファイルに書くので、各行の終わりに `pid=…` を付けている。異常終了は `aibow-mcp_crash.log` に残る
-- 版(`serverInfo.version`・起動のログ・`aibow-mcp -version`)はアプリと同じ。`_cmd/aibow/version` の写しの `_cmd/aibow-mcp/version` を埋め込む(`go run _cmd/version.go` が書き写す)。
-  exe(`go build`・`go install`)は `version` のまま、`go run` で起動したものは patch を1つ上げて `+dev`(`0.5.1` なら `0.5.2+dev`。`appversion.go`)。
+- 版(`serverInfo.version`・起動のログ・`aibow-mcp -version`)はアプリと同じ。`_cmd/aibow/version` の写しの `internal/appversion/version` を埋め込む(aibow-server と共通。`go run _cmd/version.go` が書き写す)。
+  exe(`go build`・`go install`)は `version` のまま、`go run` で起動したものは patch を1つ上げて `+dev`(`0.5.1` なら `0.5.2+dev`。`internal/appversion`)。
   アプリはビルドタグ(`production`)で見分けるが、aibow-mcp は Taskfile を通さずに作るので、自分の exe が `go-build…` の一時フォルダにあるか(= `go run`)で見分ける
 
 ### 実際のやり取り

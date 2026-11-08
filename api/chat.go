@@ -26,10 +26,10 @@ import (
 
 	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/format"
-	"github.com/secondarykey/aibow/genlog"
 	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/models"
 	"github.com/secondarykey/aibow/tool"
+	"github.com/secondarykey/aibow/usage"
 )
 
 // maxBody はリクエストの本文の上限。履歴の全部が毎回来るので大きめにする(作業領域 32K トークンでも数百 KB)。
@@ -112,16 +112,16 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 // 道はアプリ(aibow 欄がある)とそれ以外(Cline など)。受け付けたときのログ(logAccepted)と同じ見分け方。
 // 用途と会話はアプリが aibow 欄で知らせたもの(書いていなければ返事)。会話の ID は記録に書くだけなので、読めなければ空にする。
 func jobContext(ctx context.Context, a *aibowRequest, wait time.Duration) context.Context {
-	ctx = genlog.WithWait(ctx, wait)
+	ctx = usage.WithWait(ctx, wait)
 	if a == nil {
-		return genlog.WithPurpose(genlog.WithRoute(ctx, genlog.RouteAPI), genlog.PurposeReply, uuid.UUID{})
+		return usage.WithPurpose(usage.WithRoute(ctx, usage.RouteAPI), usage.PurposeReply, uuid.UUID{})
 	}
-	purpose := genlog.PurposeReply
-	if a.Purpose == genlog.PurposeSummary {
-		purpose = genlog.PurposeSummary
+	purpose := usage.PurposeReply
+	if a.Purpose == usage.PurposeSummary {
+		purpose = usage.PurposeSummary
 	}
 	conv, _ := uuid.Parse(a.Conversation)
-	return genlog.WithPurpose(genlog.WithRoute(ctx, genlog.RouteApp), purpose, conv)
+	return usage.WithPurpose(usage.WithRoute(ctx, usage.RouteApp), purpose, conv)
 }
 
 // readChatRequest は本文を読み、書式の形にする。読めなければ 400 を返して false。
@@ -322,8 +322,8 @@ func finishReason(stop string, calls int) string {
 	return "stop"
 }
 
-func usageOf(st engine.GenerateStats) *usage {
-	u := &usage{PromptTokens: st.PromptTokens, CompletionTokens: st.GenTokens, TotalTokens: st.PromptTokens + st.GenTokens}
+func usageOf(st engine.GenerateStats) *tokenUsage {
+	u := &tokenUsage{PromptTokens: st.PromptTokens, CompletionTokens: st.GenTokens, TotalTokens: st.PromptTokens + st.GenTokens}
 	u.PromptTokensDetails.CachedTokens = st.ReusedTokens
 	return u
 }

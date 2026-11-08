@@ -12,6 +12,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/secondarykey/aibow"
+	"github.com/secondarykey/aibow/config"
 	"github.com/secondarykey/aibow/format"
 	"github.com/secondarykey/aibow/mcp/client"
 	mcpserver "github.com/secondarykey/aibow/mcp/server"
@@ -24,7 +25,7 @@ import (
 
 type mcpWeb struct {
 	*testWeb
-	prefs *aibow.ToolPrefs
+	prefs *config.ToolPrefs
 }
 
 // newMCPWeb は、MCP のサーバー web(HTTP)と wd(${workdir} を使う。ブラウザには出さない)を server.json に書いた aibow-server を立てる。
@@ -39,7 +40,7 @@ func newMCPWeb(t *testing.T) *mcpWeb {
 	}
 	m := client.New(configs, client.Options{Version: "0.0.1-test"})
 	t.Cleanup(m.Close)
-	prefs, err := aibow.LoadServerToolPrefs(filepath.Join(t.TempDir(), "server-tools.json"))
+	prefs, err := config.LoadServerToolPrefs(filepath.Join(t.TempDir(), "server-tools.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +53,7 @@ func webCall(name, expr string) []format.ToolCall {
 }
 
 // webConversation は、MCP のサーバー web を使う会話を作る。
-func (w *mcpWeb) webConversation(t *testing.T, policies map[string]aibow.ToolPolicy) aibow.Conversation {
+func (w *mcpWeb) webConversation(t *testing.T, policies map[string]config.ToolPolicy) aibow.Conversation {
 	t.Helper()
 	c := w.newConversation(t)
 	s := c.Settings
@@ -103,7 +104,7 @@ func TestWebMCPServer(t *testing.T) {
 			t.Errorf("作業フォルダのツールを見せている: %s", tl.Name)
 		}
 	}
-	var builtin []aibow.KnownTool
+	var builtin []config.KnownTool
 	w.mustCall(t, &builtin, "BuiltinTools")
 	if len(builtin) != 3 {
 		t.Errorf("BuiltinTools は時刻・計算・URL を読むだけ: %+v", builtin)
@@ -116,7 +117,7 @@ func TestWebAdminToolDefaults(t *testing.T) {
 	bob := w.addUser(t, "bob")
 	w.user.Store(bob)
 
-	var v aibow.ToolPrefsView
+	var v config.ToolPrefsView
 	w.mustCall(t, &v, "ToolPrefs")
 	if v.Path != "" || !v.Ban {
 		t.Errorf("管理者でない人に既定のファイルの場所を見せている: %+v", v)
@@ -143,7 +144,7 @@ func TestWebAdminToolDefaults(t *testing.T) {
 	if known := w.prefs.View().Known["web"]; len(known) != 2 {
 		t.Errorf("読み直した一覧: %+v", known)
 	}
-	w.mustCall(t, nil, "SetToolPolicy", "web__calculate", aibow.ToolAllow)
+	w.mustCall(t, nil, "SetToolPolicy", "web__calculate", config.ToolAllow)
 	w.admin.Store(false)
 
 	events := w.openEvents(t)
@@ -165,18 +166,18 @@ func TestWebAdminBan(t *testing.T) {
 	w := newMCPWeb(t)
 	w.admin.Store(true)
 	w.mustCall(t, nil, "LoadToolList", "web")
-	w.mustCall(t, nil, "SetToolPolicy", "calculate", aibow.ToolOff) // 組み込みの計算だけ
-	w.mustCall(t, nil, "SetGroupPolicy", "web", aibow.ToolOff)      // サーバーごと
+	w.mustCall(t, nil, "SetToolPolicy", "calculate", config.ToolOff) // 組み込みの計算だけ
+	w.mustCall(t, nil, "SetGroupPolicy", "web", config.ToolOff)      // サーバーごと
 	w.admin.Store(false)
 
 	events := w.openEvents(t)
-	c := w.webConversation(t, map[string]aibow.ToolPolicy{"calculate": aibow.ToolOn, "web__calculate": aibow.ToolOn})
+	c := w.webConversation(t, map[string]config.ToolPolicy{"calculate": config.ToolOn, "web__calculate": config.ToolOn})
 	var groups []aibow.ToolGroupState
 	w.mustCall(t, &groups, "ToolStates", c.ID, c.Settings)
 	for _, g := range groups {
 		for _, tl := range g.Tools {
 			banned := tl.Name == "calculate" || g.Server == "web"
-			if banned && (tl.Policy != aibow.ToolOff || tl.From != aibow.PolicyFromAdmin) {
+			if banned && (tl.Policy != config.ToolOff || tl.From != aibow.PolicyFromAdmin) {
 				t.Errorf("%s は管理者の禁止のはず: %+v", tl.Name, tl)
 			}
 		}
@@ -198,7 +199,7 @@ func TestWebAdminBan(t *testing.T) {
 func TestWebFetchOptIn(t *testing.T) {
 	w := newMCPWeb(t)
 	events := w.openEvents(t)
-	c := w.webConversation(t, map[string]aibow.ToolPolicy{"fetch_url": aibow.ToolOn})
+	c := w.webConversation(t, map[string]config.ToolPolicy{"fetch_url": config.ToolOn})
 	fetchState := func() aibow.ToolState {
 		t.Helper()
 		var groups []aibow.ToolGroupState
@@ -218,7 +219,7 @@ func TestWebFetchOptIn(t *testing.T) {
 		return slices.Contains(w.eng.tools[len(w.eng.tools)-1], "fetch_url")
 	}
 
-	if s := fetchState(); s.Policy != aibow.ToolOff || s.From != aibow.PolicyFromAdmin {
+	if s := fetchState(); s.Policy != config.ToolOff || s.From != aibow.PolicyFromAdmin {
 		t.Errorf("有効にする前は管理者の禁止のはず: %+v", s)
 	}
 	if sees() {
@@ -226,16 +227,16 @@ func TestWebFetchOptIn(t *testing.T) {
 	}
 
 	w.admin.Store(true)
-	w.mustCall(t, nil, "SetGroupPolicy", "", aibow.ToolAllow)
+	w.mustCall(t, nil, "SetGroupPolicy", "", config.ToolAllow)
 	w.admin.Store(false)
-	if s := fetchState(); s.Policy != aibow.ToolOff {
+	if s := fetchState(); s.Policy != config.ToolOff {
 		t.Errorf("組み込みのグループの扱いで有効になった: %+v", s)
 	}
 
 	w.admin.Store(true)
-	w.mustCall(t, nil, "SetToolPolicy", "fetch_url", aibow.ToolAsk)
+	w.mustCall(t, nil, "SetToolPolicy", "fetch_url", config.ToolAsk)
 	w.admin.Store(false)
-	if s := fetchState(); s.Policy != aibow.ToolAsk {
+	if s := fetchState(); s.Policy != config.ToolAsk {
 		t.Errorf("有効にしたら確認するはず: %+v", s)
 	}
 	if !sees() {

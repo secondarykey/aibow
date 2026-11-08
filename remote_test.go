@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/secondarykey/aibow/config"
 	"github.com/secondarykey/aibow/format"
 	"github.com/secondarykey/aibow/tool"
 )
@@ -238,23 +239,23 @@ func TestRemoteToolsStartError(t *testing.T) {
 func TestToolPolicy(t *testing.T) {
 	cs := &Conversations{}
 	rt := &remoteTool{name: "fake__write"}
-	prefs := &ToolPrefs{}
+	prefs := &config.ToolPrefs{}
 	cs.SetToolPrefs(prefs)
 	set := ConversationSettings{}
 
-	if got := cs.toolPolicy(set, rt); got != ToolAsk {
+	if got := cs.toolPolicy(set, rt); got != config.ToolAsk {
 		t.Errorf("何も決めていなければ確認する: %v", got)
 	}
-	prefs.SetServerPolicy("fake", ToolAllow)
-	if got := cs.toolPolicy(set, rt); got != ToolAllow {
+	prefs.SetServerPolicy("fake", config.ToolAllow)
+	if got := cs.toolPolicy(set, rt); got != config.ToolAllow {
 		t.Errorf("サーバーごとの既定: %v", got)
 	}
-	prefs.SetToolPolicy("fake__write", ToolAsk)
-	if got := cs.toolPolicy(set, rt); got != ToolAsk {
+	prefs.SetToolPolicy("fake__write", config.ToolAsk)
+	if got := cs.toolPolicy(set, rt); got != config.ToolAsk {
 		t.Errorf("ツールごとの既定はサーバーごとより優先: %v", got)
 	}
-	set.ToolPolicies = map[string]ToolPolicy{"fake__write": ToolOff}
-	if got := cs.toolPolicy(set, rt); got != ToolOff {
+	set.ToolPolicies = map[string]config.ToolPolicy{"fake__write": config.ToolOff}
+	if got := cs.toolPolicy(set, rt); got != config.ToolOff {
 		t.Errorf("会話の上書きが一番優先: %v", got)
 	}
 }
@@ -271,12 +272,12 @@ func TestToolPolicyInConversations(t *testing.T) {
 	write := &remoteTool{name: "fake__write"}
 	hidden := &remoteTool{name: "fake__screenshot"}
 	cs.SetRemoteTools(&fakeRemote{tools: []tool.Tool{write, hidden}})
-	prefs := &ToolPrefs{}
-	prefs.SetToolPolicy("fake__screenshot", ToolOff) // PC の既定で使わない
+	prefs := &config.ToolPrefs{}
+	prefs.SetToolPolicy("fake__screenshot", config.ToolOff) // PC の既定で使わない
 	cs.SetToolPrefs(prefs)
 
 	// 会話A: write を「確認しない」に上書きした
-	a.Settings.ToolPolicies = map[string]ToolPolicy{"fake__write": ToolAllow}
+	a.Settings.ToolPolicies = map[string]config.ToolPolicy{"fake__write": config.ToolAllow}
 	useFake(t, cs, &a)
 	asked := 0
 	sendAnswering(cs, context.Background(), a, "書いて", func(q *ConfirmRequest) bool {
@@ -310,14 +311,14 @@ func TestRememberTools(t *testing.T) {
 	useFake(t, cs, &c)
 	cs.SetRemoteTools(&fakeRemote{tools: []tool.Tool{&remoteTool{name: "fake__write"}}})
 	path := filepath.Join(t.TempDir(), "tools.json")
-	prefs, err := LoadToolPrefs(path)
+	prefs, err := config.LoadToolPrefs(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	cs.SetToolPrefs(prefs)
 
 	sendAnswering(cs, context.Background(), c, "やあ", func(*ConfirmRequest) bool { return false })
-	again, err := LoadToolPrefs(path)
+	again, err := config.LoadToolPrefs(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -331,26 +332,26 @@ func TestRememberTools(t *testing.T) {
 // グループごと「使わない」なら、ツールごとの扱いにかかわらず使わない
 func TestLocalToolPolicy(t *testing.T) {
 	cs := &Conversations{}
-	prefs := &ToolPrefs{}
+	prefs := &config.ToolPrefs{}
 	cs.SetToolPrefs(prefs)
 	set := ConversationSettings{}
 	write, read := tool.Find(tool.Files("."), "write_file"), tool.Find(tool.Files("."), "read_file")
 	if write.Def().Name != "write_file" || read.Def().Name != "read_file" {
 		t.Fatalf("並び: %s %s", write.Def().Name, read.Def().Name)
 	}
-	if cs.toolPolicy(set, write) != ToolAsk || cs.toolPolicy(set, read) != ToolAllow {
+	if cs.toolPolicy(set, write) != config.ToolAsk || cs.toolPolicy(set, read) != config.ToolAllow {
 		t.Error("決まりの既定: 書き換えるツールは確認する、読むだけのツールは確認しない")
 	}
-	prefs.SetToolPolicy("write_file", ToolAllow)
-	if cs.toolPolicy(set, write) != ToolAllow {
+	prefs.SetToolPolicy("write_file", config.ToolAllow)
+	if cs.toolPolicy(set, write) != config.ToolAllow {
 		t.Error("ツールごとの PC の既定")
 	}
-	prefs.SetBuiltinPolicy(ToolOff)
-	if cs.toolPolicy(set, write) != ToolOff || cs.toolPolicy(set, read) != ToolOff {
+	prefs.SetBuiltinPolicy(config.ToolOff)
+	if cs.toolPolicy(set, write) != config.ToolOff || cs.toolPolicy(set, read) != config.ToolOff {
 		t.Error("グループごと使わないなら、ツールごとの扱いにかかわらず使わない")
 	}
-	set.ToolPolicies = map[string]ToolPolicy{"read_file": ToolAsk}
-	if cs.toolPolicy(set, read) != ToolAsk {
+	set.ToolPolicies = map[string]config.ToolPolicy{"read_file": config.ToolAsk}
+	if cs.toolPolicy(set, read) != config.ToolAsk {
 		t.Error("会話の上書きが一番優先")
 	}
 	if names := BuiltinTools(); len(names) != 12 || names[0].Name != "get_current_time" || names[2].Name != "fetch_url" || names[8].Name != "update_plan" || names[9].Name != "run_command" ||
@@ -366,31 +367,31 @@ func TestFetchPolicy(t *testing.T) {
 	fetch := tool.FetchURL(tool.FetchOptions{})
 	set := ConversationSettings{}
 	app := &Conversations{}
-	app.SetToolPrefs(&ToolPrefs{})
-	if p := app.toolPolicy(set, fetch); p != ToolAsk {
+	app.SetToolPrefs(&config.ToolPrefs{})
+	if p := app.toolPolicy(set, fetch); p != config.ToolAsk {
 		t.Errorf("アプリの既定が %q(確認するのはず)", p)
 	}
 
-	prefs, err := LoadServerToolPrefs(filepath.Join(t.TempDir(), "server-tools.json"))
+	prefs, err := config.LoadServerToolPrefs(filepath.Join(t.TempDir(), "server-tools.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	server := &Conversations{}
 	server.SetToolPrefs(prefs)
-	on := ConversationSettings{ToolPolicies: map[string]ToolPolicy{"fetch_url": ToolOn}}
-	if p := server.toolPolicy(on, fetch); p != ToolOff {
+	on := ConversationSettings{ToolPolicies: map[string]config.ToolPolicy{"fetch_url": config.ToolOn}}
+	if p := server.toolPolicy(on, fetch); p != config.ToolOff {
 		t.Errorf("有効にする前に、会話の「使う」で使えた(%q)", p)
 	}
-	prefs.SetBuiltinPolicy(ToolAllow)
-	if p := server.toolPolicy(set, fetch); p != ToolOff {
+	prefs.SetBuiltinPolicy(config.ToolAllow)
+	if p := server.toolPolicy(set, fetch); p != config.ToolOff {
 		t.Errorf("組み込みのグループの扱いで有効になった(%q)", p)
 	}
-	prefs.SetToolPolicy("fetch_url", ToolAllow)
-	if p := server.toolPolicy(set, fetch); p != ToolAllow {
+	prefs.SetToolPolicy("fetch_url", config.ToolAllow)
+	if p := server.toolPolicy(set, fetch); p != config.ToolAllow {
 		t.Errorf("管理者が確認しないにしたのに %q", p)
 	}
-	prefs.SetBuiltinPolicy(ToolOff)
-	if p := server.toolPolicy(set, fetch); p != ToolOff {
+	prefs.SetBuiltinPolicy(config.ToolOff)
+	if p := server.toolPolicy(set, fetch); p != config.ToolOff {
 		t.Errorf("組み込みのグループごと禁止したのに %q", p)
 	}
 }
@@ -404,10 +405,10 @@ func TestLocalToolPolicyInConversation(t *testing.T) {
 	useFake(t, cs, &c)
 	r := &fakeRemote{tools: []tool.Tool{&remoteTool{name: "fake__write"}}}
 	cs.SetRemoteTools(r)
-	prefs := &ToolPrefs{}
-	prefs.SetToolPolicy("run_command", ToolOff)
-	prefs.SetToolPolicy("read_file", ToolAsk)
-	prefs.SetServerPolicy("fake", ToolOff)
+	prefs := &config.ToolPrefs{}
+	prefs.SetToolPolicy("run_command", config.ToolOff)
+	prefs.SetToolPolicy("read_file", config.ToolAsk)
+	prefs.SetServerPolicy("fake", config.ToolOff)
 	cs.SetToolPrefs(prefs)
 
 	var req *ConfirmRequest
@@ -457,14 +458,14 @@ func TestBuiltinOffInConversation(t *testing.T) {
 func TestToolPrefsLegacy(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "tools.json")
 	os.WriteFile(path, []byte(`{"local": "allow", "servers": {"Blender": "off", "filesystem": "allow"}}`), 0o644)
-	p, err := LoadToolPrefs(path)
-	if got, ok := p.groupPolicy(""); err != nil || !ok || got != ToolAllow {
+	p, err := config.LoadToolPrefs(path)
+	if got, ok := p.GroupPolicy(""); err != nil || !ok || got != config.ToolAllow {
 		t.Fatalf("local を builtin として読む: %v %v %v", got, ok, err)
 	}
-	if _, ok := p.groupPolicy("Blender"); ok || p.groupDefault("Blender") || !p.groupDefault("filesystem") {
+	if _, ok := p.GroupPolicy("Blender"); ok || p.GroupDefault("Blender") || !p.GroupDefault("filesystem") {
 		t.Error("グループの off は「最初から選ばない」に読み替える")
 	}
-	if err := p.SetToolPolicy("x", ToolOff); err != nil {
+	if err := p.SetToolPolicy("x", config.ToolOff); err != nil {
 		t.Fatal(err)
 	}
 	b, _ := os.ReadFile(path)
@@ -472,7 +473,7 @@ func TestToolPrefsLegacy(t *testing.T) {
 		t.Errorf("書くときは新しい形にする: %s", b)
 	}
 	os.WriteFile(path, []byte(`{"builtin": "off"}`), 0o644)
-	if p, _ := LoadToolPrefs(path); p.groupDefault("") {
+	if p, _ := config.LoadToolPrefs(path); p.GroupDefault("") {
 		t.Error("組み込みの off も読み替える")
 	}
 }
@@ -495,7 +496,7 @@ func TestNotDefaultServerCanBeSelected(t *testing.T) {
 func TestLoadToolList(t *testing.T) {
 	cs := &Conversations{}
 	cs.SetRemoteTools(&fakeRemote{tools: []tool.Tool{&remoteTool{name: "fake__write"}}})
-	prefs := &ToolPrefs{}
+	prefs := &config.ToolPrefs{}
 	cs.SetToolPrefs(prefs)
 	if err := cs.LoadToolList(context.Background(), "fake"); err != nil {
 		t.Fatal(err)
@@ -511,34 +512,34 @@ func TestLoadToolList(t *testing.T) {
 // tools.json の読み書き。壊れたファイルは読まずに、書き換えもしない(人が書いたものを消さないため)
 func TestToolPrefsFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "aibow", "tools.json")
-	p, err := LoadToolPrefs(path)
+	p, err := config.LoadToolPrefs(path)
 	if err != nil {
 		t.Fatalf("ファイルが無ければ空: %v", err)
 	}
-	if err := p.SetToolPolicy("Blender__render", ToolOff); err != nil {
+	if err := p.SetToolPolicy("Blender__render", config.ToolOff); err != nil {
 		t.Fatal(err)
 	}
 	if err := p.SetToolPolicy("Blender__render", "maybe"); err == nil {
 		t.Error("知らない値はエラー")
 	}
-	again, err := LoadToolPrefs(path)
-	if got, ok := again.policy("Blender", "Blender__render"); err != nil || !ok || got != ToolOff {
+	again, err := config.LoadToolPrefs(path)
+	if got, ok := again.Policy("Blender", "Blender__render"); err != nil || !ok || got != config.ToolOff {
 		t.Errorf("書いたものを読める: %v %v %v", got, ok, err)
 	}
 	if err := again.SetToolPolicy("Blender__render", ""); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := again.policy("Blender", "Blender__render"); ok {
+	if _, ok := again.Policy("Blender", "Blender__render"); ok {
 		t.Error("空にすると決めていない状態に戻る")
 	}
 
 	broken := filepath.Join(t.TempDir(), "tools.json")
 	os.WriteFile(broken, []byte(`{"tools": {"x": "sometimes"}}`), 0o644)
-	bp, err := LoadToolPrefs(broken)
+	bp, err := config.LoadToolPrefs(broken)
 	if err == nil || bp == nil || bp.View().Error == "" {
 		t.Fatalf("壊れたファイルはエラーを返す: %v", err)
 	}
-	if err := bp.SetToolPolicy("x", ToolOff); err == nil {
+	if err := bp.SetToolPolicy("x", config.ToolOff); err == nil {
 		t.Error("読めなかったファイルは書き換えない")
 	}
 	if b, _ := os.ReadFile(broken); string(b) != `{"tools": {"x": "sometimes"}}` {
@@ -550,14 +551,14 @@ func TestToolPrefsFile(t *testing.T) {
 // MCP のサーバーのツールは、起動していなくても、覚えた一覧(tools.json の known)から出す
 func TestToolStates(t *testing.T) {
 	cs := &Conversations{}
-	prefs := &ToolPrefs{}
+	prefs := &config.ToolPrefs{}
 	cs.SetToolPrefs(prefs)
 	cs.SetRemoteTools(&fakeRemote{})
-	prefs.SetToolPolicy("read_file", ToolOff)
-	if err := prefs.setKnown("fake", []KnownTool{{Name: "fake__write", Description: "Remote tool."}}); err != nil {
+	prefs.SetToolPolicy("read_file", config.ToolOff)
+	if err := prefs.SetKnown("fake", []config.KnownTool{{Name: "fake__write", Description: "Remote tool."}}); err != nil {
 		t.Fatal(err)
 	}
-	set := ConversationSettings{ToolPolicies: map[string]ToolPolicy{"fake__write": ToolOff}}
+	set := ConversationSettings{ToolPolicies: map[string]config.ToolPolicy{"fake__write": config.ToolOff}}
 
 	groups := cs.ToolStates(set)
 	if len(groups) != 2 || groups[0].Server != "" || groups[1].Server != "fake" {
@@ -572,16 +573,16 @@ func TestToolStates(t *testing.T) {
 		t.Fatalf("%s がありません", name)
 		return ToolState{}
 	}
-	if s := find(groups[0], "get_current_time"); s.Policy != ToolAllow || s.From != PolicyFromDefault || s.NeedsWorkDir {
+	if s := find(groups[0], "get_current_time"); s.Policy != config.ToolAllow || s.From != PolicyFromDefault || s.NeedsWorkDir {
 		t.Errorf("決まりの既定(読むだけ): %+v", s)
 	}
-	if s := find(groups[0], "write_file"); s.Policy != ToolAsk || s.From != PolicyFromDefault || !s.NeedsWorkDir {
+	if s := find(groups[0], "write_file"); s.Policy != config.ToolAsk || s.From != PolicyFromDefault || !s.NeedsWorkDir {
 		t.Errorf("決まりの既定(書き換える・作業フォルダが要る): %+v", s)
 	}
-	if s := find(groups[0], "read_file"); s.Policy != ToolOff || s.From != PolicyFromPC {
+	if s := find(groups[0], "read_file"); s.Policy != config.ToolOff || s.From != PolicyFromPC {
 		t.Errorf("PC の既定: %+v", s)
 	}
-	if s := find(groups[1], "fake__write"); s.Policy != ToolOff || s.From != PolicyFromConversation || s.Description != "Remote tool." {
+	if s := find(groups[1], "fake__write"); s.Policy != config.ToolOff || s.From != PolicyFromConversation || s.Description != "Remote tool." {
 		t.Errorf("会話の上書き: %+v", s)
 	}
 }
@@ -590,32 +591,32 @@ func TestToolStates(t *testing.T) {
 // 確認するかは変えない(PC の既定のツールごと・グループごとの確認の扱い → 決まりの既定)
 func TestToolOnOverridesPCOff(t *testing.T) {
 	cs := &Conversations{}
-	prefs := &ToolPrefs{}
+	prefs := &config.ToolPrefs{}
 	cs.SetToolPrefs(prefs)
-	prefs.SetToolPolicy("get_current_time", ToolOff)
-	prefs.SetServerPolicy("fake", ToolAllow)
-	prefs.SetToolPolicy("fake__write", ToolOff)
+	prefs.SetToolPolicy("get_current_time", config.ToolOff)
+	prefs.SetServerPolicy("fake", config.ToolAllow)
+	prefs.SetToolPolicy("fake__write", config.ToolOff)
 	set := ConversationSettings{}
 
 	now := tool.Builtin()[0]
 	if now.Def().Name != "get_current_time" {
 		t.Fatalf("並び: %s", now.Def().Name)
 	}
-	if cs.toolPolicy(set, now) != ToolOff {
+	if cs.toolPolicy(set, now) != config.ToolOff {
 		t.Fatal("PC の既定で使わないツールは、会話で何もしなければ使わない")
 	}
-	set.ToolPolicies = map[string]ToolPolicy{"get_current_time": ToolOn, "fake__write": ToolOn}
-	if got := cs.toolPolicy(set, now); got != ToolAllow {
+	set.ToolPolicies = map[string]config.ToolPolicy{"get_current_time": config.ToolOn, "fake__write": config.ToolOn}
+	if got := cs.toolPolicy(set, now); got != config.ToolAllow {
 		t.Errorf("会話で使うにしたら使う。読むだけの組み込みのツールは決まりの既定(確認しない)のまま: %v", got)
 	}
-	if got := cs.toolPolicy(set, &remoteTool{name: "fake__write"}); got != ToolAllow {
+	if got := cs.toolPolicy(set, &remoteTool{name: "fake__write"}); got != config.ToolAllow {
 		t.Errorf("確認の扱いはサーバーごとの PC の既定から取る: %v", got)
 	}
 
 	// グループごと使わないにした組み込みのツールも、会話で使うにできる。書き換えるツールは確認する
-	prefs.SetBuiltinPolicy(ToolOff)
-	set.ToolPolicies = map[string]ToolPolicy{"write_file": ToolOn}
-	if got := cs.toolPolicy(set, tool.Find(tool.Files("."), "write_file")); got != ToolAsk {
+	prefs.SetBuiltinPolicy(config.ToolOff)
+	set.ToolPolicies = map[string]config.ToolPolicy{"write_file": config.ToolOn}
+	if got := cs.toolPolicy(set, tool.Find(tool.Files("."), "write_file")); got != config.ToolAsk {
 		t.Errorf("書き換えるツールは確認する: %v", got)
 	}
 	if err := set.validate(); err != nil {
@@ -624,53 +625,9 @@ func TestToolOnOverridesPCOff(t *testing.T) {
 
 	states := cs.ToolStates(set)
 	for _, s := range states[0].Tools {
-		if s.Name == "write_file" && (s.Policy != ToolAsk || s.From != PolicyFromConversation || s.Default != ToolOff) {
+		if s.Name == "write_file" && (s.Policy != config.ToolAsk || s.From != PolicyFromConversation || s.Default != config.ToolOff) {
 			t.Errorf("画面に出す状態(上書きが無ければ使わない): %+v", s)
 		}
-	}
-}
-
-// settings.json に足したばかりの MCP のサーバーは、新しい会話で最初から使わない。
-// 一度見たサーバーは、settings.json から消して戻しても前の扱いのまま。
-// この仕組みより前の tools.json(seen が無い)なら、今あるサーバーの扱いは変えない
-func TestNoteServers(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "tools.json")
-	p, _ := LoadToolPrefs(path)
-	if added, err := p.NoteServers(nil); err != nil || added != nil {
-		t.Fatalf("サーバーが無ければ何もしない: %v %v", added, err)
-	}
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		t.Errorf("サーバーが無ければ tools.json を作らない: %v", err)
-	}
-	added, err := p.NoteServers([]string{"filesystem"})
-	if err != nil || !slices.Equal(added, []string{"filesystem"}) || p.groupDefault("filesystem") {
-		t.Fatalf("足したばかりのサーバーは最初から使わない: %v %v", added, err)
-	}
-	p.update(func(f *toolsFile) { f.NotDefault.Servers = nil }, "") // 使う人がチェックした(プロファイルより前の画面)
-
-	again, _ := LoadToolPrefs(path)
-	added, _ = again.NoteServers([]string{"Blender", "filesystem"})
-	if !slices.Equal(added, []string{"Blender"}) || !again.groupDefault("filesystem") || again.groupDefault("Blender") {
-		t.Errorf("見たサーバーはそのまま、足したサーバーだけ使わない: %v", added)
-	}
-	again.NoteServers([]string{"Blender"}) // filesystem を settings.json から消した
-	if added, _ := again.NoteServers([]string{"Blender", "filesystem"}); len(added) != 0 || !again.groupDefault("filesystem") {
-		t.Errorf("消して戻しても前の扱いのまま: %v", added)
-	}
-
-	// この仕組みより前のファイル: 今あるサーバーは全部見たことにする(最初から使っていたものを急に外さない)
-	old := filepath.Join(t.TempDir(), "tools.json")
-	os.WriteFile(old, []byte(`{"notDefault":{"servers":["Blender"]}}`), 0o644)
-	q, err := LoadToolPrefs(old)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if added, _ := q.NoteServers([]string{"Blender", "filesystem"}); len(added) != 0 || !q.groupDefault("filesystem") || q.groupDefault("Blender") {
-		t.Errorf("前のファイルは扱いを変えない: %v", added)
-	}
-	q2, _ := LoadToolPrefs(old)
-	if added, _ := q2.NoteServers([]string{"Blender", "filesystem", "fetch"}); !slices.Equal(added, []string{"fetch"}) || q2.groupDefault("fetch") {
-		t.Errorf("次の起動からは、足したサーバーを使わない: %v", added)
 	}
 }
 
@@ -679,12 +636,12 @@ func TestNoteServers(t *testing.T) {
 func TestConfirmRemember(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
-		remember ToolPolicy
+		remember config.ToolPolicy
 		asked    int
 		ran      bool // 2回目を実行したか
 	}{
-		{"この会話では今後聞かない", ToolAllow, 1, true},
-		{"今後許可しない", ToolOff, 1, false},
+		{"この会話では今後聞かない", config.ToolAllow, 1, true},
+		{"今後許可しない", config.ToolOff, 1, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			g := &fakeGen{replies: []fakeReply{
@@ -695,13 +652,13 @@ func TestConfirmRemember(t *testing.T) {
 			cs, c, _ := newWorkDirConversation(t, g)
 			write := &remoteTool{name: "fake__write"}
 			cs.SetRemoteTools(&fakeRemote{tools: []tool.Tool{write}})
-			cs.SetToolPrefs(&ToolPrefs{})
+			cs.SetToolPrefs(&config.ToolPrefs{})
 			useFake(t, cs, &c)
 
 			asked := 0
 			evs := sendAnswering(cs, context.Background(), c, "書いて", func(q *ConfirmRequest) bool {
 				asked++
-				approved := tc.remember != ToolOff
+				approved := tc.remember != config.ToolOff
 				return cs.Answer(ctx, c.ID, q.ID, Confirmation{Approved: approved, Remember: tc.remember}) == nil
 			})
 			if asked != tc.asked {
@@ -732,24 +689,24 @@ func TestConfirmRemember(t *testing.T) {
 func TestSetToolPolicy(t *testing.T) {
 	cs, _ := newTestConversations(t, &fakeGen{})
 	c := mustCreate(t, cs)
-	if err := cs.SetToolPolicy(ctx, c.ID, "write_file", ToolAllow); err != nil {
+	if err := cs.SetToolPolicy(ctx, c.ID, "write_file", config.ToolAllow); err != nil {
 		t.Fatal(err)
 	}
 	if err := cs.SetToolPolicy(ctx, c.ID, "write_file", "yes"); err == nil {
 		t.Error("知らない値は書かない")
 	}
-	if got, _, _ := cs.Get(ctx, c.ID); got.Settings.ToolPolicies["write_file"] != ToolAllow {
+	if got, _, _ := cs.Get(ctx, c.ID); got.Settings.ToolPolicies["write_file"] != config.ToolAllow {
 		t.Errorf("書いた値: %v", got.Settings.ToolPolicies)
 	}
 	cs.SetToolPolicy(ctx, c.ID, "write_file", "")
 	if got, _, _ := cs.Get(ctx, c.ID); len(got.Settings.ToolPolicies) != 0 {
 		t.Errorf("空なら消す: %v", got.Settings.ToolPolicies)
 	}
-	p := &ToolPrefs{}
-	if err := p.SetGroupPolicy("fake", ToolOff); err == nil {
+	p := &config.ToolPrefs{}
+	if err := p.SetGroupPolicy("fake", config.ToolOff); err == nil {
 		t.Error("グループの扱いは確認する・確認しないだけ")
 	}
-	if err := p.SetGroupPolicy("", ToolAllow); err != nil || p.View().Builtin != ToolAllow {
+	if err := p.SetGroupPolicy("", config.ToolAllow); err != nil || p.View().Builtin != config.ToolAllow {
 		t.Errorf("組み込みのグループ: %v %v", err, p.View().Builtin)
 	}
 }
@@ -784,7 +741,7 @@ func TestServerAsks(t *testing.T) {
 	cs, c, _ := newWorkDirConversation(t, g)
 	write := &askingTool{remoteTool: remoteTool{name: "fake__write"}}
 	cs.SetRemoteTools(&fakeRemote{tools: []tool.Tool{write}})
-	cs.SetToolPrefs(&ToolPrefs{})
+	cs.SetToolPrefs(&config.ToolPrefs{})
 	useFake(t, cs, &c)
 
 	var reqs []*ConfirmRequest
@@ -820,8 +777,8 @@ func TestServerAsksAllowed(t *testing.T) {
 	cs, c, _ := newWorkDirConversation(t, g)
 	write := &askingTool{remoteTool: remoteTool{name: "fake__write"}}
 	cs.SetRemoteTools(&fakeRemote{tools: []tool.Tool{write}})
-	prefs := &ToolPrefs{}
-	prefs.SetServerPolicy("fake", ToolAllow)
+	prefs := &config.ToolPrefs{}
+	prefs.SetServerPolicy("fake", config.ToolAllow)
 	cs.SetToolPrefs(prefs)
 	useFake(t, cs, &c)
 
@@ -841,7 +798,7 @@ func TestServerAsksRememberOff(t *testing.T) {
 	cs, c, _ := newWorkDirConversation(t, g)
 	write := &askingTool{remoteTool: remoteTool{name: "fake__write"}}
 	cs.SetRemoteTools(&fakeRemote{tools: []tool.Tool{write}})
-	cs.SetToolPrefs(&ToolPrefs{})
+	cs.SetToolPrefs(&config.ToolPrefs{})
 	useFake(t, cs, &c)
 
 	n := 0
@@ -850,13 +807,13 @@ func TestServerAsksRememberOff(t *testing.T) {
 		if n == 1 {
 			return cs.Confirm(ctx, c.ID, q.ID, true, "") == nil // 呼ぶ前の確認は通す
 		}
-		return cs.Answer(ctx, c.ID, q.ID, Confirmation{Reason: "違う", Remember: ToolOff}) == nil
+		return cs.Answer(ctx, c.ID, q.ID, Confirmation{Reason: "違う", Remember: config.ToolOff}) == nil
 	})
 	rs := toolResults(t, cs, c)
 	if len(rs) != 1 || write.ran || !strings.Contains(rs[0].Content, "理由: 違う") || !strings.Contains(rs[0].Content, "今後使えません") {
 		t.Fatalf("拒否の結果: %+v", rs)
 	}
-	if got, _, _ := cs.Get(ctx, c.ID); got.Settings.ToolPolicies["fake__write"] != ToolOff {
+	if got, _, _ := cs.Get(ctx, c.ID); got.Settings.ToolPolicies["fake__write"] != config.ToolOff {
 		t.Errorf("会話の上書きに書く: %v", got.Settings.ToolPolicies)
 	}
 }

@@ -31,8 +31,10 @@ Ollama が保存したファイルを aibow が直接読むので、Ollama は�
 | `models/` | 使えるモデルの一覧を作る(`models\` フォルダと Ollama の保存フォルダと、画面で足した置き場所。Ollama の目録に画像を読む部品 projector があれば、その場所も持つ)。GGUF の先頭からモデルの種類(`general.architecture`)だけを読む部分(`gguf.go`。起動のときに書式に未対応のモデルを飛ばすため) |
 | `format/` | 書式(チャットテンプレート)。会話を、モデルが理解する書式の1本の文字列にし、生成された文字を「思考」「答え」「ツール呼び出し」に振り分ける。今ある書式は Qwen3.5・Gemma 4・Llama 3・Granite 4(4.0・4.1)・Granite 4.2(一覧は [usage.md](usage.md) の「使えるモデル(書式)」)。テストのデータは `format/testdata/<書式の名前>/` |
 | `conversation.go` | 会話の仕組み。発言を保存し、送信のたびに履歴を並べ直してモデルに渡す(モデル自身は何も覚えていない) |
+| `prompt.go` | モデルに渡す内容を組み立てる部分。システムプロンプト(会話の設定 + 環境の説明 + 作業の決まり)・要約と履歴を並べた発言の列・ツールの定義 |
 | `files.go` | 読み込んだファイル(テキストのファイル・画像。0030)。中身の確かめ(テキストか画像か・文字コード・大きさ)、会話の上限に入るか、テキストのファイルを発言の文の前に展開する、画像をエンジンに渡す形にする |
 | `agent.go` | エージェントループ。モデルがツールを呼んだら実行し、結果を渡して続きを書かせる、をツールを呼ばなくなるまで繰り返す |
+| `tools.go` | 会話で使うツール。並べる・使わない / 確認する / 確認しないの決め方・設定の画面に出す状態・MCP のサーバーを起動してツールを受け取る |
 | `tool/` | ツールの形と、組み込みのツール(現在時刻・計算)・作業フォルダのツール(ファイルを並べる・読む・書き換える・コマンドを実行する)。LLM や会話の仕組みを知らない独立したパッケージ(MCP でツールだけを使うため) |
 | `worktree.go` | worktree で作業する会話(0039)。最初に書き換える前に、会話ごとの worktree をリポジトリの中の `.aibow/worktrees/` に作り、最後に差分を本体に取り込む / 捨てる |
 | `git/` | アプリが行う Git の操作(`git` の exe を呼ぶ)。worktree を作る・差分を取る・本体に当てる・消す。モデルには Git の操作をさせない(0039) |
@@ -41,33 +43,31 @@ Ollama が保存したファイルを aibow が直接読むので、Ollama は�
 | `mcp/internal/` | MCP のクライアントとサーバーの両方で使う部分 |
 | `internal/proc/` | 起動したプロセスを、子プロセスまでまとめて止める仕組み(コマンドのツールと MCP のサーバーで使う) |
 | `internal/secret/` | 手元に置くアプリ用のトークンを、Windows の DPAPI で包む(標準の `syscall` で `crypt32.dll` を呼ぶ。Windows 以外は包まない。0019) |
+| `internal/appversion/` | aibow-mcp と aibow-server が名乗るバージョン。`_cmd/aibow/version` の写し(`version`。`go run _cmd/version.go` が書き写す)を埋め込み、`go run` で起動したものは patch を1つ上げて `+dev` を付ける |
 | `log/` | aibow のログ。aibow のコードはここからログを出す。aibow をライブラリとして使う人は `log.SetLogger` で aibow のログの出し先(`*slog.Logger`)を決められる(決めなければ `slog.Default()`) |
-| `settingsfile.go` | 設定ファイル `settings.json`(手で書く設定。aibow-server のつなぎ先など)の読み込みと、MCP のサーバーを移したあとに `mcpServers` を消す書き直し |
-| `workspaces.go` | ワークスペース(名前を付けたフォルダの組。0035)の `workspaces.json` の読み書きと、前の作業フォルダ(`work_dir`)を移す `MigrateWorkDirs` |
-| `toolprefs.go` | ツールの扱い(使わない / 確認する / 確認しない)と、その PC の既定 `tools.json` の読み書き |
-| `mcpfile.go` | 設定の画面の「MCP」から足した MCP のサーバー `mcp.json` の読み書きと、`settings.json` に手で書いた分を起動したときに移す係 |
-| `connectionfile.go` | 設定の画面の「サーバー」で決めた aibow-server のつなぎ先 `connection.json` の読み書き(アプリ用のトークンは `internal/secret` で包む。0019) |
+| `config/` | アプリと aibow-server の設定ファイルと環境変数を読む部分。アプリの設定ファイル `settings.json`(手で書く設定。aibow-server のつなぎ先など)の読み込みと、MCP のサーバーを移したあとに `mcpServers` を消す書き直し(`settings.go`)・設定の画面の「サーバー」で決めた aibow-server のつなぎ先 `connection.json` の読み書き(`connection.go`。アプリ用のトークンは `internal/secret` で包む。0019)・aibow-server の設定ファイル `server.json` の読み込み(`server.go`)・`AIBOW_` の環境変数の読み方(`env.go`。誤りをまとめて返す)・ツールの扱いとその PC の既定 `tools.json`(`toolprefs.go`)・設定の画面の「MCP」から足した MCP のサーバー `mcp.json` と `settings.json` に手で書いた分を移す係(`mcp.go`)・ワークスペースの `workspaces.json`(`workspaces.go`)・aibow-server が書く `server-models.json`(`servermodels.go`) |
+| `workspacedirs.go` | 会話の仕組みとワークスペースのつなぎ(`SetWorkspaces`)と、前の作業フォルダ(`work_dir`)を移す `MigrateWorkDirs`。`workspaces.json` の読み書きは `config/workspaces.go` |
 | `compact.go` | 長くなった会話を「会話の上限」に収める仕組み(古い発言を捨てる / 要約する)と、メーターの計算 |
 | `store.go` | 会話の保存先の約束(interface)と、会話・発言・要約の形。会話の仕組みは保存先が SQLite かどうかを知らない |
 | `appsettings.go` | アプリの設定(GPU の層数・最後に使ったモデル・画面の設定)と新しい会話の既定の設定(会話の上限・返事の上限も入る) |
 | `profile.go` | 設定のプロファイル(名前の付いた新しい会話の既定。値と決まり)と、起動したときの引き継ぎ |
-| `store/sqlite.go` | 会話・発言・要約・読み込んだファイルを SQLite のファイルに保存する部分(テーブルの作り変え = マイグレーションもここ) |
+| `store/sqlite.go` | 会話・発言・要約・読み込んだファイルを SQLite のファイルに保存する部分の土台(開く・持ち主・値の変換)。中身は区切りごとのファイルに分けている(`migrate.go`(テーブルの作り変え = マイグレーション)・`conversations.go`・`share.go`(共有)・`messages.go`(発言と読み込んだファイル)・`compactions.go`(要約)・`profiles.go`・`settings.go`) |
 | `store/users.go` | aibow-server の利用者・セッション・API キーを保存する部分(ステップ10) |
 | `store/remote/` | 画面のアプリの会話を aibow-server に保存するための口(サーバーの側)と、その HTTP 版(アプリの側)。ステップ10 |
 | `*_test.go` | テスト(モデルなしで実行できる) |
 | `api/` | OpenAI 互換の API(`/v1/models`・`/v1/chat/completions`)。`engine` で生成し、会話の仕組みは持たない(履歴を持つのはクライアント)。HTTP は標準ライブラリの `net/http` |
 | `auth/` | aibow-server の利用者とログイン(ステップ10)。パスワードのハッシュ・cookie のセッション・ログインの口(`/_aibow/auth/`)・画面のアプリ用のトークン・本人がパスワードを決めるリンク・証明書のフィンガープリント。保存は `store/users.go`(server.db) |
 | `api/client/` | aibow-server につなぐクライアント(ステップ8)。画面のアプリが aibow-server につなぐとき、会話の仕組みに渡す生成の口になる |
-| `ui/service.go` | 画面から呼ばれる Go のメソッド(モデル・会話・設定・メーター・送信・今すぐ要約)。会話の仕組みとの中継だけをする。Wails を使わないので、デスクトップのアプリと aibow-server(ブラウザ向け。ステップ9)の両方で使う |
+| `ui/service.go` | 画面から呼ばれる Go のメソッドの係(`Service`)と、その作り方・起動と終了。メソッドは画面の区切りごとのファイルに分けている(`models.go`(モデル)・`appsettings.go`(アプリ全体と画面の設定)・`profiles.go`(プロファイル)・`tools.go`(MCP のサーバーとツールの扱い)・`conversations.go`(会話・メーター)・`share.go`(共有・ほかの人の会話を読む)・`groups.go`(グループ)・`send.go`(送信・今すぐ要約・ツールの確認))。会話の仕組みとの中継だけをする。Wails を使わないので、デスクトップのアプリと aibow-server(ブラウザ向け。ステップ9)の両方で使う |
 | `ui/modelhost.go` | モデルを扱う係。アプリの中で動かす形と、aibow-server につなぐ形の2つ |
 | `ui/serverhost.go` | aibow-server の中で、ブラウザの会話のモデルを扱う係(ステップ9)。作業領域は変えず、サーバーの PC の事情は見せない |
-| `ui/web.go` | ブラウザの画面用の HTTP の口(ステップ9)。`POST /_aibow/ui/call/{メソッド}` で `ui/service.go` のメソッドを呼び、`GET /_aibow/ui/events`(SSE)で経過を送る |
+| `ui/web.go` | ブラウザの画面用の HTTP の口(ステップ9)。`POST /_aibow/ui/call/{メソッド}` で `ui.Service` のメソッドを呼び、`GET /_aibow/ui/events`(SSE)で経過を送る |
 | `ui/settings.go` | 新しい会話の既定(システムプロンプトなど)。アプリと aibow-server のブラウザの会話で同じにする |
 | `web/` | 画面のビルド結果(`web/dist/app`。Git には入れない)。デスクトップのアプリと aibow-server が同じものを埋め込む。ビルドしていなければ `web/dist/index.html` の「画面がビルドされていません」が出る |
 | `ui/modelplaces.go` | アプリの中で動かすときに、設定の画面の「モデル」のタブで足した置き場所を `%APPDATA%\aibow\model-places.json` に覚える |
-| `_cmd/aibow-server/` | aibow のサーバー(OpenAI 互換の API と、ブラウザに配る画面と会話)の exe。`config.go` は引数・設定ファイル(`%APPDATA%/aibow/server.json`)・環境変数を読む部分、`main.go` はモデルを読み込んで `api` を `127.0.0.1` で待ち受けるだけ、`browser.go` はブラウザの会話(会話を `server.db` に保存し、`ui/web.go` の口を同じポートに載せる。ステップ9。ツールは組み込みの時刻・計算と `server.json` の `mcpServers`、扱いの既定は `server-tools.json`、資料のフォルダは `server.json` の `folders`。ステップ12)、`log.go` はログの出口(`aibow-server_<日付>.log`)、`version` / `appversion.go` はアプリと同じバージョン。ルートのモジュールに入っている。画面のアプリがアプリの中でモデルを動かしているときは同時に使わない(アプリを aibow-server につないでいるときは同時に動かせる) |
+| `_cmd/aibow-server/` | aibow のサーバー(OpenAI 互換の API と、ブラウザに配る画面と会話)の exe。`config.go` は引数・設定ファイル(`%APPDATA%/aibow/server.json`)・環境変数を読む部分、`main.go` はモデルを読み込んで `api` を `127.0.0.1` で待ち受けるだけ、`browser.go` はブラウザの会話(会話を `server.db` に保存し、`ui/web.go` の口を同じポートに載せる。ステップ9。ツールは組み込みの時刻・計算と `server.json` の `mcpServers`、扱いの既定は `server-tools.json`、資料のフォルダは `server.json` の `folders`。ステップ12)、`log.go` はログの出口(`aibow-server_<日付>.log`)、バージョンはアプリと同じ(`internal/appversion`)。ルートのモジュールに入っている。画面のアプリがアプリの中でモデルを動かしているときは同時に使わない(アプリを aibow-server につないでいるときは同時に動かせる) |
 | `_cmd/dev/` | aibow-server を開発で動かす(`go run ./_cmd/dev server`。画面は vite の開発用サーバーから配る)・画面と一緒に exe を作る(`go run ./_cmd/dev build`)スクリプト |
-| `_cmd/aibow-mcp/` | 自作の MCP のサーバーの exe(標準入出力で話す)。`main.go` は引数の作業フォルダを読んで `mcp/server` を動かすだけ、`log.go` はログの出口(アプリと同じフォルダの `aibow-mcp_<日付>.log`)、`version` / `appversion.go` はアプリと同じバージョン(`_cmd/aibow/version` の写し)。ルートのモジュールに入っている |
+| `_cmd/aibow-mcp/` | 自作の MCP のサーバーの exe(標準入出力で話す)。`main.go` は引数の作業フォルダを読んで `mcp/server` を動かすだけ、`log.go` はログの出口(アプリと同じフォルダの `aibow-mcp_<日付>.log`)、バージョンはアプリと同じ(`internal/appversion`。`_cmd/aibow/version` の写しで、aibow-server と共通)。ルートのモジュールに入っている |
 | `_cmd/aibow/main.go` | デスクトップアプリの起動(Wails のアプリとウィンドウを作る) |
 | `_cmd/aibow/config.go` | 環境変数から設定を読む(`settings.json` も読み、aibow-server のつなぎ先を決める。MCP の係を作るのは `main.go`) |
 | `_cmd/aibow/connection.go` | 設定の画面の「サーバー」から呼ぶメソッド(つなぎ先を確かめる・ログインしてつなぐ・戻す。起動し直すと切り替わる。0019) |

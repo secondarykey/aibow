@@ -14,7 +14,7 @@
 // ファイルの役割:
 //
 //	main.go    … 起動(このファイル)
-//	config.go  … 環境変数から設定を読む(settings.json は aibow.LoadSettingsFile、MCP のサーバーは startMCP。aibow-server のつなぎ先は loadServer)
+//	config.go  … 環境変数から設定を読む(settings.json は config.LoadSettingsFile、MCP のサーバーは startMCP。aibow-server のつなぎ先は loadServer)
 //	connection.go … 画面から aibow-server につなぐ・ログインする・戻す(connection.json。0019。起動し直すと切り替わる)
 //	service.go … 画面から呼ばれるメソッドを Wails に渡す(中身はルートの ui パッケージ。モデル・会話・設定・送信と、モデルを扱う係)
 //	frontend/  … 画面(React + TypeScript)。Vite でビルドした結果は、共有のパッケージ web(リポジトリのルートの web/dist/app)に出て、実行ファイルに埋め込まれる
@@ -34,6 +34,7 @@ import (
 
 	"github.com/secondarykey/aibow"
 	apiclient "github.com/secondarykey/aibow/api/client"
+	"github.com/secondarykey/aibow/config"
 	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/mcp/client"
@@ -75,9 +76,9 @@ func main() {
 	// ログが書けない・前回は異常終了した、などは起動を止めず、画面のお知らせで伝える
 	cfg.notices = append(cfg.notices, logNotices...)
 	var mcpm *client.Manager
-	var mcpc *aibow.MCPConfig
-	var prefs *aibow.ToolPrefs
-	var workspaces *aibow.Workspaces
+	var mcpc *config.MCPConfig
+	var prefs *config.ToolPrefs
+	var workspaces *config.Workspaces
 	// 組み込みのツールは、aibow の中で自作の MCP サーバーを動かし、MCP 越しに呼ぶ(0007 の 5-4)。サーバーは要る最初のときに動かす
 	local := client.NewLocal(client.Options{Version: appVersion(), Fetch: fetchOptions(cfg)})
 	defer local.Close()
@@ -250,20 +251,20 @@ func startLog() (io.Closer, []string) {
 	return c, notices
 }
 
-// startMCP は、mcp.json(0034)の MCP のサーバーで、MCP のサーバーの係(client.Manager)と、画面で変えたものをそこに流す係(aibow.MCPConfig)を作る。
+// startMCP は、mcp.json(0034)の MCP のサーバーで、MCP のサーバーの係(client.Manager)と、画面で変えたものをそこに流す係(config.MCPConfig)を作る。
 // settings.json に手で書いた分は、先に mcp.json へ移す(0034 の決定事項 13。移せなかった分だけ settings.json のものとして合わせる)。
 // サーバーはまだ起動しない(要る最初の送信のときに起動する)。サーバーが1つも無くても作る(画面から最初の1つを足せるように)。
 // ファイルの書き間違いは、アプリを止めずに画面のお知らせで伝え、そのファイルのサーバーを使わずに起動する。
-func startMCP(cfg *appConfig, prefs *aibow.ToolPrefs) (*client.Manager, *aibow.MCPConfig) {
+func startMCP(cfg *appConfig, prefs *config.ToolPrefs) (*client.Manager, *config.MCPConfig) {
 	hand := cfg.settings.MCPServers
 	if cfg.settingsErr != nil {
 		cfg.notices = append(cfg.notices, cfg.settingsErr.Error()+"(settings.json の MCP のサーバーは使わずに起動しました)")
 		hand = nil
 	}
-	file, _ := aibow.LoadMCPFile(cfg.mcpPath) // 読めなかった理由は Notices が返す
+	file, _ := config.LoadMCPFile(cfg.mcpPath) // 読めなかった理由は Notices が返す
 	hand, moved := file.MoveFromSettings(cfg.settingsPath, hand)
 	cfg.notices = append(cfg.notices, moved...)
-	c := aibow.NewMCPConfig(absPath(cfg.settingsPath), hand, file, prefs)
+	c := config.NewMCPConfig(absPath(cfg.settingsPath), hand, file, prefs)
 	cfg.notices = append(cfg.notices, c.Notices()...)
 	servers := c.Servers()
 	if len(servers) == 0 {
@@ -279,7 +280,7 @@ func startMCP(cfg *appConfig, prefs *aibow.ToolPrefs) (*client.Manager, *aibow.M
 
 // noteNewServers は、settings.json に足したばかりの MCP のサーバーを、新しい会話で最初から使わないにする(tools.json に書く)。
 // 画面のお知らせに出す文を返す(足したサーバーが無ければ空)。
-func noteNewServers(mcpm *client.Manager, prefs *aibow.ToolPrefs) string {
+func noteNewServers(mcpm *client.Manager, prefs *config.ToolPrefs) string {
 	var servers []string
 	if mcpm != nil {
 		servers = mcpm.Servers()
@@ -300,8 +301,8 @@ func noteNewServers(mcpm *client.Manager, prefs *aibow.ToolPrefs) string {
 
 // loadToolPrefs は、ツールの扱いの PC の既定(tools.json)を読む。
 // 壊れていたら画面のお知らせで伝え、決まりの既定で動く(壊れたファイルは書き換えない)。
-func loadToolPrefs(cfg *appConfig) *aibow.ToolPrefs {
-	prefs, err := aibow.LoadToolPrefs(cfg.toolsPath)
+func loadToolPrefs(cfg *appConfig) *config.ToolPrefs {
+	prefs, err := config.LoadToolPrefs(cfg.toolsPath)
 	if err != nil {
 		cfg.notices = append(cfg.notices, err.Error())
 	}
@@ -319,8 +320,8 @@ func fetchOptions(cfg appConfig) *tool.FetchOptions {
 
 // loadWorkspaces は、その PC のワークスペース(workspaces.json。0035)を読む。
 // aibow-server につないでいても手元のファイル(パスは PC のもの)。壊れていたら画面のお知らせで伝え、ワークスペースが無いものとして動く(書き換えない)。
-func loadWorkspaces(cfg *appConfig) *aibow.Workspaces {
-	w, err := aibow.LoadWorkspaces(cfg.wsPath)
+func loadWorkspaces(cfg *appConfig) *config.Workspaces {
+	w, err := config.LoadWorkspaces(cfg.wsPath)
 	if err != nil {
 		cfg.notices = append(cfg.notices, err.Error())
 	}

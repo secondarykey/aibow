@@ -8,55 +8,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 
 	"github.com/secondarykey/aibow"
+	"github.com/secondarykey/aibow/config"
 	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/format"
 	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/models"
 	"github.com/secondarykey/aibow/ui"
 )
-
-// 設定の誤りはログで止めず、まとめて error で返す。
-// リリース版(wails3 build)はコンソールが無いので、ログに出しただけでは誰にも見えない。
-// main.go が画面に表示する。
-type envReader struct {
-	errs []error
-}
-
-func (r *envReader) str(key, def string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return def
-}
-
-func (r *envReader) int(key string, def int) int {
-	v := os.Getenv(key)
-	if v == "" {
-		return def
-	}
-	n, err := strconv.Atoi(v)
-	if err != nil {
-		r.errs = append(r.errs, fmt.Errorf("%s は整数で指定してください: %q", key, v))
-		return def
-	}
-	return n
-}
-
-func (r *envReader) float(key string, def float64) float64 {
-	v := os.Getenv(key)
-	if v == "" {
-		return def
-	}
-	f, err := strconv.ParseFloat(v, 64)
-	if err != nil {
-		r.errs = append(r.errs, fmt.Errorf("%s は数値で指定してください: %q", key, v))
-		return def
-	}
-	return f
-}
 
 // 既定では、カレントフォルダの中の lib フォルダ(llama.cpp)と models フォルダ(モデル)を使う。
 // _cmd/aibow で起動すると(wails3 dev / wails3 task run も _cmd/aibow で動く)、
@@ -77,7 +37,7 @@ type appConfig struct {
 	initialModel string // AIBOW_MODEL。空なら最後に使ったモデル → 一覧の先頭(書式に対応している最初のモデル)
 
 	// settings は settings.json の中身。settingsErr は読めなかった理由(settings.json の MCP のサーバーは使わずに起動し、お知らせで伝える。startMCP)
-	settings    aibow.SettingsFile
+	settings    config.SettingsFile
 	settingsErr error
 	// serverURL は生成を頼む aibow-server のつなぎ先(settings.json の serverUrl > 環境変数 AIBOW_SERVER_URL > 画面で決めたもの。loadServer)。
 	// 空なら今までどおりアプリの中で llama.cpp を動かす。書けば llama.cpp を読み込まず、aibow-server につなぎに行く(0015 の 1・20)
@@ -89,7 +49,7 @@ type appConfig struct {
 	// 手で書いた値(settings.json・環境変数)が画面の値より強い(0019 の決定事項 5)
 	serverSource string
 	// conn は connection.json の中身(画面で決めたつなぎ先。手で書いた値があれば使わないが、画面に出すために読む)
-	conn aibow.ConnectionFile
+	conn config.ConnectionFile
 
 	// app は、画面で変えられるアプリ全体の設定の初期値。
 	// DB にまだ値が無いときだけ使う(画面で一度変えると DB の値が優先される)。
@@ -100,37 +60,37 @@ type appConfig struct {
 }
 
 func loadConfig() (appConfig, error) {
-	var env envReader
+	var env config.Env
 	c := appConfig{
 		engine: engine.Config{
-			LibPath:  env.str("AIBOW_LIB", "lib"),
+			LibPath:  env.String("AIBOW_LIB", "lib"),
 			LlamaLog: os.Getenv("AIBOW_LLAMA_LOG") == "1",
 			// 画像1枚のトークン数の上限(0030 の決定事項 22)
-			ImageMaxTokens: env.int("AIBOW_IMAGE_MAX_TOKENS", engine.DefaultImageMaxTokens),
+			ImageMaxTokens: env.Int("AIBOW_IMAGE_MAX_TOKENS", engine.DefaultImageMaxTokens),
 		},
 		catalog: models.Catalog{
-			ModelsDir: env.str("AIBOW_MODELS_DIR", "models"),
+			ModelsDir: env.String("AIBOW_MODELS_DIR", "models"),
 			OllamaDir: models.OllamaDir(),
 		},
-		dbPath:       env.str("AIBOW_DB", configFile("aibow.db")),
-		settingsPath: env.str("AIBOW_SETTINGS", configFile("settings.json")),
-		toolsPath:    env.str("AIBOW_TOOLS", configFile("tools.json")),
-		mcpPath:      env.str("AIBOW_MCP", configFile("mcp.json")),
-		windowPath:   env.str("AIBOW_WINDOW", configFile("window.json")),
-		placesPath:   env.str("AIBOW_MODEL_PLACES", configFile("model-places.json")),
-		connPath:     env.str("AIBOW_CONNECTION", configFile("connection.json")),
-		wsPath:       env.str("AIBOW_WORKSPACES", configFile("workspaces.json")),
+		dbPath:       env.String("AIBOW_DB", configFile("aibow.db")),
+		settingsPath: env.String("AIBOW_SETTINGS", configFile("settings.json")),
+		toolsPath:    env.String("AIBOW_TOOLS", configFile("tools.json")),
+		mcpPath:      env.String("AIBOW_MCP", configFile("mcp.json")),
+		windowPath:   env.String("AIBOW_WINDOW", configFile("window.json")),
+		placesPath:   env.String("AIBOW_MODEL_PLACES", configFile("model-places.json")),
+		connPath:     env.String("AIBOW_CONNECTION", configFile("connection.json")),
+		wsPath:       env.String("AIBOW_WORKSPACES", configFile("workspaces.json")),
 		initialModel: os.Getenv("AIBOW_MODEL"),
 		// 既定のシステムプロンプトなど、環境変数で変えない初期値は ui にある(aibow-server のブラウザの会話と同じ既定にするため)
 		app: ui.InitialAppSettings(ui.InitialValues{
-			GPULayers:       env.int("AIBOW_GPU_LAYERS", 999), // 999 = 全部 GPU に載せる
-			PresencePenalty: env.float("AIBOW_PRESENCE_PENALTY", 1.5),
-			HistoryTokens:   env.int("AIBOW_HISTORY_TOKENS", 8192),
-			ReplyTokens:     env.int("AIBOW_MAX_TOKENS", 8192),
+			GPULayers:       env.Int("AIBOW_GPU_LAYERS", 999), // 999 = 全部 GPU に載せる
+			PresencePenalty: env.Float("AIBOW_PRESENCE_PENALTY", 1.5),
+			HistoryTokens:   env.Int("AIBOW_HISTORY_TOKENS", 8192),
+			ReplyTokens:     env.Int("AIBOW_MAX_TOKENS", 8192),
 		}),
 	}
 	// settings.json は MCP のサーバーとつなぎ先を書く場所。読めなくても起動は止めない(MCP は使わない。つなぎ先は環境変数を使う)
-	c.settings, c.settingsErr = aibow.LoadSettingsFile(c.settingsPath)
+	c.settings, c.settingsErr = config.LoadSettingsFile(c.settingsPath)
 	c.loadServer(&env)
 
 	// AIBOW_CTX(コンテキスト長)は、会話の上限 + 返事の上限から aibow が計算するようになったので使わない
@@ -144,18 +104,18 @@ func loadConfig() (appConfig, error) {
 		v   int
 	}{{"AIBOW_HISTORY_TOKENS", c.app.Defaults.HistoryTokens}, {"AIBOW_MAX_TOKENS", c.app.Defaults.ReplyTokens}} {
 		if n.v <= 0 {
-			env.errs = append(env.errs, fmt.Errorf("%s は 1 以上で指定してください: %d", n.key, n.v))
+			env.Add(fmt.Errorf("%s は 1 以上で指定してください: %d", n.key, n.v))
 		}
 	}
 	// aibow-server につなぐときは llama.cpp を読み込まないので、lib が無くてもよい。
 	// 初めての PC で画面からつなぐときは、ここで起動に失敗してから設定の画面の「サーバー」のタブでつなぐ(タブは起動に失敗しても使える。0019)
 	if _, err := os.Stat(c.engine.LibPath); err != nil && c.serverURL == "" {
-		env.errs = append(env.errs, c.libMissing())
+		env.Add(c.libMissing())
 	}
 	if c.dbPath == "" {
-		env.errs = append(env.errs, errors.New("会話を保存する場所が決められません。AIBOW_DB で DB ファイルの場所を指定してください"))
+		env.Add(errors.New("会話を保存する場所が決められません。AIBOW_DB で DB ファイルの場所を指定してください"))
 	}
-	return c, errors.Join(env.errs...)
+	return c, env.Err()
 }
 
 // libMissing は、lib が無く、つなぐ先も無いので起動できないときのエラー。
@@ -182,14 +142,14 @@ const (
 
 // loadServer は aibow-server のつなぎ先を決める。強い順に settings.json の serverUrl > 環境変数 AIBOW_SERVER_URL(0015 の 20)> 画面で決めたもの(connection.json)。
 // 手で書いた値があれば、画面の値は使わない(書いたのに効かない、が起きないように。0019 の決定事項 5)。どれも無ければアプリの中で動かす。
-func (c *appConfig) loadServer(env *envReader) {
+func (c *appConfig) loadServer(env *config.Env) {
 	envURL := os.Getenv("AIBOW_SERVER_URL")
-	if err := aibow.CheckServerURL(envURL); err != nil {
-		env.errs = append(env.errs, fmt.Errorf("AIBOW_SERVER_URL: %w", err))
+	if err := config.CheckServerURL(envURL); err != nil {
+		env.Add(fmt.Errorf("AIBOW_SERVER_URL: %w", err))
 		envURL = ""
 	}
 	// 画面に出すため、手で書いてあっても読んでおく(読めなければお知らせで伝え、無いものとして起動する)
-	conn, err := aibow.LoadConnectionFile(c.connPath)
+	conn, err := config.LoadConnectionFile(c.connPath)
 	if err != nil {
 		c.notices = append(c.notices, err.Error())
 	}

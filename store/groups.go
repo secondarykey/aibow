@@ -3,8 +3,8 @@ package store
 // groups.go: グループとグループの長(0031 の段4)。
 //
 // グループは管理者が作り、名前を付け、利用者を入れる。共有の相手にグループを選ぶと、会話とプロファイルの「指定したグループ」の表
-// (conversation_group_shares・profile_group_shares)に覚え、誰に見えるかは読むたびにメンバーの表を引く(sqlite.go の
-// conversationShared・profileVisible)。メンバーを変えると、そのグループに共有されたものが見える人もすぐ変わる(決定事項 26・33)。
+// (conversation_group_shares・profile_group_shares)に覚え、誰に見えるかは読むたびにメンバーの表を引く(share.go の
+// conversationShared・profiles.go の profileVisible)。メンバーを変えると、そのグループに共有されたものが見える人もすぐ変わる(決定事項 26・33)。
 //
 // 誰が変えられるかも、ここの条件の1か所で決める(プロファイルの profileEditable と同じ考え方。決定事項 34):
 //   - 作る・名前を変える・消す・長を決める … 管理者だけ(:admin = 1)

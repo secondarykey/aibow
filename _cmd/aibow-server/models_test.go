@@ -8,27 +8,28 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/secondarykey/aibow/config"
 	"github.com/secondarykey/aibow/models"
 )
 
 // 覚えた GPU の層数は server-models.json に書き、次の起動で読める。ファイルが無ければ何も覚えていない
 func TestServerState(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "sub", stateFileName)
-	s, err := loadState(path)
+	s, err := config.LoadServerModels(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := s.gpuLayers("ollama:qwen3.5:9b"); ok {
+	if _, ok := s.GPULayers("ollama:qwen3.5:9b"); ok {
 		t.Error("まだ覚えていないはず")
 	}
-	if err := s.setGPULayers("ollama:qwen3.5:9b", 28); err != nil {
+	if err := s.SetGPULayers("ollama:qwen3.5:9b", 28); err != nil {
 		t.Fatal(err)
 	}
-	s2, err := loadState(path)
+	s2, err := config.LoadServerModels(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n, ok := s2.gpuLayers("ollama:qwen3.5:9b"); !ok || n != 28 {
+	if n, ok := s2.GPULayers("ollama:qwen3.5:9b"); !ok || n != 28 {
 		t.Errorf("読み直した値: %d %v", n, ok)
 	}
 	if _, err := os.Stat(path + ".tmp"); !os.IsNotExist(err) {
@@ -45,7 +46,7 @@ func TestModelPlaces(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := filepath.Join(dir, stateFileName)
-	s, _ := loadState(path)
+	s, _ := config.LoadServerModels(path)
 	m := &modelManager{catalog: models.Catalog{ModelsDir: filepath.Join(dir, "models"), OllamaDir: filepath.Join(dir, "ollama")}, state: s}
 	if err := m.AddPlace(extra); err != nil {
 		t.Fatal(err)
@@ -56,11 +57,11 @@ func TestModelPlaces(t *testing.T) {
 	if err := m.RemovePlace(m.catalog.ModelsDir); err == nil {
 		t.Error("models フォルダは外せないはず")
 	}
-	if err := s.setGPULayers("x", 1); err != nil { // 層の数を書いても置き場所は消えない
+	if err := s.SetGPULayers("x", 1); err != nil { // 層の数を書いても置き場所は消えない
 		t.Fatal(err)
 	}
 
-	s2, _ := loadState(path)
+	s2, _ := config.LoadServerModels(path)
 	m2 := &modelManager{catalog: m.catalog, state: s2}
 	if l := m2.List(); len(l) != 1 || l[0].Origin != models.OriginAdded {
 		t.Fatalf("起動し直したあとの一覧: %+v", l)
@@ -92,11 +93,11 @@ func TestDisabledModels(t *testing.T) {
 	if err := os.WriteFile(path, old, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	s, err := loadState(path)
+	s, err := config.LoadServerModels(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n, ok := s.gpuLayers("file:a.gguf"); !ok || n != 20 {
+	if n, ok := s.GPULayers("file:a.gguf"); !ok || n != 20 {
 		t.Errorf("以前の形の ID の層の数を読み替えていない: %d %v", n, ok)
 	}
 	if b, _ := os.ReadFile(path); strings.Contains(string(b), mdir) {
@@ -104,7 +105,7 @@ func TestDisabledModels(t *testing.T) {
 	}
 
 	m := &modelManager{catalog: models.Catalog{ModelsDir: mdir, OllamaDir: filepath.Join(dir, "ollama")}, state: s}
-	if err := s.setDisabled("file:b.gguf", true); err != nil {
+	if err := s.SetDisabled("file:b.gguf", true); err != nil {
 		t.Fatal(err)
 	}
 	if l := m.List(); len(l) != 1 || l[0].ID != "file:a.gguf" {
@@ -130,8 +131,8 @@ func TestDisabledModels(t *testing.T) {
 	if _, err := m.findArg(filepath.Join(mdir, "b.gguf")); err == nil {
 		t.Error("起動のときも、使えないモデルは断る")
 	}
-	s2, _ := loadState(path)
-	if !s2.disabled("file:b.gguf") {
+	s2, _ := config.LoadServerModels(path)
+	if !s2.Disabled("file:b.gguf") {
 		t.Error("使えないモデルを覚えていない")
 	}
 }

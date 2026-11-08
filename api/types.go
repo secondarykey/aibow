@@ -274,12 +274,12 @@ func toPrompt(req chatRequest, think bool) (format.Prompt, error) {
 // completion は返事。ストリーミングなしなら object は chat.completion で、choices に message が入る。
 // ストリーミングなら object は chat.completion.chunk で、choices に delta(増えた分)が入る塊を何回も送る。
 type completion struct {
-	ID      string   `json:"id"`
-	Object  string   `json:"object"`
-	Created int64    `json:"created"`
-	Model   string   `json:"model"`
-	Choices []choice `json:"choices"` // 使ったトークン数だけの最後の塊は空の配列([])
-	Usage   *usage   `json:"usage,omitempty"`
+	ID      string      `json:"id"`
+	Object  string      `json:"object"`
+	Created int64       `json:"created"`
+	Model   string      `json:"model"`
+	Choices []choice    `json:"choices"` // 使ったトークン数だけの最後の塊は空の配列([])
+	Usage   *tokenUsage `json:"usage,omitempty"`
 
 	// Timings は生成の時間(llama.cpp の server と同じ欄)。ストリーミングなら終了の理由の塊に入れる
 	Timings *timings `json:"timings,omitempty"`
@@ -310,9 +310,9 @@ type delta struct {
 	ToolCalls        []toolCall `json:"tool_calls,omitempty"`
 }
 
-// usage は使ったトークン数。completion_tokens は思考と答えの合計。
+// tokenUsage は使ったトークン数(OpenAI の usage 欄。パッケージ usage と名前がぶつからないよう tokenUsage にしている)。completion_tokens は思考と答えの合計。
 // prompt_tokens_details.cached_tokens は、プロンプトのうち KV キャッシュを使い回せた数(OpenAI の「キャッシュされた入力」と同じ欄)
-type usage struct {
+type tokenUsage struct {
 	PromptTokens        int `json:"prompt_tokens"`
 	CompletionTokens    int `json:"completion_tokens"`
 	TotalTokens         int `json:"total_tokens"`

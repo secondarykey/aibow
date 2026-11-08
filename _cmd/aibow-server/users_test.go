@@ -8,6 +8,7 @@ import (
 
 	"github.com/secondarykey/aibow"
 	"github.com/secondarykey/aibow/auth"
+	"github.com/secondarykey/aibow/config"
 	"github.com/secondarykey/aibow/store"
 )
 
@@ -19,7 +20,7 @@ func TestUserCommands(t *testing.T) {
 	}
 	defer st.Close()
 	ctx := context.Background()
-	var env envReader
+	var env config.Env
 	base := linkURL{base: "http://127.0.0.1:8089"}
 	if err := addUser(ctx, st, initialSettings(&env, 0), "bob", base); err != nil {
 		t.Fatal(err)
@@ -91,14 +92,14 @@ func TestUserCommands(t *testing.T) {
 
 // コマンドが出すリンクの頭は、待ち受けから作る。0.0.0.0 なら 127.0.0.1 にして、置き換えるよう添える(0022 の決定事項 11)
 func TestLinkBase(t *testing.T) {
-	if b := linkBase(config{Host: "127.0.0.1", Port: 8089}); b.base != "http://127.0.0.1:8089" || b.note != "" {
+	if b := linkBase(serverConfig{Host: "127.0.0.1", Port: 8089}); b.base != "http://127.0.0.1:8089" || b.note != "" {
 		t.Errorf("127.0.0.1: %+v", b)
 	}
-	if b := linkBase(config{Host: "0.0.0.0", Port: 18089, TLSCert: "c.pem"}); b.base != "https://127.0.0.1:18089" || b.note == "" {
+	if b := linkBase(serverConfig{Host: "0.0.0.0", Port: 18089, TLSCert: "c.pem"}); b.base != "https://127.0.0.1:18089" || b.note == "" {
 		t.Errorf("0.0.0.0: %+v", b)
 	}
 	// 道の頭(base。0042)も付く。画面は base の下にあるため
-	if b := linkBase(config{Host: "127.0.0.1", Port: 8089, Base: "/aibow"}); b.base != "http://127.0.0.1:8089/aibow" {
+	if b := linkBase(serverConfig{Host: "127.0.0.1", Port: 8089, Base: "/aibow"}); b.base != "http://127.0.0.1:8089/aibow" {
 		t.Errorf("base: %+v", b)
 	}
 }

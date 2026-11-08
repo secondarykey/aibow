@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/secondarykey/aibow/config"
+	"github.com/secondarykey/aibow/internal/appversion"
 	"github.com/secondarykey/aibow/log"
 )
 
@@ -67,24 +69,15 @@ func startLog(level slog.Level) io.Closer {
 }
 
 // logLevel は出すレベル。-debug > 設定ファイルの logLevel > 既定(go run は Info、exe は Notice)。
-func logLevel(c config, debug bool) slog.Level {
+func logLevel(c serverConfig, debug bool) slog.Level {
 	if debug {
 		return log.LevelDebug
 	}
-	if l, ok := logLevels[c.LogLevel]; ok && c.LogLevel != "" {
+	if l, ok := config.LogLevels[c.LogLevel]; ok && c.LogLevel != "" {
 		return l
 	}
-	if isGoRun() {
+	if appversion.IsGoRun() {
 		return log.LevelInfo
 	}
 	return log.LevelNotice
-}
-
-// logLevels は設定ファイルの logLevel に書ける値。
-var logLevels = map[string]slog.Level{
-	"debug":  log.LevelDebug,
-	"info":   log.LevelInfo,
-	"notice": log.LevelNotice,
-	"warn":   log.LevelWarn,
-	"error":  log.LevelError,
 }

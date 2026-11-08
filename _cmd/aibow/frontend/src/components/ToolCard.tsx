@@ -10,7 +10,7 @@
 // 作業の予定(update_plan。0037)は、引数と結果ではなく、予定のチェックリストとして出す(PlanCard)。
 import { useState } from "react";
 import { LuBan, LuCheck, LuFolder, LuGitBranch, LuHourglass, LuLoaderCircle, LuWrench, LuX } from "react-icons/lu";
-import { ToolPolicy } from "../../bindings/github.com/secondarykey/aibow";
+import { ToolPolicy } from "../../bindings/github.com/secondarykey/aibow/config";
 import type { ConfirmRequest } from "../../bindings/github.com/secondarykey/aibow";
 import type { ToolView } from "../transcript";
 import { CodeBlock } from "./CodeBlock";

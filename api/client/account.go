@@ -7,7 +7,7 @@ import (
 	"net/http"
 
 	"github.com/secondarykey/aibow/auth"
-	"github.com/secondarykey/aibow/genlog"
+	"github.com/secondarykey/aibow/usage"
 )
 
 // Account は、キーの持ち主(GET /_aibow/auth/key。名前・表示名・メールアドレス・管理者か)。
@@ -41,8 +41,8 @@ func (c *Client) ChangePassword(current, password string) (auth.AppLogin, error)
 }
 
 // MyUsage は、キーの持ち主の使用量(今日・7日・30日。0033)。
-func (c *Client) MyUsage() (genlog.Mine, error) {
-	var out genlog.Mine
+func (c *Client) MyUsage() (usage.Mine, error) {
+	var out usage.Mine
 	err := c.call(http.MethodGet, "/_aibow/auth/usage", nil, &out, shortTimeout)
 	return out, err
 }

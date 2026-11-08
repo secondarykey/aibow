@@ -9,10 +9,12 @@ import (
 	"testing"
 	"time"
 	"uuid"
+
+	"github.com/secondarykey/aibow/config"
 )
 
 // startProfiles は、アプリの起動と同じ順に、保存先 st から設定を読んでプロファイルを準備する(model は最後に使ったモデル)。
-func startProfiles(t *testing.T, st Store, model string, remote RemoteTools, prefs *ToolPrefs) (*Conversations, []string) {
+func startProfiles(t *testing.T, st Store, model string, remote RemoteTools, prefs *config.ToolPrefs) (*Conversations, []string) {
 	t.Helper()
 	app, _, err := LoadAppSettings(ctx, st, AppSettings{Defaults: testDefaults})
 	if err != nil {
@@ -43,7 +45,7 @@ func TestPrepareProfilesMigratesDefaults(t *testing.T) {
 	old := Conversation{ID: uuid.NewV7(), Title: "前の会話", Settings: legacy, CreatedAt: time.Now(), UpdatedAt: time.Now()}
 	st.CreateConversation(ctx, old)
 	// 設定の画面の「ツール」で、組み込みのツールを最初から使わないにしていた
-	prefs := &ToolPrefs{data: toolsFile{NotDefault: NotDefault{Builtin: true}}}
+	prefs := toolPrefsFrom(t, `{"notDefault": {"builtin": true}}`)
 
 	cs, notes := startProfiles(t, st, "ollama:qwen3.5:4b", &fakeRemote{}, prefs)
 	if len(notes) != 2 {
@@ -83,7 +85,7 @@ func TestPrepareProfilesMigratesDefaults(t *testing.T) {
 	}
 
 	// 2回目の起動:作り直さず、変えた既定を読む
-	again, notes := startProfiles(t, st, "ollama:qwen3.5:9b", &fakeRemote{}, &ToolPrefs{})
+	again, notes := startProfiles(t, st, "ollama:qwen3.5:9b", &fakeRemote{}, &config.ToolPrefs{})
 	if list, _ := st.ListProfiles(ctx); len(notes) != 0 || len(list) != 1 {
 		t.Errorf("2回目は何もしない: %q %+v", notes, list)
 	}
@@ -102,7 +104,7 @@ func TestPrepareProfilesMigratesDefaults(t *testing.T) {
 // 初めての起動(DB が空):「既定」の値は環境変数の初期値。足したばかりの MCP のサーバーは最初から使わない
 func TestPrepareProfilesFirstRun(t *testing.T) {
 	st := newMemStore()
-	prefs := &ToolPrefs{data: toolsFile{NotDefault: NotDefault{Servers: []string{"fake"}}}}
+	prefs := toolPrefsFrom(t, `{"notDefault": {"servers": ["fake"]}}`)
 	cs, notes := startProfiles(t, st, "", &fakeRemote{}, prefs)
 	if len(notes) != 1 {
 		t.Errorf("引き継ぎだけを知らせる(紐づける会話は無い): %q", notes)
@@ -253,14 +255,14 @@ func TestToolsOffMovesToProfiles(t *testing.T) {
 	st := newMemStore()
 	startProfiles(t, st, "", nil, nil)
 	old := Conversation{ID: uuid.NewV7(), Settings: testDefaults, ProfileID: mustDefaultID(t, st), CreatedAt: time.Now(), UpdatedAt: time.Now()}
-	old.Settings.ToolPolicies = map[string]ToolPolicy{"calculate": ToolOn} // この会話では使うにしていた
+	old.Settings.ToolPolicies = map[string]config.ToolPolicy{"calculate": config.ToolOn} // この会話では使うにしていた
 	st.CreateConversation(ctx, old)
 	other := Conversation{ID: uuid.NewV7(), Settings: testDefaults, ProfileID: old.ProfileID, CreatedAt: time.Now(), UpdatedAt: time.Now()}
 	st.CreateConversation(ctx, other)
 
 	path := filepath.Join(t.TempDir(), "tools.json")
 	os.WriteFile(path, []byte(`{"tools": {"calculate": "off", "get_current_time": "allow"}, "seen": []}`), 0o644)
-	prefs, err := LoadToolPrefs(path)
+	prefs, err := config.LoadToolPrefs(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -271,10 +273,10 @@ func TestToolsOffMovesToProfiles(t *testing.T) {
 	if v := mustDefaultProfile(t, cs).Values.ToolsOff; !slices.Equal(v, []string{"calculate"}) {
 		t.Errorf("プロファイルの「最初は使わない」に移す: %v", v)
 	}
-	if got, _, _ := cs.Get(ctx, old.ID); got.Settings.ToolPolicies["calculate"] != ToolOn {
+	if got, _, _ := cs.Get(ctx, old.ID); got.Settings.ToolPolicies["calculate"] != config.ToolOn {
 		t.Errorf("会話の上書きはそのまま: %v", got.Settings.ToolPolicies)
 	}
-	if got, _, _ := cs.Get(ctx, other.ID); got.Settings.ToolPolicies["calculate"] != ToolOff {
+	if got, _, _ := cs.Get(ctx, other.ID); got.Settings.ToolPolicies["calculate"] != config.ToolOff {
 		t.Errorf("上書きの無い会話は、今までどおり使わない: %v", got.Settings.ToolPolicies)
 	}
 	b, _ := os.ReadFile(path)
@@ -284,7 +286,7 @@ func TestToolsOffMovesToProfiles(t *testing.T) {
 
 	// 新しい会話には上書き(off)として写り、会話で使うにもできる
 	c := mustCreate(t, cs)
-	if c.Settings.ToolPolicies["calculate"] != ToolOff {
+	if c.Settings.ToolPolicies["calculate"] != config.ToolOff {
 		t.Errorf("新しい会話に写す: %v", c.Settings.ToolPolicies)
 	}
 	c.Settings.ToolPolicies = nil
@@ -351,4 +353,18 @@ func TestSharedProfiles(t *testing.T) {
 	if _, err := cs.DefaultsOf(ctx, shared.ID); err == nil {
 		t.Error("もう配られていないものは新しい会話で選べない")
 	}
+}
+
+// toolPrefsFrom は、tools.json に body を書いて読んだ扱いの既定(中身は config パッケージの中なので、ファイルを通して作る)。
+func toolPrefsFrom(t *testing.T, body string) *config.ToolPrefs {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "tools.json")
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p, err := config.LoadToolPrefs(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p
 }

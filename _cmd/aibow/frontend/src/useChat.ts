@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ChatService, isCancel, onChat } from "./backend";
 import type { Call } from "./backend";
-import type { ToolPolicy } from "../bindings/github.com/secondarykey/aibow";
+import type { ToolPolicy } from "../bindings/github.com/secondarykey/aibow/config";
 import type { ChatEvent, ConfirmRequest, FileCheck, StoredMessage } from "../bindings/github.com/secondarykey/aibow";
 import { lastIndex, messageItems, thinkLabel, toolCount, turnView, withConfirm } from "./transcript";
 import type { AssistantView, Transcript } from "./transcript";

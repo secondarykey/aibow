@@ -9,7 +9,7 @@ package main
 // 生成が通る2本の道の両方に書き足さず、aibow-server が engine を渡すところで1か所だけ包む(デコレータの形)。
 // 包む側は、だれが・どの道で・何のために呼んだかを ctx から読む:
 //   - だれ:API キーかログインの人(auth.UserFrom)、なければ会話の持ち主(aibow.UserOf。ログインなしの形の local)
-//   - 道・用途・会話・順番待ち:呼ぶ側が付けた付箋(genlog)
+//   - 道・用途・会話・順番待ち:呼ぶ側が付けた付箋(usage パッケージ)
 //
 // 記録は使えるかどうかには関わらないので、書けなくても生成は止めない(Warn のログだけ。決定事項 11。最後に使った日と同じ考え方)。
 
@@ -27,13 +27,13 @@ import (
 	"github.com/secondarykey/aibow/auth"
 	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/format"
-	"github.com/secondarykey/aibow/genlog"
 	"github.com/secondarykey/aibow/log"
+	"github.com/secondarykey/aibow/usage"
 )
 
 // generationLog は、記録を書く先(本物は *store.SQLite)。名前を写すために、利用者も読む。
 type generationLog interface {
-	AddGeneration(ctx context.Context, r genlog.Record) error
+	AddGeneration(ctx context.Context, r usage.Record) error
 	UserByID(ctx context.Context, id uuid.UUID) (auth.User, error)
 }
 
@@ -75,8 +75,8 @@ func logSequence(st engine.GenerateStats) {
 }
 
 func (r *recorder) record(ctx context.Context, at time.Time, model string, st engine.GenerateStats, genErr error) {
-	j := genlog.JobOf(ctx)
-	rec := genlog.Record{
+	j := usage.JobOf(ctx)
+	rec := usage.Record{
 		ID: uuid.NewV7(), At: at, Route: j.Route, Purpose: j.Purpose, Conversation: j.Conversation, Model: model,
 		PromptTokens: st.PromptTokens, ReusedTokens: st.ReusedTokens, GenTokens: st.GenTokens, ImageTokens: st.ImageTokens,
 		PromptSec: st.PromptSec, GenSec: st.GenSec, EncodeSec: st.EncodeSec, StopReason: st.StopReason,
@@ -88,9 +88,9 @@ func (r *recorder) record(ctx context.Context, at time.Time, model string, st en
 		rec.StopReason = "error"
 	}
 	if rec.Purpose == "" {
-		rec.Purpose = genlog.PurposeReply
+		rec.Purpose = usage.PurposeReply
 	}
-	if d, ok := genlog.TakeWait(ctx); ok {
+	if d, ok := usage.TakeWait(ctx); ok {
 		sec := d.Seconds()
 		rec.WaitSec = &sec
 	}
@@ -129,9 +129,9 @@ func asLocal(next http.Handler) http.Handler {
 
 // ---- 使用量を見る口(0033 の段2・段3) ----------------------------------------------------
 //
-//	GET /_aibow/admin/usage?days=7                  利用者ごと([]genlog.Total。GPU の秒数の多い順)
+//	GET /_aibow/admin/usage?days=7                  利用者ごと([]usage.Total。GPU の秒数の多い順)
 //	GET /_aibow/admin/usage/user?id=<ID>&days=7     1人のモデルごと・日ごと({"models", "days"}。id が空ならだれでもない生成の分)
-//	GET /_aibow/auth/usage                          自分の今日・7日・30日(genlog.Mine)
+//	GET /_aibow/auth/usage                          自分の今日・7日・30日(usage.Mine)
 //
 // days は今日を含めた日数(1〜366。書かなければ 7)。日の区切りはサーバーの PC の時刻。
 // 全員の分を見られるのは、ログインした管理者だけ(利用者のタブと同じ線)。ログインなしの形(利用者は local だけ)では、
@@ -140,16 +140,16 @@ func asLocal(next http.Handler) http.Handler {
 
 // usageStore は、使用量を読む先(本物は *store.SQLite)。
 type usageStore interface {
-	UsageByUser(ctx context.Context, since time.Time) ([]genlog.Total, error)
-	UsageOfUser(ctx context.Context, user string, since time.Time) (genlog.Total, error)
-	UsageByModel(ctx context.Context, user string, since time.Time) ([]genlog.Total, error)
-	UsageByDay(ctx context.Context, user string, since time.Time) ([]genlog.Total, error)
+	UsageByUser(ctx context.Context, since time.Time) ([]usage.Total, error)
+	UsageOfUser(ctx context.Context, user string, since time.Time) (usage.Total, error)
+	UsageByModel(ctx context.Context, user string, since time.Time) ([]usage.Total, error)
+	UsageByDay(ctx context.Context, user string, since time.Time) ([]usage.Total, error)
 }
 
 // usageDetail は、1人の使用量の内訳。
 type usageDetail struct {
-	Models []genlog.Total `json:"models"`
-	Days   []genlog.Total `json:"days"`
+	Models []usage.Total `json:"models"`
+	Days   []usage.Total `json:"days"`
 }
 
 // adminUsageHandler は、全員の使用量の口(/_aibow/admin/usage の下)。now はテストで時刻を決めるため。
@@ -223,12 +223,12 @@ func myUsageHandler(st usageStore, login bool, now func() time.Time) http.Handle
 			id = u.ID
 		}
 		t := now()
-		var out genlog.Mine
+		var out usage.Mine
 		for _, p := range []struct {
-			total *genlog.Total
+			total *usage.Total
 			days  int
 		}{{&out.Today, 1}, {&out.Week, 7}, {&out.Month, 30}} {
-			v, err := st.UsageOfUser(r.Context(), id.String(), genlog.Since(t, p.days))
+			v, err := st.UsageOfUser(r.Context(), id.String(), usage.Since(t, p.days))
 			if err != nil {
 				writeAdminError(w, http.StatusInternalServerError, err)
 				return
@@ -250,5 +250,5 @@ func usageSince(w http.ResponseWriter, r *http.Request, now time.Time) (time.Tim
 		}
 		days = n
 	}
-	return genlog.Since(now, days), true
+	return usage.Since(now, days), true
 }

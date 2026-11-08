@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/secondarykey/aibow/config"
 	"github.com/secondarykey/aibow/tool"
 )
 
@@ -109,7 +110,7 @@ func TestCreateRefusesFixedChange(t *testing.T) {
 func TestOffToolsAreHidden(t *testing.T) {
 	g := &fakeGen{content: "ok"}
 	cs, st, c := newToolConversation(t, g)
-	c.Settings.ToolPolicies = map[string]ToolPolicy{"calculate": ToolOn}
+	c.Settings.ToolPolicies = map[string]config.ToolPolicy{"calculate": config.ToolOn}
 	if err := cs.UpdateSettings(ctx, c.ID, c.Settings); err != nil {
 		t.Fatal(err)
 	}
@@ -122,16 +123,16 @@ func TestOffToolsAreHidden(t *testing.T) {
 	got, _, _ := cs.Get(ctx, c.ID)
 	states, _ := cs.ConversationToolStates(ctx, c.ID, got.Settings)
 	if i := slices.IndexFunc(states[0].Tools, func(s ToolState) bool { return s.Name == "calculate" }); i < 0 ||
-		states[0].Tools[i].Policy != ToolOff || states[0].Tools[i].From != PolicyFromProfile {
+		states[0].Tools[i].Policy != config.ToolOff || states[0].Tools[i].From != PolicyFromProfile {
 		t.Errorf("画面には「プロファイルで使えない」と返す: %+v", states[0].Tools)
 	}
 
 	// 使えないツールの上書きは、新しく書けない(消すのはよい)。確認のカードからも書けない
-	got.Settings.ToolPolicies = map[string]ToolPolicy{"calculate": ToolAllow}
+	got.Settings.ToolPolicies = map[string]config.ToolPolicy{"calculate": config.ToolAllow}
 	if err := cs.UpdateSettings(ctx, c.ID, got.Settings); err == nil {
 		t.Error("使えないツールの上書きは変えられない")
 	}
-	if err := cs.SetToolPolicy(ctx, c.ID, "calculate", ToolAllow); err == nil {
+	if err := cs.SetToolPolicy(ctx, c.ID, "calculate", config.ToolAllow); err == nil {
 		t.Error("確認のカードからも書けない")
 	}
 	got.Settings.ToolPolicies = nil
@@ -141,7 +142,7 @@ func TestOffToolsAreHidden(t *testing.T) {
 	// ほかの項目を変えるだけなら、残っている上書きがあっても保存できる
 	setRules(t, cs, st, func(p *Profile) { p.Rules.Off.Tools = []string{"get_current_time"} })
 	got, _, _ = cs.Get(ctx, c.ID)
-	got.Settings.ToolPolicies = map[string]ToolPolicy{"calculate": ToolOff}
+	got.Settings.ToolPolicies = map[string]config.ToolPolicy{"calculate": config.ToolOff}
 	cs.UpdateSettings(ctx, c.ID, got.Settings)
 	setRules(t, cs, st, func(p *Profile) { p.Rules.Off.Tools = []string{"calculate"} })
 	got, _, _ = cs.Get(ctx, c.ID)

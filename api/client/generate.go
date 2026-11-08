@@ -26,8 +26,8 @@ import (
 
 	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/format"
-	"github.com/secondarykey/aibow/genlog"
 	"github.com/secondarykey/aibow/tool"
+	"github.com/secondarykey/aibow/usage"
 )
 
 // ---- 送る JSON -------------------------------------------------------------------------
@@ -231,7 +231,7 @@ func (c *Client) Generate(ctx context.Context, p format.Prompt, opt engine.Gener
 	req.Stream = true
 	req.Temperature, req.MaxTokens, req.PresencePenalty = &opt.Temperature, opt.MaxTokens, &opt.PresencePenalty
 	req.Aibow = &aibowRequest{ReturnPrompt: true}
-	if j := genlog.JobOf(ctx); j.Purpose != "" {
+	if j := usage.JobOf(ctx); j.Purpose != "" {
 		req.Aibow.Purpose = j.Purpose
 		if j.Conversation != (uuid.UUID{}) {
 			req.Aibow.Conversation = j.Conversation.String()

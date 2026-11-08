@@ -1,4 +1,4 @@
-package aibow
+package config
 
 import (
 	"os"

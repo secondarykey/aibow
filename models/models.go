@@ -274,6 +274,26 @@ func IDOf(id string) string {
 	return id
 }
 
+// LoadAppSettings は保存先から設定を読む。人ごとの設定(表示の設定・新しい会話の既定)は ctx の利用者のもの。
+// 保存されていない項目は initial の値のまま(環境変数から作った初期値)。
+// 画面で一度変えると保存先に入るので、以降は環境変数より保存した値が優先される。
+//
+// LayersByID は、モデルごとの層の数のキーを、今の形のモデルの ID にする(IDOf)。
+// 以前の形と今の形の両方があれば、今の形の値を使う(読み替えたあとに覚え直した値のほうが新しいため)。nil なら空のマップ。
+func LayersByID(layers map[string]int) map[string]int {
+	out := make(map[string]int, len(layers))
+	for id, n := range layers {
+		if now := IDOf(id); now != id {
+			if _, ok := layers[now]; ok {
+				continue
+			}
+			id = now
+		}
+		out[id] = n
+	}
+	return out
+}
+
 // Find は ID でモデルを探す。
 // "ollama:名前" か "file:ファイル名"(以前の形 "file:パス" も読み替える)のほか、GGUF ファイルのパスを直接書いてもよい(AIBOW_MODEL 用)。
 // models フォルダの外にあるファイルも、パスを指定すれば使える(一覧には出ないので、ほかのモデルに替えたあとは ID では戻れない)。

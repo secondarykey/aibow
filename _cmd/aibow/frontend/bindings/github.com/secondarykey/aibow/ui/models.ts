@@ -9,6 +9,9 @@ import * as aibow$0 from "../models.js";
 import * as client$0 from "../api/client/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as config$0 from "../config/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as engine$0 from "../engine/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -195,6 +198,6 @@ export interface WorkspaceView {
      * (worktree は PC のフォルダなので。会話の DB には「worktree で作業する」の切り替えだけを置く)。
      * 設定の画面からは変えない(Update は今の値を残す)。作る・捨てるのは会話の仕組み(worktree.go)
      */
-    "worktrees"?: aibow$0.WorkspaceWorktree[] | null;
+    "worktrees"?: config$0.WorkspaceWorktree[] | null;
     "folders": FolderView[] | null;
 }

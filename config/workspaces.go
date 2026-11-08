@@ -1,4 +1,4 @@
-package aibow
+package config
 
 // workspaces.go: ワークスペース(名前の付いた、PC のフォルダの組。0035)と、その置き場所(workspaces.json)。
 //
@@ -9,7 +9,7 @@ package aibow
 // コーディングエージェントは「どのソースに対して働くか」が先にあり、会話はその上の1回の作業。
 // 対象(ワークスペース)を会話から切り離しておくと、同じ対象で何度も会話を始められ、会話を消しても対象の登録は残る。
 //
-// 置き場所の分け方(settingsfile.go・connectionfile.go)では、tools.json と同じ「画面で変えるが、その PC の人が決めること」:
+// 置き場所の分け方(doc.go)では、tools.json と同じ「画面で変えるが、その PC の人が決めること」:
 //
 //	ワークスペース = PC のフォルダの組 … workspaces.json(パスは PC ごと。人と共有しない)
 //	会話           = 1回の作業        … 会話の DB(ワークスペースの ID だけ)
@@ -20,7 +20,6 @@ package aibow
 // 「作業領域」(WorkspaceSettings・ensureWorkspace。モデルの KV キャッシュの置き場)とは別のもの。名前が似ているので気をつける。
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -117,7 +116,7 @@ func LoadWorkspaces(path string) (*Workspaces, error) {
 	var f workspacesFile
 	if err == nil {
 		if err = json.Unmarshal(data, &f); err != nil {
-			err = fmt.Errorf("%s: %w", jsonErrorLine(data, err), err)
+			err = fmt.Errorf("%s: %w", JSONErrorLine(data, err), err)
 		}
 	}
 	if err == nil {
@@ -346,8 +345,8 @@ func (w *Workspaces) Worktree(conv string) (wt WorkspaceWorktree, workspace stri
 	return WorkspaceWorktree{}, "", false
 }
 
-// addWorktree は、ワークスペース id に会話の worktree を結び付けて、workspaces.json に書く。
-func (w *Workspaces) addWorktree(id string, wt WorkspaceWorktree) error {
+// AddWorktree は、ワークスペース id に会話の worktree を結び付けて、workspaces.json に書く。
+func (w *Workspaces) AddWorktree(id string, wt WorkspaceWorktree) error {
 	return w.update(func(list *[]Workspace) error {
 		i := slices.IndexFunc(*list, func(ws Workspace) bool { return ws.ID == id })
 		if i < 0 {
@@ -358,8 +357,8 @@ func (w *Workspaces) addWorktree(id string, wt WorkspaceWorktree) error {
 	})
 }
 
-// removeWorktree は、会話 conv の worktree の結び付けを消す(無ければ何もしない)。
-func (w *Workspaces) removeWorktree(conv string) error {
+// RemoveWorktree は、会話 conv の worktree の結び付けを消す(無ければ何もしない)。
+func (w *Workspaces) RemoveWorktree(conv string) error {
 	return w.update(func(list *[]Workspace) error {
 		for i := range *list {
 			(*list)[i].Worktrees = slices.DeleteFunc((*list)[i].Worktrees, func(t WorkspaceWorktree) bool { return t.Conversation == conv })
@@ -439,52 +438,4 @@ func samePath(a, b string) bool {
 // IsGitRepo は、フォルダがリポジトリ(.git がある)か。worktree では .git がファイルなので、ある・なしだけを見る(決定事項 2)。
 func IsGitRepo(path string) bool {
 	return git.IsRepo(path) // 見分け方は git にまとめた(モデルに見せる Git のツールを出すかも同じ見分け方で決める。0041)
-}
-
-// SetWorkspaces は、その PC のワークスペース(workspaces.json)を決める(アプリの起動時に1回)。
-// 決めなければ、ワークスペースを選んだ会話でもフォルダのツールを出さない(見つからないワークスペースと同じ扱い)。
-func (cs *Conversations) SetWorkspaces(w *Workspaces) {
-	cs.workspaces = w
-}
-
-// MigrateWorkDirs は、ワークスペースより前の会話の作業フォルダ(WorkDir)を、ワークスペースに移す(0035 の段1。起動したときに1回)。
-//
-// 移すのは、そのパスがこの PC にある会話だけ。パスごとに1つのワークスペース(フォルダ1つ・メイン・書く。名前はフォルダ名)を作り、
-// 会話の設定をその ID に置き換えて、WorkDir を空にする。パスが無いもの(別の PC で選んだフォルダ)はそのまま残し、
-// この PC では使わない(workDir は WorkDir を見ない)。そのパスのある PC で起動したときに、そちらで移せるように。
-// aibow-server につないでいるときの会話(server.db)も、つないでいる PC で同じように移す(保存の口が違うだけ)。
-//
-// 移した数と、この PC に無いので残した数を返す。
-func (cs *Conversations) MigrateWorkDirs(ctx context.Context) (moved, kept int, err error) {
-	if cs.workspaces == nil || cs.noWorkDir {
-		return 0, 0, nil
-	}
-	list, err := cs.store.ListConversations(ctx)
-	if err != nil {
-		return 0, 0, err
-	}
-	for _, c := range list {
-		dir := c.Settings.WorkDir
-		if dir == "" {
-			continue
-		}
-		if st, err := os.Stat(dir); err != nil || !st.IsDir() || !filepath.IsAbs(dir) {
-			kept++
-			continue
-		}
-		// 両方ある(移したあとに古い版で開いて作業フォルダを決めた、など)ときは、今のワークスペースを残して古いほうを捨てる
-		if c.Settings.Workspace == "" {
-			ws, err := cs.workspaces.CreateFromFolder(dir)
-			if err != nil {
-				return moved, kept, fmt.Errorf("会話 %s の作業フォルダ %s をワークスペースに移せません: %w", c.ID, dir, err)
-			}
-			c.Settings.Workspace = ws.ID
-		}
-		c.Settings.WorkDir = ""
-		if err := cs.store.UpdateConversation(ctx, c); err != nil {
-			return moved, kept, fmt.Errorf("会話 %s の作業フォルダをワークスペースに移せません: %w", c.ID, err)
-		}
-		moved++
-	}
-	return moved, kept, nil
 }

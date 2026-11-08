@@ -14,6 +14,7 @@ import (
 	"github.com/secondarykey/aibow"
 	apiclient "github.com/secondarykey/aibow/api/client"
 	"github.com/secondarykey/aibow/auth"
+	"github.com/secondarykey/aibow/config"
 	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/store"
 )
@@ -39,7 +40,7 @@ func TestRoundTrip(t *testing.T) {
 	now := time.Now().Truncate(time.Microsecond)
 	conv := aibow.Conversation{ID: uuid.NewV7(), Title: "t", CreatedAt: now, UpdatedAt: now,
 		Settings: aibow.ConversationSettings{Model: "ollama:qwen3.5:4b", System: "sys <b>&", Temperature: 0.7, Compact: aibow.CompactSummary,
-			HistoryTokens: 8192, ReplyTokens: 4096, MCPServers: []string{"fs"}, ToolPolicies: map[string]aibow.ToolPolicy{"run_command": aibow.ToolOff}}}
+			HistoryTokens: 8192, ReplyTokens: 4096, MCPServers: []string{"fs"}, ToolPolicies: map[string]config.ToolPolicy{"run_command": config.ToolOff}}}
 	if err := c.CreateConversation(ctx, conv); err != nil {
 		t.Fatal(err)
 	}

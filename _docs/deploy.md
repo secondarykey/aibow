@@ -5,8 +5,8 @@
 | ファイル | 役割 |
 |---|---|
 | `_cmd/aibow/version` | バージョンの唯一の正。`//go:embed` で exe に入る |
-| `_cmd/version.go` | `version` を config.yml / package.json / `_cmd/aibow-mcp/version` / `_cmd/aibow-server/version` に書き写すスクリプト(リポジトリのルートで `go run _cmd/version.go`) |
-| `_cmd/aibow-mcp/version` / `appversion.go`(`_cmd/aibow-server` も同じ) | MCP のサーバー(aibow-mcp)と OpenAI 互換 API(aibow-server)のバージョン。`_cmd/aibow/version` の写しで、手で書き換えない(`//go:embed` は自分のフォルダの下しか埋め込めないため写しを置く)。exe(`go build`・`go install`)は `version` のまま、`go run` で起動したものは patch を1つ上げて `+dev`(自分の exe が `go-build…` の一時フォルダにあるかで見分ける) |
+| `_cmd/version.go` | `version` を config.yml / package.json / `internal/appversion/version` に書き写すスクリプト(リポジトリのルートで `go run _cmd/version.go`) |
+| `internal/appversion/version` / `appversion.go` | MCP のサーバー(aibow-mcp)と OpenAI 互換 API(aibow-server)のバージョン(2つの exe で1つを使う)。`_cmd/aibow/version` の写しで、手で書き換えない(`//go:embed` は自分のフォルダの下しか埋め込めないため写しを置く)。exe(`go build`・`go install`)は `version` のまま、`go run` で起動したものは patch を1つ上げて `+dev`(自分の exe が `go-build…` の一時フォルダにあるかで見分ける) |
 | `_cmd/aibow/appversion.go` / `build_dev.go` / `build_production.go` | 画面・ウィンドウの名前・ログに出すバージョン。`wails3 dev` で起動したものは patch を1つ上げて `+dev` を付ける(`0.3.1` なら `0.3.2+dev`。まだデプロイしていない次のバージョンを作っている途中のため)。リリースのビルドは `version` のまま。見分けは、Taskfile がリリースのビルドにだけ付ける `production` のビルドタグ(Taskfile は変えない) |
 | `_cmd/aibow/Taskfile.local.yml` | ローカルデプロイ(`wails3 task local:deploy`)。各自が持つ個人用のファイルで、**Git に入れない(ひな形もコミットしない)**。`Taskfile.yml` から optional で読む |
 | `.github/workflows/versionup.yml` | 正式なリリース。`main` への PR のマージで版を決め、ビルド情報が変われば PR(`chore: version …`)を作ってマージし、`v`+バージョンのタグを PAT で push する |
@@ -62,6 +62,6 @@ main の保護(ブランチの保護かルールセット)で「マージの前�
 - `v`+今のバージョンのタグがある(= リリース済み)なら、deploy が patch を自動で上げる。minor / major は `go run _cmd/version.go -bump` で上げてから deploy し、PR を出す
 - `Taskfile.local.yml` とそのひな形・コピーはコミットしない(インストール先などローカルの設定をリポジトリに残さないため。ユーザーの方針)
 - `Taskfile.local.yml` のタスクを、コミットする `Taskfile.yml` のタスクから呼ばない(持っていない環境で壊れる)
-- deploy がビルド情報としてコミットするファイル(`Taskfile.local.yml` の `BUILD_INFO_FILES`)には `../aibow-mcp/version` と `../aibow-server/version` も入れる(入れないと、バージョンを上げたときに写しだけがコミットされずに残る)
+- deploy がビルド情報としてコミットするファイル(`Taskfile.local.yml` の `BUILD_INFO_FILES`)には `../../internal/appversion/version` も入れる(入れないと、バージョンを上げたときに写しだけがコミットされずに残る。2026-11-08 までは `../aibow-mcp/version` と `../aibow-server/version` の2つだった)
 - deploy を試すときは `DEPLOY_DEST` を一時フォルダにし、試しに作ったコミットは消しておく
 - 手でタグを作って push しない(`release.yml` が動き、リリースの下書きができる)。`git push --tags` も、手元にだけあるタグを全部 push してしまうので使わない

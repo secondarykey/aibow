@@ -2,7 +2,7 @@ package ui
 
 // workspaces.go: 設定の画面の「ワークスペース」と、入力欄の上のワークスペースを選ぶ部品から呼ぶメソッド(0035)。
 //
-// 中身は aibow.Workspaces にあり、ここは画面との中継だけ。ワークスペースは PC のフォルダの組なので、デスクトップのアプリだけ。
+// 中身は config.Workspaces にあり、ここは画面との中継だけ。ワークスペースは PC のフォルダの組なので、デスクトップのアプリだけ。
 // ブラウザ(aibow-server)の画面用の口には載せない(web.go の browserMethods に入れない)。口の作りを間違えても、
 // サーバーの PC のフォルダを登録できないよう、ここでも断る(workspaces が nil)。
 
@@ -11,7 +11,7 @@ import (
 	"errors"
 	"os"
 
-	"github.com/secondarykey/aibow"
+	"github.com/secondarykey/aibow/config"
 	"github.com/secondarykey/aibow/log"
 )
 
@@ -27,19 +27,19 @@ type WorkspaceList struct {
 
 // WorkspaceView は、画面に出すワークスペース1つ。
 type WorkspaceView struct {
-	aibow.Workspace
+	config.Workspace
 	Folders []FolderView `json:"folders"`
 }
 
 // FolderView は、画面に出すフォルダ1つ。この PC にあるか・リポジトリかを添える(どちらもそのつど見る)。
 type FolderView struct {
-	aibow.WorkspaceFolder
+	config.WorkspaceFolder
 	Missing bool `json:"missing,omitempty"` // この PC に無い(消した・ドライブを外した)
 	Git     bool `json:"git,omitempty"`     // .git がある
 }
 
 // workspaceStore は、画面からワークスペースを使う係(使えなければエラー)。
-func (s *Service) workspaceStore() (*aibow.Workspaces, error) {
+func (s *Service) workspaceStore() (*config.Workspaces, error) {
 	if s.startupErr != nil {
 		return nil, s.startupErr
 	}
@@ -62,7 +62,7 @@ func (s *Service) Workspaces() WorkspaceList {
 	for _, ws := range w.List() {
 		v := WorkspaceView{Workspace: ws, Folders: []FolderView{}}
 		for _, f := range ws.Folders {
-			v.Folders = append(v.Folders, FolderView{WorkspaceFolder: f, Missing: !isDir(f.Path), Git: aibow.IsGitRepo(f.Path)})
+			v.Folders = append(v.Folders, FolderView{WorkspaceFolder: f, Missing: !isDir(f.Path), Git: config.IsGitRepo(f.Path)})
 		}
 		r.Workspaces = append(r.Workspaces, v)
 	}
@@ -71,10 +71,10 @@ func (s *Service) Workspaces() WorkspaceList {
 
 // CreateWorkspace は、フォルダ path 1つのワークスペースを作る(入力欄の上の「フォルダから新しく作る」・設定の画面)。
 // 同じフォルダ1つだけのワークスペースがあれば、それを返す。
-func (s *Service) CreateWorkspace(path string) (aibow.Workspace, error) {
+func (s *Service) CreateWorkspace(path string) (config.Workspace, error) {
 	w, err := s.workspaceStore()
 	if err != nil {
-		return aibow.Workspace{}, err
+		return config.Workspace{}, err
 	}
 	ws, err := w.CreateFromFolder(path)
 	if err != nil {
@@ -86,7 +86,7 @@ func (s *Service) CreateWorkspace(path string) (aibow.Workspace, error) {
 
 // UpdateWorkspace は、ワークスペース ws.ID の名前とフォルダの組を変える(設定の画面の「ワークスペース」)。
 // 次の送信から効く(ツールは送信のたびにワークスペースから作るため)。
-func (s *Service) UpdateWorkspace(ws aibow.Workspace) error {
+func (s *Service) UpdateWorkspace(ws config.Workspace) error {
 	w, err := s.workspaceStore()
 	if err != nil {
 		return err

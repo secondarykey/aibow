@@ -40,8 +40,8 @@ import (
 	"uuid"
 
 	"github.com/secondarykey/aibow"
-	"github.com/secondarykey/aibow/genlog"
 	"github.com/secondarykey/aibow/log"
+	"github.com/secondarykey/aibow/usage"
 )
 
 // browserMethods は、ブラウザから呼べる Service のメソッド。
@@ -129,7 +129,7 @@ func Handler(s *Service, ev *Events, who Who) http.Handler {
 			return
 		}
 		// 道の付箋は、ここから始まる生成をブラウザの会話として使用量に記録するため(0033)
-		ctx := genlog.WithRoute(withCaller(aibow.WithUser(r.Context(), c.ID), c), genlog.RouteBrowser)
+		ctx := usage.WithRoute(withCaller(aibow.WithUser(r.Context(), c.ID), c), usage.RouteBrowser)
 		call(w, r.WithContext(ctx), name, m)
 	})
 	mux.HandleFunc("GET /_aibow/ui/events", func(w http.ResponseWriter, r *http.Request) {

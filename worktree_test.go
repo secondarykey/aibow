@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/secondarykey/aibow/config"
 	"github.com/secondarykey/aibow/format"
 	"github.com/secondarykey/aibow/git"
 )
@@ -256,7 +257,7 @@ func TestWorktreeRemovedWithConversation(t *testing.T) {
 // Git のリポジトリでないフォルダでは、切り替えを入れても本体を直接書くので、確認する(0039 の完了の条件 5)
 func TestWorktreeConfirmDefaults(t *testing.T) {
 	cs, c, repo := newWorktreeConversation(t, &fakeGen{})
-	policy := func(set ConversationSettings, name string) ToolPolicy {
+	policy := func(set ConversationSettings, name string) config.ToolPolicy {
 		for _, g := range cs.ToolStates(set) {
 			for _, ts := range g.Tools {
 				if ts.Name == name {
@@ -269,23 +270,23 @@ func TestWorktreeConfirmDefaults(t *testing.T) {
 	}
 	conv, _, _ := cs.Get(ctx, c.ID)
 	set := conv.Settings
-	for name, want := range map[string]ToolPolicy{"write_file": ToolAllow, "edit_file": ToolAllow, "run_command": ToolAsk} {
+	for name, want := range map[string]config.ToolPolicy{"write_file": config.ToolAllow, "edit_file": config.ToolAllow, "run_command": config.ToolAsk} {
 		if got := policy(set, name); got != want {
 			t.Errorf("worktree の会話の %s = %s, want %s", name, got, want)
 		}
 	}
-	set.ToolPolicies = map[string]ToolPolicy{"write_file": ToolAsk}
-	if got := policy(set, "write_file"); got != ToolAsk {
+	set.ToolPolicies = map[string]config.ToolPolicy{"write_file": config.ToolAsk}
+	if got := policy(set, "write_file"); got != config.ToolAsk {
 		t.Errorf("会話で確認するにした write_file = %s", got)
 	}
 	set.ToolPolicies = nil
 	set.Worktree = false
-	if got := policy(set, "write_file"); got != ToolAsk {
+	if got := policy(set, "write_file"); got != config.ToolAsk {
 		t.Errorf("切り替えを外した write_file = %s", got)
 	}
 
 	plain := ConversationSettings{Workspace: workspaceFor(t, cs, t.TempDir()), Worktree: true}
-	if got := policy(plain, "write_file"); got != ToolAsk {
+	if got := policy(plain, "write_file"); got != config.ToolAsk {
 		t.Errorf("リポジトリでないフォルダの write_file = %s", got)
 	}
 	if st := cs.WorktreeStateOf(ctx, c.ID, plain); st.Usable || !strings.Contains(st.Reason, "Git のリポジトリではありません") {

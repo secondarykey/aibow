@@ -20,8 +20,8 @@ aibow-server(`server.json`)の分は、あとで同じ部品で作る(今回は�
 
 ## 今の作り(2026-11-02、Chat がコードを読んで確かめた)
 
-- `settings.json`(`%APPDATA%\aibow\settings.json`・`AIBOW_SETTINGS`)の `mcpServers` を、起動したときに `aibow.LoadSettingsFile` で読む。`serverUrl`・`serverKey`・`serverCert` と同居している
-- 確かめるのは `aibow.CheckMCPServers`(名前の重なり・`ServerConfig.Validate`)。アプリと aibow-server(`server.json`)で共有している
+- `settings.json`(`%APPDATA%\aibow\settings.json`・`AIBOW_SETTINGS`)の `mcpServers` を、起動したときに `aibow.LoadSettingsFile`(今は `config.LoadSettingsFile`)で読む。`serverUrl`・`serverKey`・`serverCert` と同居している
+- 確かめるのは `aibow.CheckMCPServers`(今は `config.CheckMCPServers`。名前の重なり・`ServerConfig.Validate`)。アプリと aibow-server(`server.json`)で共有している
 - `_cmd/aibow/main.go` の `startMCP` が `client.New(configs)` で `Manager` を作る。**サーバーが1つも無ければ `Manager` を作らない(nil)**。`Manager` は名前の一覧 `names` を作ったときに固定で持つ
 - 会話の仕組みは `RemoteTools`(`Servers`・`Start`・`Tools`・`ListTools`)だけを見る。`ListTools` は「一時的に起動して一覧だけ受け取り、すぐ止める」(設定の画面で使っている)
 - 足したばかりのサーバーは、`tools.json` の `seen` に無ければ `notDefault` に入れる(`ToolPrefs.NoteServers`。起動したときだけ呼ばれる)
@@ -117,7 +117,7 @@ aibow-server(`server.json`)の分は、あとで同じ部品で作る(今回は�
 
 ### 2026-11-02(段1〜段4。Code)
 
-- 段1:`mcpfile.go`(`MCPFile`・`MergeMCPServers`・`MCPConfig`)。`Manager` は設定を差し替えられるようにした(`Update`・`TryTools`・`ServerConfig.Equal`)。テストは `mcpfile_test.go` と `mcp/client` の `TestUpdate`・`TestUpdateFromEmpty`・`TestTryTools`
+- 段1:`mcpfile.go`(今は `config/mcp.go`。`MCPFile`・`MergeMCPServers`・`MCPConfig`)。`Manager` は設定を差し替えられるようにした(`Update`・`TryTools`・`ServerConfig.Equal`)。テストは `mcpfile_test.go` と `mcp/client` の `TestUpdate`・`TestUpdateFromEmpty`・`TestTryTools`
 - 段2:`ui/mcpedit.go`(`MCPServerList`・`AddMCPServers`・`UpdateMCPServer`・`DeleteMCPServer`・`TryMCPServer`・`ParseMCPJSON`)。ブラウザの口(`browserMethods`)には載せず、`mcpConfig` が無ければ断る
 - 段3:設定の画面のタブ「MCP」と `McpEditor.tsx`(呼ぶ口 `McpEditorAPI` を外から渡す)
 - 段4:`_docs/mcp.md` の「画面から足す」・`_docs/usage.md`(MCP のサーバー・`AIBOW_MCP`)・`_docs/ui.md`・`_docs/structure.md`
@@ -140,7 +140,7 @@ Code が決めたこと:
 
 - ユーザーが「ボタンが無い」と気づいた。手元のサーバー5つがすべて settings.json に書いたもので、決定事項 13(もとの形)のとおり変えも消しもできなかった。
   もとの 13 はユーザーが決めたことではなく(0032 の「今回は出さない」を Chat が原則にした)、確かめずに作っていた。ユーザーと話して「mcp.json に寄せる」に改めた(決定事項 13)
-- `MCPFile.MoveFromSettings`(起動したときに settings.json の `mcpServers` を mcp.json へ移す)と `removeSettingsKey`(settings.json から `mcpServers` だけを消し、ほかの項目は並びも値も残す)を足した。`_cmd/aibow` の `startMCP` が呼ぶ。
+- `MCPFile.MoveFromSettings`(起動したときに settings.json の `mcpServers` を mcp.json へ移す)と `removeSettingsKey`(今は `config.RemoveSettingsKey`。settings.json から `mcpServers` だけを消し、ほかの項目は並びも値も残す)を足した。`_cmd/aibow` の `startMCP` が呼ぶ。
   テストは `TestMoveFromSettings`・`TestMoveFromSettingsFails`
 - Code が決めたこと:
   - mcp.json に同じ名前があれば、settings.json の設定にする(動いていたのは settings.json のほうなので、移しても動きが変わらない)。お知らせで伝える
