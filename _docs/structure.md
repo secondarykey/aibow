@@ -57,10 +57,10 @@ Ollama が保存したファイルを aibow が直接読むので、Ollama は�
 | `api/` | OpenAI 互換の API(`/v1/models`・`/v1/chat/completions`)。`engine` で生成し、会話の仕組みは持たない(履歴を持つのはクライアント)。HTTP は標準ライブラリの `net/http` |
 | `auth/` | aibow-server の利用者とログイン(ステップ10)。パスワードのハッシュ・cookie のセッション・ログインの口(`/_aibow/auth/`)・画面のアプリ用のトークン・本人がパスワードを決めるリンク・証明書のフィンガープリント。保存は `store/users.go`(server.db) |
 | `api/client/` | aibow-server につなぐクライアント(ステップ8)。画面のアプリが aibow-server につなぐとき、会話の仕組みに渡す生成の口になる |
-| `ui/service.go` | 画面から呼ばれる Go のメソッド(モデル・会話・設定・メーター・送信・今すぐ要約)。会話の仕組みとの中継だけをする。Wails を使わないので、デスクトップのアプリと aibow-server(ブラウザ向け。ステップ9)の両方で使う |
+| `ui/service.go` | 画面から呼ばれる Go のメソッドの係(`Service`)と、その作り方・起動と終了。メソッドは画面の区切りごとのファイルに分けている(`models.go`(モデル)・`appsettings.go`(アプリ全体と画面の設定)・`profiles.go`(プロファイル)・`tools.go`(MCP のサーバーとツールの扱い)・`conversations.go`(会話・メーター)・`share.go`(共有・ほかの人の会話を読む)・`groups.go`(グループ)・`send.go`(送信・今すぐ要約・ツールの確認))。会話の仕組みとの中継だけをする。Wails を使わないので、デスクトップのアプリと aibow-server(ブラウザ向け。ステップ9)の両方で使う |
 | `ui/modelhost.go` | モデルを扱う係。アプリの中で動かす形と、aibow-server につなぐ形の2つ |
 | `ui/serverhost.go` | aibow-server の中で、ブラウザの会話のモデルを扱う係(ステップ9)。作業領域は変えず、サーバーの PC の事情は見せない |
-| `ui/web.go` | ブラウザの画面用の HTTP の口(ステップ9)。`POST /_aibow/ui/call/{メソッド}` で `ui/service.go` のメソッドを呼び、`GET /_aibow/ui/events`(SSE)で経過を送る |
+| `ui/web.go` | ブラウザの画面用の HTTP の口(ステップ9)。`POST /_aibow/ui/call/{メソッド}` で `ui.Service` のメソッドを呼び、`GET /_aibow/ui/events`(SSE)で経過を送る |
 | `ui/settings.go` | 新しい会話の既定(システムプロンプトなど)。アプリと aibow-server のブラウザの会話で同じにする |
 | `web/` | 画面のビルド結果(`web/dist/app`。Git には入れない)。デスクトップのアプリと aibow-server が同じものを埋め込む。ビルドしていなければ `web/dist/index.html` の「画面がビルドされていません」が出る |
 | `ui/modelplaces.go` | アプリの中で動かすときに、設定の画面の「モデル」のタブで足した置き場所を `%APPDATA%\aibow\model-places.json` に覚える |
