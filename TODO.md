@@ -72,3 +72,4 @@ aibow に残っている課題の一覧(入口)。ルールと全体の構成は
 | ⬜ | aibow-mcp の `git_status`・`git_diff` を、Claude Code などほかのクライアントから | [0041-agent-prompt.md](_docs/features/0041-agent-prompt.md) |
 | ⬜ | aibow-server の base:頭を外すプロキシ・アプリの serverUrl に /aibow・デスクトップの画面(vite の base) | [0042-server-addr-base.md](_docs/features/0042-server-addr-base.md) |
 | ⬜ | 今の組の中の compact の画面(吹き出しの「省略して渡しました」・カードの札)と、水位を下回らない省略を見送る形を 4B で | [0040-compact-in-turn.md](_docs/features/0040-compact-in-turn.md) |
+| ⬜ | 設定の画面のエラーが次の操作で消える(ログインを続けて間違える・並べ方が変わらない) | [0043-clear-errors.md](_docs/features/0043-clear-errors.md) |
