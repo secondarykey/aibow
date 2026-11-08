@@ -12,8 +12,12 @@ import (
 // アプリ(aibow_<日付>.log)と同じフォルダに置くので、サーバーのものだと分かる別の名前にする
 const logPrefix = "aibow-mcp"
 
-// logKeepDays は、ログファイルを残す日数(今日を含む)。それより古いものを、書き始めたときと日付が変わったときに消す(アプリと同じ)
-const logKeepDays = 10
+// logKeepDays は、ログファイルを残す日数(今日を含む)。それより古いものを、書き始めたときと日付が変わったときに消す。
+// logCompressDays より古いものは gzip(.log.gz)にする(どちらもアプリと同じ)
+const (
+	logKeepDays     = 60
+	logCompressDays = 2
+)
 
 // startLog はログの出口を組む(aibow/log の Init)。形はアプリ(_cmd/aibow の startLog)にならう。
 //
@@ -39,11 +43,12 @@ func startLog() io.Closer {
 		}
 	}
 	c, err := log.Init(log.Options{
-		Dir:      dir,
-		KeepDays: logKeepDays,
-		Root:     log.LevelInfo,
-		Console:  true,
-		Prefix:   logPrefix,
+		Dir:          dir,
+		KeepDays:     logKeepDays,
+		CompressDays: logCompressDays,
+		Root:         log.LevelInfo,
+		Console:      true,
+		Prefix:       logPrefix,
 	})
 	log.SetLogger(log.Logger().With("pid", os.Getpid()))
 	if dir == "" {

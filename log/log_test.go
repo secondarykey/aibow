@@ -2,6 +2,7 @@ package log
 
 import (
 	"bytes"
+	"compress/gzip"
 	"io"
 	stdlog "log"
 	"log/slog"
@@ -225,6 +226,49 @@ func waitRemoved(t *testing.T, paths ...string) {
 			}
 			time.Sleep(10 * time.Millisecond)
 		}
+	}
+}
+
+// Init(CompressDays)は、今日を含めて CompressDays 日分を .log のまま残し、それより古いものを .log.gz にする。
+// KeepDays より古いものは消す(圧縮しない)。圧縮は「.gz を作ってから元の .log を消す」順なので、元が消えるのを待てば .gz はできている
+func TestInitCompressDays(t *testing.T) {
+	keepDefault(t)
+	dir := t.TempDir()
+	day := func(n int) string {
+		return filepath.Join(dir, "aibow_"+time.Now().AddDate(0, 0, -n).Format("20060102")+".log")
+	}
+	yesterday, older, oldest := day(1), day(2), day(60)
+	for _, p := range []string{yesterday, older, oldest} {
+		if err := os.WriteFile(p, []byte("記録 "+filepath.Base(p)+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	c, err := Init(Options{Dir: dir, KeepDays: 60, CompressDays: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	Info("書くと片付けが始まる")
+	c.Close()
+
+	waitRemoved(t, older, oldest)
+	if _, err := os.Stat(yesterday); err != nil {
+		t.Errorf("昨日のログは .log のまま残す: %v", err)
+	}
+	if _, err := os.Stat(oldest + ".gz"); !os.IsNotExist(err) {
+		t.Errorf("KeepDays より古いものは圧縮せずに消す: %v", err)
+	}
+	f, err := os.Open(older + ".gz")
+	if err != nil {
+		t.Fatalf("おとといのログが .log.gz になっていない: %v", err)
+	}
+	defer f.Close()
+	zr, err := gzip.NewReader(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := io.ReadAll(zr)
+	if want := "記録 " + filepath.Base(older) + "\n"; err != nil || string(b) != want {
+		t.Errorf("圧縮したものの中身 = %q, %v(want %q)", b, err, want)
 	}
 }
 

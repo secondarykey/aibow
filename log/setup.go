@@ -20,6 +20,10 @@ type Options struct {
 	// 消すのは wenteasy/log の RollingFileWriter(SetKeep)で、ファイルを開いたとき(最初に書いたとき・日付が変わって切り替えたとき)に
 	// 別の goroutine で動く。何日も動かし続ける aibow-server でも、日が変わるたびに片付く
 	KeepDays int
+	// CompressDays は、そのまま読める形で残す日数(今日を含む)。それより古いログファイルを gzip(<名前>.log.gz)にする。0 なら圧縮しない。
+	// 2 なら今日と昨日は .log のまま。ログは同じ形の行が続くので 1/9 ほどに縮む(2026-11-08 に手元のログで測った)。
+	// 圧縮するのも消すのと同じ時(SetCompressAfter)。KeepDays より古いものは、圧縮したものも消える
+	CompressDays int
 	// Root は出すレベル(これより下は出さない)。ゼロ値は Info。名前は ikkyoku の log に揃えた。
 	// アプリは dev で Info(開発中・学習で観察するもの)、配る exe で Notice(常に残したいもの)を渡す
 	Root slog.Level
@@ -60,7 +64,8 @@ func Init(opts Options) (io.Closer, error) {
 			// 片付けるのは <prefix>_<日付>.log(と .log.gz)にぴったり合うものだけ。異常終了の記録(<prefix>_crash.log・
 			// <prefix>_crash_<日時>.log)や頭の違うファイル(aibow-dev_…・aibow-mcp_…)には触らない
 			w.SetKeep(opts.KeepDays)
-			// 消せなかったことは残す(ログのために止めはしない)。wenteasy/log は w のロックを持たずに呼ぶので、ここから同じ w へ書いてよい
+			w.SetCompressAfter(opts.CompressDays)
+			// 消せなかった・圧縮できなかったことは残す(ログのために止めはしない)。wenteasy/log は w のロックを持たずに呼ぶので、ここから同じ w へ書いてよい
 			w.SetErrorHandler(func(err error) {
 				Warnf("古いログファイルを片付けられませんでした(%s): %v", opts.Dir, err)
 			})
