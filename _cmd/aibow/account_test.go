@@ -11,7 +11,7 @@ import (
 
 	apiclient "github.com/secondarykey/aibow/api/client"
 	"github.com/secondarykey/aibow/auth"
-	"github.com/secondarykey/aibow/localconf"
+	"github.com/secondarykey/aibow/config"
 	"github.com/secondarykey/aibow/store"
 )
 
@@ -39,12 +39,12 @@ func TestAppAccount(t *testing.T) {
 	// 画面でつないで起動した形(トークンはまだ無い)
 	path := filepath.Join(t.TempDir(), "connection.json")
 	conn := newConnection(appConfig{connPath: path, serverSource: serverScreen, serverURL: srv.URL,
-		conn: localconf.ConnectionFile{ServerURL: srv.URL}})
+		conn: config.ConnectionFile{ServerURL: srv.URL}})
 	conn.client = apiclient.New(srv.URL)
 	s := &ChatService{conn: conn}
-	load := func() localconf.ConnectionFile {
+	load := func() config.ConnectionFile {
 		t.Helper()
-		f, err := localconf.LoadConnectionFile(path)
+		f, err := config.LoadConnectionFile(path)
 		if err != nil {
 			t.Fatal(err)
 		}

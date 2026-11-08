@@ -1,4 +1,4 @@
-package localconf
+package config
 
 import (
 	"os"

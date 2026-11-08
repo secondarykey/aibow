@@ -24,23 +24,23 @@ import (
 	"time"
 
 	apiclient "github.com/secondarykey/aibow/api/client"
-	"github.com/secondarykey/aibow/localconf"
+	"github.com/secondarykey/aibow/config"
 	"github.com/secondarykey/aibow/log"
 )
 
 // connection は、つなぎ先を決めるのに要るもの(起動のときの設定から)。ChatService が持つ。
 type connection struct {
-	path         string                   // connection.json
-	settingsPath string                   // settings.json(手で書いたときに、どこに書いてあるかを画面に出す)
-	source       string                   // つなぎ先をどこで決めたか(serverSettings など。つながないなら空)
-	url          string                   // 今動いている形のつなぎ先
-	file         localconf.ConnectionFile // 起動のときに読んだ connection.json(今動いている形)
+	path         string                // connection.json
+	settingsPath string                // settings.json(手で書いたときに、どこに書いてあるかを画面に出す)
+	source       string                // つなぎ先をどこで決めたか(serverSettings など。つながないなら空)
+	url          string                // 今動いている形のつなぎ先
+	file         config.ConnectionFile // 起動のときに読んだ connection.json(今動いている形)
 
 	// 保存したもの(起動し直すと効く)。起動し直す前に、もう一度つなぎ直す・戻すこともあるので、今動いている形とは分けて持つ
 	mu      sync.Mutex
-	saved   localconf.ConnectionFile // 今の connection.json の中身(消したら空。信頼したつなぎ先 Known だけのこともある)
-	key     string                   // saved のトークン(ログアウトのときに aibow-server で消すため)
-	pending string                   // 保存したが、まだ効いていない形("server"・"direct"。無ければ空)
+	saved   config.ConnectionFile // 今の connection.json の中身(消したら空。信頼したつなぎ先 Known だけのこともある)
+	key     string                // saved のトークン(ログアウトのときに aibow-server で消すため)
+	pending string                // 保存したが、まだ効いていない形("server"・"direct"。無ければ空)
 
 	// client は、今動いている aibow-server のクライアント(つないでいなければ nil)。生成も保存もこれを使うので、
 	// キーを替えれば起動し直さずにログインし直せる(account.go。0031 の決定事項 44)
@@ -133,7 +133,7 @@ func (c *connection) remember(p apiclient.Probe) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	old := c.saved.Trusted()
-	k := localconf.KnownServer{URL: p.URL, Fingerprint: pinnedFingerprint(p)}
+	k := config.KnownServer{URL: p.URL, Fingerprint: pinnedFingerprint(p)}
 	if sameServer(old.URL, k.URL) {
 		k.User = old.User // 同じサーバーなら、最後にログインした名前を残す
 	}
@@ -182,14 +182,14 @@ func (s *ChatService) ConnectServer(req ConnectRequest) error {
 	if !p.Trusted {
 		return fmt.Errorf("aibow-server の証明書の指紋(%s)を確かめてから、つないでください", p.Fingerprint)
 	}
-	f := localconf.ConnectionFile{ServerURL: p.URL, Fingerprint: pinnedFingerprint(p)}
+	f := config.ConnectionFile{ServerURL: p.URL, Fingerprint: pinnedFingerprint(p)}
 	token := ""
 	if p.Login {
 		if token, err = login(&f, req); err != nil {
 			return err
 		}
 	}
-	f.Known = &localconf.KnownServer{URL: f.ServerURL, Fingerprint: f.Fingerprint, User: f.User}
+	f.Known = &config.KnownServer{URL: f.ServerURL, Fingerprint: f.Fingerprint, User: f.User}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	// ほかの aibow-server につなぎ替えるときは、前のトークンを消しておく(同じサーバーなら、同じ PC の前のトークンは今ので置き換わった)
@@ -206,7 +206,7 @@ func (s *ChatService) ConnectServer(req ConnectRequest) error {
 
 // login は名前とパスワードでアプリ用のトークンをもらい、f に入れる(包むのは SetToken)。もらったトークンで本当につながるかも確かめる。
 // もらったトークンも返す(起動し直す前にログアウトするとき、aibow-server で消すため)。
-func login(f *localconf.ConnectionFile, req ConnectRequest) (string, error) {
+func login(f *config.ConnectionFile, req ConnectRequest) (string, error) {
 	if strings.TrimSpace(req.Name) == "" || req.Password == "" {
 		return "", errors.New("この aibow-server はログインが要ります。名前とパスワードを入れてください")
 	}
@@ -235,13 +235,13 @@ func (s *ChatService) DisconnectServer() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.revoke()
-	var f localconf.ConnectionFile
+	var f config.ConnectionFile
 	if k := c.saved.Trusted(); k.URL != "" {
 		f.Known = &k
 		if err := f.Save(c.path); err != nil {
 			return err
 		}
-	} else if err := localconf.RemoveConnectionFile(c.path); err != nil {
+	} else if err := config.RemoveConnectionFile(c.path); err != nil {
 		return err
 	}
 	c.saved, c.key, c.pending = f, "", "direct"

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/secondarykey/aibow/localconf"
+	"github.com/secondarykey/aibow/config"
 )
 
 // lib が無く、つなぐ先も無いときのエラーの文。信頼したつなぎ先があれば、llama.cpp ではなくログインを促す(まだログインしていないだけなので)
@@ -23,7 +23,7 @@ func TestLibMissingMessage(t *testing.T) {
 		t.Fatalf("信頼したつなぎ先が無いとき: %v", err)
 	}
 
-	known := localconf.ConnectionFile{Known: &localconf.KnownServer{URL: "https://192.168.11.4:8089", Fingerprint: "AB:CD", User: "bob"}}
+	known := config.ConnectionFile{Known: &config.KnownServer{URL: "https://192.168.11.4:8089", Fingerprint: "AB:CD", User: "bob"}}
 	if err := known.Save(conn); err != nil {
 		t.Fatal(err)
 	}

@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/secondarykey/aibow/localconf"
+	"github.com/secondarykey/aibow/config"
 )
 
 // 信頼したつなぎ先は、確かめただけでも覚え(次の起動でつなぐ先にはしない)、ログアウトしても残る(2026-10-29、ユーザーと決めた)。
@@ -25,9 +25,9 @@ func TestConnectionKeepsKnownServer(t *testing.T) {
 
 	path := filepath.Join(t.TempDir(), "connection.json")
 	s := &ChatService{conn: newConnection(appConfig{connPath: path})}
-	load := func() localconf.ConnectionFile {
+	load := func() config.ConnectionFile {
 		t.Helper()
-		f, err := localconf.LoadConnectionFile(path)
+		f, err := config.LoadConnectionFile(path)
 		if err != nil {
 			t.Fatal(err)
 		}

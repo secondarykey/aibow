@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/secondarykey/aibow/config"
 	"github.com/secondarykey/aibow/log"
 )
 
@@ -32,12 +33,12 @@ func TestResolveOrder(t *testing.T) {
 	if err := fs.Parse([]string{"-config", path, "-lib", "arg-lib"}); err != nil {
 		t.Fatal(err)
 	}
-	var env envReader
+	var env config.Env
 	c, notices, err := resolve(fs, f, &env)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := config{Port: 9000, Ctx: 16384, Parallel: 2, Model: "env-model", Lib: "arg-lib", ModelsDir: "models", Host: "127.0.0.1", Login: true,
+	want := serverConfig{Port: 9000, Ctx: 16384, Parallel: 2, Model: "env-model", Lib: "arg-lib", ModelsDir: "models", Host: "127.0.0.1", Login: true,
 		File: path, StatePath: filepath.Join(dir, stateFileName), DBPath: filepath.Join(dir, dbFileName), ToolsPath: filepath.Join(dir, toolsFileName)}
 	if !reflect.DeepEqual(c, want) {
 		t.Errorf("設定:\n got  %+v\n want %+v", c, want)
@@ -65,7 +66,7 @@ func TestResolveLogin(t *testing.T) {
 		if err := fs.Parse(append([]string{"-config", path}, args...)); err != nil {
 			t.Fatal(err)
 		}
-		var env2 envReader
+		var env2 config.Env
 		c, _, err := resolve(fs, f, &env2)
 		if err != nil {
 			t.Fatal(err)
@@ -103,14 +104,14 @@ func TestResolveConfigErrors(t *testing.T) {
 		fs := flag.NewFlagSet("test", flag.ContinueOnError)
 		f := defineFlags(fs)
 		fs.Parse([]string{"-config", tc.path})
-		var env envReader
+		var env config.Env
 		if _, _, err := resolve(fs, f, &env); err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%s: エラーに %q が入っていません: %v", tc.path, tc.want, err)
 		}
 	}
 }
 
-// ログのレベル:-debug > 設定ファイルの logLevel > 既定(go run は Info。go test も go-build の下で動くので Info)。書き間違いはエラー
+// ログのレベル:-debug > 設定ファイルの logLevel > 既定(go run は Info。go test も go-build の下で動くので Info)。書き間違いは config の TestServerFileLogLevel
 func TestLogLevel(t *testing.T) {
 	for _, tc := range []struct {
 		file  string
@@ -123,14 +124,9 @@ func TestLogLevel(t *testing.T) {
 		{"warn", false, log.LevelWarn},
 		{"notice", false, log.LevelNotice},
 	} {
-		if got := logLevel(config{LogLevel: tc.file}, tc.debug); got != tc.want {
+		if got := logLevel(serverConfig{LogLevel: tc.file}, tc.debug); got != tc.want {
 			t.Errorf("logLevel(%q, %v) = %v, want %v", tc.file, tc.debug, got, tc.want)
 		}
-	}
-	path := filepath.Join(t.TempDir(), configFileName)
-	os.WriteFile(path, []byte(`{"logLevel": "verbose"}`), 0o644)
-	if _, _, err := loadConfigFile(path); err == nil || !strings.Contains(err.Error(), "logLevel") {
-		t.Errorf("書き間違い: %v", err)
 	}
 }
 
@@ -141,13 +137,13 @@ func TestResolveHost(t *testing.T) {
 	for _, k := range []string{"AIBOW_SERVER_HOST", "AIBOW_SERVER_LOGIN", "AIBOW_SERVER_TLS_CERT", "AIBOW_SERVER_TLS_KEY"} {
 		t.Setenv(k, "")
 	}
-	resolveArgs := func(args ...string) (config, []string, error) {
+	resolveArgs := func(args ...string) (serverConfig, []string, error) {
 		fs := flag.NewFlagSet("test", flag.ContinueOnError)
 		f := defineFlags(fs)
 		if err := fs.Parse(append([]string{"-config", path}, args...)); err != nil {
 			t.Fatal(err)
 		}
-		var env envReader
+		var env config.Env
 		return resolve(fs, f, &env)
 	}
 	c, notices, err := resolveArgs()
@@ -171,46 +167,6 @@ func TestResolveHost(t *testing.T) {
 	}
 }
 
-// server.json の mcpServers は、アプリの settings.json と同じ形で読み、同じように確かめる(0024 の決定事項 23)
-func TestConfigMCPServers(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, configFileName)
-	os.WriteFile(path, []byte(`{"mcpServers": {"fetch": {"command": "uvx", "args": ["mcp-server-fetch"]}}}`), 0o644)
-	file, _, err := loadConfigFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if f := file.MCPServers["fetch"]; f.Command != "uvx" || len(f.Args) != 1 {
-		t.Errorf("mcpServers: %+v", file.MCPServers)
-	}
-	os.WriteFile(path, []byte(`{"mcpServers": {"broken": {}}}`), 0o644)
-	if _, _, err := loadConfigFile(path); err == nil || !strings.Contains(err.Error(), "broken") {
-		t.Errorf("書き間違えたサーバーは、名前の分かるエラーのはず: %v", err)
-	}
-}
-
-// server.json の folders は、名前と絶対パスで、フォルダがあること(0024 の決定事項 29)
-func TestConfigFolders(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, configFileName)
-	docs := filepath.ToSlash(filepath.Join(dir, "docs"))
-	os.Mkdir(filepath.Join(dir, "docs"), 0o755)
-	os.WriteFile(path, []byte(`{"folders": {"docs": "`+docs+`"}}`), 0o644)
-	if file, _, err := loadConfigFile(path); err != nil || file.Folders["docs"] != docs {
-		t.Errorf("folders: %+v, %v", file.Folders, err)
-	}
-	for _, c := range []struct{ json, want string }{
-		{`{"folders": {"docs": "docs"}}`, "絶対パス"},
-		{`{"folders": {"docs": "` + docs + `/nothing"}}`, "フォルダがありません"},
-		{`{"folders": {" ": "` + docs + `"}}`, "名前が空"},
-	} {
-		os.WriteFile(path, []byte(c.json), 0o644)
-		if _, _, err := loadConfigFile(path); err == nil || !strings.Contains(err.Error(), c.want) {
-			t.Errorf("%s: %v", c.json, err)
-		}
-	}
-}
-
 // addr は host と port をまとめて書く形で、書いた所の強さで効く。同じ所に addr と host・port を書くとエラー(0042)
 func TestResolveAddr(t *testing.T) {
 	dir := t.TempDir()
@@ -225,7 +181,7 @@ func TestResolveAddr(t *testing.T) {
 	for _, k := range []string{"AIBOW_SERVER_HOST", "AIBOW_SERVER_PORT", "AIBOW_SERVER_ADDR", "AIBOW_SERVER_BASE", "AIBOW_SERVER_LOGIN"} {
 		t.Setenv(k, "")
 	}
-	resolveWith := func(path string, envs map[string]string, args ...string) (config, error) {
+	resolveWith := func(path string, envs map[string]string, args ...string) (serverConfig, error) {
 		t.Helper()
 		for k, v := range envs {
 			t.Setenv(k, v)
@@ -240,7 +196,7 @@ func TestResolveAddr(t *testing.T) {
 		if err := fs.Parse(append([]string{"-config", path}, args...)); err != nil {
 			t.Fatal(err)
 		}
-		var env envReader
+		var env config.Env
 		c, _, err := resolve(fs, f, &env)
 		return c, err
 	}
@@ -310,7 +266,7 @@ func TestCleanBase(t *testing.T) {
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
 	f := defineFlags(fs)
 	fs.Parse([]string{"-config", path, "-base", "aibow/"})
-	var env envReader
+	var env config.Env
 	c, _, err := resolve(fs, f, &env)
 	if err != nil || c.Base != "/aibow" || c.URL() != "http://127.0.0.1:8089/aibow" {
 		t.Errorf("引数の base: %q %q %v", c.Base, c.URL(), err)

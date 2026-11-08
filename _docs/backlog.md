@@ -117,8 +117,9 @@ VRAM 8GB に LLM と同時に載せるのは厳しく、交互に読み込むな
 `workspaces.go`(workspaces.json)・`connectionfile.go`(connection.json))。どれも、会話を aibow-server に置く形でもその PC に残るもの(2026-10-14、Chat が気づいた)。
 使う相手(会話の仕組みを使わずに、これらだけを読む側)が現れたら分ける。
 
-2026-11-08、ユーザーの指示で、ルートの中から使われていない `settingsfile.go` と `connectionfile.go` を `localconf/` に分けた
-(画面のアプリが別モジュールで `internal/secret` を import できないため、ルートのモジュールの中の `internal` でないパッケージにした)。
-残りの3つ(`toolprefs.go`・`mcpfile.go`・`workspaces.go`)を `localconf` に移すには、会話の仕組みが使っている非公開のメソッド
+2026-11-08、ユーザーの指示で、ルートの中から使われていない `settingsfile.go` と `connectionfile.go` を `config/` に分けた
+(画面のアプリが別モジュールで `internal/secret` を import できないため、ルートのモジュールの中の `internal` でないパッケージにした。
+はじめは `localconf` という名前にしたが、`config` に変え、aibow-server の `server.json` の読み込みと、アプリと aibow-server の環境変数の読み方も入れた)。
+残りの3つ(`toolprefs.go`・`mcpfile.go`・`workspaces.go`)を `config` に移すには、会話の仕組みが使っている非公開のメソッド
 (`ToolPrefs` の `policy`・`banned`・`setKnown` など8つほど・`Workspaces` の `addWorktree`・`removeWorktree`)を公開にし、
 `ConversationSettings` の欄の型 `ToolPolicy` の置き場所を決める必要がある(`mcpfile.go` は `ToolPrefs` を使うので一緒に移す)

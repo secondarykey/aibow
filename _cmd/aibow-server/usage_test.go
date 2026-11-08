@@ -19,6 +19,7 @@ import (
 	"github.com/secondarykey/aibow"
 	"github.com/secondarykey/aibow/api"
 	"github.com/secondarykey/aibow/auth"
+	"github.com/secondarykey/aibow/config"
 	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/format"
 	"github.com/secondarykey/aibow/log"
@@ -86,7 +87,7 @@ func TestRecorder(t *testing.T) {
 	}
 	defer st.Close()
 	ctx := context.Background()
-	var env envReader
+	var env config.Env
 	if _, err := createUser(ctx, st, initialSettings(&env, 0), "alice", ""); err != nil {
 		t.Fatal(err)
 	}
@@ -250,7 +251,7 @@ func TestUsageHandlers(t *testing.T) {
 	}
 	defer st.Close()
 	ctx := context.Background()
-	var env envReader
+	var env config.Env
 	initial := initialSettings(&env, 0)
 	sessions := auth.NewSessions(st)
 	users := map[string]auth.User{}

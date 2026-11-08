@@ -19,7 +19,7 @@ import (
 
 	apiclient "github.com/secondarykey/aibow/api/client"
 	"github.com/secondarykey/aibow/auth"
-	"github.com/secondarykey/aibow/localconf"
+	"github.com/secondarykey/aibow/config"
 	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/usage"
 )
@@ -78,13 +78,13 @@ func (s *ChatService) Login(name, password string) (AccountInfo, error) {
 		c.mu.Unlock()
 		return AccountInfo{}, errors.New("つなぎ先を変えて、まだ起動し直していません。起動し直してからログインしてください")
 	}
-	f := localconf.ConnectionFile{ServerURL: c.url, Fingerprint: c.file.Fingerprint}
+	f := config.ConnectionFile{ServerURL: c.url, Fingerprint: c.file.Fingerprint}
 	token, err := login(&f, ConnectRequest{URL: c.url, Fingerprint: c.file.Fingerprint, Name: name, Password: password})
 	if err != nil {
 		c.mu.Unlock()
 		return AccountInfo{}, err
 	}
-	f.Known = &localconf.KnownServer{URL: f.ServerURL, Fingerprint: f.Fingerprint, User: f.User}
+	f.Known = &config.KnownServer{URL: f.ServerURL, Fingerprint: f.Fingerprint, User: f.User}
 	if err := f.Save(c.path); err != nil {
 		c.mu.Unlock()
 		return AccountInfo{}, err

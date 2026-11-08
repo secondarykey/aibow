@@ -42,7 +42,7 @@ Ollama が保存したファイルを aibow が直接読むので、Ollama は�
 | `internal/proc/` | 起動したプロセスを、子プロセスまでまとめて止める仕組み(コマンドのツールと MCP のサーバーで使う) |
 | `internal/secret/` | 手元に置くアプリ用のトークンを、Windows の DPAPI で包む(標準の `syscall` で `crypt32.dll` を呼ぶ。Windows 以外は包まない。0019) |
 | `log/` | aibow のログ。aibow のコードはここからログを出す。aibow をライブラリとして使う人は `log.SetLogger` で aibow のログの出し先(`*slog.Logger`)を決められる(決めなければ `slog.Default()`) |
-| `localconf/` | その PC に置く設定のファイル。設定ファイル `settings.json`(手で書く設定。aibow-server のつなぎ先など)の読み込みと、MCP のサーバーを移したあとに `mcpServers` を消す書き直し(`settings.go`)・設定の画面の「サーバー」で決めた aibow-server のつなぎ先 `connection.json` の読み書き(`connection.go`。アプリ用のトークンは `internal/secret` で包む。0019) |
+| `config/` | アプリと aibow-server の設定ファイルと環境変数を読む部分。アプリの設定ファイル `settings.json`(手で書く設定。aibow-server のつなぎ先など)の読み込みと、MCP のサーバーを移したあとに `mcpServers` を消す書き直し(`settings.go`)・設定の画面の「サーバー」で決めた aibow-server のつなぎ先 `connection.json` の読み書き(`connection.go`。アプリ用のトークンは `internal/secret` で包む。0019)・aibow-server の設定ファイル `server.json` の読み込み(`server.go`)・`AIBOW_` の環境変数の読み方(`env.go`。誤りをまとめて返す) |
 | `workspaces.go` | ワークスペース(名前を付けたフォルダの組。0035)の `workspaces.json` の読み書きと、前の作業フォルダ(`work_dir`)を移す `MigrateWorkDirs` |
 | `toolprefs.go` | ツールの扱い(使わない / 確認する / 確認しない)と、その PC の既定 `tools.json` の読み書き |
 | `mcpfile.go` | 設定の画面の「MCP」から足した MCP のサーバー `mcp.json` の読み書きと、`settings.json` に手で書いた分を起動したときに移す係 |

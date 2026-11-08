@@ -37,6 +37,7 @@ import (
 	"github.com/secondarykey/aibow"
 	"github.com/secondarykey/aibow/api"
 	"github.com/secondarykey/aibow/auth"
+	"github.com/secondarykey/aibow/config"
 	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/format"
 	"github.com/secondarykey/aibow/log"
@@ -62,7 +63,7 @@ func main() {
 
 	// ログのレベルは設定ファイルでも決められるので、設定を読んでからログの出口を組む(log.Init のあとでレベルは変えられない)。
 	// 設定が読めなかったときも、既定のレベルで組んでから理由を書く
-	var env envReader
+	var env config.Env
 	c, notices, cfgErr := resolve(flag.CommandLine, f, &env)
 	closer := startLog(logLevel(c, *f.debug))
 	defer closer.Close()
@@ -74,7 +75,7 @@ func main() {
 	}
 }
 
-func run(c config, notices []string, cfgErr error, env *envReader) error {
+func run(c serverConfig, notices []string, cfgErr error, env *config.Env) error {
 	if flag.Arg(0) == "cert" {
 		if cfgErr != nil {
 			return cfgErr
@@ -85,7 +86,7 @@ func run(c config, notices []string, cfgErr error, env *envReader) error {
 		if cfgErr != nil {
 			return cfgErr
 		}
-		if err := errors.Join(env.errs...); err != nil {
+		if err := env.Err(); err != nil {
 			return err
 		}
 		return runUser(c, env, flag.Args()[1:])
@@ -112,27 +113,27 @@ func run(c config, notices []string, cfgErr error, env *envReader) error {
 		LibPath:   c.Lib,
 		NCtx:      nCtx,
 		Seqs:      c.Parallel,                       // 作業領域の中のシーケンスの数(0023)
-		GPULayers: env.int("AIBOW_GPU_LAYERS", 999), // 999 = 全部 GPU に載せる
+		GPULayers: env.Int("AIBOW_GPU_LAYERS", 999), // 999 = 全部 GPU に載せる
 		LlamaLog:  os.Getenv("AIBOW_LLAMA_LOG") == "1",
 		// 画像1枚のトークン数の上限(0030 の決定事項 22)
-		ImageMaxTokens: env.int("AIBOW_IMAGE_MAX_TOKENS", engine.DefaultImageMaxTokens),
+		ImageMaxTokens: env.Int("AIBOW_IMAGE_MAX_TOKENS", engine.DefaultImageMaxTokens),
 	}
 	catalog := models.Catalog{ModelsDir: c.ModelsDir, OllamaDir: models.OllamaDir()}
 	defaults := api.Defaults{
 		Temperature:     0.7,
-		MaxTokens:       env.int("AIBOW_MAX_TOKENS", 8192),
-		PresencePenalty: float32(env.float("AIBOW_PRESENCE_PENALTY", 1.5)),
+		MaxTokens:       env.Int("AIBOW_MAX_TOKENS", 8192),
+		PresencePenalty: float32(env.Float("AIBOW_PRESENCE_PENALTY", 1.5)),
 		Think:           true,
 	}
 	initial := initialSettings(env, cfg.GPULayers)
 	if nCtx <= 0 || port <= 0 || defaults.MaxTokens <= 0 || c.Parallel <= 0 {
-		env.errs = append(env.errs, fmt.Errorf("作業領域の大きさ(ctx)・ポート(port)・AIBOW_MAX_TOKENS・シーケンスの数(parallel)は 1 以上にしてください: %d / %d / %d / %d",
+		env.Add(fmt.Errorf("作業領域の大きさ(ctx)・ポート(port)・AIBOW_MAX_TOKENS・シーケンスの数(parallel)は 1 以上にしてください: %d / %d / %d / %d",
 			nCtx, port, defaults.MaxTokens, c.Parallel))
 	}
 	if _, err := os.Stat(cfg.LibPath); err != nil {
-		env.errs = append(env.errs, fmt.Errorf("llama.cpp のフォルダが見つかりません: %s(相対パスはカレントフォルダが基準です。-lib・設定ファイルの lib・AIBOW_LIB で場所を指定してください)", absPath(cfg.LibPath)))
+		env.Add(fmt.Errorf("llama.cpp のフォルダが見つかりません: %s(相対パスはカレントフォルダが基準です。-lib・設定ファイルの lib・AIBOW_LIB で場所を指定してください)", absPath(cfg.LibPath)))
 	}
-	if err := errors.Join(env.errs...); err != nil {
+	if err := env.Err(); err != nil {
 		return err
 	}
 
@@ -255,7 +256,7 @@ func run(c config, notices []string, cfgErr error, env *envReader) error {
 // loadTLS は、証明書と秘密鍵を読む(HTTPS。0017 の 10-2)。証明書が無ければ nil(HTTP)。
 // 起動の途中(モデルを読み込む前)で読み、間違っていれば待ち受ける前に止める。
 // 127.0.0.1 の外で証明書なしなら、警告して HTTP で動かす(ユーザーと決めた。家の中など、信用できる網だけで使うとき向け)。
-func loadTLS(c config) (*tls.Config, error) {
+func loadTLS(c serverConfig) (*tls.Config, error) {
 	if c.TLSCert == "" {
 		if !c.Local() {
 			log.Warnf("証明書なしで 127.0.0.1 の外(%s)に HTTP で出します。パスワード・API キー・会話が暗号化されずに流れます。"+
@@ -275,7 +276,7 @@ func loadTLS(c config) (*tls.Config, error) {
 
 // logAddresses は、つなぐ側が書く値をそのまま出す(画面のアプリは /v1 なし、Cline などの OpenAI 互換のクライアントは /v1 付き)。
 // 全部のネットワークで待ち受けるとき(0.0.0.0 など)は、ほかの PC からはこの PC のアドレスでつなぐことも書く。
-func logAddresses(c config, base string) {
+func logAddresses(c serverConfig, base string) {
 	if ip := net.ParseIP(c.Host); ip != nil && ip.IsUnspecified() {
 		log.Noticef("全部のネットワークで待ち受けます。ほかの PC からは、%s の %s をこの PC のアドレス(IP アドレスか名前)に替えてつなぎます", base, c.Host)
 	}
@@ -303,12 +304,12 @@ func logAddresses(c config, base string) {
 
 // initialSettings は、ブラウザの会話(0016)の、DB にまだ値が無いときの設定。画面のアプリと同じ環境変数と既定。
 // 新しい利用者のプロファイル「既定」もここから作る(users.go)。
-func initialSettings(env *envReader, gpuLayers int) aibow.AppSettings {
+func initialSettings(env *config.Env, gpuLayers int) aibow.AppSettings {
 	return ui.InitialAppSettings(ui.InitialValues{
 		GPULayers:       gpuLayers,
-		PresencePenalty: env.float("AIBOW_PRESENCE_PENALTY", 1.5),
-		HistoryTokens:   env.int("AIBOW_HISTORY_TOKENS", 8192),
-		ReplyTokens:     env.int("AIBOW_MAX_TOKENS", 8192),
+		PresencePenalty: env.Float("AIBOW_PRESENCE_PENALTY", 1.5),
+		HistoryTokens:   env.Int("AIBOW_HISTORY_TOKENS", 8192),
+		ReplyTokens:     env.Int("AIBOW_MAX_TOKENS", 8192),
 	})
 }
 

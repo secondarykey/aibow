@@ -24,7 +24,7 @@ Cline など [ 会話の仕組み + 手 ] ⇄ HTTP(OpenAI 互換。127.0.0.1 だ
 | `usage/` | 生成の付箋(道・用途・会話・順番待ちを ctx で運ぶ)と、使用量の記録の形(`usage` パッケージ。0033)。何にも依存しない。下の「使用量の記録」 |
 | `_cmd/aibow-server/usage.go` | 記録付きの engine(`recorder`)と、使用量を見る口(0033)。下の「使用量の記録」 |
 | `ui/web.go`・`ui/serverhost.go` | 画面用の口(`/_aibow/ui/` の下)と、aibow-server の中でブラウザの会話のモデルを扱う係(`ServerHost`)。ステップ9。下の「画面用の口」 |
-| `_cmd/aibow-server/` | exe(ステップ8で `aibow-api` から名前を変えた。0015)。`config.go` は設定(強さの順は 引数 > 設定ファイル `server.json` > 環境変数 > 既定)、`models.go` はモデルの係(GPU の層数と画面で足した置き場所を `server-models.json` に覚える)、`main.go` はエンジンとモデルを用意して `api` を `127.0.0.1` で待ち受けるだけ、`browser.go` はブラウザの会話(`server.db` を開き、`ui` の会話の仕組みと画面用の口を作る。ステップ9)。`log.go` はログの出口(`aibow-server_<日付>.log`)、`version` / `appversion.go` はアプリと同じバージョン(`_cmd/aibow/version` の写し) |
+| `_cmd/aibow-server/` | exe(ステップ8で `aibow-api` から名前を変えた。0015)。`config.go` は設定(強さの順は 引数 > 設定ファイル `server.json` > 環境変数 > 既定。`server.json` の形と読み込み・環境変数の読み方は `config` パッケージ)、`models.go` はモデルの係(GPU の層数と画面で足した置き場所を `server-models.json` に覚える)、`main.go` はエンジンとモデルを用意して `api` を `127.0.0.1` で待ち受けるだけ、`browser.go` はブラウザの会話(`server.db` を開き、`ui` の会話の仕組みと画面用の口を作る。ステップ9)。`log.go` はログの出口(`aibow-server_<日付>.log`)、`version` / `appversion.go` はアプリと同じバージョン(`_cmd/aibow/version` の写し) |
 
 依存の向きは `_cmd/aibow-server` → `api` → `engine` → `format` → `tool`。`api` はルートの `aibow`(会話の仕組み)を import しない。
 会話の保存・compact・エージェントループ・ツールの実行はクライアントの仕事なので、API の側には持たない。

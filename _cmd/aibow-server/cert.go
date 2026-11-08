@@ -46,7 +46,7 @@ const certUsage = `使い方:
   例: aibow-server cert 192.168.1.10 my-pc.local`
 
 // runCert は cert のコマンドを実行する。hosts はほかの PC からつなぐときに使う名前とアドレス(127.0.0.1 と localhost は足す)。
-func runCert(c config, hosts []string) error {
+func runCert(c serverConfig, hosts []string) error {
 	if len(hosts) == 0 {
 		return errors.New("証明書に書くホスト名か IP アドレスを1つ以上書いてください(ほかの PC からつなぐときのアドレス)\n" + certUsage)
 	}

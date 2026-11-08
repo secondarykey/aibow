@@ -38,6 +38,7 @@ import (
 
 	"github.com/secondarykey/aibow"
 	"github.com/secondarykey/aibow/auth"
+	"github.com/secondarykey/aibow/config"
 	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/store"
 )
@@ -54,7 +55,7 @@ const userUsage = `使い方:
   aibow-server [-config 設定ファイル] user email <名前> [アドレス]`
 
 // runUser は user のコマンドを実行する。args は user のあと。
-func runUser(c config, env *envReader, args []string) error {
+func runUser(c serverConfig, env *config.Env, args []string) error {
 	if len(args) == 0 {
 		return errors.New(userUsage)
 	}
@@ -335,7 +336,7 @@ type linkURL struct {
 
 // linkBase は、コマンドが出すリンクの頭を、aibow-server の待ち受け(引数・server.json・環境変数)から作る(0022 の決定事項 11)。
 // 全部のネットワークで待ち受けるとき(0.0.0.0 など)は、この PC から開ける 127.0.0.1 にし、ほかの PC からはアドレスを置き換えるよう添える。
-func linkBase(c config) linkURL {
+func linkBase(c serverConfig) linkURL {
 	host, note := c.Host, ""
 	if ip := net.ParseIP(host); ip != nil && ip.IsUnspecified() {
 		host = "127.0.0.1"

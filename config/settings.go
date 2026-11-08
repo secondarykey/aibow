@@ -1,4 +1,4 @@
-package localconf
+package config
 
 // settings.go: 設定ファイル(settings.json)。手で書く設定・その PC でどう起動するかの設定を置く(置き場所の分け方は doc.go)。
 //
@@ -156,7 +156,7 @@ func JSONErrorLine(data []byte, err error) string {
 	case errors.As(err, &typ):
 		off = typ.Offset
 	default:
-		return "JSON の形が違います"
+		return "JSON の形か欄の名前が違います"
 	}
 	return fmt.Sprintf("%d 行目のあたり", bytes.Count(data[:min(int(off), len(data))], []byte("\n"))+1)
 }

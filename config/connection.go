@@ -1,4 +1,4 @@
-package localconf
+package config
 
 // connection.go: 画面で決めた aibow-server のつなぎ先(connection.json。0019)。置き場所の分け方は doc.go。
 //
