@@ -1,18 +1,11 @@
-package aibow
+package localconf
 
-// settingsfile.go: 設定ファイル(settings.json)。手で書く設定・その PC でどう起動するかの設定を置く。
+// settings.go: 設定ファイル(settings.json)。手で書く設定・その PC でどう起動するかの設定を置く(置き場所の分け方は doc.go)。
 //
-// 設定の置き場所は2つに分けている:
-//
-//	画面で変える設定 … DB(appsettings.go の app_settings と、会話ごとの conversations.settings)
-//	手で書く設定     … このファイル。生成を頼む aibow-server のつなぎ先(serverUrl。0015)など
-//
-// その PC でどう起動するかは、会話のデータとは性格が違う。
-// 会話を aibow-server に置く形(0013・ステップ10)にしても、これは手元に残るもの。
 // 読むのは起動したときだけ。変えたらアプリを起動し直す。
 //
 // MCP のサーバー(mcpServers)も書けるが、起動したときに mcp.json へ移し、ここからは消す(置き場所を1つにして、画面から変える・消すため。
-// 0034 の決定事項 13。移すのは mcpfile.go の MoveFromSettings、消すのは removeSettingsKey)。
+// 0034 の決定事項 13。移すのはルートの aibow の mcpfile.go の MoveFromSettings、消すのは RemoveSettingsKey)。
 
 import (
 	"bytes"
@@ -58,7 +51,7 @@ func LoadSettingsFile(path string) (SettingsFile, error) {
 		return s, fmt.Errorf("設定ファイル %s を読めません: %w", path, err)
 	}
 	if err := json.Unmarshal(data, &s); err != nil {
-		return SettingsFile{}, fmt.Errorf("設定ファイル %s を読めません(%s): %w", path, jsonErrorLine(data, err), err)
+		return SettingsFile{}, fmt.Errorf("設定ファイル %s を読めません(%s): %w", path, JSONErrorLine(data, err), err)
 	}
 	if err := CheckServerURL(s.ServerURL); err != nil {
 		return SettingsFile{}, fmt.Errorf("設定ファイル %s の serverUrl: %w", path, err)
@@ -69,12 +62,12 @@ func LoadSettingsFile(path string) (SettingsFile, error) {
 	return s, nil
 }
 
-// removeSettingsKey は、設定ファイル path から項目 key だけを消して書き直す。
+// RemoveSettingsKey は、設定ファイル path から項目 key だけを消して書き直す(mcp.json へ移したあとの mcpServers を消すのに使う)。
 //
 // 手で書いたファイルなので、ほかの項目は並びも値もそのまま残す(aibow が知らない項目も落とさない)。
 // SettingsFile に読んで書き戻すと、知らない項目が消え、並びも struct の順になるため、項目を1つずつ生のまま読んで並べ直す。
 // 変わるのは字下げだけ(値の中も2つの空白で揃える)。JSON にはコメントが無いので、ほかに失うものは無い。
-func removeSettingsKey(path, key string) error {
+func RemoveSettingsKey(path, key string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("設定ファイル %s を読めません: %w", path, err)
@@ -151,8 +144,9 @@ func CheckMCPServers(path string, servers map[string]client.ServerConfig) error 
 	return nil
 }
 
-// jsonErrorLine は、JSON の読み間違いの場所を「N 行目」にする。
-func jsonErrorLine(data []byte, err error) string {
+// JSONErrorLine は、JSON の読み間違いの場所を「N 行目」にする(手で書く・画面に貼る JSON の間違いを、場所の分かるエラーにするため。
+// mcp.json・workspaces.json も使う)。
+func JSONErrorLine(data []byte, err error) string {
 	var off int64
 	var syn *json.SyntaxError
 	var typ *json.UnmarshalTypeError

@@ -29,7 +29,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/secondarykey/aibow"
+	"github.com/secondarykey/aibow/localconf"
 	"github.com/secondarykey/aibow/mcp/client"
 )
 
@@ -382,7 +382,7 @@ func loadConfigFile(path string) (file configFile, found bool, err error) {
 	if file.Port < 0 || file.Ctx < 0 {
 		return configFile{}, false, fmt.Errorf("設定ファイル %s の port と ctx は 1 以上にしてください: %d / %d", path, file.Port, file.Ctx)
 	}
-	if err := aibow.CheckMCPServers(path, file.MCPServers); err != nil {
+	if err := localconf.CheckMCPServers(path, file.MCPServers); err != nil {
 		return configFile{}, false, err
 	}
 	if err := checkFolders(path, file.Folders); err != nil {

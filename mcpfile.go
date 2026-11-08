@@ -25,6 +25,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/secondarykey/aibow/localconf"
 	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/mcp/client"
 	"github.com/secondarykey/aibow/tool"
@@ -55,11 +56,11 @@ func LoadMCPFile(path string) (*MCPFile, error) {
 	var d mcpFileData
 	if err == nil {
 		if err = json.Unmarshal(data, &d); err != nil {
-			err = fmt.Errorf("%s: %w", jsonErrorLine(data, err), err)
+			err = fmt.Errorf("%s: %w", localconf.JSONErrorLine(data, err), err)
 		}
 	}
 	if err == nil {
-		err = CheckMCPServers(path, d.MCPServers)
+		err = localconf.CheckMCPServers(path, d.MCPServers)
 	}
 	if err != nil {
 		f.broken = fmt.Errorf("画面から足した MCP のサーバーのファイル %s を読めません(このファイルのサーバーは使わず、書き換えません。直すか消してから、アプリを起動し直してください): %w", path, err)
@@ -135,13 +136,13 @@ func (f *MCPFile) MoveFromSettings(settingsPath string, hand map[string]client.S
 	slices.Sort(replaced)
 	names := strings.Join(slices.Sorted(maps.Keys(hand)), ", ")
 
-	if err := CheckMCPServers(f.path, next); err != nil {
+	if err := localconf.CheckMCPServers(f.path, next); err != nil {
 		return hand, f.moveFailed(names, err)
 	}
 	if err := f.save(next); err != nil {
 		return hand, f.moveFailed(names, err)
 	}
-	if err := removeSettingsKey(settingsPath, "mcpServers"); err != nil {
+	if err := localconf.RemoveSettingsKey(settingsPath, "mcpServers"); err != nil {
 		// mcp.json には書けた。settings.json にも残るので、settings.json の分として持ち続ける(画面で変えても、次の起動で戻ってしまうため)
 		n := fmt.Sprintf("MCP のサーバー %s を mcp.json(%s)に写しましたが、settings.json から mcpServers を消せませんでした(settings.json のものとして使います。mcpServers を手で消して、アプリを起動し直してください): %v",
 			names, f.path, err)
@@ -436,7 +437,7 @@ func (c *MCPConfig) change(edit func(next map[string]client.ServerConfig) error)
 		return nil, err
 	}
 	merged, _ := MergeMCPServers(c.hand, next)
-	if err := CheckMCPServers(c.file.Path(), merged); err != nil {
+	if err := localconf.CheckMCPServers(c.file.Path(), merged); err != nil {
 		return nil, err
 	}
 	if err := c.file.save(next); err != nil {
@@ -537,7 +538,7 @@ func (c *MCPConfig) ParseMCPJSON(text string) ([]ParsedMCPServer, error) {
 		}
 	}
 	if err != nil {
-		return nil, fmt.Errorf("JSON として読めません(%s): %w", jsonErrorLine([]byte(text), err), err)
+		return nil, fmt.Errorf("JSON として読めません(%s): %w", localconf.JSONErrorLine([]byte(text), err), err)
 	}
 	servers := map[string]json.RawMessage{}
 	switch {

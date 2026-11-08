@@ -42,11 +42,10 @@ Ollama が保存したファイルを aibow が直接読むので、Ollama は�
 | `internal/proc/` | 起動したプロセスを、子プロセスまでまとめて止める仕組み(コマンドのツールと MCP のサーバーで使う) |
 | `internal/secret/` | 手元に置くアプリ用のトークンを、Windows の DPAPI で包む(標準の `syscall` で `crypt32.dll` を呼ぶ。Windows 以外は包まない。0019) |
 | `log/` | aibow のログ。aibow のコードはここからログを出す。aibow をライブラリとして使う人は `log.SetLogger` で aibow のログの出し先(`*slog.Logger`)を決められる(決めなければ `slog.Default()`) |
-| `settingsfile.go` | 設定ファイル `settings.json`(手で書く設定。aibow-server のつなぎ先など)の読み込みと、MCP のサーバーを移したあとに `mcpServers` を消す書き直し |
+| `localconf/` | その PC に置く設定のファイル。設定ファイル `settings.json`(手で書く設定。aibow-server のつなぎ先など)の読み込みと、MCP のサーバーを移したあとに `mcpServers` を消す書き直し(`settings.go`)・設定の画面の「サーバー」で決めた aibow-server のつなぎ先 `connection.json` の読み書き(`connection.go`。アプリ用のトークンは `internal/secret` で包む。0019) |
 | `workspaces.go` | ワークスペース(名前を付けたフォルダの組。0035)の `workspaces.json` の読み書きと、前の作業フォルダ(`work_dir`)を移す `MigrateWorkDirs` |
 | `toolprefs.go` | ツールの扱い(使わない / 確認する / 確認しない)と、その PC の既定 `tools.json` の読み書き |
 | `mcpfile.go` | 設定の画面の「MCP」から足した MCP のサーバー `mcp.json` の読み書きと、`settings.json` に手で書いた分を起動したときに移す係 |
-| `connectionfile.go` | 設定の画面の「サーバー」で決めた aibow-server のつなぎ先 `connection.json` の読み書き(アプリ用のトークンは `internal/secret` で包む。0019) |
 | `compact.go` | 長くなった会話を「会話の上限」に収める仕組み(古い発言を捨てる / 要約する)と、メーターの計算 |
 | `store.go` | 会話の保存先の約束(interface)と、会話・発言・要約の形。会話の仕組みは保存先が SQLite かどうかを知らない |
 | `appsettings.go` | アプリの設定(GPU の層数・最後に使ったモデル・画面の設定)と新しい会話の既定の設定(会話の上限・返事の上限も入る) |

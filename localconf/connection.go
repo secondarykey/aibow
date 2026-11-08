@@ -1,14 +1,9 @@
-package aibow
+package localconf
 
-// connectionfile.go: 画面で決めた aibow-server のつなぎ先(connection.json。0019)。
-//
-// 設定の置き場所の分け方(settingsfile.go)に、もう1つ足す:
-//
-//	画面で変える設定           … DB
-//	手で書く設定               … settings.json(serverUrl など。手で書いてあれば、こちらが強い。0019 の決定事項 5)
-//	画面で変えるが、その PC の人が決めること … tools.json(ツールの扱い)と、このファイル(つなぎ先・ログイン)
+// connection.go: 画面で決めた aibow-server のつなぎ先(connection.json。0019)。置き場所の分け方は doc.go。
 //
 // つなぎ先は「その PC でどう起動するか」なので会話の DB には入れない(つないだ先の DB に、つなぎ方を置くことになってしまう)。
+// 手で書いた settings.json の serverUrl があれば、そちらが強い(0019 の決定事項 5)。
 // アプリ用のトークンはそのまま置かず、OS の仕組みで包む(internal/secret。Windows の DPAPI)。
 // 読むのは起動したときだけ。画面で変えたら、アプリが起動し直す(決定事項 1)。
 
@@ -28,7 +23,7 @@ import (
 type ConnectionFile struct {
 	// ServerURL は aibow-server のつなぎ先(例: https://192.168.1.10:8089)。空なら、アプリの中で動かす
 	ServerURL string `json:"serverUrl"`
-	// Fingerprint は、信頼した証明書の SHA-256 の指紋(自己署名の証明書のとき。初めてつなぐときに人が確かめて覚えたもの。決定事項 6)。
+	// Fingerprint は、信頼した証明書の SHA-256 のフィンガープリント(自己署名の証明書のとき。初めてつなぐときに人が確かめて覚えたもの。決定事項 6)。
 	// 空なら、OS が信頼している証明書だけを信頼する(HTTP のときも空)
 	Fingerprint string `json:"fingerprint,omitempty"`
 	// User はログインした名前(画面に出すだけ。誰かを決めるのはトークン)
@@ -48,7 +43,7 @@ type ConnectionFile struct {
 // KnownServer は、信頼したつなぎ先(ConnectionFile.Known)。秘密は入れない(フィンガープリントは秘密ではない)。
 type KnownServer struct {
 	URL string `json:"url"`
-	// Fingerprint は信頼した証明書の指紋(自己署名の証明書のとき。OS が信頼している証明書・HTTP なら空)
+	// Fingerprint は信頼した証明書のフィンガープリント(自己署名の証明書のとき。OS が信頼している証明書・HTTP なら空)
 	Fingerprint string `json:"fingerprint,omitempty"`
 	// User は最後にログインした名前(タブに入れておくだけ)
 	User string `json:"user,omitempty"`
@@ -73,7 +68,7 @@ func LoadConnectionFile(path string) (ConnectionFile, error) {
 		return c, fmt.Errorf("つなぎ先のファイル %s を読めません: %w", path, err)
 	}
 	if err := json.Unmarshal(data, &c); err != nil {
-		return ConnectionFile{}, fmt.Errorf("つなぎ先のファイル %s を読めません(%s。画面でつなぎ直すと書き直します): %w", path, jsonErrorLine(data, err), err)
+		return ConnectionFile{}, fmt.Errorf("つなぎ先のファイル %s を読めません(%s。画面でつなぎ直すと書き直します): %w", path, JSONErrorLine(data, err), err)
 	}
 	if err := CheckServerURL(c.ServerURL); err != nil {
 		return ConnectionFile{}, fmt.Errorf("つなぎ先のファイル %s の serverUrl: %w", path, err)

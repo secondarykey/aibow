@@ -34,6 +34,7 @@ import (
 	"uuid"
 
 	"github.com/secondarykey/aibow/git"
+	"github.com/secondarykey/aibow/localconf"
 )
 
 // Workspace はワークスペース1つ。
@@ -117,7 +118,7 @@ func LoadWorkspaces(path string) (*Workspaces, error) {
 	var f workspacesFile
 	if err == nil {
 		if err = json.Unmarshal(data, &f); err != nil {
-			err = fmt.Errorf("%s: %w", jsonErrorLine(data, err), err)
+			err = fmt.Errorf("%s: %w", localconf.JSONErrorLine(data, err), err)
 		}
 	}
 	if err == nil {

@@ -13,6 +13,7 @@ import (
 	"github.com/secondarykey/aibow"
 	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/format"
+	"github.com/secondarykey/aibow/localconf"
 	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/models"
 	"github.com/secondarykey/aibow/ui"
@@ -77,7 +78,7 @@ type appConfig struct {
 	initialModel string // AIBOW_MODEL。空なら最後に使ったモデル → 一覧の先頭(書式に対応している最初のモデル)
 
 	// settings は settings.json の中身。settingsErr は読めなかった理由(settings.json の MCP のサーバーは使わずに起動し、お知らせで伝える。startMCP)
-	settings    aibow.SettingsFile
+	settings    localconf.SettingsFile
 	settingsErr error
 	// serverURL は生成を頼む aibow-server のつなぎ先(settings.json の serverUrl > 環境変数 AIBOW_SERVER_URL > 画面で決めたもの。loadServer)。
 	// 空なら今までどおりアプリの中で llama.cpp を動かす。書けば llama.cpp を読み込まず、aibow-server につなぎに行く(0015 の 1・20)
@@ -89,7 +90,7 @@ type appConfig struct {
 	// 手で書いた値(settings.json・環境変数)が画面の値より強い(0019 の決定事項 5)
 	serverSource string
 	// conn は connection.json の中身(画面で決めたつなぎ先。手で書いた値があれば使わないが、画面に出すために読む)
-	conn aibow.ConnectionFile
+	conn localconf.ConnectionFile
 
 	// app は、画面で変えられるアプリ全体の設定の初期値。
 	// DB にまだ値が無いときだけ使う(画面で一度変えると DB の値が優先される)。
@@ -130,7 +131,7 @@ func loadConfig() (appConfig, error) {
 		}),
 	}
 	// settings.json は MCP のサーバーとつなぎ先を書く場所。読めなくても起動は止めない(MCP は使わない。つなぎ先は環境変数を使う)
-	c.settings, c.settingsErr = aibow.LoadSettingsFile(c.settingsPath)
+	c.settings, c.settingsErr = localconf.LoadSettingsFile(c.settingsPath)
 	c.loadServer(&env)
 
 	// AIBOW_CTX(コンテキスト長)は、会話の上限 + 返事の上限から aibow が計算するようになったので使わない
@@ -184,12 +185,12 @@ const (
 // 手で書いた値があれば、画面の値は使わない(書いたのに効かない、が起きないように。0019 の決定事項 5)。どれも無ければアプリの中で動かす。
 func (c *appConfig) loadServer(env *envReader) {
 	envURL := os.Getenv("AIBOW_SERVER_URL")
-	if err := aibow.CheckServerURL(envURL); err != nil {
+	if err := localconf.CheckServerURL(envURL); err != nil {
 		env.errs = append(env.errs, fmt.Errorf("AIBOW_SERVER_URL: %w", err))
 		envURL = ""
 	}
 	// 画面に出すため、手で書いてあっても読んでおく(読めなければお知らせで伝え、無いものとして起動する)
-	conn, err := aibow.LoadConnectionFile(c.connPath)
+	conn, err := localconf.LoadConnectionFile(c.connPath)
 	if err != nil {
 		c.notices = append(c.notices, err.Error())
 	}

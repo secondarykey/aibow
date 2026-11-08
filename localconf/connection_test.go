@@ -1,4 +1,4 @@
-package aibow
+package localconf
 
 import (
 	"os"

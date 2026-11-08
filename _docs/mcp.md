@@ -36,7 +36,7 @@ aibow ── tools/call ──────→ 結果(content)が返る → ツ�
 | `mcp/client/remote.go` | サーバーのツールを `tool.Tool` として見せる(`remoteTool`)。`tools/call` の結果を文章にする・長い結果を切る |
 | `mcp/client/log.go` | 送受信したメッセージとサーバーのエラー出力を、1行ずつログに出す |
 | `mcp/client/client_test.go` | テスト。SDK でテスト用のサーバーを作り、プロセスを起動せずにつなぐ(`NewInMemoryTransports`)。本物の子プロセスは、テストの実行ファイル自身をサーバーとして起動して確かめる |
-| `settingsfile.go` | 設定ファイル `settings.json` の読み込み(`mcpServers`) |
+| `localconf/settings.go` | 設定ファイル `settings.json` の読み込み(`mcpServers`) |
 | `mcpfile.go` | 画面から足した MCP のサーバー `mcp.json` の読み書き(`MCPFile`)・settings.json との合わせ方(`MergeMCPServers`)・画面で変えたものを `Manager` に流す係(`MCPConfig`)・貼った JSON の読み取り(0034) |
 | `ui/mcpedit.go` | 設定の画面の「MCP」から呼ぶメソッド(一覧・足す・変える・消す・試す・JSON を読み取る。デスクトップのアプリだけ) |
 | `toolprefs.go` | ツールの扱い(`ToolPolicy`: 使わない / 確認する / 確認しない、会話の上書きだけの「使う」)と、その PC の既定 `tools.json`(`ToolPrefs`) |
@@ -256,7 +256,7 @@ aibow から同じものを使うと、次のことが分かりました。
 
 | | アプリ | aibow-server(ブラウザの会話) |
 |---|---|---|
-| サーバーを書くところ | `settings.json` の `mcpServers` | `server.json` の `mcpServers`(確かめ方は同じ `aibow.CheckMCPServers`) |
+| サーバーを書くところ | `settings.json` の `mcpServers` | `server.json` の `mcpServers`(確かめ方は同じ `localconf.CheckMCPServers`) |
 | 扱いの既定 | `tools.json`(その PC の人が決める) | `server-tools.json`(管理者が設定の画面の「ツール」で決める。`aibow.LoadServerToolPrefs`) |
 | 「使わない」 | 既定では使わない(会話で「使う」にできる) | 禁止(会話で「使う」にできない。`ToolPrefs.banned` → `PolicyFromAdmin`) |
 | 起動 | 最初に使われたとき。アプリを閉じるまで | 最初に使われたとき。aibow-server を止めるまで全員で1つ |
