@@ -195,7 +195,7 @@ const (
 	windowMinHeight = 480
 )
 
-// logKeepDays は、ログファイルを残す日数(今日を含む)。起動のたびに、それより古いものを消す。
+// logKeepDays は、ログファイルを残す日数(今日を含む)。それより古いものを、書き始めたときと日付が変わったときに消す。
 const logKeepDays = 10
 
 // devLogPrefix は、wails3 dev で動かしたときのログファイルの名前の頭(aibow-dev_<日付>.log・aibow-dev_crash.log)。
@@ -211,7 +211,7 @@ const devLogPrefix = "aibow-dev"
 //     リリース版(-H windowsgui)には標準エラー出力の行き先が無く、ファイルにしか残らないため
 //     (0006 で、起動できない理由がどこにも残らず困った)。Notice 以上だけを書く
 //
-// フォルダは AIBOW_LOG_DIR で変えられる。どちらも今日を含めて logKeepDays 日分を残し、古いものは起動時に消す(頭の違うファイルには触らない)
+// フォルダは AIBOW_LOG_DIR で変えられる。どちらも今日を含めて logKeepDays 日分を残し、古いものは書き始めたときと日付が変わったときに消す(頭の違うファイルには触らない)
 //
 // 異常終了(Go の panic・ランタイムの致命的なエラー)の内容も、ファイルに書くときは同じフォルダの aibow_crash.log に残す
 // (log.CatchCrash)。前回の記録が残っていれば改名して残し、「前回は異常終了しました」を画面とログで伝える(main がお知らせとして出す)。

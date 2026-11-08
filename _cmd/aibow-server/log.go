@@ -15,7 +15,7 @@ import (
 // アプリ(aibow_<日付>.log)・aibow-mcp と同じフォルダに置くので、API のものだと分かる別の名前にする
 const logPrefix = "aibow-server"
 
-// logKeepDays は、ログファイルを残す日数(今日を含む)。起動のたびに、それより古いものを消す(アプリと同じ)
+// logKeepDays は、ログファイルを残す日数(今日を含む)。それより古いものを、書き始めたときと日付が変わったときに消す(アプリと同じ)
 const logKeepDays = 10
 
 // startLog はログの出口を組む(aibow/log の Init)。形は aibow-mcp(_cmd/aibow-mcp の startLog)にならう。

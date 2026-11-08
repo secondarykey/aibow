@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	wlog "github.com/wenteasy/log"
@@ -17,7 +16,9 @@ type Options struct {
 	// Dir はログファイルを書くフォルダ。空ならファイルには書かない。無ければ作る。
 	// ファイルは日ごとに分かれる(Dir/aibow_20261014.log)
 	Dir string
-	// KeepDays は Dir に残す日数(今日を含む)。Init のときに、それより古いログファイルを消す。0 なら消さない
+	// KeepDays は Dir に残す日数(今日を含む)。それより古いログファイルを消す。0 なら消さない。
+	// 消すのは wenteasy/log の RollingFileWriter(SetKeep)で、ファイルを開いたとき(最初に書いたとき・日付が変わって切り替えたとき)に
+	// 別の goroutine で動く。何日も動かし続ける aibow-server でも、日が変わるたびに片付く
 	KeepDays int
 	// Root は出すレベル(これより下は出さない)。ゼロ値は Info。名前は ikkyoku の log に揃えた。
 	// アプリは dev で Info(開発中・学習で観察するもの)、配る exe で Notice(常に残したいもの)を渡す
@@ -56,11 +57,15 @@ func Init(opts Options) (io.Closer, error) {
 		var w *wlog.RollingFileWriter
 		if w, err = wlog.NewRollingFileWriter(opts.Dir, wlog.Day); err == nil {
 			w.SetPrefix(prefix)
+			// 片付けるのは <prefix>_<日付>.log(と .log.gz)にぴったり合うものだけ。異常終了の記録(<prefix>_crash.log・
+			// <prefix>_crash_<日時>.log)や頭の違うファイル(aibow-dev_…・aibow-mcp_…)には触らない
+			w.SetKeep(opts.KeepDays)
+			// 消せなかったことは残す(ログのために止めはしない)。wenteasy/log は w のロックを持たずに呼ぶので、ここから同じ w へ書いてよい
+			w.SetErrorHandler(func(err error) {
+				Warnf("古いログファイルを片付けられませんでした(%s): %v", opts.Dir, err)
+			})
 			sinks = append(sinks, wlog.NewSimpleHandler(w, opts.Root))
 			closer = w
-			if opts.KeepDays > 0 {
-				removeOld(opts.Dir, prefix, opts.KeepDays, time.Now())
-			}
 		} else {
 			err = fmt.Errorf("ログのフォルダ %s を作れないので、ログはファイルに残りません: %w", opts.Dir, err)
 		}
@@ -84,27 +89,6 @@ func Init(opts Options) (io.Closer, error) {
 // ファイルは最初に書いたときに作られ、日付が変わると次のファイルに切り替わる。
 func FilePath(dir string) string {
 	return filepath.Join(dir, prefix+"_"+time.Now().Format("20060102")+".log")
-}
-
-// removeOld は dir の古いログファイル(<prefix>_<日付>.log)を消し、今日を含めて keepDays 日分を残す。
-//
-// 日付はファイル名から読む(更新時刻は見ない。コピーや展開で変わるため)。
-// 名前の形が違うファイル(利用者が置いたもの・ほかのアプリのもの)は消さない。消せなくても何もしない(ログのために止めない)。
-func removeOld(dir, prefix string, keepDays int, now time.Time) {
-	names, err := filepath.Glob(filepath.Join(dir, prefix+"_*.log"))
-	if err != nil {
-		return
-	}
-	y, m, d := now.Date()
-	oldest := time.Date(y, m, d-(keepDays-1), 0, 0, 0, 0, now.Location()) // 残す一番古い日
-	for _, path := range names {
-		date := strings.TrimSuffix(strings.TrimPrefix(filepath.Base(path), prefix+"_"), ".log")
-		t, err := time.ParseInLocation("20060102", date, now.Location())
-		if err != nil || !t.Before(oldest) {
-			continue
-		}
-		os.Remove(path)
-	}
 }
 
 type nopCloser struct{}

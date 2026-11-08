@@ -43,7 +43,7 @@ func CatchCrash(dir string) (previous string, err error) {
 // 空(= 前回は正常に終わった)・無い・改名できないときは空を返す。
 //
 // ⚠️ 改名すること(消さない・上書きしない)。次の CatchCrash が CrashFile を空で作り直すので、
-// そのままにしておくと前回の記録が消える。改名した記録は、古いログを消すとき(removeOld)にも消えない
+// そのままにしておくと前回の記録が消える。改名した記録は、古いログを消すとき(Init の KeepDays。wenteasy/log の SetKeep)にも消えない
 // (名前が aibow_<日付>.log の形ではないため)。
 func keepPreviousCrash(dir string) string {
 	path := filepath.Join(dir, CrashFile())
