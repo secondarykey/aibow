@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/secondarykey/aibow/config"
+	"github.com/secondarykey/aibow/internal/appversion"
 	"github.com/secondarykey/aibow/log"
 )
 
@@ -75,7 +76,7 @@ func logLevel(c serverConfig, debug bool) slog.Level {
 	if l, ok := config.LogLevels[c.LogLevel]; ok && c.LogLevel != "" {
 		return l
 	}
-	if isGoRun() {
+	if appversion.IsGoRun() {
 		return log.LevelInfo
 	}
 	return log.LevelNotice

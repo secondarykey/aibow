@@ -21,6 +21,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/secondarykey/aibow/internal/appversion"
 	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/mcp/server"
 	"github.com/secondarykey/aibow/tool"
@@ -38,7 +39,7 @@ func main() {
 	flag.Parse()
 	if *showVersion {
 		// サーバーとして動く前なので、標準出力に書いてよい
-		fmt.Println(server.Name, appVersion())
+		fmt.Println(server.Name, appversion.Version())
 		return
 	}
 
@@ -66,9 +67,9 @@ func run() error {
 		return err
 	}
 
-	opts := server.Options{WorkDir: dir, Version: appVersion()}
+	opts := server.Options{WorkDir: dir, Version: appversion.Version()}
 	if *fetch {
-		opts.Fetch = &tool.FetchOptions{Version: appVersion()}
+		opts.Fetch = &tool.FetchOptions{Version: appversion.Version()}
 	}
 	s := server.New(opts)
 	names := make([]string, 0)
@@ -79,7 +80,7 @@ func run() error {
 	if where == "" {
 		where = "なし(作業フォルダのツールは出しません)"
 	}
-	log.Noticef("%s %s を起動しました(作業フォルダ: %s・ツール %d 個: %v)", server.Name, appVersion(), where, len(names), names)
+	log.Noticef("%s %s を起動しました(作業フォルダ: %s・ツール %d 個: %v)", server.Name, appversion.Version(), where, len(names), names)
 
 	// Ctrl+C で止める(ターミナルで試すとき用)。ふだんはクライアントが標準入力を閉じると Run が返る
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)

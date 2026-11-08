@@ -64,6 +64,7 @@ OpenAI 互換のクライアント(Cline など)⇄ HTTP(S)(既定は 127.0.0.1�
 | `usage/` | aibow-server の使用量(0033。`usage` パッケージ)。生成1回ごとの記録の形と、生成に付ける付箋(道・用途・会話・順番待ちを ctx で運ぶ)。何にも依存しない(会話の仕組み・`api`・`api/client`・`ui`・`store` から使う)。記録するのは `_cmd/aibow-server` の記録付きの engine |
 | `mcp/internal/` | MCP のクライアントとサーバーの両方で使う部分(`meta`: `_meta` の名前) |
 | `internal/proc/` | 子プロセスまでまとめて止める仕組み(`tool` の `run_command` と `mcp/client` で使う) |
+| `internal/appversion/` | aibow-mcp と aibow-server が名乗るバージョン(`_cmd/aibow/version` の写しを1つだけ埋め込む。`go run` なら patch +1 と `+dev`)。画面のアプリは別のモジュールなので自分の `appversion.go` を持つ([_docs/deploy.md](_docs/deploy.md)) |
 | `log/` | aibow のログ(`log` パッケージ)。aibow のコードはログをここから出す。土台は wenteasy/log だが、使う人には `slog.Level` と `*slog.Logger` しか見せない。出口はアプリが `Init` で組み、ライブラリとして使う人は `SetLogger(*slog.Logger)` で aibow のログだけ別にできる(決めなければ `slog.Default()`)。詳しくは [log/AGENTS.md](log/AGENTS.md) |
 | `_cmd/aibow/` | デスクトップアプリ(Wails v3 + React)。別モジュール |
 | `_cmd/aibow-server/` | aibow のサーバーの exe(OpenAI 互換の API。既定は `127.0.0.1` で待ち受け、`-host` で広げるとログインと API キーが要る。HTTPS と自己署名の証明書(`cert`)・利用者のコマンド(`user`)もここ。ステップ10。ステップ8で `aibow-api` から名前を変えた)。引数・設定ファイル(`server.json`)・環境変数を読み、モデルを読み込んで `api` を動かす。ブラウザの会話(`ui` と `server.db`)も同じポートに載せる(ステップ9)。ルートのモジュールに入れている |

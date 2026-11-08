@@ -31,6 +31,7 @@ import (
 	"github.com/secondarykey/aibow"
 	"github.com/secondarykey/aibow/api"
 	"github.com/secondarykey/aibow/auth"
+	"github.com/secondarykey/aibow/internal/appversion"
 	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/mcp/client"
 	"github.com/secondarykey/aibow/store"
@@ -72,11 +73,11 @@ func startBrowser(c serverConfig, initial aibow.AppSettings, st *store.SQLite, g
 	if c.FetchAllowPrivate {
 		log.Noticef("fetch_url: サーバーの PC の中・社内のアドレスも読みます(server.json の fetchAllowPrivate)")
 	}
-	local := client.NewLocal(client.Options{Version: appVersion(), Fetch: &tool.FetchOptions{AllowPrivate: c.FetchAllowPrivate, Version: appVersion()}})
+	local := client.NewLocal(client.Options{Version: appversion.Version(), Fetch: &tool.FetchOptions{AllowPrivate: c.FetchAllowPrivate, Version: appversion.Version()}})
 	mcpm, prefs := startServerTools(c)
 	svc, life := ui.New(ui.Options{
 		Host:  ui.NewServerHost(gen, mm, nCtx, url),
-		Store: st, App: app, Version: appVersion(),
+		Store: st, App: app, Version: appversion.Version(),
 		Notify: events, Seat: seat, Local: local, MCP: mcpm, Prefs: prefs, Browser: true, Folders: c.Folders,
 	})
 	if len(c.Folders) > 0 {
@@ -130,7 +131,7 @@ func startServerTools(c serverConfig) (*client.Manager, *aibow.ToolPrefs) {
 	}
 	names := slices.Sorted(maps.Keys(c.MCPServers))
 	log.Noticef("ブラウザの会話の MCP のサーバー: %s(server.json の mcpServers。要る最初の送信で起動し、全員で1つを使います)", strings.Join(names, ", "))
-	return client.New(c.MCPServers, client.Options{Version: appVersion()}), prefs
+	return client.New(c.MCPServers, client.Options{Version: appversion.Version()}), prefs
 }
 
 // noteFirstRun は、ログインが要る形で起動したときに、まだ使い始められない様子を知らせる(0020 の決定事項 2・4)。

@@ -40,6 +40,7 @@ import (
 	"github.com/secondarykey/aibow/config"
 	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/format"
+	"github.com/secondarykey/aibow/internal/appversion"
 	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/models"
 	"github.com/secondarykey/aibow/store"
@@ -57,7 +58,7 @@ func main() {
 	}
 	flag.Parse()
 	if *f.version {
-		fmt.Println(logPrefix, appVersion())
+		fmt.Println(logPrefix, appversion.Version())
 		return
 	}
 
@@ -239,7 +240,7 @@ func run(c serverConfig, notices []string, cfgErr error, env *config.Env) error 
 		errc <- hs.Serve(ln)
 	}()
 	log.Noticef("%s %s を起動しました(返事の上限の既定 %d・presence penalty %.1f)",
-		logPrefix, appVersion(), defaults.MaxTokens, defaults.PresencePenalty)
+		logPrefix, appversion.Version(), defaults.MaxTokens, defaults.PresencePenalty)
 	logAddresses(c, base)
 
 	select {
