@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -52,6 +53,11 @@ type ServerFile struct {
 	// FetchAllowPrivate は、ブラウザの会話の URL を読むツール(fetch_url)で、サーバーの PC の中・社内のアドレスも読むか(0036 の決定事項 12)。
 	// 既定は読まない(モデルが書いた URL で、社内のサーバーやクラウドのメタデータに届かないように)。fetch_url は管理者が「ツール」のタブで有効にするまで使えない
 	FetchAllowPrivate bool `json:"fetchAllowPrivate"`
+	// TrustedProxies は、信頼するリバースプロキシのアドレス(IP アドレスか CIDR。0044 の決定事項 3)。つないできた相手がここに入っているときだけ、
+	// ProxyHeader のヘッダーから元の相手を取り出す。サーバーの PC の上(127.0.0.0/8・::1)は書かなくても入っている(決定事項 2)ので、ほかの PC のプロキシのときだけ書く
+	TrustedProxies []string `json:"trustedProxies"`
+	// ProxyHeader は、元の相手を読むヘッダー(X-Forwarded-For(既定)・Forwarded・X-Real-IP のどれか1つ。決定事項 4)
+	ProxyHeader string `json:"proxyHeader"`
 }
 
 // LogLevels は、設定ファイルの logLevel に書ける値。
@@ -90,6 +96,12 @@ func LoadServerFile(path string) (file ServerFile, found bool, err error) {
 	if err := checkFolders(path, file.Folders); err != nil {
 		return ServerFile{}, false, err
 	}
+	if _, err := ParseTrustedProxies(file.TrustedProxies); err != nil {
+		return ServerFile{}, false, fmt.Errorf("設定ファイル %s の trustedProxies: %w", path, err)
+	}
+	if _, err := ProxyHeaderName(file.ProxyHeader); err != nil {
+		return ServerFile{}, false, fmt.Errorf("設定ファイル %s の proxyHeader: %w", path, err)
+	}
 	return file, true, nil
 }
 
@@ -108,4 +120,51 @@ func checkFolders(path string, folders map[string]string) error {
 		}
 	}
 	return nil
+}
+
+// ProxyHeaders は、server.json の proxyHeader に書けるヘッダー(0044 の決定事項 4)。先頭が既定。
+// nginx・IIS(ARR)・Apache・Caddy のどれも X-Forwarded-For を書けるので、それを既定にする。
+var ProxyHeaders = []string{"X-Forwarded-For", "Forwarded", "X-Real-IP"}
+
+// ProxyHeaderName は、proxyHeader に書いた名前を、ProxyHeaders の書き方にそろえる(大文字小文字は問わない。空なら既定)。
+// 知らない名前はエラー(書き間違えたまま、元の相手を見ないで動かないように)。
+func ProxyHeaderName(name string) (string, error) {
+	if strings.TrimSpace(name) == "" {
+		return ProxyHeaders[0], nil
+	}
+	for _, h := range ProxyHeaders {
+		if strings.EqualFold(strings.TrimSpace(name), h) {
+			return h, nil
+		}
+	}
+	return "", fmt.Errorf("%s のどれかにしてください: %q", strings.Join(ProxyHeaders, "・"), name)
+}
+
+// ParseTrustedProxies は、trustedProxies に書いた IP アドレスか CIDR を読む(0044 の決定事項 3)。
+// IP アドレスはそのアドレスだけ(/32・/128)。IPv4 を IPv6 の形で書いた値(::ffff:10.0.0.5)は IPv4 にそろえる
+// (比べる相手の元の相手も IPv4 にそろえるため。決定事項 9)。名前(proxy.example.local)は読まない(やらないこと)。
+func ParseTrustedProxies(list []string) ([]netip.Prefix, error) {
+	var out []netip.Prefix
+	for _, s := range list {
+		s = strings.TrimSpace(s)
+		var p netip.Prefix
+		if strings.Contains(s, "/") {
+			var err error
+			if p, err = netip.ParsePrefix(s); err != nil {
+				return nil, fmt.Errorf("IP アドレスか CIDR(10.0.0.5・192.168.10.0/24・2001:db8::/32 など)で書いてください: %q", s)
+			}
+			if a := p.Addr(); a.Is4In6() && p.Bits() >= 96 {
+				p = netip.PrefixFrom(a.Unmap(), p.Bits()-96)
+			}
+		} else {
+			a, err := netip.ParseAddr(s)
+			if err != nil || a.Zone() != "" {
+				return nil, fmt.Errorf("IP アドレスか CIDR(10.0.0.5・192.168.10.0/24・2001:db8::/32 など)で書いてください: %q", s)
+			}
+			a = a.Unmap()
+			p = netip.PrefixFrom(a, a.BitLen())
+		}
+		out = append(out, p.Masked())
+	}
+	return out, nil
 }

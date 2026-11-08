@@ -35,7 +35,8 @@ aibow-server はこれまで `-host` と `-port` に分けて待ち受けを決�
    パスワードを決めるリンク(画面が作るもの)は `location.pathname` まで含める。プロキシが頭を外して渡す形(base なしの aibow-server)でも同じ画面で動く
 7. **Git Bash が `/aibow` を Windows のパスに書き換える**(`-base /aibow` が `D:/Program Files/Git/aibow` で届いた。2026-11-08 に確かめた)。
    `-base aibow`(先頭の `/` なし)と書けば書き換えられないので、Windows のパスが届いたときは、そう言って止まる
-8. **プロキシ越しの呼び出しは直さず、起動のときに注意する**。base を付けて `127.0.0.1` で待ち受けると、同じ PC のプロキシ越しに、サーバーの PC からだけの操作が外に開くことをログの注意で知らせる(下の未決事項 1)
+8. **プロキシ越しの呼び出しは直さず、起動のときに注意する**。base を付けて `127.0.0.1` で待ち受けると、同じ PC のプロキシ越しに、サーバーの PC からだけの操作が外に開くことをログの注意で知らせる(下の未決事項 1)。
+   → 0044 で、この注意は外し、同じ条件で「プロキシは元の相手を X-Forwarded-For に書いてください」の Notice にした(0044 の決定事項 14)
 9. **aibow 専用の口の頭を `/aibow/` から `/_aibow/` に変える**(2026-11-08、ユーザーが決めた)。`/_aibow/ui/…`・`/_aibow/auth/…`・`/_aibow/store/…`・`/_aibow/admin/…`・
    `/_aibow/count-tokens`・`/_aibow/gpu-layers`・`/_aibow/places`・`/_aibow/settings`。`/v1/…`・`/models…`・`/apply-template` は変えない。
    - 理由:製品の名前の `/aibow` は base にもいちばん選ばれやすく、`-base /aibow` で `/aibow/aibow/ui/…` と重なって見えた。先頭の `_` で「中で使う道」と分かり、人が base に選ぶことはまずない
@@ -74,5 +75,6 @@ aibow-server はこれまで `-host` と `-port` に分けて待ち受けを決�
 ## 未決事項
 
 1. ~~**プロキシ越しの呼び出しを「サーバーの PC の上から」と見なさないようにするか**~~ → 2026-11-09 に (c) に決めた([0044](0044-trusted-proxies.md))。案:(a) 今のまま注意だけ、(b) `X-Forwarded-For`・`Forwarded` が付いた呼び出しは `IsLocal` を偽にする(付けないプロキシもあるので完全ではない)、
-   (c) server.json に信頼するプロキシのアドレスを書き、そこから来た呼び出しは `X-Forwarded-For` の相手で見る
+   (c) server.json に信頼するプロキシのアドレスを書き、そこから来た呼び出しは `X-Forwarded-For` の相手で見る。
+   2026-11-09 に 0044 で作った(サーバーの PC の上はいつも信頼するプロキシ。`trustedProxies`・`proxyHeader`)
 2. ログインの cookie の `Path` を base に合わせるか(今は `/`。同じアドレスでほかのアプリと cookie の名前が重ならない限り困らない)

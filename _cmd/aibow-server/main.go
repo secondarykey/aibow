@@ -210,6 +210,8 @@ func run(c serverConfig, notices []string, cfgErr error, env *config.Env) error 
 		apiH = asLocal(apiH) // キーの要らない形では、だれでもない呼び出しを local の分として記録する(0033)
 	}
 
+	proxies := newProxyTrust(c.TrustedProxies, c.ProxyHeader)
+
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return fmt.Errorf("%s で待ち受けられません。ほかのプログラムがこのポートを使っているなら -port で、アドレスがこの PC のものでないなら -host で変えてください: %w", addr, err)
@@ -225,7 +227,8 @@ func run(c serverConfig, notices []string, cfgErr error, env *config.Env) error 
 		StateFile: absPath(c.StatePath),
 	})
 	hs := &http.Server{
-		Handler:           mount(c.Base, routes(apiH, browser, screen())),
+		// 元の相手は mount の外側で1回だけ決める(0044 の決定事項 10)。中の道は書き換えた r.RemoteAddr を見る
+		Handler:           fromProxy(proxies, c.Login, mount(c.Base, routes(apiH, browser, screen()))),
 		ReadHeaderTimeout: 10 * time.Second,
 		TLSConfig:         tlsConfig,
 		// 書き込みの時間の上限(WriteTimeout)は付けない。返事の生成は数十秒〜数分かかることがあるため
@@ -241,7 +244,7 @@ func run(c serverConfig, notices []string, cfgErr error, env *config.Env) error 
 	}()
 	log.Noticef("%s %s を起動しました(返事の上限の既定 %d・presence penalty %.1f)",
 		logPrefix, appversion.Version(), defaults.MaxTokens, defaults.PresencePenalty)
-	logAddresses(c, base)
+	logAddresses(c, base, proxies)
 
 	select {
 	case err := <-errc:
@@ -277,7 +280,7 @@ func loadTLS(c serverConfig) (*tls.Config, error) {
 
 // logAddresses は、つなぐ側が書く値をそのまま出す(画面のアプリは /v1 なし、Cline などの OpenAI 互換のクライアントは /v1 付き)。
 // 全部のネットワークで待ち受けるとき(0.0.0.0 など)は、ほかの PC からはこの PC のアドレスでつなぐことも書く。
-func logAddresses(c serverConfig, base string) {
+func logAddresses(c serverConfig, base string, proxies proxyTrust) {
 	if ip := net.ParseIP(c.Host); ip != nil && ip.IsUnspecified() {
 		log.Noticef("全部のネットワークで待ち受けます。ほかの PC からは、%s の %s をこの PC のアドレス(IP アドレスか名前)に替えてつなぎます", base, c.Host)
 	}
@@ -285,12 +288,17 @@ func logAddresses(c serverConfig, base string) {
 	log.Noticef("OpenAI 互換のクライアント(Cline など)の Base URL: %s/v1", base)
 	log.Noticef("ブラウザで開く画面: %s/(会話は %s に保存します)", base, absPath(c.DBPath))
 	if c.Base != "" && c.Local() {
-		// base はリバースプロキシ(nginx など)の後ろに置くときに使うことが多い。同じ PC のプロキシを通った呼び出しは、
-		// 外からでも 127.0.0.1 から来たように見える(api.IsLocal は接続の相手のアドレスしか見ない)。
-		// サーバーの PC の上からだけ許している操作が外に開くので、起動のときに知らせる(0042。直すかは未決事項)
-		log.Warnf("base(%s)を付けて 127.0.0.1 で待ち受けます。同じ PC のリバースプロキシから外に出すと、プロキシを通った呼び出しも"+
-			"サーバーの PC の上からに見え、その人だけに許している操作(モデルを降ろす・GPU の層数・置き場所・全員の使用量)を誰でもできます。"+
-			"信用できる人だけが使う網に限ってください", c.Base)
+		// base はリバースプロキシ(nginx など)の後ろに置くときに使うことが多い。サーバーの PC の上はいつも信頼するプロキシなので、
+		// 同じ PC のプロキシが元の相手をヘッダーに書けば、その人で見る(0044)。書かないと、プロキシを通った呼び出しが
+		// 127.0.0.1 から来たように見える(起動のときには見分けられない。0044 の未決事項 1)ので、書くように知らせる(決定事項 14)
+		log.Noticef("同じ PC のリバースプロキシは、元の相手を %s に書くようにしてください(書かないと、プロキシを通った呼び出しがこの PC の上からに見えます)", c.ProxyHeader)
+	}
+	// 信頼するプロキシ(0044 の決定事項 13)。書かなくても、この PC の上は入っている
+	log.Noticef("信頼するプロキシ: %s(%s で元の相手を見ます)", proxies.describe(), c.ProxyHeader)
+	if all := proxies.all(); len(all) > 0 {
+		// 止めはしない(わざと書く場合を止めない)が、誰でもヘッダーで元の相手を偽れることを知らせる(決定事項 5)
+		log.Warnf("trustedProxies に全部のアドレスを含む範囲(%s)があります。どこからつないでも %s で元の相手を偽れます(サーバーの PC の上からを名乗る・ログインの制限をすり抜ける)",
+			strings.Join(all, ", "), c.ProxyHeader)
 	}
 	if c.Login {
 		log.Notice("ブラウザの画面はログインが要ります(利用者は aibow-server user add <名前> で作ります)")
