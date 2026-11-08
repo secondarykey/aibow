@@ -8,7 +8,7 @@
 
 | ファイル | 役割 |
 |---|---|
-| `conversation.go` | 会話の仕組み(`Conversations`)。発言の保存、タイトルの自動付与と名前の変更、生成、答えが出なかった回の理由の文、生成は同時に1つ。ツールを使うループは `agent.go`([tools.md](tools.md)) |
+| `conversation.go` | 会話の仕組み(`Conversations`)。発言の保存、タイトルの自動付与と名前の変更、生成、答えが出なかった回の理由の文、生成は同時に1つ。ツールを使うループは `agent.go`([tools.md](tools.md))、モデルに渡す内容(システムプロンプト・発言の列)を組み立てるのは `prompt.go` |
 | `store.go` | 保存先の約束(`Store` interface)と、会話・発言・要約の型(`Conversation` / `StoredMessage` / `ReplyStats` / `ToolResult` / `Compaction`) |
 | `user.go` | 会話の持ち主(利用者)を `ctx` で運ぶ仕組み(`WithUser` / `UserOf`)と、ログインなしの形の利用者 `LocalUser`(0017)。下の「持ち主」 |
 | `appsettings.go` | アプリ全体の設定(`app_settings`)・人ごとの設定(`user_settings`)と新しい会話の既定の読み書き。モデルの読み込みに関わる設定は `WorkspaceSettings` にまとめる。新しい会話の既定は、プロファイルがあればその値を読む。前の置き場(`conversation_defaults`、もっと古い `history_tokens` / `reply_tokens`・`n_ctx`)は、プロファイル「既定」に引き継ぐためだけに読む。環境変数は DB に値が無いときの初期値 |

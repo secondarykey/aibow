@@ -28,8 +28,8 @@ Cline はシステムプロンプトに「最後に必ず確かめる」「終�
 
 ## 今の作り(2026-11-05、Chat がコードを読んで確かめた)
 
-- `systemPrompt`(conversation.go):会話の設定の `System`(画面で変えられる。既定は `ui.DefaultSystemPrompt`)の後ろに、`environment` の説明を足す
-- `environment`(conversation.go):作業フォルダがあり、時刻・計算のほかにツールがあるときだけ書く。英語。`run_command` があるときだけシェルと `cd` の注意を書く。
+- `systemPrompt`(今は prompt.go):会話の設定の `System`(画面で変えられる。既定は `ui.DefaultSystemPrompt`)の後ろに、`environment` の説明を足す
+- `environment`(今は prompt.go):作業フォルダがあり、時刻・計算のほかにツールがあるときだけ書く。英語。`run_command` があるときだけシェルと `cd` の注意を書く。
   フォルダが複数なら `foldersEnvironment`。会話の中で変わらないので、システムプロンプトの後ろ(要約より前)に置き、KV キャッシュの使い回しを崩さない
 - aibow-mcp(`mcp/server/server.go`)は、ほかのクライアント向けに環境の説明だけを `instructions` に書く
 - `update_plan` の説明は「Write your plan for a task that takes several steps…」(`tool/plan.go`)。今は頼まなければ使わない(0037 の試し)
@@ -110,7 +110,7 @@ Cline はシステムプロンプトに「最後に必ず確かめる」「終�
 ### 段1 のコード(2026-11-06、Code)
 
 - `workrules.go` の `workingRules`:ツールの一覧から `# Working rules` を組み立てる。`edit_file` も `write_file` も無ければ空。
-  `systemPrompt`(conversation.go)が、環境の説明がある会話にだけ、その後ろ(要約より前)に足す
+  `systemPrompt`(今は prompt.go)が、環境の説明がある会話にだけ、その後ろ(要約より前)に足す
 - **Code が決めたこと(確かめてもらう)**:`run_command` が無いときは、確かめる行(5行目)と一緒に、最後の行も「End with a short answer: what you changed.」にした(「the result of the check」を外す)。
   確かめる道具が無いのに確かめた結果を求めると、小さなモデルは結果を作って書くおそれがあるため
 - ログ(Info):送信ごとに1回、「システムプロンプトの環境の説明は約 N トークン、作業の決まりは約 M トークン」(`logSystemParts`。差で数える)

@@ -25,7 +25,7 @@
 - ツールは `tool.Files(dir)` で会話ごとに作る。`Conversations.workDir(set)` が、アプリでは `set.WorkDir`、ブラウザ(`IgnoreWorkDir`)では資料のフォルダを返す(`rules.go`)
 - `run_command` は作業フォルダをカレントにして動く
 - `${workdir}` を使う MCP のサーバーは、作業フォルダごとに1つ起動する(`mcp/client` の `serverKey`)
-- 環境の説明(`Conversations.environment`。`conversation.go`)に `Working directory: <パス>` を1行書く
+- 環境の説明(`Conversations.environment`。今は `prompt.go`)に `Working directory: <パス>` を1行書く
 - 穴:aibow-server につないでいると `work_dir` が server.db に入り、別の PC で開くと前の PC のパスが残る(backlog「会話の作業フォルダを PC ごとにする」)
 
 ## 決定事項(ユーザーと決めたこと)

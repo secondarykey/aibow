@@ -31,6 +31,7 @@
 | `internal/proc/` | 子プロセスまでまとめて止める仕組み(Windows はジョブオブジェクト、それ以外はプロセスグループ)。`run_command` と MCP のサーバーで使う(0006 で `tool` から移した) |
 | `tool/confirm.go` | 実行前に確認が要るツールの印(`Confirmable`)と、確認の画面に出す内容(`Preview`: パス・上書きか・差分)。差分は `github.com/pkg/diff` |
 | `agent.go` | エージェントループ(`runTurn`)とツールの実行(10 秒の上限・20 回の上限・停止・会話の上限に入らない結果・実行前の確認の待ち) |
+| `tools.go` | 会話で使えるツールを並べる(`toolsFor`)・扱いの決め方(`toolPolicy`・`policyOf`)・設定の画面に出す状態(`ToolStates`)・組み込みのツールと MCP のツールの受け取り(`LocalTools`・`RemoteTools`) |
 | `workrules.go` | 作業の決まり(`# Working rules`。0041)。作業フォルダと書き換えるツールがある会話のシステムプロンプトに足す。下の「作業の決まり」 |
 | `worktree.go` | worktree で作業する会話(0039)。最初の書き換えの前に作る(`ensureWorktree`)・確認の既定・差分・取り込む・捨てる・会話を消したときの片付け。下の「worktree で作業する」 |
 | `git/git.go` / `git/worktree.go` / `git/read.go` | `git` パッケージ。アプリが行う Git の操作(`git` の exe を `os/exec` で呼ぶ)。worktree を作る・本体の状態・差分・`git apply` で当てる・取り込み済みか・消す。読むだけの `Status`・`WorkDiff`(`git_status`・`git_diff` が中で呼ぶ。索引を変えない。0041)。ルートの `aibow`・`tool` を import しない |

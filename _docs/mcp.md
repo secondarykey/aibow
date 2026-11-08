@@ -40,7 +40,8 @@ aibow ── tools/call ──────→ 結果(content)が返る → ツ�
 | `mcpfile.go` | 画面から足した MCP のサーバー `mcp.json` の読み書き(`MCPFile`)・settings.json との合わせ方(`MergeMCPServers`)・画面で変えたものを `Manager` に流す係(`MCPConfig`)・貼った JSON の読み取り(0034) |
 | `ui/mcpedit.go` | 設定の画面の「MCP」から呼ぶメソッド(一覧・足す・変える・消す・試す・JSON を読み取る。デスクトップのアプリだけ) |
 | `toolprefs.go` | ツールの扱い(`ToolPolicy`: 使わない / 確認する / 確認しない、会話の上書きだけの「使う」)と、その PC の既定 `tools.json`(`ToolPrefs`) |
-| `agent.go` | `RemoteTools`(会話の仕組みから見た MCP の口)・送信の前にサーバーを起動する(`startRemote`)・組み込みのツールの後ろに並べる(`toolsFor`)・ツールの扱いを決める(`toolPolicy` / `policyOf` / `needsConfirm`)・会話の設定の画面に出す扱い(`ToolStates`)・ツールの一覧を覚える(`rememberTools`) |
+| `tools.go` | `RemoteTools`(会話の仕組みから見た MCP の口)・送信の前にサーバーを起動する(`startRemote`)・組み込みのツールの後ろに並べる(`toolsFor`)・ツールの扱いを決める(`toolPolicy` / `policyOf`)・会話の設定の画面に出す扱い(`ToolStates`)・ツールの一覧を覚える(`rememberTools`) |
+| `agent.go` | 実行の前に確かめるか(`needsConfirm`。扱いは `tools.go` の `toolPolicy` で決めたもの) |
 | `internal/proc/` | 子プロセスまでまとめて止める仕組み(`run_command` と共有) |
 
 - `mcp/client` は `tool` を import し、ルートの `aibow`(LLM・会話の仕組み)は import しない。会話の仕組みは MCP を知らず、`RemoteTools` の interface だけを見る

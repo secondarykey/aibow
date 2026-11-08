@@ -1,7 +1,7 @@
 # aibow の「プロファイルを配る」の図(2026-11-01 時点)
 
 元にしたもの:`_docs/features/0014-profiles.md`(プロファイルと決まり)・`0018-sharing.md`(配る・会話の共有)・`0024-server-tools.md`(サーバーのツールと資料のフォルダ)・`0031-users-ui.md`(グループとグループ長。コミット済み)、
-コードは `store/profiles.go` の `profileVisible` / `profileUsed` / `profileEditable`・`rules.go` の `GrantedFolder`・`agent.go` の `policyOf`。
+コードは `store/profiles.go` の `profileVisible` / `profileUsed` / `profileEditable`・`rules.go` の `GrantedFolder`・`tools.go` の `policyOf`。
 図は Mermaid。[architecture-diagrams.md](architecture-diagrams.md) の続き。
 
 ## 0. ひと目で

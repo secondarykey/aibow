@@ -1,6 +1,6 @@
 # aibow の構成と関係の図（2026-10-31 時点）
 
-元にしたもの：`AGENTS.md`（全体の構成）・`_docs/mcp.md`・`_docs/features/0024-server-tools.md`・`agent.go` の `policyOf`。
+元にしたもの：`AGENTS.md`（全体の構成）・`_docs/mcp.md`・`_docs/features/0024-server-tools.md`・`tools.go` の `policyOf`。
 図は Mermaid。aibow の返事の表示（mermaid の図）や GitHub でそのまま描ける。
 
 ## 0. ひと目で比べる
