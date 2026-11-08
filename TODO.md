@@ -30,6 +30,7 @@ aibow に残っている課題の一覧(入口)。ルールと全体の構成は
 | | 課題 | 資料 |
 |---|---|---|
 | ⬜ | 共有の再検討(アプリからの閲覧・プロジェクトの概念・利用者同士の会話) | [検討メモ](_docs/backlog.md#共有の再検討アプリからの閲覧プロジェクトの概念)・[0018-sharing.md](_docs/features/0018-sharing.md) |
+| ⬜ | プロキシ越しの呼び出しを元の相手で見る(この PC の上と、server.json に書いた信頼するプロキシからのときだけ、転送のヘッダーを使う) | [0044-trusted-proxies.md](_docs/features/0044-trusted-proxies.md) |
 | ⬜ | aibow-server の中央の制御の残り(上限の上限・順番待ちの優先度・自動で降ろす・server.json を画面で) | [検討メモ](_docs/backlog.md#aibow-server-の中央の制御の残り) |
 | ⬜ | 利用者をまとめて作る(インポート) | [検討メモ](_docs/backlog.md#利用者をまとめて作るインポート) |
 | ⬜ | 複数のモデルを同時に動かす | [検討メモ](_docs/backlog.md#複数のモデルを同時に動かす) |
