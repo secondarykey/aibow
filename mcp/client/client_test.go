@@ -710,6 +710,13 @@ func TestHTTPServer(t *testing.T) {
 	if got := m.Tools("", m.Servers()); len(got) != 0 {
 		t.Errorf("つながりが切れたサーバーのツールは外す: %v", names(got))
 	}
+
+	// 外したサーバーは別の goroutine で止める。Close はその終わりまで待つ
+	// (待たないと、止める途中のログが次のテストの captureLogs に紛れ込む)
+	m.Close()
+	if !l.contains("MCP intra: つながりが切れたサーバーを止めました") {
+		t.Error("Close は、つながりが切れて止めている途中のサーバーを待つ")
+	}
 }
 
 // MCP のツールの名前には、サーバーの名前を前に付ける(名前空間の代わり)。使えない文字は _ にする
