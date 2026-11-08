@@ -266,13 +266,24 @@ func (set folderSet) cardFolder(t target) string {
 
 // withFolder は、フォルダが複数のとき、ツールの定義に引数 folder(名前の enum)を足す。1つなら def のまま。
 // path の説明の「作業フォルダ」は、フォルダが複数でも「選んだフォルダ」と読めるように変えない(定義を短く保つ)。
+//
+// JSON として読み直さず文字列で差し込むのは、定義の書き方(キーの順番・「, 」「: 」の区切り)をそのまま残すため。
+// 定義の文字列はそのままモデルに見せる形にしてある(format の qwen35_test)。encoding/json で書き戻すとキーが並べ替わり、区切りも詰まる。
+// 引数の無いツール(git_status)は properties が空の {} なので、後ろに区切りのカンマを付けると壊れた JSON になる。
+// 以前はそれで MCP の SDK の AddTool が panic した(フォルダが複数のワークスペースで会話を始められなかった。2026-11-08)。
 func (set folderSet) withFolder(def Def) Def {
 	if !set.multi() {
 		return def
 	}
 	names, _ := json.Marshal(set.names())
-	prop := `"folder": {"type": "string", "enum": ` + string(names) + `, "description": "Folder to use (see Environment). Omit for the main folder."}, `
-	def.Parameters = json.RawMessage(strings.Replace(string(def.Parameters), `"properties": {`, `"properties": {`+prop, 1))
+	prop := `"folder": {"type": "string", "enum": ` + string(names) + `, "description": "Folder to use (see Environment). Omit for the main folder."}`
+	s := string(def.Parameters)
+	if strings.Contains(s, `"properties": {}`) {
+		s = strings.Replace(s, `"properties": {}`, `"properties": {`+prop+`}`, 1)
+	} else {
+		s = strings.Replace(s, `"properties": {`, `"properties": {`+prop+`, `, 1)
+	}
+	def.Parameters = json.RawMessage(s)
 	return def
 }
 
