@@ -19,9 +19,9 @@ import (
 
 	apiclient "github.com/secondarykey/aibow/api/client"
 	"github.com/secondarykey/aibow/auth"
-	"github.com/secondarykey/aibow/genlog"
 	"github.com/secondarykey/aibow/localconf"
 	"github.com/secondarykey/aibow/log"
+	"github.com/secondarykey/aibow/usage"
 )
 
 // AccountInfo は、画面のアプリの今のアカウント(設定の画面の「アカウント」のタブと、左下の名前)。
@@ -129,9 +129,9 @@ func (s *ChatService) SetMyDisplayName(name string) (AccountInfo, error) {
 }
 
 // MyUsage は、aibow-server での自分の使用量(今日・7日・30日。設定の画面の「アカウント」のタブ。0033)。
-func (s *ChatService) MyUsage() (genlog.Mine, error) {
+func (s *ChatService) MyUsage() (usage.Mine, error) {
 	if s.conn.client == nil {
-		return genlog.Mine{}, errors.New("使用量は、aibow-server につないでいるときだけ見られます")
+		return usage.Mine{}, errors.New("使用量は、aibow-server につないでいるときだけ見られます")
 	}
 	return s.conn.client.MyUsage()
 }

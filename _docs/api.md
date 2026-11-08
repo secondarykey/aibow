@@ -21,7 +21,7 @@ Cline など [ 会話の仕組み + 手 ] ⇄ HTTP(OpenAI 互換。127.0.0.1 だ
 | `api/seat.go` | 生成の順番待ちの席(`Seat`)。ステップ9で `Server` の外に出し、ブラウザの会話(`ui`)も同じ席を通す(下の「画面用の口」)。席の数はシーケンスの数(0023。下の「席とシーケンス」) |
 | `api/api_test.go`・`api/aibow_test.go` | 偽物の生成とモデルの係でのテスト(モデル不要) |
 | `api/client/` | aibow-server につなぐクライアント(`client` パッケージ。ステップ8)。下の「クライアント(`api/client`)」 |
-| `genlog/` | 生成の付箋(道・用途・会話・順番待ちを ctx で運ぶ)と、使用量の記録の形(`genlog` パッケージ。0033)。何にも依存しない。下の「使用量の記録」 |
+| `usage/` | 生成の付箋(道・用途・会話・順番待ちを ctx で運ぶ)と、使用量の記録の形(`usage` パッケージ。0033)。何にも依存しない。下の「使用量の記録」 |
 | `_cmd/aibow-server/usage.go` | 記録付きの engine(`recorder`)と、使用量を見る口(0033)。下の「使用量の記録」 |
 | `ui/web.go`・`ui/serverhost.go` | 画面用の口(`/_aibow/ui/` の下)と、aibow-server の中でブラウザの会話のモデルを扱う係(`ServerHost`)。ステップ9。下の「画面用の口」 |
 | `_cmd/aibow-server/` | exe(ステップ8で `aibow-api` から名前を変えた。0015)。`config.go` は設定(強さの順は 引数 > 設定ファイル `server.json` > 環境変数 > 既定)、`models.go` はモデルの係(GPU の層数と画面で足した置き場所を `server-models.json` に覚える)、`main.go` はエンジンとモデルを用意して `api` を `127.0.0.1` で待ち受けるだけ、`browser.go` はブラウザの会話(`server.db` を開き、`ui` の会話の仕組みと画面用の口を作る。ステップ9)。`log.go` はログの出口(`aibow-server_<日付>.log`)、`version` / `appversion.go` はアプリと同じバージョン(`_cmd/aibow/version` の写し) |
@@ -359,7 +359,7 @@ OpenAI 互換の口(api)──────────┐   付箋:道 api / app
 
 - **1か所で包む**:生成が通る2本の道の両方に書き足さず、aibow-server が engine を渡すところで包む(デコレータの形)。
   `recorder` は `api.Generator` を満たすので、`api.New` にも `ui.NewServerHost` にも同じものを渡す(`main.go`)。トークン数・書式・読み込み中のモデルはそのまま通す
-- **付箋(`genlog`)**:包む側は「だれが・どの道で・何のために」を知らないので、呼ぶ側が ctx に付ける。道は HTTP の口(`api` の `handleChat`・`ui.Handler`)、
+- **付箋(`usage`)**:包む側は「だれが・どの道で・何のために」を知らないので、呼ぶ側が ctx に付ける。道は HTTP の口(`api` の `handleChat`・`ui.Handler`)、
   用途(`reply` / `summary`)と会話は会話の仕組み(`Conversations.generate`・`generateSummary`)。アプリの会話の仕組みは aibow-server の外で動くので、
   `api/client` が付箋を `aibow` 欄の `purpose`・`conversation` に写して送り、`api` が読んで付け直す
 - **だれか**:`auth.UserFrom`(API キー・アプリ用のトークン・ログインの cookie)、無ければ `aibow.UserOf`(ブラウザのログインなしの形の `local`)。
@@ -370,7 +370,7 @@ OpenAI 互換の口(api)──────────┐   付箋:道 api / app
 - **見る口**(`usage.go`。days は今日を含めた日数 1〜366、既定 7。日の区切りはサーバーの PC の時刻):
   `GET /_aibow/admin/usage?days=N`(利用者ごと。GPU の秒数の多い順。消された人は `deleted`)・`GET /_aibow/admin/usage/user?id=<ID>&days=N`(1人のモデルごと・日ごと)は、
   ログインした管理者だけ(ほかは 401 / 403)。ログインなしの形ではサーバーの PC の上から(127.0.0.1)だけ。
-  `GET /_aibow/auth/usage`(自分の今日・7日・30日。`genlog.Mine`)は本人(cookie かアプリ用のトークン。`keys.WithBearer`)。アプリは `api/client` の `MyUsage` で呼ぶ
+  `GET /_aibow/auth/usage`(自分の今日・7日・30日。`usage.Mine`)は本人(cookie かアプリ用のトークン。`keys.WithBearer`)。アプリは `api/client` の `MyUsage` で呼ぶ
 - **KV キャッシュと使用量**:プロンプトのトークン数には使い回した分も入る。実際に計算したのは「プロンプト − 使い回した数」。同じ会話を続けると軽く、
   毎回最初から読み直す使い方は重い、がプロンプトの秒数に出る(画面ではバルーンに使い回した数を出す)
 

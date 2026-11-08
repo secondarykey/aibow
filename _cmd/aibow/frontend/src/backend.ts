@@ -97,7 +97,7 @@ export interface Link {
   expiresAt: string;
 }
 
-// UsageTotal は、使用量の表の1行(Go の genlog.Total。0033)。key は何でまとめたか(利用者の ID・モデルの ID・日付 YYYY-MM-DD)
+// UsageTotal は、使用量の表の1行(Go の usage.Total。0033)。key は何でまとめたか(利用者の ID・モデルの ID・日付 YYYY-MM-DD)
 export interface UsageTotal {
   key: string;
   name?: string;         // 利用者でまとめたとき:記録に写した名前
@@ -119,7 +119,7 @@ export interface UsageDetail {
   days: UsageTotal[];
 }
 
-// MyUsage は、本人の使用量(Go の genlog.Mine)
+// MyUsage は、本人の使用量(Go の usage.Mine)
 export interface MyUsage {
   today: UsageTotal;
   week: UsageTotal;

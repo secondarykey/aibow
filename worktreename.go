@@ -23,8 +23,8 @@ import (
 
 	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/format"
-	"github.com/secondarykey/aibow/genlog"
 	"github.com/secondarykey/aibow/log"
+	"github.com/secondarykey/aibow/usage"
 )
 
 // worktreeNameMax は、worktree の名前の長さの上限(文字数)。Windows のパスの長さを抑えるため
@@ -91,7 +91,7 @@ func (cs *Conversations) nameWorktree(ctx context.Context, conv Conversation, sa
 		return
 	}
 	// 使用量の記録(aibow-server につないでいるとき)では、返事に数える(短い生成なので、用途を増やさない)
-	gctx := genlog.WithPurpose(ctx, genlog.PurposeReply, conv.ID)
+	gctx := usage.WithPurpose(ctx, usage.PurposeReply, conv.ID)
 	out, st, err := cs.gen.Generate(gctx, format.Prompt{Messages: worktreeNamePrompt(text), Think: false},
 		engine.GenerateOptions{Temperature: 0, MaxTokens: 24}, func(string) {}, func(string) {}, func(string) {})
 	if err != nil {
