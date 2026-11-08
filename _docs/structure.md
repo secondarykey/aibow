@@ -50,7 +50,7 @@ Ollama が保存したファイルを aibow が直接読むので、Ollama は�
 | `store.go` | 会話の保存先の約束(interface)と、会話・発言・要約の形。会話の仕組みは保存先が SQLite かどうかを知らない |
 | `appsettings.go` | アプリの設定(GPU の層数・最後に使ったモデル・画面の設定)と新しい会話の既定の設定(会話の上限・返事の上限も入る) |
 | `profile.go` | 設定のプロファイル(名前の付いた新しい会話の既定。値と決まり)と、起動したときの引き継ぎ |
-| `store/sqlite.go` | 会話・発言・要約・読み込んだファイルを SQLite のファイルに保存する部分(テーブルの作り変え = マイグレーションもここ) |
+| `store/sqlite.go` | 会話・発言・要約・読み込んだファイルを SQLite のファイルに保存する部分の土台(開く・持ち主・値の変換)。中身は区切りごとのファイルに分けている(`migrate.go`(テーブルの作り変え = マイグレーション)・`conversations.go`・`share.go`(共有)・`messages.go`(発言と読み込んだファイル)・`compactions.go`(要約)・`profiles.go`・`settings.go`) |
 | `store/users.go` | aibow-server の利用者・セッション・API キーを保存する部分(ステップ10) |
 | `store/remote/` | 画面のアプリの会話を aibow-server に保存するための口(サーバーの側)と、その HTTP 版(アプリの側)。ステップ10 |
 | `*_test.go` | テスト(モデルなしで実行できる) |

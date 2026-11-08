@@ -5,7 +5,14 @@
 
 | ファイル | 役割 |
 |---|---|
-| `sqlite.go` | `Store` の SQLite 実装(`modernc.org/sqlite`)。マイグレーションもここ |
+| `sqlite.go` | `Store` の SQLite 実装(`modernc.org/sqlite`)の土台。開く(`Open`)・ctx の利用者(`owner`・`isAdmin`)・値の変換と、ファイルをまたいで使う小さな部品 |
+| `migrate.go` | マイグレーション(`migrations` と `migrate`。版の一覧は下) |
+| `conversations.go` | 会話の読み書きと「生成中」の印(`LockConversation`)。発言と要約の持ち主の条件 `ownConversation`・`ownMessage` もここ |
+| `share.go` | 会話の共有とほかの人の会話を読む(0018 の 11-2)。誰に見えるかの条件 `conversationShared`・共有の相手を覚える `setShareTargets`(プロファイルを配るのにも使う)・共有の相手を選ぶ一覧 `Directory` |
+| `messages.go` | 発言と、発言に付けた読み込んだファイル(`files`。0030) |
+| `compactions.go` | 要約(compact) |
+| `profiles.go` | プロファイルとプロファイルを配る(0018 の 11-1)。見える・変えられるの条件 `profileVisible`・`profileUsed`・`profileEditable` |
+| `settings.go` | アプリ全体の設定(`app_settings`)と人ごとの設定(`user_settings`) |
 | `users.go` | 利用者とセッションの保存(`auth.Store` の実装。aibow-server の server.db だけで使う) |
 | `groups.go` | グループとグループの長(0031)。誰が変えられるかの条件 `groupEditable` もここ |
 | `usage.go` | aibow-server の生成の記録(使用量。0033)の保存と集計(利用者ごと・モデルごと・日ごと) |
@@ -54,7 +61,7 @@
     `SetMessagesElided` で付けるだけで、外す口は無い。`AddMessage` も印をそのまま入れる(会話を写すときに付いていく)
 - 会話の共有:ほかの人の会話を読むのは `ReadConversation` だけ(条件 `conversationShared` と管理者か)。書くメソッドは持ち主の行だけなので、共有された人も管理者も書き込めない。
   自分の会話を読むときは `share`(と1つ読むときは `ShareWith`)を入れる
-- プロファイルの読み書き:見える・変えられるの判定は `sqlite.go` の `profileVisible`・`profileUsed`・`profileEditable`(名前付きの引数 `:me`・`:admin`)の1か所だけ。
+- プロファイルの読み書き:見える・変えられるの判定は `profiles.go` の `profileVisible`・`profileUsed`・`profileEditable`(名前付きの引数 `:me`・`:admin`)の1か所だけ。
   `Profile` / `ListProfiles` は読むときに `Owner`・`OwnerName`・`ReadOnly`・`Withdrawn` を入れ、`ShareWith` は変えられる人にだけ入れる。
   利用者を消しても、配ったプロファイルと、ほかの人の会話が使っているプロファイルは残す(`DeleteUser`)。接続は1本(`SetMaxOpenConns(1)`)なので、トランザクションの途中でほかの読み出しをしない(閉じてから読む)
 - モデルの ID:会話の設定とプロファイルの値の `model` は、読むときに `models.IDOf` で今の形(`file:<ファイル名>`)に読み替える(以前の `file:<パス>` を書き換えずに使うため。0018 の決定事項 15)
