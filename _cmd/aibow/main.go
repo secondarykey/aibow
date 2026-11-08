@@ -14,7 +14,7 @@
 // ファイルの役割:
 //
 //	main.go    … 起動(このファイル)
-//	config.go  … 環境変数から設定を読む(settings.json は aibow.LoadSettingsFile、MCP のサーバーは startMCP。aibow-server のつなぎ先は loadServer)
+//	config.go  … 環境変数から設定を読む(settings.json は config.LoadSettingsFile、MCP のサーバーは startMCP。aibow-server のつなぎ先は loadServer)
 //	connection.go … 画面から aibow-server につなぐ・ログインする・戻す(connection.json。0019。起動し直すと切り替わる)
 //	service.go … 画面から呼ばれるメソッドを Wails に渡す(中身はルートの ui パッケージ。モデル・会話・設定・送信と、モデルを扱う係)
 //	frontend/  … 画面(React + TypeScript)。Vite でビルドした結果は、共有のパッケージ web(リポジトリのルートの web/dist/app)に出て、実行ファイルに埋め込まれる

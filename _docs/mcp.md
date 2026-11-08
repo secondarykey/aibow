@@ -69,7 +69,7 @@ MCP のサーバーは、設定の画面の「MCP」のタブ(アプリだけ)�
 
 - **置き場所は `mcp.json` の1つ**:`settings.json` に手で書いた `mcpServers` は、起動したときに `mcp.json` へ移し、`settings.json` からは `mcpServers` だけを消す(`MCPFile.MoveFromSettings`。0034 の決定事項 13。2026-11-03 に改めた)。
   置き場所が2つあると、画面から変えられないサーバーや、同じ名前で使われないサーバーができて分かりにくいため。説明にある JSON を `settings.json` に貼る今までの足し方も、次の起動で移るので使える
-  - `settings.json` のほかの項目は、並びも値もそのまま残す(`removeSettingsKey`。項目を生のまま1つずつ読んで並べ直す。aibow の知らない項目も落とさない。変わるのは字下げだけ)
+  - `settings.json` のほかの項目は、並びも値もそのまま残す(`config.RemoveSettingsKey`。項目を生のまま1つずつ読んで並べ直す。aibow の知らない項目も落とさない。変わるのは字下げだけ)
   - `mcp.json` に同じ名前があれば、`settings.json` の設定にする(それまで動いていたのは settings.json のほうなので)
   - 先に `mcp.json` を書き、そのあとで `settings.json` を書き直す。途中で失敗しても両方に同じ設定が残るだけで、次の起動でもう一度移す
 - 移せなかったとき(`mcp.json` が壊れている・合わせるとツールの名前で重なる・書けない)だけ、settings.json の分を別に持つ:お知らせで理由を伝え、一覧に「settings.json」の印を付けて出す(画面からは変えない。試しにつなぐだけできる)。

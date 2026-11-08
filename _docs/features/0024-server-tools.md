@@ -163,8 +163,8 @@ Code が決めたこと:
      qwen3.5:4b(CPU)のブラウザで、「今何時?」で get_current_time が動き、calculate を「確認する」にした会話で確認のカードが出て、「この会話では今後聞かない」で実行して答えた。
      SSE だけが切れたときのカードの出し直しは、ブラウザでは試していない(切る手段が無い。12-4 で)。プロファイルの「ツール」をブラウザに出すのは 12-1b(管理者の画面と一緒に)
 2. **12-1b サーバーの MCP のサーバー**:設定ファイルの MCP のサーバー・管理者の既定(上の 3・10)・管理者の「ツール」の画面。fetch で試す
-   - **済み**(2026-10-26。決定事項 20〜25):`server.json` の `mcpServers` を読み(`aibow.CheckMCPServers` でアプリと同じに確かめる)、最初に使われたときに起動して全員で1つを使う・
-     管理者の既定は `server-tools.json`(`aibow.LoadServerToolPrefs`。「使わない」は禁止で `PolicyFromAdmin`)・既定を変える・一覧を読み直すのは管理者だけ(口で 403・メソッドでも確かめる)・
+   - **済み**(2026-10-26。決定事項 20〜25):`server.json` の `mcpServers` を読み(`aibow.CheckMCPServers`。今は `config.CheckMCPServers`。アプリと同じに確かめる)、最初に使われたときに起動して全員で1つを使う・
+     管理者の既定は `server-tools.json`(`aibow.LoadServerToolPrefs`。今は `config.LoadServerToolPrefs`。「使わない」は禁止で `PolicyFromAdmin`)・既定を変える・一覧を読み直すのは管理者だけ(口で 403・メソッドでも確かめる)・
      設定の画面に「ツール」のタブ・プロファイルの「ツール」もブラウザに出す(確認しないの印・読み直し・保存先は出さない)・`${workdir}` のサーバーはブラウザに出さない。
      httptest(aibow の自作の MCP サーバーを HTTP に出したもの)で、使う・確認・管理者だけが変えられる・禁止を確かめた。
      qwen3.5:4b(CPU)のブラウザで fetch を試した([mcp.md](../mcp.md) の「aibow-server の MCP のサーバー」)。
