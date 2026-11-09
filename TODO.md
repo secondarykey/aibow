@@ -23,6 +23,7 @@ aibow に残っている課題の一覧(入口)。ルールと全体の構成は
 |---|---|---|
 | ⬜ | ツールの信頼の続き(サーバーごとにまとめて確認しない・`readOnlyHint`・自作サーバーの二重の確認) | [0010-tool-trust.md](_docs/features/0010-tool-trust.md) の「3段目以降」 |
 | ⬜ | MCP の OAuth(ログインが要る url の MCP のサーバー) | [検討メモ](_docs/backlog.md#mcp-の-oauth) |
+| ⬜ | ツールと MCP のサーバーをほかのアプリの部品にする(メモ帳から使う) | [0045-as-parts.md](_docs/features/0045-as-parts.md)(相談中) |
 | ⬜ | Web で検索する(ページを読むのは組み込みの `fetch_url` で済んだ。残りは探すほう) | [検討メモ](_docs/backlog.md#web-で検索する) |
 
 ## aibow-server と組織で使う
