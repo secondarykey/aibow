@@ -340,7 +340,7 @@ func checkFiles(files []File) error {
 // 答えが出て要らなくなった画像・ファイルを、会話は残したまま消すため(自動では捨てない。残しておきたいこともあるので、人が選ぶ)。
 // 生成中の会話では捨てられない(ツールのループの中で、答えが出るまで画像が要る)。捨てた中身は戻せない。
 func (cs *Conversations) DiscardFile(ctx context.Context, id, fileID uuid.UUID) error {
-	if g := cs.generating.Load(); g != nil && *g == id {
+	if cs.generatingIn(ctx, id) {
 		return errors.New("返事を生成中の会話では、ファイルを捨てられません。終わってから捨ててください")
 	}
 	_, history, err := cs.store.Conversation(ctx, id)

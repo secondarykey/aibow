@@ -65,7 +65,7 @@ aibow に残っている課題の一覧(入口)。ルールと全体の構成は
 |---|---|---|
 | ⬜ | 画面のアプリ(serverUrl)での共有・配られたプロファイル・共有の相手の選択・アカウントのタブの使用量 | [0018](_docs/features/0018-sharing.md) の「11-3」・[0031](_docs/features/0031-users-ui.md)・[0033](_docs/features/0033-usage.md) |
 | ⬜ | ファイルを読み込む画面(札・大きく見る・ドロップ・貼り付け)を、アプリとブラウザで本物のモデルと | [0030-read-files.md](_docs/features/0030-read-files.md) |
-| ⬜ | aibow-server を GPU の 9B で:2人同時の生成・資料のフォルダのツール | [0023-parallel.md](_docs/features/0023-parallel.md)・[0024-server-tools.md](_docs/features/0024-server-tools.md) |
+| ⬜ | aibow-server を GPU の 9B で:2人同時の生成(ブラウザの画面を2つ並べて。`parallel` 2)・資料のフォルダのツール | [0023-parallel.md](_docs/features/0023-parallel.md)・[0024-server-tools.md](_docs/features/0024-server-tools.md) |
 | ⬜ | ほかの PC からつなぐ:本物の Cline・HTTPS・資料のフォルダの見え方 | [0018](_docs/features/0018-sharing.md) の「11-3」・[0024](_docs/features/0024-server-tools.md) |
 | ⬜ | アプリのログイン:トークンの期限切れ・証明書を作り直したときの画面(テストだけ) | [0019-app-login.md](_docs/features/0019-app-login.md) |
 | ⬜ | アプリの中で動かすときのモデルのタブ(管理の画面を分けたあと) | [0032-admin-screen.md](_docs/features/0032-admin-screen.md) |

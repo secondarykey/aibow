@@ -408,16 +408,24 @@ func (cs *Conversations) confirm(ctx context.Context, conv uuid.UUID, c format.T
 		return nil, err
 	}
 	req := ConfirmRequest{ID: uuid.NewV7().String(), Call: c, Preview: pv}
-	p := &pendingConfirm{conv: conv, id: req.ID, tool: c.Name, req: req, answer: make(chan Confirmation, 1)}
-	cs.confirmMu.Lock()
-	cs.pending = p
-	cs.confirmMu.Unlock()
+	p := &pendingConfirm{id: req.ID, tool: c.Name, req: req, answer: make(chan Confirmation, 1)}
+	// 待っている確認は、この人の進行中の送信に置く(答えるとき・取り直すときも、自分の送信からしか引けない。turns.go)
+	cs.turnMu.Lock()
+	turn := cs.turnIn(ctx, conv)
+	if turn != nil {
+		turn.pending = p
+	}
+	cs.turnMu.Unlock()
+	if turn == nil {
+		// 送信の外からは確かめられない(答えを届ける先が無い)。聞かずに実行はしない
+		return nil, errors.New("送信が終わっているため実行していません")
+	}
 	defer func() {
-		cs.confirmMu.Lock()
-		if cs.pending == p {
-			cs.pending = nil
+		cs.turnMu.Lock()
+		if turn.pending == p {
+			turn.pending = nil
 		}
-		cs.confirmMu.Unlock()
+		cs.turnMu.Unlock()
 	}()
 
 	emit(ChatEvent{ConversationID: conv, Type: "confirm", Confirm: &req})
@@ -437,10 +445,10 @@ func (cs *Conversations) Pending(ctx context.Context, conv uuid.UUID) (*ConfirmR
 	if _, _, err := cs.store.Conversation(ctx, conv); err != nil {
 		return nil, err
 	}
-	cs.confirmMu.Lock()
-	defer cs.confirmMu.Unlock()
-	if p := cs.pending; p != nil && p.conv == conv {
-		req := p.req
+	cs.turnMu.Lock()
+	defer cs.turnMu.Unlock()
+	if t := cs.turnIn(ctx, conv); t != nil && t.pending != nil {
+		req := t.pending.req
 		return &req, nil
 	}
 	return nil, nil
@@ -458,10 +466,21 @@ func (cs *Conversations) Answer(ctx context.Context, conv uuid.UUID, id string, 
 	if a.Remember != "" && !a.Remember.ValidInConversation() {
 		return fmt.Errorf("これから先の扱い %q は知らない値です", a.Remember)
 	}
-	cs.confirmMu.Lock()
-	defer cs.confirmMu.Unlock()
-	p := cs.pending
-	if p == nil || p.conv != conv || p.id != id {
+	// 自分の進行中の送信が待っている確認だけに答えられる(ほかの人の確認は、ID を知っていても引けない。turns.go)。
+	// answerMu は、答える処理(扱いの保存 → 答えを渡す)を1つずつにする。turnMu を持ったまま保存先を呼ばないため、ロックを分けている
+	// (保存先が HTTP の向こうにあると、その間ほかの人の送信の始まりまで待たせてしまう)
+	cs.answerMu.Lock()
+	defer cs.answerMu.Unlock()
+	waiting := func() *pendingConfirm {
+		cs.turnMu.Lock()
+		defer cs.turnMu.Unlock()
+		if t := cs.turnIn(ctx, conv); t != nil && t.pending != nil && t.pending.id == id {
+			return t.pending
+		}
+		return nil
+	}
+	p := waiting()
+	if p == nil {
 		return errors.New("この確認はもう待っていません(停止したか、すでに答えています)")
 	}
 	if a.Remember != "" {
@@ -470,7 +489,17 @@ func (cs *Conversations) Answer(ctx context.Context, conv uuid.UUID, id string, 
 		}
 		log.Noticef("ツール %s のこの会話での扱いを %s にしました(確認のカードから)", p.tool, a.Remember)
 	}
-	cs.pending = nil // 2回押しても、答えは1回だけ届ける
+	// 2回押しても、答えは1回だけ届ける(保存している間に停止されていたら、もう待っていない)
+	cs.turnMu.Lock()
+	t := cs.turnIn(ctx, conv)
+	still := t != nil && t.pending == p
+	if still {
+		t.pending = nil
+	}
+	cs.turnMu.Unlock()
+	if !still {
+		return errors.New("この確認はもう待っていません(停止したか、すでに答えています)")
+	}
 	a.Reason = strings.TrimSpace(a.Reason)
 	p.answer <- a
 	return nil

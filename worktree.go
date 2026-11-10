@@ -358,7 +358,7 @@ func (cs *Conversations) ApplyWorktree(ctx context.Context, id uuid.UUID, paths 
 // DiscardWorktree は、会話 id の worktree とブランチを消し、会話を本体のフォルダに戻す(切り替えも外す)。
 // 生成中は消さない(モデルが書いている途中のフォルダを消さないため)。
 func (cs *Conversations) DiscardWorktree(ctx context.Context, id uuid.UUID) error {
-	if g := cs.generating.Load(); g != nil && *g == id {
+	if cs.generatingIn(ctx, id) {
 		return errors.New("返事を生成中の会話の worktree は捨てられません。停止してから捨ててください")
 	}
 	wt, err := cs.worktreeFor(ctx, id)
