@@ -106,7 +106,7 @@ func (cs *Conversations) worktreeUsable(set ConversationSettings) error {
 	if !ok {
 		return errors.New("この PC にはこのワークスペースがありません")
 	}
-	if !config.IsGitRepo(ws.MainFolder().Path) {
+	if !git.IsRepo(ws.MainFolder().Path) {
 		return fmt.Errorf("メインのフォルダ %s が Git のリポジトリではありません(直下に .git がありません)", ws.MainFolder().Name)
 	}
 	return git.Available()

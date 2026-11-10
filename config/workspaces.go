@@ -31,8 +31,6 @@ import (
 	"sync"
 	"unicode/utf8"
 	"uuid"
-
-	"github.com/secondarykey/aibow/git"
 )
 
 // Workspace はワークスペース1つ。
@@ -433,9 +431,4 @@ func samePath(a, b string) bool {
 		return strings.EqualFold(a, b)
 	}
 	return a == b
-}
-
-// IsGitRepo は、フォルダがリポジトリ(.git がある)か。worktree では .git がファイルなので、ある・なしだけを見る(決定事項 2)。
-func IsGitRepo(path string) bool {
-	return git.IsRepo(path) // 見分け方は git にまとめた(モデルに見せる Git のツールを出すかも同じ見分け方で決める。0041)
 }

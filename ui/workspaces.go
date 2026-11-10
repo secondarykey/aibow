@@ -12,6 +12,7 @@ import (
 	"os"
 
 	"github.com/secondarykey/aibow/config"
+	"github.com/secondarykey/aibow/git"
 	"github.com/secondarykey/aibow/log"
 )
 
@@ -62,7 +63,7 @@ func (s *Service) Workspaces() WorkspaceList {
 	for _, ws := range w.List() {
 		v := WorkspaceView{Workspace: ws, Folders: []FolderView{}}
 		for _, f := range ws.Folders {
-			v.Folders = append(v.Folders, FolderView{WorkspaceFolder: f, Missing: !isDir(f.Path), Git: config.IsGitRepo(f.Path)})
+			v.Folders = append(v.Folders, FolderView{WorkspaceFolder: f, Missing: !isDir(f.Path), Git: git.IsRepo(f.Path)})
 		}
 		r.Workspaces = append(r.Workspaces, v)
 	}

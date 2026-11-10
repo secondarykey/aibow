@@ -5,6 +5,7 @@
 //	toolprefs.go    … ツールの扱い(ToolPolicy: 使わない / 確認する / 確認しない)と、その PC の既定 tools.json(aibow-server は server-tools.json)
 //	mcp.go          … 画面から足した MCP のサーバー mcp.json と、settings.json に手で書いた分を移す係・画面で変えたものを流す係(MCPConfig)
 //	workspaces.go   … ワークスペース(名前の付いた PC のフォルダの組)と、会話の worktree の結び付け workspaces.json
+//	modelplaces.go  … アプリの中で動かすときに、画面で足したモデルの置き場所 model-places.json(aibow-server の側は servermodels.go)
 //	server.go       … aibow-server の手で書く設定ファイル server.json(ポート・作業領域・資料のフォルダ・mcpServers など)
 //	servermodels.go … aibow-server が書く server-models.json(モデルごとの GPU の層数・足した置き場所・使えないモデル)
 //	env.go          … AIBOW_ で始まる環境変数(誤りをまとめて返す)
@@ -13,7 +14,7 @@
 //
 //	画面で変える設定                         … DB(ルートの aibow の appsettings.go と、会話ごとの conversations.settings)
 //	手で書く設定                             … settings.json・server.json
-//	画面で変えるが、その PC の人が決めること … tools.json・mcp.json・workspaces.json・connection.json・server-models.json
+//	画面で変えるが、その PC の人が決めること … tools.json・mcp.json・workspaces.json・connection.json・model-places.json・server-models.json
 //	環境変数                                 … 画面で変えられる設定では「DB にまだ値が無いときの初期値」。手で書いたファイルの値のほうが強い
 //
 // ファイルの設定は「その PC でどう起動するか・その PC の人が決めること」で、会話のデータとは性格が違う。

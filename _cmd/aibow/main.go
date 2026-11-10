@@ -416,7 +416,7 @@ func startModels(cfg *appConfig, app aibow.AppSettings, server *apiclient.Client
 			server.URL(), sourceLabel(*cfg), map[bool]string{true: "あり", false: "なし"}[cfg.serverKey != ""])
 		return ui.NewRemoteHost(server), nil, nil, nil
 	}
-	added, err := ui.LoadPlacesFile(cfg.placesPath)
+	added, err := config.LoadPlacesFile(cfg.placesPath)
 	if err != nil {
 		log.Warn(err.Error())
 		cfg.notices = append(cfg.notices, err.Error())
