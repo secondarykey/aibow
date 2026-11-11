@@ -18,7 +18,6 @@ import (
 	"slices"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 	"unicode"
 	"uuid"
@@ -89,7 +88,7 @@ type ConfirmRequest struct {
 	Preview tool.Preview    `json:"preview"` // 何をするか(パス・上書きか・差分)
 }
 
-// ErrGenerating は、別の送信の生成中に送信されたときのエラー。
+// ErrGenerating は、同じ人の別の送信の生成中に送信されたときのエラー(ほかの人の生成中は断らない。turns.go)。
 var ErrGenerating = errors.New("別の会話で返事を生成中です。終わるまで待つか、その会話で停止してください")
 
 // Conversations は会話の一覧と送信を扱う。
@@ -108,9 +107,12 @@ type Conversations struct {
 	// models は、会話のモデルを読み込む係(SetModelLoader)。nil なら読み直さず、読み込んでいるモデルで生成する
 	models ModelLoader
 
-	// generating は生成中の会話の ID。生成していなければ nil。
-	// エンジン(作業領域)が1つしかないので、生成は同時に1つだけ。
-	generating atomic.Pointer[uuid.UUID]
+	// turns は進行中の送信(利用者 → その人の送信)。生成は、同じ人の中では同時に1つだけ(turns.go)。
+	// 人と人の間で同時に何人まで生成できるかは、ここでは決めない(aibow-server の順番待ちの席が決める。0023)
+	turnMu sync.Mutex
+	turns  map[uuid.UUID]*activeTurn
+	// answerMu は、確認に答える処理を1つずつにする(Answer)
+	answerMu sync.Mutex
 
 	// initial は、NewConversations に渡した既定から作った仮のプロファイル(保存していないので ID が空。作ったあとは変えない)。
 	// プロファイルがまだ無いとき(PrepareProfiles の前)の新しい会話の既定と、プロファイル「既定」を作るときの値に使う。
@@ -118,14 +120,6 @@ type Conversations struct {
 	initial Profile
 	// mu は、プロファイルを読んでから書くまで(updateProfile・saveProfile)を順番にする
 	mu sync.Mutex
-
-	// stopSummary は生成中の要約だけを止める関数(StopSummary)。要約していなければ nil
-	summaryMu   sync.Mutex
-	stopSummary context.CancelFunc
-
-	// pending は答えを待っている確認。待っていなければ nil。生成は同時に1つなので、確認も同時に1つだけ
-	confirmMu sync.Mutex
-	pending   *pendingConfirm
 
 	// noWorkDir は、会話に保存した作業フォルダ(ワークスペース)を使わないか(IgnoreWorkDir)
 	noWorkDir bool
@@ -137,7 +131,6 @@ type Conversations struct {
 
 // pendingConfirm は答えを待っている確認1つ。
 type pendingConfirm struct {
-	conv   uuid.UUID
 	id     string
 	tool   string // 確認しているツールの名前(これから先の扱いを会話の上書きに書くとき使う)
 	req    ConfirmRequest
@@ -246,7 +239,7 @@ func forModel(history []StoredMessage) []StoredMessage {
 // ユーザーの発言ならその1件、返事(assistant・tool)なら、前後のユーザーの発言の間にある発言を全部(ツールの呼び出しと結果を一緒に)。
 // 生成中の会話は変えられない(途中で履歴が変わらないように)。
 func (cs *Conversations) SetExcluded(ctx context.Context, id, msg uuid.UUID, excluded bool) error {
-	if g := cs.generating.Load(); g != nil && *g == id {
+	if cs.generatingIn(ctx, id) {
 		return errors.New("返事を生成中の会話では、モデルに渡すかを変えられません。終わってから変えてください")
 	}
 	_, history, err := cs.store.Conversation(ctx, id)
@@ -515,7 +508,7 @@ func (cs *Conversations) CreateIn(ctx context.Context, profileID uuid.UUID, sett
 
 // Delete は会話を消す。生成中の会話は消せない(書き込み先が消えてしまうため)。
 func (cs *Conversations) Delete(ctx context.Context, id uuid.UUID) error {
-	if g := cs.generating.Load(); g != nil && *g == id {
+	if cs.generatingIn(ctx, id) {
 		return errors.New("返事を生成中の会話は削除できません。停止してから削除してください")
 	}
 	if err := cs.store.DeleteConversation(ctx, id); err != nil {
@@ -622,11 +615,6 @@ func (cs *Conversations) SetDefaults(ctx context.Context, s ConversationSettings
 	})
 }
 
-// Generating は生成中の会話の ID を返す。生成していなければ nil。
-func (cs *Conversations) Generating() *uuid.UUID {
-	return cs.generating.Load()
-}
-
 // Send はユーザーの発言を保存し、返事を生成して保存する。
 // files は発言に付けて読み込んだファイル(0030。CheckFile で確かめたもの。無ければ nil)。
 // 途中経過は emit に ChatEvent で渡す。最後に必ず done を1回渡す。
@@ -697,11 +685,13 @@ func (cs *Conversations) turn(ctx context.Context, id uuid.UUID, text string, fi
 		emit(ChatEvent{ConversationID: id, Type: "error", Error: err.Error(), Caution: isCaution(err)})
 	}
 
-	if !cs.generating.CompareAndSwap(nil, &id) {
-		fail(ErrGenerating)
+	// 同じ人がもう生成中なら断る(ほかの人の生成中は断らない。turns.go)
+	end, err := cs.beginTurn(ctx, id)
+	if err != nil {
+		fail(err)
 		return
 	}
-	defer cs.generating.Store(nil)
+	defer end()
 	// ほかの画面(ブラウザ・ほかの PC のアプリ)が同じ会話を生成中なら断る(lock.go。保存をサーバーに置いたとき)
 	unlock, err := cs.lockConversation(ctx, id)
 	if err != nil {

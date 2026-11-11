@@ -254,7 +254,7 @@ func TestAgentStopDuringGeneration(t *testing.T) {
 	g := &fakeGen{replies: []fakeReply{{waitCancel: true, toolCalls: []format.ToolCall{calc("1+1")}}}}
 	cs, _, c := newToolConversation(t, g)
 	go func() {
-		for cs.Generating() == nil { // 生成の記録(g.calls)はここから読まない(別の goroutine が書くため)
+		for cs.Generating(ctx) == nil { // 生成の記録(g.calls)はここから読まない(別の goroutine が書くため)
 			time.Sleep(time.Millisecond)
 		}
 		cancel()

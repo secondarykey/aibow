@@ -40,9 +40,10 @@ type fakeEngine struct {
 	model   string
 	wait    bool // ctx がキャンセルされるまで生成を終えない(停止のテスト)
 	started chan struct{}
-	tools   [][]string // 生成のたびに、モデルに知らせたツールの名前
-	prompts []string   // 生成のたびに、モデルに渡した文字列
-	loading string     // 入れ替えている先のモデル(Loading が返す)
+	began   chan struct{} // nil でなければ、待つ生成が始まるたびに1つ送る(2人が同時に生成するテスト。started は1回しか閉じられない)
+	tools   [][]string    // 生成のたびに、モデルに知らせたツールの名前
+	prompts []string      // 生成のたびに、モデルに渡した文字列
+	loading string        // 入れ替えている先のモデル(Loading が返す)
 	// calls は、生成のたびに先頭から1つずつ返すツールの呼び出し(空になったら、ツールを呼ばずに答える)
 	calls [][]format.ToolCall
 }
@@ -75,7 +76,7 @@ func (e *fakeEngine) Generate(ctx context.Context, p format.Prompt, opt engine.G
 	e.mu.Lock()
 	e.tools = append(e.tools, names)
 	e.prompts = append(e.prompts, testFormat.BuildPrompt(p))
-	wait, started := e.wait, e.started
+	wait, started, began := e.wait, e.started, e.began
 	var calls []format.ToolCall
 	if len(e.calls) > 0 {
 		calls, e.calls = e.calls[0], e.calls[1:]
@@ -89,6 +90,9 @@ func (e *fakeEngine) Generate(ctx context.Context, p format.Prompt, opt engine.G
 		onContent("途中")
 		if started != nil {
 			close(started)
+		}
+		if began != nil {
+			began <- struct{}{}
 		}
 		<-ctx.Done()
 		return format.Output{Content: "途中"}, engine.GenerateStats{GenTokens: 1, StopReason: "cancel"}, nil

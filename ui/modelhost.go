@@ -8,7 +8,7 @@ package ui
 // 9-0 で _cmd/aibow からこのパッケージに移した(Wails を使わないので。0016 の 9)。係を作るのはアプリの main(NewDirectHost・NewRemoteHost)。
 //
 //	直接       … 今までどおり。GPU の層数はアプリの DB(model_gpu_layers)に覚え、作業領域は会話ごとに作り直す(0009)。
-//	             画面で足したモデルの置き場所は手元の model-places.json(modelplaces.go)
+//	             画面で足したモデルの置き場所は手元の model-places.json(config の modelplaces.go)
 //	HTTP 越し  … llama.cpp を読み込まない。作業領域はサーバーが決めた大きさで固定(0015 の 3)
 //
 // 8-4(モデルを扱う画面)で、降ろす・モデルごとの層の数・置き場所を足す / 外す・表示だけの設定を足した。
@@ -26,6 +26,7 @@ import (
 
 	"github.com/secondarykey/aibow"
 	apiclient "github.com/secondarykey/aibow/api/client"
+	"github.com/secondarykey/aibow/config"
 	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/models"
@@ -87,7 +88,7 @@ type DirectHost struct {
 	s       *Service // GPU の層数(アプリの DB)を読み書きするため。New が入れる
 	eng     *engine.Engine
 	catalog models.Catalog // 手で決めた置き場所(環境変数)。足した置き場所は added にあり、catalogNow で合わせる
-	added   *PlacesFile
+	added   *config.PlacesFile
 	missing models.MissingWatch
 
 	// lib と initialModel は、表示だけの設定のため(AIBOW_LIB・AIBOW_MODEL)
@@ -96,7 +97,7 @@ type DirectHost struct {
 
 // NewDirectHost は直接の形の係を作る。catalog は手で決めた置き場所、added は画面で足した置き場所(model-places.json)、
 // lib と initialModel は表示だけの設定(AIBOW_LIB・AIBOW_MODEL)。
-func NewDirectHost(eng *engine.Engine, catalog models.Catalog, added *PlacesFile, lib, initialModel string) *DirectHost {
+func NewDirectHost(eng *engine.Engine, catalog models.Catalog, added *config.PlacesFile, lib, initialModel string) *DirectHost {
 	return &DirectHost{eng: eng, catalog: catalog, added: added, lib: lib, initialModel: initialModel}
 }
 
@@ -208,7 +209,7 @@ func (h *DirectHost) addPlace(ctx context.Context, path string) ([]models.Place,
 	if err != nil {
 		return nil, err
 	}
-	if err := h.added.set(append(c.Added, abs)); err != nil {
+	if err := h.added.Set(append(c.Added, abs)); err != nil {
 		return nil, err
 	}
 	log.Noticef("モデルの置き場所を足しました: %s", abs)
@@ -222,7 +223,7 @@ func (h *DirectHost) removePlace(ctx context.Context, path string) ([]models.Pla
 	if !ok {
 		return nil, fmt.Errorf("%s は画面で足した置き場所ではないので外せません(models フォルダと Ollama の保存先は環境変数 AIBOW_MODELS_DIR・OLLAMA_MODELS で変えます)", path)
 	}
-	if err := h.added.set(slices.DeleteFunc(c.Added, func(s string) bool { return s == p })); err != nil {
+	if err := h.added.Set(slices.DeleteFunc(c.Added, func(s string) bool { return s == p })); err != nil {
 		return nil, err
 	}
 	log.Noticef("モデルの置き場所を外しました: %s", p)

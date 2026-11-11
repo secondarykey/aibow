@@ -11,8 +11,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/secondarykey/aibow/config"
 	"github.com/secondarykey/aibow/format"
+	"github.com/secondarykey/aibow/git"
 	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/tool"
 )
@@ -132,7 +132,7 @@ func foldersEnvironment(folders []tool.Folder, command bool, shell string) strin
 	var b strings.Builder
 	b.WriteString("# Environment\nFolders (pass the folder argument; omit it for the main folder):\n")
 	for _, f := range folders {
-		b.WriteString("- " + tool.FolderLine(f, config.IsGitRepo(f.Path)) + "\n")
+		b.WriteString("- " + tool.FolderLine(f, git.IsRepo(f.Path)) + "\n")
 	}
 	b.WriteString("OS: " + runtime.GOOS + "\n")
 	if command {

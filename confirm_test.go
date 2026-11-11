@@ -156,7 +156,7 @@ func TestConfirmStopWhileWaiting(t *testing.T) {
 	if fileText(t, dir, "a.txt") != "(無い)" || len(g.calls) != 1 {
 		t.Errorf("停止したのに実行・生成しています(生成 %d 回)", len(g.calls))
 	}
-	if cs.pending != nil {
+	if len(cs.turns) != 0 {
 		t.Error("待っている確認が残っています")
 	}
 }

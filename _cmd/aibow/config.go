@@ -31,7 +31,7 @@ type appConfig struct {
 	toolsPath    string // ツールの扱いの PC の既定(tools.json。画面で変えたものを aibow が書く)
 	mcpPath      string // 画面から足した MCP のサーバー(mcp.json。aibow が書く。0034)
 	windowPath   string // ウィンドウの位置と大きさ(window.json。閉じるときに aibow が書く。windowstate.go)
-	placesPath   string // 画面で足したモデルの置き場所(model-places.json。直接の形のときだけ使う。ui/modelplaces.go)
+	placesPath   string // 画面で足したモデルの置き場所(model-places.json。直接の形のときだけ使う。config/modelplaces.go)
 	connPath     string // 画面で決めた aibow-server のつなぎ先とログイン(connection.json。aibow が書く。0019)
 	wsPath       string // ワークスペース(workspaces.json。PC のフォルダの組。aibow が書く。0035)
 	initialModel string // AIBOW_MODEL。空なら最後に使ったモデル → 一覧の先頭(書式に対応している最初のモデル)

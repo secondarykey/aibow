@@ -335,7 +335,7 @@ func TestOnlyOneGenerationAtATime(t *testing.T) {
 	}()
 	<-started
 
-	if g := cs.Generating(); g == nil || *g != a.ID {
+	if g := cs.Generating(ctx); g == nil || *g != a.ID {
 		t.Errorf("生成中の会話が a になっていません: %v", g)
 	}
 	// 生成中でも別の会話は読める
@@ -358,7 +358,7 @@ func TestOnlyOneGenerationAtATime(t *testing.T) {
 
 	close(g.block)
 	<-finished
-	if cs.Generating() != nil {
+	if cs.Generating(ctx) != nil {
 		t.Errorf("生成が終わったのに生成中のままです")
 	}
 	if err := cs.Delete(ctx, a.ID); err != nil {
@@ -657,11 +657,14 @@ func TestExcludeMessages(t *testing.T) {
 	}
 
 	// 生成中の会話は変えられない
-	cs.generating.Store(&c.ID)
+	end, err := cs.beginTurn(ctx, c.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := cs.SetExcluded(ctx, c.ID, broken.ID, true); err == nil {
 		t.Error("生成中は変えられない")
 	}
-	cs.generating.Store(nil)
+	end()
 }
 
 // 返事は、ツールの呼び出しと結果を一緒に外す(吹き出し1つ分)。ユーザーの発言は外さない
