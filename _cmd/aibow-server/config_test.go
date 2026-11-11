@@ -38,7 +38,7 @@ func TestResolveOrder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := serverConfig{Port: 9000, Ctx: 16384, Parallel: 2, Model: "env-model", Lib: "arg-lib", ModelsDir: "models", Host: "127.0.0.1", Login: true,
+	want := serverConfig{Port: 9000, Ctx: 16384, Parallel: 2, Model: "env-model", Lib: "arg-lib", ModelsDir: "models", Host: "127.0.0.1", Login: true, ProxyHeader: "X-Forwarded-For",
 		File: path, StatePath: filepath.Join(dir, stateFileName), DBPath: filepath.Join(dir, dbFileName), ToolsPath: filepath.Join(dir, toolsFileName)}
 	if !reflect.DeepEqual(c, want) {
 		t.Errorf("設定:\n got  %+v\n want %+v", c, want)

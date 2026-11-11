@@ -25,6 +25,7 @@ import (
 	"flag"
 	"fmt"
 	"net"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -77,6 +78,9 @@ type serverConfig struct {
 	Folders    map[string]string
 	// FetchAllowPrivate は、fetch_url で PC の中・社内のアドレスも読むか(設定ファイルにだけ書ける。0036)
 	FetchAllowPrivate bool
+	// TrustedProxies は信頼するプロキシ(サーバーの PC の上は含まない。newProxyTrust が足す)、ProxyHeader は元の相手を読むヘッダー(設定ファイルにだけ書ける。0044)
+	TrustedProxies []netip.Prefix
+	ProxyHeader    string
 
 	// File は読んだ設定ファイル(無ければ空)。StatePath は aibow-server が書くファイル(server-models.json)、
 	// DBPath はブラウザの会話の DB(server.db)、ToolsPath はツールの扱いの既定(server-tools.json)。どれも設定ファイルの隣
@@ -144,6 +148,13 @@ func resolve(fs *flag.FlagSet, f *flags, env *config.Env) (serverConfig, []strin
 		MCPServers: file.MCPServers, Folders: file.Folders, FetchAllowPrivate: file.FetchAllowPrivate}
 	if found {
 		c.File = path
+	}
+	// 信頼するプロキシ(0044)。LoadServerFile で確かめてあるので、ここでは読み直すだけ
+	if c.TrustedProxies, err = config.ParseTrustedProxies(file.TrustedProxies); err != nil {
+		return serverConfig{}, nil, err
+	}
+	if c.ProxyHeader, err = config.ProxyHeaderName(file.ProxyHeader); err != nil {
+		return serverConfig{}, nil, err
 	}
 	// 待ち受けるアドレスとポートは、host・port に分けても、addr にまとめても書ける(0042)。どちらで書いても、書いた所の強さで効く
 	l, err := listenLevels(f, file, path, env)

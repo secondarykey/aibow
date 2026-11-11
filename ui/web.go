@@ -40,6 +40,7 @@ import (
 	"uuid"
 
 	"github.com/secondarykey/aibow"
+	"github.com/secondarykey/aibow/api"
 	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/usage"
 )
@@ -124,7 +125,7 @@ func Handler(s *Service, ev *Events, who Who) http.Handler {
 			return
 		}
 		if msg, ok := adminOnly[name]; ok && !c.ManagesPC() {
-			log.Warnf("管理者だけのメソッドなので断りました: %s(%s)", name, r.RemoteAddr)
+			log.Warnf("管理者だけのメソッドなので断りました: %s(%s)", name, api.RemoteHost(r))
 			writeError(w, http.StatusForbidden, msg)
 			return
 		}

@@ -2,6 +2,7 @@ package log
 
 import (
 	"bytes"
+	"compress/gzip"
 	"io"
 	stdlog "log"
 	"log/slog"
@@ -164,48 +165,110 @@ func TestInitBadDir(t *testing.T) {
 	c.Close()
 }
 
-// removeOld は今日を含めて keepDays 日分を残し、それより古い aibow_<日付>.log だけを消す
-func TestRemoveOld(t *testing.T) {
-	dir := t.TempDir()
-	now := time.Date(2026, 10, 14, 17, 0, 0, 0, time.Local)
-	names := map[string]bool{ // ファイル名 → 残るか
-		"aibow_20261014.log": true,  // 今日
-		"aibow_20261005.log": true,  // 10 日前まで(今日を含めて 10 日分)
-		"aibow_20261004.log": false, // 11 日前
-		"aibow_20250101.log": false,
-		"aibow_abc.log":      true, // 日付でない
-		"other_20250101.log": true, // aibow のものではない
-		"aibow_20250101.txt": true,
-	}
-	for name := range names {
-		if err := os.WriteFile(filepath.Join(dir, name), nil, 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	removeOld(dir, FilePrefix, 10, now)
-	for name, keep := range names {
-		_, err := os.Stat(filepath.Join(dir, name))
-		if got := err == nil; got != keep {
-			t.Errorf("%s: 残る %v, want %v", name, got, keep)
-		}
-	}
-}
-
-// Init(KeepDays)は、書き始める前に古いファイルを消す
+// Init(KeepDays)は、今日を含めて KeepDays 日分を残し、それより古い aibow_<日付>.log だけを消す。
+// 消すのは wenteasy/log の RollingFileWriter(SetKeep)で、最初に書いたときに別の goroutine で動くので、消えるまで待つ
+// (待つ仕組みは wenteasy/log のテストの中にしか無い)。名前の形の細かい決まりは wenteasy/log のテストが確かめている。
+// ここでは aibow が渡す日数の境目と、aibow のほかのファイルに触らないことを確かめる
 func TestInitKeepDays(t *testing.T) {
 	keepDefault(t)
 	dir := t.TempDir()
-	old := filepath.Join(dir, FilePrefix+"_20000101.log")
-	if err := os.WriteFile(old, nil, 0o644); err != nil {
-		t.Fatal(err)
+	day := func(n int) string { return time.Now().AddDate(0, 0, -n).Format("20060102") }
+	names := map[string]bool{ // ファイル名 → 残るか
+		"aibow_" + day(0) + ".log":  true,  // 今日(これから書く)
+		"aibow_" + day(9) + ".log":  true,  // 9 日前まで(今日を含めて 10 日分)
+		"aibow_" + day(10) + ".log": false, // 10 日前
+		"aibow_20000101.log":        false,
+		"aibow_abc.log":             true, // 日付でない
+		"aibow-dev_20000101.log":    true, // 頭が違う(wails3 dev のログ)
+		"other_20000101.log":        true, // aibow のものではない
+		"aibow_20000101.txt":        true,
+	}
+	var gone []string
+	for name, keep := range names {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if !keep {
+			gone = append(gone, path)
+		}
 	}
 	c, err := Init(Options{Dir: dir, KeepDays: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
+	Info("書くと片付けが始まる")
 	c.Close()
-	if _, err := os.Stat(old); !os.IsNotExist(err) {
-		t.Errorf("古いファイルが残っている: %v", err)
+
+	waitRemoved(t, gone...)
+	for name, keep := range names {
+		if !keep {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
+			t.Errorf("%s が消えた: %v", name, err)
+		}
+	}
+}
+
+// waitRemoved は、paths が消えるまで待つ(片付けは別の goroutine で動くため)。期限を過ぎたら失敗にする
+func waitRemoved(t *testing.T, paths ...string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for _, p := range paths {
+		for {
+			_, err := os.Stat(p)
+			if os.IsNotExist(err) {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("古いファイルが消えない: %s(%v)", p, err)
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+}
+
+// Init(CompressDays)は、今日を含めて CompressDays 日分を .log のまま残し、それより古いものを .log.gz にする。
+// KeepDays より古いものは消す(圧縮しない)。圧縮は「.gz を作ってから元の .log を消す」順なので、元が消えるのを待てば .gz はできている
+func TestInitCompressDays(t *testing.T) {
+	keepDefault(t)
+	dir := t.TempDir()
+	day := func(n int) string {
+		return filepath.Join(dir, "aibow_"+time.Now().AddDate(0, 0, -n).Format("20060102")+".log")
+	}
+	yesterday, older, oldest := day(1), day(2), day(60)
+	for _, p := range []string{yesterday, older, oldest} {
+		if err := os.WriteFile(p, []byte("記録 "+filepath.Base(p)+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	c, err := Init(Options{Dir: dir, KeepDays: 60, CompressDays: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	Info("書くと片付けが始まる")
+	c.Close()
+
+	waitRemoved(t, older, oldest)
+	if _, err := os.Stat(yesterday); err != nil {
+		t.Errorf("昨日のログは .log のまま残す: %v", err)
+	}
+	if _, err := os.Stat(oldest + ".gz"); !os.IsNotExist(err) {
+		t.Errorf("KeepDays より古いものは圧縮せずに消す: %v", err)
+	}
+	f, err := os.Open(older + ".gz")
+	if err != nil {
+		t.Fatalf("おとといのログが .log.gz になっていない: %v", err)
+	}
+	defer f.Close()
+	zr, err := gzip.NewReader(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := io.ReadAll(zr)
+	if want := "記録 " + filepath.Base(older) + "\n"; err != nil || string(b) != want {
+		t.Errorf("圧縮したものの中身 = %q, %v(want %q)", b, err, want)
 	}
 }
 
@@ -238,11 +301,9 @@ func TestInitPrefix(t *testing.T) {
 	if err != nil || !strings.Contains(string(b), "サーバーのログ") {
 		t.Errorf("ファイルに書かれていない: %q %v", b, err)
 	}
+	waitRemoved(t, mine) // サーバーの古いログは消える(片付けは別の goroutine なので待つ)
 	if _, err := os.Stat(app); err != nil {
 		t.Errorf("アプリのログを消した: %v", err)
-	}
-	if _, err := os.Stat(mine); !os.IsNotExist(err) {
-		t.Errorf("サーバーの古いログが残っている: %v", err)
 	}
 }
 

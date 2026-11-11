@@ -51,7 +51,7 @@ import { showName } from "./directory";
 import type { ServerInfo } from "../bindings/github.com/secondarykey/aibow/mcp/client";
 import type { ConversationRef, ConversationSettings, SharedRead } from "../bindings/github.com/secondarykey/aibow";
 import { ImeFocusRelay } from "./imeFocus";
-import { errorMessage, isUnreachable } from "./errors";
+import { errorMessage, isUnreachable, operationEvents } from "./errors";
 import { setTheme } from "./theme";
 import { FIX, fixedTitle, grantedFolder, lockOf, locked } from "./profileRules";
 import { NARROW_QUERY, useMediaQuery } from "./mediaQuery";
@@ -79,7 +79,8 @@ export default function App() {
   // 会話の設定の画面を開いているか。開いている会話の設定を出す
   const [convSettingsOpen, setConvSettingsOpen] = useState(false);
   const [diffOpen, setDiffOpen] = useState(false); // worktree の差分の画面(0039)
-  // 設定の画面(か会話の設定の画面)を開いたときの、表示の最後の id。これより後に出たエラー(設定の適用の失敗など)はその画面にも出す
+  // 設定の画面(か管理・会話の設定の画面)を開いたとき・その画面で最後に操作したときの、表示の最後の id。
+  // これより後に出たエラー(設定の適用の失敗など)はその画面にも出す(次の操作で進めるので、エラーは積み上がらない)
   const [settingsFrom, setSettingsFrom] = useState(0);
   // 入力欄に打っている文。設定の画面を開くと入力欄は消えるので、戻ったときに続きを打てるようにここで持つ
   const [text, setText] = useState("");
@@ -736,6 +737,11 @@ export default function App() {
         {input}
       </section>
     );
+  }
+  // 設定・管理・会話の設定の画面のエラーは、次の操作で消す(errors.ts の operationEvents)。消すのは表示の起点を進めるだけで、
+  // 会話の表示のエラー(どこで失敗したかの記録)はそのまま。display: contents の箱なので、並べ方(main の flex の子)は変わらない
+  if (settingsOpen || adminOpen || (!reading && showConvSettings)) {
+    content = <div className="op-scope" {...operationEvents(markSettingsFrom)}>{content}</div>;
   }
 
   const listProps = {

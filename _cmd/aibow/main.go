@@ -195,8 +195,13 @@ const (
 	windowMinHeight = 480
 )
 
-// logKeepDays は、ログファイルを残す日数(今日を含む)。起動のたびに、それより古いものを消す。
-const logKeepDays = 10
+// logKeepDays は、ログファイルを残す日数(今日を含む)。それより古いものを、書き始めたときと日付が変わったときに消す。
+// logCompressDays は、そのまま読める .log で残す日数(今日と昨日)。それより古いものは gzip(.log.gz)にする。
+// 圧縮すると 1/9 ほどになるので、10 日分そのままより少ない場所で 60 日分を残せる(2026-11-08、ユーザーの指示。前は 10 日・圧縮なし)
+const (
+	logKeepDays     = 60
+	logCompressDays = 2
+)
 
 // devLogPrefix は、wails3 dev で動かしたときのログファイルの名前の頭(aibow-dev_<日付>.log・aibow-dev_crash.log)。
 // ふだん使う exe と同時に動かすことがあるので、exe のファイル(aibow_…)と分ける
@@ -211,7 +216,7 @@ const devLogPrefix = "aibow-dev"
 //     リリース版(-H windowsgui)には標準エラー出力の行き先が無く、ファイルにしか残らないため
 //     (0006 で、起動できない理由がどこにも残らず困った)。Notice 以上だけを書く
 //
-// フォルダは AIBOW_LOG_DIR で変えられる。どちらも今日を含めて logKeepDays 日分を残し、古いものは起動時に消す(頭の違うファイルには触らない)
+// フォルダは AIBOW_LOG_DIR で変えられる。どちらも今日を含めて logKeepDays 日分を残し(logCompressDays 日より古いものは gzip にする)、古いものは書き始めたときと日付が変わったときに消す(頭の違うファイルには触らない)
 //
 // 異常終了(Go の panic・ランタイムの致命的なエラー)の内容も、ファイルに書くときは同じフォルダの aibow_crash.log に残す
 // (log.CatchCrash)。前回の記録が残っていれば改名して残し、「前回は異常終了しました」を画面とログで伝える(main がお知らせとして出す)。
@@ -225,7 +230,7 @@ func startLog() (io.Closer, []string) {
 			return c, []string{"ログを書くフォルダが決められないので、ログはファイルに残りません。AIBOW_LOG_DIR でフォルダを指定してください"}
 		}
 	}
-	opts := log.Options{Dir: dir, KeepDays: logKeepDays}
+	opts := log.Options{Dir: dir, KeepDays: logKeepDays, CompressDays: logCompressDays}
 	if isDev {
 		// dev は生成の統計などの Info も出す(学習・開発中に観察するもの)
 		opts.Console, opts.Root, opts.Prefix = true, log.LevelInfo, devLogPrefix
@@ -411,7 +416,7 @@ func startModels(cfg *appConfig, app aibow.AppSettings, server *apiclient.Client
 			server.URL(), sourceLabel(*cfg), map[bool]string{true: "あり", false: "なし"}[cfg.serverKey != ""])
 		return ui.NewRemoteHost(server), nil, nil, nil
 	}
-	added, err := ui.LoadPlacesFile(cfg.placesPath)
+	added, err := config.LoadPlacesFile(cfg.placesPath)
 	if err != nil {
 		log.Warn(err.Error())
 		cfg.notices = append(cfg.notices, err.Error())

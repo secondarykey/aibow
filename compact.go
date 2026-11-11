@@ -606,14 +606,9 @@ func (cs *Conversations) generateSummary(ctx context.Context, id uuid.UUID, msgs
 	// 停止ボタン(StopSummary)で、送信全体ではなく要約だけを止められるようにする
 	sctx, cancel := context.WithCancel(usage.WithPurpose(ctx, usage.PurposeSummary, id)) // 使用量の記録では要約として数える(0033)
 	defer cancel()
-	cs.summaryMu.Lock()
-	cs.stopSummary = cancel
-	cs.summaryMu.Unlock()
-	defer func() {
-		cs.summaryMu.Lock()
-		cs.stopSummary = nil
-		cs.summaryMu.Unlock()
-	}()
+	// 止める関数は、この人の進行中の送信に置く(ほかの人の要約と混ざらない。turns.go)
+	cs.setStopSummary(ctx, id, cancel)
+	defer cs.setStopSummary(ctx, id, nil)
 
 	emit(ChatEvent{ConversationID: id, Type: "summarizing"})
 	out, st, err := cs.gen.Generate(sctx, format.Prompt{Messages: msgs, Think: false}, opt, func(string) {}, func(string) {}, func(t string) {
@@ -642,19 +637,22 @@ func (cs *Conversations) generateSummary(ctx context.Context, id uuid.UUID, msgs
 
 // StopSummary は生成中の要約だけを止める(画面の要約中の停止ボタン)。
 // 送信の途中の要約なら、その回は truncate で収めて返事の生成に進む。
-// 止められるのは、ctx の利用者の会話の要約だけ(ほかの人の要約は止めない。生成中の会話がその人の保存先にあるかで確かめる。0017)。
+// 止められるのは、ctx の利用者の要約だけ(止める関数は、その人の進行中の送信が持っている。ほかの人のものは引けない。turns.go)。
 func (cs *Conversations) StopSummary(ctx context.Context) {
-	g := cs.generating.Load()
-	if g == nil {
-		return
+	cs.turnMu.Lock()
+	defer cs.turnMu.Unlock()
+	if t := cs.turns[turnUser(ctx)]; t != nil && t.stopSummary != nil {
+		t.stopSummary()
 	}
-	if _, _, err := cs.store.Conversation(ctx, *g); err != nil {
-		return
-	}
-	cs.summaryMu.Lock()
-	defer cs.summaryMu.Unlock()
-	if cs.stopSummary != nil {
-		cs.stopSummary()
+}
+
+// setStopSummary は、ctx の利用者が会話 id で進めている送信に、要約を止める関数を置く(stop が nil なら外す)。
+// 進行中の送信が無いとき(テストなどで要約だけを呼んだ)は何もしない。
+func (cs *Conversations) setStopSummary(ctx context.Context, id uuid.UUID, stop context.CancelFunc) {
+	cs.turnMu.Lock()
+	defer cs.turnMu.Unlock()
+	if t := cs.turnIn(ctx, id); t != nil {
+		t.stopSummary = stop
 	}
 }
 
@@ -665,11 +663,12 @@ func (cs *Conversations) Compact(ctx context.Context, id uuid.UUID, emit func(Ch
 	defer emit(ChatEvent{ConversationID: id, Type: "done"})
 	fail := func(err error) { emit(ChatEvent{ConversationID: id, Type: "error", Error: err.Error()}) }
 
-	if !cs.generating.CompareAndSwap(nil, &id) {
-		fail(ErrGenerating)
+	end, err := cs.beginTurn(ctx, id) // 同じ人がもう生成中なら断る(turn と同じ)
+	if err != nil {
+		fail(err)
 		return
 	}
-	defer cs.generating.Store(nil)
+	defer end()
 	unlock, err := cs.lockConversation(ctx, id) // ほかの画面で生成中なら断る(turn と同じ)
 	if err != nil {
 		fail(busyError(err))

@@ -146,7 +146,7 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 func (s *Server) pcSide(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !IsLocal(r) && (s.admin == nil || !s.admin(r)) {
-			log.Warnf("サーバーの PC からか管理者だけの操作なので断りました: %s %s(%s)", r.Method, r.URL.Path, r.RemoteAddr)
+			log.Warnf("サーバーの PC からか管理者だけの操作なので断りました: %s %s(%s)", r.Method, r.URL.Path, RemoteHost(r))
 			writeError(w, http.StatusForbidden, "permission_error", "local_only",
 				"この操作(モデルを降ろす・GPU の層数・モデルの置き場所)は、aibow-server を動かしている PC からか、管理者だけができます")
 			return
@@ -156,10 +156,21 @@ func (s *Server) pcSide(h http.HandlerFunc) http.HandlerFunc {
 }
 
 // IsLocal は、リクエストがサーバーの PC の上(127.0.0.1・::1)から来たか。
+// aibow-server は、信頼するリバースプロキシからの呼び出しの r.RemoteAddr を、転送のヘッダーにある元の相手に書き換えてから渡す(0044)。
+// なので、プロキシの後ろでも、ここは元の相手を見る。
 func IsLocal(r *http.Request) bool {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	ip := net.ParseIP(host)
 	return err == nil && ip != nil && ip.IsLoopback()
+}
+
+// RemoteHost は、ログに出す相手のアドレス(r.RemoteAddr からポートを外したもの)。
+// プロキシの後ろで元の相手に書き換えたときは、ポートが分からないので 0 になっている(0044 の決定事項 10)。出しても意味が無いので外してそろえる。
+func RemoteHost(r *http.Request) string {
+	if h, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		return h
+	}
+	return r.RemoteAddr
 }
 
 func writeError(w http.ResponseWriter, status int, typ, code, msg string) {

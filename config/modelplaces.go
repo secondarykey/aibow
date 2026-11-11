@@ -1,4 +1,4 @@
-package ui
+package config
 
 // modelplaces.go: 直接の形(aibow-server を使わないとき)で、画面から足したモデルの置き場所を覚える(0015 の 24・32)。
 //
@@ -18,7 +18,7 @@ import (
 	"sync"
 )
 
-// PlacesFile は model-places.json(直接の形の DirectHost が使う)。
+// PlacesFile は model-places.json(直接の形のときの ui.DirectHost が使う)。
 type PlacesFile struct {
 	path string
 
@@ -53,14 +53,15 @@ func LoadPlacesFile(path string) (*PlacesFile, error) {
 	return f, f.broken
 }
 
+// List は、画面で足した置き場所。
 func (f *PlacesFile) List() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return slices.Clone(f.places)
 }
 
-// set は置き場所を書く。一時ファイルに書いてから名前を変える(書いている途中で落ちても、前のファイルが壊れないように)。
-func (f *PlacesFile) set(places []string) error {
+// Set は置き場所を書く。一時ファイルに書いてから名前を変える(書いている途中で落ちても、前のファイルが壊れないように)。
+func (f *PlacesFile) Set(places []string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.broken != nil {

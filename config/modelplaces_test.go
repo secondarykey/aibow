@@ -1,4 +1,4 @@
-package ui
+package config
 
 import (
 	"os"
@@ -14,7 +14,7 @@ func TestPlacesFile(t *testing.T) {
 	if err != nil || len(f.List()) != 0 {
 		t.Fatalf("無いファイルは空のはず: %v %v", f.List(), err)
 	}
-	if err := f.set([]string{`D:\models2`}); err != nil {
+	if err := f.Set([]string{`D:\models2`}); err != nil {
 		t.Fatal(err)
 	}
 	f2, err := LoadPlacesFile(path)
@@ -27,7 +27,7 @@ func TestPlacesFile(t *testing.T) {
 	if err == nil {
 		t.Fatal("壊れたファイルはエラーのはず")
 	}
-	if err := f3.set([]string{"x"}); err == nil {
+	if err := f3.Set([]string{"x"}); err == nil {
 		t.Error("壊れたファイルは書き換えないはず")
 	}
 	if b, _ := os.ReadFile(path); string(b) != "{" {

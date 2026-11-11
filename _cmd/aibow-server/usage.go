@@ -202,7 +202,7 @@ func usageViewer(login bool, next http.Handler) http.Handler {
 				return
 			}
 		} else if !api.IsLocal(r) {
-			log.Warnf("サーバーの PC の外から使用量を呼んだので断りました: %s %s(%s)", r.Method, r.URL.Path, r.RemoteAddr)
+			log.Warnf("サーバーの PC の外から使用量を呼んだので断りました: %s %s(%s)", r.Method, r.URL.Path, api.RemoteHost(r))
 			writeAdminError(w, http.StatusForbidden, errors.New("全員の使用量は、aibow-server を動かしている PC からだけ見られます"))
 			return
 		}

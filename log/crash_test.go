@@ -39,9 +39,27 @@ func TestKeepPreviousCrash(t *testing.T) {
 		t.Fatalf("元の名前が残っている: %v", err)
 	}
 
-	removeOld(dir, FilePrefix, 1, time.Now().AddDate(1, 0, 0)) // 1 年後に片付けても消えない
-	if _, err := os.Stat(got); err != nil {
-		t.Fatalf("古いログの片付けで記録が消えた: %v", err)
+	// 古いログを片付けても記録は消えない(改名した記録も、次の回の CrashFile も <prefix>_<日付>.log の形ではない)。
+	// 今日の分だけを残す片付けで、昨日のログが消えるのを待ってから確かめる
+	if err := os.WriteFile(path, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	old := filepath.Join(dir, FilePrefix+"_"+time.Now().AddDate(0, 0, -1).Format("20060102")+".log")
+	if err := os.WriteFile(old, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	keepDefault(t)
+	c, err := Init(Options{Dir: dir, KeepDays: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	Info("書くと片付けが始まる")
+	c.Close()
+	waitRemoved(t, old)
+	for _, p := range []string{got, path} {
+		if _, err := os.Stat(p); err != nil {
+			t.Fatalf("古いログの片付けで記録が消えた: %v", err)
+		}
 	}
 }
 

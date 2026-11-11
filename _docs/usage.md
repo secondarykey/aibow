@@ -382,8 +382,9 @@ aibow-server [-config 設定ファイル] cert <ホスト名か IP アドレス>
 }
 ```
 
-- 欄は `port`・`ctx`・`parallel`・`model`・`lib`・`modelsDir`・`logLevel`・`login`・`host`・`tlsCert`・`tlsKey`・`mcpServers`・`folders`・`fetchAllowPrivate` の14こ。知らない欄があると、書き間違いとして起動を止めます
+- 欄は `port`・`ctx`・`parallel`・`model`・`lib`・`modelsDir`・`logLevel`・`login`・`host`・`addr`・`base`・`tlsCert`・`tlsKey`・`mcpServers`・`folders`・`fetchAllowPrivate`・`trustedProxies`・`proxyHeader` の18こ。知らない欄があると、書き間違いとして起動を止めます
 - `fetchAllowPrivate` を `true` にすると、ブラウザの会話の `fetch_url` が、サーバーの PC の中・社内のアドレスも読みます(既定は読まない。下の「ブラウザの会話のツール」)
+- `trustedProxies`・`proxyHeader` は、リバースプロキシの後ろで元の相手を見るための設定です(下の「リバースプロキシの後ろに置く」)
 - `mcpServers` は、ブラウザの会話で使う MCP のサーバーです(下の「ブラウザの会話のツール」。形はアプリの `settings.json` と同じ)
 - `folders` は、ブラウザの会話で読み書きする資料のフォルダです(下の「資料のフォルダ」。名前 → 絶対パス)
 - `login` を `true` にすると、ブラウザの画面にログインが要るようになります(下の「ログインと利用者」)
@@ -690,13 +691,35 @@ nginx・IIS などのリバースプロキシで、ほかのサイトと同じ�
 画面は自分の場所からの相対パスで口を呼ぶので、プロキシが頭を外して渡す形(base なしの aibow-server に `/aibow/` を `/` として渡す)でも動きます。
 
 - 画面の SSE(`/aibow/_aibow/ui/events`)と返事の生成は長くつながったままなので、プロキシの読み込みの時間切れ・バッファを切ります(nginx なら `proxy_buffering off;` と長い `proxy_read_timeout`)
-- **同じ PC のプロキシを通った呼び出しは、外からでもサーバーの PC の上(`127.0.0.1`)から来たように見えます**。aibow-server は接続の相手のアドレスしか見ないので、
-  サーバーの PC からだけ許している操作(モデルを降ろす・GPU の層数・置き場所・全員の使用量)が誰にでもでき、`login: false` ならログインもなくなります。
-  base を付けて `127.0.0.1` で待ち受けると、起動のときに注意が出ます。信用できる人だけが使う網に限ってください(`X-Forwarded-For` を見るかは 0042 の未決事項)
+- **プロキシで、元の相手を必ず `X-Forwarded-For` に書きます**(下の「元の相手を見る」)。書かないと、同じ PC のプロキシを通った呼び出しは、外からでもサーバーの PC の上(`127.0.0.1`)から来たように見え、
+  サーバーの PC からだけ許している操作(モデルを降ろす・GPU の層数・置き場所・全員の使用量)が誰にでもできてしまいます。base を付けて `127.0.0.1` で待ち受けると、起動のときにこのことを知らせます
 - **Windows のサービスから起動すると、SYSTEM のアカウントで動きます**。`%APPDATA%` とホームが `C:\WINDOWS\system32\config\systemprofile` の下になるので、
   何も書かないと、設定ファイル・server.db(利用者と会話)・ログ・Ollama のモデルを、いつもとは別の場所に探します(利用者がいなくてログインできない・モデルが無くて止まる)。
   `-config` でいつもの `server.json` を指し(無ければ `{}` だけのファイルを置く。server.db などはその隣を使う)、`OLLAMA_MODELS`・`AIBOW_LOG_DIR` も渡します。
   `aibow-server user …` のコマンドにも同じ `-config` を付けます。`go run` で起動しているなら、先に `_cmd/aibow/frontend` で `npm run build` をすると最新の画面が埋め込まれます
+
+#### 元の相手を見る(trustedProxies・proxyHeader。0044)
+
+aibow-server は「どこから来たか」で、サーバーの PC の上からだけの操作を許し、ログインを続けて間違えた人を止め、ログに相手を書きます。
+プロキシの後ろでは、つないでくる相手はいつもプロキシなので、**信頼するプロキシから来たときだけ**、プロキシが書いたヘッダーから元の相手を取り出します。
+
+- **サーバーの PC の上(`127.0.0.1`・`::1`)は、何も書かなくても信頼するプロキシです**。同じ PC のプロキシなら、プロキシがヘッダーを書くようにするだけで済みます
+- ほかの PC のプロキシを使うときは、`server.json` の `trustedProxies` にそのアドレスを書きます(IP アドレスか CIDR。例 `"trustedProxies": ["10.0.0.5", "192.168.10.0/24"]`)。
+  安全に関わるので、設定ファイルにだけ書けます(引数・環境変数では決められません)。`0.0.0.0/0` のような全部のアドレスを含む範囲は、誰でも元の相手を偽れるので、起動のときに注意が出ます
+- 見るヘッダーは `proxyHeader` で1つ選びます:`X-Forwarded-For`(既定)・`Forwarded`・`X-Real-IP`。プロキシが書き直すヘッダーを選びます(選ばなかったヘッダーは見ません)
+- ヘッダーは誰でも書けるので、信頼するプロキシでない相手が付けたヘッダーは見ません。`X-Forwarded-For` は右から読み、信頼するプロキシを飛ばした最初のアドレスを元の相手にします(左は元の相手が好きに書ける所なので)
+- 信頼するプロキシからヘッダー無しで来た呼び出しは、プロキシ自身(同じ PC なら `127.0.0.1`)からと扱います。サーバーの PC の上で `http://127.0.0.1:8089/` を直接開くのは、今までどおり使えます
+- ヘッダーに読めない値(IP でない・`unknown`)があると、400 で断ります(ログに注意が出ます)
+- `login: false`(ログインなし)の形では、元の相手がサーバーの PC の上でなければ 403 で断ります(ログインなしは、この PC の人だけが使う形なので)
+- 起動のときに「信頼するプロキシ: この PC の上, 10.0.0.5(X-Forwarded-For で元の相手を見ます)」と出ます。ログのレベルを Debug にすると、書き換えた呼び出しごとに「プロキシ 127.0.0.1 から、元の相手 192.0.2.1」と出ます
+
+プロキシで `X-Forwarded-For` を書く設定の例:
+
+- nginx:`location /aibow/ { proxy_pass http://127.0.0.1:8089; proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; }`
+  (`$proxy_add_x_forwarded_for` は、届いた `X-Forwarded-For` の右に、つないできた相手を足します。元の相手が偽って書いた左の値は、aibow-server が右から読むので効きません。
+  プロキシの前にほかのプロキシが無いなら、`$remote_addr` で書き直してもかまいません)
+- IIS(ARR):サーバーの「Application Request Routing Cache」→「Server Proxy Settings」の「Preserve client IP in the following header」に `X-Forwarded-For` と書きます(既定で入っています)。
+  ARR は `192.0.2.1:51234` のようにポートも書きますが、aibow-server はポートを外して読みます
 
 ## 設定の変更
 
@@ -769,7 +792,7 @@ nginx・IIS などのリバースプロキシで、ほかのサイトと同じ�
 | `AIBOW_SERVER_CERT` | なし | aibow-server の証明書のファイル(自己署名の証明書で HTTPS にしているとき)。`AIBOW_SERVER_KEY` と同じく、つなぎ先を手で書いたときだけ使う(画面でつないだときは、確かめたフィンガープリントで信頼する)。settings.json の `serverCert` が優先 |
 | `AIBOW_CONNECTION` | `%APPDATA%\aibow\connection.json` | 設定の画面の「サーバー」で決めた aibow-server のつなぎ先・信頼した証明書のフィンガープリント・アプリ用のトークン(DPAPI で包む)と、信頼した最後のつなぎ先(`known`。ログアウトしても残す)。aibow が書く。`serverUrl`・`AIBOW_SERVER_URL` を手で書いてあれば使わない |
 | `AIBOW_SERVER_URL` | なし | 生成を頼む aibow-server のつなぎ先(例: `http://127.0.0.1:8089`)。書けばアプリは llama.cpp を読み込まない。settings.json の `serverUrl` が優先(「画面のアプリを aibow-server につなぐ」) |
-| `AIBOW_LOG_DIR` | `%APPDATA%\aibow\logs` | ログファイル(`aibow_<日付>.log`。日ごと)を書くフォルダ。exe は Notice 以上(起動した版・使ったモデル・変えた設定・注意・エラーなど)だけを書き、起動時に古いファイルを消して今日を含めて 10 日分を残す。異常終了したときは同じフォルダの `aibow_crash_<日時>.log` に内容が残る(次の起動で画面に知らせる)。MCP のサーバー `aibow-mcp` も同じフォルダの `aibow-mcp_<日付>.log` に、OpenAI 互換 API の `aibow-server` は `aibow-server_<日付>.log` に書く(どちらも Info 以上・10 日分)。フォルダが無ければ作る。`wails3 build` で作った exe は既定でここに書く。`wails3 dev` はターミナルに出し、ここの `aibow-dev_<日付>.log` にも書く(Info 以上・10 日分。exe のログと混ざらないよう名前を分けている) |
+| `AIBOW_LOG_DIR` | `%APPDATA%\aibow\logs` | ログファイル(`aibow_<日付>.log`。日ごと)を書くフォルダ。exe は Notice 以上(起動した版・使ったモデル・変えた設定・注意・エラーなど)だけを書き、起動したときと日付が変わったときに古いファイルを消して、今日を含めて 60 日分を残す(今日と昨日より古いものは `aibow_<日付>.log.gz` に圧縮する。`gzip -dk <ファイル>` で戻せる)。異常終了したときは同じフォルダの `aibow_crash_<日時>.log` に内容が残る(次の起動で画面に知らせる)。MCP のサーバー `aibow-mcp` も同じフォルダの `aibow-mcp_<日付>.log` に、OpenAI 互換 API の `aibow-server` は `aibow-server_<日付>.log` に書く(どちらも Info 以上・60 日分・圧縮も同じ)。フォルダが無ければ作る。`wails3 build` で作った exe は既定でここに書く。`wails3 dev` はターミナルに出し、ここの `aibow-dev_<日付>.log` にも書く(Info 以上・60 日分・圧縮も同じ。exe のログと混ざらないよう名前を分けている) |
 | `AIBOW_TOOLS` | `%APPDATA%\aibow\tools.json` | ツールの扱いの、この PC の既定(設定の画面で変えたものを aibow が書く) |
 | `AIBOW_WORKSPACES` | `%APPDATA%\aibow\workspaces.json` | この PC のワークスペース(名前を付けたフォルダの組。設定の画面の「ワークスペース」と入力欄の上で変えたものを aibow が書く。0035)。aibow-server につないでいても手元に置く |
 | `AIBOW_MCP` | `%APPDATA%\aibow\mcp.json` | MCP のサーバー(設定の画面の「MCP」で足したもの・settings.json から移したもの。aibow が書く。形は settings.json の `mcpServers` と同じ) |

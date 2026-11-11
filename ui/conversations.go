@@ -52,7 +52,7 @@ func (s *Service) Conversation(ctx context.Context, id uuid.UUID) (ConversationD
 	if err != nil {
 		return ConversationDetail{}, err
 	}
-	g := s.convs.Generating()
+	g := s.convs.Generating(ctx)
 	u, err := s.Usage(ctx, id)
 	if err != nil {
 		return ConversationDetail{}, err

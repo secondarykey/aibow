@@ -1,7 +1,7 @@
 # log の AGENTS.md
 
 **aibow のログ。** aibow のコードは `log.Info(msg, "key", v)`(slog と同じ形)・
-`log.Infof(format, ...)`(printf)などで出す。土台は `github.com/wenteasy/log`(v0.3.2)。
+`log.Infof(format, ...)`(printf)などで出す。土台は `github.com/wenteasy/log`(v0.4.0)。
 形は shinte/ikkyoku の `log` に揃え、ライブラリとして使う人のために `SetLogger` を足してある。
 決めたこと・やり残しは [_docs/features/0008-log.md](../_docs/features/0008-log.md)。作り方の決まりごとの正は wenteasy/log の README「使う側のやり方(自分の log パッケージを作る)」(ひな形・よくある間違い)。この形を崩すときは、先にそちらと揃える。
 
@@ -15,12 +15,12 @@
 
 - **アプリ(`_cmd/aibow`)**: `main` の最初に `startLog` が `log.Init` を呼ぶ。`slog.Default()` が wenteasy/log の `SimpleHandler`
   (`Options.Root` 以上。dev は Info、exe は Notice)になり、aibow のログもアプリのログも、Wails 自身のログもそこに出る(`main.go` が `application.Options.Logger` に `slog.Default()` を渡す。WebView2 の行は標準の log で来るが、`slog.SetDefault` のあとは同じ出口に流れる。標準の log はレベルを持たないので、`Init` が `slog.SetLogLoggerLevel(Root)` で出すレベルに合わせ、exe でも捨てない)
-  - `wails3 dev`(`isDev`): ターミナル(標準エラー出力)とファイル `%APPDATA%\aibow\logs\aibow-dev_<日付>.log` の両方(Info 以上。`AIBOW_LOG_DIR` で変えられる。10 日分)。
+  - `wails3 dev`(`isDev`): ターミナル(標準エラー出力)とファイル `%APPDATA%\aibow\logs\aibow-dev_<日付>.log` の両方(Info 以上。`AIBOW_LOG_DIR` で変えられる。60 日分・今日と昨日より古いものは gzip)。
     ターミナルは流れて消えるので、あとから調べられるようにファイルにも残す(2026-10-16、ユーザーの指示)。ふだんの exe と同時に動かすことがあるので、ファイルの頭を `aibow-dev` にして分ける(`Options.Prefix`。異常終了は `aibow-dev_crash.log`)
   - exe(`wails3 build`): ファイル `%APPDATA%\aibow\logs\aibow_<日付>.log`(wenteasy/log の `RollingFileWriter`。日ごと。`AIBOW_LOG_DIR` で変えられる)。
-    exe(`-H windowsgui`)には標準エラー出力の行き先が無く、ファイルにしか残らないため。**Notice 以上だけ**を書く(常に残したいもの。生成の統計などの Info は wails3 dev で見る)。起動時に古いファイルを消し、今日を含めて 10 日分を残す(`Options.KeepDays`。日付はファイル名から読む。`aibow_<日付>.log` の形でないファイルは消さない)
+    exe(`-H windowsgui`)には標準エラー出力の行き先が無く、ファイルにしか残らないため。**Notice 以上だけ**を書く(常に残したいもの。生成の統計などの Info は wails3 dev で見る)。古いファイルを消し、今日を含めて 60 日分を残す(`Options.KeepDays`)。今日と昨日より古いものは gzip の `aibow_<日付>.log.gz` にする(`Options.CompressDays` = 2。wenteasy/log の `SetCompressAfter`。1/9 ほどに縮むので、前の 10 日分そのままより場所を取らない。2026-11-08、ユーザーの指示)。消すのは wenteasy/log の `RollingFileWriter` の `SetKeep`(v0.4.0。それまでは aibow の `removeOld` が起動時に消していた)で、ファイルを開いたとき(最初に書いたとき・日付が変わって切り替えたとき)に別の goroutine で動く。何日も動かし続ける aibow-server でも日が変わるたびに片付く。日付はファイル名から読み、`aibow_<日付>.log`(と `.log.gz`)の形でないファイルは消さない。消せなかったときは Warn で残す(`SetErrorHandler`)
 - **MCP のサーバー(`_cmd/aibow-mcp`)**: アプリにならい、同じフォルダ(`%APPDATA%\aibow\logs`。`AIBOW_LOG_DIR`)の `aibow-mcp_<日付>.log` に書く(`Options.Prefix`)。
-  標準エラー出力にもいつも出す(クライアントが取り込む)。レベルは Info・10 日分。作業フォルダごとに複数のプロセスが同じファイルに書くので、`SetLogger(Logger().With("pid", …))` で各行に pid を付ける。
+  標準エラー出力にもいつも出す(クライアントが取り込む)。レベルは Info・60 日分(今日と昨日より古いものは gzip)。作業フォルダごとに複数のプロセスが同じファイルに書くので、`SetLogger(Logger().With("pid", …))` で各行に pid を付ける。
   異常終了は `aibow-mcp_crash.log`(画面が無いので、前回の記録はログに Warn で書く)。0007 の決定事項 11
 - **aibow をライブラリとして使う人**: `Init` は呼ばなくてよい。aibow のログは `slog.Default()` に出るので、
   自分の `slog.SetDefault` の出口に集まる。aibow のログだけ別にしたいときは `log.SetLogger(l)`
@@ -38,7 +38,7 @@
 - ⚠️ **ログが書けなくてもアプリは動かす。** `Init` はファイルを作れなくても出せる出口だけで組み、理由をエラーで返す(アプリは画面のお知らせに出す)。
   返す `io.Closer` は nil にしない
 - ⚠️ **前回の異常終了の記録は改名して残すこと**(消さない・上書きしない)。次の `CatchCrash` が `aibow_crash.log` を空で作り直すので、退けておかないと消える。
-  改名した記録は `aibow_<日付>.log` の形ではないので、古いログを消すとき(`removeOld`)にも消えない
+  改名した記録は `aibow_<日付>.log` の形ではないので、古いログを消すとき(`SetKeep`)にも消えない
 - 拾える異常終了は Go のランタイムを通るものだけ。画面から呼ばれたメソッドの中の panic は Wails が recover して Logger に Error で書く(ログファイルに入る)。
   llama.cpp の C の部分の異常終了(GGML_ASSERT など)は拾えない([_docs/known-issues.md](../_docs/known-issues.md))
 
@@ -46,5 +46,5 @@
 
 `log_test.go` —— 出す関数とレベルの足切り・**記録される位置が呼んだ側になること**(ここの関数を通しても位置がずれない歯止め)・
 `SetLogger` をしなければ `slog.Default()` に出ること・`Init` が `slog.Default()` を向け、Notice などが名前で出ること・
-ファイルに書くこと・フォルダを作れなくても止まらないこと・古いファイルを消して決めた日数を残すこと(名前の形が違うファイルは消さない)・`Root` より下を出さず、標準の log の行は捨てないこと。
+ファイルに書くこと・フォルダを作れなくても止まらないこと・古いファイルを消して決めた日数を残すこと(名前の形が違うファイル・頭の違うファイルは消さない。片付けは別の goroutine なので `waitRemoved` で消えるまで待つ)・決めた日数より古いものを gzip にし、中身が元と同じこと・`Root` より下を出さず、標準の log の行は捨てないこと。
 `crash_test.go` —— 本当に panic させた子プロセス(テストの実行ファイル自身)の内容が `aibow_crash.log` に残ること・前回の記録を改名して残すこと・空のファイルは異常終了と見なさないこと・古いログの片付けで記録が消えないこと。
