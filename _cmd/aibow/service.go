@@ -68,7 +68,7 @@ func (s *ChatService) ChooseModelPlace(kind string) (string, error) {
 	if w := app.Window.Current(); w != nil {
 		d.AttachToWindow(w) // ウィンドウの前に出す(ChooseWorkDir と同じ)
 	}
-	p, err := d.PromptForSingleSelection()
+	p, err := dialogPath(d.PromptForSingleSelection()) // 取り消しは空(Windows だけエラーで返るのをそろえる。dialog.go)
 	if err != nil {
 		return "", fmt.Errorf("置き場所を選ぶダイアログを出せません: %w", err)
 	}
@@ -90,7 +90,7 @@ func (s *ChatService) ChooseWorkDir(current string) (string, error) {
 	if w := app.Window.Current(); w != nil {
 		d.AttachToWindow(w) // ウィンドウの前に出す(後ろに隠れて、操作できなくなったように見えるのを防ぐ)
 	}
-	dir, err := d.PromptForSingleSelection()
+	dir, err := dialogPath(d.PromptForSingleSelection()) // 取り消しは空(dialog.go)
 	if err != nil {
 		return "", fmt.Errorf("フォルダを選ぶダイアログを出せません: %w", err)
 	}
