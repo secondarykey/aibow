@@ -25,10 +25,10 @@ export function FileChips({ files, onRemove, onDiscard }: { files: Chip[]; onRem
       {files.map(({ file, tokens, uncounted }, i) => {
         if (file.discarded) {
           return (
-            <span key={file.id} className="file-chip discarded" title={`${file.name}(消去済み)`}>
+            <span key={file.id} className="file-chip discarded" title={`${file.name}(削除済み)`}>
               {file.kind === "image" ? <LuImage className="icon" /> : <LuFileText className="icon" />}
               <span className="file-name">{file.name}</span>
-              <span className="file-size">消去済み</span>
+              <span className="file-size">削除済み</span>
             </span>
           );
         }
@@ -36,8 +36,8 @@ export function FileChips({ files, onRemove, onDiscard }: { files: Chip[]; onRem
         const size = sizeText(dataSize(file.data)) + (tok !== undefined ? ` · ${tok}` : "");
         const actions = confirming === file.id ? (
           <span className="file-confirm">
-            <button type="button" className="danger" onClick={() => { setConfirming(null); onDiscard?.(file); }}>捨てる</button>
-            <button type="button" onClick={() => setConfirming(null)}>やめる</button>
+            <button type="button" className="danger" onClick={() => { setConfirming(null); onDiscard?.(file); }}>削除</button>
+            <button type="button" onClick={() => setConfirming(null)}>キャンセル</button>
           </span>
         ) : (
           <>
@@ -47,7 +47,7 @@ export function FileChips({ files, onRemove, onDiscard }: { files: Chip[]; onRem
               </button>
             )}
             {onDiscard && (
-              <button type="button" className="file-remove" title="捨てる(中身を消す。モデルには名前だけを渡す)" onClick={() => setConfirming(file.id)}>
+              <button type="button" className="file-remove" title="削除(中身を削除する。モデルには名前だけを渡す)" onClick={() => setConfirming(file.id)}>
                 <LuTrash2 />
               </button>
             )}

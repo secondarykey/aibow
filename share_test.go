@@ -38,7 +38,7 @@ func TestCopyShared(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.ID == src.ID || c.Title != "調べもの(写し)" || c.Settings.Workspace != "" || c.ProfileID == (uuid.UUID{}) {
+	if c.ID == src.ID || c.Title != "調べもの(複製)" || c.Settings.Workspace != "" || c.ProfileID == (uuid.UUID{}) {
 		t.Errorf("写した会話: %+v", c)
 	}
 	_, got, err := st.Conversation(ctx, c.ID)

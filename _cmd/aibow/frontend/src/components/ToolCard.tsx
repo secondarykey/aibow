@@ -2,7 +2,7 @@
 // モデルが書いた <tool_call> の生の文字列は答えの欄には出さない(「モデルに渡した文字列」のパネルでは見える)。
 //
 // 書き換えるツール(write_file / edit_file)とコマンド(run_command)は、実行する前に確認を待つ。待っている間はカードを開いたままにし、
-// 何をするか(パス・上書きか)と差分(```diff。+ は緑、- は赤)、コマンドならコマンドそのもの、理由の欄と「拒否」「実行する」を出す。
+// 何をするか(パス・上書きか)と差分(```diff。+ は緑、- は赤)、コマンドならコマンドそのもの、理由の欄と「拒否」「実行」を出す。
 // 「今後も同じ答えにする」のチェックを入れて答えると、拒否なら「今後許可しない」(この会話ではモデルから隠す)、
 // 実行なら「この会話では今後聞かない」(この会話では確認しない)になる(0010。0049 でボタン4つをボタン2つとチェック1つにした)。
 // MCP のサーバーのツールは中身が見えないので、全部確認する。差分の代わりに、サーバーに渡す引数(JSON)を出す。
@@ -105,9 +105,9 @@ function useElapsed(active: boolean): number {
 }
 
 // 確認の答え方(0049 の決定事項 4〜7):
-//   1行目 = 拒否する側(理由の欄と「拒否」)、2行目 = 実行する側(「今後も同じ答えにする」のチェックと「実行する」)。
-//   「今後ずっと」は1回押しただけでは決まらないよう、チェックとボタンの2つの操作にした。「拒否」と「実行する」は隣り合わせない。
-//   Enter だけで実行されないよう、フォーカスは「実行する」に置かない
+//   1行目 = 拒否する側(理由の欄と「拒否」)、2行目 = 実行する側(「今後も同じ答えにする」のチェックと「実行」)。
+//   「今後ずっと」は1回押しただけでは決まらないよう、チェックとボタンの2つの操作にした。「拒否」と「実行」は隣り合わせない。
+//   Enter だけで実行されないよう、フォーカスは「実行」に置かない
 function Confirm({ req, onAnswer }: { req: ConfirmRequest; onAnswer: Props["onAnswer"] }) {
   const [reason, setReason] = useState("");
   const [remember, setRemember] = useState(false);
@@ -146,7 +146,7 @@ function Confirm({ req, onAnswer }: { req: ConfirmRequest; onAnswer: Props["onAn
           <input
             type="text"
             placeholder="拒否の理由(モデルに伝えます。空でも可)"
-            title="「拒否」を押したとき、モデルに「ユーザーが実行を拒否しました。理由: …」として伝えます。「実行する」では使いません"
+            title="「拒否」を押したとき、モデルに「ユーザーが実行を拒否しました。理由: …」として伝えます。「実行」では使いません"
             value={reason}
             disabled={sent}
             onChange={e => setReason(e.target.value)}
@@ -156,12 +156,12 @@ function Confirm({ req, onAnswer }: { req: ConfirmRequest; onAnswer: Props["onAn
         <div className="confirm-row">
           <label
             className="confirm-remember"
-            title={"「実行する」なら、この会話ではこのツールを今後は確認せずに実行します。\n「拒否」なら、この会話ではこのツールをモデルに見せません"}
+            title={"「実行」なら、この会話ではこのツールを今後は確認せずに実行します。\n「拒否」なら、この会話ではこのツールをモデルに見せません"}
           >
             <input type="checkbox" checked={remember} disabled={sent} onChange={e => setRemember(e.target.checked)} />
             この会話では、このツールを今後も同じ答えにする
           </label>
-          <button className="primary" disabled={sent} onClick={() => answer(true)}>実行する</button>
+          <button className="primary" disabled={sent} onClick={() => answer(true)}>実行</button>
         </div>
       </div>
     </div>

@@ -124,7 +124,7 @@ export function ChatView({ items, firstId, conversationId, pinQuestion, readOnly
                     </div>
                     <UserActions text={it.text} createdAt={it.createdAt}>
                       {!readOnly && i === lastUser && it.msgId && (
-                        <button className="reply-action" disabled={retry.disabled} title="この発言を直して送り直す(この発言と返事は消える)" onClick={() => setEditing(it.id)}>
+                        <button className="reply-action" disabled={retry.disabled} title="この発言を直して再送信する(この発言と返事は削除される)" onClick={() => setEditing(it.id)}>
                           <LuPencil />
                         </button>
                       )}
@@ -140,8 +140,8 @@ export function ChatView({ items, firstId, conversationId, pinQuestion, readOnly
                 return (
                   <div key={it.id} className="error-row">
                     <div className="msg error">{it.text}</div>
-                    <button className="error-retry" disabled={retry.disabled} title="最後の発言への返事を作り直す(今のモデル・設定で)" onClick={retry.onRegenerate}>
-                      <LuRefreshCw /> 作り直す
+                    <button className="error-retry" disabled={retry.disabled} title="最後の発言への返事を再生成する(今のモデル・設定で)" onClick={retry.onRegenerate}>
+                      <LuRefreshCw /> 再生成
                     </button>
                   </div>
                 );
@@ -163,7 +163,7 @@ export function ChatView({ items, firstId, conversationId, pinQuestion, readOnly
                           <button
                             className="reply-action"
                             disabled={retry.disabled}
-                            title="この返事を作り直す(今のモデル・設定で。この返事は消える)"
+                            title="この返事を再生成する(今のモデル・設定で。この返事は削除される)"
                             onClick={retry.onRegenerate}
                           >
                             <LuRefreshCw />
@@ -320,8 +320,8 @@ function EditUser({ initial, disabled, onCancel, onSend }: {
         <textarea value={text} rows={Math.min(10, Math.max(2, text.split("\n").length))} autoFocus onChange={e => setText(e.target.value)} />
       </div>
       <div className="edit-actions">
-        <button onClick={onCancel}>やめる</button>
-        <button className="primary" disabled={disabled || !text.trim()} onClick={() => onSend(text.trim())}>送り直す</button>
+        <button onClick={onCancel}>キャンセル</button>
+        <button className="primary" disabled={disabled || !text.trim()} onClick={() => onSend(text.trim())}>再送信</button>
       </div>
     </div>
   );

@@ -305,7 +305,7 @@ func checkFiles(files []File) error {
 		if f.Discarded {
 			// 捨てたファイル(送り直す・写すで付いていく)。中身は無い
 			if len(f.Data) > 0 {
-				return fmt.Errorf("%s は捨てたファイルなのに中身があります", f.Name)
+				return fmt.Errorf("%s は削除したファイルなのに中身があります", f.Name)
 			}
 			continue
 		}
@@ -341,7 +341,7 @@ func checkFiles(files []File) error {
 // 生成中の会話では捨てられない(ツールのループの中で、答えが出るまで画像が要る)。捨てた中身は戻せない。
 func (cs *Conversations) DiscardFile(ctx context.Context, id, fileID uuid.UUID) error {
 	if cs.generatingIn(ctx, id) {
-		return errors.New("返事を生成中の会話では、ファイルを捨てられません。終わってから捨ててください")
+		return errors.New("返事を生成中の会話では、ファイルを削除できません。終わってから削除してください")
 	}
 	_, history, err := cs.store.Conversation(ctx, id)
 	if err != nil {
@@ -356,9 +356,9 @@ func (cs *Conversations) DiscardFile(ctx context.Context, id, fileID uuid.UUID) 
 				return nil // もう捨ててある
 			}
 			if err := cs.store.DiscardFile(ctx, fileID); err != nil {
-				return fmt.Errorf("%s を捨てられません: %w", f.Name, err)
+				return fmt.Errorf("%s を削除できません: %w", f.Name, err)
 			}
-			log.Infof("会話 %s のファイル %s(%s)を捨てました", id, f.Name, f.Kind)
+			log.Infof("会話 %s のファイル %s(%s)を削除しました", id, f.Name, f.Kind)
 			return nil
 		}
 	}

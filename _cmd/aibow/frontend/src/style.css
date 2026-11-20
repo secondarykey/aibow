@@ -104,6 +104,17 @@ button {
   border: 1px solid var(--border); background: var(--panel); color: var(--text); cursor: pointer;
 }
 button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+/* 削除・破棄(0050)。どの画面でも同じに効くよう、親の class で絞らずにここ1か所で書く。
+   danger-outline は最初のボタン(赤い枠)、danger は確かめる段の「削除」(赤く塗る) */
+button.danger { color: #fff; background: var(--error); border-color: var(--error); }
+button.danger-outline { color: var(--error); border-color: var(--error); background: transparent; }
+/* アイコンと文字を並べるボタン(「+ 追加」「ゴミ箱 削除」) */
+button.with-icon { display: inline-flex; align-items: center; gap: 4px; }
+/* 削除の形(DeleteButton.tsx)の確かめる段。短い文なら1行に、長い文なら折り返してボタンを下に */
+.delete-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.delete-confirm .confirm-text { margin: 0; color: var(--error); font-size: 13px; }
+.delete-confirm.block .confirm-text { flex-basis: 100%; }
+.delete-confirm-row { display: flex; align-items: center; gap: 6px; }
 button:disabled { opacity: .5; cursor: default; }
 
 main { flex: 1; display: flex; min-height: 0; }
@@ -468,10 +479,11 @@ nav.conversations.collapsed .admin.active { color: var(--accent); }
   flex-shrink: 0; width: 28px; padding: 4px 0; display: inline-flex; align-items: center; justify-content: center;
 }
 .conversation .delete { color: var(--muted); visibility: hidden; }
+.conversation .delete:hover:not(:disabled) { color: var(--error); }
 .conversation:hover .delete, .conversation.current .delete { visibility: visible; }
 .conversation .delete .dot, .conversation .running-mark .dot { margin: 0; }
-/* 送信している間の印は、いつも出す(削除できない間なので、× の代わり) */
-/* 終わったあとの印も、いつも出す。マウスを乗せたときだけ × に替える */
+/* 送信している間の印は、いつも出す(削除できない間なので、ゴミ箱の代わり) */
+/* 終わったあとの印も、いつも出す。マウスを乗せたときだけゴミ箱に替える */
 .conversation .delete.has-mark { visibility: visible; }
 .conversation .delete.has-mark .x { display: none; }
 .conversation:hover .delete.has-mark .dot { display: none; }
@@ -525,7 +537,6 @@ nav.conversations ul.grouped .conversation { margin-left: 12px; }
 .conversation.confirming { padding: 4px 6px; gap: 4px; background: var(--bg); }
 .conversation .confirm-text { flex: 1; color: var(--error); }
 .conversation.confirming button { border: 1px solid var(--border); padding: 3px 8px; }
-.conversation button.danger { color: #fff; background: var(--error); border-color: var(--error); }
 
 /* 設定・管理・会話の設定の画面を包む箱(エラーを次の操作で消すための受け口。App.tsx)。並べ方には入らない */
 .op-scope { display: contents; }
@@ -700,7 +711,6 @@ nav.conversations ul.grouped .conversation { margin-left: 12px; }
 .pick-leader.on { color: var(--warn); opacity: 1; }
 .pick-leader:hover { opacity: 1; }
 .pick-chip.leader .icon { color: var(--warn); }
-.share-confirm button.danger { color: #fff; background: var(--error); border-color: var(--error); }
 .user-sort { display: inline-flex; align-items: center; gap: 2px; border: none; background: transparent; text-align: left; cursor: pointer; }
 .user-sort.num { justify-content: flex-end; }
 .user-sort.current { color: var(--text); }
@@ -719,14 +729,12 @@ nav.conversations ul.grouped .conversation { margin-left: 12px; }
 .user-field-value.expired { color: var(--error); }
 .user-field button { font-size: 12px; padding: 2px 8px; }
 .user-field .confirm-text { color: var(--error); font-size: 12px; }
-.user-field button.danger, .user-remove button.danger { color: #fff; background: var(--error); border-color: var(--error); }
 .user-sub { margin: 14px 0 4px; font-size: 13px; color: var(--muted); font-weight: normal; }
 .more { align-self: flex-start; margin-top: 4px; font-size: 12px; padding: 2px 8px; }
 .user-remove { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--border); }
 .user-remove .confirm-text { color: var(--error); font-size: 13px; margin: 0 0 6px; }
 .user-remove-row { display: flex; gap: 6px; }
 .settings-view .user-remove-row input[type=text] { width: 200px; }
-button.danger-outline { color: var(--error); border-color: var(--error); background: transparent; }
 /* 作ったパスワード・API キー。今だけ出す(閉じたらもう見られない) */
 .secret-box {
   display: flex; align-items: center; gap: 8px; margin: 0 0 10px; padding: 8px 10px;
@@ -765,7 +773,6 @@ button.danger-outline { color: var(--error); border-color: var(--error); backgro
 .mcp-actions button { display: inline-flex; align-items: center; gap: 4px; }
 .settings-view .mcp-actions button.apply { margin-top: 0; }
 .mcp-actions .confirm-text { color: var(--error); font-size: 12px; }
-.mcp-actions button.danger { color: #fff; background: var(--error); border-color: var(--error); }
 .mcp-actions .spin { animation: spin 1s linear infinite; }
 .mcp-tried { margin: 10px 0 0; font-size: 12px; overflow-wrap: anywhere; }
 .mcp-tried.ok { color: var(--text); }
@@ -840,7 +847,6 @@ footer { border-top: 1px solid var(--border); background: var(--panel); padding:
 .file-chip.discarded { color: var(--muted); border-style: dashed; background: transparent; }
 .file-confirm { display: inline-flex; gap: 4px; margin-left: 2px; }
 .file-confirm button { font-size: 12px; padding: 1px 8px; white-space: nowrap; }
-.file-confirm button.danger { color: #fff; background: var(--error); border-color: var(--error); }
 /* 画像を大きく見る(画面いっぱいに重ねる。Esc か外を押すと閉じる) */
 .image-viewer {
   position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center;
@@ -957,8 +963,6 @@ footer { border-top: 1px solid var(--border); background: var(--panel); padding:
 .worktree-foot { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-top: 1px solid var(--border); }
 .worktree-foot .confirm-text { flex: 1; font-size: 13px; }
 .worktree-spacer { flex: 1; }
-.worktree-foot button.danger { color: var(--error); border-color: var(--error); background: transparent; }
-.worktree-foot .confirm-text + button.danger { color: #fff; background: var(--error); }
 
 /* ツールのカードの、実行の前にアプリがしたことのお知らせ(worktree を作った、など) */
 .tool-notice { display: flex; align-items: flex-start; gap: 5px; margin: 6px 0 0; color: var(--accent); font-size: 12px; }
@@ -997,6 +1001,8 @@ footer { border-top: 1px solid var(--border); background: var(--panel); padding:
 .settings-view textarea:disabled, .settings-view select:disabled, .settings-view input:disabled { opacity: .6; }
 /* プロファイルの一覧。選んでいるものに枠、しまってあるものは薄く */
 .profile-list { display: flex; flex-direction: column; gap: 2px; margin-bottom: 8px; }
+/* 既定のプロファイルの選択肢(0050)。一覧の上 */
+.profile-default { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 13px; }
 .profile-item {
   display: flex; align-items: center; gap: 8px; text-align: left;
   border-color: transparent; background: transparent; padding: 5px 8px;
@@ -1008,7 +1014,7 @@ footer { border-top: 1px solid var(--border); background: var(--panel); padding:
 .profile-uses { margin-left: auto; color: var(--muted); font-size: 12px; }
 .profile-add { color: var(--muted); }
 .profile-editor { padding: 4px 0 0 2px; }
-.profile-actions { display: flex; gap: 6px; margin-top: 8px; }
+.profile-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }
 .profile-actions button { display: inline-flex; align-items: center; gap: 4px; }
 /* 配る(0018 の 11-1)。配っている印は色付きの枠、配った人の名前は薄く */
 .share-tag { border-color: var(--accent); color: var(--accent); }

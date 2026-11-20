@@ -128,7 +128,7 @@ func (w *MissingWatch) Check(c Catalog) (lost, found []string) {
 func listAdded(p string) ([]Entry, error) {
 	st, err := os.Stat(p)
 	if err != nil {
-		return nil, errors.New("見つかりません(消したか、ドライブがつながっていない)")
+		return nil, errors.New("見つかりません(削除したか、ドライブがつながっていない)")
 	}
 	var list []Entry
 	if st.IsDir() {
@@ -173,7 +173,7 @@ func (c Catalog) CheckPlace(path string) (string, error) {
 	}
 	for _, p := range c.Added {
 		if samePath(abs, p) {
-			return "", fmt.Errorf("%s はもう足してあります", abs)
+			return "", fmt.Errorf("%s はもう追加してあります", abs)
 		}
 	}
 	return abs, nil

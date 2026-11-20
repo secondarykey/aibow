@@ -74,7 +74,7 @@ func (s *Service) usableModel(id string) error {
 		return nil
 	}
 	if err := s.host.usable(id); err != nil {
-		return fmt.Errorf("配るプロファイルのモデルは、使えるモデルから選んでください: %w", err)
+		return fmt.Errorf("配布するプロファイルのモデルは、使えるモデルから選んでください: %w", err)
 	}
 	return nil
 }
@@ -98,7 +98,7 @@ func (s *Service) SetProfileShare(ctx context.Context, id uuid.UUID, share strin
 	}
 	switch share {
 	case aibow.ShareNone:
-		log.Noticef("プロファイル「%s」を配るのをやめました", p.Name)
+		log.Noticef("プロファイル「%s」の配布を停止しました", p.Name)
 	case aibow.ShareAll:
 		log.Noticef("プロファイル「%s」を全員に配りました", p.Name)
 	default:
@@ -126,9 +126,9 @@ func (s *Service) ShareCopy(ctx context.Context, id uuid.UUID, share string, wit
 	}
 	switch share {
 	case aibow.ShareAll:
-		log.Noticef("プロファイル「%s」を写して、全員に配りました(%s)", p.Name, whoOf(ctx))
+		log.Noticef("プロファイル「%s」を複製して、全員に配布しました(%s)", p.Name, whoOf(ctx))
 	default:
-		log.Noticef("プロファイル「%s」を写して、%s に配りました(%s)", p.Name, targets(with, groups), whoOf(ctx))
+		log.Noticef("プロファイル「%s」を複製して、%s に配布しました(%s)", p.Name, targets(with, groups), whoOf(ctx))
 	}
 	return p, nil
 }
@@ -140,7 +140,7 @@ func (s *Service) CopyProfile(ctx context.Context, id uuid.UUID) (aibow.Profile,
 	}
 	p, err := s.convs.CopyProfile(ctx, id)
 	if err == nil {
-		log.Noticef("プロファイルを写して「%s」を作りました", p.Name)
+		log.Noticef("プロファイルを複製して「%s」を作成しました", p.Name)
 	}
 	return p, err
 }
@@ -153,7 +153,7 @@ func (s *Service) SetProfileArchived(ctx context.Context, id uuid.UUID, archived
 	if err := s.convs.SetProfileArchived(ctx, id, archived); err != nil {
 		return err
 	}
-	log.Noticef("プロファイル %s をしまう: %v", id, archived)
+	log.Noticef("プロファイル %s を%s", id, map[bool]string{true: "アーカイブしました", false: "アーカイブ解除しました"}[archived])
 	return nil
 }
 
@@ -165,7 +165,7 @@ func (s *Service) DeleteProfile(ctx context.Context, id uuid.UUID) error {
 	if err := s.convs.DeleteProfile(ctx, id); err != nil {
 		return err
 	}
-	log.Noticef("プロファイル %s を消しました", id)
+	log.Noticef("プロファイル %s を削除しました", id)
 	return nil
 }
 
@@ -178,7 +178,7 @@ func (s *Service) SetDefaultProfile(ctx context.Context, id uuid.UUID) error {
 		return err
 	}
 	if p, err := s.convs.DefaultProfile(ctx); err == nil {
-		log.Noticef("新しい会話で最初に選ばれるプロファイル: %s", p.Name)
+		log.Noticef("既定のプロファイル: %s", p.Name)
 	}
 	return nil
 }

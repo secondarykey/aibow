@@ -314,7 +314,7 @@ func TestUpdate(t *testing.T) {
 	}
 	select {
 	case err := <-removed:
-		if err == nil || !strings.Contains(err.Error(), "remove を消したので止めました") || strings.Contains(err.Error(), "新しい設定で起動") {
+		if err == nil || !strings.Contains(err.Error(), "remove を削除したので止めました") || strings.Contains(err.Error(), "新しい設定で起動") {
 			t.Errorf("消したサーバーのツールを実行中なら、消したことが分かるエラーで返る(起動し直すとは言わない): %v", err)
 		}
 	case <-time.After(5 * time.Second):

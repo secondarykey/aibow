@@ -101,7 +101,7 @@ func (s *ChatService) Login(name, password string) (AccountInfo, error) {
 func (s *ChatService) Logout() error {
 	c := s.conn
 	if c.source != serverScreen || c.client == nil {
-		return errors.New("ログアウトできるのは、設定の画面の「サーバー」で aibow-server にログインしたときだけです(settings.json に手で書いた API キーは消しません)")
+		return errors.New("ログアウトできるのは、設定の画面の「サーバー」で aibow-server にログインしたときだけです(settings.json に手で書いた API キーは削除しません)")
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()

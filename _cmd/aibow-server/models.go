@@ -118,7 +118,7 @@ func (m *modelManager) findArg(arg string) (models.Entry, error) {
 	if m.state.Disabled(e.ID) {
 		return models.Entry{}, &models.DisabledError{ID: e.ID}
 	}
-	log.Warnf("起動のときのモデル %s は一覧の置き場所の外にあるので、ほかのモデルに替えたあとは ID では戻れません(置き場所に足すと戻れます)", e.Path)
+	log.Warnf("起動のときのモデル %s は一覧の置き場所の外にあるので、ほかのモデルに替えたあとは ID では戻れません(置き場所に追加すると戻れます)", e.Path)
 	return e, nil
 }
 
@@ -143,7 +143,7 @@ func (m *modelManager) SetEnabled(id string, enabled bool) (bool, error) {
 		if _, err := m.eng.UnloadModel(); err != nil {
 			return false, err
 		}
-		log.Noticef("使えないようにしたモデル %s を降ろしました", id)
+		log.Noticef("使えないようにしたモデル %s をアンロードしました", id)
 		return true, nil
 	}
 	return false, nil
@@ -216,7 +216,7 @@ func (m *modelManager) AddPlace(path string) error {
 	if err := m.state.SetPlaces(append(m.state.Places(), abs)); err != nil {
 		return err
 	}
-	log.Noticef("モデルの置き場所を足しました: %s", abs)
+	log.Noticef("モデルの置き場所を追加しました: %s", abs)
 	return nil
 }
 
@@ -225,7 +225,7 @@ func (m *modelManager) RemovePlace(path string) error {
 	c := m.catalogNow()
 	p, ok := c.IsAdded(path)
 	if !ok {
-		return fmt.Errorf("%s は画面で足した置き場所ではないので外せません(models フォルダと Ollama の保存先は server.json か環境変数で変えます)", path)
+		return fmt.Errorf("%s は画面で追加した置き場所ではないので外せません(models フォルダと Ollama の保存先は server.json か環境変数で変えます)", path)
 	}
 	if err := m.state.SetPlaces(slices.DeleteFunc(slices.Clone(c.Added), func(s string) bool { return s == p })); err != nil {
 		return err

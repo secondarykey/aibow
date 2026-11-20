@@ -456,7 +456,7 @@ func startEngine(cfg appConfig, catalog models.Catalog, app aibow.AppSettings) (
 	log.Infof("モデルの置き場所: %s / Ollama: %s", absPath(catalog.ModelsDir), absPath(catalog.OllamaDir))
 	for _, p := range catalog.Places() {
 		if p.Origin == models.OriginAdded {
-			log.Infof("  足した置き場所: %s(%d 個)%s", p.Path, p.Models, p.Missing)
+			log.Infof("  追加した置き場所: %s(%d 個)%s", p.Path, p.Models, p.Missing)
 		}
 	}
 	for _, m := range list {

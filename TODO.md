@@ -16,7 +16,6 @@ aibow に残っている課題の一覧(入口)。ルールと全体の構成は
 | ⬜ | コマンドの出力を途中から見せる(go test などの実行中に、出力を流して見せる) | [検討メモ](_docs/backlog.md#コマンドの出力を途中から見せる) |
 | ⬜ | 裏で要約する(返事を書き終えたあと、次に備えて2つ目の作業領域で要約しておく) | [検討メモ](_docs/backlog.md#裏で要約する) |
 | 🔧 | ワークスペースの作り方・確認のカード・実行中の表示を見直す | [0049-ui-review.md](_docs/features/0049-ui-review.md) |
-| ⬜ | ボタンの言葉と見た目をそろえる(名詞にする・削除の形・赤の CSS・既定のプロファイルの選択肢) | [0050-buttons.md](_docs/features/0050-buttons.md) |
 | ⬜ | 会話の検索(部分一致・全文検索・意味の近さ) | [0003-search.md](_docs/features/0003-search.md)(検討メモ) |
 | ⬜ | KV キャッシュの使い回しを良くする | [検討メモ](_docs/backlog.md#kv-キャッシュの使い回しを良くする) |
 
@@ -76,6 +75,7 @@ aibow に残っている課題の一覧(入口)。ルールと全体の構成は
 | ⬜ | aibow-mcp の `git_status`・`git_diff` を、Claude Code などほかのクライアントから | [0041-agent-prompt.md](_docs/features/0041-agent-prompt.md) |
 | ⬜ | aibow-server の base:頭を外すプロキシ・アプリの serverUrl に /aibow・デスクトップの画面(vite の base) | [0042-server-addr-base.md](_docs/features/0042-server-addr-base.md) |
 | ⬜ | 返事の途中で前のツールの結果を省く compact の画面(吹き出しの「…を省いてモデルに渡しました」・ツールのカードの「省略して渡した」)と、省いても目安を下回らないときに省かない形を 4B で | [0040-compact-in-turn.md](_docs/features/0040-compact-in-turn.md) |
-| ⬜ | 送信・生成のエラーの横の「作り直す」を画面で押す(注意・読むだけの会話・発言を保存する前に止まったときには出ないこと) | [0048-user-wording.md](_docs/features/0048-user-wording.md) の「D8 の決まり」 |
+| ⬜ | 送信・生成のエラーの横の「再生成」を画面で押す(注意・読むだけの会話・発言を保存する前に止まったときには出ないこと) | [0048-user-wording.md](_docs/features/0048-user-wording.md) の「D8 の決まり」 |
+| ⬜ | ボタンの言葉と見た目(削除の形・既定のプロファイルの選択肢で新しい会話の画面の最初の選択が変わる・赤い「削除」・アイコンの付け方)を、アプリとブラウザの画面で | [0050-buttons.md](_docs/features/0050-buttons.md) の「経過」 |
 | ⬜ | 信頼するプロキシ:ユーザーのリバースプロキシで X-Forwarded-For を書き、ほかの PC から開くとログの相手がその PC になる(管理の操作の断りは 0046 でどこからでも同じ) | [0044-trusted-proxies.md](_docs/features/0044-trusted-proxies.md) の完了の条件 2 |
 | ⬜ | 設定の画面のエラーが次の操作で消える(ログインを続けて間違える・並べ方が変わらない) | [0043-clear-errors.md](_docs/features/0043-clear-errors.md) |

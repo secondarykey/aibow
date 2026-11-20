@@ -126,13 +126,13 @@ export function ServerSettings({ disabled, onError, onChanged }: { disabled: boo
 
           {(conn.pending === "server" || (conn.pending === "" && conn.source === "screen")) && (
             <>
-              <h2 className="section">アプリモードに戻す</h2>
+              <h2 className="section">アプリモードへの切り替え</h2>
               <button
                 disabled={off}
                 onClick={disconnect}
-                title="aibow-server につなぐのをやめ(アプリ用のトークンも消す)、アプリモード(このアプリの中で llama.cpp を動かす)に戻します。起動し直すと切り替わり、会話は手元の DB のものに戻ります"
+                title="aibow-server との接続を解除し(アプリ用のトークンも削除する)、アプリモード(このアプリの中で llama.cpp を動かす)に切り替えます。起動し直すと切り替わり、会話は手元の DB のものに戻ります"
               >
-                アプリモードに戻す
+                アプリモードに切り替え
               </button>
             </>
           )}

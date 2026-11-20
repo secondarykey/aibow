@@ -18,9 +18,9 @@ export function UserChangedGate({ children }: { children: ReactNode }) {
         <h1 className="login-title">AIBow</h1>
         <div className="login-note" role="alert">
           このブラウザで、別の人({now})がログインしました。この画面は {me.name} のものだったので閉じました。
-          読み込み直すと {now} の画面になります。{me.name} で使うときは、読み込み直してからログアウトし、{me.name} でログインし直してください。
+          再読み込みすると {now} の画面になります。{me.name} で使うときは、再読み込みしてからログアウトし、{me.name} でログインし直してください。
         </div>
-        <button type="button" className="primary" onClick={() => location.reload()}>読み込み直す</button>
+        <button type="button" className="primary" onClick={() => location.reload()}>再読み込み</button>
       </div>
     </div>
   );

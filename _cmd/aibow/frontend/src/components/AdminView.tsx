@@ -27,11 +27,11 @@ import { ScreenErrors } from "./ScreenErrors";
 type Tab = "users" | "groups" | "models" | "tools" | "profiles" | "usage";
 
 const TABS: { id: Tab; label: string; title: string; admin: boolean }[] = [
-  { id: "users", label: "利用者", title: "aibow-server の利用者(作る・パスワードのリンクと API キー・表示名・消す・その人の会話)", admin: true },
-  { id: "groups", label: "グループ", title: "グループ(作る・名前・メンバーと長・消す)。共有の相手に選べる", admin: true },
-  { id: "models", label: "モデル", title: "サーバーの PC のモデル(読み込む / 降ろす・GPU の層数・置き場所・使える)", admin: false },
+  { id: "users", label: "利用者", title: "aibow-server の利用者(作成・パスワードのリンクと API キー・表示名・削除・その人の会話)", admin: true },
+  { id: "groups", label: "グループ", title: "グループ(作成・名前・メンバーと長・削除)。共有の相手に選べる", admin: true },
+  { id: "models", label: "モデル", title: "サーバーの PC のモデル(読み込み / アンロード・GPU の層数・置き場所・使える)", admin: false },
   { id: "tools", label: "ツール", title: "ブラウザから使う会話のツールの扱い(使わない・確認する・確認しない)。aibow-server 全体の既定", admin: false },
-  { id: "profiles", label: "配るプロファイル", title: "組織に配るプロファイル(値と決まり・配る相手・資料のフォルダ・写して配る)", admin: true },
+  { id: "profiles", label: "配布プロファイル", title: "組織に配布するプロファイル(値と決まり・配布する相手・資料のフォルダ・複製して配布)", admin: true },
   { id: "usage", label: "使用量", title: "利用者ごとの生成の回数・GPU の秒数・生成トークン(今日・7日・30日)", admin: true },
 ];
 
@@ -91,7 +91,7 @@ export function AdminView({ onClose, errors, onError, onReadConversation, models
         {tab === "users" && <UserSettings dir={dir} reloadDir={reloadDir} onError={onError} onRead={onReadConversation} />}
         {tab === "groups" && (
           <>
-            <h2 title="グループは共有の相手に選べる。長はメンバーを足す・外せる(冠を押すと長にする / 外す)">グループ</h2>
+            <h2 title="グループは共有の相手に選べる。長はメンバーを追加・外せる(冠を押すと長にする / 外す)">グループ</h2>
             <GroupAdmin dir={dir} reload={reloadDir} onError={onError} />
           </>
         )}
@@ -100,7 +100,7 @@ export function AdminView({ onClose, errors, onError, onReadConversation, models
         {tab === "tools" && <ServerTools servers={servers} manage={models.manage} onChanged={onToolsChanged} />}
         {tab === "profiles" && (
           <>
-            <h2 title="組織に配るプロファイル。値と決まりは配った相手の会話に効き、ほかの管理者も変えられる">配るプロファイル</h2>
+            <h2 title="組織に配布するプロファイル。値と決まりは配布した相手の会話に効き、ほかの管理者も変えられる">配布プロファイル</h2>
             <ProfileSettings
               mode="distributed"
               models={models.models}

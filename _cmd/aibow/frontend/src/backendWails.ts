@@ -12,7 +12,7 @@ const notInApp = async (): Promise<never> => {
   throw new Error("利用者の管理は、aibow-server の画面をブラウザで開いて、管理者でログインして行います");
 };
 const linkInBrowser = async (): Promise<never> => {
-  throw new Error("パスワードを決めるリンクは、ブラウザで開いてください");
+  throw new Error("パスワードを設定するリンクは、ブラウザで開いてください");
 };
 
 // asMe は、Go の AccountInfo(アプリのアカウント。account.go)を画面の Me にする。

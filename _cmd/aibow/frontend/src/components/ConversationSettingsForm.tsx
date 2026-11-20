@@ -38,7 +38,7 @@ export function ConversationSettingsForm({ settings, models, lock, onChange }: {
       </FieldLabel>
       <select id="compact" value={settings.compact} disabled={off(FIX.compact)} onChange={e => onChange({ compact: e.target.value })}>
         <option value="summary">要約する(summary)</option>
-        <option value="truncate">古い発言を捨てる(truncate)</option>
+        <option value="truncate">古い発言を外す(truncate)</option>
         <option value="none">何もしない(none)</option>
       </select>
       <p className="hint">{COMPACT_HINTS[settings.compact] ?? ""}</p>
@@ -239,6 +239,6 @@ export function NumberInput({ id, value, min, step, disabled, onChange }: {
 // compact の方式ごとの説明(_docs/features/0002-compact.md)
 const COMPACT_HINTS: Record<string, string> = {
   summary: "古い部分をモデル自身に要約させ、「要約 + 最近の発言」を渡します。要約を作る分だけ待ち時間がかかります。",
-  truncate: "古い発言から順に、モデルに渡すのをやめます(保存した発言は消えません)。渡さなかった内容はモデルには完全に消えます。",
+  truncate: "古い発言から順に、モデルに渡さなくなります(保存した発言は削除されません)。渡さなかった内容はモデルには完全に消えます。",
   none: "何もしません。会話の上限を超えたら、生成する前に止まります。",
 };

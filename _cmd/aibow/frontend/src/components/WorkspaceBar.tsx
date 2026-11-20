@@ -51,7 +51,7 @@ export function WorkspaceBar({ workspaces, selected, onChange, onCreated, onNoti
     );
   };
   const title = current ? current.folders?.map(f => f.path).join("\n") ?? current.name
-    : missing ? "別の PC で選んだか、消したワークスペース。この PC ではフォルダのツールを使えない" : "ワークスペースを選ぶ";
+    : missing ? "別の PC で選んだか、削除したワークスペース。この PC ではフォルダのツールを使えない" : "ワークスペースを選ぶ";
 
   return (
     <div className={"workdir-bar" + (selected ? " set" : "") + (missing ? " missing" : "")} ref={ref}>
@@ -70,9 +70,9 @@ export function WorkspaceBar({ workspaces, selected, onChange, onCreated, onNoti
             </button>
           ))}
           {workspaces.length > 0 && <div className="workspace-menu-sep" />}
-          <button type="button" className="conv-tools-item" onClick={create} title="フォルダを選んで、そのフォルダ1つのワークスペースを作る">
+          <button type="button" className="conv-tools-item" onClick={create} title="フォルダを選んで、そのフォルダ1つのワークスペースを作成する(同じフォルダのものがあれば、それを選ぶ)">
             <span className="conv-tools-check"><LuFolderPlus /></span>
-            フォルダから新しく作る
+            フォルダから作成
           </button>
           <button type="button" className="conv-tools-item" onClick={() => { setOpen(false); if (selected) onChange(""); }} title="ワークスペースを外す">
             <span className="conv-tools-check">{!selected && <LuCheck />}</span>
@@ -89,7 +89,7 @@ export function WorkspaceBar({ workspaces, selected, onChange, onCreated, onNoti
 export function FolderBar({ name }: { name: string }) {
   return (
     <div className="workdir-bar set">
-      <span className="workdir folder-fixed" title="資料のフォルダ(aibow-server の PC。管理者が配ったプロファイルで決まる)。この会話のツールは、このフォルダの中を読み書きする">
+      <span className="workdir folder-fixed" title="資料のフォルダ(aibow-server の PC。管理者が配布したプロファイルで決まる)。この会話のツールは、このフォルダの中を読み書きする">
         <LuFolder />
         <span className="workdir-name">{name}</span>
       </span>

@@ -18,6 +18,7 @@ import { admin, ChatService, linkURL, me, type AdminUser, type Link } from "../b
 import type { ConversationRef } from "../../bindings/github.com/secondarykey/aibow";
 import { errorMessage } from "../errors";
 import { showName, type Directory } from "../directory";
+import { DeleteButton } from "./DeleteButton";
 import { UserGroups } from "./GroupSettings";
 import { CopyButton } from "./CopyButton";
 
@@ -42,7 +43,7 @@ function timeOf(at: string): string {
 type Filter = "all" | "invited" | "admin" | "key" | "idle";
 const FILTERS: { id: Filter; label: string; title: string; match(u: AdminUser): boolean }[] = [
   { id: "all", label: "すべて", title: "全員", match: () => true },
-  { id: "invited", label: "招待中", title: "本人がリンクでパスワードを決めていない人(ログインできない)", match: u => invited(u) },
+  { id: "invited", label: "招待中", title: "本人がリンクでパスワードを設定していない人(ログインできない)", match: u => invited(u) },
   { id: "admin", label: "管理者", title: "管理者の印のある人", match: u => u.admin },
   { id: "key", label: "API キーあり", title: "API キーを持っている人", match: u => u.key },
   { id: "idle", label: "30日使っていない", title: "最後に使ってから 30 日以上たった人(一度も使っていない人は、作ってから 30 日以上たった人)", match: u => idleDays(u) >= 30 },
@@ -174,14 +175,14 @@ export function UserSettings({ dir, reloadDir, onError, onRead }: {
           ))}
         </div>
         <span className="spacer" />
-        <button type="button" className="user-create" onClick={() => setCreating(c => !c)} aria-expanded={creating}><LuPlus /> 利用者を作る</button>
+        <button type="button" className="user-create" onClick={() => setCreating(c => !c)} aria-expanded={creating}><LuPlus /> 利用者を作成</button>
       </div>
       {creating && <AddUser onAdd={create} onCancel={() => setCreating(false)} />}
       <div className="user-table">
         {head("name", "名前")}
         {head("state", "状態")}
         {head("used", "最後に使った日")}
-        {head("created", "作った日")}
+        {head("created", "作成日")}
         {head("conversations", "会話", "num")}
         {shown.map(u => (
           <button
@@ -256,7 +257,6 @@ function UserDetail({ user, dir, onGroupsChanged, onClose, onRead, onError, onDi
   const [convs, setConvs] = useState<ConversationRef[] | null>(null);
   const [limit, setLimit] = useState(PAGE);
   const [resetting, setResetting] = useState(false);
-  const [removing, setRemoving] = useState(false);
   useEffect(() => {
     if (self) return; // 自分の会話は会話の一覧で開く
     ChatService.UserConversations(user.name).then(list => setConvs(list ?? []), err => onError(errorMessage(err)));
@@ -298,16 +298,16 @@ function UserDetail({ user, dir, onGroupsChanged, onClose, onRead, onError, onDi
           {invited(user) ? (
             <>
               <span className={"user-field-value" + (linkExpired(user) ? " expired" : "")}>{inviteState(user)}</span>
-              <button onClick={() => onResetLink("招待のリンク")} title="本人がパスワードを決めるリンク(1 時間・一度だけ)を出し直す。前のリンクは使えなくなる">リンクを出し直す</button>
+              <button onClick={() => onResetLink("招待のリンク")} title="本人がパスワードを設定するリンク(1 時間・一度だけ)を再発行する。前のリンクは使えなくなる">リンクを再発行</button>
             </>
           ) : resetting ? (
             <>
-              <span className="confirm-text" title="その人のログイン中の画面とアプリも切れる。リンクでパスワードを決めるまでログインできない">今のパスワードは使えなくなります</span>
-              <button className="danger" onClick={() => { setResetting(false); onResetLink("再設定のリンク"); }}>リンクを出す</button>
-              <button onClick={() => setResetting(false)}>やめる</button>
+              <span className="confirm-text" title="その人のログイン中の画面とアプリも切れる。リンクでパスワードを設定するまでログインできない">今のパスワードは使えなくなります</span>
+              <button className="danger" onClick={() => { setResetting(false); onResetLink("再設定のリンク"); }}>リンクを発行</button>
+              <button onClick={() => setResetting(false)}>キャンセル</button>
             </>
           ) : (
-            <button onClick={() => setResetting(true)} title="本人がパスワードを決め直すリンク(1 時間・一度だけ)を出す。出した時点で今のパスワードは使えなくなる">決め直すリンクを出す</button>
+            <button onClick={() => setResetting(true)} title="本人がパスワードを設定し直すリンク(1 時間・一度だけ)を発行する。発行した時点で今のパスワードは使えなくなる">再設定のリンクを発行</button>
           )}
         </div>
       )}
@@ -315,7 +315,7 @@ function UserDetail({ user, dir, onGroupsChanged, onClose, onRead, onError, onDi
       <div className="user-field">
         <span className="user-field-label">API キー</span>
         <span className="user-field-value">{user.key ? "あり" : "なし"}</span>
-        <button onClick={onRenewKey} title={user.key ? "新しい API キーを作る(前のキーは使えなくなる)" : "API キーを作る"}>{user.key ? "作り直す" : "作る"}</button>
+        <button onClick={onRenewKey} title={user.key ? "新しい API キーを発行する(前のキーは使えなくなる)" : "API キーを発行する"}>{user.key ? "再発行" : "発行"}</button>
       </div>
 
       {!self && (
@@ -338,9 +338,7 @@ function UserDetail({ user, dir, onGroupsChanged, onClose, onRead, onError, onDi
       )}
 
       {!user.local && !self && (
-        removing
-          ? <RemoveConfirm user={user} onRemove={onRemove} onCancel={() => setRemoving(false)} />
-          : <div className="user-remove"><button className="danger-outline" onClick={() => setRemoving(true)}>この人を消す</button></div>
+        <RemoveUser user={user} onRemove={onRemove} />
       )}
     </section>
   );
@@ -357,19 +355,23 @@ function inviteState(u: AdminUser): string {
   return `招待のリンクは ${timeOf(u.link_expires_at)} まで`;
 }
 
-// RemoveConfirm は、消すときの確かめ(ログインの名前を打つまで消せない。0031 の決定事項 15・36)
-function RemoveConfirm({ user, onRemove, onCancel }: { user: AdminUser; onRemove(): Promise<boolean>; onCancel(): void }) {
+// RemoveUser は、利用者の削除(削除の形。0050)。重い削除なので、確かめる段でログインの名前を打つまで削除できない(0031 の決定事項 15・36)
+function RemoveUser({ user, onRemove }: { user: AdminUser; onRemove(): Promise<boolean> }) {
   const [typed, setTyped] = useState("");
   return (
-    <div className="user-remove confirming">
-      <p className="confirm-text">
-        {user.name} を消します。会話 {user.conversations} 件・プロファイル・人ごとの設定・API キーも消え、共有の相手からも外れます。元に戻せません。
-      </p>
-      <div className="user-remove-row">
-        <input type="text" value={typed} placeholder={user.name} aria-label="消す人のログインの名前" onChange={e => setTyped(e.target.value)} autoFocus />
-        <button className="danger" disabled={typed !== user.name} onClick={onRemove}>消す</button>
-        <button onClick={onCancel}>やめる</button>
-      </div>
+    <div className="user-remove">
+      <DeleteButton
+        block
+        title="この利用者を削除する"
+        question={`${user.name} を削除しますか?会話 ${user.conversations} 件・プロファイル・人ごとの設定・API キーも削除され、共有の相手からも外れます。元に戻せません。確かめのため、ログインの名前を入力してください。`}
+        extra={<input type="text" value={typed} placeholder={user.name} aria-label="削除する人のログインの名前" onChange={e => setTyped(e.target.value)} autoFocus />}
+        confirmDisabled={typed !== user.name}
+        onCancel={() => setTyped("")}
+        onConfirm={() => {
+          setTyped("");
+          void onRemove();
+        }}
+      />
     </div>
   );
 }
@@ -439,7 +441,7 @@ export function EmailInput({ value, onSave }: { value: string; onSave(email: str
 // SecretBox は、作ったリンクか API キーを一度だけ出す(閉じたら、もう見られない)
 function SecretBox({ secret, onClose }: { secret: Secret; onClose(): void }) {
   return (
-    <div className="secret-box" title="今だけ表示する。閉じたらもう見られない(忘れたら作り直す)。リンクは本人に渡し、開いてパスワードを決めてもらう">
+    <div className="secret-box" title="今だけ表示する。閉じたらもう見られない(忘れたら再発行する)。リンクは本人に渡し、開いてパスワードを設定してもらう">
       <span className="secret-label">{secret.name} の{secret.label}{secret.until && `(${secret.until} まで・一度だけ)`}</span>
       <code className="secret-value">{secret.value}</code>
       <CopyButton text={secret.value} className="place-remove" />
@@ -460,7 +462,7 @@ function AddUser({ onAdd, onCancel }: { onAdd(name: string): Promise<boolean>; o
         value={name}
         autoFocus
         placeholder="ログインの名前"
-        title="ログインの名前(1〜32 文字。空白は使えない)。作ると、本人がパスワードを決める招待のリンクを一度だけ出す"
+        title="ログインの名前(1〜32 文字。空白は使えない)。作成すると、本人がパスワードを設定する招待のリンクを一度だけ発行する"
         onChange={e => setName(e.target.value)}
         onKeyDown={e => {
           if (e.key === "Enter" && name.trim()) add();
@@ -470,8 +472,8 @@ function AddUser({ onAdd, onCancel }: { onAdd(name: string): Promise<boolean>; o
           }
         }}
       />
-      <button disabled={!name.trim()} onClick={add}>作る</button>
-      <button onClick={onCancel}>やめる</button>
+      <button className="with-icon" disabled={!name.trim()} onClick={add}><LuPlus /> 作成</button>
+      <button onClick={onCancel}>キャンセル</button>
     </div>
   );
 }

@@ -109,7 +109,7 @@ function PasswordForm() {
       <input id="pw-next" type="password" autoComplete="new-password" value={next} onChange={e => { setNext(e.target.value); setDone(false); }} />
       <label htmlFor="pw-again">新しいパスワード(もう一度)</label>
       <input id="pw-again" type="password" autoComplete="new-password" value={again} onChange={e => { setAgain(e.target.value); setDone(false); }} />
-      <button type="submit" className="apply" disabled={busy || !current || !next || !again}>パスワードを変える</button>
+      <button type="submit" className="apply" disabled={busy || !current || !next || !again}>パスワードを変更</button>
       {error && <p className="login-error" role="alert">{error}</p>}
       {done && <p className="hint">パスワードを変えました</p>}
     </form>

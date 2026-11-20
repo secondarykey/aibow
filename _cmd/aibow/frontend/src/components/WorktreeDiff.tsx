@@ -15,6 +15,7 @@ import { ChatService } from "../backend";
 import { errorMessage } from "../errors";
 import { baseText, STATUS_LABELS } from "../worktree";
 import { CodeBlock } from "./CodeBlock";
+import { DeleteButton } from "./DeleteButton";
 
 interface Props {
   id: string; // 会話の ID
@@ -35,7 +36,6 @@ export function WorktreeDiff({ id, state, generating, onClose, onChanged, onDisc
   const [diff, setDiff] = useState<string>("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [confirmDiscard, setConfirmDiscard] = useState(false);
 
   // 一覧を取り直す。チェックは、まだ取り込んでいないものにだけ付ける(取り込み済みをもう一度当てると、当たらずに失敗するため)。
   // 取り込んだあとに取り直すときは、外していたチェックをそのままにする(取り込まなかったものに付け直さない)
@@ -103,7 +103,7 @@ export function WorktreeDiff({ id, state, generating, onClose, onChanged, onDisc
     setError("");
     try {
       await ChatService.DiscardWorktree(id);
-      onNotice("worktree を捨てました");
+      onNotice("worktree を破棄しました");
       onDiscarded();
       onClose();
     } catch (err) {
@@ -130,7 +130,7 @@ export function WorktreeDiff({ id, state, generating, onClose, onChanged, onDisc
             {changes?.map(c => (
               <li key={c.path} className={(c.path === selected ? "current " : "") + c.status + (c.applied ? " applied" : "")}>
                 <input type="checkbox" checked={checked.has(c.path)} disabled={busy} onChange={() => toggle(c.path)}
-                  title={c.applied ? "取り込み済み" : "取り込む"} />
+                  title={c.applied ? "取り込み済み" : "取り込みの対象"} />
                 <button type="button" className="worktree-file" onClick={() => setSelected(c.path)} title={`${STATUS_LABELS[c.status] ?? c.status}: ${c.path}`}>
                   <span className={"worktree-status " + c.status}>{ICONS[c.status]}</span>
                   <span className="worktree-path">{c.path}</span>
@@ -145,28 +145,18 @@ export function WorktreeDiff({ id, state, generating, onClose, onChanged, onDisc
         </div>
         {error && <p className="worktree-error">{error}</p>}
         <footer className="worktree-foot">
-          {confirmDiscard ? (
-            <>
-              <span className="confirm-text">
-                {pending > 0 ? `取り込んでいない ${pending} ファイルの変更も消えます。worktree を捨てますか?` : "worktree を捨てますか?"}
-              </span>
-              <button type="button" className="danger" disabled={busy || generating} onClick={discard}>捨てる</button>
-              <button type="button" disabled={busy} onClick={() => setConfirmDiscard(false)}>やめる</button>
-            </>
-          ) : (
-            <>
-              <button type="button" className="danger" disabled={busy || generating}
-                title={generating ? "返事を生成中は捨てられない" : "worktree とブランチを消して、本体のフォルダに戻す"}
-                onClick={() => setConfirmDiscard(true)}>
-                worktree を捨てる
-              </button>
-              <span className="worktree-spacer" />
-              <button type="button" className="primary" disabled={busy || nChecked === 0} onClick={apply}
-                title="選んだファイルの差分を本体の作業ツリーに当てる(コミットはしない)">
-                取り込む({nChecked} ファイル)
-              </button>
-            </>
-          )}
+          <DeleteButton
+            label="破棄"
+            question={pending > 0 ? `worktree を破棄しますか?(取り込んでいない ${pending} ファイルの変更も削除されます)` : "worktree を破棄しますか?"}
+            title={generating ? "返事を生成中は破棄できない" : "worktree とブランチを削除して、本体のフォルダに戻す"}
+            disabled={busy || generating}
+            onConfirm={() => void discard()}
+          />
+          <span className="worktree-spacer" />
+          <button type="button" className="primary" disabled={busy || nChecked === 0} onClick={apply}
+            title="選んだファイルの差分を本体の作業ツリーに当てる(コミットはしない)">
+            取り込み({nChecked} ファイル)
+          </button>
         </footer>
       </div>
     </div>

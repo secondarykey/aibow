@@ -275,14 +275,14 @@ func (w *Workspaces) Delete(id string) error {
 			return errWorkspaceNotFound
 		}
 		if n := len((*list)[i].Worktrees); n > 0 {
-			return fmt.Errorf("このワークスペースでは %d 個の会話が worktree で作業しています。その会話の差分の画面で worktree を捨てるか、会話を消してから、ワークスペースを消してください", n)
+			return fmt.Errorf("このワークスペースでは %d 個の会話が worktree で作業しています。その会話の差分の画面で worktree を破棄するか、会話を削除してから、ワークスペースを削除してください", n)
 		}
 		*list = slices.Delete(*list, i, i+1)
 		return nil
 	})
 }
 
-var errWorkspaceNotFound = errors.New("ワークスペースが見つかりません(ほかの画面で消したかもしれません)")
+var errWorkspaceNotFound = errors.New("ワークスペースが見つかりません(ほかの画面で削除したかもしれません)")
 
 func (w *Workspaces) index(id string) int {
 	return slices.IndexFunc(w.list, func(ws Workspace) bool { return ws.ID == id })
@@ -296,7 +296,7 @@ func (w *Workspaces) update(change func(*[]Workspace) error) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.readOnly {
-		return fmt.Errorf("ワークスペースのファイル %s を読めなかったので、書き換えません(直すか消してから、アプリを起動し直してください)", w.path)
+		return fmt.Errorf("ワークスペースのファイル %s を読めなかったので、書き換えません(直すか削除してから、アプリを起動し直してください)", w.path)
 	}
 	list := make([]Workspace, 0, len(w.list)+1)
 	for _, ws := range w.list {

@@ -19,7 +19,7 @@ type Tab = "basic" | "server";
 
 const TABS: { id: Tab; label: string; title: string }[] = [
   { id: "basic", label: "基本設定", title: "この画面の見せ方(ログインしたあとは、その人の設定で描きます)" },
-  { id: "server", label: "サーバー", title: "aibow-server のつなぎ先・アプリモードに戻す" },
+  { id: "server", label: "サーバー", title: "aibow-server のつなぎ先・アプリモードへの切り替え" },
 ];
 
 export function LoginSettings({ onClose }: { onClose(): void }) {

@@ -212,7 +212,7 @@ func (h *DirectHost) addPlace(ctx context.Context, path string) ([]models.Place,
 	if err := h.added.Set(append(c.Added, abs)); err != nil {
 		return nil, err
 	}
-	log.Noticef("モデルの置き場所を足しました: %s", abs)
+	log.Noticef("モデルの置き場所を追加しました: %s", abs)
 	return h.places(ctx)
 }
 
@@ -221,7 +221,7 @@ func (h *DirectHost) removePlace(ctx context.Context, path string) ([]models.Pla
 	c := h.catalogNow()
 	p, ok := c.IsAdded(path)
 	if !ok {
-		return nil, fmt.Errorf("%s は画面で足した置き場所ではないので外せません(models フォルダと Ollama の保存先は環境変数 AIBOW_MODELS_DIR・OLLAMA_MODELS で変えます)", path)
+		return nil, fmt.Errorf("%s は画面で追加した置き場所ではないので外せません(models フォルダと Ollama の保存先は環境変数 AIBOW_MODELS_DIR・OLLAMA_MODELS で変えます)", path)
 	}
 	if err := h.added.Set(slices.DeleteFunc(c.Added, func(s string) bool { return s == p })); err != nil {
 		return nil, err

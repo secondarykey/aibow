@@ -140,11 +140,11 @@ func adminHandler(st *store.SQLite, initial aibow.AppSettings) http.Handler {
 		name := r.PathValue("name")
 		// 自分は消せない(画面から自分を消すと、そのまま管理者が使えなくなるため。消すならほかの管理者かコマンドで)
 		if me, _ := auth.UserFrom(r.Context()); me.Name == name {
-			writeAdminError(w, http.StatusBadRequest, errors.New("自分は消せません"))
+			writeAdminError(w, http.StatusBadRequest, errors.New("自分は削除できません"))
 			return
 		}
 		if u, err := st.UserByName(r.Context(), name); err == nil && u.ID == aibow.LocalUser {
-			writeAdminError(w, http.StatusBadRequest, errors.New(name+" はログインなしで使うときの利用者なので消せません(ログインなしで使うときの会話の持ち主です)"))
+			writeAdminError(w, http.StatusBadRequest, errors.New(name+" はログインなしで使うときの利用者なので削除できません(ログインなしで使うときの会話の持ち主です)"))
 			return
 		}
 		if err := deleteUser(r.Context(), st, name, by(r)); err != nil {

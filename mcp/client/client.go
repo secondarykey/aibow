@@ -318,8 +318,8 @@ func (m *Manager) Update(configs map[string]ServerConfig) (stopped []string) {
 				s.close(fmt.Errorf("MCP のサーバー %s の設定が変わったので止めました(次の送信で、新しい設定で起動します)", s.key.name))
 				log.Infof("MCP %s: 設定が変わったので止めました", s.key.name)
 			} else {
-				s.close(fmt.Errorf("MCP のサーバー %s を消したので止めました", s.key.name))
-				log.Infof("MCP %s: 消したので止めました", s.key.name)
+				s.close(fmt.Errorf("MCP のサーバー %s を削除したので止めました", s.key.name))
+				log.Infof("MCP %s: 削除したので止めました", s.key.name)
 			}
 		}()
 	}
@@ -407,7 +407,7 @@ func (m *Manager) startAndKeep(ctx context.Context, k serverKey, cfg ServerConfi
 		m.mu.Unlock()
 		s.close(nil)
 		if !ok {
-			return errors.New("起動している間にサーバーを消したので、起動をやめました")
+			return errors.New("起動している間にサーバーを削除したので、起動をやめました")
 		}
 		return errors.New("起動している間に設定が変わったので、起動をやめました(次の送信で、新しい設定で起動します)")
 	}

@@ -151,7 +151,7 @@ func (s *Service) UnloadModel(ctx context.Context) error {
 		return err
 	}
 	if i != nil {
-		log.Noticef("モデルを降ろしました: %s", i.ID)
+		log.Noticef("モデルをアンロードしました: %s", i.ID)
 	}
 	return nil
 }

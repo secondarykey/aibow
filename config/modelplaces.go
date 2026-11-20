@@ -49,7 +49,7 @@ func LoadPlacesFile(path string) (*PlacesFile, error) {
 			return f, nil
 		}
 	}
-	f.broken = fmt.Errorf("モデルの置き場所のファイル %s を読めません。画面で足した置き場所なしで動きます(直すか消すと戻ります): %w", path, err)
+	f.broken = fmt.Errorf("モデルの置き場所のファイル %s を読めません。画面で追加した置き場所なしで動きます(直すか削除すると戻ります): %w", path, err)
 	return f, f.broken
 }
 

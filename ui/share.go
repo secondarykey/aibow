@@ -99,6 +99,6 @@ func (s *Service) CopyShared(ctx context.Context, id uuid.UUID) (aibow.Conversat
 	if err != nil {
 		return c, err
 	}
-	log.Noticef("会話 %s を写して、自分の会話「%s」(%s)を作りました", id, c.Title, c.ID)
+	log.Noticef("会話 %s を複製して、自分の会話「%s」(%s)を作成しました", id, c.Title, c.ID)
 	return c, nil
 }

@@ -524,7 +524,7 @@ export default function App() {
     ChatService.CopyShared(reading.conversation.id)
       .then(c => {
         setReading(null);
-        toasts.notify(`${showName(reading.owner_name, reading.owner_display, true)} の会話を写しました`);
+        toasts.notify(`${showName(reading.owner_name, reading.owner_display, true)} の会話を複製しました`);
         return convs.reloadList().then(() => convs.open(c.id));
       })
       .then(focusInput, err => addError(errorMessage(err)));

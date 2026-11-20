@@ -11,7 +11,7 @@
 // ブラウザでは、設定の画面のモデルのタブはだれにも一覧だけを出し(listOnly)、管理者とログインなしの形のブラウザ(models.manage。0046)には、
 // 管理の画面のモデルのタブで、アプリモードのときと同じもの(操作)を出す(0018 の決定事項 8・0032 の決定事項 6)。置き場所はサーバーの PC のパスを書く(ブラウザからはサーバーの PC のフォルダを選べないので、選ぶボタンは出さない)。
 import { useCallback, useEffect, useState } from "react";
-import { LuCircleCheck, LuFile, LuFileX, LuFolder, LuFolderX, LuInfo, LuLock, LuX } from "react-icons/lu";
+import { LuCircleCheck, LuFile, LuFileX, LuFolder, LuFolderX, LuInfo, LuLock, LuPlus, LuX } from "react-icons/lu";
 import { ChatService } from "../backend";
 import type { ModelSettingsResult } from "../../bindings/github.com/secondarykey/aibow/ui";
 // Go の models パッケージ。"…/aibow/models" と書くと aibow パッケージの models.ts が選ばれるので、index まで書く
@@ -30,7 +30,7 @@ interface Props {
 }
 
 // どこから来たか(models.Entry の origin)の表示
-const ORIGINS: Record<string, string> = { models: "models フォルダ", ollama: "Ollama", added: "足した場所" };
+const ORIGINS: Record<string, string> = { models: "models フォルダ", ollama: "Ollama", added: "追加した場所" };
 
 export function ModelSettings({ models, listOnly, disabled, onError }: Props) {
   const [places, setPlaces] = useState<Place[]>([]);
@@ -159,7 +159,7 @@ function ModelRow({ m, format, manage, onEnabled, loaded, layers, totalLayers, d
             disabled={disabled}
             onChange={e => onEnabled(e.target.checked)}
             aria-label="使える"
-            title={m.disabled ? "使えるようにする" : "使えないようにする(読み込み中なら降ろす)"}
+            title={m.disabled ? "使えるようにする" : "使えないようにする(読み込み中ならアンロードする)"}
           />
         </span>
       )}
@@ -176,8 +176,8 @@ function ModelRow({ m, format, manage, onEnabled, loaded, layers, totalLayers, d
       </span>
       <span className="model-action">
         {loaded
-          ? <button disabled={disabled} onClick={onUnload} title="VRAM を空ける。次に送信するときに会話のモデルを読み込む">降ろす</button>
-          : !m.disabled && <button disabled={disabled} onClick={onLoad} title="今のモデルと入れ替える">読み込む</button>}
+          ? <button disabled={disabled} onClick={onUnload} title="VRAM を空ける。次に送信するときに会話のモデルを読み込む">アンロード</button>
+          : !m.disabled && <button disabled={disabled} onClick={onLoad} title="今のモデルと入れ替える">読み込み</button>}
       </span>
     </div>
   );
@@ -243,7 +243,7 @@ function PlaceList({ places, server, onRemove }: { places: Place[]; server: bool
             <span className="place-path" title={p.path}>{p.path}</span>
             <span className="place-note">{p.missing ? p.missing : `${what}${p.models} 個`}</span>
             {p.origin === "added"
-              ? <button className="place-remove" onClick={() => onRemove(p.path)} title="置き場所を外す(モデルのファイルは消さない)" aria-label="外す"><LuX /></button>
+              ? <button className="place-remove" onClick={() => onRemove(p.path)} title="置き場所を外す(モデルのファイルは削除しない)" aria-label="外す"><LuX /></button>
               : <LuLock className="place-lock" title={lockTitle(p)} aria-label={lockTitle(p)} />}
           </div>
         );
@@ -283,7 +283,7 @@ function AddPlace({ onAdd, onError }: {
         <button onClick={() => choose("dir")} title="フォルダを選ぶ"><LuFolder /> フォルダ</button>
         <button onClick={() => choose("file")} title="GGUF のファイルを選ぶ"><LuFile /> ファイル</button>
       </>}
-      <button disabled={!path.trim()} onClick={add}>足す</button>
+      <button className="with-icon" disabled={!path.trim()} onClick={add}><LuPlus /> 追加</button>
     </div>
   );
 }

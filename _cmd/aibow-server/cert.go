@@ -54,7 +54,7 @@ func runCert(c serverConfig, hosts []string) error {
 	certPath, keyPath := filepath.Join(dir, certFileName), filepath.Join(dir, keyFileName)
 	for _, p := range []string{certPath, keyPath} {
 		if _, err := os.Stat(p); err == nil {
-			return fmt.Errorf("%s はもうあります。作り直すときは、先に消してください(使っているアプリの serverCert も、新しいものに替えます)", p)
+			return fmt.Errorf("%s はもうあります。作り直すときは、先に削除してください(使っているアプリの serverCert も、新しいものに替えます)", p)
 		}
 	}
 	certPEM, keyPEM, err := selfSigned(append(hosts, "127.0.0.1", "localhost"), time.Now())

@@ -32,7 +32,7 @@ const DefaultProfileName = "既定"
 var ErrProfileNotFound = errors.New("プロファイルが見つかりません(削除された可能性があります)")
 
 // ErrProfileReadOnly は、変えられないプロファイル(配られたもの)を変えようとしたときのエラー(0018 の決定事項 9)。
-var ErrProfileReadOnly = errors.New("配られたプロファイルは変えられません。変えたいときは、写して自分のプロファイルにしてください")
+var ErrProfileReadOnly = errors.New("配布されたプロファイルは変えられません。変えたいときは、複製して自分のプロファイルにしてください")
 
 // ErrNotGroupLeader は、管理者でもそのグループの長でもない人が、グループのメンバーを変えようとしたときのエラー(0031 の決定事項 31)。
 var ErrNotGroupLeader = errors.New("グループのメンバーを変えられるのは、管理者とそのグループの長だけです")
@@ -41,7 +41,7 @@ var ErrNotGroupLeader = errors.New("グループのメンバーを変えられ�
 var ErrGroupExists = errors.New("その名前のグループはもうあります")
 
 // ErrNotAdmin は、管理者でない人が管理者だけの操作(プロファイルを配る・人の会話の一覧)をしたときのエラー(0018 の決定事項 3・25)。
-var ErrNotAdmin = errors.New("管理者だけができる操作です(プロファイルを配る・ほかの人の会話の一覧を見る・グループを作る)。管理者は aibow-server user admin <名前> で決めます")
+var ErrNotAdmin = errors.New("管理者だけができる操作です(プロファイルの配布・ほかの人の会話の一覧を見る・グループの作成)。管理者は aibow-server user admin <名前> で決めます")
 
 // 配る範囲(Profile.Share。0018 の 11-1)
 const (
@@ -52,7 +52,7 @@ const (
 
 // ErrProfileInUse は、使っている会話があるプロファイルを消そうとしたときのエラー。
 // 会話はプロファイルの決まりを引くので、使っている会話があるうちは消さず「しまう」(Archived)にする(0014 の 11)。
-var ErrProfileInUse = errors.New("このプロファイルから作った会話があるので消せません。しまうことはできます")
+var ErrProfileInUse = errors.New("このプロファイルから作った会話があるので削除できません。アーカイブはできます")
 
 // Profile は、名前の付いた「新しい会話の既定」1つ。
 type Profile struct {
@@ -229,7 +229,7 @@ func (cs *Conversations) moveToolsOff(ctx context.Context) (string, error) {
 			continue
 		}
 		if err := cs.store.UpdateConversation(ctx, c); err != nil {
-			return "", fmt.Errorf("会話 %s に「使わない」のツールを写せません: %w", c.ID, err)
+			return "", fmt.Errorf("会話 %s に「使わない」のツールを引き継げません: %w", c.ID, err)
 		}
 	}
 	if err := cs.prefs.ClearOff(names); err != nil {
@@ -277,12 +277,12 @@ func markedProfile(ctx context.Context, s Store, list []Profile) (Profile, strin
 	}
 	i = slices.IndexFunc(list, func(p Profile) bool { return !p.Archived })
 	if i < 0 {
-		return Profile{}, "", errors.New("しまっていないプロファイルがありません。新しい会話を作れません")
+		return Profile{}, "", errors.New("アーカイブしていないプロファイルがありません。新しい会話を作れません")
 	}
 	if err := SaveUserSetting(ctx, s, SettingDefaultProfile, list[i].ID.String()); err != nil {
 		return Profile{}, "", err
 	}
-	return list[i], fmt.Sprintf("新しい会話で最初に選ばれるプロファイルが見つからないので、「%s」にしました", list[i].Name), nil
+	return list[i], fmt.Sprintf("既定のプロファイルが見つからないので、「%s」にしました", list[i].Name), nil
 }
 
 // markIndex は、「新しい会話で最初に選ばれる」の印(default_profile。人ごとの設定)が付いたプロファイルの list での位置。無ければ -1。
@@ -322,7 +322,7 @@ func (cs *Conversations) linkConversations(ctx context.Context, p Profile) (int,
 func (cs *Conversations) DefaultProfile(ctx context.Context) (Profile, error) {
 	p, ok, err := storedDefaultProfile(ctx, cs.store)
 	if err != nil {
-		return Profile{}, fmt.Errorf("新しい会話で最初に選ばれるプロファイルを読めません: %w", err)
+		return Profile{}, fmt.Errorf("既定のプロファイルを読めません: %w", err)
 	}
 	if !ok {
 		p = cs.initial
@@ -503,7 +503,7 @@ func (cs *Conversations) SetProfileArchived(ctx context.Context, id uuid.UUID, a
 		if def, err := cs.isDefault(ctx, id); err != nil {
 			return err
 		} else if def {
-			return errors.New("新しい会話で最初に選ばれるプロファイルはしまえません。先にほかのプロファイルを選ばれるものにしてください")
+			return errors.New("既定のプロファイルはアーカイブできません。先にほかのプロファイルを既定にしてください")
 		}
 	}
 	p, err := cs.store.Profile(ctx, id)
@@ -520,7 +520,7 @@ func (cs *Conversations) DeleteProfile(ctx context.Context, id uuid.UUID) error 
 	if def, err := cs.isDefault(ctx, id); err != nil {
 		return err
 	} else if def {
-		return errors.New("新しい会話で最初に選ばれるプロファイルは消せません。先にほかのプロファイルを選ばれるものにしてください")
+		return errors.New("既定のプロファイルは削除できません。先にほかのプロファイルを既定にしてください")
 	}
 	return cs.store.DeleteProfile(ctx, id)
 }
@@ -532,10 +532,10 @@ func (cs *Conversations) SetDefaultProfile(ctx context.Context, id uuid.UUID) er
 		return err
 	}
 	if p.Archived {
-		return fmt.Errorf("プロファイル「%s」はしまってあるので、新しい会話で最初に選ばれるものにはできません", p.Name)
+		return fmt.Errorf("プロファイル「%s」はアーカイブ済みなので、既定にはできません", p.Name)
 	}
 	if p.Withdrawn {
-		return fmt.Errorf("プロファイル「%s」はもう配られていないので、新しい会話で最初に選ばれるものにはできません", p.Name)
+		return fmt.Errorf("プロファイル「%s」はもう配布されていないので、既定にはできません", p.Name)
 	}
 	return SaveUserSetting(ctx, cs.store, SettingDefaultProfile, p.ID.String())
 }
@@ -550,10 +550,10 @@ func (cs *Conversations) usableProfile(ctx context.Context, id uuid.UUID) (Profi
 		return Profile{}, err
 	}
 	if p.Archived {
-		return Profile{}, fmt.Errorf("プロファイル「%s」はしまってあるので、新しい会話では選べません", p.Name)
+		return Profile{}, fmt.Errorf("プロファイル「%s」はアーカイブ済みなので、新しい会話では選べません", p.Name)
 	}
 	if p.Withdrawn {
-		return Profile{}, fmt.Errorf("プロファイル「%s」はもう配られていないので、新しい会話では選べません", p.Name)
+		return Profile{}, fmt.Errorf("プロファイル「%s」はもう配布されていないので、新しい会話では選べません", p.Name)
 	}
 	return p, nil
 }
@@ -593,9 +593,9 @@ func (cs *Conversations) CopyProfile(ctx context.Context, id uuid.UUID) (Profile
 	if err != nil {
 		return Profile{}, err
 	}
-	name := p.Name + "(写し)"
+	name := p.Name + "(複製)"
 	for n := 2; slices.ContainsFunc(list, func(q Profile) bool { return q.Share == ShareNone && q.Name == name }); n++ {
-		name = fmt.Sprintf("%s(写し %d)", p.Name, n)
+		name = fmt.Sprintf("%s(複製 %d)", p.Name, n)
 	}
 	rules := p.Rules
 	rules.Fixed = slices.Clone(rules.Fixed)
@@ -609,10 +609,10 @@ func (cs *Conversations) CopyProfile(ctx context.Context, id uuid.UUID) (Profile
 // 写すと配るを続けて行い、配れなかったら(管理者でない・いない相手など)写したものを消す。配る前の写しが自分の一覧に残らないように。
 func (cs *Conversations) ShareCopy(ctx context.Context, id uuid.UUID, share string, with, groups []string) (Profile, error) {
 	if share == ShareNone {
-		return Profile{}, errors.New("配る範囲(全員か指定した人)を選んでください")
+		return Profile{}, errors.New("配布する範囲(全員か指定した人)を選んでください")
 	}
 	if share == ShareUsers && len(with) == 0 && len(groups) == 0 {
-		return Profile{}, errors.New("配る相手を1人以上選んでください")
+		return Profile{}, errors.New("配布する相手を1人以上選んでください")
 	}
 	src, err := cs.store.Profile(ctx, id)
 	if err != nil {
@@ -633,11 +633,11 @@ func (cs *Conversations) ShareCopy(ctx context.Context, id uuid.UUID, share stri
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 	if err := cs.store.CreateProfile(ctx, p); err != nil {
-		return Profile{}, fmt.Errorf("プロファイル「%s」を写せません: %w", p.Name, err)
+		return Profile{}, fmt.Errorf("プロファイル「%s」を複製できません: %w", p.Name, err)
 	}
 	if err := cs.store.SetProfileShare(ctx, p.ID, share, with, groups); err != nil {
 		if derr := cs.store.DeleteProfile(ctx, p.ID); derr != nil {
-			return Profile{}, fmt.Errorf("%w(写したプロファイル「%s」も消せませんでした: %v)", err, p.Name, derr)
+			return Profile{}, fmt.Errorf("%w(複製したプロファイル「%s」も削除できませんでした: %v)", err, p.Name, derr)
 		}
 		return Profile{}, err
 	}
@@ -652,7 +652,7 @@ func (cs *Conversations) SetProfileShare(ctx context.Context, id uuid.UUID, shar
 		return err
 	}
 	if share == ShareUsers && len(with) == 0 && len(groups) == 0 {
-		return errors.New("配る相手を1人以上選んでください")
+		return errors.New("配布する相手を1人以上選んでください")
 	}
 	p.Share = share
 	if err := cs.checkName(ctx, p); err != nil {

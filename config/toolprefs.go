@@ -438,7 +438,7 @@ func (p *ToolPrefs) update(change func(*toolsFile), policy ToolPolicy) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.readOnly {
-		return fmt.Errorf("ツールの扱いのファイル %s を読めなかったので、書き換えません(直すか消してから、アプリを起動し直してください)", p.path)
+		return fmt.Errorf("ツールの扱いのファイル %s を読めなかったので、書き換えません(直すか削除してから、アプリを起動し直してください)", p.path)
 	}
 	before := p.data.clone()
 	change(&p.data)

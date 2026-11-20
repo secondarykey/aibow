@@ -171,7 +171,7 @@ export function ConversationSettingsView({ id, title, onRename, settings, models
         <div className="conv-profile">{profile ? profile.name : "(プロファイルを持たない会話)"}</div>
         {isBrowser && (
           <>
-            <label title="この会話のツールが読み書きする aibow-server の資料のフォルダ。管理者が配ったプロファイルで決まる">資料のフォルダ</label>
+            <label title="この会話のツールが読み書きする aibow-server の資料のフォルダ。管理者が配布したプロファイルで決まる">資料のフォルダ</label>
             <div className="conv-profile">{folder || "(なし)"}</div>
           </>
         )}
@@ -205,7 +205,7 @@ function ShareField({ share, shareWith, shareGroups, onShare }: { share: string;
     <SharePicker
       id="conv-share"
       label="共有"
-      labelTitle="共有した会話は、相手の一覧の「共有された会話」に出て、読むだけで開ける。相手は写して続けられる"
+      labelTitle="共有した会話は、相手の一覧の「共有された会話」に出て、読むだけで開ける。相手は複製して続けられる"
       words={CONVERSATION_WORDS}
       share={share}
       users={shareWith}
@@ -251,10 +251,10 @@ function SaveToProfile({ profile, onSave, onSaveAs }: { profile: Profile | null;
             }}
           />
           <button type="button" disabled={name.trim() === ""} onClick={submit}>保存</button>
-          <button type="button" onClick={() => setNaming(false)}>やめる</button>
+          <button type="button" onClick={() => setNaming(false)}>キャンセル</button>
         </span>
       ) : (
-        <button type="button" onClick={() => setNaming(true)} title="この会話の設定で、新しいプロファイルを作る(決まりは無し)">
+        <button type="button" onClick={() => setNaming(true)} title="この会話の設定で、新しいプロファイルを作成する(決まりは無し)">
           新しいプロファイルとして保存
         </button>
       )}

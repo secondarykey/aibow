@@ -664,7 +664,7 @@ func TestWebSharedProfile(t *testing.T) {
 	if len(list) != 1 || list[0].Profile.ID != p.ID || !list[0].Profile.ReadOnly || list[0].Profile.OwnerName != "alice" {
 		t.Fatalf("受け取った人の一覧: %+v", list)
 	}
-	if status, body := w.call(t, context.Background(), "UpdateProfile", list[0].Profile); status == http.StatusOK || !strings.Contains(string(body), "写して") {
+	if status, body := w.call(t, context.Background(), "UpdateProfile", list[0].Profile); status == http.StatusOK || !strings.Contains(string(body), "複製して") {
 		t.Errorf("受け取った人は変えられない: %d %s", status, body)
 	}
 	if status, _ := w.call(t, context.Background(), "SetProfileShare", p.ID, aibow.ShareAll, []string{}, []string{}); status == http.StatusOK {
@@ -672,7 +672,7 @@ func TestWebSharedProfile(t *testing.T) {
 	}
 	var cp aibow.Profile
 	w.mustCall(t, &cp, "CopyProfile", p.ID)
-	if cp.Name != "調べもの(写し)" || cp.ReadOnly || len(cp.Rules.Fixed) != 1 {
+	if cp.Name != "調べもの(複製)" || cp.ReadOnly || len(cp.Rules.Fixed) != 1 {
 		t.Errorf("写し: %+v", cp)
 	}
 	var c aibow.Conversation

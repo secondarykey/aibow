@@ -176,7 +176,7 @@ export function useModels(n: Notifier, t: Pick<Transcript, "addError">, setBusy:
     setBusy("loading");
     try {
       await ChatService.UnloadModel();
-      notify(`${name} を降ろしました(次に送信するときに読み込みます)`, { key: "model" });
+      notify(`${name} をアンロードしました(次に送信するときに読み込みます)`, { key: "model" });
     } catch (err) {
       addError(errorMessage(err));
     }
@@ -189,11 +189,11 @@ export function useModels(n: Notifier, t: Pick<Transcript, "addError">, setBusy:
     const loaded = current?.id === id;
     const name = models.find(m => m.id === id)?.name ?? id;
     setBusy("loading");
-    if (loaded) notify(`GPU に載せる層を ${n} にして、${name} を読み込み直しています…`, { key: "model", sticky: true });
+    if (loaded) notify(`GPU に載せる層を ${n} にして、${name} を再読み込みしています…`, { key: "model", sticky: true });
     try {
       const info = await ChatService.SetModelGPULayers(id, n);
       notify(info
-        ? `GPU に載せる層を ${n} にして読み込み直しました(${info.load_sec.toFixed(1)} 秒)`
+        ? `GPU に載せる層を ${n} にして再読み込みしました(${info.load_sec.toFixed(1)} 秒)`
         : `${name} の GPU に載せる層を ${n} にしました(次に読み込むときから効きます)`, { key: "model" });
     } catch (err) {
       dismissKey("model");

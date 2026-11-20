@@ -105,7 +105,7 @@ func (c ConnectionFile) Save(path string) error {
 // RemoveConnectionFile は connection.json を消す(アプリモードに戻す)。無くてもエラーにしない。
 func RemoveConnectionFile(path string) error {
 	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("つなぎ先のファイル %s を消せません: %w", path, err)
+		return fmt.Errorf("つなぎ先のファイル %s を削除できません: %w", path, err)
 	}
 	return nil
 }

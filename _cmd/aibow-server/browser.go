@@ -82,7 +82,7 @@ func startBrowser(c serverConfig, initial aibow.AppSettings, st *store.SQLite, g
 		Notify: events, Seat: seat, Local: local, MCP: mcpm, Prefs: prefs, Browser: true, Folders: c.Folders,
 	})
 	if len(c.Folders) > 0 {
-		log.Noticef("資料のフォルダ: %s(server.json の folders。管理者が配るプロファイルで選ぶと、その会話で読み書きできます)",
+		log.Noticef("資料のフォルダ: %s(server.json の folders。管理者が配布するプロファイルで選ぶと、その会話で読み書きできます)",
 			strings.Join(slices.Sorted(maps.Keys(c.Folders)), ", "))
 	}
 	life.Start() // 起動のときのモデルは main が読み込んだので、ここでは読み込まない(Initial を渡していない)
@@ -148,7 +148,7 @@ func noteFirstRun(st *store.SQLite) {
 	if !has {
 		// ブラウザのログインの画面にも同じことを出す(auth の me の setup)
 		// 0046 から、サーバーの PC の上からでも、モデルを降ろすなどは管理者だけになった。管理者がいなければ誰もできないので、それも書く(未決事項 1 の案 (a))
-		log.Warn("管理者がいません。モデルを降ろす・GPU の層数・モデルの置き場所・ツールの既定は、管理者を決めるまで誰も変えられません。" +
+		log.Warn("管理者がいません。モデルのアンロード・GPU の層数・モデルの置き場所・ツールの既定は、管理者を決めるまで誰も変えられません。" +
 			"サーバーの PC で aibow-server user add <名前> と aibow-server user admin <名前> を打ち、" +
 			"user add が出したリンクを開いてパスワードを決めてください(リンクは 1 時間。切れたら user passwd <名前> で出し直します。" +
 			"設定ファイルを -config で指しているときは、コマンドにも同じ -config を付けます)")

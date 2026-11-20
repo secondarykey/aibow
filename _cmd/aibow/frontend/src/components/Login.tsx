@@ -86,7 +86,7 @@ function SetPassword({ token, onDone, onCancel }: { token: string; onDone(): voi
     <div className="login">
       <form className="login-box" onSubmit={submit}>
         <h1 className="login-title">AIBow</h1>
-        {name !== null && <div className="login-note">{name} のパスワードを決めます</div>}
+        {name !== null && <div className="login-note">{name} のパスワードを設定します</div>}
         {name !== null && (
           <>
             <input
@@ -97,7 +97,7 @@ function SetPassword({ token, onDone, onCancel }: { token: string; onDone(): voi
               type="password" placeholder="もう一度" aria-label="新しいパスワード(もう一度)" autoComplete="new-password"
               value={again} onChange={e => setAgain(e.target.value)}
             />
-            <button type="submit" className="primary" disabled={busy || password === "" || again === ""}>決める</button>
+            <button type="submit" className="primary" disabled={busy || password === "" || again === ""}>設定</button>
           </>
         )}
         {error && <div className="login-error" role="alert">{error}</div>}
@@ -162,7 +162,7 @@ function Login({ onDone, onOpenSettings }: { onDone(): void; onOpenSettings?(): 
           </div>
         )}
         {onOpenSettings && (
-          <button type="button" className="icon-btn login-settings" title="設定(つなぎ先・アプリモードに戻す・明るさ)" aria-label="設定" onClick={onOpenSettings}>
+          <button type="button" className="icon-btn login-settings" title="設定(つなぎ先・アプリモードへの切り替え・明るさ)" aria-label="設定" onClick={onOpenSettings}>
             <LuSettings />
           </button>
         )}

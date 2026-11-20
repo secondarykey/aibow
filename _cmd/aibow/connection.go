@@ -270,7 +270,7 @@ func (s *ChatService) DisconnectServer() error {
 	if c.url == "" {
 		c.pending = "" // 今もアプリの中で動いている(起動し直す前につないだのを取りやめた)ので、起動し直さなくてよい
 	}
-	log.Noticef("アプリモードに戻すように決めました(%s からつなぐ先とトークンを消し、信頼したつなぎ先は残しました)。起動し直すと切り替わります", absPath(c.path))
+	log.Noticef("アプリモードに切り替えるように決めました(%s からつなぐ先とトークンを削除し、信頼したつなぎ先は残しました)。起動し直すと切り替わります", absPath(c.path))
 	return nil
 }
 
@@ -278,7 +278,7 @@ func (s *ChatService) DisconnectServer() error {
 func (c *connection) editable() error {
 	switch c.source {
 	case serverSettings:
-		return fmt.Errorf("つなぎ先は settings.json(%s)の serverUrl に手で書いてあるので、画面では変えられません。画面で決めるときは、serverUrl を消して起動し直してください", absPath(c.settingsPath))
+		return fmt.Errorf("つなぎ先は settings.json(%s)の serverUrl に手で書いてあるので、画面では変えられません。画面で決めるときは、serverUrl を削除して起動し直してください", absPath(c.settingsPath))
 	case serverEnv:
 		return errors.New("つなぎ先は環境変数 AIBOW_SERVER_URL で決めてあるので、画面では変えられません。画面で決めるときは、AIBOW_SERVER_URL を外して起動し直してください")
 	}
@@ -295,7 +295,7 @@ func (c *connection) revoke() {
 	cl.PinCert(c.saved.Fingerprint)
 	cl.SetKey(c.key)
 	if err := cl.RevokeToken(); err != nil {
-		log.Warnf("aibow-server でアプリ用のトークンを消せませんでした(手元からは消します。期限の 10 日で使えなくなります): %v", err)
+		log.Warnf("aibow-server でアプリ用のトークンを削除できませんでした(手元からは削除します。期限の 10 日で使えなくなります): %v", err)
 		return
 	}
 	log.Noticef("aibow-server からログアウトしました: %s(%s)", c.saved.ServerURL, c.saved.User)

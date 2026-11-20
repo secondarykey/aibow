@@ -28,7 +28,7 @@ export function ModelBar({ models, disabled, size, selected, lockReason, onSelec
   const groups = server ? [{ origin: "", label: "" }] : [
     { origin: "models", label: "models フォルダ" },
     { origin: "ollama", label: "Ollama" },
-    { origin: "added", label: "足した場所" },
+    { origin: "added", label: "追加した場所" },
   ];
   // 降ろしている(読み込み中のモデルが無い)。次に送信するときに会話のモデルを読み込む(0015 の 29)
   const unloaded = !loading && current === null && !serverError && value !== "";
@@ -50,7 +50,7 @@ export function ModelBar({ models, disabled, size, selected, lockReason, onSelec
         `作業領域: ${workspace.toLocaleString()} トークン${server ? "(aibow-server で固定)" : resize ? `(今は ${current.n_ctx.toLocaleString()}。送信時に作り直し)` : ""}`,
         current.desc,
       ]
-      : [serverError || (unloaded ? "降ろしています。送信するときに読み込みます" : "モデル未読み込み")];
+      : [serverError || (unloaded ? "アンロード済みです。送信するときに読み込みます" : "モデル未読み込み")];
   if (server) info.unshift(`aibow-server(${server})で動かしています`);
   if (reload) info.unshift(`この会話のモデルは送信するときに読み込みます(今読み込んでいるのは ${current.name})`);
   if (lockReason) info.unshift(lockReason);
@@ -70,7 +70,7 @@ export function ModelBar({ models, disabled, size, selected, lockReason, onSelec
           const items = models.models.filter(m => server || m.origin === g.origin);
           if (!items.length) return null;
           const options = items.map(m => (
-            <option key={m.id} value={m.id}>{`${m.name}(${unloaded && m.id === value ? "降ろしています" : `${m.size_gb.toFixed(1)} GB`})`}</option>
+            <option key={m.id} value={m.id}>{`${m.name}(${unloaded && m.id === value ? "アンロード済み" : `${m.size_gb.toFixed(1)} GB`})`}</option>
           ));
           return server ? options : <optgroup key={g.origin} label={g.label}>{options}</optgroup>;
         })}
