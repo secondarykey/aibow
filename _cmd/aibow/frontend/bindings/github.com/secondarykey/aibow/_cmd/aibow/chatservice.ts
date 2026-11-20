@@ -124,7 +124,7 @@ export function CheckServer(url: string, fingerprint: string): $CancellablePromi
 }
 
 /**
- * ChooseModelPlace は、置き場所を選ぶダイアログを出し(アプリの中で動かすときだけ使う。置き場所はモデルを読み込む PC のパスなので)、選んだフォルダ(kind が "dir")か GGUF のファイル(kind が "file")の
+ * ChooseModelPlace は、置き場所を選ぶダイアログを出し(アプリモードのときだけ使う。置き場所はモデルを読み込む PC のパスなので)、選んだフォルダ(kind が "dir")か GGUF のファイル(kind が "file")の
  * 絶対パスを返す。取り消したら空。足すのは AddModelPlace(選んだだけでは足さない)。
  */
 export function ChooseModelPlace(kind: string): $CancellablePromise<string> {
@@ -272,7 +272,7 @@ export function DiscardWorktree(id: uuid$0.UUID): $CancellablePromise<void> {
 }
 
 /**
- * DisconnectServer はアプリの中で動かす形に戻すように決める:トークンを aibow-server で消し(つながらなければ手元だけ)、
+ * DisconnectServer はアプリモードに戻すように決める:トークンを aibow-server で消し(つながらなければ手元だけ)、
  * つなぐ先とトークンを connection.json から消す。信頼したつなぎ先(Known)は残す(次につなぐときに、信頼し直さずにログインから続けられるように)。
  * 起動し直すと切り替わる。
  */
@@ -282,7 +282,7 @@ export function DisconnectServer(): $CancellablePromise<void> {
 
 /**
  * Folders は aibow-server の資料のフォルダの名前(名前の順。パスは返さない)。配るプロファイルで選ぶ(0024 の 12-2)。
- * 名前は誰でも見られる(どのフォルダを使えるかは、配られたプロファイルで決まる)。アプリの中で動かすときは空。
+ * 名前は誰でも見られる(どのフォルダを使えるかは、配られたプロファイルで決まる)。アプリモードのときは空。
  */
 export function Folders(): $CancellablePromise<string[] | null> {
     return $Call.ByID(2760372572);
@@ -471,7 +471,7 @@ export function Send(id: uuid$0.UUID, text: string, files: aibow$0.File[] | null
 }
 
 /**
- * ServerConnection は今の形を返す。
+ * ServerConnection は今のモードを返す。
  */
 export function ServerConnection(): $CancellablePromise<$models.ServerConnection> {
     return $Call.ByID(3197122296);

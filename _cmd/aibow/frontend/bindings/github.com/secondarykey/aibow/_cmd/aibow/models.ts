@@ -6,7 +6,7 @@
  */
 export interface AccountInfo {
     /**
-     * Login は、aibow-server につないでいて、そこがログインの要る形か(要らない形・アプリの中で動かすときは false)
+     * Login は、aibow-server につないでいて、そこがログインの要る形か(要らない形・アプリモードのときは false)
      */
     "login": boolean;
     "name": string;
@@ -49,16 +49,16 @@ export interface ConnectRequest {
 }
 
 /**
- * ServerConnection は、設定の画面の「サーバー」のタブに出す今の形。
+ * ServerConnection は、設定の画面の「サーバー」のタブに出す今のモード。
  */
 export interface ServerConnection {
     /**
-     * Mode は "direct"(アプリの中で動かす)か "server"(aibow-server につなぐ)
+     * Mode は "direct"(アプリモード)か "server"(サーバーモード。aibow-server につなぐ)
      */
     "mode": string;
 
     /**
-     * Source はつなぎ先をどこで決めたか("settings"・"env"・"screen"。アプリの中で動かすなら空)。"settings" と "env" は画面では変えられない
+     * Source はつなぎ先をどこで決めたか("settings"・"env"・"screen"。アプリモードなら空)。"settings" と "env" は画面では変えられない
      */
     "source": string;
 
