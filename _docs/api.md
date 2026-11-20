@@ -291,9 +291,11 @@ Cline・画面のアプリ ─ Authorization: Bearer aibow_… ─→ auth.Keys.
   無い・違うは 401(`{"error": {"code": "invalid_api_key", …}}`)
 - **要るとき**:`127.0.0.1` の外で待ち受けるとき、または `127.0.0.1` でもログインが要る設定のとき。OpenAI 互換の口と aibow 専用の口の全部(`_cmd/aibow-server` の `KeysRequired`)。
   ログインなし(`login: false`)の `127.0.0.1` だけなら、キーなしで通す
-- **サーバーの PC か管理者だけの口**:`POST /models/unload`・`/_aibow/gpu-layers`・`/_aibow/places/add`・`/_aibow/places/remove` は、`127.0.0.1`・`::1` からの呼び出しと、
-  管理者の API キーの呼び出しだけ(ほかは 403・`code: local_only`。`api` の `pcSide`)。サーバーの PC と、ほかの人が使っているモデルに関わるため。
-  管理者は 0018 の 11-0 で足した(下の「管理者」)
+- **管理者だけの口**:`POST /models/unload`・`/_aibow/gpu-layers`・`/_aibow/places/add`・`/_aibow/places/remove` は、
+  管理者の API キー(かアプリのトークン)の呼び出しだけ(ほかは 403・`code: admin_only`。`api` の `pcSide`)。サーバーの PC と、ほかの人が使っているモデルに関わるため。
+  `127.0.0.1` から来たことは権限にしない(0046。アドレスは同じ PC のプロキシなどで簡単に「サーバーの PC の上」に見えるので、権限は「誰か」に付ける)。
+  ログインなし(`login: false`。キーが要らない形)では、管理者がいないので誰でも通す(aibow-server は `SetAdmin` を渡さない。外の人は `fromProxy` が手前で 403)。
+  0017 の 10-2 では「127.0.0.1 からだけ」、0018 の 11-0 で「127.0.0.1 からか管理者」にし、0046 で「管理者だけ」にそろえた(下の「管理者」)
 - **待ち受けのアドレス**:`-host`(既定 `127.0.0.1`)。ループバックの外ならログインを必ず要るようにする(認証が無いまま LAN に出さない)。
   `-addr アドレス:ポート` は `-host`・`-port` をまとめて書く形(0042)
 - **道の頭(base。0042)**:`-base /aibow` で、全部の道(画面・`/v1/…`・`/_aibow/ui/…` など)を `/aibow/` の下に載せる(`_cmd/aibow-server` の `mount`。`http.StripPrefix` で頭を外してから中の道に渡すので、`api`・`ui`・`auth` は base を知らない)。
@@ -301,7 +303,7 @@ Cline・画面のアプリ ─ Authorization: Bearer aibow_… ─→ auth.Keys.
   リバースプロキシの後ろに置くための形(usage.md の「リバースプロキシの後ろに置く」)
 - **元の相手(0044)**:`mount` の外側の `fromProxy`(`_cmd/aibow-server/proxy.go`)が、つないできた相手が信頼するプロキシ(サーバーの PC の上と `server.json` の `trustedProxies`)のときだけ、
   `proxyHeader` のヘッダー(既定 `X-Forwarded-For`。右から読む)から元の相手を取り出し、`r.RemoteAddr` を `元の相手:0` に書き換えてから中に渡す。
-  なので `api.IsLocal`・`auth` のログインの制限・ログの相手のアドレス(`api.RemoteHost`)は、中を変えずに元の相手を見る。読めない値は 400、`login: false` で外の元の相手は 403
+  なので `api.IsLocal`(ログインなしの形の全員の使用量)・`auth` のログインの制限・ログの相手のアドレス(`api.RemoteHost`)は、中を変えずに元の相手を見る。読めない値は 400、`login: false` で外の元の相手は 403
 - **HTTPS**:`tlsCert`・`tlsKey` を書くと `ServeTLS`(TLS 1.2 以上)。証明書なしで外に出すときは、警告して HTTP で動かす。ログインの cookie には `Secure` が付く
 - **自己署名の証明書**(`aibow-server cert`):誰も保証していない証明書なので、つなぐ側が「この証明書を信頼する」と決める。
   アプリは `serverCert`(`api/client` の `TrustCert`。OS の認証局に足すだけなので、ほかの証明書のサーバーにはつながらない)、curl は `--cacert`、Node.js は `NODE_EXTRA_CA_CERTS`、ブラウザは警告の画面で先へ進む
@@ -313,16 +315,17 @@ aibow-server user admin <名前>(コマンドだけ)→ server.db の users.admi
                     │
   ┌─────────────────┼──────────────────────────────────────────────┐
   OpenAI 互換の口・aibow 専用の口   画面用の口(/_aibow/ui/)              管理者の口(/_aibow/admin/)
-  API キーの持ち主(auth.IsAdmin)  ui.Caller{Admin, Local}(who)       ブラウザでログインした管理者だけ
+  API キーの持ち主(auth.IsAdmin)  ui.Caller{Admin, NoLogin}(who)     ブラウザでログインした管理者だけ
   → PC の事情を変える口を通す       → モデルのタブを全部見せる(pcMethods) → 利用者の管理
 ```
 
 - **誰が管理者か**は `auth.User.Admin`。決めるのは `aibow-server user admin <名前>` / `user unadmin <名前>` だけ(画面からは決めない。0018 の決定事項 6)。
-  一人もいなくてもよい(127.0.0.1 からはいつも PC の事情を変えられ、コマンドで戻せるため。決定事項 16)。ログインの様子(`/_aibow/auth/me`・`/_aibow/auth/key`)に `admin` を返す
+  一人もいなくても起動する(コマンドで決められるため。決定事項 16)。ただし 0046 から、ログインが要る形ではモデルを降ろすなども管理者だけなので、いなければ起動のときに「管理者がいません」と、誰も変えられない操作を出す。ログインの様子(`/_aibow/auth/me`・`/_aibow/auth/key`)に `admin` を返す
 - **認可を決める場所**:`api` は auth を import せず、aibow-server が「管理者か」を決める係(`Server.SetAdmin(auth.IsAdmin)`)を渡す。
-  画面用の口は、aibow-server の `who` が呼んだ人(`ui.Caller`。ID・管理者か・サーバーの PC の上からか)を決めて ctx に入れる。
+  ログインなしの形では渡さない(`_cmd/aibow-server` の `apiHandler`)。断ったときのログに名前を出す係(`SetCallerName`)も渡す。
+  画面用の口は、aibow-server の `who` が呼んだ人(`ui.Caller`。ID・管理者か・ログインなしの形か)を決めて ctx に入れる。どこから来たかは見ない(0046)。
   `ui.Handler` は PC の事情を変えるメソッド(`pcMethods`:`UnloadModel`・`SetModelGPULayers`・`ModelPlaces`・`AddModelPlace`・`RemoveModelPlace`・`SetModelEnabled`)を、
-  `Caller.ManagesPC()`(管理者か、サーバーの PC の上から)でなければ 403 で断り、`ServerHost` も同じことを確かめる(口の作りを間違えても漏れないように)
+  `Caller.ManagesPC()`(管理者か、ログインなしの形)でなければ 403 で断り、`ServerHost` も同じことを確かめる(口の作りを間違えても漏れないように)
 - **管理者の口**(`_cmd/aibow-server/admin.go`。ブラウザでログインした管理者だけ。ほかは 401 / 403):
   `GET /_aibow/admin/users`(一覧。パスワードと API キーは、あるかだけ)・`POST /_aibow/admin/users`(本文 `{"name"}`。返事にパスワード)・
   `POST /_aibow/admin/users/{名前}/password`・`POST /_aibow/admin/users/{名前}/key`(返事に新しいパスワード / キー。一度だけ)・`DELETE /_aibow/admin/users/{名前}`(自分と `local` は消せない)・

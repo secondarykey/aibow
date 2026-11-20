@@ -247,7 +247,7 @@ func newTestWeb(t *testing.T, opts ...func(*Options)) *testWeb {
 	svc, life := New(o)
 	t.Cleanup(life.Stop)
 	w := &testWeb{url: srv.URL, eng: eng, mm: mm, seat: seat, st: st}
-	// httptest は 127.0.0.1 で待ち受けるので、サーバーの PC の上からかは見ない(管理者かだけで、見せるものが変わることを確かめる)
+	// サーバーの PC の事情を見せる・変えるのは管理者だけ(0046。どこから来たかは見ない)。管理者かだけで、見せるものが変わることを確かめる
 	srv.Config.Handler = Handler(svc, events, func(*http.Request) (Caller, error) {
 		u := w.user.Load()
 		switch {
@@ -996,5 +996,21 @@ func TestWebImage(t *testing.T) {
 	w.mustCall(t, &d, "Conversation", c.ID)
 	if f := d.Messages[0].Files; len(f) != 1 || !f[0].Discarded || f[0].Data != nil {
 		t.Errorf("捨てた画像: %+v", f)
+	}
+}
+
+// サーバーの PC の事情を見せる・変えてよいのは、管理者か、ログインなしの形の呼び出しだけ(0046)
+func TestCallerManagesPC(t *testing.T) {
+	for _, c := range []struct {
+		c    Caller
+		want bool
+	}{
+		{Caller{Name: "bob"}, false},
+		{Caller{Name: "alice", Admin: true}, true},
+		{Caller{ID: aibow.LocalUser, Name: "local", NoLogin: true}, true},
+	} {
+		if got := c.c.ManagesPC(); got != c.want {
+			t.Errorf("%+v: %v(期待 %v)", c.c, got, c.want)
+		}
 	}
 }

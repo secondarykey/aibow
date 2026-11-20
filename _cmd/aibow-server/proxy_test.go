@@ -153,30 +153,33 @@ func TestFromProxy(t *testing.T) {
 	}
 }
 
-// サーバーの PC の上からだけの操作(api.IsLocal)は、プロキシの後ろでも元の相手を見る(完了の条件 1)
+// api.IsLocal は、プロキシの後ろでも元の相手を見る(0044 の完了の条件 1)。
+// 0046 のあと、サーバーの PC の事情を変える口はアドレスで決まらなくなった(TestAPIAdminOnly)。IsLocal を使うのは、ログインなしの形の全員の使用量(usageViewer)
 func TestFromProxyIsLocal(t *testing.T) {
-	srv := api.New(&usageGen{}, nil, 4096, api.Defaults{MaxTokens: 100})
-	h := fromProxy(newProxyTrust(nil, "X-Forwarded-For"), true, srv.Handler())
-	unload := func(remote, xff string) int {
+	h := fromProxy(newProxyTrust(nil, "X-Forwarded-For"), true, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !api.IsLocal(r) {
+			w.WriteHeader(http.StatusForbidden)
+		}
+	}))
+	local := func(remote, xff string) bool {
 		t.Helper()
-		r := httptest.NewRequest("POST", "/models/unload", strings.NewReader(`{}`))
+		r := httptest.NewRequest("GET", "/", nil)
 		r.RemoteAddr = remote
 		if xff != "" {
 			r.Header.Set("X-Forwarded-For", xff)
 		}
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, r)
-		return w.Code
+		return w.Code == http.StatusOK
 	}
-	// 通ると、モデルを切り替えられないサーバーなので 404(断られると 403)
-	if code := unload("127.0.0.1:5000", "192.0.2.1"); code != http.StatusForbidden {
-		t.Errorf("プロキシ越しの外の人は、サーバーの PC の上からではない: %d", code)
+	if local("127.0.0.1:5000", "192.0.2.1") {
+		t.Error("プロキシ越しの外の人は、サーバーの PC の上からではない")
 	}
-	if code := unload("127.0.0.1:5000", ""); code != http.StatusNotFound {
-		t.Errorf("サーバーの PC の上から直接は通る: %d", code)
+	if !local("127.0.0.1:5000", "") {
+		t.Error("サーバーの PC の上から直接")
 	}
-	if code := unload("198.51.100.7:5000", "127.0.0.1"); code != http.StatusForbidden {
-		t.Errorf("外からヘッダーでサーバーの PC の上を名乗っても通らない: %d", code)
+	if local("198.51.100.7:5000", "127.0.0.1") {
+		t.Error("外からヘッダーでサーバーの PC の上を名乗っても、サーバーの PC の上ではない")
 	}
 }
 

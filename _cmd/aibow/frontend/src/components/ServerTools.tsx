@@ -3,7 +3,7 @@
 // 組み込み(時刻・計算)と、server.json の mcpServers に書いた MCP のサーバーごとに、グループとツールの扱いを
 // 「使わない / 確認する / 確認しない」で決める(Go の server-tools.json)。ツールごとに決めたものはグループより優先する。
 // 「使わない」は禁止で、利用者が会話で「使う」にしても使えない(決定事項 22)。
-// 変えられるのは管理者とサーバーの PC の上から開いた画面だけ(models.manage と同じ人。Go も断る)。ほかの人には同じ表を、変えられない形で見せる。
+// 変えられるのは管理者だけ(ログインなしの形ではいつも。models.manage と同じ人。Go も断る。0046)。ほかの人には同じ表を、変えられない形で見せる。
 //
 // MCP のサーバーのツールの一覧は、サーバーを最後に起動したときに Go が覚えたもの。管理者は読み直せる(サーバーを一時的に起動する)。
 import { useCallback, useEffect, useState } from "react";
@@ -26,7 +26,7 @@ const CHOICES = [ToolPolicy.ToolOff, ToolPolicy.ToolAsk, ToolPolicy.ToolAllow];
 
 export function ServerTools({ servers, manage, onChanged }: {
   servers: ServerInfo[]; // ブラウザに出す MCP のサーバー(server.json の mcpServers。${workdir} を使うものは除いてある)
-  manage: boolean;       // 変えてよい人か(管理者・サーバーの PC の上から開いた画面)
+  manage: boolean;       // 変えてよい人か(管理者・ログインなしの形の画面)
   onChanged(): void;     // 既定を変えた(会話のツールの欄とメーターを読み直す)
 }) {
   const [builtin, setBuiltin] = useState<KnownTool[]>([]);

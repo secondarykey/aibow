@@ -17,7 +17,7 @@ package ui
 //
 // 呼べるメソッドは、ブラウザで使うものだけ(browserMethods)。
 // サーバーの PC の事情を変えるもの(pcMethods)とツールの扱いの既定を変えるもの(adminToolMethods)は、
-// 管理者とサーバーの PC の上から開いた画面だけが呼べる(0016 の 6・0018 の決定事項 8・0024 の決定事項 21)。
+// 管理者だけが呼べる(ログインなしの形ではいつも。0016 の 6・0024 の決定事項 21・0046)。
 // 呼び出しは reflect で Service のメソッドを名前から探す(Wails のバインディングも、実行のときは同じことをしている)。
 //
 // 誰の呼び出しかは、aibow-server が渡す係(Who)で決め、メソッドに渡す ctx に入れる(aibow.WithUser。0017 の 12。管理者かも。caller.go)。
@@ -77,8 +77,8 @@ var browserMethods = []string{
 	"Folders",
 }
 
-// pcMethods は、サーバーの PC の事情を変えるメソッド(モデルのタブ。0015 の 8-4)。管理者とサーバーの PC の上から開いた画面だけが呼べる
-// (Caller.ManagesPC。0018 の決定事項 8)。ほかの人は 403。
+// pcMethods は、サーバーの PC の事情を変えるメソッド(モデルのタブ。0015 の 8-4)。管理者だけが呼べる
+// (Caller.ManagesPC。ログインなしの形ではいつも。0046)。ほかの人は、サーバーの PC の上から開いた画面でも 403。
 var pcMethods = []string{"UnloadModel", "SetModelGPULayers", "ModelPlaces", "AddModelPlace", "RemoveModelPlace", "SetModelEnabled"}
 
 // adminToolMethods は、ツールの扱いの既定を変えるメソッド(設定の画面の「ツール」。0024 の決定事項 21)。
@@ -90,10 +90,10 @@ var adminOnly = map[string]string{}
 
 func init() {
 	for _, name := range pcMethods {
-		adminOnly[name] = "この操作(モデルを降ろす・GPU の層数・モデルの置き場所)は、aibow-server を動かしている PC からか、管理者だけができます"
+		adminOnly[name] = "この操作(モデルを降ろす・GPU の層数・モデルの置き場所)は、管理者だけができます"
 	}
 	for _, name := range adminToolMethods {
-		adminOnly[name] = "ツールの扱いの既定は、aibow-server を動かしている PC からか、管理者だけが変えられます"
+		adminOnly[name] = "ツールの扱いの既定は、管理者だけが変えられます"
 	}
 }
 
@@ -125,7 +125,7 @@ func Handler(s *Service, ev *Events, who Who) http.Handler {
 			return
 		}
 		if msg, ok := adminOnly[name]; ok && !c.ManagesPC() {
-			log.Warnf("管理者だけのメソッドなので断りました: %s(%s)", name, api.RemoteHost(r))
+			log.Warnf("管理者だけのメソッドなので断りました: %s(%s)", name, callerLabel(c, r))
 			writeError(w, http.StatusForbidden, msg)
 			return
 		}
@@ -337,4 +337,12 @@ func (e *Events) serve(w http.ResponseWriter, r *http.Request, user uuid.UUID) {
 			return
 		}
 	}
+}
+
+// callerLabel は、ログに出す相手(名前が分かれば「名前・アドレス」。0046 の決定事項 9)。
+func callerLabel(c Caller, r *http.Request) string {
+	if c.Name != "" {
+		return c.Name + "・" + api.RemoteHost(r)
+	}
+	return api.RemoteHost(r)
 }

@@ -147,7 +147,9 @@ func noteFirstRun(st *store.SQLite) {
 	}
 	if !has {
 		// ブラウザのログインの画面にも同じことを出す(auth の me の setup)
-		log.Warn("管理者がいません。サーバーの PC で aibow-server user add <名前> と aibow-server user admin <名前> を打ち、" +
+		// 0046 から、サーバーの PC の上からでも、モデルを降ろすなどは管理者だけになった。管理者がいなければ誰もできないので、それも書く(未決事項 1 の案 (a))
+		log.Warn("管理者がいません。モデルを降ろす・GPU の層数・モデルの置き場所・ツールの既定は、管理者を決めるまで誰も変えられません。" +
+			"サーバーの PC で aibow-server user add <名前> と aibow-server user admin <名前> を打ち、" +
 			"user add が出したリンクを開いてパスワードを決めてください(リンクは 1 時間。切れたら user passwd <名前> で出し直します。" +
 			"設定ファイルを -config で指しているときは、コマンドにも同じ -config を付けます)")
 	}
@@ -182,17 +184,18 @@ var errNotLoggedIn = errors.New("ログインしてください")
 //   - ログインが要る:cookie のセッションの人(auth.Middleware がリクエストの ctx に入れた人)。いなければ 401
 //   - 要らない:いつもログインなしの形の利用者(aibow.LocalUser)。127.0.0.1 だけで待ち受けるので、その PC の人だけが使う
 //
-// 管理者か(その人の印)と、サーバーの PC の上から開いたか(どこから来たか)も一緒に決める(0018 の決定事項 8。ui.Caller)。
+// 管理者か(その人の印)と、ログインなしの形か(サーバーの PC の事情を変えてよいか)も一緒に決める(ui.Caller)。
+// どこから来たか(127.0.0.1 か)は見ない(0046。外の人を断るのは手前の fromProxy の1か所。0044 の決定事項 12)。
 func who(login bool) ui.Who {
 	return func(r *http.Request) (ui.Caller, error) {
 		if !login {
-			return ui.Caller{ID: aibow.LocalUser, Name: "local", Local: api.IsLocal(r)}, nil // 名前は server.db の利用者 local と同じ
+			return ui.Caller{ID: aibow.LocalUser, Name: "local", NoLogin: true}, nil // 名前は server.db の利用者 local と同じ
 		}
 		u, ok := auth.UserFrom(r.Context())
 		if !ok {
 			return ui.Caller{}, errNotLoggedIn
 		}
-		return ui.Caller{ID: u.ID, Name: u.Name, Admin: u.Admin, Local: api.IsLocal(r)}, nil
+		return ui.Caller{ID: u.ID, Name: u.Name, Admin: u.Admin}, nil
 	}
 }
 

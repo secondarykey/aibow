@@ -437,28 +437,36 @@ func TestServerModelsLoading(t *testing.T) {
 	}
 }
 
-// サーバーの PC の事情を変える口は、ほかの PC からは 403(0017 の 10-2)。サーバーの PC からと、管理者は通る(0018 の 11-0)
+// サーバーの PC の事情を変える口は、管理者だけ。どこから来たか(127.0.0.1 か)は見ない(0046)。
+// 管理者を決める係を渡さない形(ログインなしの形)は、誰でも通る
 func TestPCSide(t *testing.T) {
-	s := &Server{}
-	ok := s.pcSide(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
 	for _, c := range []struct {
-		addr  string
-		admin bool
-		want  int
+		addr    string
+		noLogin bool // SetAdmin を渡さない(aibow-server の login: false)
+		admin   bool
+		want    int
 	}{
-		{"127.0.0.1:50000", false, http.StatusNoContent},
-		{"[::1]:50000", false, http.StatusNoContent},
-		{"192.168.1.20:50000", false, http.StatusForbidden},
-		{"[fe80::1]:50000", false, http.StatusForbidden},
-		{"192.168.1.20:50000", true, http.StatusNoContent},
+		{"127.0.0.1:50000", false, false, http.StatusForbidden},
+		{"[::1]:50000", false, false, http.StatusForbidden},
+		{"192.168.1.20:50000", false, false, http.StatusForbidden},
+		{"127.0.0.1:50000", false, true, http.StatusNoContent},
+		{"192.168.1.20:50000", false, true, http.StatusNoContent},
+		{"127.0.0.1:50000", true, false, http.StatusNoContent},
 	} {
-		s.SetAdmin(func(*http.Request) bool { return c.admin })
+		s := &Server{}
+		if !c.noLogin {
+			s.SetAdmin(func(*http.Request) bool { return c.admin })
+		}
+		ok := s.pcSide(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest("POST", "/models/unload", nil)
 		req.RemoteAddr = c.addr
 		ok(rec, req)
 		if rec.Code != c.want {
-			t.Errorf("%s(管理者 %v): %d(期待 %d)", c.addr, c.admin, rec.Code, c.want)
+			t.Errorf("%s(ログインなし %v・管理者 %v): %d(期待 %d)", c.addr, c.noLogin, c.admin, rec.Code, c.want)
+		}
+		if rec.Code == http.StatusForbidden && !strings.Contains(rec.Body.String(), `"code":"admin_only"`) {
+			t.Errorf("断るときの code は admin_only: %s", rec.Body)
 		}
 	}
 }

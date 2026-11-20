@@ -264,7 +264,7 @@ aibow から同じものを使うと、次のことが分かりました。
 | `${workdir}` | 作業フォルダごとに1つ | 資料のフォルダのある会話でだけ。フォルダごとに1つ(12-2。フォルダが1つも無ければ出さない) |
 
 - 「使わない」を禁止にしたのは、利用者が自分のプロファイルを作れるため(配るプロファイルの「使えない」では止められない)。グループごとの「使わない」も禁止として持つ(アプリのように「新しい会話で最初から選ばない」には読み替えない)
-- 既定を変える(`SetToolPolicy`・`SetGroupPolicy`)・一覧を読み直す(`LoadToolList`)は、管理者とサーバーの PC の上から開いた画面だけ(画面用の口の `adminToolMethods` で 403 にし、`ui.Service.canSetTools` でも確かめる)
+- 既定を変える(`SetToolPolicy`・`SetGroupPolicy`)・一覧を読み直す(`LoadToolList`)は、管理者だけ(ログインなしの形ではいつも。0046。画面用の口の `adminToolMethods` で 403 にし、`ui.Service.canSetTools` でも確かめる)
 - 人をまたいで状態が残るサーバー・社内の URL に届く fetch・外に出る検索の語の危うさは [usage.md](usage.md) の「ブラウザの会話のツール」
 - 実際に試したこと(2026-10-26。qwen3.5:4b を CPU で):公式の fetch(`mcp-server-fetch`)を書き、管理者の「ツール」で一覧を読み直すと `fetch__fetch` が出た。
   会話の「この会話のツール」で fetch を選んで https://example.com を頼むと、最初の送信で起動し、確認のカード(サーバー fetch・URL)を許可すると取ってきて答えた。

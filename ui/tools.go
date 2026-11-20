@@ -115,7 +115,7 @@ func (s *Service) Folders() []string {
 }
 
 // checkFolder は、プロファイルの資料のフォルダを old から folder に変えてよいか(0024 の決定事項 31)。
-// 選べるのは aibow-server の管理者(とサーバーの PC の上から開いた画面)だけで、server.json にあるフォルダだけ。変えないなら確かめない。
+// 選べるのは aibow-server の管理者(ログインなしの形ではいつも。0046)だけで、server.json にあるフォルダだけ。変えないなら確かめない。
 func (s *Service) checkFolder(ctx context.Context, old, folder string) error {
 	if folder == old || folder == "" {
 		return nil
@@ -166,7 +166,7 @@ func (s *Service) SetToolPolicy(ctx context.Context, name string, policy config.
 	return nil
 }
 
-// canSetTools は、ツールの扱いの既定を変えてよいか。ブラウザでは管理者(とサーバーの PC の上から開いた画面)だけ。
+// canSetTools は、ツールの扱いの既定を変えてよいか。ブラウザでは管理者(ログインなしの形ではいつも。0046)だけ。
 // 口でも断っている(web.go の adminToolMethods)。ここでも確かめるのは、口の作りを間違えても漏れないように(サーバーの PC の事情と同じ)。
 func (s *Service) canSetTools(ctx context.Context) error {
 	if s.browser && !managesPC(ctx) {

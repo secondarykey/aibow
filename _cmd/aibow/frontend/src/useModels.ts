@@ -30,7 +30,7 @@ export interface Models {
   serverError: string;       // aibow-server につながらない理由(つながっていれば空)
   startupError: string;      // 起動に失敗した理由(lib が無いなど。起動できていれば空)。Go のメソッドはどれもこの理由で断る
   // manage は、aibow-server の中で、サーバーの PC の事情(降ろす・層の数・置き場所・出どころ)を見せて変えてよい人か
-  // (ブラウザの管理者か、サーバーの PC の上から開いた画面。0018 の決定事項 8)。モデルのタブをアプリモードのときと同じに出す
+  // (ブラウザの管理者か、ログインなしの形の画面。0046)。モデルのタブをアプリモードのときと同じに出す
   manage: boolean;
   gpuLayers: { [id: string]: number | undefined }; // モデルの ID → 読み込むときの GPU の層数
   lastModel: string;         // 最後に読み込んだモデル(降ろしたあとも、どれを降ろしたかを出すため)

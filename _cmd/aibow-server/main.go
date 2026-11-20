@@ -206,15 +206,7 @@ func run(c serverConfig, notices []string, cfgErr error, env *config.Env) error 
 		return err
 	}
 	defer closeBrowser()
-	// OpenAI 互換の口と aibow 専用の口は、要るときは API キーで守る(0017 の決定事項 9)
-	// サーバーの PC の事情を変える口は、127.0.0.1 からのほか、管理者にも許す(API キーの持ち主。0018 の決定事項 8)
-	srv.SetAdmin(auth.IsAdmin)
-	apiH := srv.Handler()
-	if c.KeysRequired() {
-		apiH = keys.RequireKey(apiH)
-	} else {
-		apiH = asLocal(apiH) // キーの要らない形では、だれでもない呼び出しを local の分として記録する(0033)
-	}
+	apiH := apiHandler(srv, keys, c.KeysRequired())
 
 	proxies := newProxyTrust(c.TrustedProxies, c.ProxyHeader)
 
@@ -261,6 +253,25 @@ func run(c serverConfig, notices []string, cfgErr error, env *config.Env) error 
 	sctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	return hs.Shutdown(sctx)
+}
+
+// apiHandler は、OpenAI 互換の口と aibow 専用の口を、要るときは API キーで守る(0017 の決定事項 9)。
+//
+// サーバーの PC の事情を変える口(降ろす・GPU の層数・置き場所)は、キーが要る形では管理者(API キーかアプリのトークンの持ち主)だけ。
+// どこから来たか(127.0.0.1 か)は見ない(0046)。キーの要らない形(127.0.0.1 だけでログインなし)は管理者がいないので、
+// SetAdmin を渡さずに誰でも通す(外の人は手前の fromProxy が 403 にする。0044 の決定事項 12)。
+func apiHandler(srv *api.Server, keys *auth.Keys, keysRequired bool) http.Handler {
+	if !keysRequired {
+		return asLocal(srv.Handler()) // キーの要らない形では、だれでもない呼び出しを local の分として記録する(0033)
+	}
+	srv.SetAdmin(auth.IsAdmin)
+	srv.SetCallerName(func(r *http.Request) string {
+		if u, ok := auth.UserFrom(r.Context()); ok {
+			return u.Name
+		}
+		return ""
+	})
+	return keys.RequireKey(srv.Handler())
 }
 
 // loadTLS は、証明書と秘密鍵を読む(HTTPS。0017 の 10-2)。証明書が無ければ nil(HTTP)。

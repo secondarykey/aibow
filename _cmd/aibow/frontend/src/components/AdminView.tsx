@@ -35,7 +35,8 @@ const TABS: { id: Tab; label: string; title: string; admin: boolean }[] = [
   { id: "usage", label: "使用量", title: "利用者ごとの生成の回数・GPU の秒数・生成トークン(今日・7日・30日)", admin: true },
 ];
 
-// canAdmin は、管理の画面を出すか(歯車の隣の盾を出すか)。ブラウザで、管理者か、サーバーの PC の上から開いた画面(manage。Go の Caller.ManagesPC)。
+// canAdmin は、管理の画面を出すか(歯車の隣の盾を出すか)。ブラウザで、ログインした管理者か、ログインなしの形の画面(manage。Go の Caller.ManagesPC。0046)。
+// サーバーの PC の上から開いても、管理者でなければ出さない。
 // 0032 の決定事項 4。アプリ(serverUrl)からは開かない(決定事項 9)
 export function canAdmin(manage: boolean): boolean {
   return isBrowser && manage;

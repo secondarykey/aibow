@@ -55,7 +55,7 @@ interface Props {
   onToggleSettings(): void;
   onOpenAccount(): void; // 設定の画面を「アカウント」のタブで開く(左下の名前のメニュー)
   adminOpen: boolean;    // 管理の画面を開いているか(0032)
-  canAdmin: boolean;     // 管理の画面の盾を出すか(管理者か、サーバーの PC の上から開いたブラウザ)
+  canAdmin: boolean;     // 管理の画面の盾を出すか(ログインした管理者か、ログインなしの形のブラウザ。0046)
   onToggleAdmin(): void; // 歯車の隣の盾で、管理の画面を開く / 閉じる
   open: boolean; // 一覧を開いているか
   onToggleOpen(): void;

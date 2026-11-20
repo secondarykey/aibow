@@ -8,7 +8,7 @@
 // 読み込む / 降ろす・層の数・置き場所・出どころ・サーバーの PC のパスは、サーバーの PC の事情でサーバーの側で決めること(中央の制御)。
 // つないでくる側から見せたり変えたりするのは別の問題なので出さない。モデルが変わるのは会話を送信するときだけ。
 //
-// ブラウザでは、設定の画面のモデルのタブはだれにも一覧だけを出し(listOnly)、管理者とサーバーの PC の上から開いたブラウザ(models.manage)には、
+// ブラウザでは、設定の画面のモデルのタブはだれにも一覧だけを出し(listOnly)、管理者とログインなしの形のブラウザ(models.manage。0046)には、
 // 管理の画面のモデルのタブで、アプリモードのときと同じもの(操作)を出す(0018 の決定事項 8・0032 の決定事項 6)。置き場所はサーバーの PC のパスを書く(ブラウザからはサーバーの PC のフォルダを選べないので、選ぶボタンは出さない)。
 import { useCallback, useEffect, useState } from "react";
 import { LuCircleCheck, LuFile, LuFileX, LuFolder, LuFolderX, LuInfo, LuLock, LuX } from "react-icons/lu";
