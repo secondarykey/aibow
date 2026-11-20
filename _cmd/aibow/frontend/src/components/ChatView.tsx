@@ -76,6 +76,10 @@ export function ChatView({ items, firstId, conversationId, pinQuestion, readOnly
   // やり直せるのは最後のやり取りだけ: 最後の発言(直す)と、その後ろの最後の返事(作り直す)
   const lastUser = lastIndex(items, it => it.kind === "user");
   const lastAssistant = lastIndex(items, it => it.kind === "assistant");
+  // 横に「作り直す」を出すエラー(0048 の D8): 最後の発言より後ろの、いちばん新しい送信・生成のエラーだけ。
+  // 作り直すのは最後の発言への返事なので、前のやり取りのエラーには出さない。読むだけの会話には出さない
+  const lastRetryError = lastIndex(items, it => it.kind === "error" && !!it.retry && !it.caution);
+  const retryError = !readOnly && lastRetryError > lastUser && lastUser >= 0 ? lastRetryError : -1;
   // 直している発言(吹き出しの中で直す)。会話を切り替えたらやめる
   const [editing, setEditing] = useState<number | null>(null);
   useEffect(() => setEditing(null), [conversationId]);
@@ -130,9 +134,17 @@ export function ChatView({ items, firstId, conversationId, pinQuestion, readOnly
                 );
               case "error":
                 // 注意(理由と対処を書いた断り)は、要約できなかったお知らせと同じ見た目にする
-                return it.caution
-                  ? <div key={it.id} className="compact-note"><LuTriangleAlert className="icon" /><div>{it.text}</div></div>
-                  : <div key={it.id} className="msg error">{it.text}</div>;
+                if (it.caution) return <div key={it.id} className="compact-note"><LuTriangleAlert className="icon" /><div>{it.text}</div></div>;
+                if (i !== retryError) return <div key={it.id} className="msg error">{it.text}</div>;
+                // 押すと、返事の下の ↻ と同じ作り直す。表示から最後の発言の後ろ(このエラーも)を外してから作り直す
+                return (
+                  <div key={it.id} className="error-row">
+                    <div className="msg error">{it.text}</div>
+                    <button className="error-retry" disabled={retry.disabled} title="最後の発言への返事を作り直す(今のモデル・設定で)" onClick={retry.onRegenerate}>
+                      <LuRefreshCw /> 作り直す
+                    </button>
+                  </div>
+                );
               case "divider":
                 return <Divider key={it.id} compaction={it.compaction} />;
               case "assistant":
@@ -273,7 +285,7 @@ function ReplyActions({ content, stats, createdAt, msgId, children }: {
         <div className="stats">
           {stats}
           {msgId && (
-            <div className="stats-id" title="発言の ID(UUIDv7)。DB の messages の id と同じ値">
+            <div className="stats-id" title="発言の ID。ログや DB でこの発言を探すときに使います">
               ID: {msgId} <CopyButton text={msgId} />
             </div>
           )}

@@ -154,7 +154,8 @@ func (cs *Conversations) elideOld(ctx context.Context, conv Conversation, histor
 		return history, nil
 	}
 	if fits := before > limit && after <= limit; after > elideHigh(limit) && !fits {
-		log.Infof("今の組の古い一歩 %d 個を縮めても水位 %d を下回らないので、縮めません(%d → %d トークン)", len(done), elideHigh(limit), before, after)
+		log.Infof("この返事の途中の前のツールの結果と思考 %d 回分を省いても、省き始める目安の %d トークン(会話の上限の 3/4)を下回らないので、省きませんでした(%d → %d トークン)",
+			len(done), elideHigh(limit), before, after)
 		return history, nil
 	}
 
@@ -189,9 +190,10 @@ func (cs *Conversations) logElide(set ConversationSettings, history, next []Stor
 	}
 	mid, err := cs.turnTokens(set, append(thinkOnly, next...))
 	if err != nil {
-		log.Infof("今の組の古い一歩 %d 個を省略しました(%d → %d トークン。水位 %d を超えたので %d まで)", len(done), before, after, elideHigh(limit), elideLow(limit))
+		log.Infof("この返事の途中の前のツールの結果と思考 %d 回分を省いてモデルに渡しました(%d → %d トークン。省き始める目安の %d トークン(会話の上限の 3/4)を超えたので、%d トークン(1/2)まで減らした)",
+			len(done), before, after, elideHigh(limit), elideLow(limit))
 		return
 	}
-	log.Infof("今の組の古い一歩 %d 個を省略しました(%d → %d トークン。うち思考で %d・結果で %d 減った。水位 %d を超えたので %d まで)",
+	log.Infof("この返事の途中の前のツールの結果と思考 %d 回分を省いてモデルに渡しました(%d → %d トークン。うち思考で %d・結果で %d 減った。省き始める目安の %d トークン(会話の上限の 3/4)を超えたので、%d トークン(1/2)まで減らした)",
 		len(done), before, after, before-mid, mid-after, elideHigh(limit), elideLow(limit))
 }

@@ -170,6 +170,10 @@ footer.home .composer textarea { line-height: 1.5; min-height: calc(3 * 1.5em + 
 }
 .edit-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 4px; }
 .msg.error { color: var(--error); border: 1px solid var(--error); background: transparent; white-space: pre-wrap; }
+/* 送信・生成のエラーと、そのすぐ横の「作り直す」(0048 の D8) */
+.error-row { display: flex; align-items: flex-start; gap: 8px; }
+.error-row .msg.error { flex: 1; min-width: 0; }
+.error-retry { flex-shrink: 0; display: flex; align-items: center; gap: 4px; white-space: nowrap; margin-top: 4px; }
 /* 応答待ち・打ち切りの説明など、本文の外の短い文。返事の本文(.md)には効かせない */
 .msg .body > p { margin: 0; white-space: pre-wrap; }
 .msg pre {

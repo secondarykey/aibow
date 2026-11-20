@@ -198,9 +198,10 @@ func (cs *Conversations) runTurn(ctx context.Context, conv Conversation, history
 			broken = 0
 		}
 		if broken >= maxBrokenRounds {
-			log.Warnf("読み取れない呼び出しが %d 回続いたため、止めました", broken)
-			return last, fmt.Errorf("読み取れないツールの呼び出しが %d 回続いたため、止めました。"+
-				"モデルが書式を立て直せていません。頼み方を変えるか、崩れた返事を「渡さない」にしてから、もう一度送信してください", broken)
+			log.Warnf("ツールの呼び出しを %d 回続けて読み取れなかったので止めました", broken)
+			// 画面ではこのエラーの横に「作り直す」が出る(0048 の D8)。作り直すは崩れた返事を消してから作るので、崩れた返事はもうモデルに渡らない
+			return last, fmt.Errorf("ツールの呼び出しを %d 回続けて読み取れなかったので、止めました。"+
+				"横の「作り直す」を押すか、頼み方を変えて送り直してください。何度も続くときは、大きいモデル(9B など)に切り替えてください", broken)
 		}
 	}
 

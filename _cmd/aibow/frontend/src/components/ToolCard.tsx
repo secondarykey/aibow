@@ -50,7 +50,7 @@ export function ToolCard({ tool, generating, onAnswer }: Props) {
         )}
         {state === "error" && <span className="tool-status"><LuX /> エラー</span>}
         {tool.elided && (
-          <span className="tool-tag" title="会話の上限を空けるため、この結果はモデルには短い札に置き換えて渡しています(保存した結果はこのとおりです)">省略して渡した</span>
+          <span className="tool-tag" title="会話の上限に収めるため、モデルにはこの結果を省いて、短い一文だけを渡しています。ここに出ている結果は保存したままです">省略して渡した</span>
         )}
       </summary>
       <div className="tool-body">

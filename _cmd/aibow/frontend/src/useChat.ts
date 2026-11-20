@@ -15,10 +15,12 @@ import type { Busy } from "./useModels";
 import type { Notifier } from "./toast";
 import { errorMessage } from "./errors";
 
-// ErrorNote は、送信で届いたエラー1つ。caution なら赤いエラーではなく注意で出す
+// ErrorNote は、送信で届いたエラー1つ。caution なら赤いエラーではなく注意で出す。
+// retry なら、エラーの横に「作り直す」を出してよい(0048 の D8。どれに出すかは showError)
 interface ErrorNote {
   text: string;
   caution?: boolean;
+  retry?: boolean;
 }
 
 const secSince = (t: number) => Math.round((performance.now() - t) / 1000);
@@ -111,7 +113,7 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
       l.userItemId = null;
     }
     // 見ていない間に終わった会話を開いたら、一覧の印を消し、届いていたエラーを出す
-    heldErrors.current[id]?.forEach(e => addError(e.text, e.caution));
+    heldErrors.current[id]?.forEach(e => addError(e.text, e.caution, e.retry));
     delete heldErrors.current[id];
     setEnded(e => {
       if (!(id in e)) return e;
@@ -189,11 +191,18 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
     // 返事は Send の戻り値ではなく、chat イベントで少しずつ届く。done が来たら終わり。
     let compacted = false; // 今すぐ要約で、要約が保存された
     let failed = false;    // エラーが届いた(一覧の印を赤にする)
-    // エラーは、見ている会話なら表示に出し、ほかの会話なら開いたときに出すよう持っておく
+    // エラーは、見ている会話なら表示に出し、ほかの会話なら開いたときに出すよう持っておく。
+    // 横に「作り直す」を出してよいのは、作り直すと止まった返事をもう一度作れるとき(0048 の D8):
+    //   - 今すぐ要約(manual)のエラーには出さない(返事を作っていない)
+    //   - 注意(管理者が使えないようにしたモデルなど)には出さない(作り直しても同じ理由で断られる)
+    //   - 新しい発言を送ったのに、Go が保存する前に止まった(会話の上限を超える、など)ときは出さない。
+    //     発言は入力欄に戻り、作り直すと1つ前の返事が作り直されてしまうため(2026-11-21、ユーザーと決めた)
     const showError = (text: string, caution?: boolean) => {
       failed = true;
-      if (viewing.current === id) addError(text, caution);
-      else (heldErrors.current[id] ??= []).push({ text, caution });
+      const retry = !manual && !caution && (userItemId === null || userSaved);
+      errors.push({ text, caution, retry });
+      if (viewing.current === id) addError(text, caution, retry);
+      else (heldErrors.current[id] ??= []).push({ text, caution, retry });
     };
     let finish = () => {};
     let ended = false; // done が届いた・呼び出しが失敗した(この送信の終わりを済ませた)
@@ -281,7 +290,6 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
           return;
         case "error":
           // caution は、理由と対処を書いた断り(管理者が使えないようにしたモデル、など。0018 の決定事項 13)。赤ではなく注意で出す
-          errors.push({ text: ev.error ?? "", caution: ev.caution });
           showError(ev.error ?? "", ev.caution);
           return;
         case "model_loading":
@@ -449,7 +457,7 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
     const { errors } = await run(id, () => start(id), false, userItemId);
     if (errors.length && viewing.current === id) {
       await open(id).catch(err => addError(errorMessage(err)));
-      errors.forEach(e => addError(e.text, e.caution));
+      errors.forEach(e => addError(e.text, e.caution, e.retry));
     }
   }, [current, flushSettings, t.items, dropLastTurn, addUser, run, open, addError]);
 
@@ -462,5 +470,7 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
 // elideText は、古い一歩を省略して渡したお知らせの文(0040)。results は札にした結果の数(思考だけを空にした一歩は数えない)
 function elideText(results: number, before: number, after: number): string {
   const tokens = `(${before.toLocaleString()} → ${after.toLocaleString()} トークン)`;
-  return results > 0 ? `古いツールの結果 ${results} 件を省略して渡しました${tokens}` : `古い一歩の思考を省略して渡しました${tokens}`;
+  return results > 0
+    ? `会話の上限に収めるため、この返事の途中で前に使ったツールの結果 ${results} 件を省いてモデルに渡しました${tokens}`
+    : `会話の上限に収めるため、この返事の途中の前の思考を省いてモデルに渡しました${tokens}`;
 }

@@ -214,7 +214,7 @@ func TestAgentStopsOnRepeatedBrokenCalls(t *testing.T) {
 	evs := sendRaw(cs, c, "まとめて")
 
 	errs := errorsOf(evs)
-	if len(errs) != 1 || !strings.Contains(errs[0], fmt.Sprintf("%d 回続いた", maxBrokenRounds)) {
+	if len(errs) != 1 || !strings.Contains(errs[0], fmt.Sprintf("%d 回続けて読み取れなかった", maxBrokenRounds)) {
 		t.Errorf("エラー: %v", errs)
 	}
 	// 崩れ 2 回 → 読めた 1 回(数え直し)→ 崩れ maxBrokenRounds 回で止まる

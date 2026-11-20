@@ -155,7 +155,7 @@ export function ConversationSettingsView({ id, title, onRename, settings, models
           <h1>
             会話の設定
             {/* 会話の ID は見出しの後ろに(以前は「ID」の欄。名前は下の欄にあるので、見出しには出さない。2026-11-04、ユーザーの指示) */}
-            <span className="settings-target conv-head-id" title="会話の ID(UUIDv7)。ログの「会話 …」や DB(conversations の id)と同じ値で、調べるときの手がかりになる">
+            <span className="settings-target conv-head-id" title="会話の ID。ログの「会話 …」や DB でこの会話を探すときに使います">
               (<code>{id}</code>)
             </span>
             <CopyButton text={id} />
