@@ -6,7 +6,7 @@
 //
 //	利用者・グループ … ログインした管理者だけ(0032 の決定事項 4)
 //	モデル          … サーバーの PC の事情(読み込む / 降ろす・GPU の層数・置き場所・使える。0015 の 8-4・0018 の決定事項 8)
-//	ツール          … ブラウザの会話のツールの扱いの、aibow-server 全体の既定(0024 の決定事項 21)
+//	ツール          … ブラウザから使う会話のツールの扱いの、aibow-server 全体の既定(0024 の決定事項 21)
 //	配るプロファイル … 配っているプロファイルの値・決まり・配る相手・資料のフォルダ・写して配る(ログインした管理者だけ。0032 の段3)
 //	使用量          … 利用者ごとの生成の回数・GPU の秒数・生成トークン(ログインした管理者と、ログインなしの形のサーバーの PC。0033)
 import { useState } from "react";
@@ -30,7 +30,7 @@ const TABS: { id: Tab; label: string; title: string; admin: boolean }[] = [
   { id: "users", label: "利用者", title: "aibow-server の利用者(作る・パスワードのリンクと API キー・表示名・消す・その人の会話)", admin: true },
   { id: "groups", label: "グループ", title: "グループ(作る・名前・メンバーと長・消す)。共有の相手に選べる", admin: true },
   { id: "models", label: "モデル", title: "サーバーの PC のモデル(読み込む / 降ろす・GPU の層数・置き場所・使える)", admin: false },
-  { id: "tools", label: "ツール", title: "ブラウザの会話のツールの扱い(使わない・確認する・確認しない)。aibow-server 全体の既定", admin: false },
+  { id: "tools", label: "ツール", title: "ブラウザから使う会話のツールの扱い(使わない・確認する・確認しない)。aibow-server 全体の既定", admin: false },
   { id: "profiles", label: "配るプロファイル", title: "組織に配るプロファイル(値と決まり・配る相手・資料のフォルダ・写して配る)", admin: true },
   { id: "usage", label: "使用量", title: "利用者ごとの生成の回数・GPU の秒数・生成トークン(今日・7日・30日)", admin: true },
 ];

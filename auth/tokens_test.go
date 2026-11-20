@@ -161,7 +161,7 @@ func TestFingerprint(t *testing.T) {
 	sum := sha256.Sum256(der)
 	want := strings.ToUpper(strings.Join(strings.Split(fmt.Sprintf("% x", sum), " "), ":"))
 	if got := auth.Fingerprint(der); got != want {
-		t.Errorf("指紋の形: %s(期待 %s)", got, want)
+		t.Errorf("フィンガープリントの形: %s(期待 %s)", got, want)
 	}
 }
 

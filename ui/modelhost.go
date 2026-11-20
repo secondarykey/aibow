@@ -297,10 +297,10 @@ func (h *RemoteHost) gpuLayers() int {
 	return 0
 }
 
-// errServerSide は、サーバーの PC の事情を、つないでいる画面から変えようとしたときのエラー(0015 の 21。2026-10-22 に変えた)。
+// errServerSide は、サーバーの PC の事情を、つないでいる画面から変えようとしたときのエラー(0015 の 21。2026-10-22 に変えた。0046・0048 で文を直した)。
 func errServerSide(what string) error {
-	return fmt.Errorf("aibow-server につないでいるときは、画面から%sを変えられません(サーバーの PC で決めることなので)。"+
-		"サーバーの PC で aibow-server の設定(server.json)か口(curl など)で変えてください", what)
+	return fmt.Errorf("サーバーモードでは、この画面から%sを変えられません。aibow-server の管理者が、ブラウザの管理の画面で変えます"+
+		"(モデルは aibow-server の PC で動いているため)", what)
 }
 
 // setGPULayers・setModelGPULayers は、HTTP 越しではしない(層の数はサーバーの PC の VRAM に合わせる調整なので)。

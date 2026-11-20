@@ -173,8 +173,8 @@ func fromProxy(p proxyTrust, login bool, h http.Handler) http.Handler {
 			r = r2
 		}
 		if !login && !a.IsLoopback() {
-			log.Warnf("ログインなし(login: false)の形で、サーバーの PC の外(%s)から来たので断りました: %s %s", a, r.Method, r.URL.Path)
-			http.Error(w, "この aibow-server はログインなし(login: false)で動いているので、サーバーの PC の上からだけ使えます", http.StatusForbidden)
+			log.Warnf("ログインなし(login: false)で動いているので、この PC の外(%s)からの呼び出しを断りました: %s %s", a, r.Method, r.URL.Path)
+			http.Error(w, "この aibow-server は、aibow-server の PC からだけ使えます(ログインなしで動いているため)", http.StatusForbidden)
 			return
 		}
 		h.ServeHTTP(w, r)
@@ -183,7 +183,7 @@ func fromProxy(p proxyTrust, login bool, h http.Handler) http.Handler {
 
 // describe は、起動のときに出す信頼するプロキシの一覧(0044 の決定事項 13)。サーバーの PC の上は「この PC の上」とまとめる。
 func (p proxyTrust) describe() string {
-	names := []string{"この PC の上"}
+	names := []string{"この PC"}
 	for _, n := range p.nets[len(loopbackProxies):] {
 		if n.IsSingleIP() {
 			names = append(names, n.Addr().String())

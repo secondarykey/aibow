@@ -73,9 +73,9 @@ func runCert(c serverConfig, hosts []string) error {
 	log.Noticef("自己署名の証明書を作りました: %s(%d 日有効。ホスト: %v)", certPath, certDays, hosts)
 	fmt.Printf("証明書: %s\n秘密鍵: %s\n", absPath(certPath), absPath(keyPath))
 	block, _ := pem.Decode(certPEM)
-	fmt.Printf("証明書の指紋(SHA-256): %s\n", auth.Fingerprint(block.Bytes))
+	fmt.Printf("証明書のフィンガープリント(SHA-256): %s\n", auth.Fingerprint(block.Bytes))
 	fmt.Println("server.json の tlsCert・tlsKey にこの2つを書くと、HTTPS で待ち受けます。")
-	fmt.Println("画面のアプリからつなぐときは、初めてつなぐときに出る指紋がこの指紋と同じかを確かめて、信頼します(起動のときのログにも出ます)。")
+	fmt.Println("画面のアプリからつなぐときは、初めてつなぐときに出るフィンガープリントがこのフィンガープリントと同じかを確かめて、信頼します(起動のときのログにも出ます)。")
 	fmt.Println("settings.json に手で書くときは、アプリの PC に証明書(秘密鍵ではない)だけを写し、serverCert に書きます。")
 	return nil
 }

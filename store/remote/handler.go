@@ -31,7 +31,7 @@ func Handler(st Backend, who Who) http.Handler {
 		name := r.PathValue("method")
 		m, ok := methods[name]
 		if !ok {
-			writeError(w, http.StatusNotFound, "", "保存の口に無いメソッドです: "+name)
+			writeError(w, http.StatusNotFound, "", "保存の呼び出しに無いメソッドです: "+name)
 			return
 		}
 		user, err := who(r)
@@ -79,7 +79,7 @@ func call(w http.ResponseWriter, r *http.Request, name string, m reflect.Value) 
 				err := o.Interface().(error)
 				code, status := codeOf(err)
 				if status == http.StatusInternalServerError {
-					log.Errorf("保存の口 %s: %v", name, err)
+					log.Errorf("保存の呼び出し %s: %v", name, err)
 				}
 				writeError(w, status, code, err.Error())
 				return

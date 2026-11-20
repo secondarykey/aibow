@@ -144,7 +144,7 @@ func adminHandler(st *store.SQLite, initial aibow.AppSettings) http.Handler {
 			return
 		}
 		if u, err := st.UserByName(r.Context(), name); err == nil && u.ID == aibow.LocalUser {
-			writeAdminError(w, http.StatusBadRequest, errors.New(name+" はログインなしの形の利用者なので消せません(ログインなしで使うときの会話の持ち主です)"))
+			writeAdminError(w, http.StatusBadRequest, errors.New(name+" はログインなしで使うときの利用者なので消せません(ログインなしで使うときの会話の持ち主です)"))
 			return
 		}
 		if err := deleteUser(r.Context(), st, name, by(r)); err != nil {

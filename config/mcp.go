@@ -495,7 +495,7 @@ func (c *MCPConfig) Try(ctx context.Context, name string, cfg client.ServerConfi
 	mgr := c.mgr
 	c.mu.Unlock()
 	if mgr == nil {
-		return nil, errors.New("MCP のサーバーの係がありません")
+		return nil, errors.New("MCP のサーバーを使えません(MCP のサーバーを動かす準備ができていません)")
 	}
 	tools, err := mgr.TryTools(ctx, name, cfg)
 	if err != nil {

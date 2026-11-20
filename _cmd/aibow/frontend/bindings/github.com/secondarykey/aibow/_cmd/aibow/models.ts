@@ -38,7 +38,7 @@ export interface ConnectRequest {
     "url": string;
 
     /**
-     * Fingerprint は、人が確かめて信頼した証明書の指紋(自己署名の証明書のとき。CheckServer が返したもの)
+     * Fingerprint は、人が確かめて信頼した証明書のフィンガープリント(自己署名の証明書のとき。CheckServer が返したもの)
      */
     "fingerprint": string;
 }
@@ -79,7 +79,7 @@ export interface ServerConnection {
     "url": string;
 
     /**
-     * Fingerprint は信頼した証明書の指紋(画面でつないだ自己署名の証明書のとき)
+     * Fingerprint は信頼した証明書のフィンガープリント(画面でつないだ自己署名の証明書のとき)
      */
     "fingerprint": string;
 

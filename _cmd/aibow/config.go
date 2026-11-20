@@ -43,7 +43,7 @@ type appConfig struct {
 	// 空なら今までどおりアプリの中で llama.cpp を動かす。書けば llama.cpp を読み込まず、aibow-server につなぎに行く(0015 の 1・20)
 	serverURL string
 	// serverKey・serverCert は、aibow-server の API キーと証明書のファイル(settings.json の serverKey・serverCert > 環境変数 AIBOW_SERVER_KEY・AIBOW_SERVER_CERT。0017 の 10-2)。
-	// 画面で決めたつなぎ先なら、serverKey はアプリ用のトークン、serverPin は信頼した証明書の指紋(0019)
+	// 画面で決めたつなぎ先なら、serverKey はアプリ用のトークン、serverPin は信頼した証明書のフィンガープリント(0019)
 	serverKey, serverCert, serverPin string
 	// serverSource はつなぎ先をどこで決めたか(serverSettings・serverEnv・serverScreen。つながないなら空)。
 	// 手で書いた値(settings.json・環境変数)が画面の値より強い(0019 の決定事項 5)
@@ -167,7 +167,7 @@ func (c *appConfig) loadServer(env *config.Env) {
 		}
 		c.serverKey = token
 		if conn.Token != "" && !conn.TokenProtected() {
-			log.Warnf("aibow-server のアプリ用のトークンを、包まずに保存しています(この OS では包めません): %s", absPath(c.connPath))
+			log.Warnf("aibow-server のログイン(アプリ用のトークン)を、暗号化せずに保存しています(この OS では暗号化できません): %s", absPath(c.connPath))
 		}
 		return
 	default:

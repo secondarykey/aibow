@@ -138,7 +138,7 @@ func (c ConnectionFile) PlainToken() (string, error) {
 		return string(sealed), nil
 	case secret.KindDPAPI:
 		if secret.Kind != secret.KindDPAPI {
-			return "", errors.New("つなぎ先のファイルのトークンは Windows で包んだもので、この OS では戻せません")
+			return "", errors.New("保存したログインはこの OS では使えません。設定の画面の「サーバー」で、もう一度ログインしてください(Windows で暗号化したため)")
 		}
 		plain, err := secret.Unprotect(sealed)
 		if err != nil {
@@ -146,7 +146,7 @@ func (c ConnectionFile) PlainToken() (string, error) {
 		}
 		return string(plain), nil
 	}
-	return "", fmt.Errorf("つなぎ先のファイルのトークンの包み方 %q を知りません", c.Protection)
+	return "", fmt.Errorf("保存したログインを読めません。設定の画面の「サーバー」で、もう一度ログインしてください(トークンの暗号化のしかた %q を知りません)", c.Protection)
 }
 
 // TokenProtected は、トークンを OS の仕組みで包んでいるか(画面に「平文で保存しています」と出すため)。

@@ -121,7 +121,7 @@ func listUsers(ctx context.Context, st *store.SQLite) error {
 			note += "・管理者"
 		}
 		if u.ID == aibow.LocalUser {
-			note += "・ログインなしの形の利用者"
+			note += "・ログインなしで使うときの利用者"
 		}
 		if u.Email != "" {
 			note += "・" + u.Email
@@ -221,7 +221,7 @@ func deleteUser(ctx context.Context, st *store.SQLite, name, by string) error {
 		return fmt.Errorf("利用者 %s: %w", name, err)
 	}
 	if u.ID == aibow.LocalUser {
-		return fmt.Errorf("%s はログインなしの形の利用者なので消せません(ログインなしで使うときの会話の持ち主です)", name)
+		return fmt.Errorf("%s はログインなしで使うときの利用者なので消せません(ログインなしで使うときの会話の持ち主です)", name)
 	}
 	if err := st.DeleteUser(ctx, u.ID); err != nil {
 		return err
@@ -283,7 +283,7 @@ func setAdmin(ctx context.Context, st *store.SQLite, name string, admin bool) er
 		return err
 	}
 	if !slices.ContainsFunc(list, func(u auth.User) bool { return u.Admin }) {
-		log.Warn("管理者が一人もいなくなりました。サーバーの PC の事情(モデル・層の数・置き場所)は 127.0.0.1 からだけ変えられます。" +
+		log.Warn("管理者が一人もいなくなりました。モデル・GPU の層数・置き場所・ツールの既定は、管理者を決めるまで誰も変えられません(0046)。" +
 			"戻すときは aibow-server user admin <名前> を実行してください")
 	}
 	return nil

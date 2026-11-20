@@ -115,8 +115,8 @@ export function CheckFile(id: uuid$0.UUID, draft: aibow$0.ConversationSettings |
 }
 
 /**
- * CheckServer は、つなぎ先 url を確かめる(つながるか・ログインが要るか・証明書)。fingerprint は、人が画面で確かめて信頼した指紋(まだなら空)。
- * 自己署名の証明書で、まだ信頼していなければ、指紋だけを返す(trusted が false。画面が指紋を見せ、人が確かめる)。
+ * CheckServer は、つなぎ先 url を確かめる(つながるか・ログインが要るか・証明書)。fingerprint は、人が画面で確かめて信頼したフィンガープリント(まだなら空)。
+ * 自己署名の証明書で、まだ信頼していなければ、フィンガープリントだけを返す(trusted が false。画面がフィンガープリントを見せ、人が確かめる)。
  * 信頼できたら、信頼したつなぎ先として覚える(ログインせずに閉じても、次は信頼し直さずに続けられるように。次の起動でつなぐ先にはしない)。
  */
 export function CheckServer(url: string, fingerprint: string): $CancellablePromise<client$1.Probe> {
@@ -157,7 +157,7 @@ export function ConfirmTool(id: uuid$0.UUID, reqID: string, approved: boolean, r
 }
 
 /**
- * ConnectServer は aibow-server につなぐように決める(画面の「接続」):もう一度確かめ、つなぐ先と証明書の指紋を connection.json に書く。
+ * ConnectServer は aibow-server につなぐように決める(画面の「接続」):もう一度確かめ、つなぐ先と証明書のフィンガープリントを connection.json に書く。
  * トークンはもらわない。起動し直すとサーバーモードになり、ログインが要る aibow-server なら、ログインの画面でログインする(0047 の決定事項 1・4)。
  * 確かめられないつなぎ先は書かない(起動し直してから「つながりません」となるのを避ける。0019 の決定事項 8)。
  * 

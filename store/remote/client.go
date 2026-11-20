@@ -44,11 +44,11 @@ func (c *Client) call(ctx context.Context, name string, args []any, outs ...any)
 		return err
 	}
 	if len(raw) != len(outs) {
-		return fmt.Errorf("保存の口 %s の返事の数が違います(%d 個。期待 %d 個)。aibow-server とアプリの版が違うかもしれません", name, len(raw), len(outs))
+		return fmt.Errorf("aibow-server とアプリの版をそろえてください(版が違うようです。保存の呼び出し %s の返事が %d 個でした。期待 %d 個)", name, len(raw), len(outs))
 	}
 	for i, o := range outs {
 		if err := json.Unmarshal(raw[i], o); err != nil {
-			return fmt.Errorf("保存の口 %s の返事が読めません: %w", name, err)
+			return fmt.Errorf("aibow-server とアプリの版をそろえてください(保存の呼び出し %s の返事が読めません: %w)", name, err)
 		}
 	}
 	return nil

@@ -3,7 +3,7 @@ package main
 // connection.go: 画面から aibow-server につなぐ・ログインする・アプリモードに戻す(0019)。
 //
 //	ServerConnection … 今のモード(アプリモード / サーバーモードなら aibow-server に誰としてつないでいるか)と、つなぎ先をどこで決めたか
-//	CheckServer      … つなぎ先を確かめる(つながるか・ログインが要るか・証明書の指紋)。信頼できたら、信頼したつなぎ先として connection.json に覚える
+//	CheckServer      … つなぎ先を確かめる(つながるか・ログインが要るか・証明書のフィンガープリント)。信頼できたら、信頼したつなぎ先として connection.json に覚える
 //	ConnectServer    … つなぐ先を connection.json に書く(トークンはもらわない。ログインは起動し直したあとのログインの画面で。0047)
 //	DisconnectServer … トークンを aibow-server で消し、つなぐ先を connection.json から消す(アプリモードに戻す。信頼したつなぎ先は残す)
 //
@@ -64,7 +64,7 @@ type ServerConnection struct {
 	// SourcePath は、手で書いたときに、どこに書いてあるか(settings.json のパスか環境変数の名前)
 	SourcePath string `json:"sourcePath"`
 	URL        string `json:"url"`
-	// Fingerprint は信頼した証明書の指紋(画面でつないだ自己署名の証明書のとき)
+	// Fingerprint は信頼した証明書のフィンガープリント(画面でつないだ自己署名の証明書のとき)
 	Fingerprint string `json:"fingerprint"`
 	// User はログインした名前、ExpiresAt はトークンの期限(画面でつないで、ログインしたとき)
 	User      string    `json:"user"`
@@ -109,8 +109,8 @@ func (s *ChatService) ServerConnection() ServerConnection {
 	return v
 }
 
-// CheckServer は、つなぎ先 url を確かめる(つながるか・ログインが要るか・証明書)。fingerprint は、人が画面で確かめて信頼した指紋(まだなら空)。
-// 自己署名の証明書で、まだ信頼していなければ、指紋だけを返す(trusted が false。画面が指紋を見せ、人が確かめる)。
+// CheckServer は、つなぎ先 url を確かめる(つながるか・ログインが要るか・証明書)。fingerprint は、人が画面で確かめて信頼したフィンガープリント(まだなら空)。
+// 自己署名の証明書で、まだ信頼していなければ、フィンガープリントだけを返す(trusted が false。画面がフィンガープリントを見せ、人が確かめる)。
 // 信頼できたら、信頼したつなぎ先として覚える(ログインせずに閉じても、次は信頼し直さずに続けられるように。次の起動でつなぐ先にはしない)。
 func (s *ChatService) CheckServer(url, fingerprint string) (apiclient.Probe, error) {
 	c := s.conn
@@ -121,7 +121,7 @@ func (s *ChatService) CheckServer(url, fingerprint string) (apiclient.Probe, err
 	known := c.saved.Trusted()
 	c.mu.Unlock()
 	if fingerprint == "" && sameServer(url, known.URL) {
-		fingerprint = known.Fingerprint // 前に信頼した指紋(つなぎ直すとき・信頼だけして閉じたとき・ログアウトしたあと)
+		fingerprint = known.Fingerprint // 前に信頼したフィンガープリント(つなぎ直すとき・信頼だけして閉じたとき・ログアウトしたあと)
 	}
 	p, err := apiclient.ProbeServer(context.Background(), url, fingerprint)
 	if err == nil && p.Trusted {
@@ -152,7 +152,7 @@ func (c *connection) remember(p apiclient.Probe) {
 	log.Noticef("信頼したつなぎ先を覚えました: %s(%s)", k.URL, absPath(c.path))
 }
 
-// pinnedFingerprint は、覚える証明書の指紋。自己署名の証明書のときだけ(OS が信頼している証明書・HTTP なら空)。
+// pinnedFingerprint は、覚える証明書のフィンガープリント。自己署名の証明書のときだけ(OS が信頼している証明書・HTTP なら空)。
 func pinnedFingerprint(p apiclient.Probe) string {
 	if p.HTTPS && !p.SystemTrusted {
 		return p.Fingerprint
@@ -164,7 +164,7 @@ func pinnedFingerprint(p apiclient.Probe) string {
 // 名前とパスワードは持たない。ログインは、起動し直したあとのログインの画面で行う(Login。0047 の決定事項 5)
 type ConnectRequest struct {
 	URL string `json:"url"`
-	// Fingerprint は、人が確かめて信頼した証明書の指紋(自己署名の証明書のとき。CheckServer が返したもの)
+	// Fingerprint は、人が確かめて信頼した証明書のフィンガープリント(自己署名の証明書のとき。CheckServer が返したもの)
 	Fingerprint string `json:"fingerprint"`
 }
 
@@ -176,7 +176,7 @@ type ConnectResult struct {
 	URL string `json:"url"`
 }
 
-// ConnectServer は aibow-server につなぐように決める(画面の「接続」):もう一度確かめ、つなぐ先と証明書の指紋を connection.json に書く。
+// ConnectServer は aibow-server につなぐように決める(画面の「接続」):もう一度確かめ、つなぐ先と証明書のフィンガープリントを connection.json に書く。
 // トークンはもらわない。起動し直すとサーバーモードになり、ログインが要る aibow-server なら、ログインの画面でログインする(0047 の決定事項 1・4)。
 // 確かめられないつなぎ先は書かない(起動し直してから「つながりません」となるのを避ける。0019 の決定事項 8)。
 //
@@ -192,7 +192,7 @@ func (s *ChatService) ConnectServer(req ConnectRequest) (ConnectResult, error) {
 		return ConnectResult{}, err
 	}
 	if !p.Trusted {
-		return ConnectResult{}, fmt.Errorf("aibow-server の証明書の指紋(%s)を確かめてから、つないでください", p.Fingerprint)
+		return ConnectResult{}, fmt.Errorf("aibow-server の証明書のフィンガープリント(%s)を確かめてから、つないでください", p.Fingerprint)
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -240,7 +240,7 @@ func login(f *config.ConnectionFile, name, password string) (string, error) {
 	}
 	cl.SetKey(got.Token)
 	if _, _, err := cl.Me(); err != nil {
-		return "", fmt.Errorf("ログインはできましたが、もらったトークンでつながりません: %w", err)
+		return "", fmt.Errorf("ログインのあと、aibow-server につながりませんでした。もう一度ログインしてください(もらったトークンが通りませんでした: %w)", err)
 	}
 	f.User, f.ExpiresAt = got.Name, got.ExpiresAt
 	return got.Token, f.SetToken(got.Token)

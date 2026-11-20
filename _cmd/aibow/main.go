@@ -344,10 +344,10 @@ func newServerClient(cfg appConfig) (*apiclient.Client, error) {
 		}
 		log.Noticef("aibow-server の証明書を信頼します: %s", cfg.serverCert)
 	}
-	// 画面でつないだときは、初めてつないだときに人が指紋で確かめた証明書を信頼する(0019 の決定事項 6)
+	// 画面でつないだときは、初めてつないだときに人がフィンガープリントで確かめた証明書を信頼する(0019 の決定事項 6)
 	if cfg.serverPin != "" {
 		c.PinCert(cfg.serverPin)
-		log.Noticef("aibow-server の証明書を、信頼した指紋で確かめます: %s", cfg.serverPin)
+		log.Noticef("aibow-server の証明書を、信頼したフィンガープリントで確かめます: %s", cfg.serverPin)
 	}
 	return c, nil
 }

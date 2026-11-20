@@ -195,7 +195,7 @@ func (t *remoteTool) answer(ctx context.Context, reqs mcp.InputRequestMap, ask t
 	for id, ir := range reqs {
 		ep, ok := ir.(*mcp.ElicitParams)
 		if !ok {
-			return nil, fmt.Errorf("MCP のサーバー %s が、aibow の対応していない問い合わせ(%T)を求めました", t.server, ir)
+			return nil, fmt.Errorf("MCP のサーバー %s が、aibow の対応していない問い合わせをしてきたので、実行できませんでした", t.server)
 		}
 		if ask == nil {
 			return nil, fmt.Errorf("MCP のサーバー %s が確認を求めましたが、ユーザーに聞く手段がありません", t.server)

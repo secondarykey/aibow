@@ -133,7 +133,7 @@ export function ServerTools({ servers, manage, onChanged }: {
           </div>
         );
       })}
-      {prefs?.path && <p className="hint tool-path" title="ブラウザの会話のツールの扱いの保存先(aibow-server の PC)">{prefs.path}</p>}
+      {prefs?.path && <p className="hint tool-path" title="ブラウザから使う会話のツールの扱いの保存先(aibow-server の PC)">{prefs.path}</p>}
     </div>
   );
 }

@@ -5,7 +5,7 @@
 // ログアウトは、ブラウザと同じく左下の名前のメニューと「アカウント」のタブで行う(その場でログインの画面になる。account.go。0031 の決定事項 44)。
 // ここの「アプリモードに戻す」は、つなぐのをやめる操作(起動し直すと切り替わる)。
 //
-//	つなぎ先を打つ → 接続(CheckServer)── 自己署名の証明書なら、指紋を見せて人が確かめる(信頼したら、そのまま続ける)
+//	つなぎ先を打つ → 接続(CheckServer)── 自己署名の証明書なら、フィンガープリントを見せて人が確かめる(信頼したら、そのまま続ける)
 //	              → 保存(ConnectServer)── 起動し直すと切り替わり、ログインが要る aibow-server ならログインの画面になる
 //
 // ログインはここでしない(名前とパスワードの欄を置かない)。つなぐ(どこのサーバーか)はその PC の人が決めることなのでここで、
@@ -70,13 +70,13 @@ export function ServerSettings({ disabled, onError, onChanged }: { disabled: boo
     if (r.same) setNote(`今この aibow-server(${r.url})につないでいます`);
     await reload();
   };
-  // connect は「接続」:確かめ、信頼できればそのまま保存する。自己署名の証明書でまだ信頼していなければ、指紋を見せて待つ
+  // connect は「接続」:確かめ、信頼できればそのまま保存する。自己署名の証明書でまだ信頼していなければ、フィンガープリントを見せて待つ
   const connect = () => run(async () => {
     const p = await ChatService.CheckServer(url.trim(), "");
     if (p.trusted) await save(p);
     else setProbe(p);
   });
-  // 指紋を信頼して、もう一度確かめ、そのまま保存する(信頼のボタンが「接続」の続き。0047 の決定事項 4)
+  // フィンガープリントを信頼して、もう一度確かめ、そのまま保存する(信頼のボタンが「接続」の続き。0047 の決定事項 4)
   const trust = (fp: string) => run(async () => {
     const p = await ChatService.CheckServer(url.trim(), fp);
     if (p.trusted) await save(p);
@@ -93,7 +93,7 @@ export function ServerSettings({ disabled, onError, onChanged }: { disabled: boo
       {conn.pending && <p className="server-status" role="status">{pendingText(conn)}</p>}
       {note && <p className="server-status" role="status">{note}</p>}
       <CurrentRows conn={conn} />
-      {conn.plain && <p className="hint">アプリ用のトークンを包まずに保存しています(この OS では包めません)</p>}
+      {conn.plain && <p className="hint">ログイン(アプリ用のトークン)を暗号化せずに保存しています(この OS では暗号化できません)</p>}
       {handWritten && (
         <p className="hint">
           つなぎ先は {conn.source === "settings" ? "settings.json" : "環境変数"}(<code>{conn.sourcePath}</code>)に手で書いてあるので、画面では変えられません
@@ -160,7 +160,7 @@ function CurrentRows({ conn }: { conn: ServerConnection }) {
       const exp = conn.expiresAt ? new Date(conn.expiresAt).toLocaleString() : "";
       rows.push(["名前", conn.user], ["ログインの期限", conn.expired ? `${exp}(切れています)` : exp]);
     }
-    if (conn.fingerprint) rows.push(["証明書の指紋", conn.fingerprint]);
+    if (conn.fingerprint) rows.push(["証明書のフィンガープリント", conn.fingerprint]);
   }
   return (
     <div className="host-settings">
@@ -174,16 +174,16 @@ function CurrentRows({ conn }: { conn: ServerConnection }) {
   );
 }
 
-// Fingerprint は、まだ信頼していない自己署名の証明書の指紋。aibow-server が出す指紋と同じかを人が比べてから信頼する
+// Fingerprint は、まだ信頼していない自己署名の証明書のフィンガープリント。aibow-server が出すフィンガープリントと同じかを人が比べてから信頼する
 function Fingerprint({ fp, disabled, onTrust }: { fp: string; disabled: boolean; onTrust(fp: string): void }) {
   return (
     <div className="fingerprint-box">
-      <span className="secret-label">証明書の指紋(SHA-256)</span>
+      <span className="secret-label">証明書のフィンガープリント(SHA-256)</span>
       <code className="fingerprint-value">{fp}</code>
       <button
         disabled={disabled}
         onClick={() => onTrust(fp)}
-        title="aibow-server が起動のとき(ログイン)と aibow-server cert のときに出す指紋と同じなら、信頼して保存します。違うなら、ほかのサーバーがなりすましているかもしれないので、信頼しないでください"
+        title="aibow-server が起動のとき(ログイン)と aibow-server cert のときに出すフィンガープリントと同じなら、信頼して保存します。違うなら、ほかのサーバーがなりすましているかもしれないので、信頼しないでください"
       >
         <LuShieldCheck /> この証明書を信頼する
       </button>

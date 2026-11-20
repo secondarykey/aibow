@@ -115,7 +115,7 @@ func defineFlags(fs *flag.FlagSet) *flags {
 		login:     fs.Bool("login", false, "ログインを要るようにする(既定で要る。-login=false なら、127.0.0.1 だけで待ち受けるときにログインなし。利用者は aibow-server user add で作る)。設定ファイルの login・環境変数 AIBOW_SERVER_LOGIN"),
 		host:      fs.String("host", "", "待ち受けるアドレス(既定 127.0.0.1。0.0.0.0 なら全部のネットワーク。127.0.0.1 の外ではログインと API キーが要る)。設定ファイルの host・環境変数 AIBOW_SERVER_HOST"),
 		addr:      fs.String("addr", "", "待ち受けるアドレスとポートをまとめて書く(例 0.0.0.0:8089。:8089 はポートだけを決め、アドレスは 127.0.0.1 のまま)。-host・-port と一緒には書けない。設定ファイルの addr・環境変数 AIBOW_SERVER_ADDR"),
-		base:      fs.String("base", "", "全部の道の頭に付けるパス(例 /aibow なら、画面は /aibow/・OpenAI 互換の口は /aibow/v1。既定 /)。設定ファイルの base・環境変数 AIBOW_SERVER_BASE"),
+		base:      fs.String("base", "", "全部の URL の頭に付けるパス(例 /aibow なら、画面は /aibow/・OpenAI 互換の API は /aibow/v1。既定 /)。設定ファイルの base・環境変数 AIBOW_SERVER_BASE"),
 		tlsCert:   fs.String("tls-cert", "", "HTTPS の証明書のファイル(aibow-server cert で作れる)。設定ファイルの tlsCert・環境変数 AIBOW_SERVER_TLS_CERT"),
 		tlsKey:    fs.String("tls-key", "", "HTTPS の秘密鍵のファイル。設定ファイルの tlsKey・環境変数 AIBOW_SERVER_TLS_KEY"),
 	}

@@ -30,7 +30,7 @@ func fakeAuthServer() http.Handler {
 	return mux
 }
 
-// 自己署名の証明書:指紋を確かめる前は何も送らず、確かめた指紋なら通る。違う指紋なら断る
+// 自己署名の証明書:フィンガープリントを確かめる前は何も送らず、確かめたフィンガープリントなら通る。違うフィンガープリントなら断る
 func TestProbeSelfSigned(t *testing.T) {
 	srv := httptest.NewTLSServer(fakeAuthServer())
 	defer srv.Close()
@@ -42,7 +42,7 @@ func TestProbeSelfSigned(t *testing.T) {
 	}
 	p, err = ProbeServer(context.Background(), srv.URL+"/v1/", fp)
 	if err != nil || !p.Trusted || !p.Login || p.URL != srv.URL {
-		t.Fatalf("指紋を確かめたあと: %+v %v", p, err)
+		t.Fatalf("フィンガープリントを確かめたあと: %+v %v", p, err)
 	}
 
 	c := New(srv.URL)
@@ -58,7 +58,7 @@ func TestProbeSelfSigned(t *testing.T) {
 	other := New(srv.URL)
 	other.PinCert("00:11")
 	if _, err := other.AppLogin("bob", "pw", "pc1"); !errors.Is(err, ErrCertChanged) || errors.Is(err, ErrUnreachable) {
-		t.Errorf("覚えた指紋と違う: %v", err)
+		t.Errorf("覚えたフィンガープリントと違う: %v", err)
 	}
 }
 

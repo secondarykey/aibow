@@ -238,7 +238,7 @@ func TestResolveProxies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := newProxyTrust(c.TrustedProxies, c.ProxyHeader).describe(); got != "この PC の上, 10.0.0.5, 192.168.10.0/24, 10.0.0.6" || c.ProxyHeader != "Forwarded" {
+	if got := newProxyTrust(c.TrustedProxies, c.ProxyHeader).describe(); got != "この PC, 10.0.0.5, 192.168.10.0/24, 10.0.0.6" || c.ProxyHeader != "Forwarded" {
 		t.Errorf("読んだ一覧: %q %q", got, c.ProxyHeader)
 	}
 	for body, want := range map[string]string{

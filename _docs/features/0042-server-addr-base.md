@@ -35,7 +35,7 @@ aibow-server はこれまで `-host` と `-port` に分けて待ち受けを決�
    パスワードを決めるリンク(画面が作るもの)は `location.pathname` まで含める。プロキシが頭を外して渡す形(base なしの aibow-server)でも同じ画面で動く
 7. **Git Bash が `/aibow` を Windows のパスに書き換える**(`-base /aibow` が `D:/Program Files/Git/aibow` で届いた。2026-11-08 に確かめた)。
    `-base aibow`(先頭の `/` なし)と書けば書き換えられないので、Windows のパスが届いたときは、そう言って止まる
-8. **プロキシ越しの呼び出しは直さず、起動のときに注意する**。base を付けて `127.0.0.1` で待ち受けると、同じ PC のプロキシ越しに、サーバーの PC からだけの操作が外に開くことをログの注意で知らせる(下の未決事項 1)。
+8. **プロキシ越しの呼び出しは直さず、起動のときに注意する**。base を付けて `127.0.0.1` で待ち受けると、同じ PC のプロキシ越しに、サーバーの PC からだけの操作が外に開くことをログの注意で知らせる(下の未決事項 1)。(0044 の決定事項 14 で Notice に変え、2026-11-21 に [0048](0048-user-wording.md) で外した)
    → 0044 で、この注意は外し、同じ条件で「プロキシは元の相手を X-Forwarded-For に書いてください」の Notice にした(0044 の決定事項 14)
 9. **aibow 専用の口の頭を `/aibow/` から `/_aibow/` に変える**(2026-11-08、ユーザーが決めた)。`/_aibow/ui/…`・`/_aibow/auth/…`・`/_aibow/store/…`・`/_aibow/admin/…`・
    `/_aibow/count-tokens`・`/_aibow/gpu-layers`・`/_aibow/places`・`/_aibow/settings`。`/v1/…`・`/models…`・`/apply-template` は変えない。

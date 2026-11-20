@@ -290,8 +290,8 @@ func loadTLS(c serverConfig) (*tls.Config, error) {
 		return nil, fmt.Errorf("HTTPS の証明書(%s)と秘密鍵(%s)を読めません: %w", absPath(c.TLSCert), absPath(c.TLSKey), err)
 	}
 	log.Noticef("HTTPS で待ち受けます(証明書: %s)", absPath(c.TLSCert))
-	// 画面のアプリは、初めてつなぐときにこの指紋を画面に出す。同じなら信頼してよい(0019 の決定事項 6)
-	log.Noticef("証明書の指紋(SHA-256): %s", auth.Fingerprint(cert.Certificate[0]))
+	// 画面のアプリは、初めてつなぐときにこのフィンガープリントを画面に出す。同じなら信頼してよい(0019 の決定事項 6)
+	log.Noticef("証明書のフィンガープリント(SHA-256): %s", auth.Fingerprint(cert.Certificate[0]))
 	return &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12}, nil
 }
 
@@ -299,22 +299,22 @@ func loadTLS(c serverConfig) (*tls.Config, error) {
 // 全部のネットワークで待ち受けるとき(0.0.0.0 など)は、ほかの PC からはこの PC のアドレスでつなぐことも書く。
 func logAddresses(c serverConfig, base string, proxies proxyTrust) {
 	if ip := net.ParseIP(c.Host); ip != nil && ip.IsUnspecified() {
-		log.Noticef("全部のネットワークで待ち受けます。ほかの PC からは、%s の %s をこの PC のアドレス(IP アドレスか名前)に替えてつなぎます", base, c.Host)
+		log.Noticef("ほかの PC からは、%s でつなぎます(全部のネットワークで待ち受けています)", strings.Replace(base, c.Host, "<この PC の IP アドレスか名前>", 1))
 	}
 	log.Noticef("画面のアプリのつなぎ先(設定の画面の「サーバー」か、settings.json の serverUrl / AIBOW_SERVER_URL): %s", base)
 	log.Noticef("OpenAI 互換のクライアント(Cline など)の Base URL: %s/v1", base)
 	log.Noticef("ブラウザで開く画面: %s/(会話は %s に保存します)", base, absPath(c.DBPath))
-	if c.Base != "" && c.Local() {
-		// base はリバースプロキシ(nginx など)の後ろに置くときに使うことが多い。サーバーの PC の上はいつも信頼するプロキシなので、
-		// 同じ PC のプロキシが元の相手をヘッダーに書けば、その人で見る(0044)。書かないと、プロキシを通った呼び出しが
-		// 127.0.0.1 から来たように見える(起動のときには見分けられない。0044 の未決事項 1)ので、書くように知らせる(決定事項 14)
-		log.Noticef("同じ PC のリバースプロキシは、元の相手を %s に書くようにしてください(書かないと、プロキシを通った呼び出しがこの PC の上からに見えます)", c.ProxyHeader)
+	// プロキシで元の相手をヘッダーに書く案内(0044 の決定事項 14)は、0048 で外した。起動のときにはプロキシを使っているか見分けられず、
+	// 使わない人には意味の分からない文になるため。usage.md の「リバースプロキシの後ろに置く」に任せる。
+	// 信頼するプロキシ(0044 の決定事項 13)は、trustedProxies を書いた人にだけ Notice で出す(書かなければ、この PC だけ。0048 の決定事項 4)
+	if len(c.TrustedProxies) > 0 {
+		log.Noticef("信頼するプロキシ: %s(%s で元の相手を見ます)", proxies.describe(), c.ProxyHeader)
+	} else {
+		log.Infof("信頼するプロキシ: %s(%s で元の相手を見ます)", proxies.describe(), c.ProxyHeader)
 	}
-	// 信頼するプロキシ(0044 の決定事項 13)。書かなくても、この PC の上は入っている
-	log.Noticef("信頼するプロキシ: %s(%s で元の相手を見ます)", proxies.describe(), c.ProxyHeader)
 	if all := proxies.all(); len(all) > 0 {
 		// 止めはしない(わざと書く場合を止めない)が、誰でもヘッダーで元の相手を偽れることを知らせる(決定事項 5)
-		log.Warnf("trustedProxies に全部のアドレスを含む範囲(%s)があります。どこからつないでも %s で元の相手を偽れます(サーバーの PC の上からを名乗る・ログインの制限をすり抜ける)",
+		log.Warnf("trustedProxies に全部のアドレスを含む範囲(%s)があります。どこからつないでも %s で元の相手を偽れます(この PC からを名乗る・ログインの制限をすり抜ける)",
 			strings.Join(all, ", "), c.ProxyHeader)
 	}
 	if c.Login {
@@ -324,7 +324,7 @@ func logAddresses(c serverConfig, base string, proxies proxyTrust) {
 		log.Warn("ログインなしで使います(login: false。利用者は local だけで、この PC の人なら誰でも全部の会話を使えます。ログインを要るようにするには login: false を外します)")
 	}
 	if c.KeysRequired() {
-		log.Notice("OpenAI 互換の口と aibow 専用の口は API キーが要ります(aibow-server user key <名前> で作ります)")
+		log.Notice("Cline などからつなぐには API キーが要ります(aibow-server user key <名前> で作ります)")
 	}
 }
 
