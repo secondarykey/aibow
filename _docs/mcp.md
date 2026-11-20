@@ -40,7 +40,7 @@ aibow ── tools/call ──────→ 結果(content)が返る → ツ�
 | `config/mcp.go` | 画面から足した MCP のサーバー `mcp.json` の読み書き(`MCPFile`)・settings.json との合わせ方(`MergeMCPServers`)・画面で変えたものを `Manager` に流す係(`MCPConfig`)・貼った JSON の読み取り(0034) |
 | `ui/mcpedit.go` | 設定の画面の「MCP」から呼ぶメソッド(一覧・足す・変える・消す・試す・JSON を読み取る。デスクトップのアプリだけ) |
 | `config/toolprefs.go` | ツールの扱い(`ToolPolicy`: 使わない / 確認する / 確認しない、会話の上書きだけの「使う」)と、その PC の既定 `tools.json`(`ToolPrefs`) |
-| `tools.go` | `RemoteTools`(会話の仕組みから見た MCP の口)・送信の前にサーバーを起動する(`startRemote`)・組み込みのツールの後ろに並べる(`toolsFor`)・ツールの扱いを決める(`toolPolicy` / `policyOf`)・会話の設定の画面に出す扱い(`ToolStates`)・ツールの一覧を覚える(`rememberTools`) |
+| `tools.go` | `RemoteTools`(会話の仕組みから見た MCP のAPI)・送信の前にサーバーを起動する(`startRemote`)・組み込みのツールの後ろに並べる(`toolsFor`)・ツールの扱いを決める(`toolPolicy` / `policyOf`)・会話の設定の画面に出す扱い(`ToolStates`)・ツールの一覧を覚える(`rememberTools`) |
 | `agent.go` | 実行の前に確かめるか(`needsConfirm`。扱いは `tools.go` の `toolPolicy` で決めたもの) |
 | `internal/proc/` | 子プロセスまでまとめて止める仕組み(`run_command` と共有) |
 
@@ -98,7 +98,7 @@ MCP のサーバーは、設定の画面の「MCP」のタブ(アプリだけ)�
   同じ設定のまま保存したら、そのとき受け取った一覧を `tools.json` の `known` に覚える
 - 貼った JSON(`MCPConfig.ParseMCPJSON`)は、`{"mcpServers": {...}}`・`{"名前": {...}}`・`{"command": ...}` だけ、の3つの形と、外側の `{}` を付けずに写したものを読む。
   ほかのツールが足した項目(`disabled`・`autoApprove` など)は捨てる。今ある名前と同じなら足さずに理由を返す(上書きしない)
-- 画面の部品(`McpEditor.tsx`)は、呼ぶ口(一覧・足す・変える・消す・試す・読み取る)を外から受け取る。aibow-server(`server.json`)の分は、あとで口だけ替えて使う見込み
+- 画面の部品(`McpEditor.tsx`)は、呼ぶ API(一覧・足す・変える・消す・試す・読み取る)を外から受け取る。aibow-server(`server.json`)の分は、あとで API だけ替えて使う見込み
 
 - 形は多くのツールで使われている `mcpServers` に合わせています(`command` / `args` / `env`、`url` / `headers`)。`type` は書かなくてよく(`command` か `url` で決まる)、書いてあれば確かめます。
   古い HTTP+SSE のトランスポート(`type: sse`。2025-03-26 版から非推奨)には対応しません。OAuth(ブラウザでのログイン)には、まだ対応していません(TODO.md の「MCP の OAuth」)
@@ -264,7 +264,7 @@ aibow から同じものを使うと、次のことが分かりました。
 | `${workdir}` | 作業フォルダごとに1つ | 資料のフォルダのある会話でだけ。フォルダごとに1つ(12-2。フォルダが1つも無ければ出さない) |
 
 - 「使わない」を禁止にしたのは、利用者が自分のプロファイルを作れるため(配るプロファイルの「使えない」では止められない)。グループごとの「使わない」も禁止として持つ(アプリのように「新しい会話で最初から選ばない」には読み替えない)
-- 既定を変える(`SetToolPolicy`・`SetGroupPolicy`)・一覧を読み直す(`LoadToolList`)は、管理者だけ(ログインなしの形ではいつも。0046。画面用の口の `adminToolMethods` で 403 にし、`ui.Service.canSetTools` でも確かめる)
+- 既定を変える(`SetToolPolicy`・`SetGroupPolicy`)・一覧を読み直す(`LoadToolList`)は、管理者だけ(ログインなしの形ではいつも。0046。画面用の API の `adminToolMethods` で 403 にし、`ui.Service.canSetTools` でも確かめる)
 - 人をまたいで状態が残るサーバー・社内の URL に届く fetch・外に出る検索の語の危うさは [usage.md](usage.md) の「ブラウザの会話のツール」
 - 実際に試したこと(2026-10-26。qwen3.5:4b を CPU で):公式の fetch(`mcp-server-fetch`)を書き、管理者の「ツール」で一覧を読み直すと `fetch__fetch` が出た。
   会話の「この会話のツール」で fetch を選んで https://example.com を頼むと、最初の送信で起動し、確認のカード(サーバー fetch・URL)を許可すると取ってきて答えた。

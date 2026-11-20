@@ -138,7 +138,7 @@ Ollama の `granite4.2:3b` の GGUF のテンプレート(Hugging Face の `ibm-
 
 ### 引数の値の持ち方(0026 の段1)
 
-書式によってモデルが値を書く形は違う(Qwen3.5 はいつも文字、OpenAI 互換の口は JSON、Gemma 4 は型のある独自の書き方)。
+書式によってモデルが値を書く形は違う(Qwen3.5 はいつも文字、OpenAI 互換の API は JSON、Gemma 4 は型のある独自の書き方)。
 会話に保存し、モデルを替えても前の呼び出しを新しい書式で書けるように、`tool.Arg.Value` は**書式によらない1つの形**にそろえている:
 
 | 引数の型(JSON Schema の `type`) | `Arg.Value` |
@@ -258,7 +258,7 @@ tool ── 何も知らない
 - ツールはフォルダの組を持った値として、送信のたびに `tool.FilesIn(folders)` で作る(`Conversations.toolFolders` → `localTools`)。
   `Tool` の interface は作業フォルダを知らない。MCP のサーバー(`mcp/server` の `Options.Folders`)も、渡されたフォルダの組で同じツールを作る
 - 作業フォルダを決めた会話だけ、ファイルのツールと環境の説明をプロンプトに入れる。環境の説明は使うツールに合わせ、時刻・計算のほかにツールが無ければ書かず、シェルと cd の注意は `run_command` を使うときだけ書く
-- **外に出られないことは仕組みで守る**: `os.Root`(決めたフォルダの下しか開けないファイル操作の口)で開く。開くのは呼び出しごと(フォルダが消えたらエラーの結果を返す)
+- **外に出られないことは仕組みで守る**: `os.Root`(決めたフォルダの下しか開けないファイル操作の仕組み)で開く。開くのは呼び出しごと(フォルダが消えたらエラーの結果を返す)
   - `../` や外の絶対パスは、開く前に `localPath` が分かりやすいエラーにする。作業フォルダの中を指す絶対パスは受け付ける(4B は絶対パスで書きがちなため)
   - 外を指すシンボリックリンク・ジャンクションは `os.Root` が止める(テストは Windows ではジャンクション、Linux ではシンボリックリンクで確かめる。
     Windows のシンボリックリンクは開発者モードか管理者が要るので、作れなければそのテストは飛ばす)
@@ -328,7 +328,7 @@ Each command starts in the main folder "aibow" unless you pass folder; a cd does
 - 書き換えるツールが無い会話(読むだけ・質問だけ)には付けない。システムプロンプトは決まりを足す前と1文字も変わらない
 - 確かめる行(5行目)は `run_command` があるときだけ。無いときは最後の行も「what you changed.」まで(確かめた結果を求めない)。「You can review your changes with git_diff.」は `git_diff` があるときだけ
 - 送信ごとに、環境の説明と作業の決まりが何トークンかを Info のログに出す(`logSystemParts`)。行は段1・段2 の 4B の試しで直した(tuning.md)
-- aibow-mcp・OpenAI 互換の口(Cline など)には足さない(ほかのクライアントは自分の決まりを持っている)
+- aibow-mcp・OpenAI 互換の API(Cline など)には足さない(ほかのクライアントは自分の決まりを持っている)
 
 ### フォルダが複数のワークスペース(0035 の段2)
 
@@ -486,7 +486,7 @@ Each command starts in the main folder "aibow" unless you pass folder; a cd does
 - **捨てる・消す**:`git worktree remove --force` と `git branch -D`(`git.Remove`。フォルダを手で消してあれば `worktree prune`)。捨てると結び付けを消し、会話の切り替えも外す(本体のフォルダに戻る)。
   会話を消したら一緒に消す(この PC に結び付けの無い会話なら何もしない)。生成中は捨てられない
 - **守り**:作ったあとは切り替えを外せない(捨てるのは差分の画面)・ワークスペースを変えられない(`keepWorktree`)。worktree のある会話が残っているワークスペースは消せない(結び付けが消えると片付けられなくなるため)
-- 作るのは画面のアプリだけ(aibow-server の資料のフォルダでは作らない。`noWorkDir` のときは何もしない)。画面の口(`ui/worktree.go`)もブラウザには出さない
+- 作るのは画面のアプリだけ(aibow-server の資料のフォルダでは作らない。`noWorkDir` のときは何もしない)。画面から呼ぶメソッド(`ui/worktree.go`)もブラウザには出さない
 - テスト:`git/worktree_test.go`(一時リポジトリを `git init` で作る。当たらないとき・autocrlf・同じファイルの別の変更・git が無いとき)、`worktree_test.go`(会話から:作る時・確認の既定・取り込む・捨てる・会話を消す)。git が無ければ飛ばす
 
 ## 保存
