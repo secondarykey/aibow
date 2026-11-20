@@ -104,6 +104,9 @@ func run(c serverConfig, notices []string, cfgErr error, env *config.Env) error 
 	}
 	if c.File != "" {
 		log.Noticef("設定ファイル: %s", absPath(c.File))
+	} else {
+		// 無いことも書く(別のユーザーで起動すると %APPDATA% が変わり、書いたはずの設定が読まれないため)
+		log.Noticef("設定ファイル: なし(%s を探しました)", absPath(filepath.Join(filepath.Dir(c.StatePath), configFileName)))
 	}
 	// 待ち受けるアドレスは、モデルを読み込む前に出しておく(読み込みに失敗しても、どこで待ち受けるつもりだったかが分かるように)
 	log.Noticef("待ち受けるアドレス: %s(llama.cpp とモデルを読み込んでから待ち受けます)", c.URL())
@@ -153,6 +156,9 @@ func run(c serverConfig, notices []string, cfgErr error, env *config.Env) error 
 		return err
 	}
 	mm := &modelManager{eng: eng, catalog: catalog, state: state, defaultLayers: cfg.GPULayers}
+	for _, p := range mm.Places() {
+		log.Noticef("モデルの置き場所: %s", p.Describe())
+	}
 	m, err := firstModel(mm, c.Model)
 	if err != nil {
 		return err
@@ -337,7 +343,7 @@ func firstModel(mm *modelManager, arg string) (models.Entry, error) {
 			return firstModel(mm, "")
 		}
 		if err != nil {
-			return models.Entry{}, err
+			return models.Entry{}, fmt.Errorf("%w。%s", err, placesHint(mm))
 		}
 		if arch, ok := supported(m); !ok && arch != "" {
 			return models.Entry{}, fmt.Errorf("指定したモデル %s の書式(種類: %s)には未対応です。対応しているのは Qwen3.5 だけです。"+
@@ -352,7 +358,7 @@ func firstModel(mm *modelManager, arg string) (models.Entry, error) {
 		if disabled {
 			return models.Entry{}, fmt.Errorf("使えるモデルが1つもありません(管理者が使えないようにしました)。%s の disabled から、使うモデルの ID を外してください", absPath(mm.state.Path()))
 		}
-		return models.Entry{}, fmt.Errorf("モデルが1つも見つかりません。-models(AIBOW_MODELS_DIR)のフォルダに GGUF を置くか、ollama pull してください")
+		return models.Entry{}, fmt.Errorf("モデルが1つも見つかりません。-models(AIBOW_MODELS_DIR)のフォルダに GGUF を置くか、ollama pull してください。%s", placesHint(mm))
 	}
 	for _, m := range list {
 		arch, ok := supported(m)
@@ -364,7 +370,25 @@ func firstModel(mm *modelManager, arg string) (models.Entry, error) {
 	if disabled {
 		return models.Entry{}, fmt.Errorf("書式に対応している使えるモデル(%s)がありません。管理者が使えないようにしたモデルを使うなら、%s の disabled から ID を外してください", format.Supported(), absPath(mm.state.Path()))
 	}
-	return models.Entry{}, fmt.Errorf("書式に対応しているモデル(%s)が見つかりません。-models(AIBOW_MODELS_DIR)のフォルダに GGUF を置くか、ollama pull してください", format.Supported())
+	return models.Entry{}, fmt.Errorf("書式に対応しているモデル(%s)が見つかりません。-models(AIBOW_MODELS_DIR)のフォルダに GGUF を置くか、ollama pull してください。%s", format.Supported(), placesHint(mm))
+}
+
+// placesHint は、探した置き場所と、その場所がどう決まったか(モデルが見つからないときのエラーに足す)。
+// 同じ設定でも、カレントフォルダや起動したユーザーが違うと探す場所が変わる。どこを探したかを書けば、そのずれに気づける。
+func placesHint(mm *modelManager) string {
+	var list []string
+	for _, p := range mm.Places() {
+		list = append(list, p.Describe())
+	}
+	hint := "探した置き場所: " + strings.Join(list, " / ")
+	if d := mm.catalog.ModelsDir; d != "" && !filepath.IsAbs(d) {
+		wd, _ := os.Getwd()
+		hint += fmt.Sprintf("。models フォルダの %q は相対パスなので、カレントフォルダ(%s)が基準です", d, wd)
+	}
+	if os.Getenv("OLLAMA_MODELS") == "" {
+		hint += "。Ollama の保存先は、起動したユーザーのホームフォルダから決まります(別のユーザーで起動するなら、OLLAMA_MODELS で決めます)"
+	}
+	return hint
 }
 
 // supported は、モデルの書式に aibow が対応しているか(GGUF の先頭から種類とチャットテンプレートを読む)。arch は読めた種類(読めなければ空)。

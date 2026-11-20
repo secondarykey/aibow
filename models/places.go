@@ -15,6 +15,7 @@ package models
 
 import (
 	"bytes"
+	"cmp"
 	"errors"
 	"fmt"
 	"io"
@@ -60,6 +61,17 @@ func (c Catalog) Places() []Place {
 		list = append(list, pl)
 	}
 	return list
+}
+
+// Describe は、置き場所1つを「どこを探して、いくつ見つかったか」の1行にする(起動のログと、モデルが無いときのエラーに書く)。
+// 別のユーザーやカレントフォルダで起動すると、同じ設定でも探す場所が変わる。名前だけでは気づけないので、絶対パスで書く。
+func (p Place) Describe() string {
+	what := map[string]string{OriginModels: "models フォルダ", OriginOllama: "Ollama の保存先", OriginAdded: "足した置き場所"}[p.Origin]
+	path := cmp.Or(p.Path, "(決められません)")
+	if p.Missing != "" {
+		return fmt.Sprintf("%s %s(%s)", what, path, p.Missing)
+	}
+	return fmt.Sprintf("%s %s(モデル %d 個)", what, path, p.Models)
 }
 
 func dirPlace(path, origin string, n int) Place {

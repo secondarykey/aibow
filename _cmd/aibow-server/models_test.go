@@ -74,6 +74,25 @@ func TestModelPlaces(t *testing.T) {
 	}
 }
 
+// モデルが見つからないときは、探した置き場所を絶対パスで書く(別のユーザー・別のカレントフォルダで起動したときに気づけるように)
+func TestFirstModelTellsPlaces(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	s, _ := config.LoadServerModels(filepath.Join(dir, stateFileName))
+	m := &modelManager{catalog: models.Catalog{ModelsDir: "models", OllamaDir: filepath.Join(dir, "ollama")}, state: s}
+	for _, arg := range []string{"", "qwen3.5:4b"} {
+		_, err := firstModel(m, arg)
+		if err == nil {
+			t.Fatalf("%q: モデルが無いのに見つかった", arg)
+		}
+		for _, want := range []string{filepath.Join(dir, "models"), filepath.Join(dir, "ollama"), "フォルダが見つかりません", "相対パス"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("%q: エラーに %q が無い: %v", arg, want, err)
+			}
+		}
+	}
+}
+
 // 管理者が使えないようにしたモデルは一覧に出さず、探しても DisabledError。パスでは読み込ませない。
 // 以前の形の ID で覚えた層の数は、読み込むときに今の形へ書き換える(0018 の決定事項 13〜15・17)
 func TestDisabledModels(t *testing.T) {
