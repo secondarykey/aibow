@@ -55,7 +55,7 @@ func (wailsNotifier) Chat(_ context.Context, ev aibow.ChatEvent) {
 }
 func (wailsNotifier) ModelLoaded() { application.Get().Event.Emit(ui.ModelsEventName) }
 
-// ChooseModelPlace は、置き場所を選ぶダイアログを出し(アプリの中で動かすときだけ使う。置き場所はモデルを読み込む PC のパスなので)、選んだフォルダ(kind が "dir")か GGUF のファイル(kind が "file")の
+// ChooseModelPlace は、置き場所を選ぶダイアログを出し(アプリモードのときだけ使う。置き場所はモデルを読み込む PC のパスなので)、選んだフォルダ(kind が "dir")か GGUF のファイル(kind が "file")の
 // 絶対パスを返す。取り消したら空。足すのは AddModelPlace(選んだだけでは足さない)。
 func (s *ChatService) ChooseModelPlace(kind string) (string, error) {
 	app := application.Get()

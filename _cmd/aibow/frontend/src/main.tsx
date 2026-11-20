@@ -5,6 +5,7 @@ import './style.css'
 import { initTheme } from './theme'
 import { initBackend, session } from './backend'
 import { LoginGate } from './components/Login'
+import { UserChangedGate } from './components/UserChanged'
 
 // 最初の描画の前に明るさを決める(Go から設定が届くまで OS の明るさで描くと、ちらつくため)
 initTheme()
@@ -17,9 +18,11 @@ initBackend().then(async () => {
   await session().catch(() => undefined)
   ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
     <React.StrictMode>
-      <LoginGate>
-        <App />
-      </LoginGate>
+      <UserChangedGate>
+        <LoginGate>
+          <App />
+        </LoginGate>
+      </UserChangedGate>
     </React.StrictMode>,
   )
 })

@@ -16,6 +16,7 @@ import { isBrowser, me } from "../backend";
 import { useDirectory } from "../directory";
 import { CONVERSATION_WORDS, SharePicker } from "./SharePicker";
 import { CopyButton } from "./CopyButton";
+import { ScreenErrors } from "./ScreenErrors";
 
 interface Props {
   id: string;                             // 会話の ID(UUIDv7。ログや DB を調べるときの手がかり)
@@ -161,7 +162,7 @@ export function ConversationSettingsView({ id, title, onRename, settings, models
           </h1>
           <button className="back" onClick={onClose} title="会話の設定を閉じて、会話に戻る"><LuArrowLeft /> 会話に戻る</button>
         </div>
-        {errors.map(e => <div key={e.id} className="msg error">{e.text}</div>)}
+        <ScreenErrors errors={errors} />
 
         <TitleField title={title} onRename={onRename} />
         {!isBrowser && worktree && <WorktreeName state={worktree} onRename={onRenameWorktree} />}

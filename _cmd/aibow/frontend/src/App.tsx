@@ -79,9 +79,15 @@ export default function App() {
   // 会話の設定の画面を開いているか。開いている会話の設定を出す
   const [convSettingsOpen, setConvSettingsOpen] = useState(false);
   const [diffOpen, setDiffOpen] = useState(false); // worktree の差分の画面(0039)
-  // 設定の画面(か管理・会話の設定の画面)を開いたとき・その画面で最後に操作したときの、表示の最後の id。
-  // これより後に出たエラー(設定の適用の失敗など)はその画面にも出す(次の操作で進めるので、エラーは積み上がらない)
-  const [settingsFrom, setSettingsFrom] = useState(0);
+  // 設定・管理・会話の設定の画面のエラー(「直前の操作の結果」。0043)。会話の表示(transcript)とは別に持つ。
+  // 以前は会話の表示に足し、画面には「開いてから出た分」だけを出していたので、画面を閉じると、それまでの失敗が全部
+  // 新しい会話の画面に並んだ(A1 の「確かめる」3回・A3 のログイン3回が、「+ 新規」を押しても残っていた。2026-11-20、ユーザーの指摘)。
+  // 会話の表示のエラーは「どこで何が起きたか」の記録、この画面のエラーは次の操作で役目を終える状態なので、置き場所を分ける
+  const [screenErrors, setScreenErrors] = useState<{ id: number; text: string }[]>([]);
+  const screenErrorId = useRef(0);
+  const clearScreenErrors = useCallback(() => setScreenErrors(e => (e.length === 0 ? e : [])), []);
+  // 今その画面を開いているか(描画のたびに下で更新する)。開いている間に出たエラーは、その画面に出す
+  const inOpScope = useRef(false);
   // 入力欄に打っている文。設定の画面を開くと入力欄は消えるので、戻ったときに続きを打てるようにここで持つ
   const [text, setText] = useState("");
   const narrow = useMediaQuery(NARROW_QUERY);
@@ -119,12 +125,24 @@ export default function App() {
   // 同じエラーが積み上がって設定の画面のタブが下に押し出されるので、その理由を含むエラーは出さない(理由は useModels が「起動できません」で1回だけ出す)
   const { startupError } = models;
   const addTranscriptError = transcript.addError;
-  const addError = useCallback((text: string, caution?: boolean) => {
+  // 会話の表示に出すエラー(会話の中で起きたことの記録。0043 の決定事項 5)
+  const addRecordError = useCallback((text: string, caution?: boolean) => {
     if (startupError && text.includes(startupError)) return;
     addTranscriptError(text, caution);
   }, [addTranscriptError, startupError]);
+  // 画面の操作のエラー。設定・管理・会話の設定の画面を開いていればその画面に、そうでなければ会話の表示に出す
+  const addError = useCallback((text: string, caution?: boolean) => {
+    if (startupError && text.includes(startupError)) return;
+    if (inOpScope.current) {
+      const id = ++screenErrorId.current;
+      setScreenErrors(e => [...e, { id, text }]);
+      return;
+    }
+    addTranscriptError(text, caution);
+  }, [addTranscriptError, startupError]);
   const convs = useConversations(addError);
-  const chat = useChat({ ...transcript, addError }, setBusy, convs, toasts, models.reload);
+  // 送信・生成のエラーは、設定の画面を開いている間に届いても会話の表示に残す(記録なので、次の操作で消さない)
+  const chat = useChat({ ...transcript, addError: addRecordError }, setBusy, convs, toasts, models.reload);
   const app = useAppSettings({ addError });
   // 入力欄で読み込んだファイル(0030)。送り先の会話(新しい会話の画面では、これから作る会話の設定)で、会話の上限に入るかを Go が数える
   const attachTarget = useCallback(
@@ -276,6 +294,9 @@ export default function App() {
       // すでに新しい会話の画面なら、入力欄に戻すだけ。ただしワークスペースは外す
       // (「+ 新規」はワークスペースを選ばない。0035。一覧のまとまりの「+」で選んでいたときも、ここでは外す。0038)
       if (convs.draft?.workspace) convs.updateSettings({ workspace: "" });
+      // この画面のエラーはまだ会話が無いときのもの(記録する会話が無い)ので、「+ 新規」で新しく始めるときに消す。
+      // 会話から移ったとき(下の goHome)は、useChat が表示を空にしている
+      transcript.reset([]);
       focusInput();
       return;
     }
@@ -433,7 +454,8 @@ export default function App() {
     chat.resync();
   }), [convs.reloadList, convs.open, models.reload, addError, chat.resync]);
 
-  const markSettingsFrom = () => setSettingsFrom(transcript.items.reduce((m, it) => Math.max(m, it.id), 0));
+  // 画面を開くときは、前に開いていたときのエラーを持ち越さない
+  const markSettingsFrom = clearScreenErrors;
   const toggleSettings = () => {
     closeOverlay();
     if (!settingsOpen) markSettingsFrom();
@@ -468,6 +490,7 @@ export default function App() {
   // 一覧で会話を選んだら、設定の画面を閉じてその会話を出す
   // ほかの人の会話を読むだけで開いているとき(共有された会話・管理者が読む。0018 の 11-2)
   const [reading, setReading] = useState<SharedRead | null>(null);
+  inOpScope.current = settingsOpen || adminOpen || (!reading && showConvSettings);
   const [shared, setShared] = useState<ConversationRef[]>([]);
   const reloadShared = useCallback(() => {
     if (!me.login) return; // ログインの要らない形(1人)には、ほかの人がいない
@@ -567,11 +590,10 @@ export default function App() {
     await models.reload().catch(() => {});
     setBusy("idle");
   };
-  const settingsErrors = transcript.items.filter(it => it.kind === "error" && it.id > settingsFrom);
 
   // 会話の場所に出すもの: 設定の画面 / 新しい会話の画面 / チャット
   let content;
-  const viewErrors = settingsErrors.map(it => ({ id: it.id, text: it.kind === "error" ? it.text : "" }));
+  const viewErrors = screenErrors;
   if (settingsOpen) {
     content = (
       <SettingsView

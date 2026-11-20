@@ -68,7 +68,7 @@ aibow に残っている課題の一覧(入口)。ルールと全体の構成は
 | ⬜ | aibow-server を GPU の 9B で:2人同時の生成(ブラウザの画面を2つ並べて。`parallel` 2)・資料のフォルダのツール | [0023-parallel.md](_docs/features/0023-parallel.md)・[0024-server-tools.md](_docs/features/0024-server-tools.md) |
 | ⬜ | ほかの PC からつなぐ:本物の Cline・HTTPS・資料のフォルダの見え方 | [0018](_docs/features/0018-sharing.md) の「11-3」・[0024](_docs/features/0024-server-tools.md) |
 | ⬜ | アプリのログイン:トークンの期限切れ・証明書を作り直したときの画面(テストだけ) | [0019-app-login.md](_docs/features/0019-app-login.md) |
-| ⬜ | アプリの中で動かすときのモデルのタブ(管理の画面を分けたあと) | [0032-admin-screen.md](_docs/features/0032-admin-screen.md) |
+| ⬜ | アプリモードのときのモデルのタブ(管理の画面を分けたあと) | [0032-admin-screen.md](_docs/features/0032-admin-screen.md) |
 | ⬜ | 同じ呼び出しの繰り返しを止める仕組みを、llama3.2:3b で | [0028-repeated-calls.md](_docs/features/0028-repeated-calls.md) |
 | ⬜ | aibow-mcp の `git_status`・`git_diff` を、Claude Code などほかのクライアントから | [0041-agent-prompt.md](_docs/features/0041-agent-prompt.md) |
 | ⬜ | aibow-server の base:頭を外すプロキシ・アプリの serverUrl に /aibow・デスクトップの画面(vite の base) | [0042-server-addr-base.md](_docs/features/0042-server-addr-base.md) |

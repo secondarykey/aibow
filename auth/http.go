@@ -27,6 +27,7 @@ import (
 	"fmt"
 	"mime"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -63,6 +64,10 @@ func (s *Sessions) Middleware(next http.Handler) http.Handler {
 					setCookie(w, r, c.Value)
 				}
 				r = r.WithContext(context.WithValue(r.Context(), userKey{}, u))
+				// どの返事にも「この呼び出しを誰として受けたか」を付ける。同じブラウザのほかのタブで別の人がログインすると
+				// cookie が入れ替わるが、前から開いているタブの画面は前の人のまま。画面はこれを自分の名前と比べ、
+				// 違えば古い画面を閉じる(backendWeb.ts の checkUser。2026-11-20、A10 で見つかった)
+				w.Header().Set(UserHeader, url.PathEscape(u.Name))
 			case errors.Is(err, ErrNoSession):
 				clearCookie(w, r)
 			default:
@@ -74,6 +79,9 @@ func (s *Sessions) Middleware(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
+
+// UserHeader は、ログインした人として受けた返事に付ける、その人の名前(URL のパスの形でエスケープしたもの)の見出し。
+const UserHeader = "X-Aibow-User"
 
 // Me は GET /_aibow/auth/me の返事。
 type Me struct {

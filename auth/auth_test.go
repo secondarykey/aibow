@@ -197,7 +197,24 @@ func TestHTTP(t *testing.T) {
 	if m := me(); m.Name != "bob" {
 		t.Errorf("ログインしたあと: %+v", m)
 	}
+	// 返事に、誰として受けたかが付く(同じブラウザで別の人がログインしたことに、前から開いている画面が気づくため)
+	if res, err := c.Get(srv.URL + "/_aibow/auth/me"); err != nil {
+		t.Fatal(err)
+	} else {
+		res.Body.Close()
+		if got := res.Header.Get(auth.UserHeader); got != "bob" {
+			t.Errorf("%s: %q", auth.UserHeader, got)
+		}
+	}
 	post("/_aibow/auth/logout", "", "application/json")
+	if res, err := c.Get(srv.URL + "/_aibow/auth/me"); err != nil {
+		t.Fatal(err)
+	} else {
+		res.Body.Close()
+		if got := res.Header.Get(auth.UserHeader); got != "" {
+			t.Errorf("ログアウトしたあとは付けない: %q", got)
+		}
+	}
 	if m := me(); m.Name != "" {
 		t.Errorf("ログアウトしたあと: %+v", m)
 	}

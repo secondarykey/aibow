@@ -1,8 +1,8 @@
 // 設定の画面の「サーバー」のタブ(0019)。デスクトップのアプリだけに出す(ブラウザは aibow-server そのものの画面なので)。
 //
-// 今の形(アプリの中で動かす / aibow-server に誰としてつないでいるか)を出し、画面から aibow-server につなぐ・戻す。
+// 今のモード(アプリモード / サーバーモードなら aibow-server に誰としてつないでいるか)を出し、画面から aibow-server につなぐ・戻す。
 // ログアウトは、ブラウザと同じく左下の名前のメニューと「アカウント」のタブで行う(その場でログインの画面になる。account.go。0031 の決定事項 44)。
-// ここの「アプリの中で動かす形に戻す」は、つなぐのをやめる操作(起動し直すと切り替わる)。
+// ここの「アプリモードに戻す」は、つなぐのをやめる操作(起動し直すと切り替わる)。
 //
 //	つなぎ先を打つ → 確かめる(CheckServer)── 自己署名の証明書なら、指紋を見せて人が確かめる(信頼したら、もう一度確かめる)
 //	              → ログインが要れば名前とパスワード → つなぐ(ConnectServer)── 保存して、起動し直すと切り替わる
@@ -10,7 +10,7 @@
 // 信頼できたつなぎ先は、つながなくても Go が覚える(connection.json の known)。タブを開き直したとき・ログアウトしたあとは、
 // そのつなぎ先と名前を入れておくので、「確かめる」で信頼し直さずにログインへ進める(2026-10-29、ユーザーと決めた)。
 //
-// アプリは自分で起動し直さない(2026-10-26、ユーザーと決め直した)。起動し直すまでは前の形のまま動くので、
+// アプリは自分で起動し直さない(2026-10-26、ユーザーと決め直した)。起動し直すまでは前のモードのまま動くので、
 // 「起動し直すと切り替わります」を、起動し直すまで出し続ける(Go の ServerConnection の pending。タブを開き直しても出る)。
 //
 // パスワードはアプリ用のトークンをもらうのに使うだけで、Go も画面も覚えない(0019 の決定事項 2)。
@@ -79,12 +79,12 @@ export function ServerSettings({ disabled, onError }: { disabled: boolean; onErr
 
   return (
     <>
-      <h2 className="section">今の形</h2>
+      <h2 className="section">今のモード</h2>
       {conn.pending && (
         <p className="server-status" role="status">
           {conn.pending === "server"
             ? `保存しました。aibow を起動し直すと、aibow-server(${conn.pendingUrl})につなぎます`
-            : "保存しました。aibow を起動し直すと、アプリの中で動かす形に戻ります"}
+            : "保存しました。aibow を起動し直すと、アプリモードに戻ります"}
         </p>
       )}
       <CurrentRows conn={conn} />
@@ -139,13 +139,13 @@ export function ServerSettings({ disabled, onError }: { disabled: boolean; onErr
 
           {(conn.pending === "server" || (conn.pending === "" && conn.source === "screen")) && (
             <>
-              <h2 className="section">アプリの中で動かす</h2>
+              <h2 className="section">アプリモードに戻す</h2>
               <button
                 disabled={off}
                 onClick={disconnect}
-                title="aibow-server につなぐのをやめ(アプリ用のトークンも消す)、このアプリの中で llama.cpp を動かす形に戻します。起動し直すと切り替わり、会話は手元の DB のものに戻ります"
+                title="aibow-server につなぐのをやめ(アプリ用のトークンも消す)、アプリモード(このアプリの中で llama.cpp を動かす)に戻します。起動し直すと切り替わり、会話は手元の DB のものに戻ります"
               >
-                アプリの中で動かす形に戻す
+                アプリモードに戻す
               </button>
             </>
           )}
@@ -155,13 +155,13 @@ export function ServerSettings({ disabled, onError }: { disabled: boolean; onErr
   );
 }
 
-// CurrentRows は今の形の表(表示だけ)。
+// CurrentRows は今のモードの表(表示だけ)。
 function CurrentRows({ conn }: { conn: ServerConnection }) {
   const rows: [string, string][] = [];
   if (conn.mode === "direct") {
-    rows.push(["形", "アプリの中で動かす"]);
+    rows.push(["モード", "アプリモード(この PC でモデルを動かす)"]);
   } else {
-    rows.push(["形", "aibow-server につなぐ"], ["つなぎ先", conn.url]);
+    rows.push(["モード", "サーバーモード(aibow-server につなぐ)"], ["つなぎ先", conn.url]);
     if (conn.user) {
       const exp = conn.expiresAt ? new Date(conn.expiresAt).toLocaleString() : "";
       rows.push(["名前", conn.user], ["ログインの期限", conn.expired ? `${exp}(切れています)` : exp]);

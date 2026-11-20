@@ -4,7 +4,7 @@ package main
 //
 // GPU の層数は「その PC の人が決めること」なので、サーバーの PC の server-models.json に覚える(0015 の 9)。
 // aibow-server は DB を読まない(DB はアプリのもの。0012)。まだ覚えていないモデルは AIBOW_GPU_LAYERS(既定 999 = 全部)。
-// 画面のアプリの DB の model_gpu_layers とは別の値(アプリが直接動かす形に戻したときは、アプリの値を使う)。
+// 画面のアプリの DB の model_gpu_layers とは別の値(アプリをアプリモードに戻したときは、アプリの値を使う)。
 //
 // 画面で足したモデルの置き場所も server-models.json に覚え、server.json の modelsDir(と Ollama の保存先)に足す形で一覧に出す
 // (手で書く server.json は書き換えない。0015 の 22)。

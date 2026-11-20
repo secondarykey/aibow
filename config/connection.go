@@ -21,7 +21,7 @@ import (
 
 // ConnectionFile は connection.json の中身。
 type ConnectionFile struct {
-	// ServerURL は aibow-server のつなぎ先(例: https://192.168.1.10:8089)。空なら、アプリの中で動かす
+	// ServerURL は aibow-server のつなぎ先(例: https://192.168.1.10:8089)。空なら、アプリモード
 	ServerURL string `json:"serverUrl"`
 	// Fingerprint は、信頼した証明書の SHA-256 のフィンガープリント(自己署名の証明書のとき。初めてつなぐときに人が確かめて覚えたもの。決定事項 6)。
 	// 空なら、OS が信頼している証明書だけを信頼する(HTTP のときも空)
@@ -57,7 +57,7 @@ func (c ConnectionFile) Trusted() KnownServer {
 	return KnownServer{URL: c.ServerURL, Fingerprint: c.Fingerprint, User: c.User}
 }
 
-// LoadConnectionFile は connection.json を読む。無ければ空(アプリの中で動かす)。
+// LoadConnectionFile は connection.json を読む。無ければ空(アプリモード)。
 func LoadConnectionFile(path string) (ConnectionFile, error) {
 	var c ConnectionFile
 	data, err := os.ReadFile(path)
@@ -102,7 +102,7 @@ func (c ConnectionFile) Save(path string) error {
 	return nil
 }
 
-// RemoveConnectionFile は connection.json を消す(アプリの中で動かす形に戻す)。無くてもエラーにしない。
+// RemoveConnectionFile は connection.json を消す(アプリモードに戻す)。無くてもエラーにしない。
 func RemoveConnectionFile(path string) error {
 	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("つなぎ先のファイル %s を消せません: %w", path, err)

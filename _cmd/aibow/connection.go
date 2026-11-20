@@ -1,15 +1,15 @@
 package main
 
-// connection.go: 画面から aibow-server につなぐ・ログインする・アプリの中で動かす形に戻す(0019)。
+// connection.go: 画面から aibow-server につなぐ・ログインする・アプリモードに戻す(0019)。
 //
-//	ServerConnection … 今の形(アプリの中で動かす / aibow-server に誰としてつないでいるか)と、つなぎ先をどこで決めたか
+//	ServerConnection … 今のモード(アプリモード / サーバーモードなら aibow-server に誰としてつないでいるか)と、つなぎ先をどこで決めたか
 //	CheckServer      … つなぎ先を確かめる(つながるか・ログインが要るか・証明書の指紋)。信頼できたら、信頼したつなぎ先として connection.json に覚える
 //	ConnectServer    … ログインしてアプリ用のトークンをもらい、connection.json に書く
-//	DisconnectServer … トークンを aibow-server で消し、つなぐ先を connection.json から消す(アプリの中で動かす形に戻す。信頼したつなぎ先は残す)
+//	DisconnectServer … トークンを aibow-server で消し、つなぐ先を connection.json から消す(アプリモードに戻す。信頼したつなぎ先は残す)
 //
 // 切り替えると生成の口(engine か api/client)も会話の保存先(aibow.db か server.db)も丸ごと替わるので、起動したまま替えず、
 // 保存して、起動し直すと切り替わる(起動の流れ main.go は今のまま使える)。アプリは自分で起動し直さない(2026-10-26、ユーザーと決め直した。決定事項 1)。
-// 起動し直すまでは前の形のまま動くので、画面は「起動し直すと切り替わります」を出し続ける(ServerConnection の Pending)。
+// 起動し直すまでは前のモードのまま動くので、画面は「起動し直すと切り替わります」を出し続ける(ServerConnection の Pending)。
 // 手で書いた値(settings.json・環境変数)があれば、そちらが強いので画面からは変えない(決定事項 5)。
 // デスクトップのアプリだけのメソッドなので ui ではなくここに置く(ブラウザの画面用の口からは呼べない)。
 
@@ -55,11 +55,11 @@ func newConnection(cfg appConfig) *connection {
 	return c
 }
 
-// ServerConnection は、設定の画面の「サーバー」のタブに出す今の形。
+// ServerConnection は、設定の画面の「サーバー」のタブに出す今のモード。
 type ServerConnection struct {
-	// Mode は "direct"(アプリの中で動かす)か "server"(aibow-server につなぐ)
+	// Mode は "direct"(アプリモード)か "server"(サーバーモード。aibow-server につなぐ)
 	Mode string `json:"mode"`
-	// Source はつなぎ先をどこで決めたか("settings"・"env"・"screen"。アプリの中で動かすなら空)。"settings" と "env" は画面では変えられない
+	// Source はつなぎ先をどこで決めたか("settings"・"env"・"screen"。アプリモードなら空)。"settings" と "env" は画面では変えられない
 	Source string `json:"source"`
 	// SourcePath は、手で書いたときに、どこに書いてあるか(settings.json のパスか環境変数の名前)
 	SourcePath string `json:"sourcePath"`
@@ -81,7 +81,7 @@ type ServerConnection struct {
 	KnownUser string `json:"knownUser"`
 }
 
-// ServerConnection は今の形を返す。
+// ServerConnection は今のモードを返す。
 func (s *ChatService) ServerConnection() ServerConnection {
 	c := s.conn
 	v := ServerConnection{Mode: "direct", Source: c.source, URL: c.url}
@@ -224,7 +224,7 @@ func login(f *config.ConnectionFile, req ConnectRequest) (string, error) {
 	return got.Token, f.SetToken(got.Token)
 }
 
-// DisconnectServer はアプリの中で動かす形に戻すように決める:トークンを aibow-server で消し(つながらなければ手元だけ)、
+// DisconnectServer はアプリモードに戻すように決める:トークンを aibow-server で消し(つながらなければ手元だけ)、
 // つなぐ先とトークンを connection.json から消す。信頼したつなぎ先(Known)は残す(次につなぐときに、信頼し直さずにログインから続けられるように)。
 // 起動し直すと切り替わる。
 func (s *ChatService) DisconnectServer() error {
@@ -248,7 +248,7 @@ func (s *ChatService) DisconnectServer() error {
 	if c.url == "" {
 		c.pending = "" // 今もアプリの中で動いている(起動し直す前につないだのを取りやめた)ので、起動し直さなくてよい
 	}
-	log.Noticef("アプリの中で動かす形に戻すように決めました(%s からつなぐ先とトークンを消し、信頼したつなぎ先は残しました)。起動し直すと切り替わります", absPath(c.path))
+	log.Noticef("アプリモードに戻すように決めました(%s からつなぐ先とトークンを消し、信頼したつなぎ先は残しました)。起動し直すと切り替わります", absPath(c.path))
 	return nil
 }
 

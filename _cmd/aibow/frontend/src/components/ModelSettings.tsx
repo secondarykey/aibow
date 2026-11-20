@@ -1,6 +1,6 @@
 // 設定の画面の「モデル」のタブ(0015 の 8-4)。
 //
-// アプリの中で動かすとき:すぐ効く操作だけを画面から変える(一覧から読み込む / 降ろす・モデルごとの GPU の層数・置き場所を足す / 外す。0015 の 21)。
+// アプリモードのとき:すぐ効く操作だけを画面から変える(一覧から読み込む / 降ろす・モデルごとの GPU の層数・置き場所を足す / 外す。0015 の 21)。
 // 作業領域・llama.cpp の場所・最初のモデルは表示だけ(起動し直しが要るため)。
 // 同時に読み込むのは1つ(VRAM に1つしか載らない)ので、「読み込む」は今のモデルと入れ替える。
 //
@@ -9,7 +9,7 @@
 // つないでくる側から見せたり変えたりするのは別の問題なので出さない。モデルが変わるのは会話を送信するときだけ。
 //
 // ブラウザでは、設定の画面のモデルのタブはだれにも一覧だけを出し(listOnly)、管理者とサーバーの PC の上から開いたブラウザ(models.manage)には、
-// 管理の画面のモデルのタブで、アプリの中で動かすときと同じもの(操作)を出す(0018 の決定事項 8・0032 の決定事項 6)。置き場所はサーバーの PC のパスを書く(ブラウザからはサーバーの PC のフォルダを選べないので、選ぶボタンは出さない)。
+// 管理の画面のモデルのタブで、アプリモードのときと同じもの(操作)を出す(0018 の決定事項 8・0032 の決定事項 6)。置き場所はサーバーの PC のパスを書く(ブラウザからはサーバーの PC のフォルダを選べないので、選ぶボタンは出さない)。
 import { useCallback, useEffect, useState } from "react";
 import { LuCircleCheck, LuFile, LuFileX, LuFolder, LuFolderX, LuInfo, LuLock, LuX } from "react-icons/lu";
 import { ChatService } from "../backend";
@@ -225,7 +225,7 @@ function RemoteModelTable({ models }: { models: Models }) {
   );
 }
 
-// ---- 置き場所(アプリの中で動かすときだけ) ---------------------------------------------
+// ---- 置き場所(アプリモードのときだけ) ---------------------------------------------
 
 function PlaceList({ places, server, onRemove }: { places: Place[]; server: boolean; onRemove(path: string): void }) {
   // 手で決めた置き場所(models フォルダ・Ollama)は表示だけ。どこで変えるかを錠の吹き出しに出す(aibow-server は server.json)
@@ -290,7 +290,7 @@ function AddPlace({ onAdd, onError }: {
 
 // ---- 表示だけの設定 --------------------------------------------------------------------
 
-// HostSettings は、アプリの中で動かすときの起動の設定(環境変数で決まる)。
+// HostSettings は、アプリモードのときの起動の設定(環境変数で決まる)。
 function HostSettings({ s }: { s: ModelSettingsResult }) {
   const v = s.settings;
   const how = "環境変数で変え、aibow の起動し直しが要ります";

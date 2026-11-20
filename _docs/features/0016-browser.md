@@ -155,7 +155,7 @@ aibow.exe(画面のアプリ)は今のまま(直接でも aibow-server 越しで
 決定事項の 9 で「名前と線の引き方は Code が決める」としたもの。
 
 - **パッケージはルートの `ui`**(`github.com/secondarykey/aibow/ui`)。画面から呼ぶメソッドの中身(`ui.Service`)と、モデルを扱う係(`ui.ModelHost`。直接 `DirectHost`・aibow-server 越し `RemoteHost`)、
-  直接の形で足した置き場所のファイル(`ui.PlacesFile`。model-places.json)を `_cmd/aibow` から移した。ルートの `aibow` を使い、Wails を import しない
+  アプリモードで足した置き場所のファイル(`ui.PlacesFile`。model-places.json)を `_cmd/aibow` から移した。ルートの `aibow` を使い、Wails を import しない
   - `ModelHost` のメソッドは小文字のままにして、`ui` の外では作れないようにした(形は2つだけ)。9-1 で aibow-server 用の形が要れば、そのとき開く
 - **`ChatService` は `*ui.Service` を埋め込むだけ**。Wails は埋め込んだ型のメソッドも `ChatService` のメソッドとしてバインディングにする(生成も実行も)ので、
   画面から見た名前と ID(`main.ChatService.Send` など)は変わらない。変わったのは、戻り値の型(`ModelsResult` など)の置き場所が `bindings/…/ui` になったことだけ

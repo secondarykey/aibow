@@ -355,7 +355,7 @@ func newServerClient(cfg appConfig) (*apiclient.Client, error) {
 // openStore は会話を保存する先を開き、アプリ全体の設定を読む。close は終了のときに呼ぶ。
 //
 //   - aibow-server につなぐとき(server が nil でない):保存も aibow-server の server.db に頼む(store/remote。0017 の 10-3)。
-//     手元の aibow.db は開かない(手元の会話はサーバーに移さない。直接の形に戻せば見える)。
+//     手元の aibow.db は開かない(手元の会話はサーバーに移さない。アプリモードに戻せば見える)。
 //     サーバーがまだ起動していなくても、アプリは起動する(設定は初期値で始め、つながってから使う。0015 の 13)
 //   - つながないとき:手元の DB(aibow.db)
 func openStore(cfg appConfig, server *apiclient.Client) (st aibow.Store, app aibow.AppSettings, close func(), err error) {
@@ -408,7 +408,7 @@ func openLocalStore(cfg appConfig) (*store.SQLite, error) {
 //     (サーバーが起動のときに読み込んでいる。会話のモデルが違えば、送信の前に読み直す。0015 の 12)。
 //     ここではまだつながない(サーバーがまだ起動していなくても、アプリは起動する。0015 の 13)
 //
-// 直接の形のときは、画面で足したモデルの置き場所(model-places.json)も読み、手で決めた置き場所に足す(0015 の 24)。
+// アプリモードのときは、画面で足したモデルの置き場所(model-places.json)も読み、手で決めた置き場所に足す(0015 の 24)。
 // 読めなければ画面のお知らせで伝え、足した置き場所なしで起動する。
 func startModels(cfg *appConfig, app aibow.AppSettings, server *apiclient.Client) (ui.ModelHost, *engine.Engine, *models.Entry, error) {
 	if server != nil {

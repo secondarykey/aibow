@@ -174,7 +174,7 @@ func New(o Options) (*Service, Lifecycle) {
 		browser: o.Browser, waits: map[string]*time.Timer{}, folders: slices.Sorted(maps.Keys(o.Folders)),
 	}
 	if d, ok := o.Host.(*DirectHost); ok {
-		d.s = s // 直接の形は、GPU の層数をアプリの DB(Service が持つ設定)に覚える
+		d.s = s // アプリモードは、GPU の層数をアプリの DB(Service が持つ設定)に覚える
 	}
 	if o.StartupErr == nil {
 		st, app := o.Store, o.App

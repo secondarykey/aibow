@@ -95,7 +95,7 @@ type DirectHost struct {
 	lib, initialModel string
 }
 
-// NewDirectHost は直接の形の係を作る。catalog は手で決めた置き場所、added は画面で足した置き場所(model-places.json)、
+// NewDirectHost はアプリモードの係を作る。catalog は手で決めた置き場所、added は画面で足した置き場所(model-places.json)、
 // lib と initialModel は表示だけの設定(AIBOW_LIB・AIBOW_MODEL)。
 func NewDirectHost(eng *engine.Engine, catalog models.Catalog, added *config.PlacesFile, lib, initialModel string) *DirectHost {
 	return &DirectHost{eng: eng, catalog: catalog, added: added, lib: lib, initialModel: initialModel}
@@ -230,15 +230,15 @@ func (h *DirectHost) removePlace(ctx context.Context, path string) ([]models.Pla
 	return h.places(ctx)
 }
 
-// usable は、直接の形では確かめない(使えるモデルを決めるのは aibow-server の管理者。手元で配ることも無い)。
+// usable は、アプリモードでは確かめない(使えるモデルを決めるのは aibow-server の管理者。手元で配ることも無い)。
 func (h *DirectHost) usable(string) error { return nil }
 
-// setModelEnabled は、直接の形ではしない(使えるモデルを決めるのは aibow-server の管理者。手元のモデルは置き場所で決める)。
+// setModelEnabled は、アプリモードではしない(使えるモデルを決めるのは aibow-server の管理者。手元のモデルは置き場所で決める)。
 func (h *DirectHost) setModelEnabled(context.Context, string, bool) error {
-	return errors.New("使えるモデルを決めるのは aibow-server の管理者です(アプリの中で動かしているときは、置き場所で決めます)")
+	return errors.New("使えるモデルを決めるのは aibow-server の管理者です(アプリモードのときは、置き場所で決めます)")
 }
 
-// settings は、直接の形の表示だけの設定。作業領域は会話ごと(会話の上限 + 返事の上限)なので 0、ポートは無い(待ち受けない)。
+// settings は、アプリモードの表示だけの設定。作業領域は会話ごと(会話の上限 + 返事の上限)なので 0、ポートは無い(待ち受けない)。
 func (h *DirectHost) settings() (apiclient.ServerSettings, error) {
 	return apiclient.ServerSettings{
 		Model: h.initialModel, Lib: absPath(h.lib),
@@ -263,7 +263,7 @@ type RemoteHost struct {
 	c *apiclient.Client
 }
 
-// NewRemoteHost は aibow-server 越しの形の係を作る。
+// NewRemoteHost はサーバーモードの係を作る。
 func NewRemoteHost(c *apiclient.Client) *RemoteHost {
 	return &RemoteHost{c: c}
 }

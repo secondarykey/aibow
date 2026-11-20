@@ -7,10 +7,10 @@ package main
 //	SetMy…         … 表示名・メールアドレス・パスワードを変える(ブラウザと同じ口を、アプリ用のトークンで呼ぶ)
 //	MyUsage        … 自分の使用量(0033。同じくアプリ用のトークンで呼ぶ)
 //
-// 以前は、ログアウトは「サーバー」のタブの「ログアウトして戻す」(アプリの中で動かす形に戻り、起動し直すと切り替わる)だけだった。
+// 以前は、ログアウトは「サーバー」のタブの「ログアウトして戻す」(アプリモードに戻り、起動し直すと切り替わる)だけだった。
 // ブラウザとそろえ、ログアウトしたらその場でログインの画面になるようにした(2026-11-01、ユーザーの指示)。
 // 生成の口と会話の保存先は同じクライアント(apiclient.Client)を使っているので、そのキーを替えるだけで起動し直さずに切り替わる。
-// アプリの中で動かす形に戻すのは、ログアウトとは別の操作(「サーバー」のタブの DisconnectServer)。
+// アプリモードに戻すのは、ログアウトとは別の操作(「サーバー」のタブの DisconnectServer)。
 
 import (
 	"errors"
@@ -26,7 +26,7 @@ import (
 
 // AccountInfo は、画面のアプリの今のアカウント(設定の画面の「アカウント」のタブと、左下の名前)。
 type AccountInfo struct {
-	// Login は、aibow-server につないでいて、そこがログインの要る形か(要らない形・アプリの中で動かすときは false)
+	// Login は、aibow-server につないでいて、そこがログインの要る形か(要らない形・アプリモードのときは false)
 	Login       bool   `json:"login"`
 	Name        string `json:"name"`
 	DisplayName string `json:"displayName"`
@@ -45,7 +45,7 @@ type AccountInfo struct {
 func (s *ChatService) Account() (AccountInfo, error) {
 	c := s.conn
 	if c.client == nil {
-		return AccountInfo{}, nil // アプリの中で動かしている
+		return AccountInfo{}, nil // アプリモードで動いている
 	}
 	screen := c.source == serverScreen
 	me, err := c.client.Account()

@@ -109,7 +109,7 @@ func (s *Service) forBrowser(groups []aibow.ToolGroupState) []aibow.ToolGroupSta
 }
 
 // Folders は aibow-server の資料のフォルダの名前(名前の順。パスは返さない)。配るプロファイルで選ぶ(0024 の 12-2)。
-// 名前は誰でも見られる(どのフォルダを使えるかは、配られたプロファイルで決まる)。アプリの中で動かすときは空。
+// 名前は誰でも見られる(どのフォルダを使えるかは、配られたプロファイルで決まる)。アプリモードのときは空。
 func (s *Service) Folders() []string {
 	return slices.Clone(s.folders)
 }

@@ -97,7 +97,7 @@ func (h *ServerHost) current() *engine.ModelInfo {
 func (h *ServerHost) server() string { return h.url }
 
 // list は、サーバーの PC の置き方(出どころ・置き場所)と層の数を外した一覧(RemoteHost と同じ)。
-// サーバーの PC の事情を見てよい人には、外さずに層の数も付ける(直接の形と同じ。0018 の決定事項 8)。
+// サーバーの PC の事情を見てよい人には、外さずに層の数も付ける(アプリモードと同じ。0018 の決定事項 8)。
 func (h *ServerHost) list(ctx context.Context) (hostModels, error) {
 	if managesPC(ctx) {
 		l := h.models.ListAll() // 使えないようにしたモデルも、印を付けて見せる(戻せるように)

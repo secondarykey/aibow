@@ -22,6 +22,7 @@ import { ServerTools } from "./ServerTools";
 import { ProfileSettings } from "./ProfileSettings";
 import { UsageAdmin } from "./UsageSettings";
 import type { ConversationSettings } from "../../bindings/github.com/secondarykey/aibow";
+import { ScreenErrors } from "./ScreenErrors";
 
 type Tab = "users" | "groups" | "models" | "tools" | "profiles" | "usage";
 
@@ -69,7 +70,7 @@ export function AdminView({ onClose, errors, onError, onReadConversation, models
           <h1>管理</h1>
           <button className="back" onClick={onClose} title="管理の画面を閉じて、会話に戻る"><LuArrowLeft /> 会話に戻る</button>
         </div>
-        {errors.map(e => <div key={e.id} className="msg error">{e.text}</div>)}
+        <ScreenErrors errors={errors} />
 
         <div className="settings-tabs" role="tablist">
           {tabs.map(t => (

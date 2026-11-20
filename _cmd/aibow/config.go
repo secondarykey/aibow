@@ -31,7 +31,7 @@ type appConfig struct {
 	toolsPath    string // ツールの扱いの PC の既定(tools.json。画面で変えたものを aibow が書く)
 	mcpPath      string // 画面から足した MCP のサーバー(mcp.json。aibow が書く。0034)
 	windowPath   string // ウィンドウの位置と大きさ(window.json。閉じるときに aibow が書く。windowstate.go)
-	placesPath   string // 画面で足したモデルの置き場所(model-places.json。直接の形のときだけ使う。config/modelplaces.go)
+	placesPath   string // 画面で足したモデルの置き場所(model-places.json。アプリモードのときだけ使う。config/modelplaces.go)
 	connPath     string // 画面で決めた aibow-server のつなぎ先とログイン(connection.json。aibow が書く。0019)
 	wsPath       string // ワークスペース(workspaces.json。PC のフォルダの組。aibow が書く。0035)
 	initialModel string // AIBOW_MODEL。空なら最後に使ったモデル → 一覧の先頭(書式に対応している最初のモデル)
@@ -125,7 +125,7 @@ func (c appConfig) libMissing() error {
 	lib := absPath(c.engine.LibPath)
 	if k := c.conn.Trusted(); k.URL != "" {
 		return fmt.Errorf("aibow-server(%s)にはまだログインしていません。設定の画面の「サーバー」のタブで「確かめる」からログインし、起動し直してください"+
-			"(アプリの中で動かすなら、llama.cpp のフォルダ %s が要ります)", k.URL, lib)
+			"(アプリモードなら、llama.cpp のフォルダ %s が要ります)", k.URL, lib)
 	}
 	return fmt.Errorf("llama.cpp のフォルダが見つかりません: %s\n"+
 		"(相対パスはカレントフォルダが基準です。_cmd/aibow で起動するか、AIBOW_LIB で場所を指定してください。"+
@@ -141,7 +141,7 @@ const (
 )
 
 // loadServer は aibow-server のつなぎ先を決める。強い順に settings.json の serverUrl > 環境変数 AIBOW_SERVER_URL(0015 の 20)> 画面で決めたもの(connection.json)。
-// 手で書いた値があれば、画面の値は使わない(書いたのに効かない、が起きないように。0019 の決定事項 5)。どれも無ければアプリの中で動かす。
+// 手で書いた値があれば、画面の値は使わない(書いたのに効かない、が起きないように。0019 の決定事項 5)。どれも無ければアプリモード。
 func (c *appConfig) loadServer(env *config.Env) {
 	envURL := os.Getenv("AIBOW_SERVER_URL")
 	if err := config.CheckServerURL(envURL); err != nil {

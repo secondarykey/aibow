@@ -394,7 +394,7 @@ function AppName() {
 // UserMenu は、ログインしている人の名前(表示名)。押すと上に「アカウント」(設定の画面の「アカウント」のタブ)と「ログアウト」を出す。
 // ブラウザでも、画面のアプリが aibow-server にログインしてつないでいるときも同じ形(0031 の決定事項 44・46)。
 // ログアウトしたら読み直し、ログインの画面になる。settings.json に手で書いた API キーでつないでいるときは、ログアウトを出さない。
-// ログインが要らない形・アプリの中で動かすときは出さない。
+// ログインが要らない形・アプリモードのときは出さない。
 function UserMenu({ onOpenAccount }: { onOpenAccount(): void }) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);

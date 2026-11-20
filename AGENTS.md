@@ -26,8 +26,8 @@ MCP のクライアント(Claude Code・aibow など)⇄ 標準入出力 ⇄ aib
 aibow の組み込みのツール: 会話の仕組み ⇄ aibow/mcp/client の Local ⇄ MCP(メモリ内)⇄ aibow/mcp/server ⇄ aibow/tool
 
 OpenAI 互換のクライアント(Cline など)⇄ HTTP(S)(既定は 127.0.0.1。外では API キー)⇄ aibow-server(_cmd/aibow-server)= aibow/api ⇄ aibow/engine
-画面のアプリを aibow-server につなぐとき(settings.json の serverUrl。ステップ8・10):aibow ⇄ aibow/api/client(生成)・aibow/store/remote(保存)⇄ HTTP ⇄ aibow-server(アプリは llama.cpp を読み込まず、会話は server.db。
-  つながないとき(既定)は上の図のとおりアプリの中で動かし、そのときは aibow-server と同時に使わない)
+画面のアプリを aibow-server につなぐとき(**サーバーモード**。settings.json の serverUrl。ステップ8・10):aibow ⇄ aibow/api/client(生成)・aibow/store/remote(保存)⇄ HTTP ⇄ aibow-server(アプリは llama.cpp を読み込まず、会話は server.db。
+  つながないとき(既定。**アプリモード**)は上の図のとおりアプリの中で llama.cpp を動かし、そのときは aibow-server と同時に使わない)
 ブラウザ(http://127.0.0.1:8089/。ステップ9)⇄ HTTP(S)(画面と /_aibow/ui/ の呼び出しと SSE。ログインは cookie のセッション。ステップ10)⇄ aibow-server = aibow/ui ⇄ aibow(ツールはサーバーの PC で動く。配るプロファイルで選んだ資料のフォルダを読み書きする。ステップ12)⇄ aibow/engine
   (画面は aibow/web に埋め込んだもので、デスクトップのアプリと同じ。会話は aibow-server の server.db。生成は OpenAI 互換の口と同じ engine・同じ順番待ちの席 api.Seat)
 利用者(ステップ10):aibow-server の server.db に利用者・セッション・API キー(aibow/auth)。会話・プロファイル・表示の設定は持ち主で分かれ、誰のものかは ctx で運ぶ(aibow.WithUser)。
@@ -60,7 +60,7 @@ OpenAI 互換のクライアント(Cline など)⇄ HTTP(S)(既定は 127.0.0.1�
 | `ui/` | 画面向けの処理(`ui` パッケージ。ステップ9の 9-0 で `_cmd/aibow` から切り出した)。画面から呼ぶメソッド(`Service`。モデル・会話・設定・送信)と、モデルを扱う係(直接 `DirectHost`・aibow-server 越し `RemoteHost`)。ルートの `aibow` を使い、Wails を import しない。デスクトップのアプリは `ChatService` に埋め込んで Wails に渡す。ブラウザ向けには aibow-server が使う:aibow-server の engine でモデルを扱う係(`ServerHost`)と、画面用の HTTP の口(`Handler`。`/_aibow/ui/call/{メソッド}` と SSE の `/_aibow/ui/events`)。9-1。仕組みは [_docs/api.md](_docs/api.md) の「画面用の口」 |
 | `web/` | 画面のビルド結果(`web` パッケージ。ステップ9の 9-2)。vite が `_cmd/aibow/frontend` から `web/dist/app` に書き、デスクトップのアプリと aibow-server の両方が `web.Files()` で埋め込む(写さない)。ビルドしていなければ `web/dist/index.html`(ビルドの仕方だけのページ) |
 | `git/` | アプリが行う Git の操作(`git` パッケージ。0039)。`git` の exe を `os/exec` で呼ぶ(外部パッケージは使わない)。worktree を作る・本体の状態・差分・`git apply` で当てる・消す。ルートの `aibow`・`tool`・Wails を import しない(aibow-server からも使えるように。モデルに見せるツールは `tool`、アプリが行う Git の操作は `git`) |
-| `config/` | アプリと aibow-server の設定ファイルと環境変数(`config` パッケージ)。アプリの手で書く `settings.json`(`SettingsFile`)・画面で決めた aibow-server のつなぎ先 `connection.json`(`ConnectionFile`。トークンは `internal/secret` で包む)・ツールの扱い `ToolPolicy` とその PC の既定 `tools.json`(`ToolPrefs`)・MCP のサーバー `mcp.json`(`MCPFile`・`MCPConfig`)・ワークスペース `workspaces.json`(`Workspaces`)・アプリの中で動かすときに画面で足したモデルの置き場所 `model-places.json`(`PlacesFile`)・aibow-server の手で書く `server.json`(`ServerFile`)と書く `server-models.json`(`ServerModels`)・`AIBOW_` の環境変数(`Env`)。読んで確かめて書くまでで、強さの順はそれぞれの exe が決める。ルートの `aibow` を import しない(2026-11-08、ユーザーの指示で分けた) |
+| `config/` | アプリと aibow-server の設定ファイルと環境変数(`config` パッケージ)。アプリの手で書く `settings.json`(`SettingsFile`)・画面で決めた aibow-server のつなぎ先 `connection.json`(`ConnectionFile`。トークンは `internal/secret` で包む)・ツールの扱い `ToolPolicy` とその PC の既定 `tools.json`(`ToolPrefs`)・MCP のサーバー `mcp.json`(`MCPFile`・`MCPConfig`)・ワークスペース `workspaces.json`(`Workspaces`)・アプリモードのときに画面で足したモデルの置き場所 `model-places.json`(`PlacesFile`)・aibow-server の手で書く `server.json`(`ServerFile`)と書く `server-models.json`(`ServerModels`)・`AIBOW_` の環境変数(`Env`)。読んで確かめて書くまでで、強さの順はそれぞれの exe が決める。ルートの `aibow` を import しない(2026-11-08、ユーザーの指示で分けた) |
 | `usage/` | aibow-server の使用量(0033。`usage` パッケージ)。生成1回ごとの記録の形と、生成に付ける付箋(道・用途・会話・順番待ちを ctx で運ぶ)。何にも依存しない(会話の仕組み・`api`・`api/client`・`ui`・`store` から使う)。記録するのは `_cmd/aibow-server` の記録付きの engine |
 | `mcp/internal/` | MCP のクライアントとサーバーの両方で使う部分(`meta`: `_meta` の名前) |
 | `internal/proc/` | 子プロセスまでまとめて止める仕組み(`tool` の `run_command` と `mcp/client` で使う) |
@@ -146,6 +146,7 @@ OpenAI 互換のクライアント(Cline など)⇄ HTTP(S)(既定は 127.0.0.1�
 - ユーザーの環境: Windows、NVIDIA GPU(VRAM 8GB)、メモリ 64GB。シェルは bash(Windows 上の Git Bash など。PowerShell の `$env:` 構文は使えない)。パスは `/d/Go/Projects/aibow` の形で書く
 - 主に使うモデルは Qwen3.5(4B / 9B)。ユーザーは Ollama でのモデル管理に慣れている
 - **用語は、ユーザーが分かる言い方にする**。英語の技術用語を無理に和訳しない(例:証明書の fingerprint は「指紋」ではなく「フィンガープリント」。日本語の「指紋」は人の指紋にしか読めない。2026-10-26、ユーザーの指示)。画面・ログ・ドキュメントのどれも同じ
+- デスクトップのアプリの動かし方は「**アプリモード**」(既定。アプリの中で llama.cpp を動かす)と「**サーバーモード**」(aibow-server につなぎ、生成と会話の保存を頼む)と呼ぶ。「アプリの中で動かす形」「直接の形」「今の形」のような言い方はしない(2026-11-20、ユーザーの指示)
 
 ## 確認方法
 
