@@ -52,6 +52,15 @@ export interface ConversationDetail {
 }
 
 /**
+ * CreatedWorkspace は CreateWorkspace の結果。Existing なら、新しく作らずに今あるワークスペースを返した
+ * (画面はトーストで「既にあるワークスペースを選んだ」と知らせる。0049 の決定事項 2)。
+ */
+export interface CreatedWorkspace {
+    "workspace": config$0.Workspace;
+    "existing": boolean;
+}
+
+/**
  * FolderView は、画面に出すフォルダ1つ。この PC にあるか・リポジトリかを添える(どちらもそのつど見る)。
  */
 export interface FolderView {

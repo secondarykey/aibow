@@ -211,11 +211,12 @@ export function CreateProfile(name: string, values: aibow$0.ProfileValues, rules
 }
 
 /**
- * CreateWorkspace は、フォルダ path 1つのワークスペースを作る(入力欄の上の「フォルダから新しく作る」・設定の画面)。
- * 同じフォルダ1つだけのワークスペースがあれば、それを返す。
+ * CreateWorkspace は、フォルダ path 1つのワークスペースを作る。
+ * reuse なら、同じフォルダ1つだけのワークスペースがあればそれを返す(入力欄の上の「フォルダから新しく作る」)。
+ * reuse でなければ、同じフォルダでも新しく作る(設定の画面の「フォルダから作る」。0049)。
  */
-export function CreateWorkspace(path: string): $CancellablePromise<config$0.Workspace> {
-    return $Call.ByID(1897882904, path);
+export function CreateWorkspace(path: string, reuse: boolean): $CancellablePromise<ui$0.CreatedWorkspace> {
+    return $Call.ByID(1897882904, path, reuse);
 }
 
 /**

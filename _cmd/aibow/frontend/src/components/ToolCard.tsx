@@ -3,12 +3,13 @@
 //
 // 書き換えるツール(write_file / edit_file)とコマンド(run_command)は、実行する前に確認を待つ。待っている間はカードを開いたままにし、
 // 何をするか(パス・上書きか)と差分(```diff。+ は緑、- は赤)、コマンドならコマンドそのもの、理由の欄と「拒否」「実行する」を出す。
-// 「今後許可しない」(拒否して、この会話ではモデルから隠す)と「この会話では今後聞かない」(実行して、この会話では確認しない)も選べる(0010)。
+// 「今後も同じ答えにする」のチェックを入れて答えると、拒否なら「今後許可しない」(この会話ではモデルから隠す)、
+// 実行なら「この会話では今後聞かない」(この会話では確認しない)になる(0010。0049 でボタン4つをボタン2つとチェック1つにした)。
 // MCP のサーバーのツールは中身が見えないので、全部確認する。差分の代わりに、サーバーに渡す引数(JSON)を出す。
 // MCP のツールは、名前の前にサーバーの名前を小さく出す(モデルに見せる名前は「サーバーの名前__ツールの名前」なので、前の部分は外して出す)。
-// 答えると Go の待っているループに届き、実行(か拒否)の結果が届いたら、ほかのカードと同じく畳んだ1行に戻る。
+// 答えると Go の待っているループに届き、受け取られたら確認を閉じて「実行中… N秒」にする(0049)。結果が届いたら、ほかのカードと同じく畳んだ1行に戻る。
 // 作業の予定(update_plan。0037)は、引数と結果ではなく、予定のチェックリストとして出す(PlanCard)。
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { LuBan, LuCheck, LuFolder, LuGitBranch, LuHourglass, LuLoaderCircle, LuWrench, LuX } from "react-icons/lu";
 import { ToolPolicy } from "../../bindings/github.com/secondarykey/aibow/config";
 import type { ConfirmRequest } from "../../bindings/github.com/secondarykey/aibow";
@@ -20,7 +21,8 @@ import { PlanCard, planOf } from "./PlanCard";
 interface Props {
   tool: ToolView;
   generating: boolean;
-  onAnswer(reqId: string, approved: boolean, reason: string, remember: ToolPolicy): void;
+  // 戻り値が false なら、Go が答えを受け取らなかった(確認のカードのままにして、もう一度答えられるようにする)
+  onAnswer(reqId: string, approved: boolean, reason: string, remember: ToolPolicy): void | Promise<boolean>;
 }
 
 export function ToolCard({ tool, generating, onAnswer }: Props) {
@@ -30,6 +32,7 @@ export function ToolCard({ tool, generating, onAnswer }: Props) {
   const running = tool.result === undefined;
   const rejected = tool.decision?.approved === false;
   const state = tool.confirm ? "confirm" : running ? "running" : rejected ? "rejected" : tool.error ? "error" : "ok";
+  const sec = useElapsed(state === "running" && generating);
   const server = tool.server || tool.confirm?.preview.server;
   // MCP のツールの名前は「サーバーの名前__ツールの名前」(名前空間の代わり)。サーバーの名前は枠で出すので、名前からは外す
   const prefix = server ? [...server].map(c => /[A-Za-z0-9_-]/.test(c) ? c : "_").join("") + "__" : "";
@@ -42,7 +45,7 @@ export function ToolCard({ tool, generating, onAnswer }: Props) {
         {server && <span className="tool-server">{server}</span>}
         <code title={server ? `MCP のサーバー ${server} のツール(モデルに見せる名前: ${tool.name})` : TOOL_LABELS[tool.name]}>{name || "(読み取れない呼び出し)"}</code>
         {state === "confirm" && <span className="tool-status"><LuHourglass /> 確認待ち</span>}
-        {state === "running" && generating && <span className="tool-status"><LuLoaderCircle className="spin" /> 実行中…</span>}
+        {state === "running" && generating && <span className="tool-status"><LuLoaderCircle className="spin" /> 実行中… {sec}秒</span>}
         {state === "ok" && <span className="tool-status"><LuCheck /> {tool.sec?.toFixed(2)}秒</span>}
         {state === "rejected" && <span className="tool-status"><LuBan /> {tool.decision?.remember === ToolPolicy.ToolOff ? "今後許可しない" : "拒否"}</span>}
         {state === "ok" && tool.decision?.remember === ToolPolicy.ToolAllow && (
@@ -86,13 +89,36 @@ export function ToolCard({ tool, generating, onAnswer }: Props) {
 }
 
 // Confirm は確認の中身: 何をするか・差分・理由の欄と答えのボタン
+// useElapsed は、active になってからの秒数(1秒ごとに増える)。実行中のカードの「実行中… N秒」に使う(0049 の決定事項 8)。
+// Go に新しい知らせは足さず、画面で数える。確認したツールは答えて確認を閉じた時から、確認の無いツールはカードが実行中で出た時から数える
+// (別の会話を開いて戻ると、カードを作り直すので 0 から数え直す)
+function useElapsed(active: boolean): number {
+  const [sec, setSec] = useState(0);
+  useEffect(() => {
+    if (!active) return;
+    const start = performance.now();
+    setSec(0);
+    const timer = window.setInterval(() => setSec(Math.floor((performance.now() - start) / 1000)), 1000);
+    return () => window.clearInterval(timer);
+  }, [active]);
+  return sec;
+}
+
+// 確認の答え方(0049 の決定事項 4〜7):
+//   1行目 = 拒否する側(理由の欄と「拒否」)、2行目 = 実行する側(「今後も同じ答えにする」のチェックと「実行する」)。
+//   「今後ずっと」は1回押しただけでは決まらないよう、チェックとボタンの2つの操作にした。「拒否」と「実行する」は隣り合わせない。
+//   Enter だけで実行されないよう、フォーカスは「実行する」に置かない
 function Confirm({ req, onAnswer }: { req: ConfirmRequest; onAnswer: Props["onAnswer"] }) {
   const [reason, setReason] = useState("");
-  // 答えてから結果が届くまでの間は押せなくする(2回押しても、Go は1回目しか受け取らない)
+  const [remember, setRemember] = useState(false);
+  // 答えてから確認が閉じるまでの間は押せなくする(2回押しても、Go は1回目しか受け取らない)。受け取られなかったら戻す
   const [sent, setSent] = useState(false);
-  const answer = (approved: boolean, remember: ToolPolicy = ToolPolicy.$zero) => {
+  const answer = (approved: boolean) => {
     setSent(true);
-    onAnswer(req.id, approved, approved ? "" : reason, remember);
+    const policy = !remember ? ToolPolicy.$zero : approved ? ToolPolicy.ToolAllow : ToolPolicy.ToolOff;
+    Promise.resolve(onAnswer(req.id, approved, approved ? "" : reason, policy)).then(ok => {
+      if (ok === false) setSent(false);
+    });
   };
   const pv = req.preview;
   return (
@@ -116,18 +142,27 @@ function Confirm({ req, onAnswer }: { req: ConfirmRequest; onAnswer: Props["onAn
           ? <CodeBlock code={pv.args} lang="json" closed /> // MCP のツールと、読むだけのツールを「確認する」にしたときは引数を見せる
           : <p className="tool-none">(大きいため差分は出していません)</p>}
       <div className="confirm-actions">
-        <input
-          type="text"
-          placeholder="理由"
-          title="拒否するときの理由。モデルに「ユーザーが実行を拒否しました。理由: …」として渡す(空でもよい)"
-          value={reason}
-          disabled={sent}
-          onChange={e => setReason(e.target.value)}
-        />
-        <button disabled={sent} onClick={() => answer(false, ToolPolicy.ToolOff)} title="拒否して、この会話ではこのツールをモデルに見せない">今後許可しない</button>
-        <button disabled={sent} onClick={() => answer(false)}>拒否</button>
-        <button disabled={sent} onClick={() => answer(true, ToolPolicy.ToolAllow)} title="実行して、この会話ではこのツールを今後確認しない">この会話では今後聞かない</button>
-        <button className="primary" disabled={sent} onClick={() => answer(true)}>実行する</button>
+        <div className="confirm-row">
+          <input
+            type="text"
+            placeholder="拒否の理由(モデルに伝えます。空でも可)"
+            title="「拒否」を押したとき、モデルに「ユーザーが実行を拒否しました。理由: …」として伝えます。「実行する」では使いません"
+            value={reason}
+            disabled={sent}
+            onChange={e => setReason(e.target.value)}
+          />
+          <button className="confirm-reject" disabled={sent} onClick={() => answer(false)}>拒否</button>
+        </div>
+        <div className="confirm-row">
+          <label
+            className="confirm-remember"
+            title={"「実行する」なら、この会話ではこのツールを今後は確認せずに実行します。\n「拒否」なら、この会話ではこのツールをモデルに見せません"}
+          >
+            <input type="checkbox" checked={remember} disabled={sent} onChange={e => setRemember(e.target.checked)} />
+            この会話では、このツールを今後も同じ答えにする
+          </label>
+          <button className="primary" disabled={sent} onClick={() => answer(true)}>実行する</button>
+        </div>
       </div>
     </div>
   );

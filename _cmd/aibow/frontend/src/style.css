@@ -321,11 +321,17 @@ footer.home .composer textarea { line-height: 1.5; min-height: calc(3 * 1.5em + 
 .confirm-url { margin: 6px 0; overflow-wrap: anywhere; }
 .confirm-url code { font-size: 12.5px; }
 .confirm .code-block { margin: 0; }
-.confirm-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.confirm-actions input {
+/* 確認の答え方(0049)。1行目が拒否する側、2行目が実行する側。押し間違えないよう、行の間を空けて「拒否」と「実行する」を隣り合わせない */
+.confirm-actions { display: flex; flex-direction: column; gap: 14px; }
+.confirm-row { display: flex; align-items: center; gap: 8px; }
+.confirm-row input[type="text"] {
   flex: 1; min-width: 0; font: inherit; font-size: 13px; padding: 5px 8px; border-radius: 6px;
   border: 1px solid var(--border); background: var(--bg); color: var(--text);
 }
+/* 「拒否」は控えめに(主のボタンの色は「実行する」だけ) */
+.confirm-reject { color: var(--muted); background: transparent; }
+.confirm-remember { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); cursor: pointer; }
+.confirm-row .primary { flex-shrink: 0; }
 .waiting { color: var(--muted); font-size: 13px; }
 .cutoff { color: var(--muted); font-style: italic; }
 .msg .hint { color: var(--muted); font-size: 12px; margin-top: 4px; }

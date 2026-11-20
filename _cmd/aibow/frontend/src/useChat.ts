@@ -55,7 +55,7 @@ export interface Chat {
   generatingId: string | null; // 返事(か要約)を生成中の会話の ID
   ended: Record<string, Ended>; // ほかの会話を見ている間に送信が終わった会話(会話の ID → 終わり方)。起動をまたいでは覚えない
   confirmingId: string | null; // ツールの実行前の確認を待っている会話の ID(会話の一覧に「確認待ち」と出す)
-  answer(reqId: string, approved: boolean, reason: string, remember: ToolPolicy): Promise<void>; // 確認に答える(「実行する」「拒否」と、これから先の扱い)
+  answer(reqId: string, approved: boolean, reason: string, remember: ToolPolicy): Promise<boolean>; // 確認に答える(「実行する」「拒否」と、これから先の扱い)。Go が受け取らなかったら false
   lastPrompt: string;          // 開いている会話で、モデルに実際に渡した文字列
   lastPromptFormat: string;    // その文字列を組み立てた書式の名前(Qwen3.5・Gemma 4。0026)
   send(text: string, files: FileCheck[]): Promise<boolean>; // 発言が保存されたら true(false なら送れていないので、入力欄に文と読み込んだファイルを戻す)
@@ -279,11 +279,12 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
         case "tool_result":
           // ツールの結果を保存した。結果の無いカードは「実行中」と出ている。確認を待っていたなら、答えが出た
           if (!ev.message) return;
+          // 確認を待っていたなら、答えが出た(ふつうは答えた時点で外している。answer)
           if (l.confirm) {
             l.confirm = null;
             setConfirmingId(null);
-            show({ waiting: true }); // 次はモデルが結果を読んで続きを書く
           }
+          show({ waiting: true }); // 次はモデルが結果を読んで続きを書く
           l.saved.push(ev.message);
           show({ steps: turnView(l.saved).steps });
           show(liveProcess(false));
@@ -421,18 +422,30 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
   const lastPromptFormat = shown?.format ?? "";
   // 確認に答える。答えは Go の待っているループに届き、実行(か拒否の結果)の tool_result が返ってくる。
   // remember はこのツールのこの会話でのこれから先の扱い(空 = この1回だけ、allow = この会話では今後聞かない、off = 今後許可しない。0010)。
-  // Go が会話の上書きに書くので、先にまだ送っていない設定を送り(あとで丸ごと書き戻して、Go が書いた上書きを消さないように)、答えたら読み直す
-  const answer = useCallback(async (reqId: string, approved: boolean, reason: string, remember: ToolPolicy) => {
+  // Go が会話の上書きに書くので、先にまだ送っていない設定を送り(あとで丸ごと書き戻して、Go が書いた上書きを消さないように)、答えたら読み直す。
+  // Go が答えを受け取ったら、結果を待たずに確認を閉じる(0049 の決定事項 8・9)。カードは「実行中… N秒」になり、一覧の「確認待ち」も外れる。
+  // 時間のかかるコマンド(go test など)でも、動いていることが分かるように。受け取られなかったら確認のカードのままにする(戻り値 false)
+  const answer = useCallback(async (reqId: string, approved: boolean, reason: string, remember: ToolPolicy): Promise<boolean> => {
     const l = live.current;
-    if (!l) return;
+    if (!l) return false;
     try {
       if (remember) await flushSettings();
       await ChatService.ConfirmTool(l.convId, reqId, approved, reason, remember);
-      if (remember) await reloadSettings(l.convId);
     } catch (err) {
       addError(errorMessage(err));
+      return false;
     }
-  }, [addError, flushSettings, reloadSettings]);
+    // 結果がもう届いていた(拒否はすぐ届く)・次の確認(MCP のサーバーからの確認。0007)に移っていたら、そのままにする
+    if (live.current === l && l.confirm?.id === reqId) {
+      l.confirm = null;
+      setConfirmingId(null);
+      const patch = { steps: turnView(l.saved).steps, waiting: true };
+      l.view = { ...l.view, ...patch };
+      if (l.itemId !== null) updateAssistant(l.itemId, patch);
+    }
+    if (remember) await reloadSettings(l.convId).catch(err => addError(errorMessage(err)));
+    return true;
+  }, [addError, flushSettings, reloadSettings, updateAssistant]);
 
   // retry は作り直す・送り直すの共通部分(0011)。表示から最後のやり取りを外してから、送信と同じ流れで返事を作る。
   // 終わったら会話を開き直して、保存された内容に表示を合わせる(送れなかったときは Go が何も消していないので、元の表示に戻る)。

@@ -282,6 +282,9 @@ export default function App() {
   // 「+ 新規」: 新しい会話の画面に移る。会話そのものは、そこで最初に送信したときに作る
   const home = convs.current === null;
   const onNew = () => {
+    // 設定の画面・管理の画面から戻ってきたときは、新しい会話の画面で選んでいたワークスペースを残す(0049 の決定事項 1。
+    // 設定を見に行っただけで、選んだものが消えないように)。新しい会話の画面にいて押したときだけ、下で外す
+    const fromSettings = settingsOpen || adminOpen;
     closeOverlay();
     setSettingsOpen(false); // 設定の画面を開いていたら閉じて、新しい会話の画面に戻る
     setConvSettingsOpen(false);
@@ -293,7 +296,7 @@ export default function App() {
     if (home) {
       // すでに新しい会話の画面なら、入力欄に戻すだけ。ただしワークスペースは外す
       // (「+ 新規」はワークスペースを選ばない。0035。一覧のまとまりの「+」で選んでいたときも、ここでは外す。0038)
-      if (convs.draft?.workspace) convs.updateSettings({ workspace: "" });
+      if (convs.draft?.workspace && !fromSettings) convs.updateSettings({ workspace: "" });
       // この画面のエラーはまだ会話が無いときのもの(記録する会話が無い)ので、「+ 新規」で新しく始めるときに消す。
       // 会話から移ったとき(下の goHome)は、useChat が表示を空にしている
       transcript.reset([]);
@@ -373,6 +376,7 @@ export default function App() {
                   focusInput();
                 }}
                 onCreated={reloadWorkspaces}
+                onNotice={text => toasts.notify(text)}
                 onError={addError}
               />
             )}

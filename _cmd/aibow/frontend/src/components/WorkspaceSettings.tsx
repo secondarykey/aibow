@@ -25,11 +25,12 @@ export function WorkspaceSettings({ list, reload }: Props) {
 
   const create = () => {
     setError("");
-    createFromFolder().then(
-      id => {
-        if (!id) return;
+    // 同じフォルダでも毎回新しく作る(同じフォルダを別のワークスペースにしたいときの入口。0049 の決定事項 3)
+    createFromFolder(false).then(
+      r => {
+        if (!r) return;
         reload();
-        setSelected(id);
+        setSelected(r.id);
       },
       err => setError(errorMessage(err)),
     );
@@ -39,7 +40,7 @@ export function WorkspaceSettings({ list, reload }: Props) {
     <div className="workspace-settings">
       {(error || list.error) && <div className="msg error">{error || list.error}</div>}
       <div className="user-toolbar">
-        <button type="button" className="user-create" disabled={locked} onClick={create} title="フォルダを選んで、そのフォルダ1つのワークスペースを作る">
+        <button type="button" className="user-create" disabled={locked} onClick={create} title="フォルダを選んで、そのフォルダ1つのワークスペースを作る(同じフォルダのワークスペースがあっても、別に作る)">
           <LuFolderPlus /> フォルダから作る
         </button>
       </div>
