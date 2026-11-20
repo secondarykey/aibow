@@ -4,7 +4,7 @@
 // ログインが要らない形の aibow-server・アプリモードのときは出さない(LoginGate がそのまま中身を描く)。
 // ログインできる管理者がまだいなければ(初めての起動など)、サーバーの PC で管理者を作るよう出す(0020 の決定事項 2)。
 // 招待・再設定のリンク(URL の #reset=<合言葉>。0022)で開いたときは、ログインの代わりにパスワードを決める画面を出す。
-// デスクトップのアプリでは、箱の右上の歯車から、その PC の設定(つなぎ先・アプリモードに戻す・明るさ)を開ける(LoginSettings。0047)。
+// デスクトップのアプリでは、箱の右下の歯車から、その PC の設定(つなぎ先・アプリモードに戻す・明るさ)を開ける(LoginSettings。0047)。
 // アプリモードに戻すと決めた(起動し直すと切り替わる)間は、そのお知らせを出してログインを押せなくする(Go の Login も断る。0047 の決定事項 14)。
 import { useEffect, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
@@ -141,12 +141,7 @@ function Login({ onDone, onOpenSettings }: { onDone(): void; onOpenSettings?(): 
 
   return (
     <div className="login">
-      <form className="login-box" onSubmit={submit}>
-        {onOpenSettings && (
-          <button type="button" className="icon-btn login-settings" title="設定(つなぎ先・アプリモードに戻す・明るさ)" aria-label="設定" onClick={onOpenSettings}>
-            <LuSettings />
-          </button>
-        )}
+      <form className={"login-box" + (onOpenSettings ? " with-settings" : "")} onSubmit={submit}>
         <h1 className="login-title">AIBow</h1>
         {pending && <div className="login-note" role="status">{pending}</div>}
         <input
@@ -165,6 +160,11 @@ function Login({ onDone, onOpenSettings }: { onDone(): void; onOpenSettings?(): 
             <code>aibow-server user add &lt;名前&gt;</code>
             <code>aibow-server user admin &lt;名前&gt;</code>
           </div>
+        )}
+        {onOpenSettings && (
+          <button type="button" className="icon-btn login-settings" title="設定(つなぎ先・アプリモードに戻す・明るさ)" aria-label="設定" onClick={onOpenSettings}>
+            <LuSettings />
+          </button>
         )}
       </form>
     </div>
