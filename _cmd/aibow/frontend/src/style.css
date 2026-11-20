@@ -1033,6 +1033,7 @@ footer { border-top: 1px solid var(--border); background: var(--panel); padding:
 /* ログインの画面(ブラウザでログインが要るとき。0017 の 10-1)。画面の中央に、名前・パスワード・ボタンだけ */
 .login { flex: 1; display: flex; align-items: center; justify-content: center; background: var(--bg); }
 .login-box {
+  position: relative;
   width: 280px; display: flex; flex-direction: column; gap: 10px; padding: 28px 24px;
   background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
 }
@@ -1043,6 +1044,8 @@ footer { border-top: 1px solid var(--border); background: var(--panel); padding:
 }
 .login-box input:focus { outline: none; border-color: var(--accent); }
 .login-box button { padding: 8px 12px; font-size: 14px; }
+/* ログインの画面の設定(デスクトップのアプリだけ。0047)。箱の右上の歯車 */
+.login-box .login-settings { position: absolute; top: 8px; right: 8px; padding: 4px; }
 .login-error { color: var(--error); font-size: 13px; }
 .login-note { color: var(--muted); font-size: 12.5px; line-height: 1.6; }
 .login-note code { display: block; margin-top: 4px; font-family: ui-monospace, Consolas, monospace; font-size: 12px; white-space: nowrap; overflow-x: auto; color: var(--text); }

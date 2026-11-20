@@ -156,7 +156,7 @@ go run ./_cmd/dev build
 既定では `127.0.0.1:8089` だけで待ち受けます。起動の引数と設定ファイル(`server.json`)は [usage.md](usage.md) の「aibow-server」にあります。
 
 - ブラウザ:`http://127.0.0.1:8089/` を開いてログインすると、アプリと同じ画面で会話できる
-- 画面のアプリ:設定の画面の「サーバー」のタブでつなぎ先を入れてログインする(つなぐだけの PC には `lib\`・`models\` は要らない。[usage.md](usage.md) の「画面のアプリを aibow-server につなぐ」)
+- 画面のアプリ:設定の画面の「サーバー」のタブでつなぎ先を入れて「接続」し、起動し直してログインの画面でログインする(つなぐだけの PC には `lib\`・`models\` は要らない。[usage.md](usage.md) の「画面のアプリを aibow-server につなぐ」)
 - Cline など:Base URL は `http://127.0.0.1:8089/v1`。API キー(`aibow-server user key <名前>`)が要る([usage.md](usage.md) の「Cline からつなぐ」)
 
 初めて起動した aibow-server の利用者は `local` の1人だけで(パスワードは空)、**管理者は一人もいません。既定の admin も作りません**

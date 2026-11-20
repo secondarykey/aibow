@@ -32,6 +32,7 @@ export interface AccountInfo {
 
 /**
  * ConnectRequest は ConnectServer に渡すもの。
+ * 名前とパスワードは持たない。ログインは、起動し直したあとのログインの画面で行う(Login。0047 の決定事項 5)
  */
 export interface ConnectRequest {
     "url": string;
@@ -40,12 +41,21 @@ export interface ConnectRequest {
      * Fingerprint は、人が確かめて信頼した証明書の指紋(自己署名の証明書のとき。CheckServer が返したもの)
      */
     "fingerprint": string;
+}
+
+/**
+ * ConnectResult は ConnectServer の結果。
+ */
+export interface ConnectResult {
+    /**
+     * Same は、今つないでいるのと同じ aibow-server だったので、何も変えなかったか(0047 の決定事項 7)
+     */
+    "same": boolean;
 
     /**
-     * Name・Password はログイン(ログインの要る aibow-server のとき)。パスワードはトークンをもらうのに使うだけで、覚えない
+     * URL は確かめたつなぎ先(後ろの / などをそろえたもの)
      */
-    "name": string;
-    "password": string;
+    "url": string;
 }
 
 /**
@@ -94,6 +104,11 @@ export interface ServerConnection {
      */
     "pending": string;
     "pendingUrl": string;
+
+    /**
+     * PendingLogin は、保存したつなぐ先がログインの要る aibow-server か(起動し直したら、ログインの画面でログインする。0047)
+     */
+    "pendingLogin": boolean;
 
     /**
      * KnownURL・KnownUser は、信頼した最後のつなぎ先と、そこに最後にログインした名前(タブの入力欄に入れておく。つないでいなくても残る)

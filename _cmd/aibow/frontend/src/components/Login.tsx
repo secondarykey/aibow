@@ -4,11 +4,16 @@
 // ログインが要らない形の aibow-server・アプリモードのときは出さない(LoginGate がそのまま中身を描く)。
 // ログインできる管理者がまだいなければ(初めての起動など)、サーバーの PC で管理者を作るよう出す(0020 の決定事項 2)。
 // 招待・再設定のリンク(URL の #reset=<合言葉>。0022)で開いたときは、ログインの代わりにパスワードを決める画面を出す。
+// デスクトップのアプリでは、箱の右上の歯車から、その PC の設定(つなぎ先・アプリモードに戻す・明るさ)を開ける(LoginSettings。0047)。
+// アプリモードに戻すと決めた(起動し直すと切り替わる)間は、そのお知らせを出してログインを押せなくする(Go の Login も断る。0047 の決定事項 14)。
 import { useEffect, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
-import { isBrowser, linkUser, login, me, onUnauthorized, applyLink } from "../backend";
+import { LuSettings } from "react-icons/lu";
+import { ChatService, isBrowser, linkUser, login, me, onUnauthorized, applyLink } from "../backend";
 import { errorMessage } from "../errors";
 import { TitleBar } from "./TitleBar";
+import { LoginSettings } from "./LoginSettings";
+import { pendingText } from "./ServerSettings";
 
 // LoginGate は、ログインが要るのにしていなければログインの画面を、していれば children(アプリの画面)を描く。
 // 使っている途中で期限が切れた(呼び出しが 401 で断られた)ときもログインの画面に戻し、ログインしたら画面を読み直す
@@ -30,7 +35,7 @@ export function LoginGate({ children }: { children: ReactNode }) {
   }
 
   if (needed || expired) {
-    return <WithTitleBar><Login onDone={() => (expired ? location.reload() : setNeeded(false))} /></WithTitleBar>;
+    return <WithTitleBar><LoginScreen onDone={() => (expired ? location.reload() : setNeeded(false))} /></WithTitleBar>;
   }
   return <>{children}</>;
 }
@@ -102,8 +107,21 @@ function SetPassword({ token, onDone, onCancel }: { token: string; onDone(): voi
   );
 }
 
-function Login({ onDone }: { onDone(): void }) {
+// LoginScreen は、ログインの画面と、そこから開く設定(デスクトップのアプリだけ)を切り替える
+function LoginScreen({ onDone }: { onDone(): void }) {
+  const [settings, setSettings] = useState(false);
+  if (settings) return <LoginSettings onClose={() => setSettings(false)} />;
+  return <Login onDone={onDone} onOpenSettings={isBrowser ? undefined : () => setSettings(true)} />;
+}
+
+function Login({ onDone, onOpenSettings }: { onDone(): void; onOpenSettings?(): void }) {
   const [name, setName] = useState(me.lastUser ?? ""); // アプリは最後にログインした名前を入れておく(ブラウザは空)
+  // 起動し直すと切り替わる(設定でアプリモードに戻した・つなぎ先を変えた)間のお知らせ。デスクトップのアプリだけ
+  const [pending, setPending] = useState("");
+  useEffect(() => {
+    if (isBrowser) return;
+    ChatService.ServerConnection().then(c => setPending(c.pending ? pendingText(c) : ""), () => {});
+  }, []);
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -124,7 +142,13 @@ function Login({ onDone }: { onDone(): void }) {
   return (
     <div className="login">
       <form className="login-box" onSubmit={submit}>
+        {onOpenSettings && (
+          <button type="button" className="icon-btn login-settings" title="設定(つなぎ先・アプリモードに戻す・明るさ)" aria-label="設定" onClick={onOpenSettings}>
+            <LuSettings />
+          </button>
+        )}
         <h1 className="login-title">AIBow</h1>
+        {pending && <div className="login-note" role="status">{pending}</div>}
         <input
           type="text" placeholder="名前" aria-label="名前" autoComplete="username" autoFocus
           value={name} onChange={e => setName(e.target.value)}
@@ -133,7 +157,7 @@ function Login({ onDone }: { onDone(): void }) {
           type="password" placeholder="パスワード" aria-label="パスワード" autoComplete="current-password"
           value={password} onChange={e => setPassword(e.target.value)}
         />
-        <button type="submit" className="primary" disabled={busy || name.trim() === "" || password === ""}>ログイン</button>
+        <button type="submit" className="primary" disabled={busy || pending !== "" || name.trim() === "" || password === ""}>ログイン</button>
         {error && <div className="login-error" role="alert">{error}</div>}
         {me.setup && (
           <div className="login-note">

@@ -79,7 +79,7 @@ func (s *ChatService) Login(name, password string) (AccountInfo, error) {
 		return AccountInfo{}, errors.New("つなぎ先を変えて、まだ起動し直していません。起動し直してからログインしてください")
 	}
 	f := config.ConnectionFile{ServerURL: c.url, Fingerprint: c.file.Fingerprint}
-	token, err := login(&f, ConnectRequest{URL: c.url, Fingerprint: c.file.Fingerprint, Name: name, Password: password})
+	token, err := login(&f, name, password)
 	if err != nil {
 		c.mu.Unlock()
 		return AccountInfo{}, err

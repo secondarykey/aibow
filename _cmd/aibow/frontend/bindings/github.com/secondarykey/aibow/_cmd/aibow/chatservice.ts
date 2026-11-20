@@ -157,10 +157,14 @@ export function ConfirmTool(id: uuid$0.UUID, reqID: string, approved: boolean, r
 }
 
 /**
- * ConnectServer は aibow-server につなぐように決める:もう一度確かめ、ログインが要ればアプリ用のトークンをもらって、connection.json に書く。
- * 起動し直すと切り替わる。確かめられないつなぎ先は書かない(起動し直してから「つながりません」となるのを避ける。決定事項 8)。
+ * ConnectServer は aibow-server につなぐように決める(画面の「接続」):もう一度確かめ、つなぐ先と証明書の指紋を connection.json に書く。
+ * トークンはもらわない。起動し直すとサーバーモードになり、ログインが要る aibow-server なら、ログインの画面でログインする(0047 の決定事項 1・4)。
+ * 確かめられないつなぎ先は書かない(起動し直してから「つながりません」となるのを避ける。0019 の決定事項 8)。
+ * 
+ * 「ログインする」と「つなぐ」を分けたのは、ログインの入口をブラウザと同じログインの画面の1つにそろえるため。
+ * つなぐ(どこのサーバーか)はその PC の人が決めることなので PC のファイルに書き、ログイン(誰か)はサーバーとのやり取りなのでログインの画面で行う。
  */
-export function ConnectServer(req: $models.ConnectRequest): $CancellablePromise<void> {
+export function ConnectServer(req: $models.ConnectRequest): $CancellablePromise<$models.ConnectResult> {
     return $Call.ByID(768792652, req);
 }
 

@@ -30,7 +30,6 @@ aibow に残っている課題の一覧(入口)。ルールと全体の構成は
 
 | | 課題 | 資料 |
 |---|---|---|
-| ⬜ | ログインの画面から設定を開き、アプリモードに戻せるようにする(「確かめる」を「接続」にし、ログインはログインの画面で) | [0047-login-screen-settings.md](_docs/features/0047-login-screen-settings.md) |
 | ⬜ | 共有の再検討(アプリからの閲覧・プロジェクトの概念・利用者同士の会話) | [検討メモ](_docs/backlog.md#共有の再検討アプリからの閲覧プロジェクトの概念)・[0018-sharing.md](_docs/features/0018-sharing.md) |
 | ⬜ | aibow-server の中央の制御の残り(上限の上限・順番待ちの優先度・自動で降ろす・server.json を画面で) | [検討メモ](_docs/backlog.md#aibow-server-の中央の制御の残り) |
 | ⬜ | 利用者をまとめて作る(インポート) | [検討メモ](_docs/backlog.md#利用者をまとめて作るインポート) |
@@ -65,6 +64,7 @@ aibow に残っている課題の一覧(入口)。ルールと全体の構成は
 
 | | 確かめること | 資料 |
 |---|---|---|
+| ⬜ | アプリで「接続」→起動し直してログイン・ログインの画面の歯車(明るさ・アプリモードに戻す)・同じ / 違うつなぎ先(HTTPS・ログインありの aibow-server で) | [0047](_docs/features/0047-login-screen-settings.md) の完了の条件 1〜9 |
 | ⬜ | サーバーの PC の上のブラウザで、管理者でない人には盾が出ず、管理者なら降ろせる・`login: false` なら今までどおり | [0046](_docs/features/0046-admin-only-pc.md) の完了の条件 2 |
 | ⬜ | 画面のアプリ(serverUrl)での共有・配られたプロファイル・共有の相手の選択・アカウントのタブの使用量 | [0018](_docs/features/0018-sharing.md) の「11-3」・[0031](_docs/features/0031-users-ui.md)・[0033](_docs/features/0033-usage.md) |
 | ⬜ | ファイルを読み込む画面(札・大きく見る・ドロップ・貼り付け)を、アプリとブラウザで本物のモデルと | [0030-read-files.md](_docs/features/0030-read-files.md) |
