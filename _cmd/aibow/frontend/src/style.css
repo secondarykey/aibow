@@ -1073,10 +1073,13 @@ footer { border-top: 1px solid var(--border); background: var(--panel); padding:
 .login-error { color: var(--error); font-size: 13px; }
 .login-note { color: var(--muted); font-size: 12.5px; line-height: 1.6; }
 .login-note code { display: block; margin-top: 4px; font-family: ui-monospace, Consolas, monospace; font-size: 12px; white-space: nowrap; overflow-x: auto; color: var(--text); }
-/* 「起動し直してください」の画面(0051 の決定事項 3)。ログインの箱と同じ形で、お知らせを主にして少し大きく出す */
-.login-box.restart-box { width: 320px; }
-.login-note.restart-note { color: var(--text); font-size: 14px; }
-.login-box.restart-box button { justify-content: center; }
+/* 「起動し直してください」の画面(0051 の決定事項 3)。ログインの箱と同じ形で、ボタンは置かず、警告の色のお知らせだけ */
+.login-box.restart-box { width: 340px; }
+.restart-note {
+  display: flex; gap: 8px; padding: 10px 12px; border-radius: 6px; font-size: 14px; line-height: 1.6; color: var(--text);
+  background: color-mix(in srgb, var(--warn) 12%, transparent); border-left: 3px solid var(--warn);
+}
+.restart-note .icon { flex-shrink: 0; margin-top: 4px; color: var(--warn); }
 
 /* 会話の共有と管理者が読む(0018 の 11-2) */
 .share-mark { flex-shrink: 0; margin-left: 4px; color: var(--muted); font-size: 12px; vertical-align: -1px; }

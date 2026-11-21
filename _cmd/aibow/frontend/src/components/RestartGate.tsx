@@ -5,48 +5,43 @@
 // (aibow-server のログの「…断りました」の正体。0051 の 4)。そこで、変えたらその場でアプリ全体をこの画面で覆い、
 // 会話の一覧・入力欄を出さない(App を描かないので、aibow-server には何も送らない)。
 //
-// ここから開ける設定は「サーバー」のタブだけ。選び直して今動いているモードに戻した(pending が空になった)ら、画面を読み直して元に戻す。
-// サーバーモードで「アプリモードに戻す」を押したときはトークンをもう消しているので、読み直すとログインの画面になる(Go の Account が NeedLogin を返す)。
-import { useEffect, useRef, useState } from "react";
+// ボタンは置かず、警告のお知らせだけにする(2026-11-21、ユーザーと決め直した)。
+// 初めは設定を開くボタンを置いたが、ボタンが1つだけあると人は考えずに押しやすく、「起動し直す」が薄れる。
+// 間違えて変えたときは、起動し直してから設定の画面の「サーバー」で戻せる(起動し直しが1回増えるだけ)。閉じるのはタイトルバーの ✕
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import { LuSettings } from "react-icons/lu";
+import { LuTriangleAlert } from "react-icons/lu";
 import type { ServerConnection } from "../../bindings/github.com/secondarykey/aibow/_cmd/aibow";
 import { isBrowser } from "../backend";
 import { onModeChanged } from "../modeChange";
 import { WithTitleBar } from "./Login";
-import { LoginSettings } from "./LoginSettings";
-import { pendingText } from "./ServerSettings";
 
 export function RestartGate({ children }: { children: ReactNode }) {
   const [conn, setConn] = useState<ServerConnection | null>(null);
-  const [settings, setSettings] = useState(false);
-  const open = useRef(false); // この画面を出しているか(知らせの中で読むので ref でも持つ)
+  // 一度覆ったら、起動し直すまでこのまま(この画面からはモードを変えられない)
   useEffect(() => onModeChanged(c => {
-    if (c.pending) {
-      open.current = true;
-      setConn(c);
-      setSettings(false);
-    } else if (open.current) {
-      // 今動いているモードに戻した。描き直すのではなく読み直す(ログインの様子を起動のときと同じ流れで決め直すため)
-      location.reload();
-    }
+    if (c.pending) setConn(c);
   }), []);
 
   if (isBrowser || !conn) return <>{children}</>;
-  if (settings) {
-    return <WithTitleBar><LoginSettings serverOnly onClose={() => setSettings(false)} /></WithTitleBar>;
-  }
   return (
     <WithTitleBar>
       <div className="login">
         <div className="login-box restart-box">
           <h1 className="login-title">AIBow</h1>
-          <div className="login-note restart-note" role="status">{pendingText(conn)}</div>
-          <button type="button" className="with-icon" title="つなぎ先を選び直す(「サーバー」のタブ)" onClick={() => setSettings(true)}>
-            <LuSettings /> 設定
-          </button>
+          <div className="restart-note" role="alert" title="設定はもう保存してあります。戻すときは、起動し直してから設定の画面の「サーバー」で変えてください">
+            <LuTriangleAlert className="icon" />
+            <span>{restartText(conn)}</span>
+          </div>
         </div>
       </div>
     </WithTitleBar>
   );
+}
+
+// restartText は、起動し直してほしいことのお知らせ。することを先に書き、起動し直したらどうなるかを後ろに(0048)
+function restartText(conn: ServerConnection): string {
+  if (conn.pending === "direct") return "aibow を起動し直してください。起動し直すと、アプリモードに戻ります";
+  const base = `aibow を起動し直してください。起動し直すと、aibow-server(${conn.pendingUrl})につなぎます`;
+  return conn.pendingLogin ? base + "(つないだら、ログインの画面でログインします)" : base;
 }

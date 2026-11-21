@@ -15,8 +15,8 @@
 // そのつなぎ先を入れておくので、「接続」で信頼し直さずに進める(2026-10-29、ユーザーと決めた)。
 //
 // アプリは自分で起動し直さない(2026-10-26、ユーザーと決め直した)。起動し直すまでは前のモードのまま動くので、
-// 変えたら、その場で「起動し直してください」の画面(RestartGate)に移す(modeChanged。0051 の決定事項 3)。その画面の設定から開いたこのタブでは、
-// 「起動し直すと切り替わります」を出し続ける(Go の ServerConnection の pending)。
+// 変えたら、その場で「起動し直してください」の画面(RestartGate)に移す(modeChanged。0051 の決定事項 3)。
+// その画面からはこのタブを開けないので、起動し直すまでのお知らせ(Go の ServerConnection の pending)はその画面だけに出す。
 // つなぎ先を settings.json か環境変数に手で書いてあれば、そちらが強いので、ここでは表示だけ(決定事項 5)。
 import { useCallback, useEffect, useState } from "react";
 import { LuInfo, LuShieldCheck } from "react-icons/lu";
@@ -95,7 +95,6 @@ export function ServerSettings({ disabled, onError, onChanged }: { disabled: boo
   return (
     <>
       <h2 className="section">今のモード</h2>
-      {conn.pending && <p className="server-status" role="status">{pendingText(conn)}</p>}
       {note && <p className="server-status" role="status">{note}</p>}
       <CurrentRows conn={conn} />
       {conn.plain && <p className="hint">ログイン(アプリ用のトークン)を暗号化せずに保存しています(この OS では暗号化できません)</p>}
@@ -145,13 +144,6 @@ export function ServerSettings({ disabled, onError, onChanged }: { disabled: boo
       )}
     </>
   );
-}
-
-// pendingText は、保存したがまだ効いていない(起動し直すと切り替わる)ことのお知らせ。ログインの画面でも同じ文を出す
-export function pendingText(conn: ServerConnection): string {
-  if (conn.pending === "direct") return "保存しました。aibow を起動し直すと、アプリモードに戻ります";
-  const base = `保存しました。aibow を起動し直すと、aibow-server(${conn.pendingUrl})につなぎます`;
-  return conn.pendingLogin ? base + "。起動し直したら、ログインの画面でログインしてください" : base;
 }
 
 // CurrentRows は今のモードの表(表示だけ)。

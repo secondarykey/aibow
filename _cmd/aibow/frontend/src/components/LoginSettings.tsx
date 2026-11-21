@@ -9,7 +9,6 @@
 // まだ誰か分からない人が触る画面なので、サーバーに何かを頼む操作は置かない(「接続」は、サーバーがあるかを確かめるだけ)。
 // ふだんの設定の画面(SettingsView)は、ログインしたあとの App の状態(設定・モデル・MCP のサーバーの一覧など)を前提にしているので使い回さず、
 // この小さい入れ物を別に作る(0047 の決定事項 11)。
-// 「起動し直してください」の画面(RestartGate)からも開く。そのときは「サーバー」のタブだけ(serverOnly。0051 の決定事項 4)
 import { useCallback, useState } from "react";
 import { LuArrowLeft } from "react-icons/lu";
 import { ScreenErrors } from "./ScreenErrors";
@@ -23,7 +22,7 @@ const TABS: { id: Tab; label: string; title: string }[] = [
   { id: "server", label: "サーバー", title: "aibow-server のつなぎ先・アプリモードへの切り替え" },
 ];
 
-export function LoginSettings({ onClose, serverOnly }: { onClose(): void; serverOnly?: boolean }) {
+export function LoginSettings({ onClose }: { onClose(): void }) {
   const [tab, setTab] = useState<Tab>("server");
   const [errors, setErrors] = useState<{ id: number; text: string }[]>([]);
   const [theme, setThemeValue] = useState(themeSetting());
@@ -33,15 +32,13 @@ export function LoginSettings({ onClose, serverOnly }: { onClose(): void; server
     <section className="settings-view">
       <div className="settings-inner">
         <div className="settings-header">
-          <h1>{serverOnly ? "設定(起動し直す前)" : "設定(ログインの前)"}</h1>
-          <button className="back" onClick={onClose} title={serverOnly ? "設定を閉じる" : "設定を閉じて、ログインの画面に戻る"}>
-            <LuArrowLeft /> {serverOnly ? "戻る" : "ログインの画面に戻る"}
-          </button>
+          <h1>設定(ログインの前)</h1>
+          <button className="back" onClick={onClose} title="設定を閉じて、ログインの画面に戻る"><LuArrowLeft /> ログインの画面に戻る</button>
         </div>
         <ScreenErrors errors={errors} />
 
         <div className="settings-tabs" role="tablist">
-          {TABS.filter(t => !serverOnly || t.id === "server").map(t => (
+          {TABS.map(t => (
             <button
               key={t.id}
               role="tab"
