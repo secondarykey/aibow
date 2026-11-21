@@ -78,8 +78,6 @@ aibow に残っている課題の一覧(入口)。ルールと全体の構成は
 | ⬜ | aibow-mcp の `git_status`・`git_diff` を、Claude Code などほかのクライアントから | [0041-agent-prompt.md](_docs/features/0041-agent-prompt.md) |
 | ⬜ | aibow-server の base:頭を外すプロキシ・アプリの serverUrl に /aibow・デスクトップの画面(vite の base) | [0042-server-addr-base.md](_docs/features/0042-server-addr-base.md) |
 | ⬜ | 返事の途中で前のツールの結果を省く compact の画面(吹き出しの「…を省いてモデルに渡しました」・ツールのカードの「省略して渡した」)と、省いても目安を下回らないときに省かない形を 4B で | [0040-compact-in-turn.md](_docs/features/0040-compact-in-turn.md) |
-| ⬜ | 送信・生成のエラーの横の「再生成」を画面で押す(注意・読むだけの会話・発言を保存する前に止まったときには出ないこと) | [0048-user-wording.md](_docs/features/0048-user-wording.md) の「D8 の決まり」 |
 | ⬜ | ボタンの言葉と見た目(削除の形・既定のプロファイルの選択肢で新しい会話の画面の最初の選択が変わる・赤い「削除」・アイコンの付け方)を、アプリとブラウザの画面で | [0050-buttons.md](_docs/features/0050-buttons.md) の「経過」 |
 | ⬜ | 信頼するプロキシ:ユーザーのリバースプロキシで X-Forwarded-For を書き、ほかの PC から開くとログの相手がその PC になる(管理の操作の断りは 0046 でどこからでも同じ) | [0044-trusted-proxies.md](_docs/features/0044-trusted-proxies.md) の完了の条件 2 |
 | ⬜ | 設定の画面のエラーが次の操作で消える(ログインを続けて間違える・並べ方が変わらない) | [0043-clear-errors.md](_docs/features/0043-clear-errors.md) |
-| ⬜ | チェック E・F の改善を画面で:確認のカードの範囲(6通り)・「起動し直してください」の画面(3通りの切り替え)・aibow-server のログに「…断りました」が出ない・添付の保存・層数の「適用」・「ワークスペースなし」の「+」。選ぶ形と専用の画面の見た目(警告の色・大きさ)はユーザーが決める | [0051-check-ef-fixes.md](_docs/features/0051-check-ef-fixes.md) の「未決事項」・「経過」 |
