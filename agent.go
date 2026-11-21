@@ -259,7 +259,8 @@ func (cs *Conversations) runFound(ctx context.Context, conv Conversation, c form
 		res.ToolResult.Confirm = &Confirmation{Remember: config.ToolOff, ForReply: true}
 		return res
 	}
-	if reply == config.ToolAllow {
+	if _, self := t.(tool.SelfConfirming); reply == config.ToolAllow && !self {
+		// 実行の途中で確かめるツール(run_command など)は、聞かずに受け入れたときに askFor が出すので、ここでは出さない(1回の実行で2行にしない)
 		log.Noticef("ツール %s は、確認のカードで「この返事の間は実行」と答えたので、聞かずに実行します(会話 %s)", c.Name, conv.ID)
 	}
 	if reply != config.ToolAllow && cs.needsConfirm(conv.ID, conv.Settings, t) {

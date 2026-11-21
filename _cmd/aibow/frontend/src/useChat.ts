@@ -79,8 +79,11 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
   const live = useRef<Live | null>(null);
   const viewing = useRef<string | null>(null); // 表示している会話の ID
   const [ended, setEnded] = useState<Record<string, Ended>>({});
-  // ほかの会話を見ている間に届いたエラー。エラーは保存しないので、ここで持っておき、その会話を開いたときに出す
-  const heldErrors = useRef<Record<string, ErrorNote[]>>({});
+  // 会話ごとの、最後の送信で届いたエラー。エラーは保存しないので、ここで持っておき、その会話を開くたびに表示の末尾に出し直す。
+  // 送信の途中・終わりに開き直すと(要約の区切りを出すため・done が遅れたとき)、表示が保存された発言から作り直され、
+  // 出したエラーが消えていた(ツールの回数の上限で止まったのに、エラーが出ずに止まったように見えた。2026-11-21)。
+  // ほかの会話を見ている間に届いたエラーも、ここから開いたときに出る。次の送信を始めたら空にする
+  const runErrors = useRef<Record<string, ErrorNote[]>>({});
   // 生成中の呼び出し(stop() で停止できる)。生成中でなければ null
   const controller = useRef<{ stop(): void } | null>(null);
   // 送信を受け付けてから生成が始まるまでの間に、もう一度送られないようにする
@@ -112,9 +115,8 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
       l.itemId = l.convId === id && current.generating ? addAssistant(l.view) : null;
       l.userItemId = null;
     }
-    // 見ていない間に終わった会話を開いたら、一覧の印を消し、届いていたエラーを出す
-    heldErrors.current[id]?.forEach(e => addError(e.text, e.caution, e.retry));
-    delete heldErrors.current[id];
+    // 最後の送信で届いたエラーを出し直す(生成中なら、生成中の吹き出しの後ろに)。見ていない間に終わった会話なら、一覧の印も消す
+    runErrors.current[id]?.forEach(e => addError(e.text, e.caution, e.retry));
     setEnded(e => {
       if (!(id in e)) return e;
       const { [id]: _, ...rest } = e;
@@ -143,6 +145,7 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
   // 戻り値は、この送信で届いたエラー(作り直す・送り直すで、開き直したあとに出し直すため)と、送った発言を Go が保存したか
   const run = useCallback(async (id: string, start: () => Call<void>, manual: boolean, userItemId: number | null): Promise<RunResult> => {
     const errors: ErrorNote[] = [];
+    runErrors.current[id] = errors; // 前の送信のエラーは、もう出し直さない
     let userSaved = false;
     const l: Live = {
       convId: id, itemId: null, userItemId, thinkStart: 0, processStart: 0, saved: [], confirm: null,
@@ -200,9 +203,8 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
     const showError = (text: string, caution?: boolean) => {
       failed = true;
       const retry = !manual && !caution && (userItemId === null || userSaved);
-      errors.push({ text, caution, retry });
+      errors.push({ text, caution, retry }); // runErrors にも入る(同じ配列)。ほかの会話を見ているなら、開いたときに出る
       if (viewing.current === id) addError(text, caution, retry);
-      else (heldErrors.current[id] ??= []).push({ text, caution, retry });
     };
     let finish = () => {};
     let ended = false; // done が届いた・呼び出しが失敗した(この送信の終わりを済ませた)
@@ -470,10 +472,8 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
     dropLastTurn(withUser);
     const userItemId = withUser ? addUser(text, files) : null;
     const { errors } = await run(id, () => start(id), false, userItemId);
-    if (errors.length && viewing.current === id) {
-      await open(id).catch(err => addError(errorMessage(err)));
-      errors.forEach(e => addError(e.text, e.caution, e.retry));
-    }
+    // 開き直すと、この送信のエラーは表示の末尾に出し直される(runErrors)
+    if (errors.length && viewing.current === id) await open(id).catch(err => addError(errorMessage(err)));
   }, [current, flushSettings, t.items, dropLastTurn, addUser, run, open, addError]);
 
   const regenerate = useCallback(() => retry(false, "", id => ChatService.Regenerate(id)), [retry]);

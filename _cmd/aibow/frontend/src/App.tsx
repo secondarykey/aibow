@@ -125,10 +125,11 @@ export default function App() {
   // 同じエラーが積み上がって設定の画面のタブが下に押し出されるので、その理由を含むエラーは出さない(理由は useModels が「起動できません」で1回だけ出す)
   const { startupError } = models;
   const addTranscriptError = transcript.addError;
-  // 会話の表示に出すエラー(会話の中で起きたことの記録。0043 の決定事項 5)
-  const addRecordError = useCallback((text: string, caution?: boolean) => {
+  // 会話の表示に出すエラー(会話の中で起きたことの記録。0043 の決定事項 5)。
+  // retry(横に「再生成」を出してよいか。0048 の D8)も渡す(以前は落としていて、「再生成」が出なかった。2026-11-21)
+  const addRecordError = useCallback((text: string, caution?: boolean, retry?: boolean) => {
     if (startupError && text.includes(startupError)) return;
-    addTranscriptError(text, caution);
+    addTranscriptError(text, caution, retry);
   }, [addTranscriptError, startupError]);
   // 画面の操作のエラー。設定・管理・会話の設定の画面を開いていればその画面に、そうでなければ会話の表示に出す
   const addError = useCallback((text: string, caution?: boolean) => {
