@@ -303,6 +303,14 @@ export function LoadToolList(server: string): $CancellablePromise<void> {
 }
 
 /**
+ * LogFile は、アプリの今日のログファイルの絶対パス(画面に出してコピーする。0052 の決定事項 21)。ファイルに書いていなければ空。
+ * 日ごとに切り替わるので、画面は開くたびに呼ぶ。
+ */
+export function LogFile(): $CancellablePromise<string> {
+    return $Call.ByID(589043037);
+}
+
+/**
  * LogLevel は、アプリの今のログのレベル(log.LevelNames の名前。trace・debug・info・notice・warn・error)。
  */
 export function LogLevel(): $CancellablePromise<string> {
@@ -488,6 +496,14 @@ export function Send(id: uuid$0.UUID, text: string, files: aibow$0.File[] | null
  */
 export function ServerConnection(): $CancellablePromise<$models.ServerConnection> {
     return $Call.ByID(3197122296);
+}
+
+/**
+ * ServerLogFile は、aibow-server の今日のログファイルの絶対パス(サーバーの PC のパス。管理の画面に出してコピーする。0052 の決定事項 21)。
+ * ファイルに書いていなければ空。サーバーの PC のパスなので、レベルと同じく管理者だけに見せる。
+ */
+export function ServerLogFile(): $CancellablePromise<string> {
+    return $Call.ByID(4231543972);
 }
 
 /**

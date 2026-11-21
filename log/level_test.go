@@ -3,6 +3,7 @@ package log
 import (
 	stdlog "log"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -78,5 +79,32 @@ func TestParseLevel(t *testing.T) {
 	}
 	if _, ok := ParseLevel("verbose"); ok {
 		t.Error("知らない名前は false")
+	}
+}
+
+// CurrentFile は、Init でファイルに書くと決まったときだけ、今日のログファイルの絶対パスを返す(0052 の決定事項 21)
+func TestCurrentFile(t *testing.T) {
+	keepDefault(t)
+	if _, ok := CurrentFile(); ok {
+		t.Error("Init の前はファイルが無い")
+	}
+	c, _ := Init(Options{Console: true})
+	c.Close()
+	if _, ok := CurrentFile(); ok {
+		t.Error("Dir が空ならファイルが無い")
+	}
+	dir := t.TempDir()
+	c, err := Init(Options{Dir: dir, Prefix: "aibow-dev"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	Notice("書く")
+	c.Close()
+	p, ok := CurrentFile()
+	if !ok || !filepath.IsAbs(p) || filepath.Dir(p) != dir || !strings.HasPrefix(filepath.Base(p), "aibow-dev_") {
+		t.Errorf("今日のファイル: %q %v", p, ok)
+	}
+	if _, err := os.Stat(p); err != nil {
+		t.Errorf("書いたファイルがある: %v", err)
 	}
 }

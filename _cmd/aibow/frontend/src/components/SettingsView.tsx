@@ -26,7 +26,7 @@ import type { Models } from "../useModels";
 // Go の models パッケージ。"…/aibow/models" と書くと aibow パッケージの models.ts が選ばれるので、index まで書く
 import type { Entry as ModelEntry } from "../../bindings/github.com/secondarykey/aibow/models/index";
 import { ScreenErrors } from "./ScreenErrors";
-import { LogLevelSelect } from "./LogLevelSelect";
+import { LogSettings } from "./LogSettings";
 
 interface Props {
   onClose(): void;                        // 会話に戻る
@@ -117,12 +117,13 @@ export function SettingsView({ onClose, errors, app, models, modelState, servers
             {!isBrowser && (
               <>
                 <h2 title="このアプリのログ(aibow-server につないでいても、このアプリの分だけ)">ログ</h2>
-                <LogLevelSelect
+                <LogSettings
                   id="app-log-level"
                   label="ログのレベル"
                   title="選んだレベルより細かいものは書かない。起動し直すと、起動したときのレベルに戻る"
                   load={() => ChatService.LogLevel()}
                   save={name => ChatService.SetLogLevel(name)}
+                  loadFile={() => ChatService.LogFile()}
                   onError={onError}
                 />
               </>

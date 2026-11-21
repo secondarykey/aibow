@@ -116,6 +116,7 @@ func keepDefault(t *testing.T) {
 		slog.SetLogLoggerLevel(slog.LevelInfo)
 		prefix = FilePrefix // Init(Prefix)で変えたファイルの名前の頭を戻す
 		levelVar.Store(nil) // Init で組んだレベルを忘れる(SetLevel が Init の前と同じに戻る)
+		fileDir = ""        // Init で決めたファイルのフォルダを忘れる(CurrentFile)
 	})
 }
 

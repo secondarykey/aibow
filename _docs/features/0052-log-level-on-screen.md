@@ -59,13 +59,29 @@
 19. `-log-level <名前>` の引数を足す(`aibow-mcp -log-level debug [作業フォルダ]`)。書かなければ今と同じ Info。知らない名前なら、書ける値を添えて起動を止める
 20. 環境変数(`AIBOW_LOG_LEVEL` のようなもの)は足さない。`AIBOW_` の環境変数はアプリと aibow-server も同じ名前を読むので、同じターミナルから起動するとほかにも効いてしまう
 
+## 決定事項(あとから足したこと:ログファイルのパスを出す。2026-11-21)
+
+レベルを変えたあとに、ログを見に行けるようにする(0008 のやり残しの 6「画面からログを見る手段が無い」の一部)。
+
+ユーザーと決めたこと:
+
+21. **ログファイルを開くボタンは作らず、今日のログファイルのパスをコピーできる形で出す**(Wails の `Browser.OpenFile` で関連付けたアプリで開くこともできるが、パスなら Win+R やエクスプローラーに貼って開け、前の日の `.log.gz` や異常終了の記録も同じフォルダで見られる)
+22. **アプリは「基本設定」の「ログ」、aibow-server は管理の画面の「ログ」のタブ**に、「ログのレベル」と並べて出す。aibow-server のパスはサーバーの PC のパスなので、レベルと同じく管理者だけに見せる
+
+話の流れから Code が決めて書いたこと(2026-11-21、ユーザーが「それで作って」と確かめた):
+
+23. パスは画面を開くたびに Go から読み直す(ファイルは日ごとに切り替わるため)。絶対パスで出す
+24. ログのフォルダを作れなかったなどで、ファイルに書いていないときは、パスの代わりに「ログはファイルに残っていません」と出す
+25. コピーは今の `CopyButton`(アイコンだけ。マウスを乗せると「コピー」)を使う。ボタンの言葉は増えない
+26. メソッドの置き場所はレベルと同じ(アプリは `ChatService.LogFile`、aibow-server は `ui.Service.ServerLogFile`。管理者だけ)
+
 ## やらないこと(先回りしない)
 
 - 変えたレベルを保存する・起動したときのレベルの決め方を変える(決定事項 1・2)
 - パッケージごとのレベル(「`mcp/client` だけ Debug」。0008 のやり残しの 1 の残り)
 - MCP の `logging/setLevel` で、アプリから起動した aibow-mcp のレベルをアプリの画面に合わせる。
   `logging/setLevel` はもともと「サーバーからクライアントへ送るログのお知らせ(`notifications/message`)」の細かさを決めるもので、ファイルのログに当てるのは読み替えになる。MCP を学ぶ題材として、0008 のやり残しに書く
-- 画面からログを見る・ログのフォルダを開く(0008 のやり残しの 6)
+- 画面の中でログを見る(ログビューア)・ログファイルやフォルダを関連付けたアプリで開くボタン(0008 のやり残しの 6 の残り。パスを出すことだけ、決定事項 21 で足した)
 - 既製の MCP のサーバー・llama.cpp のログのレベル
 
 ## 未決事項
@@ -83,30 +99,32 @@
 7. `aibow-mcp -log-level debug` で Debug の行が出る。書かなければ Info。知らない名前で起動が止まる
 8. `server.json` の `logLevel` に `trace` を書ける
 9. `go test ./log/` に、`SetLevel` で出る行が変わること・標準の log の行も合わせて変わることのテストを足す
+10. 「基本設定」の「ログ」と管理の画面の「ログ」に今日のログファイルのパスが出て、コピーできる。ファイルに書いていないときは「ログはファイルに残っていません」。aibow-server のパスは管理者でなければ断られる(テスト)
 
 ## 作ったもの(2026-11-21)
 
 | 場所 | 中身 |
 |---|---|
-| `log/level.go` | `SetLevel(l, by)`・`Level()`・`LevelNames`・`ParseLevel`・`LevelName`。`Init`(`log/setup.go`)は出口に `slog.LevelVar` を渡す |
+| `log/level.go` | `SetLevel(l, by)`・`Level()`・`LevelNames`・`ParseLevel`・`LevelName`。`Init`(`log/setup.go`)は出口に `slog.LevelVar` を渡し、ファイルに書くフォルダを覚える(`CurrentFile`。決定事項 21) |
 | `config/server.go` | `LogLevels` をやめ、`log.ParseLevel` で確かめる(`trace` も書ける)。aibow-server の `logLevel`(`_cmd/aibow-server/log.go`)も同じ |
 | `_cmd/aibow-mcp` | `-log-level`(既定 info)。知らない名前は、Info で組んだログにエラーを書いて終了の状態 2 で止める |
-| `_cmd/aibow/loglevel.go` | `ChatService.LogLevel` / `SetLogLevel`(アプリのログ。ブラウザからは呼べない) |
-| `ui/loglevel.go` | `ServerLogLevel` / `SetServerLogLevel`(ブラウザの管理者だけ。`ui/web.go` の `adminLogMethods` で 403、デスクトップのアプリでは `s.browser` で断る) |
-| `_cmd/aibow/frontend/src/components/LogLevelSelect.tsx` | 選択の部品(6つ。段階の意味はマウスを乗せた説明)。設定の画面の「基本設定」の「ログ」(デスクトップだけ)と、管理の画面の「ログ」のタブで使う |
+| `_cmd/aibow/loglevel.go` | `ChatService.LogLevel` / `SetLogLevel`(アプリのログ。ブラウザからは呼べない)・`LogFile`(今日のログファイルの場所。決定事項 21) |
+| `ui/loglevel.go` | `ServerLogLevel` / `SetServerLogLevel`・`ServerLogFile`(ブラウザの管理者だけ。`ui/web.go` の `adminLogMethods` で 403、デスクトップのアプリでは `s.browser` で断る) |
+| `_cmd/aibow/frontend/src/components/LogSettings.tsx` | 選択の部品(6つ。段階の意味はマウスを乗せた説明)と、今日のログファイルのパス(`CopyButton`)。設定の画面の「基本設定」の「ログ」(デスクトップだけ)と、管理の画面の「ログ」のタブで使う |
 
 ## 確かめたこと(2026-11-21)
 
 - `go test ./...`・`(cd _cmd/aibow && go test .)`・`go vet`・`gofmt -l .`・`wails3 build`(画面の型チェックとビルド)が通る
 - `go test ./log/`:`SetLevel` で再起動せずに出る行が変わる・標準の log の行も変わる・変えたことが Notice で残る(絞るときは変える前)・`Init` の前は何もしない(完了の条件 3・9)
 - `go test ./ui/`:管理者でなければ `ServerLogLevel` / `SetServerLogLevel` は 403・管理者は trace にできる・知らない名前はエラー・デスクトップのアプリの `Service` では断る(完了の条件 5 の Go の側)
+- `go test ./log/` の `TestCurrentFile`:ファイルに書くときだけ今日のログファイルの絶対パスを返す(Init の前・Dir が空なら無い)。`go test ./ui/`:`ServerLogFile` は管理者でなければ 403(完了の条件 10 の Go の側)
 - `go test ./config/`:`server.json` の `logLevel` に `trace` を書ける(完了の条件 8)
 - `aibow-mcp -log-level bogus` で、書ける値を添えたエラーを書いて止まる。`-log-level warn` で起動の Notice(ログの書き出し先)が出なくなる。
   ⚠️ aibow-mcp には今 Debug で出す行が無いので、「`-log-level debug` で Debug の行が出る」(完了の条件 7)は、レベルが効くことを warn で確かめただけ
 
 ### まだ確かめていないこと
 
-- 画面で確かめること:完了の条件 1・2・4、5 の画面の側(ブラウザの管理の画面の「ログ」のタブ・管理者でない人にタブが出ない)、6(ブラウザの「基本設定」に「ログ」が出ない)。
+- 画面で確かめること:完了の条件 1・2・4、5 の画面の側(ブラウザの管理の画面の「ログ」のタブ・管理者でない人にタブが出ない)、6(ブラウザの「基本設定」に「ログ」が出ない)、10 の画面の側(パスが出てコピーでき、貼ると開ける)。
   Go の側はテストで確かめた。`ChatService` のメソッドがブラウザから呼べないのは、`ui.Handler` が `ui.Service` の決まったメソッドしか受けないため(呼べば 404)
 
 ## 作業の順番(案)

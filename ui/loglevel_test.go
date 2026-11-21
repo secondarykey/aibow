@@ -22,7 +22,7 @@ func TestWebServerLogLevel(t *testing.T) {
 	})
 	w := newTestWeb(t)
 
-	for _, m := range [][]any{{"ServerLogLevel"}, {"SetServerLogLevel", "debug"}} {
+	for _, m := range [][]any{{"ServerLogLevel"}, {"SetServerLogLevel", "debug"}, {"ServerLogFile"}} {
 		if status, body := w.call(t, context.Background(), m[0].(string), m[1:]...); status != http.StatusForbidden || !strings.Contains(string(body), "管理者だけ") {
 			t.Errorf("%s は管理者でなければ 403: %d %s", m[0], status, body)
 		}
@@ -40,6 +40,12 @@ func TestWebServerLogLevel(t *testing.T) {
 	w.mustCall(t, &name, "SetServerLogLevel", "trace")
 	if l, _ := log.Level(); name != "trace" || l != log.LevelTrace {
 		t.Errorf("trace にしたあと: %q %v", name, l)
+	}
+	// この Init はファイルに書かないので、ログファイルの場所は空(画面は「ログはファイルに残っていません」)
+	var file string
+	w.mustCall(t, &file, "ServerLogFile")
+	if file != "" {
+		t.Errorf("ファイルに書いていないのに場所がある: %q", file)
 	}
 	if status, body := w.call(t, context.Background(), "SetServerLogLevel", "verbose"); status != http.StatusInternalServerError || !strings.Contains(string(body), "trace・debug・info・notice・warn・error") {
 		t.Errorf("知らない名前: %d %s", status, body)

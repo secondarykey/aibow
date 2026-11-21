@@ -9,7 +9,7 @@
 |---|---|
 | `log.go` | 出す関数(Trace / Debug / Info / Notice / Warn / Error と `…f`)。段階(`Level*`。値は wenteasy/log と同じ `slog.Level`)。出し先の `SetLogger` / `Logger` |
 | `setup.go` | `Init(Options)`。出口(ファイル `Dir/aibow_<日付>.log`・標準エラー出力)を組んで `slog.Default()` を向ける(アプリの main の最初に 1 回)。ファイルの名前の頭は `Options.Prefix`(空なら `aibow`。aibow-mcp は `aibow-mcp`)。`FilePath` は今日のファイルの場所 |
-| `level.go` | 起動したあとにレベルを変える(0052)。`Init` が出口に渡した `slog.LevelVar` を `SetLevel` / `Level` で読み書きする(標準の log の行のレベルも合わせる。変えたことは Notice で残す)。名前とレベルの対応(`LevelNames`・`ParseLevel`・`LevelName`。aibow-server の `server.json`・aibow-mcp の `-log-level`・画面で使う)はここだけ |
+| `level.go` | 起動したあとにレベルを変える(0052)。`Init` が出口に渡した `slog.LevelVar` を `SetLevel` / `Level` で読み書きする(標準の log の行のレベルも合わせる。変えたことは Notice で残す)。名前とレベルの対応(`LevelNames`・`ParseLevel`・`LevelName`。aibow-server の `server.json`・aibow-mcp の `-log-level`・画面で使う)はここだけ。今日のログファイルの絶対パス `CurrentFile`(画面に出してコピーする。`setup.go`。ファイルに書いていなければ false) |
 | `crash.go` | `CatchCrash`。異常終了(Go の panic・ランタイムの致命的なエラー)の内容をログの隣の `aibow_crash.log`(名前は `CrashFile()`。頭は `Options.Prefix`)にも書かせる(`debug.SetCrashOutput`)。前回の記録が残っていれば `aibow_crash_<日時>.log` に改名して返す(= 前回は異常終了した)。形は ikkyoku の `CatchCrash` と同じ |
 
 ## どこに出るか

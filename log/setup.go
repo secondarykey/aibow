@@ -43,6 +43,10 @@ const FilePrefix = "aibow"
 // prefix は Init で決めたログファイルの名前の頭(FilePath・CatchCrash が使う)。Init はアプリの main で 1 回だけ呼ぶので、そこで決めて変えない
 var prefix = FilePrefix
 
+// fileDir は Init でファイルを書くと決まったフォルダ(CurrentFile が使う)。空ならファイルには書いていない(Dir が空・フォルダを作れなかった)。
+// prefix と同じく Init で 1 回だけ決める
+var fileDir string
+
 // Init はログの出口を組み、slog.Default() をそこへ向ける。**アプリの main の最初に 1 回だけ呼ぶ**。
 // aibow をライブラリとして使う人は呼ばなくてよい(自分の slog.SetDefault の出口に出る)。
 //
@@ -58,6 +62,7 @@ func Init(opts Options) (io.Closer, error) {
 	level.Set(opts.Root)
 	var err error
 	prefix = FilePrefix
+	fileDir = ""
 	if opts.Prefix != "" {
 		prefix = opts.Prefix
 	}
@@ -75,6 +80,7 @@ func Init(opts Options) (io.Closer, error) {
 			})
 			sinks = append(sinks, wlog.NewSimpleHandler(w, level))
 			closer = w
+			fileDir = opts.Dir
 		} else {
 			err = fmt.Errorf("ログのフォルダ %s を作れないので、ログはファイルに残りません: %w", opts.Dir, err)
 		}
@@ -99,6 +105,20 @@ func Init(opts Options) (io.Closer, error) {
 // ファイルは最初に書いたときに作られ、日付が変わると次のファイルに切り替わる。
 func FilePath(dir string) string {
 	return filepath.Join(dir, prefix+"_"+time.Now().Format("20060102")+".log")
+}
+
+// CurrentFile は、今日のログファイルの絶対パス(画面に出してコピーするため。0052 の決定事項 21)。
+// Init でファイルに書くと決まっていなければ false(Dir が空・フォルダを作れなかった・Init を呼んでいない)。
+// ファイルは日ごとに切り替わるので、出すたびに呼ぶ。最初に書くまではファイルがまだ無いこともある(どの exe も起動のときに Notice を書くので、ふだんはある)
+func CurrentFile() (string, bool) {
+	if fileDir == "" {
+		return "", false
+	}
+	p := FilePath(fileDir)
+	if abs, err := filepath.Abs(p); err == nil {
+		p = abs
+	}
+	return p, true
 }
 
 type nopCloser struct{}

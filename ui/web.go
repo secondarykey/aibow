@@ -85,8 +85,8 @@ var pcMethods = []string{"UnloadModel", "SetModelGPULayers", "ModelPlaces", "Add
 // サーバー全体の既定(server-tools.json)を変え、一覧の読み直しはサーバーの PC で MCP のサーバーを起動するので、pcMethods と同じ人だけが呼べる。ほかの人は 403。
 var adminToolMethods = []string{"SetToolPolicy", "SetGroupPolicy", "LoadToolList"}
 
-// adminLogMethods は、aibow-server のログのレベルを見る・変えるメソッド(管理の画面の「ログ」。0052)。pcMethods と同じ人だけが呼べる。ほかの人は 403。
-var adminLogMethods = []string{"ServerLogLevel", "SetServerLogLevel"}
+// adminLogMethods は、aibow-server のログのレベルを見る・変える・ログファイルの場所を見るメソッド(管理の画面の「ログ」。0052)。pcMethods と同じ人だけが呼べる。ほかの人は 403。
+var adminLogMethods = []string{"ServerLogLevel", "SetServerLogLevel", "ServerLogFile"}
 
 // adminOnly は、管理者だけが呼べるメソッドと、ほかの人に断るときの文。
 var adminOnly = map[string]string{}

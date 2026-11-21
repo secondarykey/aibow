@@ -49,6 +49,16 @@ func (s *Service) SetServerLogLevel(ctx context.Context, name string) (string, e
 	return log.LevelName(l), nil
 }
 
+// ServerLogFile は、aibow-server の今日のログファイルの絶対パス(サーバーの PC のパス。管理の画面に出してコピーする。0052 の決定事項 21)。
+// ファイルに書いていなければ空。サーバーの PC のパスなので、レベルと同じく管理者だけに見せる。
+func (s *Service) ServerLogFile(ctx context.Context) (string, error) {
+	if err := s.checkServerLog(ctx); err != nil {
+		return "", err
+	}
+	p, _ := log.CurrentFile()
+	return p, nil
+}
+
 // checkServerLog は、aibow-server のログのレベルを見たり変えたりしてよいか。ブラウザ(aibow-server)の管理者だけ(ログインなしで使うときはいつも。0046)。
 func (s *Service) checkServerLog(ctx context.Context) error {
 	if !s.browser {

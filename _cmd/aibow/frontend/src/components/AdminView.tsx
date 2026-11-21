@@ -24,7 +24,7 @@ import { ProfileSettings } from "./ProfileSettings";
 import { UsageAdmin } from "./UsageSettings";
 import type { ConversationSettings } from "../../bindings/github.com/secondarykey/aibow";
 import { ScreenErrors } from "./ScreenErrors";
-import { LogLevelSelect } from "./LogLevelSelect";
+import { LogSettings } from "./LogSettings";
 
 type Tab = "users" | "groups" | "models" | "tools" | "profiles" | "usage" | "log";
 
@@ -102,12 +102,13 @@ export function AdminView({ onClose, errors, onError, onReadConversation, models
         {tab === "log" && (
           <>
             <h2 title="aibow-server のログ(ブラウザから使う会話・OpenAI 互換の API の生成など。サーバーの PC の logs のフォルダに書く)">ログ</h2>
-            <LogLevelSelect
+            <LogSettings
               id="server-log-level"
               label="ログのレベル"
               title="選んだレベルより細かいものは書かない。aibow-server を起動し直すと、起動したときのレベル(-debug・server.json の logLevel)に戻る"
               load={() => ChatService.ServerLogLevel()}
               save={name => ChatService.SetServerLogLevel(name)}
+              loadFile={() => ChatService.ServerLogFile()}
               onError={onError}
             />
           </>

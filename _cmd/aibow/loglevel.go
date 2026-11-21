@@ -38,3 +38,10 @@ func (s *ChatService) SetLogLevel(name string) (string, error) {
 	}
 	return log.LevelName(l), nil
 }
+
+// LogFile は、アプリの今日のログファイルの絶対パス(画面に出してコピーする。0052 の決定事項 21)。ファイルに書いていなければ空。
+// 日ごとに切り替わるので、画面は開くたびに呼ぶ。
+func (s *ChatService) LogFile() string {
+	p, _ := log.CurrentFile()
+	return p
+}
