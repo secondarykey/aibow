@@ -69,15 +69,11 @@ aibow に残っている課題の一覧(入口)。ルールと全体の構成は
 | | 確かめること | 資料 |
 |---|---|---|
 | ⬜ | 画面のアプリ(serverUrl)での共有・配られたプロファイル・共有の相手の選択・アカウントのタブの使用量 | [0018](_docs/features/0018-sharing.md) の「11-3」・[0031](_docs/features/0031-users-ui.md)・[0033](_docs/features/0033-usage.md) |
-| ⬜ | ファイルを読み込む画面(入力欄の上のファイル名・大きく見る・ドロップ・貼り付け)を、アプリとブラウザで本物のモデルと | [0030-read-files.md](_docs/features/0030-read-files.md) |
 | ⬜ | aibow-server を GPU の 9B で:2人同時の生成(ブラウザの画面を2つ並べて。`parallel` 2)・資料のフォルダのツール | [0023-parallel.md](_docs/features/0023-parallel.md)・[0024-server-tools.md](_docs/features/0024-server-tools.md) |
 | ⬜ | ほかの PC からつなぐ:本物の Cline・HTTPS・資料のフォルダの見え方 | [0018](_docs/features/0018-sharing.md) の「11-3」・[0024](_docs/features/0024-server-tools.md) |
 | ⬜ | アプリのログイン:トークンの期限切れ・証明書を作り直したときの画面(テストだけ) | [0019-app-login.md](_docs/features/0019-app-login.md) |
-| ⬜ | アプリモードのときのモデルのタブ(管理の画面を分けたあと) | [0032-admin-screen.md](_docs/features/0032-admin-screen.md) |
 | ⬜ | 同じ呼び出しの繰り返しを止める仕組みを、llama3.2:3b で | [0028-repeated-calls.md](_docs/features/0028-repeated-calls.md) |
 | ⬜ | aibow-mcp の `git_status`・`git_diff` を、Claude Code などほかのクライアントから | [0041-agent-prompt.md](_docs/features/0041-agent-prompt.md) |
-| ⬜ | aibow-server の base:頭を外すプロキシ・アプリの serverUrl に /aibow・デスクトップの画面(vite の base) | [0042-server-addr-base.md](_docs/features/0042-server-addr-base.md) |
 | ⬜ | 返事の途中で前のツールの結果を省く compact の画面(吹き出しの「…を省いてモデルに渡しました」・ツールのカードの「省略して渡した」)と、省いても目安を下回らないときに省かない形を 4B で | [0040-compact-in-turn.md](_docs/features/0040-compact-in-turn.md) |
 | ⬜ | ボタンの言葉と見た目(削除の形・既定のプロファイルの選択肢で新しい会話の画面の最初の選択が変わる・赤い「削除」・アイコンの付け方)を、アプリとブラウザの画面で | [0050-buttons.md](_docs/features/0050-buttons.md) の「経過」 |
 | ⬜ | 信頼するプロキシ:ユーザーのリバースプロキシで X-Forwarded-For を書き、ほかの PC から開くとログの相手がその PC になる(管理の操作の断りは 0046 でどこからでも同じ) | [0044-trusted-proxies.md](_docs/features/0044-trusted-proxies.md) の完了の条件 2 |
-| ⬜ | 設定の画面のエラーが次の操作で消える(ログインを続けて間違える・並べ方が変わらない) | [0043-clear-errors.md](_docs/features/0043-clear-errors.md) |
