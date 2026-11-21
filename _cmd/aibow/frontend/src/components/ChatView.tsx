@@ -51,7 +51,7 @@ export function ChatView({ items, firstId, conversationId, pinQuestion, readOnly
   exclude: Exclude;
   discard?: Discard;
   retry: Retry;
-  onAnswer(reqId: string, approved: boolean, reason: string, remember: ToolPolicy): void | Promise<boolean>; // ツールの実行前の確認に答える(remember はこれから先の扱い)
+  onAnswer(reqId: string, approved: boolean, reason: string, remember: ToolPolicy, forReply: boolean): void | Promise<boolean>; // ツールの実行前の確認に答える(remember はこれから先の扱い。forReply ならこの返事の間だけ)
 }) {
   const faded = (msgId?: string) => (msgId && firstId && msgId < firstId ? " faded" : "");
   const fadedTitle = (msgId?: string, excluded?: boolean) => (excluded ? EXCLUDED_TITLE : faded(msgId) ? FADED_TITLE : undefined);
@@ -111,6 +111,7 @@ export function ChatView({ items, firstId, conversationId, pinQuestion, readOnly
                     {it.files && (
                       <FileChips
                         files={it.files.map(file => ({ file }))}
+                        savable
                         onDiscard={!readOnly && it.msgId && discard && !discard.disabled ? f => discard.onDiscard(f.id) : undefined}
                       />
                     )}
@@ -213,7 +214,7 @@ function AssistantMessage({ view, msgId, faded, onStop, onAnswer, excludeButton,
   onStop(): void;
   excludeButton?: ReactNode; // 「モデルに渡さない」の切り替え(保存済みの返事だけ)
   excluded: boolean;
-  onAnswer(reqId: string, approved: boolean, reason: string, remember: ToolPolicy): void | Promise<boolean>;
+  onAnswer(reqId: string, approved: boolean, reason: string, remember: ToolPolicy, forReply: boolean): void | Promise<boolean>;
 }) {
   // コピーするのは答えの文だけ(ツールを使った送信では、各回の答えをつなげる)
   const answer = [...(view.steps ?? []).map(s => s.content), view.content].filter(Boolean).join("\n\n");

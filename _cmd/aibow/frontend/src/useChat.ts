@@ -55,7 +55,7 @@ export interface Chat {
   generatingId: string | null; // 返事(か要約)を生成中の会話の ID
   ended: Record<string, Ended>; // ほかの会話を見ている間に送信が終わった会話(会話の ID → 終わり方)。起動をまたいでは覚えない
   confirmingId: string | null; // ツールの実行前の確認を待っている会話の ID(会話の一覧に「確認待ち」と出す)
-  answer(reqId: string, approved: boolean, reason: string, remember: ToolPolicy): Promise<boolean>; // 確認に答える(「実行する」「拒否」と、これから先の扱い)。Go が受け取らなかったら false
+  answer(reqId: string, approved: boolean, reason: string, remember: ToolPolicy, forReply: boolean): Promise<boolean>; // 確認に答える(「実行する」「拒否」と、これから先の扱い。forReply ならこの返事の間だけ)。Go が受け取らなかったら false
   lastPrompt: string;          // 開いている会話で、モデルに実際に渡した文字列
   lastPromptFormat: string;    // その文字列を組み立てた書式の名前(Qwen3.5・Gemma 4。0026)
   send(text: string, files: FileCheck[]): Promise<boolean>; // 発言が保存されたら true(false なら送れていないので、入力欄に文と読み込んだファイルを戻す)
@@ -421,16 +421,18 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
   const lastPrompt = shown?.text ?? "";
   const lastPromptFormat = shown?.format ?? "";
   // 確認に答える。答えは Go の待っているループに届き、実行(か拒否の結果)の tool_result が返ってくる。
-  // remember はこのツールのこの会話でのこれから先の扱い(空 = この1回だけ、allow = この会話では今後聞かない、off = 今後許可しない。0010)。
-  // Go が会話の上書きに書くので、先にまだ送っていない設定を送り(あとで丸ごと書き戻して、Go が書いた上書きを消さないように)、答えたら読み直す。
+  // remember はこのツールのこれから先の扱い(空 = この1回だけ、allow = 聞かずに実行する、off = 聞かずに断る。0010)。
+  // forReply ならこの返事の間だけ(Go が送信の中で覚える。会話の設定は変えない)、そうでなければこの会話の間(0051 の決定事項 10〜12)。
+  // この会話の間は Go が会話の上書きに書くので、先にまだ送っていない設定を送り(あとで丸ごと書き戻して、Go が書いた上書きを消さないように)、答えたら読み直す。
   // Go が答えを受け取ったら、結果を待たずに確認を閉じる(0049 の決定事項 8・9)。カードは「実行中… N秒」になり、一覧の「確認待ち」も外れる。
   // 時間のかかるコマンド(go test など)でも、動いていることが分かるように。受け取られなかったら確認のカードのままにする(戻り値 false)
-  const answer = useCallback(async (reqId: string, approved: boolean, reason: string, remember: ToolPolicy): Promise<boolean> => {
+  const answer = useCallback(async (reqId: string, approved: boolean, reason: string, remember: ToolPolicy, forReply: boolean): Promise<boolean> => {
     const l = live.current;
     if (!l) return false;
+    const inSettings = !!remember && !forReply; // 会話の設定に書く答えか
     try {
-      if (remember) await flushSettings();
-      await ChatService.ConfirmTool(l.convId, reqId, approved, reason, remember);
+      if (inSettings) await flushSettings();
+      await ChatService.ConfirmTool(l.convId, reqId, approved, reason, remember, forReply);
     } catch (err) {
       addError(errorMessage(err));
       return false;
@@ -443,7 +445,7 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
       l.view = { ...l.view, ...patch };
       if (l.itemId !== null) updateAssistant(l.itemId, patch);
     }
-    if (remember) await reloadSettings(l.convId).catch(err => addError(errorMessage(err)));
+    if (inSettings) await reloadSettings(l.convId).catch(err => addError(errorMessage(err)));
     return true;
   }, [addError, flushSettings, reloadSettings, updateAssistant]);
 

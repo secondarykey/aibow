@@ -18,6 +18,8 @@ package aibow
 import (
 	"context"
 	"uuid"
+
+	"github.com/secondarykey/aibow/config"
 )
 
 // activeTurn は進行中の送信1つ。中身は Conversations.turnMu を持って読み書きする。
@@ -27,6 +29,19 @@ type activeTurn struct {
 	stopSummary context.CancelFunc
 	// pending は答えを待っている確認。待っていなければ nil。1つの送信の中ではツールを順に実行するので、確認も同時に1つだけ
 	pending *pendingConfirm
+	// forReply は、確認のカードで「この返事の間」と答えたツールの扱い(ツールの名前 → allow / off。0051 の決定事項 12)。
+	// 会話の設定には書かず、この送信の中だけで覚える。送信が終われば activeTurn ごと消えるので、忘れるための処理は要らない
+	forReply map[string]config.ToolPolicy
+}
+
+// replyPolicy は、ツール name に「この返事の間」の扱いがあれば返す(無ければ空)。ctx の利用者の会話 conv の送信から引く。
+func (cs *Conversations) replyPolicy(ctx context.Context, conv uuid.UUID, name string) config.ToolPolicy {
+	cs.turnMu.Lock()
+	defer cs.turnMu.Unlock()
+	if t := cs.turnIn(ctx, conv); t != nil {
+		return t.forReply[name]
+	}
+	return ""
 }
 
 // turnUser は、進行中の送信を引くときの利用者。

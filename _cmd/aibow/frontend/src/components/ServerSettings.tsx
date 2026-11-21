@@ -15,7 +15,8 @@
 // そのつなぎ先を入れておくので、「接続」で信頼し直さずに進める(2026-10-29、ユーザーと決めた)。
 //
 // アプリは自分で起動し直さない(2026-10-26、ユーザーと決め直した)。起動し直すまでは前のモードのまま動くので、
-// 「起動し直すと切り替わります」を、起動し直すまで出し続ける(Go の ServerConnection の pending。タブを開き直しても出る)。
+// 変えたら、その場で「起動し直してください」の画面(RestartGate)に移す(modeChanged。0051 の決定事項 3)。その画面の設定から開いたこのタブでは、
+// 「起動し直すと切り替わります」を出し続ける(Go の ServerConnection の pending)。
 // つなぎ先を settings.json か環境変数に手で書いてあれば、そちらが強いので、ここでは表示だけ(決定事項 5)。
 import { useCallback, useEffect, useState } from "react";
 import { LuInfo, LuShieldCheck } from "react-icons/lu";
@@ -23,6 +24,7 @@ import { ChatService } from "../backend";
 import type { ServerConnection } from "../../bindings/github.com/secondarykey/aibow/_cmd/aibow";
 import type { Probe } from "../../bindings/github.com/secondarykey/aibow/api/client";
 import { errorMessage } from "../errors";
+import { modeChanged } from "../modeChange";
 
 export function ServerSettings({ disabled, onError, onChanged }: { disabled: boolean; onError(text: string): void; onChanged?(): void }) {
   const [conn, setConn] = useState<ServerConnection | null>(null);
@@ -31,9 +33,12 @@ export function ServerSettings({ disabled, onError, onChanged }: { disabled: boo
   const [note, setNote] = useState(""); // 「今つないでいます」(何も変えなかったとき)
   const [busy, setBusy] = useState(false);
 
+  // reload は、つなぐ・戻すの操作のあとに今のモードを読み直し、画面全体にも知らせる(モードが変われば「起動し直してください」の画面になる)
   const reload = useCallback(async () => {
-    setConn(await ChatService.ServerConnection());
+    const c = await ChatService.ServerConnection();
+    setConn(c);
     onChanged?.();
+    modeChanged(c);
   }, [onChanged]);
   useEffect(() => {
     ChatService.ServerConnection().then(c => {

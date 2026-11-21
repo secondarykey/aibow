@@ -172,7 +172,8 @@ function ModelRow({ m, format, manage, onEnabled, loaded, layers, totalLayers, d
       <span className="num">{m.size_gb.toFixed(1)} GB</span>
       <span className="model-layers">
         <NumberInput id={`layers-${m.id}`} value={n} min={0} step={1} disabled={disabled} onChange={setN} />
-        {n !== layers && <button disabled={disabled} onClick={() => onLayers(n)} title={loaded ? "変えて読み直す" : "次に読み込むときから効く"}>適用</button>}
+        {/* 「適用」は常に出しておき、値が変わっていない間は押せなくする(出たり消えたりで行の幅が変わらないように。0051 の決定事項 9) */}
+        <button disabled={disabled || n === layers} onClick={() => onLayers(n)} title={loaded ? "変えて読み直す" : "次に読み込むときから効く"}>適用</button>
       </span>
       <span className="model-action">
         {loaded

@@ -103,13 +103,16 @@ func main() {
 	var eng *engine.Engine
 	var initial *models.Entry
 	var server *apiclient.Client // aibow-server につなぐとき(serverUrl)。生成も保存も、ここに頼む(0017 の 10-3)
+	waitLogin := false
 	if err == nil && cfg.serverURL != "" {
 		server, err = newServerClient(cfg)
 		conn.client = server
+		// ログインの要る aibow-server にトークンなしで起動したときは、ログインするまで aibow-server を呼ばない(0051 の決定事項 6)
+		waitLogin = err == nil && conn.checkLogin(cfg.serverPin)
 	}
 	if err == nil {
 		var closeStore func()
-		st, settings, closeStore, err = openStore(cfg, server)
+		st, settings, closeStore, err = openStore(cfg, server, waitLogin)
 		if closeStore != nil {
 			defer closeStore()
 		}
@@ -138,7 +141,7 @@ func main() {
 		Services: []application.Service{
 			application.NewService(NewChatService(ui.Options{
 				Host: host, Store: st, App: settings, Initial: initial, Local: local, MCP: mcpm, MCPConfig: mcpc, Prefs: prefs, Workspaces: workspaces,
-				Version: appVersion(), Notices: cfg.notices, StartupErr: err,
+				Version: appVersion(), Notices: cfg.notices, StartupErr: err, WaitLogin: waitLogin,
 			}, conn)),
 		},
 		Assets: application.AssetOptions{
@@ -356,12 +359,16 @@ func newServerClient(cfg appConfig) (*apiclient.Client, error) {
 //
 //   - aibow-server につなぐとき(server が nil でない):保存も aibow-server の server.db に頼む(store/remote。0017 の 10-3)。
 //     手元の aibow.db は開かない(手元の会話はサーバーに移さない。アプリモードに戻せば見える)。
-//     サーバーがまだ起動していなくても、アプリは起動する(設定は初期値で始め、つながってから使う。0015 の 13)
+//     サーバーがまだ起動していなくても、アプリは起動する(設定は初期値で始め、つながってから使う。0015 の 13)。
+//     waitLogin(ログインの要る aibow-server にトークンなしで起動した)なら、設定は読まずに初期値で始め、ログインしたあとに読む(0051 の決定事項 6)
 //   - つながないとき:手元の DB(aibow.db)
-func openStore(cfg appConfig, server *apiclient.Client) (st aibow.Store, app aibow.AppSettings, close func(), err error) {
+func openStore(cfg appConfig, server *apiclient.Client, waitLogin bool) (st aibow.Store, app aibow.AppSettings, close func(), err error) {
 	if server != nil {
 		rs := remote.New(server)
 		log.Noticef("会話の保存先: aibow-server(%s)。手元の %s は使いません", server.URL(), absPath(cfg.dbPath))
+		if waitLogin {
+			return rs, cfg.app, nil, nil
+		}
 		app, notes, err := aibow.LoadAppSettings(context.Background(), rs, cfg.app)
 		if err != nil {
 			log.Warnf("aibow-server から設定を読めません(初期値で始めます): %v", err)

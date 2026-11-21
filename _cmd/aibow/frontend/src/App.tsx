@@ -306,7 +306,8 @@ export default function App() {
     convs.goHome().then(focusInput, err => addError(errorMessage(err)));
   };
   // 一覧のまとまりの「+」(並べ方がワークスペースごとのとき。0038): そのワークスペースを選んだ新しい会話の画面に移る。
-  // 上の「+ 新規」と違い、利用者がワークスペースを選んで押しているので、選んでおいてよい(0035 の「前回のワークスペースを選ばない」とは別)
+  // 上の「+ 新規」と違い、利用者がワークスペースを選んで押しているので、選んでおいてよい(0035 の「前回のワークスペースを選ばない」とは別)。
+  // 「ワークスペースなし」の「+」は workspace が "" で、設定の画面から戻ったときも含めて必ず外す(0051 の決定事項 2)
   const onNewIn = (workspace: string) => {
     closeOverlay();
     setSettingsOpen(false);

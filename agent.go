@@ -251,7 +251,18 @@ func (cs *Conversations) runTool(ctx context.Context, conv Conversation, c forma
 func (cs *Conversations) runFound(ctx context.Context, conv Conversation, c format.ToolCall, t tool.Tool, args tool.Args, emit func(ChatEvent)) StoredMessage {
 	var conf *Confirmation
 	var err error
-	if cs.needsConfirm(conv.ID, conv.Settings, t) {
+	// 確認のカードで「この返事の間」と答えたツールは、この返事が終わるまで聞かない(0051 の決定事項 11)
+	reply := cs.replyPolicy(ctx, conv.ID, c.Name)
+	if reply == config.ToolOff {
+		log.Noticef("ツール %s は、確認のカードで「この返事の間は拒否」と答えたので、聞かずに断ります(会話 %s)", c.Name, conv.ID)
+		res := toolMessage(conv.ID, c, replyOffText, false, 0)
+		res.ToolResult.Confirm = &Confirmation{Remember: config.ToolOff, ForReply: true}
+		return res
+	}
+	if reply == config.ToolAllow {
+		log.Noticef("ツール %s は、確認のカードで「この返事の間は実行」と答えたので、聞かずに実行します(会話 %s)", c.Name, conv.ID)
+	}
+	if reply != config.ToolAllow && cs.needsConfirm(conv.ID, conv.Settings, t) {
 		ct, ok := t.(tool.Confirmable)
 		if !ok {
 			ct = argsPreview{t} // 確認の内容を作れないツール(読むだけのツールを「確認する」にしたとき)は、引数を見せる
@@ -260,11 +271,7 @@ func (cs *Conversations) runFound(ctx context.Context, conv Conversation, c form
 			return toolMessage(conv.ID, c, errorPrefix+err.Error(), true, 0)
 		}
 		if !conf.Approved {
-			text := tool.RejectedText(conf.Reason)
-			if conf.Remember == config.ToolOff {
-				// 「今後許可しない」: 次の送信からはモデルに見せないが、この送信の間は見えているので、呼び直さないように伝える
-				text += "。この会話では、このツールは今後使えません"
-			}
+			text := rejectedText(conf)
 			res := toolMessage(conv.ID, c, text, false, 0)
 			res.ToolResult.Confirm = conf
 			return res
@@ -287,8 +294,8 @@ func (cs *Conversations) runFound(ctx context.Context, conv Conversation, c form
 		text, err = cs.execute(ctx, t, args)
 	}
 	sec := (time.Since(start) - waited).Seconds()
-	if err == nil && conf != nil && !conf.Approved && conf.Remember == config.ToolOff {
-		text += "。この会話では、このツールは今後使えません" // サーバーからの確認を「今後許可しない」で拒否した(上と同じ)
+	if err == nil && conf != nil && !conf.Approved {
+		text += rememberNote(conf) // サーバーからの確認を「今後も同じ」で拒否した(上と同じ)
 	}
 	res := toolMessage(conv.ID, c, text, false, sec)
 	if err != nil {
@@ -296,6 +303,29 @@ func (cs *Conversations) runFound(ctx context.Context, conv Conversation, c form
 	}
 	res.ToolResult.Confirm = conf
 	return res
+}
+
+// replyOffText は、「この返事の間は拒否」と答えたツールが、また呼ばれたときにモデルに返す結果(0051 の決定事項 11)。
+// 同じツールを試し続けないように、使わずに答えるよう頼む
+const replyOffText = "ユーザーはこのツールを使わないよう求めています。このツールを使わずに答えてください"
+
+// rejectedText は、確認のカードで拒否したときにモデルに返す結果。
+func rejectedText(conf *Confirmation) string {
+	return tool.RejectedText(conf.Reason) + rememberNote(conf)
+}
+
+// rememberNote は、拒否を「今後も同じ」にしたときに結果に足す一言。この送信の間はツールがモデルに見えているので、呼び直さないように伝える。
+//   - この会話の間(off):次の送信からはモデルに見せない
+//   - この返事の間:この返事が終わるまで聞かずに断る(replyOffText)
+func rememberNote(conf *Confirmation) string {
+	switch {
+	case conf.Remember != config.ToolOff:
+		return ""
+	case conf.ForReply:
+		return "。" + replyOffText
+	default:
+		return "。この会話では、このツールは今後使えません"
+	}
 }
 
 // askFor は、MCP のサーバーが実行の途中で確認を求めてきたときに、ユーザーに聞く関数を作る(0007 の 5-3)。
@@ -313,6 +343,11 @@ func (cs *Conversations) askFor(sendCtx context.Context, conv Conversation, c fo
 		}
 		if cs.toolPolicy(set, t) == config.ToolAllow {
 			log.Noticef("ツール %s: サーバーからの確認を、「確認しない」の扱いなので聞かずに受け入れます", t.Def().Name)
+			return tool.Answer{Approved: true}, nil
+		}
+		// 確認のカードで「この返事の間は実行」と答えたツールも聞かない(0051 の決定事項 11。拒否のほうは、実行する前の runFound で断っている)
+		if cs.replyPolicy(sendCtx, conv.ID, c.Name) == config.ToolAllow {
+			log.Noticef("ツール %s: サーバーからの確認を、「この返事の間は実行」と答えたので聞かずに受け入れます", t.Def().Name)
 			return tool.Answer{Approved: true}, nil
 		}
 		begin := time.Now()
@@ -463,9 +498,13 @@ func (cs *Conversations) Confirm(ctx context.Context, conv uuid.UUID, id string,
 
 // Answer は、確認を待っているツールに答える。a.Remember があれば、そのツールのこの会話でのこれから先の扱いにする(0010)。
 // 扱いは答えを渡す前に保存する(返ったときには保存済みなので、画面はすぐ会話の設定を読み直せる)。保存できなければ答えずにエラーを返す。
+// a.ForReply なら会話の設定には書かず、この返事(進行中の送信)の間だけ覚える(0051 の決定事項 12)。
 func (cs *Conversations) Answer(ctx context.Context, conv uuid.UUID, id string, a Confirmation) error {
 	if a.Remember != "" && !a.Remember.ValidInConversation() {
 		return fmt.Errorf("これから先の扱い %q は知らない値です", a.Remember)
+	}
+	if a.ForReply && a.Remember != config.ToolAllow && a.Remember != config.ToolOff {
+		return fmt.Errorf("この返事の間の扱い %q は知らない値です(allow か off)", a.Remember)
 	}
 	// 自分の進行中の送信が待っている確認だけに答えられる(ほかの人の確認は、ID を知っていても引けない。turns.go)。
 	// answerMu は、答える処理(扱いの保存 → 答えを渡す)を1つずつにする。turnMu を持ったまま保存先を呼ばないため、ロックを分けている
@@ -484,7 +523,7 @@ func (cs *Conversations) Answer(ctx context.Context, conv uuid.UUID, id string, 
 	if p == nil {
 		return errors.New("この確認はもう待っていません(停止したか、すでに答えています)")
 	}
-	if a.Remember != "" {
+	if a.Remember != "" && !a.ForReply {
 		if err := cs.SetToolPolicy(ctx, conv, p.tool, a.Remember); err != nil {
 			return fmt.Errorf("ツール %s のこれから先の扱いを保存できません: %w", p.tool, err)
 		}
@@ -496,8 +535,17 @@ func (cs *Conversations) Answer(ctx context.Context, conv uuid.UUID, id string, 
 	still := t != nil && t.pending == p
 	if still {
 		t.pending = nil
+		if a.ForReply {
+			if t.forReply == nil {
+				t.forReply = map[string]config.ToolPolicy{}
+			}
+			t.forReply[p.tool] = a.Remember
+		}
 	}
 	cs.turnMu.Unlock()
+	if still && a.ForReply {
+		log.Noticef("ツール %s をこの返事の間は %s にしました(確認のカードから。会話の設定には保存しません)", p.tool, a.Remember)
+	}
 	if !still {
 		return errors.New("この確認はもう待っていません(停止したか、すでに答えています)")
 	}

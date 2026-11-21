@@ -354,8 +354,18 @@ func firstModel(mm *modelManager, arg string) (models.Entry, error) {
 			return firstModel(mm, "")
 		}
 		if err != nil {
-			return models.Entry{}, fmt.Errorf("%w。%s", err, placesHint(mm))
+			// 見つからないモデルでも起動を止めない。使える最初のモデルで起動し、管理者が直せるように Warn で知らせる
+			// (止めると、置き場所にモデルが無い間、何度も起動に失敗し続ける。2026-11-20 のログ。0051 の決定事項 1)。
+			// 使えるモデルが1つも無ければ、下の firstModel(mm, "") がエラーで止める
+			fallback, ferr := firstModel(mm, "")
+			if ferr != nil {
+				return models.Entry{}, fmt.Errorf("起動のときのモデル %s が見つからず、ほかに使えるモデルもありません。%w", arg, ferr)
+			}
+			log.Warnf("起動のときのモデル %s が見つからないので、%s で起動します(-model・設定ファイルの model・AIBOW_MODEL を直してください。%s)",
+				arg, fallback.Name, placesHint(mm))
+			return fallback, nil
 		}
+		// 見つかったが書式に未対応のモデルは、今までどおり止める(指定したものを黙って替えない)
 		if arch, ok := supported(m); !ok && arch != "" {
 			return models.Entry{}, fmt.Errorf("指定したモデル %s の書式(種類: %s)には未対応です。対応しているのは Qwen3.5 だけです。"+
 				"-model・設定ファイルの model・AIBOW_MODEL で、ほかのモデルを指定してください", m.Name, arch)

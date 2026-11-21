@@ -65,7 +65,7 @@ interface Props {
   onOpenShared(id: string): void;
   workspaces: WorkspaceView[]; // この PC のワークスペース(並べ方がワークスペースごとのとき。0038)
   currentWorkspace: string | null; // 開いている会話のワークスペース(一覧を読み直す前に変えたときも、すぐにまとまりを移すため)
-  onNewIn(workspace: string): void; // まとまりの「+」:そのワークスペースを選んだ新しい会話の画面に移る
+  onNewIn(workspace: string): void; // まとまりの「+」:そのワークスペースを選んだ新しい会話の画面に移る(「ワークスペースなし」は "" で、必ず外す)
 }
 
 export function ConversationList({
@@ -212,8 +212,15 @@ export function ConversationList({
           <span className="conv-group-count">{g.list.length}</span>
           {groupMark && <span className={"dot " + groupMark} title={MARK_BADGE_LABEL[groupMark]} />}
         </button>
-        {g.workspace && (
-          <button className="conv-group-new" title={`「${g.label}」で新しい会話`} disabled={disabled} onClick={() => onNewIn(g.workspace)}>
+        {/* 「ワークスペースなし」にも出す(押すとワークスペースを外した新しい会話の画面。0051 の決定事項 2)。
+            「見つからない」には出さない(無いワークスペースでは始められない) */}
+        {(g.workspace || g.key === "none") && (
+          <button
+            className="conv-group-new"
+            title={g.workspace ? `「${g.label}」で新しい会話` : "ワークスペースなしで新しい会話"}
+            disabled={disabled}
+            onClick={() => onNewIn(g.workspace)}
+          >
             <LuPlus />
           </button>
         )}

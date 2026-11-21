@@ -131,7 +131,7 @@ sequenceDiagram
   alt 確認する（ask）
     C-->>B: SSE で confirm（差分・引数）
     Note over B,C: 待つのは 5 分まで。タブを閉じたら停止と同じ。<br/>SSE だけ切れたら PendingConfirm で出し直す
-    B->>H: ConfirmTool（許可 / 拒否 / この会話では今後聞かない）
+    B->>H: ConfirmTool（許可 / 拒否 / 今後も同じ：この返事の間・この会話の間）
     H->>C: 答え（Remember なら会話の上書きに書く）
   end
   C->>T: 実行（ログ：誰の・どの会話の・どのツール）
@@ -196,7 +196,7 @@ flowchart LR
     SVJ["server.json：サーバーの MCP・資料のフォルダ"]
     STJ["server-tools.json：ブラウザの扱いの既定（使わない＝禁止）"]
     PROF["配るプロファイル：使えないツール・資料のフォルダ・誰に配るか"]
-    CONVP["会話の上書き：使う / 使わない / 確認する<br/>カードの「この会話では今後聞かない」「今後許可しない」"]
+    CONVP["会話の上書き：使う / 使わない / 確認する<br/>カードの「この会話の間」（今後聞かない・今後許可しない）"]
   end
   PCU --> SJ & TJ
   ADM --> SVJ & STJ & PROF

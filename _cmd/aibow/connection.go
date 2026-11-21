@@ -9,7 +9,8 @@ package main
 //
 // 切り替えると生成の口(engine か api/client)も会話の保存先(aibow.db か server.db)も丸ごと替わるので、起動したまま替えず、
 // 保存して、起動し直すと切り替わる(起動の流れ main.go は今のまま使える)。アプリは自分で起動し直さない(2026-10-26、ユーザーと決め直した。決定事項 1)。
-// 起動し直すまでは前のモードのまま動くので、画面は「起動し直すと切り替わります」を出し続ける(ServerConnection の Pending)。
+// 起動し直すまでは前のモードのまま動くので、画面は変えたらその場で「起動し直してください」の画面に移り、aibow-server を呼ばない
+// (ServerConnection の Pending。0051 の決定事項 3)。aibow-server で消したトークンは、今動いているクライアントからも手放す(forgetKey)。
 // 手で書いた値(settings.json・環境変数)があれば、そちらが強いので画面からは変えない(決定事項 5)。
 // デスクトップのアプリだけのメソッドなので ui ではなくここに置く(ブラウザの画面用の口からは呼べない)。
 
@@ -45,6 +46,46 @@ type connection struct {
 	// client は、今動いている aibow-server のクライアント(つないでいなければ nil)。生成も保存もこれを使うので、
 	// キーを替えれば起動し直さずにログインし直せる(account.go。0031 の決定事項 44)
 	client *apiclient.Client
+	// loginRequired は、画面でつないで今動いている aibow-server がログインの要る形か(起動のときに確かめる。ログインしたら true)。
+	// トークンが無いときは、aibow-server を呼ばずにログインの画面にする(呼べば断られるだけ。0051 の決定事項 6)。mu で守る
+	loginRequired bool
+}
+
+// checkLogin は、起動のときに、ログインするまで aibow-server を呼ばずに待つかを決める(0051 の決定事項 6)。
+// 画面でつないだ aibow-server で、トークンが無く、そこがログインの要る形のとき true。
+// 確かめるのは、ログインの要らない /_aibow/auth/me だけ(つながらなければ待たない。呼び出しのエラーで伝える今までの形)。
+func (c *connection) checkLogin(pin string) bool {
+	if c.source != serverScreen || c.client == nil {
+		return false
+	}
+	if c.client.Key() != "" {
+		c.loginRequired = true // トークンはログインの要る aibow-server でしかもらわない
+		return false
+	}
+	p, err := apiclient.ProbeServer(context.Background(), c.url, pin)
+	if err != nil || !p.Trusted {
+		return false
+	}
+	c.loginRequired = p.Login
+	if p.Login {
+		log.Noticef("aibow-server(%s)にまだログインしていないので、ログインするまで aibow-server を呼びません", c.url)
+	}
+	return p.Login
+}
+
+// forgetKey は、今動いているクライアントのトークンを手放す(aibow-server で消したあと。0051 の決定事項 5)。
+// 消したトークンで呼び続けると、起動し直すまで aibow-server に断られる呼び出しが出続けるため。mu を持って呼ぶ。
+func (c *connection) forgetKey() {
+	if c.client != nil && c.source == serverScreen && c.client.Key() != "" {
+		c.client.SetKey("")
+	}
+}
+
+// needLogin は、aibow-server を呼ばずにログインの画面にしてよいか(ログインの要る aibow-server で、トークンを持っていない)。
+func (c *connection) needLogin() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.source == serverScreen && c.client != nil && c.loginRequired && c.client.Key() == ""
 }
 
 func newConnection(cfg appConfig) *connection {
@@ -209,6 +250,7 @@ func (s *ChatService) ConnectServer(req ConnectRequest) (ConnectResult, error) {
 	// ほかの aibow-server につなぎ替えるときは、今のトークンを aibow-server で消しておく(ログインの画面からなら、トークンは無いので何も送らない)
 	if !sameServer(c.saved.ServerURL, f.ServerURL) {
 		c.revoke()
+		c.forgetKey()
 	}
 	if err := f.Save(c.path); err != nil {
 		return ConnectResult{}, err
@@ -257,6 +299,7 @@ func (s *ChatService) DisconnectServer() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.revoke()
+	c.forgetKey()
 	var f config.ConnectionFile
 	if k := c.saved.Trusted(); k.URL != "" {
 		f.Known = &k

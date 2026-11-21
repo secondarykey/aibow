@@ -69,10 +69,15 @@ async function toPNG(svg: string, background: string): Promise<Blob> {
 }
 
 function download(blob: Blob, ext: string): void {
+  downloadBlob(blob, `diagram-${timestamp(new Date())}.${ext}`);
+}
+
+// downloadBlob は中身をブラウザのダウンロードで保存する(読み込んだファイルの保存でも使う。0051 の決定事項 13)
+export function downloadBlob(blob: Blob, name: string): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `diagram-${timestamp(new Date())}.${ext}`;
+  a.download = name;
   a.click();
   window.setTimeout(() => URL.revokeObjectURL(url), 10_000); // ダウンロードが始まるまで URL を残しておく
 }

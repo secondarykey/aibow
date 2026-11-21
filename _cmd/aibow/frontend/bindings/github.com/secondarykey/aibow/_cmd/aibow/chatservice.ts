@@ -150,10 +150,11 @@ export function Compact(id: uuid$0.UUID): $CancellablePromise<void> {
 /**
  * ConfirmTool は、実行前の確認を待っているツールに答える(カードの「実行する」「拒否」)。
  * reqID は confirm イベントの ID。拒否するときの reason は空でもよい(モデルには「理由: (書かれていません)」と渡る)。
- * remember は、このツールのこの会話でのこれから先の扱い(空ならこの1回だけ。allow = この会話では今後聞かない、off = 今後許可しない。0010)。
+ * remember は、このツールのこれから先の扱い(空ならこの1回だけ。allow = 聞かずに実行する、off = 聞かずに断る。0010)。
+ * forReply なら、remember はこの返事の間だけ(会話の設定には書かない)。false ならこの会話の間(会話の設定に書く。0051 の決定事項 10・11)。
  */
-export function ConfirmTool(id: uuid$0.UUID, reqID: string, approved: boolean, reason: string, remember: config$0.ToolPolicy): $CancellablePromise<void> {
-    return $Call.ByID(665849895, id, reqID, approved, reason, remember);
+export function ConfirmTool(id: uuid$0.UUID, reqID: string, approved: boolean, reason: string, remember: config$0.ToolPolicy, forReply: boolean): $CancellablePromise<void> {
+    return $Call.ByID(665849895, id, reqID, approved, reason, remember, forReply);
 }
 
 /**

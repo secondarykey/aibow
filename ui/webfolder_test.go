@@ -121,7 +121,7 @@ func TestWebFolderWrite(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(w.dir, "next.md")); err == nil {
 		t.Fatal("答える前に書いている")
 	}
-	w.mustCall(t, nil, "ConfirmTool", c.ID, req.ID, true, "", "")
+	w.mustCall(t, nil, "ConfirmTool", c.ID, req.ID, true, "", "", false)
 	until(t, events, "done")
 	<-done
 	if b, err := os.ReadFile(filepath.Join(w.dir, "next.md")); err != nil || string(b) != "# 次のステップ\n" {
@@ -196,7 +196,7 @@ func TestWebFolderWriteConflict(t *testing.T) {
 	// bob が確認のカードを見ている間に、ほかの人(carol の会話や、管理者の git pull)が書き換えた
 	readme := filepath.Join(w.dir, "README.md")
 	os.WriteFile(readme, []byte("# carol の版\n"), 0o644)
-	w.mustCall(t, nil, "ConfirmTool", c.ID, got[len(got)-1].Confirm.ID, true, "", "")
+	w.mustCall(t, nil, "ConfirmTool", c.ID, got[len(got)-1].Confirm.ID, true, "", "", false)
 	until(t, events, "done")
 	<-done
 	if b, _ := os.ReadFile(readme); string(b) != "# carol の版\n" {

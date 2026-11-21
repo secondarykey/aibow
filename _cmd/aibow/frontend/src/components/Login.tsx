@@ -5,15 +5,14 @@
 // ログインできる管理者がまだいなければ(初めての起動など)、サーバーの PC で管理者を作るよう出す(0020 の決定事項 2)。
 // 招待・再設定のリンク(URL の #reset=<合言葉>。0022)で開いたときは、ログインの代わりにパスワードを決める画面を出す。
 // デスクトップのアプリでは、箱の右下の歯車から、その PC の設定(つなぎ先・アプリモードに戻す・明るさ)を開ける(LoginSettings。0047)。
-// アプリモードに戻すと決めた(起動し直すと切り替わる)間は、そのお知らせを出してログインを押せなくする(Go の Login も断る。0047 の決定事項 14)。
+// 設定でモードを変えたら、ログインの画面ではなく「起動し直してください」の画面(RestartGate)に移る(0051 の決定事項 3。Go の Login も断る。0047 の決定事項 14)。
 import { useEffect, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import { LuSettings } from "react-icons/lu";
-import { ChatService, isBrowser, linkUser, login, me, onUnauthorized, applyLink } from "../backend";
+import { isBrowser, linkUser, login, me, onUnauthorized, applyLink } from "../backend";
 import { errorMessage } from "../errors";
 import { TitleBar } from "./TitleBar";
 import { LoginSettings } from "./LoginSettings";
-import { pendingText } from "./ServerSettings";
 
 // LoginGate は、ログインが要るのにしていなければログインの画面を、していれば children(アプリの画面)を描く。
 // 使っている途中で期限が切れた(呼び出しが 401 で断られた)ときもログインの画面に戻し、ログインしたら画面を読み直す
@@ -43,8 +42,8 @@ export function LoginGate({ children }: { children: ReactNode }) {
 // WithTitleBar は、デスクトップのアプリでログインの画面の上にタイトルバーを付ける。
 // アプリは Frameless(OS のタイトルバーが無い)なので、付けないとログインの画面がウィンドウいっぱいになり、
 // ウィンドウを動かす・最小化・閉じるができなくなる(ログアウトしたとき。2026-11-20、ユーザーの指摘)。
-// ブラウザにはブラウザのタイトルバーがあるので付けない(App と同じ。0016 の 17)。
-function WithTitleBar({ children }: { children: ReactNode }) {
+// ブラウザにはブラウザのタイトルバーがあるので付けない(App と同じ。0016 の 17)。「起動し直してください」の画面(RestartGate)も使う
+export function WithTitleBar({ children }: { children: ReactNode }) {
   if (isBrowser) return <>{children}</>;
   return (
     <div className="workspace">
@@ -116,12 +115,6 @@ function LoginScreen({ onDone }: { onDone(): void }) {
 
 function Login({ onDone, onOpenSettings }: { onDone(): void; onOpenSettings?(): void }) {
   const [name, setName] = useState(me.lastUser ?? ""); // アプリは最後にログインした名前を入れておく(ブラウザは空)
-  // 起動し直すと切り替わる(設定でアプリモードに戻した・つなぎ先を変えた)間のお知らせ。デスクトップのアプリだけ
-  const [pending, setPending] = useState("");
-  useEffect(() => {
-    if (isBrowser) return;
-    ChatService.ServerConnection().then(c => setPending(c.pending ? pendingText(c) : ""), () => {});
-  }, []);
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -143,7 +136,6 @@ function Login({ onDone, onOpenSettings }: { onDone(): void; onOpenSettings?(): 
     <div className="login">
       <form className={"login-box" + (onOpenSettings ? " with-settings" : "")} onSubmit={submit}>
         <h1 className="login-title">AIBow</h1>
-        {pending && <div className="login-note" role="status">{pending}</div>}
         <input
           type="text" placeholder="名前" aria-label="名前" autoComplete="username" autoFocus
           value={name} onChange={e => setName(e.target.value)}
@@ -152,7 +144,7 @@ function Login({ onDone, onOpenSettings }: { onDone(): void; onOpenSettings?(): 
           type="password" placeholder="パスワード" aria-label="パスワード" autoComplete="current-password"
           value={password} onChange={e => setPassword(e.target.value)}
         />
-        <button type="submit" className="primary" disabled={busy || pending !== "" || name.trim() === "" || password === ""}>ログイン</button>
+        <button type="submit" className="primary" disabled={busy || name.trim() === "" || password === ""}>ログイン</button>
         {error && <div className="login-error" role="alert">{error}</div>}
         {me.setup && (
           <div className="login-note">
