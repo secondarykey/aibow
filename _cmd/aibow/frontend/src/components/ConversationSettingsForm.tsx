@@ -184,12 +184,12 @@ export function LimitsForm({ history, reply, disabled, lock, onApply }: {
       <FieldLabel htmlFor="history-tokens" item={FIX.historyTokens} lock={lock} title="モデルに渡す文字列(これまでの会話)のトークン数の上限。超えたら compact で収める">
         会話の上限
       </FieldLabel>
-      <NumberInput id="history-tokens" value={h} min={512} step={1024} disabled={locked(lock, FIX.historyTokens)} onChange={setH} />
+      <NumberInput id="history-tokens" value={h} min={0} step={1024} disabled={locked(lock, FIX.historyTokens)} onChange={setH} />
 
       <FieldLabel htmlFor="reply-tokens" item={FIX.replyTokens} lock={lock} title="1回の返事で生成するトークン数の上限(思考 + 答え)">
         返事の上限
       </FieldLabel>
-      <NumberInput id="reply-tokens" value={r} min={256} step={1024} disabled={locked(lock, FIX.replyTokens)} onChange={setR} />
+      <NumberInput id="reply-tokens" value={r} min={0} step={1024} disabled={locked(lock, FIX.replyTokens)} onChange={setR} />
 
       {server ? (
         // aibow-server につないでいるときは、作業領域はサーバーが決めた大きさで固定(0015 の 3)
@@ -203,7 +203,7 @@ export function LimitsForm({ history, reply, disabled, lock, onApply }: {
           会話を上限まで詰めても、返事を上限まで書ける大きさを確保します。変えても、モデルは読み直しません。
         </p>
       )}
-      <button className="apply" disabled={disabled || !changed} onClick={() => onApply(h, r)}>適用</button>
+      <button className="apply" disabled={disabled || !changed || h <= 0 || r <= 0} onClick={() => onApply(h, r)}>適用</button>
     </>
   );
 }
