@@ -2,6 +2,7 @@ package main
 
 import (
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -25,8 +26,9 @@ const (
 //   - ファイル:アプリと同じフォルダ(%APPDATA%\aibow\logs。AIBOW_LOG_DIR で変えられる)の aibow-mcp_<日付>.log。
 //     標準エラー出力はクライアントの中に取り込まれて見えにくく、aibow の exe も Info の行をファイルに残さないので、サーバー自身でも残す
 //
-// レベルは Info(ツールの実行も残す)。アプリの exe が Notice にしているのは生成の統計などで行数が多いためで、
-// サーバーはツールを1回呼ぶごとに1行なので Info でも少ない。
+// レベルは引数の -log-level で決め、既定は Info(ツールの実行も残す)。アプリの exe が Notice にしているのは生成の統計などで行数が多いためで、
+// サーバーはツールを1回呼ぶごとに1行なので Info でも少ない。Debug にすると、MCP のやり取りの中身も出る(0052)。
+// level が知らない名前から来たとき(ParseLevel が false)はゼロ値の Info になる。main がそのあとで止める。
 //
 // サーバーは作業フォルダごとに1つずつ起動されるので、同じ日のファイルに複数のプロセスが書く。
 // ファイルは追記(O_APPEND)で開くので壊れないが、どのプロセスの行か分かるよう、各行にプロセスの番号(pid)を付ける。
@@ -35,7 +37,7 @@ const (
 // 前回の記録が見つかったら、ログに Warn で書く。複数のプロセスが同じ記録のファイルを使うので、どのプロセスの異常終了かは記録の中身で見分ける。
 //
 // ログが書けなくてもサーバーは止めない(ログに Warn で書いて続ける)。
-func startLog() io.Closer {
+func startLog(level slog.Level) io.Closer {
 	dir := os.Getenv("AIBOW_LOG_DIR")
 	if dir == "" {
 		if d, err := os.UserConfigDir(); err == nil {
@@ -46,7 +48,7 @@ func startLog() io.Closer {
 		Dir:          dir,
 		KeepDays:     logKeepDays,
 		CompressDays: logCompressDays,
-		Root:         log.LevelInfo,
+		Root:         level,
 		Console:      true,
 		Prefix:       logPrefix,
 	})

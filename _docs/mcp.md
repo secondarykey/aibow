@@ -324,7 +324,7 @@ MCP のクライアント(Claude Code・aibow など)── 起動する(aibow-m
   ほかのクライアントは書かないので、作業フォルダとシェルをサーバーの `instructions`(つないだときにクライアントに渡す説明)に入れる
 - **ログ**は標準エラー出力と、アプリと同じフォルダのファイル(`%APPDATA%\aibow\logs\aibow-mcp_<日付>.log`。`AIBOW_LOG_DIR`)に書く(`_cmd/aibow-mcp/log.go`。形はアプリの `startLog` にならう)。
   標準出力に何か書くと、クライアントが MCP のメッセージとして読もうとして壊れる。
-  起動(版・作業フォルダ・ツール)は Notice、ツールの実行(名前・秒数・結果の文字数・失敗の理由)は Info。aibow から起動すると、aibow のログにも `MCP <名前> (stderr) …` として入る
+  起動(版・作業フォルダ・ツール)は Notice、ツールの実行(名前・秒数・結果の文字数・失敗の理由)は Info。レベルは `-log-level`(既定は Info。0052)。aibow から起動すると、aibow のログにも `MCP <名前> (stderr) …` として入る
   (ただし aibow の exe は Notice 以上しかファイルに残さないので、サーバーの行はサーバー自身のファイルで見る)。
   作業フォルダごとに複数のプロセスが同じ日のファイルに書くので、各行の終わりに `pid=…` を付けている。異常終了は `aibow-mcp_crash.log` に残る
 - 版(`serverInfo.version`・起動のログ・`aibow-mcp -version`)はアプリと同じ。`_cmd/aibow/version` の写しの `internal/appversion/version` を埋め込む(aibow-server と共通。`go run _cmd/version.go` が書き写す)。

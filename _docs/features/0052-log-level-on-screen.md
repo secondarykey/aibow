@@ -1,6 +1,6 @@
 # 0052: 起動したあとに画面からログのレベルを変える
 
-- 状態: ⬜ 未着手(仕様を書いたところ。Code が決めて書いたこと(10〜20)をユーザーに確かめてから作る)
+- 状態: 🔧 作業中(2026-11-21。10〜20 もユーザーが「このまま」と確かめた)
 - ロードマップ: ロードマップの外(0008 のやり残しの 1「画面から全体のレベルを変えるか」の続き)
 - 決めた日: 2026-11-21(Code のセッションでユーザーと相談した。下の「決定事項(ユーザーと決めたこと)」の外は、話の流れから Code が決めて書いた)
 - 前提: 0008(ログの仕組み。`aibow/log`・`Init` の `Root`)、0032・0046(管理の画面・`Caller.ManagesPC`)
@@ -28,7 +28,7 @@
 8. **aibow-server のレベルは、ブラウザの管理の画面で変える**。サーバーモードのデスクトップのアプリには出さない(管理の画面は今ブラウザだけにあり、サーバーの管理の作業は管理の画面に集める。0032・0046 の形のまま。もとの未決事項 1)
 9. **Info にしたときの Wails の `[AssetFileServerFS] Handling request` の行は、今回は絞らない**(exe で Info にすると、画面のファイルを読むたびに十数行がファイルに入る。0008 のやり残しの 5 のまま。困ったら別に絞る。もとの未決事項 2)
 
-## 決定事項(話の流れから Code が決めて書いたこと。作る前にユーザーに確かめる)
+## 決定事項(話の流れから Code が決めて書いたこと。2026-11-21、作る前にユーザーが「このまま」と確かめた)
 
 ### レベルを変える仕組み(`aibow/log`)
 
@@ -83,6 +83,31 @@
 7. `aibow-mcp -log-level debug` で Debug の行が出る。書かなければ Info。知らない名前で起動が止まる
 8. `server.json` の `logLevel` に `trace` を書ける
 9. `go test ./log/` に、`SetLevel` で出る行が変わること・標準の log の行も合わせて変わることのテストを足す
+
+## 作ったもの(2026-11-21)
+
+| 場所 | 中身 |
+|---|---|
+| `log/level.go` | `SetLevel(l, by)`・`Level()`・`LevelNames`・`ParseLevel`・`LevelName`。`Init`(`log/setup.go`)は出口に `slog.LevelVar` を渡す |
+| `config/server.go` | `LogLevels` をやめ、`log.ParseLevel` で確かめる(`trace` も書ける)。aibow-server の `logLevel`(`_cmd/aibow-server/log.go`)も同じ |
+| `_cmd/aibow-mcp` | `-log-level`(既定 info)。知らない名前は、Info で組んだログにエラーを書いて終了の状態 2 で止める |
+| `_cmd/aibow/loglevel.go` | `ChatService.LogLevel` / `SetLogLevel`(アプリのログ。ブラウザからは呼べない) |
+| `ui/loglevel.go` | `ServerLogLevel` / `SetServerLogLevel`(ブラウザの管理者だけ。`ui/web.go` の `adminLogMethods` で 403、デスクトップのアプリでは `s.browser` で断る) |
+| `_cmd/aibow/frontend/src/components/LogLevelSelect.tsx` | 選択の部品(6つ。段階の意味はマウスを乗せた説明)。設定の画面の「基本設定」の「ログ」(デスクトップだけ)と、管理の画面の「ログ」のタブで使う |
+
+## 確かめたこと(2026-11-21)
+
+- `go test ./...`・`(cd _cmd/aibow && go test .)`・`go vet`・`gofmt -l .`・`wails3 build`(画面の型チェックとビルド)が通る
+- `go test ./log/`:`SetLevel` で再起動せずに出る行が変わる・標準の log の行も変わる・変えたことが Notice で残る(絞るときは変える前)・`Init` の前は何もしない(完了の条件 3・9)
+- `go test ./ui/`:管理者でなければ `ServerLogLevel` / `SetServerLogLevel` は 403・管理者は trace にできる・知らない名前はエラー・デスクトップのアプリの `Service` では断る(完了の条件 5 の Go の側)
+- `go test ./config/`:`server.json` の `logLevel` に `trace` を書ける(完了の条件 8)
+- `aibow-mcp -log-level bogus` で、書ける値を添えたエラーを書いて止まる。`-log-level warn` で起動の Notice(ログの書き出し先)が出なくなる。
+  ⚠️ aibow-mcp には今 Debug で出す行が無いので、「`-log-level debug` で Debug の行が出る」(完了の条件 7)は、レベルが効くことを warn で確かめただけ
+
+### まだ確かめていないこと
+
+- 画面で確かめること:完了の条件 1・2・4、5 の画面の側(ブラウザの管理の画面の「ログ」のタブ・管理者でない人にタブが出ない)、6(ブラウザの「基本設定」に「ログ」が出ない)。
+  Go の側はテストで確かめた。`ChatService` のメソッドがブラウザから呼べないのは、`ui.Handler` が `ui.Service` の決まったメソッドしか受けないため(呼べば 404)
 
 ## 作業の順番(案)
 

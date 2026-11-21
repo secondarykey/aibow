@@ -303,6 +303,13 @@ export function LoadToolList(server: string): $CancellablePromise<void> {
 }
 
 /**
+ * LogLevel は、アプリの今のログのレベル(log.LevelNames の名前。trace・debug・info・notice・warn・error)。
+ */
+export function LogLevel(): $CancellablePromise<string> {
+    return $Call.ByID(1468793011);
+}
+
+/**
  * Login は、画面でつないだ aibow-server に、名前とパスワードでログインし直す(ログアウトしたあと・期限が切れたあと)。
  * アプリ用のトークンをもらって、今動いているクライアントのキーを替え、connection.json に書く(起動し直さない)。
  */
@@ -484,6 +491,13 @@ export function ServerConnection(): $CancellablePromise<$models.ServerConnection
 }
 
 /**
+ * ServerLogLevel は、aibow-server の今のログのレベル(log.LevelNames の名前)。管理者だけ(画面で隠すだけにしない)。
+ */
+export function ServerLogLevel(): $CancellablePromise<string> {
+    return $Call.ByID(2792991696);
+}
+
+/**
  * SetConversationShare は、自分の会話の共有の範囲(""・all・users)と相手(利用者の名前とグループの名前。0031)を変える。
  */
 export function SetConversationShare(id: uuid$0.UUID, share: string, $with: string[] | null, groups: string[] | null): $CancellablePromise<void> {
@@ -547,6 +561,13 @@ export function SetGroupPolicy(group: string, policy: config$0.ToolPolicy): $Can
 }
 
 /**
+ * SetLogLevel は、アプリのログのレベルを変えて、変えたあとのレベルを返す。変えたことは Notice で残る。
+ */
+export function SetLogLevel(name: string): $CancellablePromise<string> {
+    return $Call.ByID(3578678533, name);
+}
+
+/**
  * SetModelEnabled は、モデルを使えるかを決める(aibow-server の管理者がモデルのタブで。0018 の決定事項 13)。
  * 使えないモデルは一覧に出さず、頼まれても読み込まない。使えなくしたのが読み込み中のモデルなら降ろすので、席を取ってから行う。
  */
@@ -588,6 +609,13 @@ export function SetProfileArchived(id: uuid$0.UUID, archived: boolean): $Cancell
  */
 export function SetProfileShare(id: uuid$0.UUID, share: string, $with: string[] | null, groups: string[] | null): $CancellablePromise<void> {
     return $Call.ByID(2853156393, id, share, $with, groups);
+}
+
+/**
+ * SetServerLogLevel は、aibow-server のログのレベルを変えて、変えたあとのレベルを返す。変えたことは Notice で残り、誰が変えたかも添える。
+ */
+export function SetServerLogLevel(name: string): $CancellablePromise<string> {
+    return $Call.ByID(4172485490, name);
 }
 
 /**

@@ -9,6 +9,7 @@
 |---|---|
 | `log.go` | 出す関数(Trace / Debug / Info / Notice / Warn / Error と `…f`)。段階(`Level*`。値は wenteasy/log と同じ `slog.Level`)。出し先の `SetLogger` / `Logger` |
 | `setup.go` | `Init(Options)`。出口(ファイル `Dir/aibow_<日付>.log`・標準エラー出力)を組んで `slog.Default()` を向ける(アプリの main の最初に 1 回)。ファイルの名前の頭は `Options.Prefix`(空なら `aibow`。aibow-mcp は `aibow-mcp`)。`FilePath` は今日のファイルの場所 |
+| `level.go` | 起動したあとにレベルを変える(0052)。`Init` が出口に渡した `slog.LevelVar` を `SetLevel` / `Level` で読み書きする(標準の log の行のレベルも合わせる。変えたことは Notice で残す)。名前とレベルの対応(`LevelNames`・`ParseLevel`・`LevelName`。aibow-server の `server.json`・aibow-mcp の `-log-level`・画面で使う)はここだけ |
 | `crash.go` | `CatchCrash`。異常終了(Go の panic・ランタイムの致命的なエラー)の内容をログの隣の `aibow_crash.log`(名前は `CrashFile()`。頭は `Options.Prefix`)にも書かせる(`debug.SetCrashOutput`)。前回の記録が残っていれば `aibow_crash_<日時>.log` に改名して返す(= 前回は異常終了した)。形は ikkyoku の `CatchCrash` と同じ |
 
 ## どこに出るか
@@ -20,10 +21,15 @@
   - exe(`wails3 build`): ファイル `%APPDATA%\aibow\logs\aibow_<日付>.log`(wenteasy/log の `RollingFileWriter`。日ごと。`AIBOW_LOG_DIR` で変えられる)。
     exe(`-H windowsgui`)には標準エラー出力の行き先が無く、ファイルにしか残らないため。**Notice 以上だけ**を書く(常に残したいもの。生成の統計などの Info は wails3 dev で見る)。古いファイルを消し、今日を含めて 60 日分を残す(`Options.KeepDays`)。今日と昨日より古いものは gzip の `aibow_<日付>.log.gz` にする(`Options.CompressDays` = 2。wenteasy/log の `SetCompressAfter`。1/9 ほどに縮むので、前の 10 日分そのままより場所を取らない。2026-11-08、ユーザーの指示)。消すのは wenteasy/log の `RollingFileWriter` の `SetKeep`(v0.4.0。それまでは aibow の `removeOld` が起動時に消していた)で、ファイルを開いたとき(最初に書いたとき・日付が変わって切り替えたとき)に別の goroutine で動く。何日も動かし続ける aibow-server でも日が変わるたびに片付く。日付はファイル名から読み、`aibow_<日付>.log`(と `.log.gz`)の形でないファイルは消さない。消せなかったときは Warn で残す(`SetErrorHandler`)
 - **MCP のサーバー(`_cmd/aibow-mcp`)**: アプリにならい、同じフォルダ(`%APPDATA%\aibow\logs`。`AIBOW_LOG_DIR`)の `aibow-mcp_<日付>.log` に書く(`Options.Prefix`)。
-  標準エラー出力にもいつも出す(クライアントが取り込む)。レベルは Info・60 日分(今日と昨日より古いものは gzip)。作業フォルダごとに複数のプロセスが同じファイルに書くので、`SetLogger(Logger().With("pid", …))` で各行に pid を付ける。
+  標準エラー出力にもいつも出す(クライアントが取り込む)。レベルは起動の引数 `-log-level` で決め、既定は Info(0052)・60 日分(今日と昨日より古いものは gzip)。作業フォルダごとに複数のプロセスが同じファイルに書くので、`SetLogger(Logger().With("pid", …))` で各行に pid を付ける。
   異常終了は `aibow-mcp_crash.log`(画面が無いので、前回の記録はログに Warn で書く)。0007 の決定事項 11
 - **aibow をライブラリとして使う人**: `Init` は呼ばなくてよい。aibow のログは `slog.Default()` に出るので、
   自分の `slog.SetDefault` の出口に集まる。aibow のログだけ別にしたいときは `log.SetLogger(l)`
+
+- **起動したあとにレベルを変える**(0052): `Init` は出口のレベルを `slog.LevelVar` で渡すので、`SetLevel` で再起動せずに変わる。保存はしない(起動し直すと `Options.Root` に戻る)。
+  画面から変えるのは、アプリは設定の画面の「基本設定」(`_cmd/aibow/loglevel.go` の `ChatService.LogLevel` / `SetLogLevel`。ブラウザからは呼べない)、
+  aibow-server はブラウザの管理の画面の「ログ」(`ui/loglevel.go` の `ServerLogLevel` / `SetServerLogLevel`。管理者だけ)。aibow-mcp は起動の引数 `-log-level`。
+  `Init` を呼んでいなければ(ライブラリとして使う人)`SetLevel` は何もしない
 
 ## ⚠️ 崩さないこと
 
@@ -43,6 +49,8 @@
   llama.cpp の C の部分の異常終了(GGML_ASSERT など)は拾えない([_docs/known-issues.md](../_docs/known-issues.md))
 
 ## テスト(`go test ./log/`)
+
+`level_test.go` —— `SetLevel` で再起動せずに出る行が変わること・標準の log の行も合わせて変わること・変えたことが Notice で残ること(絞るときは変える前)・`Init` の前は何もしないこと・名前とレベルが行き来できること。
 
 `log_test.go` —— 出す関数とレベルの足切り・**記録される位置が呼んだ側になること**(ここの関数を通しても位置がずれない歯止め)・
 `SetLogger` をしなければ `slog.Default()` に出ること・`Init` が `slog.Default()` を向け、Notice などが名前で出ること・

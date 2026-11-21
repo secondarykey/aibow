@@ -85,6 +85,9 @@ var pcMethods = []string{"UnloadModel", "SetModelGPULayers", "ModelPlaces", "Add
 // サーバー全体の既定(server-tools.json)を変え、一覧の読み直しはサーバーの PC で MCP のサーバーを起動するので、pcMethods と同じ人だけが呼べる。ほかの人は 403。
 var adminToolMethods = []string{"SetToolPolicy", "SetGroupPolicy", "LoadToolList"}
 
+// adminLogMethods は、aibow-server のログのレベルを見る・変えるメソッド(管理の画面の「ログ」。0052)。pcMethods と同じ人だけが呼べる。ほかの人は 403。
+var adminLogMethods = []string{"ServerLogLevel", "SetServerLogLevel"}
+
 // adminOnly は、管理者だけが呼べるメソッドと、ほかの人に断るときの文。
 var adminOnly = map[string]string{}
 
@@ -95,6 +98,9 @@ func init() {
 	for _, name := range adminToolMethods {
 		adminOnly[name] = "ツールの扱いの既定は、管理者だけが変えられます"
 	}
+	for _, name := range adminLogMethods {
+		adminOnly[name] = serverLogOnly
+	}
 }
 
 // Who は、リクエストを送ってきた人を決める係(aibow-server が渡す)。決められなければエラー(401 で断る)。
@@ -104,10 +110,10 @@ type Who func(r *http.Request) (Caller, error)
 func Handler(s *Service, ev *Events, who Who) http.Handler {
 	methods := map[string]reflect.Value{}
 	v := reflect.ValueOf(s)
-	for _, name := range slices.Concat(browserMethods, pcMethods, adminToolMethods) {
+	for _, name := range slices.Concat(browserMethods, pcMethods, adminToolMethods, adminLogMethods) {
 		m := v.MethodByName(name)
 		if !m.IsValid() {
-			panic("ui.Service に " + name + " がありません(browserMethods・pcMethods・adminToolMethods を直してください)")
+			panic("ui.Service に " + name + " がありません(browserMethods・pcMethods・adminToolMethods・adminLogMethods を直してください)")
 		}
 		methods[name] = m
 	}
