@@ -7,16 +7,18 @@ import (
 	"testing"
 )
 
-// logLevel の書き間違いはエラー(書ける値は LogLevels)
+// logLevel の書き間違いはエラー(書ける値は log.LevelNames。trace も書ける。0052)
 func TestServerFileLogLevel(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "server.json")
 	os.WriteFile(path, []byte(`{"logLevel": "verbose"}`), 0o644)
 	if _, _, err := LoadServerFile(path); err == nil || !strings.Contains(err.Error(), "logLevel") {
 		t.Errorf("書き間違い: %v", err)
 	}
-	os.WriteFile(path, []byte(`{"logLevel": "notice"}`), 0o644)
-	if f, found, err := LoadServerFile(path); err != nil || !found || f.LogLevel != "notice" {
-		t.Errorf("notice: %+v %v %v", f, found, err)
+	for _, name := range []string{"notice", "trace"} {
+		os.WriteFile(path, []byte(`{"logLevel": "`+name+`"}`), 0o644)
+		if f, found, err := LoadServerFile(path); err != nil || !found || f.LogLevel != name {
+			t.Errorf("%s: %+v %v %v", name, f, found, err)
+		}
 	}
 }
 

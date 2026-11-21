@@ -26,10 +26,10 @@ MCP のクライアント(Claude Code・aibow など)⇄ 標準入出力 ⇄ aib
 aibow の組み込みのツール: 会話の仕組み ⇄ aibow/mcp/client の Local ⇄ MCP(メモリ内)⇄ aibow/mcp/server ⇄ aibow/tool
 
 OpenAI 互換のクライアント(Cline など)⇄ HTTP(S)(既定は 127.0.0.1。外では API キー)⇄ aibow-server(_cmd/aibow-server)= aibow/api ⇄ aibow/engine
-画面のアプリを aibow-server につなぐとき(settings.json の serverUrl。ステップ8・10):aibow ⇄ aibow/api/client(生成)・aibow/store/remote(保存)⇄ HTTP ⇄ aibow-server(アプリは llama.cpp を読み込まず、会話は server.db。
-  つながないとき(既定)は上の図のとおりアプリの中で動かし、そのときは aibow-server と同時に使わない)
+画面のアプリを aibow-server につなぐとき(**サーバーモード**。settings.json の serverUrl。ステップ8・10):aibow ⇄ aibow/api/client(生成)・aibow/store/remote(保存)⇄ HTTP ⇄ aibow-server(アプリは llama.cpp を読み込まず、会話は server.db。
+  つながないとき(既定。**アプリモード**)は上の図のとおりアプリの中で llama.cpp を動かし、そのときは aibow-server と同時に使わない)
 ブラウザ(http://127.0.0.1:8089/。ステップ9)⇄ HTTP(S)(画面と /_aibow/ui/ の呼び出しと SSE。ログインは cookie のセッション。ステップ10)⇄ aibow-server = aibow/ui ⇄ aibow(ツールはサーバーの PC で動く。配るプロファイルで選んだ資料のフォルダを読み書きする。ステップ12)⇄ aibow/engine
-  (画面は aibow/web に埋め込んだもので、デスクトップのアプリと同じ。会話は aibow-server の server.db。生成は OpenAI 互換の口と同じ engine・同じ順番待ちの席 api.Seat)
+  (画面は aibow/web に埋め込んだもので、デスクトップのアプリと同じ。会話は aibow-server の server.db。生成は OpenAI 互換の API と同じ engine・同じ順番待ちの席 api.Seat)
 利用者(ステップ10):aibow-server の server.db に利用者・セッション・API キー(aibow/auth)。会話・プロファイル・表示の設定は持ち主で分かれ、誰のものかは ctx で運ぶ(aibow.WithUser)。
   既定でログインと API キーが要る(0020。login: false で 127.0.0.1 だけならログインなし(利用者 local))。-host で外に出すと、書いた値によらず要る([_docs/usage.md](_docs/usage.md) の「ほかの PC から使う」)
 共有(ステップ11):管理者(コマンドで決める)は利用者の管理・使えるモデル・サーバーの PC の事情を変えられ、ほかの人の会話を読むだけで読める(ログに残る)。
@@ -41,7 +41,7 @@ OpenAI 互換のクライアント(Cline など)⇄ HTTP(S)(既定は 127.0.0.1�
   (aibow 自身の `aibow-server` は別。中で動くのは aibow の engine と llama.cpp で、ユーザーが決めて作ったもの。ステップ6・8)
 - ただし **Ollama を「モデルの管理係」として使うのは OK**(ユーザーの方針)。Ollama が保存したファイルを aibow が直接読む。Ollama のサーバーや API は使わない
 - 画面は Wails v3 のデスクトップアプリ。画面のアプリは HTTP サーバーを立てない(以前のブラウザ版から移行した。OpenAI 互換の API は別の exe `aibow-server` が立てる)。
-  ブラウザから使うときは、`aibow-server` が同じ画面(`web`)を配り、会話も持つ(ステップ9。[_docs/api.md](_docs/api.md) の「画面用の口」)。
+  ブラウザから使うときは、`aibow-server` が同じ画面(`web`)を配り、会話も持つ(ステップ9。[_docs/api.md](_docs/api.md) の「画面用の API」)。
   GUI の無い環境で確かめるための Wails の server モードは、確認用の一時ビルドだけで使う([_docs/env-cloud.md](_docs/env-cloud.md))
 
 | 場所 | 中身 |
@@ -51,17 +51,17 @@ OpenAI 互換のクライアント(Cline など)⇄ HTTP(S)(既定は 127.0.0.1�
 | `format/` | 書式(`format` パッケージ。チャットテンプレートと、会話の仕組みとエンジンの間で受け渡す形 `Message` / `Prompt` / `Output` / `ToolCall`)。`tool` だけを使う |
 | `models/` | 使えるモデルの一覧(`models` パッケージ。GGUF と Ollama の目録と、画面で足した置き場所。ステップ8)と、GGUF の先頭からモデルの種類だけを読む `Arch`。何にも依存しない |
 | `tool/` | ツール(`tool` パッケージ)。ツールの形と組み込みのツール・作業フォルダのツール。LLM・書式・会話・保存を import しない(MCP でツールだけを使うため) |
-| `store/` | 会話の保存先(SQLite)と、利用者・セッション・API キー(`auth.Store`)。`store/remote/` は会話の保存を HTTP 越しに使う口(aibow-server の `/_aibow/store/`)とその HTTP 版(アプリの側。0017 の 10-3) |
+| `store/` | 会話の保存先(SQLite)と、利用者・セッション・API キー(`auth.Store`)。`store/remote/` は会話の保存を HTTP 越しに使う API(aibow-server の `/_aibow/store/`)とその HTTP 版(アプリの側。0017 の 10-3) |
 | `mcp/client/` | MCP のクライアント(`client` パッケージ。SDK のパッケージ名 `mcp` と重ならないよう `mcp/` の下に置く。サーバーは `mcp/server/` に並べる)。`settings.json` の MCP のサーバーを起動し、そのツールを `tool.Tool` として見せる。aibow の中で `mcp/server` を動かし、組み込みのツールを MCP 越しに渡す(`Local`)。`tool` と `mcp/server` を import し、ルートの `aibow` は import しない |
 | `mcp/server/` | MCP のサーバー(`server` パッケージ。ステップ5)。`tool` のツールを MCP のツールとして出す。書き換えるツールはサーバーからユーザーに確かめる(MRTR)。`tool` と SDK だけを使い、ルートの `aibow` は import しない |
-| `api/` | OpenAI 互換の API(`api` パッケージ。ステップ6)。`engine` で生成だけを使い、ルートの `aibow`(会話の仕組み)は import しない。HTTP は標準の `net/http`。ステップ8で aibow 専用の口と欄(モデルの一覧・読み込み・トークン数など)を足した。生成の順番待ちの席 `Seat` はブラウザの会話(`ui`)と分け合う(ステップ9) |
-| `auth/` | aibow-server の利用者とログイン(`auth` パッケージ。ステップ10の 10-1)。パスワードのハッシュ(`crypto/pbkdf2`)・cookie のセッション・ログインの口(`/_aibow/auth/`)・アプリ用のトークン(0019)・パスワードを決めるリンク(0022)・証明書のフィンガープリント。認証だけを受け持ち、ルートの `aibow` は import しない。保存は `store`(server.db) |
+| `api/` | OpenAI 互換の API(`api` パッケージ。ステップ6)。`engine` で生成だけを使い、ルートの `aibow`(会話の仕組み)は import しない。HTTP は標準の `net/http`。ステップ8で aibow 専用の API と欄(モデルの一覧・読み込み・トークン数など)を足した。生成の順番待ちの席 `Seat` はブラウザの会話(`ui`)と分け合う(ステップ9) |
+| `auth/` | aibow-server の利用者とログイン(`auth` パッケージ。ステップ10の 10-1)。パスワードのハッシュ(`crypto/pbkdf2`)・cookie のセッション・ログインの API(`/_aibow/auth/`)・アプリ用のトークン(0019)・パスワードを決めるリンク(0022)・証明書のフィンガープリント。認証だけを受け持ち、ルートの `aibow` は import しない。保存は `store`(server.db) |
 | `api/client/` | aibow-server につなぐクライアント(`client` パッケージ。ステップ8)。会話の仕組みの `Generator` と `ModelLoader` の HTTP 版。ルートの `aibow` は import しない |
-| `ui/` | 画面向けの処理(`ui` パッケージ。ステップ9の 9-0 で `_cmd/aibow` から切り出した)。画面から呼ぶメソッド(`Service`。モデル・会話・設定・送信)と、モデルを扱う係(直接 `DirectHost`・aibow-server 越し `RemoteHost`)。ルートの `aibow` を使い、Wails を import しない。デスクトップのアプリは `ChatService` に埋め込んで Wails に渡す。ブラウザ向けには aibow-server が使う:aibow-server の engine でモデルを扱う係(`ServerHost`)と、画面用の HTTP の口(`Handler`。`/_aibow/ui/call/{メソッド}` と SSE の `/_aibow/ui/events`)。9-1。仕組みは [_docs/api.md](_docs/api.md) の「画面用の口」 |
+| `ui/` | 画面向けの処理(`ui` パッケージ。ステップ9の 9-0 で `_cmd/aibow` から切り出した)。画面から呼ぶメソッド(`Service`。モデル・会話・設定・送信)と、モデルを扱う係(直接 `DirectHost`・aibow-server 越し `RemoteHost`)。ルートの `aibow` を使い、Wails を import しない。デスクトップのアプリは `ChatService` に埋め込んで Wails に渡す。ブラウザ向けには aibow-server が使う:aibow-server の engine でモデルを扱う係(`ServerHost`)と、画面用の HTTP のAPI(`Handler`。`/_aibow/ui/call/{メソッド}` と SSE の `/_aibow/ui/events`)。9-1。仕組みは [_docs/api.md](_docs/api.md) の「画面用の API」 |
 | `web/` | 画面のビルド結果(`web` パッケージ。ステップ9の 9-2)。vite が `_cmd/aibow/frontend` から `web/dist/app` に書き、デスクトップのアプリと aibow-server の両方が `web.Files()` で埋め込む(写さない)。ビルドしていなければ `web/dist/index.html`(ビルドの仕方だけのページ) |
 | `git/` | アプリが行う Git の操作(`git` パッケージ。0039)。`git` の exe を `os/exec` で呼ぶ(外部パッケージは使わない)。worktree を作る・本体の状態・差分・`git apply` で当てる・消す。ルートの `aibow`・`tool`・Wails を import しない(aibow-server からも使えるように。モデルに見せるツールは `tool`、アプリが行う Git の操作は `git`) |
-| `config/` | アプリと aibow-server の設定ファイルと環境変数(`config` パッケージ)。アプリの手で書く `settings.json`(`SettingsFile`)・画面で決めた aibow-server のつなぎ先 `connection.json`(`ConnectionFile`。トークンは `internal/secret` で包む)・ツールの扱い `ToolPolicy` とその PC の既定 `tools.json`(`ToolPrefs`)・MCP のサーバー `mcp.json`(`MCPFile`・`MCPConfig`)・ワークスペース `workspaces.json`(`Workspaces`)・アプリの中で動かすときに画面で足したモデルの置き場所 `model-places.json`(`PlacesFile`)・aibow-server の手で書く `server.json`(`ServerFile`)と書く `server-models.json`(`ServerModels`)・`AIBOW_` の環境変数(`Env`)。読んで確かめて書くまでで、強さの順はそれぞれの exe が決める。ルートの `aibow` を import しない(2026-11-08、ユーザーの指示で分けた) |
-| `usage/` | aibow-server の使用量(0033。`usage` パッケージ)。生成1回ごとの記録の形と、生成に付ける付箋(道・用途・会話・順番待ちを ctx で運ぶ)。何にも依存しない(会話の仕組み・`api`・`api/client`・`ui`・`store` から使う)。記録するのは `_cmd/aibow-server` の記録付きの engine |
+| `config/` | アプリと aibow-server の設定ファイルと環境変数(`config` パッケージ)。アプリの手で書く `settings.json`(`SettingsFile`)・画面で決めた aibow-server のつなぎ先 `connection.json`(`ConnectionFile`。トークンは `internal/secret` で包む)・ツールの扱い `ToolPolicy` とその PC の既定 `tools.json`(`ToolPrefs`)・MCP のサーバー `mcp.json`(`MCPFile`・`MCPConfig`)・ワークスペース `workspaces.json`(`Workspaces`)・アプリモードのときに画面で足したモデルの置き場所 `model-places.json`(`PlacesFile`)・aibow-server の手で書く `server.json`(`ServerFile`)と書く `server-models.json`(`ServerModels`)・`AIBOW_` の環境変数(`Env`)。読んで確かめて書くまでで、強さの順はそれぞれの exe が決める。ルートの `aibow` を import しない(2026-11-08、ユーザーの指示で分けた) |
+| `usage/` | aibow-server の使用量(0033。`usage` パッケージ)。生成1回ごとの記録の形と、生成に付ける付箋(呼び出し元・用途・会話・順番待ちを ctx で運ぶ)。何にも依存しない(会話の仕組み・`api`・`api/client`・`ui`・`store` から使う)。記録するのは `_cmd/aibow-server` の記録付きの engine |
 | `mcp/internal/` | MCP のクライアントとサーバーの両方で使う部分(`meta`: `_meta` の名前) |
 | `internal/proc/` | 子プロセスまでまとめて止める仕組み(`tool` の `run_command` と `mcp/client` で使う) |
 | `internal/appversion/` | aibow-mcp と aibow-server が名乗るバージョン(`_cmd/aibow/version` の写しを1つだけ埋め込む。`go run` なら patch +1 と `+dev`)。画面のアプリは別のモジュールなので自分の `appversion.go` を持つ([_docs/deploy.md](_docs/deploy.md)) |
@@ -87,7 +87,7 @@ OpenAI 互換のクライアント(Cline など)⇄ HTTP(S)(既定は 127.0.0.1�
 | 会話の履歴・会話ごとの設定(会話の上限・返事の上限も)・アプリの設定・保存の約束(`Store`)・モデルに渡さない発言・作り直す / 送り直す | [_docs/conversations.md](_docs/conversations.md) |
 | 会話の上限・compact(truncate / summary)・メーター | [_docs/compact.md](_docs/compact.md) |
 | ファイルを読み込む(テキストのファイル・画像を発言に付ける・展開・会話の上限に入るか) | [_docs/conversations.md](_docs/conversations.md) の「読み込んだファイル」・画面は [_docs/ui.md](_docs/ui.md) の「ファイルを読み込む」・仕様は [_docs/features/0030-read-files.md](_docs/features/0030-read-files.md) |
-| 画像を読む(mmproj・mtmd・画像トークン・チャンクと KV キャッシュ・M-RoPE の位置・OpenAI 互換の口の `image_url`) | [_docs/engine.md](_docs/engine.md) の「画像を読む」・[_docs/api.md](_docs/api.md) |
+| 画像を読む(mmproj・mtmd・画像トークン・チャンクと KV キャッシュ・M-RoPE の位置・OpenAI 互換の API の `image_url`) | [_docs/engine.md](_docs/engine.md) の「画像を読む」・[_docs/api.md](_docs/api.md) |
 | SQLite の実装・マイグレーション | [store/AGENTS.md](store/AGENTS.md) |
 | ログの出し方・出口(`Init`)・ライブラリとして使う人のログ(`SetLogger`)・異常終了の記録 | [log/AGENTS.md](log/AGENTS.md)(決めたこととやり残しは [_docs/features/0008-log.md](_docs/features/0008-log.md)) |
 | アプリの起動・`ChatService`・環境変数の読み込み・Go と画面のやり取り | [_cmd/aibow/AGENTS.md](_cmd/aibow/AGENTS.md) |
@@ -136,6 +136,15 @@ OpenAI 互換のクライアント(Cline など)⇄ HTTP(S)(既定は 127.0.0.1�
 - コメントは日本語。「何をしているか」より「なぜそうしているか」「ここで何を学べるか」を書く
 - 1つの関数に処理を詰め込みすぎず、流れが上から読めるようにする
 - エラーは握りつぶさず、原因と対処が分かる日本語のメッセージで画面かログに出す
+- 画面・お知らせ・Notice / Warn / Error のログ・コマンドの出力の文は、読む人から見て書く(0048。2026-11-20、ユーザーと決めた):
+  - 先に「使う人が何をすればいいか」(無ければ、使う人から見て何が起きたか)。中の事情(なぜそうなったか)は後ろか括弧に
+  - その人に関係あるときだけ出す。条件でしぼれないもの(プロキシを使っているかなど)は、起動のログでなくドキュメントに書く
+  - 開発する人向けの詳細(HTTP のメソッドとパス・戻り値・`[DONE]` などの印)は文の頭に置かず、括弧の後ろかログへ。Go の型名(`%T`)は画面に出さない
+  - 学習用の詳細は Info / Debug のログ・マウスを乗せた説明に置く。Info / Debug のログ・ツールの説明と結果(読み手はモデル)・API を直接呼ぶ人向けの断り・`_cmd/dev` の出力は、この決まりの外
+    (ただし造語を使わない、は Info のログにも当てる。確認の手順でログを読んでもらうことがあるため。2026-11-21)
+  - 造語を使わない。仕様の中で付けた呼び名(札・水位・一歩・組など)は、画面・ログ・確認の手順に持ち出さない。使う人に見えるもの(会話の上限・ツールの結果・この質問への返事の途中)で言う
+  - 画面の操作を頼むときは、場所と見た目まで書く(✕「「渡さない」にしてください」○「返事の下の作り直すボタン(↻)を押してください」)。押せば済む操作があれば、それを案内する
+  - 言い訳にしない。「モデルが…できていません」のような、何かのせいにする説明を頭に置かない。起きたこと → 試すこと、の順で短く(6〜8 は 2026-11-21 に足した)
 - 学習用のログ(トークン数、再利用数、速度、終了理由など)は残す。仕組みが観察できることが目的の一部
 - ログは `aibow/log`(`log.Infof` / `log.Warnf` / `log.Errorf` など)から出す。標準の `log` や `slog`、wenteasy/log を直接使わない(`_cmd/aibow` も同じ)。レベルは、開発中・学習で観察するものは `Info`(生成の統計・ツールの実行・compact など)、レベルを上げても常に残したいものは `Notice`(起動した版・ログと会話の保存先・計算装置・読み込んだモデル・利用者が変えた設定・確認せずに実行したツール・つながった MCP のサーバー)、注意は `Warn`、失敗は `Error`(以前の「※」はレベルで表す)
 
@@ -146,6 +155,11 @@ OpenAI 互換のクライアント(Cline など)⇄ HTTP(S)(既定は 127.0.0.1�
 - ユーザーの環境: Windows、NVIDIA GPU(VRAM 8GB)、メモリ 64GB。シェルは bash(Windows 上の Git Bash など。PowerShell の `$env:` 構文は使えない)。パスは `/d/Go/Projects/aibow` の形で書く
 - 主に使うモデルは Qwen3.5(4B / 9B)。ユーザーは Ollama でのモデル管理に慣れている
 - **用語は、ユーザーが分かる言い方にする**。英語の技術用語を無理に和訳しない(例:証明書の fingerprint は「指紋」ではなく「フィンガープリント」。日本語の「指紋」は人の指紋にしか読めない。2026-10-26、ユーザーの指示)。画面・ログ・ドキュメントのどれも同じ
+- 画面・ログ・ドキュメントには中の呼び名・造語を使わない(0048 の言い換え表。ドキュメントは 2026-11-21 にそろえた):「口」→ API(OpenAI 互換の API・aibow 専用の API)・「道」→ URL・「ログインなしの形」→ ログインなしで使うとき・
+  「この PC の上」→ この PC・「サーバーの PC の事情」→ モデル・GPU の層数・置き場所(具体的に)・トークンを「包む」→ 暗号化して保存する・「ブラウザの会話」→ ブラウザから使う会話。
+  「札」(短い札)→ 短い一文・「水位」→ 省き始める目安(会話の上限の 3/4)・「今の組の古い一歩」→ この質問への返事の途中で前に使ったツールの結果(と思考)・発言の ID(UUIDv7)→ 発言の ID(この4つは画面・ログ・確認の手順で。2026-11-21)。
+  「作業領域」は今までの言葉として残す。画面のボタンと、その説明・確かめる文・トースト・エラーの言葉は [_docs/ui.md](_docs/ui.md) の「ボタンの言葉と見た目」の表にそろえる(0050。「降ろす」→ アンロード・「写す」→ 複製・「しまう」→ アーカイブ・「消す」→ 削除 など)
+- デスクトップのアプリの動かし方は「**アプリモード**」(既定。アプリの中で llama.cpp を動かす)と「**サーバーモード**」(aibow-server につなぎ、生成と会話の保存を頼む)と呼ぶ。「アプリの中で動かす形」「直接の形」「今の形」のような言い方はしない(2026-11-20、ユーザーの指示)
 
 ## 確認方法
 

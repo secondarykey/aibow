@@ -166,7 +166,7 @@ func (s *Server) handleUnload(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Model != "" && req.Model != info.ID {
 		if m, err := s.models.Find(req.Model); err != nil || m.ID != info.ID {
-			log.Infof("モデル %s は読み込んでいないので、降ろしません(読み込み中: %s)", req.Model, info.ID)
+			log.Infof("モデル %s は読み込んでいないので、アンロードしません(読み込み中: %s)", req.Model, info.ID)
 			writeJSON(w, http.StatusOK, loadResult{Success: true})
 			return
 		}
@@ -176,7 +176,7 @@ func (s *Server) handleUnload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "server_error", "", err.Error())
 		return
 	}
-	log.Noticef("モデルを降ろしました: %s(VRAM を空けました。次のリクエストで読み込みます)", info.ID)
+	log.Noticef("モデルをアンロードしました: %s(VRAM を空けました。次のリクエストで読み込みます)", info.ID)
 	writeJSON(w, http.StatusOK, loadResult{Success: true})
 }
 

@@ -1,6 +1,6 @@
 package config
 
-// modelplaces.go: 直接の形(aibow-server を使わないとき)で、画面から足したモデルの置き場所を覚える(0015 の 24・32)。
+// modelplaces.go: アプリモード(aibow-server を使わないとき)で、画面から足したモデルの置き場所を覚える(0015 の 24・32)。
 //
 // 覚える先は %APPDATA%\aibow\model-places.json(AIBOW_MODEL_PLACES)。会話の DB には入れない。
 // 置き場所は「画面で変えるが、その PC の人が決めること」で、tools.json と同じ扱い
@@ -18,7 +18,7 @@ import (
 	"sync"
 )
 
-// PlacesFile は model-places.json(直接の形のときの ui.DirectHost が使う)。
+// PlacesFile は model-places.json(アプリモードのときの ui.DirectHost が使う)。
 type PlacesFile struct {
 	path string
 
@@ -49,7 +49,7 @@ func LoadPlacesFile(path string) (*PlacesFile, error) {
 			return f, nil
 		}
 	}
-	f.broken = fmt.Errorf("モデルの置き場所のファイル %s を読めません。画面で足した置き場所なしで動きます(直すか消すと戻ります): %w", path, err)
+	f.broken = fmt.Errorf("モデルの置き場所のファイル %s を読めません。画面で追加した置き場所なしで動きます(直すか削除すると戻ります): %w", path, err)
 	return f, f.broken
 }
 

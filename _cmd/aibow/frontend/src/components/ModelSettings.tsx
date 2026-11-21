@@ -1,6 +1,6 @@
 // 設定の画面の「モデル」のタブ(0015 の 8-4)。
 //
-// アプリの中で動かすとき:すぐ効く操作だけを画面から変える(一覧から読み込む / 降ろす・モデルごとの GPU の層数・置き場所を足す / 外す。0015 の 21)。
+// アプリモードのとき:すぐ効く操作だけを画面から変える(一覧から読み込む / 降ろす・モデルごとの GPU の層数・置き場所を足す / 外す。0015 の 21)。
 // 作業領域・llama.cpp の場所・最初のモデルは表示だけ(起動し直しが要るため)。
 // 同時に読み込むのは1つ(VRAM に1つしか載らない)ので、「読み込む」は今のモデルと入れ替える。
 //
@@ -8,10 +8,10 @@
 // 読み込む / 降ろす・層の数・置き場所・出どころ・サーバーの PC のパスは、サーバーの PC の事情でサーバーの側で決めること(中央の制御)。
 // つないでくる側から見せたり変えたりするのは別の問題なので出さない。モデルが変わるのは会話を送信するときだけ。
 //
-// ブラウザでは、設定の画面のモデルのタブはだれにも一覧だけを出し(listOnly)、管理者とサーバーの PC の上から開いたブラウザ(models.manage)には、
-// 管理の画面のモデルのタブで、アプリの中で動かすときと同じもの(操作)を出す(0018 の決定事項 8・0032 の決定事項 6)。置き場所はサーバーの PC のパスを書く(ブラウザからはサーバーの PC のフォルダを選べないので、選ぶボタンは出さない)。
+// ブラウザでは、設定の画面のモデルのタブはだれにも一覧だけを出し(listOnly)、管理者とログインなしの形のブラウザ(models.manage。0046)には、
+// 管理の画面のモデルのタブで、アプリモードのときと同じもの(操作)を出す(0018 の決定事項 8・0032 の決定事項 6)。置き場所はサーバーの PC のパスを書く(ブラウザからはサーバーの PC のフォルダを選べないので、選ぶボタンは出さない)。
 import { useCallback, useEffect, useState } from "react";
-import { LuCircleCheck, LuFile, LuFileX, LuFolder, LuFolderX, LuInfo, LuLock, LuX } from "react-icons/lu";
+import { LuCircleCheck, LuFile, LuFileX, LuFolder, LuFolderX, LuInfo, LuLock, LuPlus, LuX } from "react-icons/lu";
 import { ChatService } from "../backend";
 import type { ModelSettingsResult } from "../../bindings/github.com/secondarykey/aibow/ui";
 // Go の models パッケージ。"…/aibow/models" と書くと aibow パッケージの models.ts が選ばれるので、index まで書く
@@ -30,7 +30,7 @@ interface Props {
 }
 
 // どこから来たか(models.Entry の origin)の表示
-const ORIGINS: Record<string, string> = { models: "models フォルダ", ollama: "Ollama", added: "足した場所" };
+const ORIGINS: Record<string, string> = { models: "models フォルダ", ollama: "Ollama", added: "追加した場所" };
 
 export function ModelSettings({ models, listOnly, disabled, onError }: Props) {
   const [places, setPlaces] = useState<Place[]>([]);
@@ -159,7 +159,7 @@ function ModelRow({ m, format, manage, onEnabled, loaded, layers, totalLayers, d
             disabled={disabled}
             onChange={e => onEnabled(e.target.checked)}
             aria-label="使える"
-            title={m.disabled ? "使えるようにする" : "使えないようにする(読み込み中なら降ろす)"}
+            title={m.disabled ? "使えるようにする" : "使えないようにする(読み込み中ならアンロードする)"}
           />
         </span>
       )}
@@ -172,12 +172,13 @@ function ModelRow({ m, format, manage, onEnabled, loaded, layers, totalLayers, d
       <span className="num">{m.size_gb.toFixed(1)} GB</span>
       <span className="model-layers">
         <NumberInput id={`layers-${m.id}`} value={n} min={0} step={1} disabled={disabled} onChange={setN} />
-        {n !== layers && <button disabled={disabled} onClick={() => onLayers(n)} title={loaded ? "変えて読み直す" : "次に読み込むときから効く"}>適用</button>}
+        {/* 「適用」は常に出しておき、値が変わっていない間は押せなくする(出たり消えたりで行の幅が変わらないように。0051 の決定事項 9) */}
+        <button disabled={disabled || n === layers} onClick={() => onLayers(n)} title={loaded ? "変えて読み直す" : "次に読み込むときから効く"}>適用</button>
       </span>
       <span className="model-action">
         {loaded
-          ? <button disabled={disabled} onClick={onUnload} title="VRAM を空ける。次に送信するときに会話のモデルを読み込む">降ろす</button>
-          : !m.disabled && <button disabled={disabled} onClick={onLoad} title="今のモデルと入れ替える">読み込む</button>}
+          ? <button disabled={disabled} onClick={onUnload} title="VRAM を空ける。次に送信するときに会話のモデルを読み込む">アンロード</button>
+          : !m.disabled && <button disabled={disabled} onClick={onLoad} title="今のモデルと入れ替える">読み込み</button>}
       </span>
     </div>
   );
@@ -225,7 +226,7 @@ function RemoteModelTable({ models }: { models: Models }) {
   );
 }
 
-// ---- 置き場所(アプリの中で動かすときだけ) ---------------------------------------------
+// ---- 置き場所(アプリモードのときだけ) ---------------------------------------------
 
 function PlaceList({ places, server, onRemove }: { places: Place[]; server: boolean; onRemove(path: string): void }) {
   // 手で決めた置き場所(models フォルダ・Ollama)は表示だけ。どこで変えるかを錠の吹き出しに出す(aibow-server は server.json)
@@ -243,7 +244,7 @@ function PlaceList({ places, server, onRemove }: { places: Place[]; server: bool
             <span className="place-path" title={p.path}>{p.path}</span>
             <span className="place-note">{p.missing ? p.missing : `${what}${p.models} 個`}</span>
             {p.origin === "added"
-              ? <button className="place-remove" onClick={() => onRemove(p.path)} title="置き場所を外す(モデルのファイルは消さない)" aria-label="外す"><LuX /></button>
+              ? <button className="place-remove" onClick={() => onRemove(p.path)} title="置き場所を外す(モデルのファイルは削除しない)" aria-label="外す"><LuX /></button>
               : <LuLock className="place-lock" title={lockTitle(p)} aria-label={lockTitle(p)} />}
           </div>
         );
@@ -283,14 +284,14 @@ function AddPlace({ onAdd, onError }: {
         <button onClick={() => choose("dir")} title="フォルダを選ぶ"><LuFolder /> フォルダ</button>
         <button onClick={() => choose("file")} title="GGUF のファイルを選ぶ"><LuFile /> ファイル</button>
       </>}
-      <button disabled={!path.trim()} onClick={add}>足す</button>
+      <button className="with-icon" disabled={!path.trim()} onClick={add}><LuPlus /> 追加</button>
     </div>
   );
 }
 
 // ---- 表示だけの設定 --------------------------------------------------------------------
 
-// HostSettings は、アプリの中で動かすときの起動の設定(環境変数で決まる)。
+// HostSettings は、アプリモードのときの起動の設定(環境変数で決まる)。
 function HostSettings({ s }: { s: ModelSettingsResult }) {
   const v = s.settings;
   const how = "環境変数で変え、aibow の起動し直しが要ります";

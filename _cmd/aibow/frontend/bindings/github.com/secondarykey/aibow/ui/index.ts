@@ -3,6 +3,7 @@
 
 export type {
     ConversationDetail,
+    CreatedWorkspace,
     FolderView,
     ModelSettingsResult,
     ModelsResult,

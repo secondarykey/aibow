@@ -29,10 +29,12 @@ export function mainFolder(ws: WorkspaceView | undefined): FolderView | undefine
   return ws?.folders?.find(f => f.main);
 }
 
-// createFromFolder は、フォルダを選ぶダイアログを出し、選んだフォルダ1つのワークスペースを作る(同じフォルダ1つのものがあればそれ)。
-// 作った(選んだ)ワークスペースの ID を返す。取り消したら空
-export async function createFromFolder(): Promise<string> {
+// createFromFolder は、フォルダを選ぶダイアログを出し、選んだフォルダ1つのワークスペースを作る。取り消したら null。
+// reuse なら、同じフォルダ1つのワークスペースがあればそれを返す(existing。入力欄の上。呼んだ側がトーストで知らせる)。
+// reuse でなければ、同じフォルダでも新しく作る(設定の画面。名前が重なれば「名前 (2)」。0049)
+export async function createFromFolder(reuse: boolean): Promise<{ id: string; name: string; existing: boolean } | null> {
   const dir = await ChatService.ChooseWorkDir("");
-  if (!dir) return "";
-  return (await ChatService.CreateWorkspace(dir)).id;
+  if (!dir) return null;
+  const r = await ChatService.CreateWorkspace(dir, reuse);
+  return { id: r.workspace.id, name: r.workspace.name, existing: r.existing };
 }

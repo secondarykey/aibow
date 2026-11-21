@@ -119,7 +119,7 @@ func (cs *Conversations) SetWorktreeName(ctx context.Context, id uuid.UUID, name
 		return err
 	}
 	if _, _, ok := cs.workspaces.Worktree(id.String()); ok {
-		return errors.New("この会話の worktree はもう作ってあるので、名前は変えられません(捨ててから変えてください)")
+		return errors.New("この会話の worktree はもう作ってあるので、名前は変えられません(破棄してから変えてください)")
 	}
 	return cs.saveWorktreeName(ctx, id, name, true)
 }

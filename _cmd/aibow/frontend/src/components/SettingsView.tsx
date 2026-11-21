@@ -25,6 +25,8 @@ import { useDirectory } from "../directory";
 import type { Models } from "../useModels";
 // Go の models パッケージ。"…/aibow/models" と書くと aibow パッケージの models.ts が選ばれるので、index まで書く
 import type { Entry as ModelEntry } from "../../bindings/github.com/secondarykey/aibow/models/index";
+import { ScreenErrors } from "./ScreenErrors";
+import { LogSettings } from "./LogSettings";
 
 interface Props {
   onClose(): void;                        // 会話に戻る
@@ -53,16 +55,16 @@ export type Tab = "basic" | "model" | "conversation" | "workspace" | "mcp" | "se
 const TABS: { id: Tab; label: string; title: string }[] = [
   { id: "basic", label: "基本設定", title: "会話によらず、この PC で1つだけのもの(画面)" },
   // ブラウザ(aibow-server)では一覧だけ。読み込む / 降ろす・GPU の層数・置き場所は管理の画面(0032 の決定事項 6)
-  { id: "model", label: "モデル", title: isBrowser ? "使えるモデルの一覧" : "モデルの一覧(読み込む / 降ろす・GPU の層数)と置き場所" },
+  { id: "model", label: "モデル", title: isBrowser ? "使えるモデルの一覧" : "モデルの一覧(読み込み / アンロード・GPU の層数)と置き場所" },
   { id: "conversation", label: "会話", title: "プロファイル(新しい会話の既定・ツールの扱い)" },
   // その PC のフォルダの組(アプリだけ。0035)。会話は入力欄の上でここから選ぶ
-  { id: "workspace", label: "ワークスペース", title: "この PC のワークスペース(名前を付けたフォルダの組)を作る・変える・消す" },
+  { id: "workspace", label: "ワークスペース", title: "この PC のワークスペース(名前を付けたフォルダの組)の作成・変更・削除" },
   // MCP のサーバーそのものを足す・変える・消す(アプリだけ。0034 の決定事項 2・3)。使う・確認するを決めるのは「会話」のプロファイルの「ツール」
-  { id: "mcp", label: "MCP", title: "MCP のサーバーを足す・変える・消す・試しにつなぐ" },
+  { id: "mcp", label: "MCP", title: "MCP のサーバーの追加・変更・削除・接続テスト" },
   // aibow-server につなぐ・戻すは、デスクトップのアプリだけ(0019。ブラウザは aibow-server そのものの画面)
-  { id: "server", label: "サーバー", title: "aibow-server につなぐ・ログインする・アプリの中で動かす形に戻す" },
+  { id: "server", label: "サーバー", title: "aibow-server への接続・ログイン・アプリモードへの切り替え" },
   // グループの長だけ(管理者でない人。管理者は「利用者」のタブで扱う。0031 の決定事項 32・37)
-  { id: "groups", label: "グループ", title: "自分が長のグループ(メンバーを足す・外す)" },
+  { id: "groups", label: "グループ", title: "自分が長のグループ(メンバーの追加・外す)" },
   // ログインしているとき(ブラウザ・アプリが aibow-server にログインしてつないでいるとき)。自分の名前・表示名・メールアドレス・パスワード・ログアウト(0031 の決定事項 44)
   { id: "account", label: "アカウント", title: "自分の表示名・メールアドレス・パスワード・ログアウト" },
 ];
@@ -90,7 +92,7 @@ export function SettingsView({ onClose, errors, app, models, modelState, servers
           <h1>設定</h1>
           <button className="back" onClick={onClose} title="設定を閉じて、会話に戻る"><LuArrowLeft /> 会話に戻る</button>
         </div>
-        {errors.map(e => <div key={e.id} className="msg error">{e.text}</div>)}
+        <ScreenErrors errors={errors} />
 
         <div className="settings-tabs" role="tablist">
           {TABS.filter(t => (t.id !== "groups" || leader) && (t.id !== "account" || signedIn()) && (t.id !== "server" || !isBrowser) && (t.id !== "mcp" || !isBrowser) && (t.id !== "workspace" || !isBrowser)).map(t => (
@@ -111,10 +113,25 @@ export function SettingsView({ onClose, errors, app, models, modelState, servers
           <>
             <h2 title="画面の見せ方。生成には関わらない">画面</h2>
             {app && <DisplaySettingsForm display={app.display} onChange={onDisplayChange} />}
+            {/* アプリのログ。ブラウザにはアプリのプロセスが無いので出さない(0052 の決定事項 16) */}
+            {!isBrowser && (
+              <>
+                <h2 title="このアプリのログ(aibow-server につないでいても、このアプリの分だけ)">ログ</h2>
+                <LogSettings
+                  id="app-log-level"
+                  label="ログのレベル"
+                  title="選んだレベルより細かいものは書かない。起動し直すと、起動したときのレベルに戻る"
+                  load={() => ChatService.LogLevel()}
+                  save={name => ChatService.SetLogLevel(name)}
+                  loadFile={() => ChatService.LogFile()}
+                  onError={onError}
+                />
+              </>
+            )}
           </>
         )}
 
-        {/* ブラウザ(aibow-server)では一覧だけ。読み込む / 降ろす・層の数・置き場所・使えるは管理の画面(0032 の決定事項 6)。アプリの中で動かすときは今のまま */}
+        {/* ブラウザ(aibow-server)では一覧だけ。読み込む / 降ろす・層の数・置き場所・使えるは管理の画面(0032 の決定事項 6)。アプリモードのときは今のまま */}
         {tab === "model" && <ModelSettings models={modelState} listOnly={isBrowser} disabled={appDisabled} onError={onError} />}
 
         {tab === "groups" && <LeaderGroups dir={dir} reload={reloadDir} onError={onError} />}
@@ -129,7 +146,7 @@ export function SettingsView({ onClose, errors, app, models, modelState, servers
 
         {tab === "conversation" && (
           <>
-            <h2 title="名前の付いた新しい会話の既定。新しい会話は、選んだプロファイルの写しから始まる(今ある会話には効かない)。決まり(固定・使えない)は、そのプロファイルから作った会話にすぐ効く">プロファイル</h2>
+            <h2 title="名前の付いた新しい会話の既定。新しい会話は、選んだプロファイルの値から始まる(今ある会話には効かない)。決まり(固定・使えない)は、そのプロファイルから作った会話にすぐ効く">プロファイル</h2>
             <ProfileSettings
               models={models}
               servers={servers}

@@ -70,19 +70,31 @@ func (s *Service) Workspaces() WorkspaceList {
 	return r
 }
 
-// CreateWorkspace は、フォルダ path 1つのワークスペースを作る(入力欄の上の「フォルダから新しく作る」・設定の画面)。
-// 同じフォルダ1つだけのワークスペースがあれば、それを返す。
-func (s *Service) CreateWorkspace(path string) (config.Workspace, error) {
+// CreatedWorkspace は CreateWorkspace の結果。Existing なら、新しく作らずに今あるワークスペースを返した
+// (画面はトーストで「既にあるワークスペースを選んだ」と知らせる。0049 の決定事項 2)。
+type CreatedWorkspace struct {
+	Workspace config.Workspace `json:"workspace"`
+	Existing  bool             `json:"existing"`
+}
+
+// CreateWorkspace は、フォルダ path 1つのワークスペースを作る。
+// reuse なら、同じフォルダ1つだけのワークスペースがあればそれを返す(入力欄の上の「フォルダから新しく作る」)。
+// reuse でなければ、同じフォルダでも新しく作る(設定の画面の「フォルダから作る」。0049)。
+func (s *Service) CreateWorkspace(path string, reuse bool) (CreatedWorkspace, error) {
 	w, err := s.workspaceStore()
 	if err != nil {
-		return config.Workspace{}, err
+		return CreatedWorkspace{}, err
 	}
-	ws, err := w.CreateFromFolder(path)
+	ws, existing, err := w.CreateFromFolder(path, reuse)
 	if err != nil {
-		return ws, err
+		return CreatedWorkspace{}, err
 	}
-	log.Noticef("ワークスペース %s(%s)", ws.Name, ws.MainFolder().Path)
-	return ws, nil
+	if existing {
+		log.Infof("同じフォルダのワークスペース %s(%s)を選びました", ws.Name, ws.MainFolder().Path)
+	} else {
+		log.Noticef("ワークスペース %s(%s)", ws.Name, ws.MainFolder().Path)
+	}
+	return CreatedWorkspace{Workspace: ws, Existing: existing}, nil
 }
 
 // UpdateWorkspace は、ワークスペース ws.ID の名前とフォルダの組を変える(設定の画面の「ワークスペース」)。

@@ -48,7 +48,7 @@ import (
 // 戻り値の handler は /_aibow/ui/・/_aibow/auth/・/_aibow/store/・/_aibow/admin/ の下を受け持つ。keys は API キーの係(利用者は同じ server.db にいるので、ここで作る)。
 // close は終了のときに呼ぶ(生成を止める)。
 func startBrowser(c serverConfig, initial aibow.AppSettings, st *store.SQLite, gen ui.ServerEngine, mm *modelManager, nCtx int, url string, seat *api.Seat) (http.Handler, *auth.Keys, func(), error) {
-	log.Noticef("ブラウザの会話の保存先: %s", absPath(c.DBPath))
+	log.Noticef("ブラウザから使う会話の保存先: %s", absPath(c.DBPath))
 	// 起動のときに読む人ごとの設定(新しい会話の既定)は、ログインなしの形の利用者のもの(ログインは 0017 の 10-1)
 	app, notes, err := aibow.LoadAppSettings(aibow.WithUser(context.Background(), aibow.LocalUser), st, initial)
 	if err != nil {
@@ -82,7 +82,7 @@ func startBrowser(c serverConfig, initial aibow.AppSettings, st *store.SQLite, g
 		Notify: events, Seat: seat, Local: local, MCP: mcpm, Prefs: prefs, Browser: true, Folders: c.Folders,
 	})
 	if len(c.Folders) > 0 {
-		log.Noticef("資料のフォルダ: %s(server.json の folders。管理者が配るプロファイルで選ぶと、その会話で読み書きできます)",
+		log.Noticef("資料のフォルダ: %s(server.json の folders。管理者が配布するプロファイルで選ぶと、その会話で読み書きできます)",
 			strings.Join(slices.Sorted(maps.Keys(c.Folders)), ", "))
 	}
 	life.Start() // 起動のときのモデルは main が読み込んだので、ここでは読み込まない(Initial を渡していない)
@@ -125,13 +125,13 @@ func startServerTools(c serverConfig) (*client.Manager, *config.ToolPrefs) {
 	if err != nil {
 		log.Error(err.Error())
 	}
-	log.Noticef("ブラウザの会話のツールの扱いの既定: %s(管理者が設定の画面の「ツール」で変えます)", absPath(c.ToolsPath))
+	log.Noticef("ブラウザから使う会話のツールの扱いの既定: %s(管理者が設定の画面の「ツール」で変えます)", absPath(c.ToolsPath))
 	if len(c.MCPServers) == 0 {
-		log.Info("ブラウザの会話の MCP のサーバー: なし(server.json の mcpServers)")
+		log.Info("ブラウザから使う会話の MCP のサーバー: なし(server.json の mcpServers)")
 		return nil, prefs
 	}
 	names := slices.Sorted(maps.Keys(c.MCPServers))
-	log.Noticef("ブラウザの会話の MCP のサーバー: %s(server.json の mcpServers。要る最初の送信で起動し、全員で1つを使います)", strings.Join(names, ", "))
+	log.Noticef("ブラウザから使う会話の MCP のサーバー: %s(server.json の mcpServers。要る最初の送信で起動し、全員で1つを使います)", strings.Join(names, ", "))
 	return client.New(c.MCPServers, client.Options{Version: appversion.Version()}), prefs
 }
 
@@ -147,7 +147,9 @@ func noteFirstRun(st *store.SQLite) {
 	}
 	if !has {
 		// ブラウザのログインの画面にも同じことを出す(auth の me の setup)
-		log.Warn("管理者がいません。サーバーの PC で aibow-server user add <名前> と aibow-server user admin <名前> を打ち、" +
+		// 0046 から、サーバーの PC の上からでも、モデルを降ろすなどは管理者だけになった。管理者がいなければ誰もできないので、それも書く(未決事項 1 の案 (a))
+		log.Warn("管理者がいません。モデルのアンロード・GPU の層数・モデルの置き場所・ツールの既定は、管理者を決めるまで誰も変えられません。" +
+			"サーバーの PC で aibow-server user add <名前> と aibow-server user admin <名前> を打ち、" +
 			"user add が出したリンクを開いてパスワードを決めてください(リンクは 1 時間。切れたら user passwd <名前> で出し直します。" +
 			"設定ファイルを -config で指しているときは、コマンドにも同じ -config を付けます)")
 	}
@@ -161,7 +163,7 @@ func noteFirstRun(st *store.SQLite) {
 		return
 	}
 	if len(convs) > 0 {
-		log.Warnf("ログインなしの形で使っていた local の会話が %d 件あります。local はパスワードが無いのでログインできません。"+
+		log.Warnf("ログインなしで使っていたときの local の会話が %d 件あります。local はパスワードが無いのでログインできません。"+
 			"使うときは aibow-server user passwd local でパスワードを作って local でログインするか、login: false で起動してください", len(convs))
 	}
 }
@@ -182,17 +184,18 @@ var errNotLoggedIn = errors.New("ログインしてください")
 //   - ログインが要る:cookie のセッションの人(auth.Middleware がリクエストの ctx に入れた人)。いなければ 401
 //   - 要らない:いつもログインなしの形の利用者(aibow.LocalUser)。127.0.0.1 だけで待ち受けるので、その PC の人だけが使う
 //
-// 管理者か(その人の印)と、サーバーの PC の上から開いたか(どこから来たか)も一緒に決める(0018 の決定事項 8。ui.Caller)。
+// 管理者か(その人の印)と、ログインなしの形か(サーバーの PC の事情を変えてよいか)も一緒に決める(ui.Caller)。
+// どこから来たか(127.0.0.1 か)は見ない(0046。外の人を断るのは手前の fromProxy の1か所。0044 の決定事項 12)。
 func who(login bool) ui.Who {
 	return func(r *http.Request) (ui.Caller, error) {
 		if !login {
-			return ui.Caller{ID: aibow.LocalUser, Name: "local", Local: api.IsLocal(r)}, nil // 名前は server.db の利用者 local と同じ
+			return ui.Caller{ID: aibow.LocalUser, Name: "local", NoLogin: true}, nil // 名前は server.db の利用者 local と同じ
 		}
 		u, ok := auth.UserFrom(r.Context())
 		if !ok {
 			return ui.Caller{}, errNotLoggedIn
 		}
-		return ui.Caller{ID: u.ID, Name: u.Name, Admin: u.Admin, Local: api.IsLocal(r)}, nil
+		return ui.Caller{ID: u.ID, Name: u.Name, Admin: u.Admin}, nil
 	}
 }
 
@@ -265,7 +268,7 @@ func mount(base string, h http.Handler) http.Handler {
 	// 画面は自分の場所からの相対パスで口を呼ぶので、/aibow のまま開くと /_aibow/ui/… を呼んでしまう。転送はそれを防ぐ
 	mux.Handle(base+"/", http.StripPrefix(base, h))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "aibow-server は "+base+"/ の下で待ち受けています(-base・設定ファイルの base)。画面は "+base+"/、OpenAI 互換の口は "+base+"/v1 です", http.StatusNotFound)
+		http.Error(w, "aibow-server は "+base+"/ の下で待ち受けています(-base・設定ファイルの base)。画面は "+base+"/、OpenAI 互換の API は "+base+"/v1 です", http.StatusNotFound)
 	})
 	return mux
 }

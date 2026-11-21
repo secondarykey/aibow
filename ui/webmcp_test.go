@@ -83,7 +83,7 @@ func TestWebMCPServer(t *testing.T) {
 	if req == nil || req.Call.Name != "web__calculate" || req.Preview.Server != "web" {
 		t.Fatalf("MCP のツールの確認のカード: %+v", req)
 	}
-	w.mustCall(t, nil, "ConfirmTool", c.ID, req.ID, true, "", "")
+	w.mustCall(t, nil, "ConfirmTool", c.ID, req.ID, true, "", "", false)
 	until(t, events, "done")
 	<-done
 	if r := w.toolResult(t, c.ID); r.Content != "42" || r.ToolResult.Server != "web" {

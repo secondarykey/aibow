@@ -78,7 +78,8 @@ func (k *Keys) RequireKey(next http.Handler) http.Handler {
 			return
 		}
 		if !ok || errors.Is(err, ErrBadKey) {
-			log.Warnf("API キーが無いか違うので断りました: %s %s(%s)", r.Method, r.URL.Path, remote(r))
+			// アプリのログインのトークンも同じ Bearer で届くので、どちらとも言う(API キーを使っていない人が首をかしげないように。0051 の決定事項 8)
+			log.Warnf("API キーかアプリのログインのトークンが無いか違うので断りました: %s %s(%s)", r.Method, r.URL.Path, remote(r))
 			writeAPIError(w, http.StatusUnauthorized, "invalid_api_key", ErrBadKey.Error())
 			return
 		}

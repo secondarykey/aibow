@@ -198,7 +198,7 @@ func (e *Engine) decode(s *sequence, tokens []llama.Token) error {
 
 // decodeError は decode の戻り値が 0 でないときのエラー。1 はキャッシュに空きがない、負の値はそれ以外のエラー。
 func decodeError(rc int32) error {
-	return fmt.Errorf("decode に失敗しました(戻り値 %d)。コンテキストが足りない可能性があります", rc)
+	return fmt.Errorf("返事を作れませんでした。会話の上限か返事の上限を下げて、もう一度送ってください(llama.cpp の decode の戻り値 %d。作業領域が足りない見込み)", rc)
 }
 
 // decodeImage は画像のチャンクを読ませる。エンコードにかかった秒数を返す。
@@ -267,7 +267,7 @@ func (e *Engine) decodeImage(s *sequence, c chunk) (float64, error) {
 			return sec, err
 		}
 		if rc != 0 {
-			return sec, fmt.Errorf("画像の decode に失敗しました(戻り値 %d)。コンテキストが足りない可能性があります", rc)
+			return sec, fmt.Errorf("画像を読めませんでした。会話の上限か返事の上限を下げて、もう一度送ってください(llama.cpp の画像の decode の戻り値 %d。作業領域が足りない見込み)", rc)
 		}
 	}
 	s.cached = append(s.cached, chunk{image: c.image, nTok: c.nTok, nPos: c.nPos})

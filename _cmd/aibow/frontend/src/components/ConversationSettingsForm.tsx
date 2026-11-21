@@ -38,7 +38,7 @@ export function ConversationSettingsForm({ settings, models, lock, onChange }: {
       </FieldLabel>
       <select id="compact" value={settings.compact} disabled={off(FIX.compact)} onChange={e => onChange({ compact: e.target.value })}>
         <option value="summary">要約する(summary)</option>
-        <option value="truncate">古い発言を捨てる(truncate)</option>
+        <option value="truncate">古い発言を外す(truncate)</option>
         <option value="none">何もしない(none)</option>
       </select>
       <p className="hint">{COMPACT_HINTS[settings.compact] ?? ""}</p>
@@ -184,12 +184,12 @@ export function LimitsForm({ history, reply, disabled, lock, onApply }: {
       <FieldLabel htmlFor="history-tokens" item={FIX.historyTokens} lock={lock} title="モデルに渡す文字列(これまでの会話)のトークン数の上限。超えたら compact で収める">
         会話の上限
       </FieldLabel>
-      <NumberInput id="history-tokens" value={h} min={512} step={1024} disabled={locked(lock, FIX.historyTokens)} onChange={setH} />
+      <NumberInput id="history-tokens" value={h} min={0} step={1024} disabled={locked(lock, FIX.historyTokens)} onChange={setH} />
 
       <FieldLabel htmlFor="reply-tokens" item={FIX.replyTokens} lock={lock} title="1回の返事で生成するトークン数の上限(思考 + 答え)">
         返事の上限
       </FieldLabel>
-      <NumberInput id="reply-tokens" value={r} min={256} step={1024} disabled={locked(lock, FIX.replyTokens)} onChange={setR} />
+      <NumberInput id="reply-tokens" value={r} min={0} step={1024} disabled={locked(lock, FIX.replyTokens)} onChange={setR} />
 
       {server ? (
         // aibow-server につないでいるときは、作業領域はサーバーが決めた大きさで固定(0015 の 3)
@@ -203,7 +203,7 @@ export function LimitsForm({ history, reply, disabled, lock, onApply }: {
           会話を上限まで詰めても、返事を上限まで書ける大きさを確保します。変えても、モデルは読み直しません。
         </p>
       )}
-      <button className="apply" disabled={disabled || !changed} onClick={() => onApply(h, r)}>適用</button>
+      <button className="apply" disabled={disabled || !changed || h <= 0 || r <= 0} onClick={() => onApply(h, r)}>適用</button>
     </>
   );
 }
@@ -239,6 +239,6 @@ export function NumberInput({ id, value, min, step, disabled, onChange }: {
 // compact の方式ごとの説明(_docs/features/0002-compact.md)
 const COMPACT_HINTS: Record<string, string> = {
   summary: "古い部分をモデル自身に要約させ、「要約 + 最近の発言」を渡します。要約を作る分だけ待ち時間がかかります。",
-  truncate: "古い発言から順に、モデルに渡すのをやめます(保存した発言は消えません)。渡さなかった内容はモデルには完全に消えます。",
+  truncate: "古い発言から順に、モデルに渡さなくなります(保存した発言は削除されません)。渡さなかった内容はモデルには完全に消えます。",
   none: "何もしません。会話の上限を超えたら、生成する前に止まります。",
 };

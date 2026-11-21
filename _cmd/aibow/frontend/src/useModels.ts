@@ -26,11 +26,11 @@ export interface Models {
   current: ModelInfo | null; // 今読み込まれているモデル(Go の ModelInfo)
   gpu: boolean;
   loading: boolean;          // モデルを読み込み中か(起動時・切り替え時)
-  server: string;            // 生成を頼んでいる aibow-server のつなぎ先(アプリの中で動かしているときは空)
+  server: string;            // 生成を頼んでいる aibow-server のつなぎ先(アプリモードのときは空)
   serverError: string;       // aibow-server につながらない理由(つながっていれば空)
   startupError: string;      // 起動に失敗した理由(lib が無いなど。起動できていれば空)。Go のメソッドはどれもこの理由で断る
   // manage は、aibow-server の中で、サーバーの PC の事情(降ろす・層の数・置き場所・出どころ)を見せて変えてよい人か
-  // (ブラウザの管理者か、サーバーの PC の上から開いた画面。0018 の決定事項 8)。モデルのタブをアプリの中で動かすときと同じに出す
+  // (ブラウザの管理者か、ログインなしの形の画面。0046)。モデルのタブをアプリモードのときと同じに出す
   manage: boolean;
   gpuLayers: { [id: string]: number | undefined }; // モデルの ID → 読み込むときの GPU の層数
   lastModel: string;         // 最後に読み込んだモデル(降ろしたあとも、どれを降ろしたかを出すため)
@@ -176,7 +176,7 @@ export function useModels(n: Notifier, t: Pick<Transcript, "addError">, setBusy:
     setBusy("loading");
     try {
       await ChatService.UnloadModel();
-      notify(`${name} を降ろしました(次に送信するときに読み込みます)`, { key: "model" });
+      notify(`${name} をアンロードしました(次に送信するときに読み込みます)`, { key: "model" });
     } catch (err) {
       addError(errorMessage(err));
     }
@@ -189,11 +189,11 @@ export function useModels(n: Notifier, t: Pick<Transcript, "addError">, setBusy:
     const loaded = current?.id === id;
     const name = models.find(m => m.id === id)?.name ?? id;
     setBusy("loading");
-    if (loaded) notify(`GPU に載せる層を ${n} にして、${name} を読み込み直しています…`, { key: "model", sticky: true });
+    if (loaded) notify(`GPU に載せる層を ${n} にして、${name} を再読み込みしています…`, { key: "model", sticky: true });
     try {
       const info = await ChatService.SetModelGPULayers(id, n);
       notify(info
-        ? `GPU に載せる層を ${n} にして読み込み直しました(${info.load_sec.toFixed(1)} 秒)`
+        ? `GPU に載せる層を ${n} にして再読み込みしました(${info.load_sec.toFixed(1)} 秒)`
         : `${name} の GPU に載せる層を ${n} にしました(次に読み込むときから効きます)`, { key: "model" });
     } catch (err) {
       dismissKey("model");

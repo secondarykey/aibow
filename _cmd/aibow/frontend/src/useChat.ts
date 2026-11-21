@@ -15,10 +15,12 @@ import type { Busy } from "./useModels";
 import type { Notifier } from "./toast";
 import { errorMessage } from "./errors";
 
-// ErrorNote は、送信で届いたエラー1つ。caution なら赤いエラーではなく注意で出す
+// ErrorNote は、送信で届いたエラー1つ。caution なら赤いエラーではなく注意で出す。
+// retry なら、エラーの横に「作り直す」を出してよい(0048 の D8。どれに出すかは showError)
 interface ErrorNote {
   text: string;
   caution?: boolean;
+  retry?: boolean;
 }
 
 const secSince = (t: number) => Math.round((performance.now() - t) / 1000);
@@ -53,7 +55,7 @@ export interface Chat {
   generatingId: string | null; // 返事(か要約)を生成中の会話の ID
   ended: Record<string, Ended>; // ほかの会話を見ている間に送信が終わった会話(会話の ID → 終わり方)。起動をまたいでは覚えない
   confirmingId: string | null; // ツールの実行前の確認を待っている会話の ID(会話の一覧に「確認待ち」と出す)
-  answer(reqId: string, approved: boolean, reason: string, remember: ToolPolicy): Promise<void>; // 確認に答える(「実行する」「拒否」と、これから先の扱い)
+  answer(reqId: string, approved: boolean, reason: string, remember: ToolPolicy, forReply: boolean): Promise<boolean>; // 確認に答える(「実行する」「拒否」と、これから先の扱い。forReply ならこの返事の間だけ)。Go が受け取らなかったら false
   lastPrompt: string;          // 開いている会話で、モデルに実際に渡した文字列
   lastPromptFormat: string;    // その文字列を組み立てた書式の名前(Qwen3.5・Gemma 4。0026)
   send(text: string, files: FileCheck[]): Promise<boolean>; // 発言が保存されたら true(false なら送れていないので、入力欄に文と読み込んだファイルを戻す)
@@ -77,8 +79,11 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
   const live = useRef<Live | null>(null);
   const viewing = useRef<string | null>(null); // 表示している会話の ID
   const [ended, setEnded] = useState<Record<string, Ended>>({});
-  // ほかの会話を見ている間に届いたエラー。エラーは保存しないので、ここで持っておき、その会話を開いたときに出す
-  const heldErrors = useRef<Record<string, ErrorNote[]>>({});
+  // 会話ごとの、最後の送信で届いたエラー。エラーは保存しないので、ここで持っておき、その会話を開くたびに表示の末尾に出し直す。
+  // 送信の途中・終わりに開き直すと(要約の区切りを出すため・done が遅れたとき)、表示が保存された発言から作り直され、
+  // 出したエラーが消えていた(ツールの回数の上限で止まったのに、エラーが出ずに止まったように見えた。2026-11-21)。
+  // ほかの会話を見ている間に届いたエラーも、ここから開いたときに出る。次の送信を始めたら空にする
+  const runErrors = useRef<Record<string, ErrorNote[]>>({});
   // 生成中の呼び出し(stop() で停止できる)。生成中でなければ null
   const controller = useRef<{ stop(): void } | null>(null);
   // 送信を受け付けてから生成が始まるまでの間に、もう一度送られないようにする
@@ -110,9 +115,8 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
       l.itemId = l.convId === id && current.generating ? addAssistant(l.view) : null;
       l.userItemId = null;
     }
-    // 見ていない間に終わった会話を開いたら、一覧の印を消し、届いていたエラーを出す
-    heldErrors.current[id]?.forEach(e => addError(e.text, e.caution));
-    delete heldErrors.current[id];
+    // 最後の送信で届いたエラーを出し直す(生成中なら、生成中の吹き出しの後ろに)。見ていない間に終わった会話なら、一覧の印も消す
+    runErrors.current[id]?.forEach(e => addError(e.text, e.caution, e.retry));
     setEnded(e => {
       if (!(id in e)) return e;
       const { [id]: _, ...rest } = e;
@@ -141,6 +145,7 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
   // 戻り値は、この送信で届いたエラー(作り直す・送り直すで、開き直したあとに出し直すため)と、送った発言を Go が保存したか
   const run = useCallback(async (id: string, start: () => Call<void>, manual: boolean, userItemId: number | null): Promise<RunResult> => {
     const errors: ErrorNote[] = [];
+    runErrors.current[id] = errors; // 前の送信のエラーは、もう出し直さない
     let userSaved = false;
     const l: Live = {
       convId: id, itemId: null, userItemId, thinkStart: 0, processStart: 0, saved: [], confirm: null,
@@ -189,11 +194,17 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
     // 返事は Send の戻り値ではなく、chat イベントで少しずつ届く。done が来たら終わり。
     let compacted = false; // 今すぐ要約で、要約が保存された
     let failed = false;    // エラーが届いた(一覧の印を赤にする)
-    // エラーは、見ている会話なら表示に出し、ほかの会話なら開いたときに出すよう持っておく
+    // エラーは、見ている会話なら表示に出し、ほかの会話なら開いたときに出すよう持っておく。
+    // 横に「作り直す」を出してよいのは、作り直すと止まった返事をもう一度作れるとき(0048 の D8):
+    //   - 今すぐ要約(manual)のエラーには出さない(返事を作っていない)
+    //   - 注意(管理者が使えないようにしたモデルなど)には出さない(作り直しても同じ理由で断られる)
+    //   - 新しい発言を送ったのに、Go が保存する前に止まった(会話の上限を超える、など)ときは出さない。
+    //     発言は入力欄に戻り、作り直すと1つ前の返事が作り直されてしまうため(2026-11-21、ユーザーと決めた)
     const showError = (text: string, caution?: boolean) => {
       failed = true;
-      if (viewing.current === id) addError(text, caution);
-      else (heldErrors.current[id] ??= []).push({ text, caution });
+      const retry = !manual && !caution && (userItemId === null || userSaved);
+      errors.push({ text, caution, retry }); // runErrors にも入る(同じ配列)。ほかの会話を見ているなら、開いたときに出る
+      if (viewing.current === id) addError(text, caution, retry);
     };
     let finish = () => {};
     let ended = false; // done が届いた・呼び出しが失敗した(この送信の終わりを済ませた)
@@ -270,18 +281,18 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
         case "tool_result":
           // ツールの結果を保存した。結果の無いカードは「実行中」と出ている。確認を待っていたなら、答えが出た
           if (!ev.message) return;
+          // 確認を待っていたなら、答えが出た(ふつうは答えた時点で外している。answer)
           if (l.confirm) {
             l.confirm = null;
             setConfirmingId(null);
-            show({ waiting: true }); // 次はモデルが結果を読んで続きを書く
           }
+          show({ waiting: true }); // 次はモデルが結果を読んで続きを書く
           l.saved.push(ev.message);
           show({ steps: turnView(l.saved).steps });
           show(liveProcess(false));
           return;
         case "error":
           // caution は、理由と対処を書いた断り(管理者が使えないようにしたモデル、など。0018 の決定事項 13)。赤ではなく注意で出す
-          errors.push({ text: ev.error ?? "", caution: ev.caution });
           showError(ev.error ?? "", ev.caution);
           return;
         case "model_loading":
@@ -412,19 +423,33 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
   const lastPrompt = shown?.text ?? "";
   const lastPromptFormat = shown?.format ?? "";
   // 確認に答える。答えは Go の待っているループに届き、実行(か拒否の結果)の tool_result が返ってくる。
-  // remember はこのツールのこの会話でのこれから先の扱い(空 = この1回だけ、allow = この会話では今後聞かない、off = 今後許可しない。0010)。
-  // Go が会話の上書きに書くので、先にまだ送っていない設定を送り(あとで丸ごと書き戻して、Go が書いた上書きを消さないように)、答えたら読み直す
-  const answer = useCallback(async (reqId: string, approved: boolean, reason: string, remember: ToolPolicy) => {
+  // remember はこのツールのこれから先の扱い(空 = この1回だけ、allow = 聞かずに実行する、off = 聞かずに断る。0010)。
+  // forReply ならこの返事の間だけ(Go が送信の中で覚える。会話の設定は変えない)、そうでなければこの会話の間(0051 の決定事項 10〜12)。
+  // この会話の間は Go が会話の上書きに書くので、先にまだ送っていない設定を送り(あとで丸ごと書き戻して、Go が書いた上書きを消さないように)、答えたら読み直す。
+  // Go が答えを受け取ったら、結果を待たずに確認を閉じる(0049 の決定事項 8・9)。カードは「実行中… N秒」になり、一覧の「確認待ち」も外れる。
+  // 時間のかかるコマンド(go test など)でも、動いていることが分かるように。受け取られなかったら確認のカードのままにする(戻り値 false)
+  const answer = useCallback(async (reqId: string, approved: boolean, reason: string, remember: ToolPolicy, forReply: boolean): Promise<boolean> => {
     const l = live.current;
-    if (!l) return;
+    if (!l) return false;
+    const inSettings = !!remember && !forReply; // 会話の設定に書く答えか
     try {
-      if (remember) await flushSettings();
-      await ChatService.ConfirmTool(l.convId, reqId, approved, reason, remember);
-      if (remember) await reloadSettings(l.convId);
+      if (inSettings) await flushSettings();
+      await ChatService.ConfirmTool(l.convId, reqId, approved, reason, remember, forReply);
     } catch (err) {
       addError(errorMessage(err));
+      return false;
     }
-  }, [addError, flushSettings, reloadSettings]);
+    // 結果がもう届いていた(拒否はすぐ届く)・次の確認(MCP のサーバーからの確認。0007)に移っていたら、そのままにする
+    if (live.current === l && l.confirm?.id === reqId) {
+      l.confirm = null;
+      setConfirmingId(null);
+      const patch = { steps: turnView(l.saved).steps, waiting: true };
+      l.view = { ...l.view, ...patch };
+      if (l.itemId !== null) updateAssistant(l.itemId, patch);
+    }
+    if (inSettings) await reloadSettings(l.convId).catch(err => addError(errorMessage(err)));
+    return true;
+  }, [addError, flushSettings, reloadSettings, updateAssistant]);
 
   // retry は作り直す・送り直すの共通部分(0011)。表示から最後のやり取りを外してから、送信と同じ流れで返事を作る。
   // 終わったら会話を開き直して、保存された内容に表示を合わせる(送れなかったときは Go が何も消していないので、元の表示に戻る)。
@@ -447,10 +472,8 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
     dropLastTurn(withUser);
     const userItemId = withUser ? addUser(text, files) : null;
     const { errors } = await run(id, () => start(id), false, userItemId);
-    if (errors.length && viewing.current === id) {
-      await open(id).catch(err => addError(errorMessage(err)));
-      errors.forEach(e => addError(e.text, e.caution));
-    }
+    // 開き直すと、この送信のエラーは表示の末尾に出し直される(runErrors)
+    if (errors.length && viewing.current === id) await open(id).catch(err => addError(errorMessage(err)));
   }, [current, flushSettings, t.items, dropLastTurn, addUser, run, open, addError]);
 
   const regenerate = useCallback(() => retry(false, "", id => ChatService.Regenerate(id)), [retry]);
@@ -462,5 +485,7 @@ export function useChat(t: Transcript, setBusy: (b: Busy) => void, convs: Conver
 // elideText は、古い一歩を省略して渡したお知らせの文(0040)。results は札にした結果の数(思考だけを空にした一歩は数えない)
 function elideText(results: number, before: number, after: number): string {
   const tokens = `(${before.toLocaleString()} → ${after.toLocaleString()} トークン)`;
-  return results > 0 ? `古いツールの結果 ${results} 件を省略して渡しました${tokens}` : `古い一歩の思考を省略して渡しました${tokens}`;
+  return results > 0
+    ? `会話の上限に収めるため、この返事の途中で前に使ったツールの結果 ${results} 件を省いてモデルに渡しました${tokens}`
+    : `会話の上限に収めるため、この返事の途中の前の思考を省いてモデルに渡しました${tokens}`;
 }

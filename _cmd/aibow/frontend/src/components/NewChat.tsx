@@ -38,7 +38,7 @@ export function NewChat({ items, profiles, profile, onProfile, children }: {
                 : (
                   <>
                     <optgroup label="自分のプロファイル">{own.map(option)}</optgroup>
-                    <optgroup label="配られたプロファイル">{shared.map(option)}</optgroup>
+                    <optgroup label="配布されたプロファイル">{shared.map(option)}</optgroup>
                   </>
                 )}
             </select>

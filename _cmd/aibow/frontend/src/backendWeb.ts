@@ -22,6 +22,54 @@ class CancelError extends Error {}
 // unauthorized は、呼び出しが 401(ログインしてください)で断られたときに知らせる相手(onUnauthorized)
 const unauthorized = new Set<() => void>();
 
+// current は、この画面がログインしていると思っている人の名前(me・ログイン・リンクで決めたときに入れる。ログインなしの形では空)。
+// cookie はブラウザのタブで分け合うので、ほかのタブで別の人がログインすると、この画面の呼び出しも別の人として受けられる。
+// 画面は前の人のまま(名前・管理者のタブ・会話の一覧)なので、気づいたら画面を閉じる(2026-11-20、確認表の A10 で見つかった。
+// alice の画面のまま bob として呼んでいた)。気づく道は2つ:
+//
+//	呼び出しの返事 … aibow-server が、誰として受けたかを見出し X-Aibow-User に付ける(auth.UserHeader)。それが current と違う
+//	タブに戻ったとき … 何も押さないうちに気づくよう、me を聞き直す(押してから気づくと、その1回は別の人として動いてしまう)
+let current = "";
+const userChanged = new Set<(name: string) => void>();
+let changedTo: string | null = null; // 一度知らせたら、もう知らせない(画面は閉じている)
+
+function remember(m: Me): Me {
+  current = m.login ? m.name : "";
+  return m;
+}
+
+// changed は、この画面が別の人として呼ばれていると分かったとき。知らせのつながり(SSE)も前の人のものなので切る
+function changed(name: string) {
+  if (changedTo !== null) return;
+  changedTo = name;
+  source?.close();
+  userChanged.forEach(f => f(name));
+}
+
+// checkUser は、返事の見出しで、誰として受けられたかを確かめる。見出しが無い(ログインしていない)ときは 401 の側に任せる
+function checkUser(res: Response) {
+  const h = res.headers.get("X-Aibow-User");
+  if (current === "" || h === null) return;
+  const name = decodeURIComponent(h);
+  if (name !== current) changed(name);
+}
+
+// recheck は、タブに戻ったときに、ログインしている人が変わっていないかを聞き直す
+async function recheck() {
+  if (current === "" || changedTo !== null || document.visibilityState !== "visible") return;
+  try {
+    const res = await fetch("_aibow/auth/me");
+    const m = (await res.json()) as Me;
+    if (!m.login) return;
+    if (m.name === "") unauthorized.forEach(f => f()); // ほかのタブでログアウトした(ログインの画面に戻す)
+    else if (m.name !== current) changed(m.name);
+  } catch {
+    // つながらないときは、次の呼び出しのエラーで伝わる
+  }
+}
+document.addEventListener("visibilitychange", () => void recheck());
+window.addEventListener("focus", () => void recheck());
+
 // call は Go のメソッドを1つ呼ぶ。生成が終わるまで返らない長い呼び出し(Send など)も、返事が来るまで待つ。
 function call<T>(method: string, args: unknown[]): Call<T> {
   const ac = new AbortController();
@@ -33,6 +81,7 @@ function call<T>(method: string, args: unknown[]): Call<T> {
         body: JSON.stringify(args),
         signal: ac.signal,
       });
+      checkUser(res);
       const body = await res.json().catch(() => null);
       if (ac.signal.aborted) throw new CancelError("停止しました"); // 本文を読んでいる間に止めた
       if (res.status === 401) unauthorized.forEach(f => f()); // ログインの期限が切れた(画面はログインの画面に戻る)
@@ -112,6 +161,7 @@ async function adminCall<T>(method: "GET" | "POST" | "DELETE", path: string, bod
   } catch (err) {
     throw new Error(`aibow-server につながりません(${errorMessage(err)})。aibow-server が動いているか確かめてください`);
   }
+  checkUser(res);
   const data = await res.json().catch(() => null);
   if (res.status === 401) unauthorized.forEach(f => f());
   if (!res.ok) throw new Error(data?.error?.message ?? `${path}: ${res.status} ${res.statusText}`);
@@ -148,18 +198,22 @@ export const backend: Backend = {
     return () => reconnected.delete(f);
   },
 
-  session: () => auth("GET", "me"),
-  login: (name, password) => auth("POST", "login", { name, password }),
-  logout: async () => { await auth("POST", "logout"); },
+  session: async () => remember(await auth("GET", "me")),
+  login: async (name, password) => remember(await auth("POST", "login", { name, password })),
+  logout: async () => { await auth("POST", "logout"); current = ""; },
   linkUser: async token => ((await auth("POST", "link/check", { token })) as unknown as { name: string }).name,
-  applyLink: (token, password) => auth("POST", "link", { token, password }),
-  changePassword: async (current, password) => { await auth("POST", "password", { current, password }); },
-  setDisplayName: name => auth("POST", "display", { display_name: name }),
-  setEmail: email => auth("POST", "email", { email }),
+  applyLink: async (token, password) => remember(await auth("POST", "link", { token, password })),
+  changePassword: async (old, password) => { await auth("POST", "password", { current: old, password }); },
+  setDisplayName: async name => remember(await auth("POST", "display", { display_name: name })),
+  setEmail: async email => remember(await auth("POST", "email", { email })),
   myUsage: async () => (await auth("GET", "usage")) as unknown as MyUsage,
   onUnauthorized: f => {
     unauthorized.add(f);
     return () => unauthorized.delete(f);
+  },
+  onUserChanged: f => {
+    userChanged.add(f);
+    return () => userChanged.delete(f);
   },
   admin,
 

@@ -325,10 +325,10 @@ func TestSharedProfiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cp.Name != "既定(写し)" || cp.Share != ShareNone || !slices.Equal(cp.Rules.Fixed, []string{"system"}) {
+	if cp.Name != "既定(複製)" || cp.Share != ShareNone || !slices.Equal(cp.Rules.Fixed, []string{"system"}) {
 		t.Errorf("写し: %+v", cp)
 	}
-	if cp2, err := cs.CopyProfile(ctx, shared.ID); err != nil || cp2.Name != "既定(写し 2)" {
+	if cp2, err := cs.CopyProfile(ctx, shared.ID); err != nil || cp2.Name != "既定(複製 2)" {
 		t.Errorf("2回目の写し: %+v %v", cp2, err)
 	}
 	upd := shared

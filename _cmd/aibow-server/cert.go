@@ -54,7 +54,7 @@ func runCert(c serverConfig, hosts []string) error {
 	certPath, keyPath := filepath.Join(dir, certFileName), filepath.Join(dir, keyFileName)
 	for _, p := range []string{certPath, keyPath} {
 		if _, err := os.Stat(p); err == nil {
-			return fmt.Errorf("%s はもうあります。作り直すときは、先に消してください(使っているアプリの serverCert も、新しいものに替えます)", p)
+			return fmt.Errorf("%s はもうあります。作り直すときは、先に削除してください(使っているアプリの serverCert も、新しいものに替えます)", p)
 		}
 	}
 	certPEM, keyPEM, err := selfSigned(append(hosts, "127.0.0.1", "localhost"), time.Now())
@@ -73,9 +73,9 @@ func runCert(c serverConfig, hosts []string) error {
 	log.Noticef("自己署名の証明書を作りました: %s(%d 日有効。ホスト: %v)", certPath, certDays, hosts)
 	fmt.Printf("証明書: %s\n秘密鍵: %s\n", absPath(certPath), absPath(keyPath))
 	block, _ := pem.Decode(certPEM)
-	fmt.Printf("証明書の指紋(SHA-256): %s\n", auth.Fingerprint(block.Bytes))
+	fmt.Printf("証明書のフィンガープリント(SHA-256): %s\n", auth.Fingerprint(block.Bytes))
 	fmt.Println("server.json の tlsCert・tlsKey にこの2つを書くと、HTTPS で待ち受けます。")
-	fmt.Println("画面のアプリからつなぐときは、初めてつなぐときに出る指紋がこの指紋と同じかを確かめて、信頼します(起動のときのログにも出ます)。")
+	fmt.Println("画面のアプリからつなぐときは、初めてつなぐときに出るフィンガープリントがこのフィンガープリントと同じかを確かめて、信頼します(起動のときのログにも出ます)。")
 	fmt.Println("settings.json に手で書くときは、アプリの PC に証明書(秘密鍵ではない)だけを写し、serverCert に書きます。")
 	return nil
 }

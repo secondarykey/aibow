@@ -18,16 +18,16 @@ func TestWorkspacesFile(t *testing.T) {
 	if err := os.Mkdir(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	ws, err := w.CreateFromFolder(dir)
-	if err != nil {
+	ws, existing, err := w.CreateFromFolder(dir, true)
+	if err != nil || existing {
 		t.Fatal(err)
 	}
 	if ws.Name != "example" || len(ws.Folders) != 1 || ws.MainFolder() != (WorkspaceFolder{Path: dir, Name: "example", Main: true, Writable: true}) {
 		t.Errorf("フォルダから作ったワークスペース: %+v", ws)
 	}
 	// 同じフォルダ1つだけのワークスペースは、新しく作らずに今あるものを返す
-	if again, err := w.CreateFromFolder(dir); err != nil || again.ID != ws.ID || len(w.List()) != 1 {
-		t.Errorf("同じフォルダ: %+v(一覧 %d), %v", again, len(w.List()), err)
+	if again, existing, err := w.CreateFromFolder(dir, true); err != nil || !existing || again.ID != ws.ID || len(w.List()) != 1 {
+		t.Errorf("同じフォルダ: %+v(既存 %v・一覧 %d), %v", again, existing, len(w.List()), err)
 	}
 	renamed := ws
 	renamed.Name = "  サンプル  "
@@ -63,9 +63,48 @@ func TestWorkspacesFile(t *testing.T) {
 	}
 	// 無いフォルダ・相対パスからは作らない
 	for _, p := range []string{filepath.Join(dir, "none"), "relative"} {
-		if _, err := w.CreateFromFolder(p); err == nil {
+		if _, _, err := w.CreateFromFolder(p, true); err == nil {
 			t.Errorf("%s から作れてしまった", p)
 		}
+	}
+}
+
+// 設定の画面の「フォルダから作る」(reuse = false)は、同じフォルダでも毎回新しく作り、名前に番号を付ける(0049 の決定事項 3)。
+// 入力欄の上(reuse = true)は、そのあとも最初のワークスペースを選ぶ
+func TestWorkspacesCreateSameFolder(t *testing.T) {
+	w, err := LoadWorkspaces(filepath.Join(t.TempDir(), "workspaces.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(t.TempDir(), "aibow")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var made []Workspace
+	for range 3 {
+		ws, existing, err := w.CreateFromFolder(dir, false)
+		if err != nil || existing {
+			t.Fatalf("新しく作る: %v(既存 %v)", err, existing)
+		}
+		made = append(made, ws)
+	}
+	for i, want := range []string{"aibow", "aibow (2)", "aibow (3)"} {
+		if made[i].Name != want || made[i].MainFolder().Name != "aibow" || made[i].MainFolder().Path != dir {
+			t.Errorf("%d 個目: %+v(名前は %s、モデルが呼ぶフォルダの名前はフォルダ名のまま)", i+1, made[i], want)
+		}
+	}
+	if made[0].ID == made[1].ID || len(w.List()) != 3 {
+		t.Errorf("別のワークスペースにならない: %+v", w.List())
+	}
+	// 番号の付いた名前を消すと、次はその番号が空く(重ならなくなるまで上げる)
+	if err := w.Delete(made[1].ID); err != nil {
+		t.Fatal(err)
+	}
+	if ws, _, err := w.CreateFromFolder(dir, false); err != nil || ws.Name != "aibow (2)" {
+		t.Errorf("空いた番号: %+v, %v", ws, err)
+	}
+	if ws, existing, err := w.CreateFromFolder(dir, true); err != nil || !existing || ws.ID != made[0].ID {
+		t.Errorf("入力欄の上からは、最初のワークスペースを選ぶ: %+v(既存 %v), %v", ws, existing, err)
 	}
 }
 
@@ -78,7 +117,7 @@ func TestWorkspacesBrokenFile(t *testing.T) {
 		if err == nil || w == nil || len(w.List()) != 0 {
 			t.Fatalf("%s: 壊れたファイルはエラーのはず: %v", body, err)
 		}
-		if _, err := w.CreateFromFolder(t.TempDir()); err == nil {
+		if _, _, err := w.CreateFromFolder(t.TempDir(), true); err == nil {
 			t.Errorf("%s: 読めなかったファイルに書いてしまう", body)
 		}
 		if b, _ := os.ReadFile(path); string(b) != body {

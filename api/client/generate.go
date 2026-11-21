@@ -313,7 +313,7 @@ func (r *streamReader) read(body io.Reader) error {
 	if err := sc.Err(); err != nil {
 		return fmt.Errorf("aibow-server とのつながりが途中で切れました: %w", err)
 	}
-	return fmt.Errorf("aibow-server の返事が終わりの印([DONE])の前に切れました")
+	return fmt.Errorf("aibow-server からの返事が途中で切れました。もう一度送ってください([DONE] の前に切れました)")
 }
 
 // push は塊1つを振り分ける。
@@ -375,7 +375,7 @@ func (r *streamReader) result() (format.Output, engine.GenerateStats, error) {
 	st := r.stats
 	st.StopReason = r.stopReason
 	if !r.finished || st.StopReason == "" {
-		return format.Output{}, st, fmt.Errorf("aibow-server の返事に終了の理由がありません(aibow-server が古い版かもしれません)")
+		return format.Output{}, st, fmt.Errorf("aibow-server とアプリの版をそろえてください(返事に終了の理由がありませんでした)")
 	}
 	out := format.Output{Thinking: r.thinking.String(), Content: r.content.String()}
 

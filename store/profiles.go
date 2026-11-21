@@ -76,7 +76,7 @@ func (s *SQLite) SetProfileShare(ctx context.Context, id uuid.UUID, share string
 	switch share {
 	case aibow.ShareNone, aibow.ShareAll, aibow.ShareUsers:
 	default:
-		return fmt.Errorf("配る範囲 %q は知らない値です(\"\"・all・users のどれか)", share)
+		return fmt.Errorf("配布する範囲 %q は知らない値です(\"\"・all・users のどれか)", share)
 	}
 	p, err := s.Profile(ctx, id)
 	if err != nil {

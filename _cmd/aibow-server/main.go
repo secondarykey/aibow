@@ -10,7 +10,7 @@
 // 中身は api パッケージにあり、ここは引数と環境変数を読み、エンジンとモデルを用意して起動するだけ
 // (aibow-mcp と mcp/server の関係と同じ)。画面のアプリ(_cmd/aibow)とは別の exe にしているのは、
 // VRAM 8GB にモデルを2つ載せられず、1つの作業領域を画面の会話と API で取り合うと KV キャッシュを壊し合うため。
-// 画面のアプリが**アプリの中でモデルを動かしているときは、同時には使わない**(使うときはアプリを閉じる)。
+// 画面のアプリが**アプリモードでモデルを動かしているときは、同時には使わない**(使うときはアプリを閉じる)。
 // 画面のアプリをここにつないでいるとき(settings.json の serverUrl。0015)は、アプリは GPU を使わないので同時に動かせる。
 //
 // ステップ9(0016)で、ブラウザの会話も持つようにした(browser.go)。会話の仕組みと保存(server.db)をここで動かし、
@@ -104,6 +104,9 @@ func run(c serverConfig, notices []string, cfgErr error, env *config.Env) error 
 	}
 	if c.File != "" {
 		log.Noticef("設定ファイル: %s", absPath(c.File))
+	} else {
+		// 無いことも書く(別のユーザーで起動すると %APPDATA% が変わり、書いたはずの設定が読まれないため)
+		log.Noticef("設定ファイル: なし(%s を探しました)", absPath(filepath.Join(filepath.Dir(c.StatePath), configFileName)))
 	}
 	// 待ち受けるアドレスは、モデルを読み込む前に出しておく(読み込みに失敗しても、どこで待ち受けるつもりだったかが分かるように)
 	log.Noticef("待ち受けるアドレス: %s(llama.cpp とモデルを読み込んでから待ち受けます)", c.URL())
@@ -153,6 +156,9 @@ func run(c serverConfig, notices []string, cfgErr error, env *config.Env) error 
 		return err
 	}
 	mm := &modelManager{eng: eng, catalog: catalog, state: state, defaultLayers: cfg.GPULayers}
+	for _, p := range mm.Places() {
+		log.Noticef("モデルの置き場所: %s", p.Describe())
+	}
 	m, err := firstModel(mm, c.Model)
 	if err != nil {
 		return err
@@ -200,15 +206,7 @@ func run(c serverConfig, notices []string, cfgErr error, env *config.Env) error 
 		return err
 	}
 	defer closeBrowser()
-	// OpenAI 互換の口と aibow 専用の口は、要るときは API キーで守る(0017 の決定事項 9)
-	// サーバーの PC の事情を変える口は、127.0.0.1 からのほか、管理者にも許す(API キーの持ち主。0018 の決定事項 8)
-	srv.SetAdmin(auth.IsAdmin)
-	apiH := srv.Handler()
-	if c.KeysRequired() {
-		apiH = keys.RequireKey(apiH)
-	} else {
-		apiH = asLocal(apiH) // キーの要らない形では、だれでもない呼び出しを local の分として記録する(0033)
-	}
+	apiH := apiHandler(srv, keys, c.KeysRequired())
 
 	proxies := newProxyTrust(c.TrustedProxies, c.ProxyHeader)
 
@@ -257,6 +255,25 @@ func run(c serverConfig, notices []string, cfgErr error, env *config.Env) error 
 	return hs.Shutdown(sctx)
 }
 
+// apiHandler は、OpenAI 互換の口と aibow 専用の口を、要るときは API キーで守る(0017 の決定事項 9)。
+//
+// サーバーの PC の事情を変える口(降ろす・GPU の層数・置き場所)は、キーが要る形では管理者(API キーかアプリのトークンの持ち主)だけ。
+// どこから来たか(127.0.0.1 か)は見ない(0046)。キーの要らない形(127.0.0.1 だけでログインなし)は管理者がいないので、
+// SetAdmin を渡さずに誰でも通す(外の人は手前の fromProxy が 403 にする。0044 の決定事項 12)。
+func apiHandler(srv *api.Server, keys *auth.Keys, keysRequired bool) http.Handler {
+	if !keysRequired {
+		return asLocal(srv.Handler()) // キーの要らない形では、だれでもない呼び出しを local の分として記録する(0033)
+	}
+	srv.SetAdmin(auth.IsAdmin)
+	srv.SetCallerName(func(r *http.Request) string {
+		if u, ok := auth.UserFrom(r.Context()); ok {
+			return u.Name
+		}
+		return ""
+	})
+	return keys.RequireKey(srv.Handler())
+}
+
 // loadTLS は、証明書と秘密鍵を読む(HTTPS。0017 の 10-2)。証明書が無ければ nil(HTTP)。
 // 起動の途中(モデルを読み込む前)で読み、間違っていれば待ち受ける前に止める。
 // 127.0.0.1 の外で証明書なしなら、警告して HTTP で動かす(ユーザーと決めた。家の中など、信用できる網だけで使うとき向け)。
@@ -273,8 +290,8 @@ func loadTLS(c serverConfig) (*tls.Config, error) {
 		return nil, fmt.Errorf("HTTPS の証明書(%s)と秘密鍵(%s)を読めません: %w", absPath(c.TLSCert), absPath(c.TLSKey), err)
 	}
 	log.Noticef("HTTPS で待ち受けます(証明書: %s)", absPath(c.TLSCert))
-	// 画面のアプリは、初めてつなぐときにこの指紋を画面に出す。同じなら信頼してよい(0019 の決定事項 6)
-	log.Noticef("証明書の指紋(SHA-256): %s", auth.Fingerprint(cert.Certificate[0]))
+	// 画面のアプリは、初めてつなぐときにこのフィンガープリントを画面に出す。同じなら信頼してよい(0019 の決定事項 6)
+	log.Noticef("証明書のフィンガープリント(SHA-256): %s", auth.Fingerprint(cert.Certificate[0]))
 	return &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12}, nil
 }
 
@@ -282,22 +299,22 @@ func loadTLS(c serverConfig) (*tls.Config, error) {
 // 全部のネットワークで待ち受けるとき(0.0.0.0 など)は、ほかの PC からはこの PC のアドレスでつなぐことも書く。
 func logAddresses(c serverConfig, base string, proxies proxyTrust) {
 	if ip := net.ParseIP(c.Host); ip != nil && ip.IsUnspecified() {
-		log.Noticef("全部のネットワークで待ち受けます。ほかの PC からは、%s の %s をこの PC のアドレス(IP アドレスか名前)に替えてつなぎます", base, c.Host)
+		log.Noticef("ほかの PC からは、%s でつなぎます(全部のネットワークで待ち受けています)", strings.Replace(base, c.Host, "<この PC の IP アドレスか名前>", 1))
 	}
 	log.Noticef("画面のアプリのつなぎ先(設定の画面の「サーバー」か、settings.json の serverUrl / AIBOW_SERVER_URL): %s", base)
 	log.Noticef("OpenAI 互換のクライアント(Cline など)の Base URL: %s/v1", base)
 	log.Noticef("ブラウザで開く画面: %s/(会話は %s に保存します)", base, absPath(c.DBPath))
-	if c.Base != "" && c.Local() {
-		// base はリバースプロキシ(nginx など)の後ろに置くときに使うことが多い。サーバーの PC の上はいつも信頼するプロキシなので、
-		// 同じ PC のプロキシが元の相手をヘッダーに書けば、その人で見る(0044)。書かないと、プロキシを通った呼び出しが
-		// 127.0.0.1 から来たように見える(起動のときには見分けられない。0044 の未決事項 1)ので、書くように知らせる(決定事項 14)
-		log.Noticef("同じ PC のリバースプロキシは、元の相手を %s に書くようにしてください(書かないと、プロキシを通った呼び出しがこの PC の上からに見えます)", c.ProxyHeader)
+	// プロキシで元の相手をヘッダーに書く案内(0044 の決定事項 14)は、0048 で外した。起動のときにはプロキシを使っているか見分けられず、
+	// 使わない人には意味の分からない文になるため。usage.md の「リバースプロキシの後ろに置く」に任せる。
+	// 信頼するプロキシ(0044 の決定事項 13)は、trustedProxies を書いた人にだけ Notice で出す(書かなければ、この PC だけ。0048 の決定事項 4)
+	if len(c.TrustedProxies) > 0 {
+		log.Noticef("信頼するプロキシ: %s(%s で元の相手を見ます)", proxies.describe(), c.ProxyHeader)
+	} else {
+		log.Infof("信頼するプロキシ: %s(%s で元の相手を見ます)", proxies.describe(), c.ProxyHeader)
 	}
-	// 信頼するプロキシ(0044 の決定事項 13)。書かなくても、この PC の上は入っている
-	log.Noticef("信頼するプロキシ: %s(%s で元の相手を見ます)", proxies.describe(), c.ProxyHeader)
 	if all := proxies.all(); len(all) > 0 {
 		// 止めはしない(わざと書く場合を止めない)が、誰でもヘッダーで元の相手を偽れることを知らせる(決定事項 5)
-		log.Warnf("trustedProxies に全部のアドレスを含む範囲(%s)があります。どこからつないでも %s で元の相手を偽れます(サーバーの PC の上からを名乗る・ログインの制限をすり抜ける)",
+		log.Warnf("trustedProxies に全部のアドレスを含む範囲(%s)があります。どこからつないでも %s で元の相手を偽れます(この PC からを名乗る・ログインの制限をすり抜ける)",
 			strings.Join(all, ", "), c.ProxyHeader)
 	}
 	if c.Login {
@@ -307,7 +324,7 @@ func logAddresses(c serverConfig, base string, proxies proxyTrust) {
 		log.Warn("ログインなしで使います(login: false。利用者は local だけで、この PC の人なら誰でも全部の会話を使えます。ログインを要るようにするには login: false を外します)")
 	}
 	if c.KeysRequired() {
-		log.Notice("OpenAI 互換の口と aibow 専用の口は API キーが要ります(aibow-server user key <名前> で作ります)")
+		log.Notice("Cline などからつなぐには API キーが要ります(aibow-server user key <名前> で作ります)")
 	}
 }
 
@@ -337,8 +354,18 @@ func firstModel(mm *modelManager, arg string) (models.Entry, error) {
 			return firstModel(mm, "")
 		}
 		if err != nil {
-			return models.Entry{}, err
+			// 見つからないモデルでも起動を止めない。使える最初のモデルで起動し、管理者が直せるように Warn で知らせる
+			// (止めると、置き場所にモデルが無い間、何度も起動に失敗し続ける。2026-11-20 のログ。0051 の決定事項 1)。
+			// 使えるモデルが1つも無ければ、下の firstModel(mm, "") がエラーで止める
+			fallback, ferr := firstModel(mm, "")
+			if ferr != nil {
+				return models.Entry{}, fmt.Errorf("起動のときのモデル %s が見つからず、ほかに使えるモデルもありません。%w", arg, ferr)
+			}
+			log.Warnf("起動のときのモデル %s が見つからないので、%s で起動します(-model・設定ファイルの model・AIBOW_MODEL を直してください。%s)",
+				arg, fallback.Name, placesHint(mm))
+			return fallback, nil
 		}
+		// 見つかったが書式に未対応のモデルは、今までどおり止める(指定したものを黙って替えない)
 		if arch, ok := supported(m); !ok && arch != "" {
 			return models.Entry{}, fmt.Errorf("指定したモデル %s の書式(種類: %s)には未対応です。対応しているのは Qwen3.5 だけです。"+
 				"-model・設定ファイルの model・AIBOW_MODEL で、ほかのモデルを指定してください", m.Name, arch)
@@ -352,7 +379,7 @@ func firstModel(mm *modelManager, arg string) (models.Entry, error) {
 		if disabled {
 			return models.Entry{}, fmt.Errorf("使えるモデルが1つもありません(管理者が使えないようにしました)。%s の disabled から、使うモデルの ID を外してください", absPath(mm.state.Path()))
 		}
-		return models.Entry{}, fmt.Errorf("モデルが1つも見つかりません。-models(AIBOW_MODELS_DIR)のフォルダに GGUF を置くか、ollama pull してください")
+		return models.Entry{}, fmt.Errorf("モデルが1つも見つかりません。-models(AIBOW_MODELS_DIR)のフォルダに GGUF を置くか、ollama pull してください。%s", placesHint(mm))
 	}
 	for _, m := range list {
 		arch, ok := supported(m)
@@ -364,7 +391,25 @@ func firstModel(mm *modelManager, arg string) (models.Entry, error) {
 	if disabled {
 		return models.Entry{}, fmt.Errorf("書式に対応している使えるモデル(%s)がありません。管理者が使えないようにしたモデルを使うなら、%s の disabled から ID を外してください", format.Supported(), absPath(mm.state.Path()))
 	}
-	return models.Entry{}, fmt.Errorf("書式に対応しているモデル(%s)が見つかりません。-models(AIBOW_MODELS_DIR)のフォルダに GGUF を置くか、ollama pull してください", format.Supported())
+	return models.Entry{}, fmt.Errorf("書式に対応しているモデル(%s)が見つかりません。-models(AIBOW_MODELS_DIR)のフォルダに GGUF を置くか、ollama pull してください。%s", format.Supported(), placesHint(mm))
+}
+
+// placesHint は、探した置き場所と、その場所がどう決まったか(モデルが見つからないときのエラーに足す)。
+// 同じ設定でも、カレントフォルダや起動したユーザーが違うと探す場所が変わる。どこを探したかを書けば、そのずれに気づける。
+func placesHint(mm *modelManager) string {
+	var list []string
+	for _, p := range mm.Places() {
+		list = append(list, p.Describe())
+	}
+	hint := "探した置き場所: " + strings.Join(list, " / ")
+	if d := mm.catalog.ModelsDir; d != "" && !filepath.IsAbs(d) {
+		wd, _ := os.Getwd()
+		hint += fmt.Sprintf("。models フォルダの %q は相対パスなので、カレントフォルダ(%s)が基準です", d, wd)
+	}
+	if os.Getenv("OLLAMA_MODELS") == "" {
+		hint += "。Ollama の保存先は、起動したユーザーのホームフォルダから決まります(別のユーザーで起動するなら、OLLAMA_MODELS で決めます)"
+	}
+	return hint
 }
 
 // supported は、モデルの書式に aibow が対応しているか(GGUF の先頭から種類とチャットテンプレートを読む)。arch は読めた種類(読めなければ空)。

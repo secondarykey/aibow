@@ -58,15 +58,22 @@ type Server struct {
 	// aibow-server の中のブラウザの会話も同じ席を使う(Seat で渡す。0016 の 11)
 	seat *Seat
 
-	// admin は、リクエストを送ってきた人が管理者か(SetAdmin で渡す。0018 の 11-0)。nil なら誰も管理者でない
+	// admin は、リクエストを送ってきた人が管理者か(SetAdmin で渡す。0018 の 11-0・0046)。
+	// nil なら、ログインの仕組みが無い形(aibow-server の login: false。API キーが要らない)で、サーバーの PC の事情を変える口も通す
 	admin func(r *http.Request) bool
+	// callerName は、リクエストを送ってきた人の名前(断ったときのログに出す。SetCallerName で渡す)。nil か空なら出さない
+	callerName func(r *http.Request) string
 
 	now func() time.Time // テストで時刻を固定するため
 }
 
 // SetAdmin は、リクエストを送ってきた人が管理者かを決める係を渡す(0018 の 11-0)。
 // 誰かを決めるのは aibow-server(API キーの持ち主。auth)なので、api は auth を import せずに、決める係だけを受け取る。
+// ログインが要る形(API キーが要る形)では必ず渡す。渡さなければ、サーバーの PC の事情を変える口を誰にでも通す(ログインなしの形。0046 の決定事項 3)。
 func (s *Server) SetAdmin(f func(r *http.Request) bool) { s.admin = f }
+
+// SetCallerName は、リクエストを送ってきた人の名前を決める係を渡す(断ったときのログに出す。0046 の決定事項 9)。
+func (s *Server) SetCallerName(f func(r *http.Request) string) { s.callerName = f }
 
 // New は API を作る。起動のときのモデルは gen にもう読み込んである前提(読み込みは _cmd/aibow-server が起動時に行う)。
 // mm が nil なら、リクエストの model ではモデルを切り替えない(0012 の形)。nCtx はサーバーの作業領域の大きさ(GET /models で知らせる)。
@@ -85,7 +92,7 @@ func (s *Server) Handler() http.Handler {
 	// aibow 専用の口(0015)。/v1/ と分け、意味が同じものは llama.cpp の server の名前にそろえる
 	mux.HandleFunc("GET /models", s.handleServerModels)
 	mux.HandleFunc("POST /models/load", s.handleLoad)
-	// サーバーの PC の事情を変える口(降ろす・GPU の層数・置き場所)は、サーバーの PC からか管理者だけ(pcSide。0017 の 10-2・0018 の 11-0)
+	// サーバーの PC の事情を変える口(降ろす・GPU の層数・置き場所)は、管理者だけ(pcSide。0046。ログインなしの形では通す)
 	mux.HandleFunc("POST /models/unload", s.pcSide(s.handleUnload))
 	mux.HandleFunc("POST /apply-template", s.handleApplyTemplate)
 	mux.HandleFunc("POST /_aibow/count-tokens", s.handleCountTokens)
@@ -139,20 +146,35 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 // writeError は OpenAI と同じ形のエラーを返す:{"error": {"message", "type", "code"}}。
 // クライアントは type と code で見分ける(例: 長すぎるときの code は context_length_exceeded)。
-// pcSide は、サーバーの PC の上(127.0.0.1・::1)からの呼び出しと、管理者の呼び出しだけを通す
-// (0017 の 10-2 で「サーバーの PC からだけ」にし、0018 の決定事項 8 で管理者にも許した)。
+// pcSide は、サーバーの PC の事情を変える口を、管理者(API キーかアプリのトークンの持ち主)の呼び出しだけに通す。
 // モデルを降ろす・GPU の層数・置き場所は、サーバーの PC と、ほかの人が使っているモデルに関わるので、ほかの人には変えさせない。
-// aibow-server が 127.0.0.1 だけで待ち受けているときは、いつも通る。
+//
+// 0017 の 10-2 では「サーバーの PC の上(127.0.0.1)からだけ」、0018 の決定事項 8 で「127.0.0.1 からか管理者」にしたが、
+// 0046 で「管理者だけ」にそろえた。アドレスは、同じ PC のリバースプロキシやほかのプログラムで簡単に「サーバーの PC の上」に見えてしまう。
+// ログインした人の印は、偽るのにパスワードかキーが要る。権限を「どこから来たか」でなく「誰か」に付けると、アドレスの見え方の穴が権限の穴にならない。
+//
+// ログインなしの形(SetAdmin を渡さない。aibow-server の login: false)では通す。そこには管理者がいないので、断ると誰も変えられなくなる。
+// login: false は 127.0.0.1 だけで待ち受けるときしか選べず、プロキシ越しの外の人は aibow-server が手前で 403 にする(0044 の決定事項 12)。
 func (s *Server) pcSide(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !IsLocal(r) && (s.admin == nil || !s.admin(r)) {
-			log.Warnf("サーバーの PC からか管理者だけの操作なので断りました: %s %s(%s)", r.Method, r.URL.Path, RemoteHost(r))
-			writeError(w, http.StatusForbidden, "permission_error", "local_only",
-				"この操作(モデルを降ろす・GPU の層数・モデルの置き場所)は、aibow-server を動かしている PC からか、管理者だけができます")
+		if s.admin != nil && !s.admin(r) {
+			log.Warnf("管理者だけの操作なので断りました: %s %s(%s)", r.Method, r.URL.Path, s.caller(r))
+			writeError(w, http.StatusForbidden, "permission_error", "admin_only",
+				"この操作(モデルを降ろす・GPU の層数・モデルの置き場所)は、管理者だけができます")
 			return
 		}
 		h(w, r)
 	}
+}
+
+// caller は、ログに出す相手(名前が分かれば「名前・アドレス」、分からなければアドレスだけ)。
+func (s *Server) caller(r *http.Request) string {
+	if s.callerName != nil {
+		if name := s.callerName(r); name != "" {
+			return name + "・" + RemoteHost(r)
+		}
+	}
+	return RemoteHost(r)
 }
 
 // IsLocal は、リクエストがサーバーの PC の上(127.0.0.1・::1)から来たか。

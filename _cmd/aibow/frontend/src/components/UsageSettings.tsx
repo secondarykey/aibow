@@ -105,7 +105,7 @@ export function UsageAdmin({ onError }: { onError(text: string): void }) {
             >
               <span className="model-name">
                 {personOf(t)}
-                {t.deleted && <span className="origin-chip" title="消された利用者(記録は残す)">消した人</span>}
+                {t.deleted && <span className="origin-chip" title="削除された利用者(記録は残す)">削除された人</span>}
               </span>
               <Numbers t={t} />
             </button>

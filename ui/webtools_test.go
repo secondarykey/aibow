@@ -94,7 +94,7 @@ func TestWebConfirm(t *testing.T) {
 		t.Fatal("確認を待っている間に席が空いている")
 	}
 
-	w.mustCall(t, nil, "ConfirmTool", c.ID, req.ID, true, "", config.ToolAllow)
+	w.mustCall(t, nil, "ConfirmTool", c.ID, req.ID, true, "", config.ToolAllow, false)
 	got = until(t, events, "tool_result")
 	if m := got[len(got)-1].Message; m == nil || m.Content != "3" || m.ToolResult.Confirm == nil || !m.ToolResult.Confirm.Approved {
 		t.Fatalf("計算の結果: %+v", got[len(got)-1].Message)
@@ -135,7 +135,7 @@ func TestWebConfirmReject(t *testing.T) {
 
 	done := w.sendAsync(t, context.Background(), c.ID, "計算して")
 	got := until(t, events, "confirm")
-	w.mustCall(t, nil, "ConfirmTool", c.ID, got[len(got)-1].Confirm.ID, false, "暗算で", "")
+	w.mustCall(t, nil, "ConfirmTool", c.ID, got[len(got)-1].Confirm.ID, false, "暗算で", "", false)
 	until(t, events, "done")
 	<-done
 	if r := w.toolResult(t, c.ID); !strings.Contains(r.Content, "拒否") || !strings.Contains(r.Content, "暗算で") {
@@ -161,12 +161,12 @@ func TestWebConfirmOtherUser(t *testing.T) {
 	if status, body := w.call(t, context.Background(), "PendingConfirm", c.ID); status == http.StatusOK {
 		t.Errorf("ほかの人の確認が見えた: %s", body)
 	}
-	if status, body := w.call(t, context.Background(), "ConfirmTool", c.ID, req.ID, true, "", ""); status == http.StatusOK {
+	if status, body := w.call(t, context.Background(), "ConfirmTool", c.ID, req.ID, true, "", "", false); status == http.StatusOK {
 		t.Errorf("ほかの人の確認に答えられた: %s", body)
 	}
 
 	w.user.Store(bob)
-	w.mustCall(t, nil, "ConfirmTool", c.ID, req.ID, true, "", "")
+	w.mustCall(t, nil, "ConfirmTool", c.ID, req.ID, true, "", "", false)
 	until(t, events, "done")
 	<-done
 	if r := w.toolResult(t, c.ID); r.Content != "3" {
@@ -244,7 +244,7 @@ func TestWebConfirmAnsweredBeforeLimit(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := w.sendAsync(t, ctx, c.ID, "計算して")
 	got := until(t, events, "confirm")
-	w.mustCall(t, nil, "ConfirmTool", c.ID, got[len(got)-1].Confirm.ID, true, "", "")
+	w.mustCall(t, nil, "ConfirmTool", c.ID, got[len(got)-1].Confirm.ID, true, "", "", false)
 	<-w.eng.started
 	time.Sleep(2 * confirmLimit)
 	cancel() // 偽物の engine は止めるまで書き続ける。タイマーで止まっていたら、ここより前に done が来ている

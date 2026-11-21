@@ -52,6 +52,15 @@ export interface ConversationDetail {
 }
 
 /**
+ * CreatedWorkspace は CreateWorkspace の結果。Existing なら、新しく作らずに今あるワークスペースを返した
+ * (画面はトーストで「既にあるワークスペースを選んだ」と知らせる。0049 の決定事項 2)。
+ */
+export interface CreatedWorkspace {
+    "workspace": config$0.Workspace;
+    "existing": boolean;
+}
+
+/**
  * FolderView は、画面に出すフォルダ1つ。この PC にあるか・リポジトリかを添える(どちらもそのつど見る)。
  */
 export interface FolderView {
@@ -146,7 +155,7 @@ export interface ModelsResult {
     "last_model"?: string;
 
     /**
-     * Server は生成を頼んでいる aibow-server のつなぎ先(アプリの中で動かしているときは空。0015)
+     * Server は生成を頼んでいる aibow-server のつなぎ先(アプリモードのときは空。0015)
      */
     "server"?: string;
 
@@ -157,7 +166,7 @@ export interface ModelsResult {
 
     /**
      * Manage は、aibow-server の中で、サーバーの PC の事情(読み込む / 降ろす・層の数・置き場所・出どころ)を見せて変えてよい人か
-     * (管理者か、サーバーの PC の上から開いた画面。0018 の決定事項 8)。画面はモデルのタブを、アプリの中で動かすときと同じに出す
+     * (管理者か、ログインなしの形の画面。0046)。画面はモデルのタブを、アプリモードのときと同じに出す
      */
     "manage"?: boolean;
 }

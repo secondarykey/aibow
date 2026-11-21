@@ -1,15 +1,16 @@
 // グループの画面(0031 の段4)。
 //
-//	GroupAdmin   … 管理の画面の「グループ」のタブ(0032)。作る・名前を変える・メンバーと長・消す(決定事項 23・24・30)
+//	GroupAdmin   … 管理の画面の「グループ」のタブ(0032)。作成・名前を変える・メンバーと長・削除(決定事項 23・24・30)
 //	LeaderGroups … グループの長が、設定の画面の「グループ」のタブで、自分が長のグループのメンバーだけを足す・外す(決定事項 31・32・37)
 //
 // メンバーを変えると、そのグループに共有された会話・配られたプロファイルが見える人も変わる(決定事項 26・33)。
 // 人を足すときは、見えるようになるものの件数を出してから足す。誰が変えられるかは Go の保存先が決める(画面は出し分けるだけ)。
 import { useState } from "react";
-import { LuCrown, LuX } from "react-icons/lu";
+import { LuCrown, LuPlus, LuX } from "react-icons/lu";
 import { ChatService, me } from "../backend";
 import { personLabel, type Directory, type Group } from "../directory";
 import { errorMessage } from "../errors";
+import { DeleteButton } from "./DeleteButton";
 import { TargetSearch } from "./SharePicker";
 
 // GroupMembers は、グループのメンバーの札と、名前で探して足す欄。admin なら札で長を決められる
@@ -38,7 +39,7 @@ function GroupMembers({ group, dir, admin, onChanged, onError }: {
                   type="button"
                   className={"pick-leader" + (leader ? " on" : "")}
                   aria-pressed={leader}
-                  title={leader ? "長から外す" : "長にする(このグループのメンバーを足す・外せるようになる)"}
+                  title={leader ? "長から外す" : "長にする(このグループのメンバーを追加・外せるようになる)"}
                   onClick={() => run(() => ChatService.SetGroupLeader(group.id, m, !leader))}
                 >
                   <LuCrown />
@@ -61,17 +62,17 @@ function GroupMembers({ group, dir, admin, onChanged, onError }: {
         <div className="share-confirm">
           <span>自分を外すと、このグループの長でもなくなります。</span>
           <button type="button" className="danger" onClick={() => { setLeaving(false); setMember(me.name, false); }}>外す</button>
-          <button type="button" onClick={() => setLeaving(false)}>やめる</button>
+          <button type="button" onClick={() => setLeaving(false)}>キャンセル</button>
         </div>
       )}
       {adding ? (
         <div className="share-confirm">
           <span>
-            {personLabel(dir.people.find(p => p.name === adding), adding, true)} を足します。
+            {personLabel(dir.people.find(p => p.name === adding), adding, true)} を追加します。
             {shares && `この人は、グループに共有された ${group.conversations} 件の会話と ${group.profiles} 件のプロファイルを読めるようになります。`}
           </span>
-          <button type="button" className="primary" onClick={() => { const u = adding; setAdding(null); setMember(u, true); }}>足す</button>
-          <button type="button" onClick={() => setAdding(null)}>やめる</button>
+          <button type="button" className="primary" onClick={() => { const u = adding; setAdding(null); setMember(u, true); }}>追加</button>
+          <button type="button" onClick={() => setAdding(null)}>キャンセル</button>
         </div>
       ) : (
         <TargetSearch
@@ -79,7 +80,7 @@ function GroupMembers({ group, dir, admin, onChanged, onError }: {
           self=""
           groups={false}
           chosen={group.members.map(name => ({ kind: "user" as const, name }))}
-          placeholder="足す人を名前で探す…"
+          placeholder="追加する人を名前で探す…"
           onPick={t => setAdding(t.name)}
         />
       )}
@@ -110,13 +111,13 @@ export function GroupAdmin({ dir, reload, onError }: { dir: Directory; reload():
           onChange={e => setName(e.target.value)}
           onKeyDown={e => { if (!e.nativeEvent.isComposing && e.key === "Enter" && name.trim()) create(); }}
         />
-        <button disabled={!name.trim()} onClick={create}>作る</button>
+        <button className="with-icon" disabled={!name.trim()} onClick={create}><LuPlus /> 作成</button>
       </div>
       <div className="group-table">
         <span className="model-table-head">名前</span>
         <span className="model-table-head">長</span>
         <span className="model-table-head num">人数</span>
-        <span className="model-table-head num" title="このグループに共有されている会話・配られているプロファイルの数">共有</span>
+        <span className="model-table-head num" title="このグループに共有されている会話・配布されているプロファイルの数">共有</span>
         {dir.groups.map(g => (
           <button
             key={g.id}
@@ -141,7 +142,6 @@ export function GroupAdmin({ dir, reload, onError }: { dir: Directory; reload():
 // GroupDetail は、一覧で押したグループの詳細(名前・メンバーと長・消す)
 function GroupDetail({ group, dir, onClose, onChanged, onError }: { group: Group; dir: Directory; onClose(): void; onChanged(): void; onError(text: string): void }) {
   const [name, setName] = useState(group.name);
-  const [removing, setRemoving] = useState(false);
   const rename = () => {
     const t = name.trim();
     if (t === "" || t === group.name) {
@@ -177,23 +177,15 @@ function GroupDetail({ group, dir, onClose, onChanged, onError }: { group: Group
           }}
         />
       </div>
-      <h3 className="user-sub" title="冠を押すと長にする / 外す。長は、このグループのメンバーを足す・外せる">メンバー({group.members.length})</h3>
+      <h3 className="user-sub" title="冠を押すと長にする / 外す。長は、このグループのメンバーを追加・外せる">メンバー({group.members.length})</h3>
       <GroupMembers group={group} dir={dir} admin onChanged={onChanged} onError={onError} />
       <div className="user-remove">
-        {removing ? (
-          <>
-            <p className="confirm-text">
-              {group.name} グループを消します。{group.conversations} 件の会話と {group.profiles} 件のプロファイルの共有から外れます
-              (ほかに相手がいなければ、非公開・配らないになります)。
-            </p>
-            <div className="user-remove-row">
-              <button className="danger" onClick={remove}>消す</button>
-              <button onClick={() => setRemoving(false)}>やめる</button>
-            </div>
-          </>
-        ) : (
-          <button className="danger-outline" onClick={() => setRemoving(true)}>このグループを消す</button>
-        )}
+        <DeleteButton
+          block
+          question={`グループ「${group.name}」を削除しますか?${group.conversations} 件の会話と ${group.profiles} 件のプロファイルの共有から外れます(ほかに相手がいなければ、非公開・配布しないになります)。`}
+          title="このグループを削除する"
+          onConfirm={remove}
+        />
       </div>
     </section>
   );
@@ -217,13 +209,13 @@ export function UserGroups({ user, dir, onChanged, onError }: { user: string; di
       {others.length > 0 && (
         <select
           value=""
-          aria-label="グループに足す"
+          aria-label="グループに追加"
           onChange={e => {
             const g = others.find(g => g.id === e.target.value);
             if (g) set(g, true);
           }}
         >
-          <option value="">+ グループに足す</option>
+          <option value="">+ グループに追加</option>
           {others.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
         </select>
       )}
@@ -237,7 +229,7 @@ export function LeaderGroups({ dir, reload, onError }: { dir: Directory; reload(
   const mine = dir.groups.filter(g => g.leaders.includes(me.name));
   return (
     <>
-      <h2 title="長は、このグループのメンバーを足す・外せる。グループに共有された会話・配られたプロファイルは、メンバーに見える">自分が長のグループ</h2>
+      <h2 title="長は、このグループのメンバーを追加・外せる。グループに共有された会話・配布されたプロファイルは、メンバーに見える">自分が長のグループ</h2>
       {mine.length === 0 && <p className="hint">長のグループがありません</p>}
       {mine.map(g => (
         <section key={g.id} className="user-detail">

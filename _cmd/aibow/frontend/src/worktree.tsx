@@ -99,4 +99,4 @@ export function BaseLabel({ state }: { state: WorktreeState }) {
 }
 
 // STATUS_LABELS は、変わり方の画面での名前
-export const STATUS_LABELS: Record<string, string> = { added: "足した", modified: "変えた", deleted: "消した" };
+export const STATUS_LABELS: Record<string, string> = { added: "追加", modified: "変更", deleted: "削除" };

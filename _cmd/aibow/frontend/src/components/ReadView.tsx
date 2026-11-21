@@ -37,8 +37,8 @@ export function ReadView({ read, pinQuestion, onCopy }: { read: SharedRead; pinQ
         exclude={{ disabled: true, onChange: noop }}
       />
       <footer className="read-footer">
-        <button type="button" className="primary" onClick={onCopy} title="この会話(発言と要約)を写して、自分の会話として続ける">
-          <LuCopy /> 写して続ける
+        <button type="button" className="primary" onClick={onCopy} title="この会話(発言と要約)を複製して、自分の会話として続ける">
+          <LuCopy /> 複製して続ける
         </button>
       </footer>
     </section>

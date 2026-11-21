@@ -124,3 +124,60 @@ func TestAppAccountHandWritten(t *testing.T) {
 		t.Error("手で書いたつなぎ先でログインできる")
 	}
 }
+
+// ログインの要る aibow-server にトークンなしで起動したときは、aibow-server を呼ばずにログインの画面にする。
+// アプリモードに戻したあと(トークンを消した)も呼ばない(0051 の決定事項 5・6)。呼べば断られて、aibow-server のログに残るだけなので
+func TestWaitLogin(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "server.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	hash, _ := auth.HashPassword("bob-password-1")
+	now := time.Now()
+	if err := st.CreateUser(context.Background(), auth.User{ID: uuid.NewV7(), Name: "bob", Password: hash, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	sessions, keys := auth.NewSessions(st), auth.NewKeys(st)
+	mux := http.NewServeMux()
+	mux.Handle("/_aibow/auth/", keys.WithBearer(auth.Handler(sessions, true)))
+	mux.Handle("GET /_aibow/auth/key", keys.MeHandler(true))
+	var keyCalls int // トークンが要る口を呼んだ回数(/_aibow/auth/me はログインの要らない確かめ)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/_aibow/auth/key" {
+			keyCalls++
+		}
+		mux.ServeHTTP(w, r)
+	}))
+	defer srv.Close()
+
+	path := filepath.Join(t.TempDir(), "connection.json")
+	conn := newConnection(appConfig{connPath: path, serverSource: serverScreen, serverURL: srv.URL,
+		conn: config.ConnectionFile{ServerURL: srv.URL}})
+	conn.client = apiclient.New(srv.URL)
+	if !conn.checkLogin("") {
+		t.Fatal("ログインの要る aibow-server にトークンなしなら、ログインを待つはず")
+	}
+	s := &ChatService{conn: conn}
+	if a, err := s.Account(); err != nil || !a.NeedLogin || keyCalls != 0 {
+		t.Fatalf("呼ばずにログインの画面: %+v %v(呼んだ回数 %d)", a, err, keyCalls)
+	}
+	if _, err := s.Login("bob", "bob-password-1"); err != nil {
+		t.Fatal(err)
+	}
+	if conn.checkLogin("") {
+		t.Error("トークンがあれば待たない")
+	}
+
+	// アプリモードに戻す:aibow-server でトークンを消し、今のクライアントからも手放す。起動し直すまで、呼ばずにログインの画面
+	if err := s.DisconnectServer(); err != nil {
+		t.Fatal(err)
+	}
+	if conn.client.Key() != "" {
+		t.Error("消したトークンを持ったまま")
+	}
+	keyCalls = 0
+	if a, err := s.Account(); err != nil || !a.NeedLogin || keyCalls != 0 {
+		t.Errorf("戻したあと: %+v %v(呼んだ回数 %d)", a, err, keyCalls)
+	}
+}

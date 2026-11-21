@@ -8,7 +8,7 @@
 //	  [営業 グループ ×] [佐藤 花子 ×] [tanaka ×]                          … 選んだ相手のチップ
 //	  [ 名前・グループで探す…   ]                                          … 打つと候補(最近選んだ相手が先頭。決定事項 12)
 //	  佐藤・鈴木 ほか3人 に共有します。                                    … 確かめの文(決定事項 9・11)
-//	  [ 共有する(5人) ]  [ やめる ]
+//	  [ 共有(5人) ]  [ キャンセル ]
 import { useMemo, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { LuUsers, LuX } from "react-icons/lu";
@@ -31,9 +31,9 @@ export interface ShareWords {
 
 export const CONVERSATION_WORDS: ShareWords = {
   none: "非公開",
-  commitUsers: n => `共有する(${n}人)`,
-  commitAll: "全員に共有する",
-  commitNone: "非公開にする",
+  commitUsers: n => `共有(${n}人)`,
+  commitAll: "全員に共有",
+  commitNone: "非公開に変更",
   willUsers: names => `${names} に共有します。`,
   willAll: "全員に共有します。",
   willNone: "非公開にします。",
@@ -44,16 +44,16 @@ export const CONVERSATION_WORDS: ShareWords = {
 };
 
 export const PROFILE_WORDS: ShareWords = {
-  none: "配らない",
-  commitUsers: n => `配る(${n}人)`,
-  commitAll: "全員に配る",
-  commitNone: "配るのをやめる",
-  willUsers: names => `${names} に配ります。`,
-  willAll: "全員に配ります。",
-  willNone: "配るのをやめます。",
-  becomesNone: "相手がいないので、配らなくなります。",
-  nowUsers: (n, names) => `${n}人に配っています:${names}`,
-  nowAll: "全員に配っています",
+  none: "配布しない",
+  commitUsers: n => `配布(${n}人)`,
+  commitAll: "全員に配布",
+  commitNone: "配布を停止",
+  willUsers: names => `${names} に配布します。`,
+  willAll: "全員に配布します。",
+  willNone: "配布を停止します。",
+  becomesNone: "相手がいないので、配布を停止します。",
+  nowUsers: (n, names) => `${n}人に配布中:${names}`,
+  nowAll: "全員に配布中",
   nowNone: "",
 };
 
@@ -196,7 +196,7 @@ function ShareEditor({ draft, share, current, dir, self, words, notes, onChange,
       {sentences.length > 0 && <div className="share-confirm">{sentences.map(s => <span key={s}>{s}</span>)}</div>}
       <div className="share-actions">
         <button type="button" className="primary" disabled={!changed || blocked} onClick={() => onCommit(next)}>{button}</button>
-        <button type="button" onClick={onCancel}>やめる</button>
+        <button type="button" onClick={onCancel}>キャンセル</button>
       </div>
     </div>
   );

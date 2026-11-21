@@ -55,7 +55,7 @@ func (wailsNotifier) Chat(_ context.Context, ev aibow.ChatEvent) {
 }
 func (wailsNotifier) ModelLoaded() { application.Get().Event.Emit(ui.ModelsEventName) }
 
-// ChooseModelPlace は、置き場所を選ぶダイアログを出し(アプリの中で動かすときだけ使う。置き場所はモデルを読み込む PC のパスなので)、選んだフォルダ(kind が "dir")か GGUF のファイル(kind が "file")の
+// ChooseModelPlace は、置き場所を選ぶダイアログを出し(アプリモードのときだけ使う。置き場所はモデルを読み込む PC のパスなので)、選んだフォルダ(kind が "dir")か GGUF のファイル(kind が "file")の
 // 絶対パスを返す。取り消したら空。足すのは AddModelPlace(選んだだけでは足さない)。
 func (s *ChatService) ChooseModelPlace(kind string) (string, error) {
 	app := application.Get()
@@ -68,7 +68,7 @@ func (s *ChatService) ChooseModelPlace(kind string) (string, error) {
 	if w := app.Window.Current(); w != nil {
 		d.AttachToWindow(w) // ウィンドウの前に出す(ChooseWorkDir と同じ)
 	}
-	p, err := d.PromptForSingleSelection()
+	p, err := dialogPath(d.PromptForSingleSelection()) // 取り消しは空(Windows だけエラーで返るのをそろえる。dialog.go)
 	if err != nil {
 		return "", fmt.Errorf("置き場所を選ぶダイアログを出せません: %w", err)
 	}
@@ -90,7 +90,7 @@ func (s *ChatService) ChooseWorkDir(current string) (string, error) {
 	if w := app.Window.Current(); w != nil {
 		d.AttachToWindow(w) // ウィンドウの前に出す(後ろに隠れて、操作できなくなったように見えるのを防ぐ)
 	}
-	dir, err := d.PromptForSingleSelection()
+	dir, err := dialogPath(d.PromptForSingleSelection()) // 取り消しは空(dialog.go)
 	if err != nil {
 		return "", fmt.Errorf("フォルダを選ぶダイアログを出せません: %w", err)
 	}

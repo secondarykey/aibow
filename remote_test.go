@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"uuid"
 
 	"github.com/secondarykey/aibow/config"
 	"github.com/secondarykey/aibow/format"
@@ -682,6 +683,78 @@ func TestConfirmRemember(t *testing.T) {
 				t.Errorf("答えに残す: %+v", first)
 			}
 		})
+	}
+}
+
+// 確認のカードで「この返事の間」と答えると、会話の上書きには書かず、この送信の中だけで効く(0051 の決定事項 10〜12)。
+// allow なら次は聞かずに実行し、off なら次は聞かずに断る(モデルには使わないよう頼む)。次の送信では、また聞く
+func TestConfirmForReply(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		remember config.ToolPolicy
+		ran      bool // 2回目を実行したか
+	}{
+		{"この返事の間は実行", config.ToolAllow, true},
+		{"この返事の間は拒否", config.ToolOff, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			twice := []fakeReply{
+				{toolCalls: []format.ToolCall{toolCall("fake__write", "paths", `["a"]`)}},
+				{toolCalls: []format.ToolCall{toolCall("fake__write", "paths", `["b", "c"]`)}},
+				{content: "書きました"},
+			}
+			g := &fakeGen{replies: slices.Clone(twice)}
+			cs, c, _ := newWorkDirConversation(t, g)
+			write := &remoteTool{name: "fake__write"}
+			cs.SetRemoteTools(&fakeRemote{tools: []tool.Tool{write}})
+			cs.SetToolPrefs(&config.ToolPrefs{})
+			useFake(t, cs, &c)
+
+			asked := 0
+			answer := func(q *ConfirmRequest) bool {
+				asked++
+				return cs.Answer(ctx, c.ID, q.ID, Confirmation{Approved: tc.ran, Remember: tc.remember, ForReply: true}) == nil
+			}
+			evs := sendAnswering(cs, context.Background(), c, "書いて", answer)
+			if asked != 1 {
+				t.Errorf("聞いた回数: %d", asked)
+			}
+			_, ms, _ := cs.Get(ctx, c.ID)
+			second := ms[4] // user, assistant, tool, assistant, tool
+			if second.Role != "tool" || (second.Content == "xx") != tc.ran {
+				t.Errorf("2回目の結果: %q(実行したはず: %v)%v", second.Content, tc.ran, errorsOf(evs))
+			}
+			if !tc.ran {
+				if second.Content != replyOffText {
+					t.Errorf("断るときは、使わないよう頼む: %q", second.Content)
+				}
+				if !strings.Contains(ms[2].Content, replyOffText) {
+					t.Errorf("拒否の結果でも伝える: %q", ms[2].Content)
+				}
+				if a := second.ToolResult.Confirm; a == nil || a.Approved || !a.ForReply {
+					t.Errorf("聞かずに断った記録: %+v", a)
+				}
+			}
+			if first := ms[2].ToolResult.Confirm; first == nil || first.Remember != tc.remember || !first.ForReply {
+				t.Errorf("答えに範囲を残す: %+v", first)
+			}
+			if got, _, _ := cs.Get(ctx, c.ID); len(got.Settings.ToolPolicies) != 0 {
+				t.Errorf("会話の上書きには書かない: %v", got.Settings.ToolPolicies)
+			}
+
+			// 次の送信では、また聞く
+			g.replies = slices.Clone(twice)
+			asked = 0
+			sendAnswering(cs, context.Background(), c, "もう一度", answer)
+			if asked != 1 {
+				t.Errorf("次の送信で聞いた回数: %d", asked)
+			}
+		})
+	}
+	// 「この返事の間」は allow か off だけ
+	cs, _ := newTestConversations(t, &fakeGen{})
+	if err := cs.Answer(ctx, uuid.NewV7(), "x", Confirmation{Remember: config.ToolAsk, ForReply: true}); err == nil || !strings.Contains(err.Error(), "allow か off") {
+		t.Errorf("知らない値: %v", err)
 	}
 }
 

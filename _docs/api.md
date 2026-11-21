@@ -2,7 +2,7 @@
 
 aibow の「頭」(llama.cpp で動かすモデルと書式)を、OpenAI 互換の HTTP の API として出す仕組みです(ステップ6。仕様は [features/0012-openai-api.md](features/0012-openai-api.md))。
 使い方(起動・設定ファイル・環境変数・curl の例)は [usage.md](usage.md) の「aibow のモデルをほかのアプリから使う(aibow-server)」にあります。
-ステップ9で、aibow-server はブラウザに画面を配り、ブラウザの会話(会話の仕組みと保存)も持つようになった。その口は下の「画面用の口」。
+ステップ9で、aibow-server はブラウザに画面を配り、ブラウザの会話(会話の仕組みと保存)も持つようになった。その API は下の「画面用の API」。
 
 ```
 Cline など [ 会話の仕組み + 手 ] ⇄ HTTP(OpenAI 互換。127.0.0.1 だけ)⇄ aibow-server [ 頭(モデル + 書式)]
@@ -12,23 +12,23 @@ Cline など [ 会話の仕組み + 手 ] ⇄ HTTP(OpenAI 互換。127.0.0.1 だ
 
 | ファイル | 役割 |
 |---|---|
-| `api/api.go` | `api` パッケージ。`Server`(道筋・`GET /v1/models`・エラーの形)と、使う生成の interface `Generator`(本物は `*engine.Engine`) |
+| `api/api.go` | `api` パッケージ。`Server`(パスの振り分け・`GET /v1/models`・エラーの形)と、使う生成の interface `Generator`(本物は `*engine.Engine`) |
 | `api/types.go` | やり取りする JSON の形と、リクエストを書式の形(`format.Prompt`)にする `toPrompt` |
 | `api/tools.go` | ツール呼び出しの変換(`tools` → `tool.Def`、履歴の `tool_calls` → 書式の呼び出し、モデルの呼び出し → `tool_calls`) |
 | `api/chat.go` | `POST /v1/chat/completions`。順番待ち・モデルの読み直し・トークン数の確かめ・生成(まとめて / ストリーミング)・学習用のログ。`POST /apply-template`・`POST /_aibow/count-tokens` も |
 | `api/models.go` | モデルの一覧と読み込み(ステップ8)。使う係の interface `Models`(本物は `_cmd/aibow-server` の `modelManager`)・`GET /models`・`POST /models/load`・`POST /_aibow/gpu-layers` |
 | `api/places.go` | モデルの置き場所(`GET /_aibow/places`・`POST /_aibow/places/add`・`POST /_aibow/places/remove`)と、表示だけのサーバーの設定(`GET /_aibow/settings`。`Settings`)。8-4 |
-| `api/seat.go` | 生成の順番待ちの席(`Seat`)。ステップ9で `Server` の外に出し、ブラウザの会話(`ui`)も同じ席を通す(下の「画面用の口」)。席の数はシーケンスの数(0023。下の「席とシーケンス」) |
+| `api/seat.go` | 生成の順番待ちの席(`Seat`)。ステップ9で `Server` の外に出し、ブラウザの会話(`ui`)も同じ席を通す(下の「画面用の API」)。席の数はシーケンスの数(0023。下の「席とシーケンス」) |
 | `api/api_test.go`・`api/aibow_test.go` | 偽物の生成とモデルの係でのテスト(モデル不要) |
 | `api/client/` | aibow-server につなぐクライアント(`client` パッケージ。ステップ8)。下の「クライアント(`api/client`)」 |
-| `usage/` | 生成の付箋(道・用途・会話・順番待ちを ctx で運ぶ)と、使用量の記録の形(`usage` パッケージ。0033)。何にも依存しない。下の「使用量の記録」 |
-| `_cmd/aibow-server/usage.go` | 記録付きの engine(`recorder`)と、使用量を見る口(0033)。下の「使用量の記録」 |
-| `ui/web.go`・`ui/serverhost.go` | 画面用の口(`/_aibow/ui/` の下)と、aibow-server の中でブラウザの会話のモデルを扱う係(`ServerHost`)。ステップ9。下の「画面用の口」 |
-| `_cmd/aibow-server/` | exe(ステップ8で `aibow-api` から名前を変えた。0015)。`config.go` は設定(強さの順は 引数 > 設定ファイル `server.json` > 環境変数 > 既定。`server.json` の形と読み込み・環境変数の読み方は `config` パッケージ)、`models.go` はモデルの係(GPU の層数と画面で足した置き場所を `server-models.json` に覚える)、`main.go` はエンジンとモデルを用意して `api` を `127.0.0.1` で待ち受けるだけ、`browser.go` はブラウザの会話(`server.db` を開き、`ui` の会話の仕組みと画面用の口を作る。ステップ9)。`log.go` はログの出口(`aibow-server_<日付>.log`)、バージョンはアプリと同じ(`internal/appversion`。`_cmd/aibow/version` の写し) |
+| `usage/` | 生成の付箋(呼び出し元・用途・会話・順番待ちを ctx で運ぶ)と、使用量の記録の形(`usage` パッケージ。0033)。何にも依存しない。下の「使用量の記録」 |
+| `_cmd/aibow-server/usage.go` | 記録付きの engine(`recorder`)と、使用量を見る API(0033)。下の「使用量の記録」 |
+| `ui/web.go`・`ui/serverhost.go` | 画面用の API(`/_aibow/ui/` の下)と、aibow-server の中でブラウザの会話のモデルを扱う係(`ServerHost`)。ステップ9。下の「画面用の API」 |
+| `_cmd/aibow-server/` | exe(ステップ8で `aibow-api` から名前を変えた。0015)。`config.go` は設定(強さの順は 引数 > 設定ファイル `server.json` > 環境変数 > 既定。`server.json` の形と読み込み・環境変数の読み方は `config` パッケージ)、`models.go` はモデルの係(GPU の層数と画面で足した置き場所を `server-models.json` に覚える)、`main.go` はエンジンとモデルを用意して `api` を `127.0.0.1` で待ち受けるだけ、`browser.go` はブラウザの会話(`server.db` を開き、`ui` の会話の仕組みと画面用の API を作る。ステップ9)。`log.go` はログの出口(`aibow-server_<日付>.log`)、バージョンはアプリと同じ(`internal/appversion`。`_cmd/aibow/version` の写し) |
 
 依存の向きは `_cmd/aibow-server` → `api` → `engine` → `format` → `tool`。`api` はルートの `aibow`(会話の仕組み)を import しない。
 会話の保存・compact・エージェントループ・ツールの実行はクライアントの仕事なので、API の側には持たない。
-ブラウザの会話(ステップ9)は別の道で、`_cmd/aibow-server` → `ui` → `aibow`(会話の仕組み)→ `engine`。`api` とは席(`api.Seat`)だけを分け合う。
+ブラウザの会話(ステップ9)は別の経路で、`_cmd/aibow-server` → `ui` → `aibow`(会話の仕組み)→ `engine`。`api` とは席(`api.Seat`)だけを分け合う。
 
 ## 1回のリクエストの流れ(`api/chat.go`)
 
@@ -42,7 +42,7 @@ Cline など [ 会話の仕組み + 手 ] ⇄ HTTP(OpenAI 互換。127.0.0.1 だ
    - `assistant` の `reasoning_content` は思考(`Thinking`)に戻す。プロンプトに入れるかは書式が決める(ツールのループの途中の返事だけ)
    - `assistant` の `tool_calls` は書式の呼び出しに、`tool` の役の発言はツールの結果に戻す(下の「ツール呼び出し」)。`tools` は `tool.Def` にしてモデルに知らせる
 2. **順番を待つ**。同時に生成できるのは、作業領域の中のシーケンスの数(`-parallel`。既定 1)まで。席(`api.Seat`)が全部ふさがっていたら待たせ、断らない。待っている間につながりが切れたら列から外れる
-3. リクエストの `model` が読み込み中のモデルと違えば**読み直す**(ステップ8。下の「aibow 専用の口と欄」)。順番待ちの席の中で行うので、生成と取り合わない
+3. リクエストの `model` が読み込み中のモデルと違えば**読み直す**(ステップ8。下の「aibow 専用の API と欄」)。順番待ちの席の中で行うので、生成と取り合わない
 4. 書式を当てたトークン数を数え(`CountTokens`)、作業領域に入らなければ **400・`code: context_length_exceeded`**(OpenAI と同じ形)。compact はしない(履歴を持つのはクライアント)。
    読み直すとモデル(語彙と書式)が変わって数も変わるので、順番待ちと読み直しの後に数える(0012 では順番を待つ前に数えていた)。返事の分の空きまでは求めない(足りなくなったら止めて `finish_reason: length`)
 5. 生成する。リクエストの context を `Engine.Generate` に渡すので、クライアントがつながりを切ると次のトークンで止まる(`終了理由: cancel`)
@@ -58,7 +58,7 @@ Cline など [ 会話の仕組み + 手 ] ⇄ HTTP(OpenAI 互換。127.0.0.1 だ
 - `model` は、リクエストの値が使えるモデル(ID・`qwen3.5:4b` のような一覧の名前・GGUF のパス)なら、それを読み込んでから答える(ステップ8。0012 では見なかった)。
   知らない名前なら読み込み中のモデルで答え、Info のログを出す(Cline などがおかしな名前を送ってきても動くように)。返事の `model` は読み込み中のモデルの ID(`ollama:qwen3.5:4b` など)。
   `/v1/models` は使えるモデルを全部返す
-- `timings`:生成の時間とトークン数(llama.cpp の server と同じ欄。下の「aibow 専用の口と欄」)。小さいので、いつも返す
+- `timings`:生成の時間とトークン数(llama.cpp の server と同じ欄。下の「aibow 専用の API と欄」)。小さいので、いつも返す
 - サンプリング:`temperature`・`max_tokens`(`max_completion_tokens` があればそちら)・`presence_penalty`。書かれていなければアプリの既定(0.7・`AIBOW_MAX_TOKENS`・`AIBOW_PRESENCE_PENALTY`)。
   「書かれていない」と「0」を見分けるため、JSON の数の欄はポインタで読む(`temperature: 0` は greedy)
 - エラーは OpenAI と同じ `{"error": {"message", "type", "code"}}`。知らないパスは 404、メソッドが違えば 405(Go の `ServeMux` が返す)
@@ -100,15 +100,15 @@ data: [DONE]
 
 ステータスは最初に 200 で送ってしまうので、生成の途中のエラーは `data: {"error": …}` の塊で送る(OpenAI も同じ)。
 
-## aibow 専用の口と欄(ステップ8。0015)
+## aibow 専用の API と欄(ステップ8。0015)
 
 画面のアプリ(aibow のクライアント)が使っているのに、OpenAI の標準に無いもの(トークン数・モデルに渡した文字列・生成の時間・崩れたツール呼び出し・モデルの切り替え)を、
 **標準の形を壊さずに**足した。Cline などから見た `/v1/models`・`/v1/chat/completions` の形は変わらない。
 意味が同じものは **llama.cpp の server の名前にそろえ**、無いものだけ `/aibow/` と `aibow` 欄に置いた(2026-10-21、ユーザーと決めた)。
 
-### 口(`/v1/` の外)
+### API(`/v1/` の外)
 
-| 口 | 本文 → 返事 | 順番待ち | 元にしたもの |
+| API | 本文 → 返事 | 順番待ち | 元にしたもの |
 |---|---|---|---|
 | `GET /models` | → `{"object":"list","data":[{"id","name","source","size_gb","origin","place","arch","format","no_thinking","status":{"value":"loaded"\|"loading"\|"unloaded"},"n_gpu_layers"}],"current":<読み込み中のモデルの情報 か null>,"loading":<入れ替えている先のモデルの ID。入れ替え中だけ>,"n_ctx","gpu"}` | 待たない | llama.cpp の router の `GET /models`(`status.value`) |
 | `POST /models/load` | `{"model"}` → `{"success":true,"model":<読み込んだモデルの情報>}` | 待つ | llama.cpp の router の `POST /models/load` |
@@ -139,7 +139,7 @@ data: [DONE]
   `api/client` はこれを `engine.ErrNoModel`・`format.ErrUnsupported`・`engine.ErrNoVision` に戻すので、画面のアプリは直接でも HTTP 越しでも同じに「メーターを出さない」にできる(会話を開くのは止めない)。
   `/v1/chat/completions` の前の数えるところで失敗したときも同じ code を入れる
 - 画面のアプリ(`api/client` を使う側)は、`/models/unload`・`/_aibow/gpu-layers`・`/_aibow/places/*` を使わない。`/_aibow/settings` も作業領域しか画面に渡さない(2026-10-22、ユーザーと決めた。0015 の 21)。
-  これらはサーバーの PC の事情を変える口で、サーバーの PC の人が curl などで呼ぶもの。誰が呼んでよいか(管理者だけにする)はステップ10で決める
+  これらはサーバーの PC の事情を変える API で、サーバーの PC の人が curl などで呼ぶもの。誰が呼んでよいか(管理者だけにする)はステップ10で決める
 - `/_aibow/settings` は表示だけのサーバーの設定(作業領域・ポート・llama.cpp の場所・最初のモデル・設定ファイルの場所)。変えるのは `server.json` と起動し直し(0015 の 21)
 
 ### `/v1/chat/completions` に足した欄
@@ -172,7 +172,7 @@ data: [DONE]
   会話の仕組みの `Generator`・`ModelLoader` をそのまま満たす(ルートの `model_test.go` で型を確かめている)ので、**会話の仕組みのコードは変えずに**相手がネットワークの先に変わる
 - ルートの `aibow` は import しない(`api` と同じ)。JSON の形はクライアントの側で自分で持つ(サーバーの型は外に見せていない)
 
-| メソッド | 口 | 中身 |
+| メソッド | API | 中身 |
 |---|---|---|
 | `Generate` | `POST /v1/chat/completions` | いつもストリーミング・`"aibow": {"return_prompt": true}`。届いた塊を `onThinking` / `onContent` / `onPrompt` に渡し、最後の塊の `timings` と `aibow` から `GenerateStats` と崩れた呼び出しを戻す |
 | `CountTokens` | `POST /_aibow/count-tokens` | 生成と同じ形の本文で数える(形が違うとトークン数がずれるため) |
@@ -192,9 +192,9 @@ data: [DONE]
 - 停止ボタン(ctx を止める)はつながりを切る。サーバーはそれを見て生成を止める。クライアントは届いた分を `StopReason: cancel` で返す(エラーにしない。engine と同じ)
 - つながらないとき(起動していない・止めた)は `ErrUnreachable`(つなぎ先と「aibow-server を起動してください」を添える)。サーバーのエラーは `APIError`(`code` で見分けられる)
 
-## 画面用の口(ブラウザの会話。ステップ9。0016)
+## 画面用の API(ブラウザの会話。ステップ9。0016)
 
-aibow-server は、ブラウザの画面のために会話の仕組みと保存も持つ(OpenAI 互換の口はステートレスのまま)。
+aibow-server は、ブラウザの画面のために会話の仕組みと保存も持つ(OpenAI 互換の API はステートレスのまま)。
 
 ```
 ブラウザ ──HTTP──→ /_aibow/ui/  → ui.Service → 会話の仕組み(ツールはここ)→ engine ┐
@@ -204,10 +204,10 @@ Cline など ──HTTP──→ /v1/ など → api.Server ──────�
 
 デスクトップのアプリで Wails が仲立ちしていること(メソッドの呼び出し・Go からのイベント・停止)を、HTTP に自分で書いたもの。形を Wails にそろえた。
 
-| | デスクトップ(Wails) | 画面用の口 |
+| | デスクトップ(Wails) | 画面用の API |
 |---|---|---|
 | 呼び出し | `ChatService.Send(id, text)` | `POST /_aibow/ui/call/Send`、本文は引数の JSON の配列 `["<id>", "<text>"]`。返事は戻り値の JSON(無ければ `null`) |
-| エラー | Promise が reject | Go の `error` は 500、引数が読めない・数が違うは 400、ブラウザで呼べないメソッドは 404。形は `{"error": {"message", "type"}}`(OpenAI 互換の口と同じ) |
+| エラー | Promise が reject | Go の `error` は 500、引数が読めない・数が違うは 400、ブラウザで呼べないメソッドは 404。形は `{"error": {"message", "type"}}`(OpenAI 互換の API と同じ) |
 | Go からの知らせ | Wails のイベント `chat`・`models` | `GET /_aibow/ui/events`(SSE)。`event: chat` / `data: ChatEvent の JSON`。最初に `: connected`、何も無いときは 15 秒ごとに `: ping` |
 | 停止 | Promise の `cancel()` → ctx が止まる | fetch を止める → つながりが切れて、リクエストの ctx が止まる |
 
@@ -216,19 +216,19 @@ Cline など ──HTTP──→ /v1/ など → api.Server ──────�
   会話・プロファイル・表示の設定は、その人のものだけが見える([conversations.md](conversations.md) の「持ち主」)。決められなければ 401(SSE も同じ)。
   ログインが要る形(既定。0020)ならログインした人(下の「ログイン」)、要らない形(`login: false`)ならいつもログインなしの形の利用者(`aibow.LocalUser`。名前 `local`)
 - 呼べるのは、ブラウザで使うメソッドだけ(`ui/web.go` の `browserMethods`)。ツールの扱いの既定を変えるもの(`SetToolPolicy`・`SetGroupPolicy`・`ToolPrefs`・`LoadToolList` など。
-  既定は管理者が決める。0024 の決定事項 3)と、GPU の層数・降ろす・置き場所(サーバーの PC の事情)は口に出さない(0016 の 6)
-- 送信(`Send`・`Regenerate`・`Resend`・`Compact`)は生成が終わるまで返らない長い呼び出し。経過は SSE の `chat` で届き、終わりは `done` で判定する(戻り値とは別の道で届くので。Wails と同じ)。
+  既定は管理者が決める。0024 の決定事項 3)と、GPU の層数・降ろす・置き場所(サーバーの PC の事情)は API に出さない(0016 の 6)
+- 送信(`Send`・`Regenerate`・`Resend`・`Compact`)は生成が終わるまで返らない長い呼び出し。経過は SSE の `chat` で届き、終わりは `done` で判定する(戻り値とは別の経路で届くので。Wails と同じ)。
   書き込みの時間の上限は付けていない
 - SSE の `chat`(生成の途中経過)は、その会話の持ち主がつないでいる画面にだけ送る(同じ人の別のタブ・別の PC には送る。0017 の 7)。`models` は全員に送る。
   送り切れずに 1024 件溜まったら、そのつながりを切る(黙って捨てると、答えの途中が抜けたまま気づけないため)
-- **席**:送信の全体(会話のモデルの読み直し・要約・返事)の間、OpenAI 互換の口と同じ席を持つ。生成1回ごとに取り直すと、その間に Cline などがモデルを入れ替えてしまうため。
+- **席**:送信の全体(会話のモデルの読み直し・要約・返事)の間、OpenAI 互換の API と同じ席を持つ。生成1回ごとに取り直すと、その間に Cline などがモデルを入れ替えてしまうため。
   ふさがっていれば `notice`(「ほかの生成が終わるのを待っています…」)を送ってから待つ。モデルのタブの「読み込む」(`SwitchModel`)も席を取ってから読み込む(入力欄の下でモデルを選んでも読み込まない。送信の前に読み直す。0014)
 - **ツールと確認の往復**(0024 の 12-1a):ブラウザの会話のツールはサーバーの PC で動く。今は組み込みの時刻・計算だけ(会話に保存した作業フォルダは使わない。`Conversations.IgnoreWorkDir`)。
   書き換えるツールなど、実行の前に確認するときは、確認のカードが SSE の `chat`(`type: confirm`)で届き、答えは `POST /_aibow/ui/call/ConfirmTool` で返す。会話の仕組みは答えが来るまでループを止めて待つ(Wails の中で済んでいたことを、知らせと呼び出しに分けただけ)
   - 待っている間に送信の呼び出しが切れたら(タブを閉じた・読み直した)、停止と同じ(「停止されたため実行していません」)
   - 知らせ(SSE)だけが切れてつなぎ直したら、画面は `PendingConfirm` で待っている確認を取り直し、カードを出し直す(切れている間のイベントは届かないため)
   - 待っている間も席は持ったまま。ただし 5 分答えがなければ送信を止めて席を返す(`ui.confirmLimit`。ほかの人と Cline をずっと待たせないため)
-  - ほかの人の会話の確認は、見えも答えられもしない。利用者は会話の設定で「確認しない」を足せない(足せるのは確認のカードの「この会話では今後聞かない」だけ)
+  - ほかの人の会話の確認は、見えも答えられもしない。利用者は会話の設定で「確認しない」を足せない(足せるのは確認のカードで「この会話の間」にして実行したときだけ)
   - ツールの実行のログには、利用者の名前と会話が付く(`ツール calculate(...)(bob の会話 …)`)
   - MCP のサーバー(`server.json` の `mcpServers`)と管理者の既定(`server-tools.json`)は [mcp.md](mcp.md) の「aibow-server の MCP のサーバー」。
     既定を見る `ToolPrefs`・`ToolDefaults`・`BuiltinTools` は誰でも呼べ(既定のファイルの場所は管理者にだけ返す)、変える `SetToolPolicy`・`SetGroupPolicy`・`LoadToolList` は管理者だけ(ほかの人は 403)
@@ -261,7 +261,7 @@ API はステートレスで、クライアントは毎回履歴の全部を送�
 ブラウザ ─ POST /_aibow/ui/call/…(cookie 付き)─→ auth.Middleware(合言葉 → 利用者を ctx に)→ who(ui.Who)→ aibow.WithUser → ui.Service
 ```
 
-| 口 | 中身 |
+| API | 中身 |
 |---|---|
 | `GET /_aibow/auth/me` | `{"login": ログインが要るか, "name": ログインしている人}`。画面は最初にこれを聞き、要るのにしていなければログインの画面を出す |
 | `POST /_aibow/auth/login` | 本文 `{"name", "password"}`(JSON だけ)。合っていれば cookie を渡して `{"login": true, "name"}`、違えば 401「名前かパスワードが違います」 |
@@ -274,11 +274,11 @@ API はステートレスで、クライアントは毎回履歴の全部を送�
 - **パスワード**は保存しない。塩を付けて PBKDF2(HMAC-SHA256)を 60 万回重ねた値を `users.password` に保存する(`pbkdf2-sha256$回数$塩$値`)。
   パスワードは本人が決める(0022。12 文字以上)。`aibow-server user add|passwd` と管理者の画面は、決めるリンク(`/#reset=<合言葉>`。1 時間・一度だけ・`password_links` には SHA-256 だけ)を出す。
   合言葉は URL の `#` の後ろなので、サーバーのアクセスに乗らない(画面が読んで本文で送る)
-- **セッション**:ステートレスな OpenAI 互換の口(毎回全部を送る)と違い、サーバーが「誰がログインしているか」を覚える。合言葉(32 バイトのでたらめな値)を cookie で渡し、server.db には SHA-256 だけを保存する。
+- **セッション**:ステートレスな OpenAI 互換の API(毎回全部を送る)と違い、サーバーが「誰がログインしているか」を覚える。合言葉(32 バイトのでたらめな値)を cookie で渡し、server.db には SHA-256 だけを保存する。
   期限は最後に使ってから 30 日(1日以上たってから使うと延ばし、cookie の期限も延ばす)。server.db にあるので、起動し直しても切れない
 - **cookie**:`HttpOnly`(画面のスクリプトから読めない)・`SameSite=Strict`(ほかのサイトからのリクエストには付かない)・HTTPS なら `Secure`
 - ログインが要らない形では、`/_aibow/auth/login` は 400 で断り、`me` は `{"login": false}`
-- OpenAI 互換の口と aibow 専用の口は、下の「API キーと外で待ち受け」で守る(10-2)
+- OpenAI 互換の API と aibow 専用の API は、下の「API キーと外で待ち受け」で守る(10-2)
 
 ## API キーと外で待ち受け(ステップ10の 10-2。0017)
 
@@ -289,19 +289,21 @@ Cline・画面のアプリ ─ Authorization: Bearer aibow_… ─→ auth.Keys.
 
 - **API キー**:利用者ごとに1本(`aibow-server user key <名前>`)。server.db には SHA-256 だけ。OpenAI の API と同じく `Authorization: Bearer <キー>` で毎回送る(サーバーは覚えない。ステートレス)。
   無い・違うは 401(`{"error": {"code": "invalid_api_key", …}}`)
-- **要るとき**:`127.0.0.1` の外で待ち受けるとき、または `127.0.0.1` でもログインが要る設定のとき。OpenAI 互換の口と aibow 専用の口の全部(`_cmd/aibow-server` の `KeysRequired`)。
+- **要るとき**:`127.0.0.1` の外で待ち受けるとき、または `127.0.0.1` でもログインが要る設定のとき。OpenAI 互換の API と aibow 専用の API の全部(`_cmd/aibow-server` の `KeysRequired`)。
   ログインなし(`login: false`)の `127.0.0.1` だけなら、キーなしで通す
-- **サーバーの PC か管理者だけの口**:`POST /models/unload`・`/_aibow/gpu-layers`・`/_aibow/places/add`・`/_aibow/places/remove` は、`127.0.0.1`・`::1` からの呼び出しと、
-  管理者の API キーの呼び出しだけ(ほかは 403・`code: local_only`。`api` の `pcSide`)。サーバーの PC と、ほかの人が使っているモデルに関わるため。
-  管理者は 0018 の 11-0 で足した(下の「管理者」)
+- **管理者だけの API**:`POST /models/unload`・`/_aibow/gpu-layers`・`/_aibow/places/add`・`/_aibow/places/remove` は、
+  管理者の API キー(かアプリのトークン)の呼び出しだけ(ほかは 403・`code: admin_only`。`api` の `pcSide`)。サーバーの PC と、ほかの人が使っているモデルに関わるため。
+  `127.0.0.1` から来たことは権限にしない(0046。アドレスは同じ PC のプロキシなどで簡単に「サーバーの PC の上」に見えるので、権限は「誰か」に付ける)。
+  ログインなし(`login: false`。キーが要らない形)では、管理者がいないので誰でも通す(aibow-server は `SetAdmin` を渡さない。外の人は `fromProxy` が手前で 403)。
+  0017 の 10-2 では「127.0.0.1 からだけ」、0018 の 11-0 で「127.0.0.1 からか管理者」にし、0046 で「管理者だけ」にそろえた(下の「管理者」)
 - **待ち受けのアドレス**:`-host`(既定 `127.0.0.1`)。ループバックの外ならログインを必ず要るようにする(認証が無いまま LAN に出さない)。
   `-addr アドレス:ポート` は `-host`・`-port` をまとめて書く形(0042)
-- **道の頭(base。0042)**:`-base /aibow` で、全部の道(画面・`/v1/…`・`/_aibow/ui/…` など)を `/aibow/` の下に載せる(`_cmd/aibow-server` の `mount`。`http.StripPrefix` で頭を外してから中の道に渡すので、`api`・`ui`・`auth` は base を知らない)。
-  画面は自分の場所からの相対パス(`_aibow/ui/call/…`)で口を呼び、ビルドした index.html も `./assets/…` を指すので、頭が付いても・プロキシが頭を外しても同じ画面で動く。
+- **URL の頭(base。0042)**:`-base /aibow` で、全部の URL(画面・`/v1/…`・`/_aibow/ui/…` など)を `/aibow/` の下に載せる(`_cmd/aibow-server` の `mount`。`http.StripPrefix` で頭を外してから中の振り分けに渡すので、`api`・`ui`・`auth` は base を知らない)。
+  画面は自分の場所からの相対パス(`_aibow/ui/call/…`)で API を呼び、ビルドした index.html も `./assets/…` を指すので、頭が付いても・プロキシが頭を外しても同じ画面で動く。
   リバースプロキシの後ろに置くための形(usage.md の「リバースプロキシの後ろに置く」)
 - **元の相手(0044)**:`mount` の外側の `fromProxy`(`_cmd/aibow-server/proxy.go`)が、つないできた相手が信頼するプロキシ(サーバーの PC の上と `server.json` の `trustedProxies`)のときだけ、
   `proxyHeader` のヘッダー(既定 `X-Forwarded-For`。右から読む)から元の相手を取り出し、`r.RemoteAddr` を `元の相手:0` に書き換えてから中に渡す。
-  なので `api.IsLocal`・`auth` のログインの制限・ログの相手のアドレス(`api.RemoteHost`)は、中を変えずに元の相手を見る。読めない値は 400、`login: false` で外の元の相手は 403
+  なので `api.IsLocal`(ログインなしの形の全員の使用量)・`auth` のログインの制限・ログの相手のアドレス(`api.RemoteHost`)は、中を変えずに元の相手を見る。読めない値は 400、`login: false` で外の元の相手は 403
 - **HTTPS**:`tlsCert`・`tlsKey` を書くと `ServeTLS`(TLS 1.2 以上)。証明書なしで外に出すときは、警告して HTTP で動かす。ログインの cookie には `Secure` が付く
 - **自己署名の証明書**(`aibow-server cert`):誰も保証していない証明書なので、つなぐ側が「この証明書を信頼する」と決める。
   アプリは `serverCert`(`api/client` の `TrustCert`。OS の認証局に足すだけなので、ほかの証明書のサーバーにはつながらない)、curl は `--cacert`、Node.js は `NODE_EXTRA_CA_CERTS`、ブラウザは警告の画面で先へ進む
@@ -312,18 +314,19 @@ Cline・画面のアプリ ─ Authorization: Bearer aibow_… ─→ auth.Keys.
 aibow-server user admin <名前>(コマンドだけ)→ server.db の users.admin(DB の版 10)
                     │
   ┌─────────────────┼──────────────────────────────────────────────┐
-  OpenAI 互換の口・aibow 専用の口   画面用の口(/_aibow/ui/)              管理者の口(/_aibow/admin/)
-  API キーの持ち主(auth.IsAdmin)  ui.Caller{Admin, Local}(who)       ブラウザでログインした管理者だけ
-  → PC の事情を変える口を通す       → モデルのタブを全部見せる(pcMethods) → 利用者の管理
+  OpenAI 互換の API・aibow 専用の API   画面用の API(/_aibow/ui/)              管理者の API(/_aibow/admin/)
+  API キーの持ち主(auth.IsAdmin)  ui.Caller{Admin, NoLogin}(who)     ブラウザでログインした管理者だけ
+  → PC の事情を変える API を通す      → モデルのタブを全部見せる(pcMethods) → 利用者の管理
 ```
 
 - **誰が管理者か**は `auth.User.Admin`。決めるのは `aibow-server user admin <名前>` / `user unadmin <名前>` だけ(画面からは決めない。0018 の決定事項 6)。
-  一人もいなくてもよい(127.0.0.1 からはいつも PC の事情を変えられ、コマンドで戻せるため。決定事項 16)。ログインの様子(`/_aibow/auth/me`・`/_aibow/auth/key`)に `admin` を返す
+  一人もいなくても起動する(コマンドで決められるため。決定事項 16)。ただし 0046 から、ログインが要る形ではモデルを降ろすなども管理者だけなので、いなければ起動のときに「管理者がいません」と、誰も変えられない操作を出す。ログインの様子(`/_aibow/auth/me`・`/_aibow/auth/key`)に `admin` を返す
 - **認可を決める場所**:`api` は auth を import せず、aibow-server が「管理者か」を決める係(`Server.SetAdmin(auth.IsAdmin)`)を渡す。
-  画面用の口は、aibow-server の `who` が呼んだ人(`ui.Caller`。ID・管理者か・サーバーの PC の上からか)を決めて ctx に入れる。
+  ログインなしの形では渡さない(`_cmd/aibow-server` の `apiHandler`)。断ったときのログに名前を出す係(`SetCallerName`)も渡す。
+  画面用の API は、aibow-server の `who` が呼んだ人(`ui.Caller`。ID・管理者か・ログインなしの形か)を決めて ctx に入れる。どこから来たかは見ない(0046)。
   `ui.Handler` は PC の事情を変えるメソッド(`pcMethods`:`UnloadModel`・`SetModelGPULayers`・`ModelPlaces`・`AddModelPlace`・`RemoveModelPlace`・`SetModelEnabled`)を、
-  `Caller.ManagesPC()`(管理者か、サーバーの PC の上から)でなければ 403 で断り、`ServerHost` も同じことを確かめる(口の作りを間違えても漏れないように)
-- **管理者の口**(`_cmd/aibow-server/admin.go`。ブラウザでログインした管理者だけ。ほかは 401 / 403):
+  `Caller.ManagesPC()`(管理者か、ログインなしの形)でなければ 403 で断り、`ServerHost` も同じことを確かめる(API の作りを間違えても漏れないように)
+- **管理者の API**(`_cmd/aibow-server/admin.go`。ブラウザでログインした管理者だけ。ほかは 401 / 403):
   `GET /_aibow/admin/users`(一覧。パスワードと API キーは、あるかだけ)・`POST /_aibow/admin/users`(本文 `{"name"}`。返事にパスワード)・
   `POST /_aibow/admin/users/{名前}/password`・`POST /_aibow/admin/users/{名前}/key`(返事に新しいパスワード / キー。一度だけ)・`DELETE /_aibow/admin/users/{名前}`(自分と `local` は消せない)・
   `POST /_aibow/admin/users/{名前}/display`(本文 `{"display_name"}`。表示名。空なら無し。0031)・`POST /_aibow/admin/users/{名前}/email`(本文 `{"email"}`。空なら無し。重なれば 409)。
@@ -334,14 +337,14 @@ aibow-server user admin <名前>(コマンドだけ)→ server.db の users.admi
   (会話・プロファイル・アプリの設定は読むときだけで DB は書き換えない。`server-models.json` の層の数のキーは、読み込むときに書き換える)
 - **使えるモデル**:管理者がモデルのタブで決め、`server-models.json` の `disabled` に「使えないモデル」の ID を覚える(新しく増えたモデルは使える。決定事項 17)。
   使えないモデルは `/v1/models`・`GET /models`・画面の一覧に出さず(管理者の一覧にだけ印 `disabled` 付きで出す)、`Find` は `*models.DisabledError` を返す。
-  OpenAI 互換の口は知らないモデルと同じ 404 `model_not_found`(読み込み中のモデルで代わりに答えない)、aibow 専用の `/models/load` は 404 `model_disabled`、
+  OpenAI 互換の API は知らないモデルと同じ 404 `model_not_found`(読み込み中のモデルで代わりに答えない)、aibow 専用の `/models/load` は 404 `model_disabled`、
   会話の送信は注意で断る(`ChatEvent.Caution`。勝手にほかのモデルに替えない)。使えなくしたのが読み込み中のモデルなら降ろす。
   一覧の外の GGUF をパスで読み込ませるのは起動のとき(`-model` など)だけ。つないでくる人には、パスで好きなファイルを読ませない
 
 ## 席とシーケンス(0023)
 
 - 席(`api.Seat`)の数は、作業領域の中のシーケンスの数(`-parallel`・`server.json` の `parallel`・`AIBOW_SERVER_PARALLEL`。既定 1)。
-  OpenAI 互換の口もブラウザの会話も同じ席を通す。席が全部ふさがっているときだけ待つ(ブラウザには「ほかの生成が終わるのを待っています」、ログには「席が全部ふさがっている…ので順番を待ちます」)。
+  OpenAI 互換の API もブラウザの会話も同じ席を通す。席が全部ふさがっているときだけ待つ(ブラウザには「ほかの生成が終わるのを待っています」、ログには「席が全部ふさがっている…ので順番を待ちます」)。
   どのシーケンスを使うかは engine が選ぶ([engine.md](engine.md) の「シーケンス」)
 - **作業領域の大きさは1本あたりを見せる**:`GET /models` の `n_ctx`・ブラウザの会話の確かめ(`fixedContext`)・トークン数の確かめは、`ctx` を本数で割った大きさ。
   入らなければ今までと同じエラー(文に「`-parallel` を減らす」を足した)。既定の会話の上限 8192 + 返事の上限 8192 = 16384 は、32768 を 2 本でちょうど入る
@@ -354,23 +357,23 @@ aibow-server user admin <名前>(コマンドだけ)→ server.db の users.admi
 ## 使用量の記録(0033)
 
 ```
-OpenAI 互換の口(api)──────────┐   付箋:道 api / app(aibow 欄)・用途と会話(アプリは aibow 欄の purpose・conversation)・順番待ち
+OpenAI 互換の API(api)──────────┐   付箋:呼び出し元 api / app(aibow 欄)・用途と会話(アプリは aibow 欄の purpose・conversation)・順番待ち
                                  ├→ recorder.Generate → engine.Generate
-ブラウザの会話(ui.ServerHost)──┘   付箋:道 browser(ui.Handler)・用途と会話(会話の仕組み)・順番待ち(送信の最初の生成だけ)
+ブラウザの会話(ui.ServerHost)──┘   付箋:呼び出し元 browser(ui.Handler)・用途と会話(会話の仕組み)・順番待ち(送信の最初の生成だけ)
                                            └→ 終わったら server.db の generation_log に1行
 ```
 
-- **1か所で包む**:生成が通る2本の道の両方に書き足さず、aibow-server が engine を渡すところで包む(デコレータの形)。
+- **1か所で包む**:生成が通る2本の経路の両方に書き足さず、aibow-server が engine を渡すところで包む(デコレータの形)。
   `recorder` は `api.Generator` を満たすので、`api.New` にも `ui.NewServerHost` にも同じものを渡す(`main.go`)。トークン数・書式・読み込み中のモデルはそのまま通す
-- **付箋(`usage`)**:包む側は「だれが・どの道で・何のために」を知らないので、呼ぶ側が ctx に付ける。道は HTTP の口(`api` の `handleChat`・`ui.Handler`)、
+- **付箋(`usage`)**:包む側は「だれが・どこから・何のために」を知らないので、呼ぶ側が ctx に付ける。呼び出し元は HTTP の API(`api` の `handleChat`・`ui.Handler`)、
   用途(`reply` / `summary`)と会話は会話の仕組み(`Conversations.generate`・`generateSummary`)。アプリの会話の仕組みは aibow-server の外で動くので、
   `api/client` が付箋を `aibow` 欄の `purpose`・`conversation` に写して送り、`api` が読んで付け直す
 - **だれか**:`auth.UserFrom`(API キー・アプリ用のトークン・ログインの cookie)、無ければ `aibow.UserOf`(ブラウザのログインなしの形の `local`)。
-  キーの要らない形(127.0.0.1 だけでログインなし)の OpenAI 互換の口は `asLocal` で `local` にする(保存の口と同じ線)。それでも分からなければ、利用者を空にして Warn
-- **1行に持つもの**:時刻(始めた時刻)・利用者の ID と名前(写す)・道・用途・会話の ID・モデル・プロンプト / 使い回した / 生成 / 画像のトークン数・プロンプト / 生成 / エンコードの秒数・順番待ちの秒数・終了理由。
+  キーの要らない形(127.0.0.1 だけでログインなし)の OpenAI 互換の API は `asLocal` で `local` にする(保存の API と同じ線)。それでも分からなければ、利用者を空にして Warn
+- **1行に持つもの**:時刻(始めた時刻)・利用者の ID と名前(写す)・呼び出し元・用途・会話の ID・モデル・プロンプト / 使い回した / 生成 / 画像のトークン数・プロンプト / 生成 / エンコードの秒数・順番待ちの秒数・終了理由。
   会話の中身は持たない。**GPU の秒数 = プロンプト + 生成 + エンコード**(モデルの読み込みは入れない)。失敗して秒数が 0 の生成は書かず、途中で失敗したものは終了理由 `error`
 - **書けなくても止めない**:記録は使えるかどうかに関わらないので、書けなければ Warn のログだけ(最後に使った日と同じ考え方)
-- **見る口**(`usage.go`。days は今日を含めた日数 1〜366、既定 7。日の区切りはサーバーの PC の時刻):
+- **見る API**(`usage.go`。days は今日を含めた日数 1〜366、既定 7。日の区切りはサーバーの PC の時刻):
   `GET /_aibow/admin/usage?days=N`(利用者ごと。GPU の秒数の多い順。消された人は `deleted`)・`GET /_aibow/admin/usage/user?id=<ID>&days=N`(1人のモデルごと・日ごと)は、
   ログインした管理者だけ(ほかは 401 / 403)。ログインなしの形ではサーバーの PC の上から(127.0.0.1)だけ。
   `GET /_aibow/auth/usage`(自分の今日・7日・30日。`usage.Mine`)は本人(cookie かアプリ用のトークン。`keys.WithBearer`)。アプリは `api/client` の `MyUsage` で呼ぶ
@@ -379,16 +382,16 @@ OpenAI 互換の口(api)──────────┐   付箋:道 api / app
 
 ## 会話の共有と管理者が読む(ステップ11の 11-2。0018)
 
-- 画面用の口に `SetConversationShare`・`SharedConversations`・`UserConversations`・`Directory`(以前の `UserNames`。0031)・`ReadConversation`・`CopyShared` を足した(`browserMethods`)。
+- 画面用の API に `SetConversationShare`・`SharedConversations`・`UserConversations`・`Directory`(以前の `UserNames`。0031)・`ReadConversation`・`CopyShared` を足した(`browserMethods`)。
   `SetConversationShare` と `SetProfileShare` の引数は(ID・範囲・人の名前・グループの名前)。
-  グループ(0031)の `CreateGroup`・`RenameGroup`・`DeleteGroup`・`SetGroupMember`・`SetGroupLeader` も画面用の口と保存の口に出る(管理者か・そのグループの長かは保存先が確かめる。
-  保存の口では `ErrNotGroupLeader` が `not_group_leader`(403)、`ErrGroupExists` が `group_exists`(409)になって手元の同じエラーに戻る)
+  グループ(0031)の `CreateGroup`・`RenameGroup`・`DeleteGroup`・`SetGroupMember`・`SetGroupLeader` も画面用の API と保存の API に出る(管理者か・そのグループの長かは保存先が確かめる。
+  保存の API では `ErrNotGroupLeader` が `not_group_leader`(403)、`ErrGroupExists` が `group_exists`(409)になって手元の同じエラーに戻る)
   誰が読めるかは保存先(`store`)が決め、管理者かも保存先が利用者の表で確かめる(`UserConversations` は管理者だけ)
-- 保存の口(`/_aibow/store/`)にも、`aibow.Store` に足した同じメソッドが出る(`store/remote` の `Client`)。画面のアプリ(serverUrl)でも、共有された会話を読む・写す・自分の会話を共有するができる
+- 保存の API(`/_aibow/store/`)にも、`aibow.Store` に足した同じメソッドが出る(`store/remote` の `Client`)。画面のアプリ(serverUrl)でも、共有された会話を読む・写す・自分の会話を共有するができる
 - 管理者が共有されていない会話を読むと、`ui.Service.ReadConversation` が Notice のログに残す(誰が・誰の・どの会話を)
-- OpenAI 互換の口は会話を持たない(履歴はクライアントが毎回送る)ので、共有と関係しない
+- OpenAI 互換の API は会話を持たない(履歴はクライアントが毎回送る)ので、共有と関係しない
 
-## 保存の口(画面のアプリの会話をサーバーに置く。ステップ10の 10-3。0017)
+## 保存の API(画面のアプリの会話をサーバーに置く。ステップ10の 10-3。0017)
 
 画面のアプリを aibow-server につなぐと、生成だけでなく会話の保存もサーバーに頼む(表の C)。ループとツールはアプリの PC で動くので、HTTP を越えるのは画面の呼び出しではなく、会話の仕組みが保存先に頼む操作(`aibow.Store` のメソッド)。
 
@@ -397,36 +400,36 @@ OpenAI 互換の口(api)──────────┐   付箋:道 api / app
                                               └─ 保存:store/remote.Client ─→ /_aibow/store/{メソッド} ──→ server.db(ブラウザの会話と同じ)
 ```
 
-- 形は画面用の口と同じ:`POST /_aibow/store/{メソッド}`(`ListConversations`・`AddMessage` など `aibow.Store` と `aibow.ConversationLocks` のメソッド)。本文は引数の JSON の配列(ctx は除く)、返事は戻り値(error は除く)の JSON の配列
+- 形は画面用の API と同じ:`POST /_aibow/store/{メソッド}`(`ListConversations`・`AddMessage` など `aibow.Store` と `aibow.ConversationLocks` のメソッド)。本文は引数の JSON の配列(ctx は除く)、返事は戻り値(error は除く)の JSON の配列
 - エラーは `{"error": {"message", "type", "code"}}`。`code` は `not_found`・`profile_not_found`・`profile_in_use`・`busy`(ほかの画面で生成中)・`no_user`。アプリの側で同じエラーに戻すので、会話の仕組みは直接のときと同じに見分けられる
 - 誰のものか:API キーが要る形ならキーの持ち主、要らない形ならログインなしの形の利用者(`local`)。アプリは利用者を送らない
 - アプリが書く「アプリ全体の設定」(最後に使ったモデルなど)は、その人の設定(`app.` で始まるキー)として置く(サーバー全体の設定を、ほかの人のアプリが書き換えないように)
 - 同じ server.db なので、アプリで作った会話を、同じ人がブラウザで開ける
 - **生成中の印**:同じ会話にブラウザとアプリ(または2台のアプリ)から同時に送ったら、後から来たほうを `busy`(409)で断る。印は送信の間だけ付け、期限 2 分・30 秒ごとに延ばす(`lock.go`)
 
-## そのほかの口(ステップ10の 10-4)
+## そのほかの API(ステップ10の 10-4)
 
 - `GET /_aibow/auth/key`(10-4):API キーの持ち主の名前(`{"login": true, "name"}`。ブラウザの `/_aibow/auth/me` と同じ形)。画面のアプリが、誰としてつないでいるかを一覧の下に出すのに使う。キーの要らない形なら `{"login": false}`
 ## アプリのログイン(0019)
 
 ```
 画面のアプリ ─ POST /_aibow/auth/token {"name","password","device"} ─→ auth(パスワードを確かめる)→ アプリ用のトークン(aibowapp_…)
-画面のアプリ ─ Authorization: Bearer aibowapp_… ─→ auth.Keys.RequireKey(API キーと同じ口。トークン → 利用者を ctx に)
+画面のアプリ ─ Authorization: Bearer aibowapp_… ─→ auth.Keys.RequireKey(API キーと同じ仕組み。トークン → 利用者を ctx に)
 ```
 
-| 口 | 中身 |
+| API | 中身 |
 |---|---|
 | `POST /_aibow/auth/token` | 本文 `{"name", "password", "device"}`(JSON だけ。device は PC の名前)。合っていれば `{"token", "name", "admin", "expiresAt"}`、違えば 401。間違いの回数はブラウザのログインと一緒に数える(5回で 15 分)。ログインの要らない形では 400 |
 | `POST /_aibow/auth/token/revoke` | `Authorization: Bearer <トークン>` のトークンを消す(アプリのログアウト)。無くても 200 |
 
-- **本人のアカウントの口をアプリからも**(0031 の決定事項 45):`/_aibow/auth/` は `auth.Keys.WithBearer` を通すので、cookie でログインしていない呼び出しに
+- **本人のアカウントの API をアプリからも**(0031 の決定事項 45):`/_aibow/auth/` は `auth.Keys.WithBearer` を通すので、cookie でログインしていない呼び出しに
   `Authorization: Bearer <アプリ用のトークンか API キー>` があれば、その持ち主として `POST /_aibow/auth/display`・`email`・`password` を呼べる。
-  パスワードを変える口は、アプリ用のトークンで呼ぶと cookie の代わりに同じ PC の名前の新しいトークン(`{"token", "name", "admin", "expiresAt"}`)を返す(前のトークンは、ほかのものと一緒に消える)。
+  パスワードを変える API は、アプリ用のトークンで呼ぶと cookie の代わりに同じ PC の名前の新しいトークン(`{"token", "name", "admin", "expiresAt"}`)を返す(前のトークンは、ほかのものと一緒に消える)。
   API キーで呼んだときは `token` が空(キーは消えない)
 
 - **トークン**:期限は作ってから 10 日で固定(ブラウザのセッションと違って延ばさない)。PC ごとに1本(利用者 + PC の名前)で、同じ PC でログインし直すと前のものは消える。server.db の `app_tokens` には SHA-256 だけ。
   パスワードを作り直すと、ブラウザのセッションと一緒に消える
-- **使える口**:API キーと同じ(`KeysRequired` の口の全部と `/_aibow/auth/key`)。期限が切れたら 401 で `code` が `token_expired`(アプリはもう一度ログインするよう出す)
+- **使える API**:API キーと同じ(`KeysRequired` の API の全部と `/_aibow/auth/key`)。期限が切れたら 401 で `code` が `token_expired`(アプリはもう一度ログインするよう出す)
 - **証明書のフィンガープリント**:HTTPS で起動したときと `cert` のコマンドで、証明書の SHA-256 のフィンガープリント(`AB:CD:…`。`auth.Fingerprint`)を出す。画面のアプリは初めてつなぐときに同じ形で出し、人が比べて信頼する(`api/client` の `ProbeServer`・`PinCert`)
 
-- `GET /favicon.ico` は、画面の係が黙って 404 を返す(ブラウザが自分で取りに来るので、OpenAI 互換の口に落として「キーが無い」の警告を出さないように)
+- `GET /favicon.ico` は、画面の係が黙って 404 を返す(ブラウザが自分で取りに来るので、OpenAI 互換の API に落として「キーが無い」の警告を出さないように)

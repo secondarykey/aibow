@@ -8,7 +8,8 @@
 // headers と env の値は Go が伏せて返す(キーだけ)。フォームでも伏せ字で出し、空のまま保存したら前の値のまま(決定事項 10)。
 // 名前は変えられない(会話の設定と tools.json のキーのため。決定事項 11)。
 import { useCallback, useEffect, useState } from "react";
-import { LuClipboardPaste, LuLoaderCircle, LuPlug, LuPlus, LuTrash2, LuX } from "react-icons/lu";
+import { LuClipboardPaste, LuLoaderCircle, LuPlug, LuPlus, LuX } from "react-icons/lu";
+import { DeleteButton } from "./DeleteButton";
 import type { KnownTool, MCPServerEntry, MCPServerInput, MCPServerList, ParsedMCPServer } from "../../bindings/github.com/secondarykey/aibow/config";
 import type { ServerConfig } from "../../bindings/github.com/secondarykey/aibow/mcp/client";
 import { errorMessage } from "../errors";
@@ -135,10 +136,10 @@ export function McpEditor({ api, onChanged, onNotice }: Props) {
     <div className="mcp-editor">
       {(error || list?.error) && <div className="msg error">{error || list?.error}</div>}
       <div className="user-toolbar">
-        <button type="button" className="user-create" disabled={locked} onClick={() => open({ kind: "add" })} title="フォームに書いて足す">
-          <LuPlus /> 足す
+        <button type="button" className="user-create" disabled={locked} onClick={() => open({ kind: "add" })} title="フォームに書いて追加する">
+          <LuPlus /> 追加
         </button>
-        <button type="button" className="user-create" disabled={locked} onClick={() => setPasteOpen(o => !o)} title="MCP サーバーの説明にある JSON({&quot;mcpServers&quot;: …})を貼って足す">
+        <button type="button" className="user-create" disabled={locked} onClick={() => setPasteOpen(o => !o)} title="MCP サーバーの説明にある JSON({&quot;mcpServers&quot;: …})を貼って追加する">
           <LuClipboardPaste /> JSON を貼る
         </button>
       </div>
@@ -164,7 +165,7 @@ export function McpEditor({ api, onChanged, onNotice }: Props) {
                 type="button"
                 className={"user-row model-row mcp-row" + (current ? " current" : "") + (s.shadowed ? " shadowed" : "")}
                 onClick={() => select(s)}
-                title={s.source === "settings" ? "settings.json に手で書いたまま、mcp.json に移せなかったサーバー(理由は起動したときのお知らせ。画面からは変えられません。試しにつなぐことはできます)" : "画面から足したサーバー(押すと変える・消す)"}
+                title={s.source === "settings" ? "settings.json に手で書いたまま、mcp.json に移せなかったサーバー(理由は起動したときのお知らせ。画面からは変えられません。接続テストはできます)" : "画面から足したサーバー(押すと変える・消す)"}
               >
                 <span className="mcp-name">{s.name}</span>
                 <span className="origin-chip">{s.config.url ? "url" : "command"}</span>
@@ -196,7 +197,7 @@ export function McpEditor({ api, onChanged, onNotice }: Props) {
       )}
 
       {list && (
-        <p className="hint tool-path" title="画面から足したサーバーの保存先(手で書いた settings.json は変えません)">
+        <p className="hint tool-path" title="画面から追加したサーバーの保存先(手で書いた settings.json は変えません)">
           {list.path}
         </p>
       )}
@@ -218,7 +219,6 @@ function ServerForm({ api, mode, draft, locked, onChange, onClose, onSaved }: {
   const [saving, setSaving] = useState(false);
   const [trying, setTrying] = useState(false);
   const [tried, setTried] = useState<{ tools?: KnownTool[]; error?: string } | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState(false);
   const view = mode.kind === "view";
   const set = (patch: Partial<Draft>) => {
     onChange({ ...draft, ...patch });
@@ -246,7 +246,7 @@ function ServerForm({ api, mode, draft, locked, onChange, onClose, onSaved }: {
   return (
     <section className="user-detail mcp-form">
       <div className="user-detail-head">
-        <h2 className="section">{mode.kind === "add" ? "MCP のサーバーを足す" : draft.name}</h2>
+        <h2 className="section">{mode.kind === "add" ? "MCP のサーバーを追加" : draft.name}</h2>
         {view && <span className="origin-chip">settings.json</span>}
         <span className="spacer" />
         <button type="button" className="place-remove" onClick={onClose} title="閉じる"><LuX /></button>
@@ -315,26 +315,21 @@ function ServerForm({ api, mode, draft, locked, onChange, onClose, onSaved }: {
 
       <div className="mcp-actions">
         <button type="button" onClick={tryConnect} disabled={trying || saving || draft.name.trim() === ""} title="保存する前の中身で、一時的に起動してツールの一覧を受け取る(何も保存しません)">
-          {trying ? <LuLoaderCircle className="spin" /> : <LuPlug />} 試しにつなぐ
+          {trying ? <LuLoaderCircle className="spin" /> : <LuPlug />} 接続テスト
         </button>
         {!view && (
           <button type="button" className="apply" onClick={save} disabled={saving || locked}>
-            {mode.kind === "add" ? "足す" : "保存"}
+            {mode.kind === "add" ? "追加" : "保存"}
           </button>
         )}
         <span className="spacer" />
         {mode.kind === "edit" && (
-          confirmDelete ? (
-            <>
-              <span className="confirm-text">消しますか?</span>
-              <button type="button" className="danger" disabled={saving || locked} onClick={() => run(api.remove(draft.name))}>消す</button>
-              <button type="button" onClick={() => setConfirmDelete(false)}>やめる</button>
-            </>
-          ) : (
-            <button type="button" className="danger-outline" disabled={saving || locked} onClick={() => setConfirmDelete(true)} title="mcp.json から消す(ツールの扱いの設定は残す)">
-              <LuTrash2 /> 消す
-            </button>
-          )
+          <DeleteButton
+            question={`MCP のサーバー「${draft.name}」を削除しますか?`}
+            title="mcp.json から削除する(ツールの扱いの設定は残す)"
+            disabled={saving || locked}
+            onConfirm={() => run(api.remove(draft.name))}
+          />
         )}
       </div>
     </section>
@@ -349,7 +344,7 @@ function KVEditor({ label, rows, disabled, onChange }: { label: string; rows: KV
       <div className="field-label">
         <label>{label}</label>
         {!disabled && (
-          <button type="button" className="place-remove" onClick={() => onChange([...rows, { key: "", value: "", saved: false }])} title={`${label} を足す`}>
+          <button type="button" className="place-remove" onClick={() => onChange([...rows, { key: "", value: "", saved: false }])} title={`${label} を追加`}>
             <LuPlus />
           </button>
         )}
@@ -428,7 +423,7 @@ function PasteBox({ api, onClose, onForm, onAdded }: {
       />
       {!parsed && (
         <div className="mcp-actions">
-          <button type="button" onClick={read} disabled={text.trim() === ""}>読み取る</button>
+          <button type="button" onClick={read} disabled={text.trim() === ""}>読み取り</button>
         </div>
       )}
       {parsed && (
@@ -443,7 +438,7 @@ function PasteBox({ api, onClose, onForm, onAdded }: {
             ))}
           </div>
           <div className="mcp-actions">
-            <button type="button" className="apply" onClick={add} disabled={busy || count === 0}>{count} 個を足す</button>
+            <button type="button" className="apply" onClick={add} disabled={busy || count === 0}>{count} 個を追加</button>
           </div>
         </>
       )}

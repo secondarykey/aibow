@@ -27,7 +27,7 @@ import { ChatService, isBrowser, me } from "../backend";
 import { canLogout, signedIn, signOut } from "./AccountSettings";
 import { showName } from "../directory";
 import type { KeyboardEvent } from "react";
-import { LuCheck, LuChevronDown, LuChevronRight, LuEye, LuFolderTree, LuList, LuMenu, LuPlus, LuSettings, LuShare2, LuShield, LuUser } from "react-icons/lu";
+import { LuCheck, LuChevronDown, LuChevronRight, LuEye, LuFolderTree, LuList, LuMenu, LuPlus, LuSettings, LuShare2, LuShield, LuTrash2, LuUser } from "react-icons/lu";
 import { useMenuDismiss } from "./SplitButton";
 import { toggleMaximiseOnDoubleClick } from "./TitleBar";
 import type { Conversation, ConversationRef } from "../../bindings/github.com/secondarykey/aibow";
@@ -55,7 +55,7 @@ interface Props {
   onToggleSettings(): void;
   onOpenAccount(): void; // 設定の画面を「アカウント」のタブで開く(左下の名前のメニュー)
   adminOpen: boolean;    // 管理の画面を開いているか(0032)
-  canAdmin: boolean;     // 管理の画面の盾を出すか(管理者か、サーバーの PC の上から開いたブラウザ)
+  canAdmin: boolean;     // 管理の画面の盾を出すか(ログインした管理者か、ログインなしの形のブラウザ。0046)
   onToggleAdmin(): void; // 歯車の隣の盾で、管理の画面を開く / 閉じる
   open: boolean; // 一覧を開いているか
   onToggleOpen(): void;
@@ -65,7 +65,7 @@ interface Props {
   onOpenShared(id: string): void;
   workspaces: WorkspaceView[]; // この PC のワークスペース(並べ方がワークスペースごとのとき。0038)
   currentWorkspace: string | null; // 開いている会話のワークスペース(一覧を読み直す前に変えたときも、すぐにまとまりを移すため)
-  onNewIn(workspace: string): void; // まとまりの「+」:そのワークスペースを選んだ新しい会話の画面に移る
+  onNewIn(workspace: string): void; // まとまりの「+」:そのワークスペースを選んだ新しい会話の画面に移る(「ワークスペースなし」は "" で、必ず外す)
 }
 
 export function ConversationList({
@@ -152,11 +152,11 @@ export function ConversationList({
     if (confirming === c.id) {
       return (
         <li key={c.id} className={cls + " confirming"}>
-          <span className="confirm-text" title={unapplied > 0 ? "この会話の worktree とブランチも消える" : undefined}>
-            {unapplied > 0 ? `取り込んでいない差分(${unapplied} ファイル)も消えます。削除しますか?` : "削除しますか?"}
+          <span className="confirm-text" title={unapplied > 0 ? "この会話の worktree とブランチも削除される" : undefined}>
+            {unapplied > 0 ? `削除しますか?(取り込んでいない差分 ${unapplied} ファイルも削除されます)` : "削除しますか?"}
           </span>
           <button className="danger" onClick={() => { setConfirming(null); onDelete(c.id); }}>削除</button>
-          <button onClick={() => setConfirming(null)}>やめる</button>
+          <button onClick={() => setConfirming(null)}>キャンセル</button>
         </li>
       );
     }
@@ -178,7 +178,8 @@ export function ConversationList({
             <span className={"dot " + mark} />
           </span>
         ) : (
-          // 終わったあとの印(終わった・エラー)も同じ場所に出し、マウスを乗せたときだけ × に替える(削除はできるので)
+          // 終わったあとの印(終わった・エラー)も同じ場所に出し、マウスを乗せたときだけゴミ箱に替える(削除はできるので)。
+          // 「×」は閉じる・一覧から外すだけに使うので、削除はゴミ箱(0050 の決定事項 7)
           <button
             className={"delete" + (mark ? " has-mark" : "")}
             title={mark ? `削除(${MARK_LABEL[mark]})` : "削除"}
@@ -186,7 +187,7 @@ export function ConversationList({
             onClick={() => startConfirm(c)}
           >
             {mark && <span className={"dot " + mark} />}
-            <span className="x">×</span>
+            <LuTrash2 className="x" />
           </button>
         )}
       </li>
@@ -211,8 +212,15 @@ export function ConversationList({
           <span className="conv-group-count">{g.list.length}</span>
           {groupMark && <span className={"dot " + groupMark} title={MARK_BADGE_LABEL[groupMark]} />}
         </button>
-        {g.workspace && (
-          <button className="conv-group-new" title={`「${g.label}」で新しい会話`} disabled={disabled} onClick={() => onNewIn(g.workspace)}>
+        {/* 「ワークスペースなし」にも出す(押すとワークスペースを外した新しい会話の画面。0051 の決定事項 2)。
+            「見つからない」には出さない(無いワークスペースでは始められない) */}
+        {(g.workspace || g.key === "none") && (
+          <button
+            className="conv-group-new"
+            title={g.workspace ? `「${g.label}」で新しい会話` : "ワークスペースなしで新しい会話"}
+            disabled={disabled}
+            onClick={() => onNewIn(g.workspace)}
+          >
             <LuPlus />
           </button>
         )}
@@ -358,7 +366,7 @@ function SharedGroup({ label, list, readingId, onOpenShared }: { label: string; 
 }
 
 // Mark は会話の印の種類(CSS の .dot.<種類>)。どれも行の右の削除の場所に出す。送信している間(生成中・確認待ち)は削除できないので印だけ、
-// 終わったあと(終わった・エラー)は印を出し、マウスを乗せたときだけ削除の × に替える。
+// 終わったあと(終わった・エラー)は印を出し、マウスを乗せたときだけ削除のゴミ箱に替える。
 type Mark = "waiting" | "generating" | Ended;
 
 // MARK_ORDER は、畳んだ一覧のハンバーガーに1つだけ出すときに、どれを先に出すか(気にしてほしい順)
@@ -394,7 +402,7 @@ function AppName() {
 // UserMenu は、ログインしている人の名前(表示名)。押すと上に「アカウント」(設定の画面の「アカウント」のタブ)と「ログアウト」を出す。
 // ブラウザでも、画面のアプリが aibow-server にログインしてつないでいるときも同じ形(0031 の決定事項 44・46)。
 // ログアウトしたら読み直し、ログインの画面になる。settings.json に手で書いた API キーでつないでいるときは、ログアウトを出さない。
-// ログインが要らない形・アプリの中で動かすときは出さない。
+// ログインが要らない形・アプリモードのときは出さない。
 function UserMenu({ onOpenAccount }: { onOpenAccount(): void }) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);

@@ -152,7 +152,7 @@ func (s *SQLite) DeleteMessages(ctx context.Context, ids []uuid.UUID) error {
 	defer tx.Rollback()
 	for _, id := range ids {
 		if _, err := tx.ExecContext(ctx, `DELETE FROM messages WHERE id = ? AND `+ownMessage, id.String(), owner); err != nil {
-			return fmt.Errorf("発言 %s を消せません: %w", id, err)
+			return fmt.Errorf("発言 %s を削除できません: %w", id, err)
 		}
 	}
 	return tx.Commit()

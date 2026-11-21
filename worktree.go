@@ -205,7 +205,7 @@ func (cs *Conversations) ensureWorktree(ctx context.Context, set ConversationSet
 		if rerr := git.Remove(context.WithoutCancel(ctx), repo, path, branch); rerr != nil {
 			log.Warnf("worktree %s を片付けられません: %v", path, rerr)
 		}
-		return "", fmt.Errorf("worktree を作りましたが、結び付けを保存できないため消しました(実行していません): %w", err)
+		return "", fmt.Errorf("worktree を作りましたが、結び付けを保存できないため削除しました(実行していません): %w", err)
 	}
 	log.Noticef("会話 %s の worktree を作りました: %s(ブランチ %s。%s から)", set.conv, path, branch, baseLabel(base.Branch, base.Commit))
 	note := worktreeNote(path, base.Branch, base.Commit, uncommitted)
@@ -286,7 +286,7 @@ func (cs *Conversations) keepWorktree(id uuid.UUID, stored ConversationSettings,
 		return nil
 	}
 	if s.Workspace != stored.Workspace {
-		return errors.New("この会話は worktree で作業しているので、ワークスペースを変えられません。差分の画面で取り込むか捨ててから変えてください")
+		return errors.New("この会話は worktree で作業しているので、ワークスペースを変えられません。差分の画面で取り込むか破棄してから変えてください")
 	}
 	s.Worktree = true
 	return nil
@@ -338,7 +338,7 @@ func (cs *Conversations) WorktreeDiff(ctx context.Context, id uuid.UUID, path st
 // 全部当たるか、何も変えないか(git apply)。当たらなければ、当たらないファイルを書いたエラーを返す。worktree は残す(会話を続けられるように)。
 func (cs *Conversations) ApplyWorktree(ctx context.Context, id uuid.UUID, paths []string) error {
 	if len(paths) == 0 {
-		return errors.New("取り込むファイルを選んでください")
+		return errors.New("取り込みの対象のファイルを選んでください")
 	}
 	wt, err := cs.worktreeFor(ctx, id)
 	if err != nil {
@@ -359,7 +359,7 @@ func (cs *Conversations) ApplyWorktree(ctx context.Context, id uuid.UUID, paths 
 // 生成中は消さない(モデルが書いている途中のフォルダを消さないため)。
 func (cs *Conversations) DiscardWorktree(ctx context.Context, id uuid.UUID) error {
 	if cs.generatingIn(ctx, id) {
-		return errors.New("返事を生成中の会話の worktree は捨てられません。停止してから捨ててください")
+		return errors.New("返事を生成中の会話の worktree は破棄できません。停止してから破棄してください")
 	}
 	wt, err := cs.worktreeFor(ctx, id)
 	if err != nil {
@@ -369,9 +369,9 @@ func (cs *Conversations) DiscardWorktree(ctx context.Context, id uuid.UUID) erro
 		return err
 	}
 	if err := cs.workspaces.RemoveWorktree(id.String()); err != nil {
-		return fmt.Errorf("worktree は消しましたが、結び付けを消せません: %w", err)
+		return fmt.Errorf("worktree は削除しましたが、結び付けを削除できません: %w", err)
 	}
-	log.Noticef("会話 %s の worktree を捨てました: %s(ブランチ %s)", id, wt.Path, wt.Branch)
+	log.Noticef("会話 %s の worktree を破棄しました: %s(ブランチ %s)", id, wt.Path, wt.Branch)
 	c, _, err := cs.store.Conversation(ctx, id)
 	if err != nil {
 		return err
@@ -392,12 +392,12 @@ func (cs *Conversations) removeWorktreeOf(ctx context.Context, id uuid.UUID) {
 		return
 	}
 	if err := git.Remove(ctx, wt.Repo, wt.Path, wt.Branch); err != nil {
-		log.Warnf("消した会話 %s の worktree %s を消せません(手で git worktree remove してください): %v", id, wt.Path, err)
+		log.Warnf("削除した会話 %s の worktree %s を削除できません(手で git worktree remove してください): %v", id, wt.Path, err)
 		return
 	}
 	if err := cs.workspaces.RemoveWorktree(id.String()); err != nil {
-		log.Warnf("消した会話 %s の worktree の結び付けを消せません: %v", id, err)
+		log.Warnf("削除した会話 %s の worktree の結び付けを削除できません: %v", id, err)
 		return
 	}
-	log.Noticef("消した会話 %s の worktree を消しました: %s(ブランチ %s)", id, wt.Path, wt.Branch)
+	log.Noticef("削除した会話 %s の worktree を削除しました: %s(ブランチ %s)", id, wt.Path, wt.Branch)
 }

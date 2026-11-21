@@ -224,8 +224,12 @@ func (c *Client) do(ctx context.Context, method, path string, body any) (*http.R
 	if json.Unmarshal(data, &eb) == nil && eb.Error != nil {
 		return nil, &APIError{Status: res.StatusCode, Type: eb.Error.Type, Code: eb.Error.Code, Message: eb.Error.Message}
 	}
-	return nil, &APIError{Status: res.StatusCode, Message: fmt.Sprintf("aibow-server が %s を返しました(%s %s): %s",
-		res.Status, method, path, strings.TrimSpace(string(data)))}
+	// サーバーの返した文を先に、HTTP の状態とメソッド・パス(開発する人向けの詳細)は括弧の後ろに(0048)
+	msg := "aibow-server からエラーが返りました"
+	if body := strings.TrimSpace(string(data)); body != "" {
+		msg += ": " + body
+	}
+	return nil, &APIError{Status: res.StatusCode, Message: fmt.Sprintf("%s(%s・%s %s)", msg, res.Status, method, path)}
 }
 
 // call は、生成以外のやり取り(JSON を送って JSON を受け取る)。out が nil なら本文を読まない。

@@ -16,17 +16,17 @@ export interface Probe {
     "https": boolean;
 
     /**
-     * Fingerprint は、サーバーが出した証明書の SHA-256 の指紋(HTTPS のとき)
+     * Fingerprint は、サーバーが出した証明書の SHA-256 のフィンガープリント(HTTPS のとき)
      */
     "fingerprint"?: string;
 
     /**
-     * SystemTrusted は、OS が信頼している認証局の証明書か(そうなら指紋を確かめなくてよい)
+     * SystemTrusted は、OS が信頼している認証局の証明書か(そうならフィンガープリントを確かめなくてよい)
      */
     "systemTrusted"?: boolean;
 
     /**
-     * Trusted は、つないでよい証明書か(HTTP・OS が信頼している・指紋が覚えたものと同じ)。false なら、ほかの欄は調べていない
+     * Trusted は、つないでよい証明書か(HTTP・OS が信頼している・フィンガープリントが覚えたものと同じ)。false なら、ほかの欄は調べていない
      */
     "trusted": boolean;
 

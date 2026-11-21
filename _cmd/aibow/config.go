@@ -31,7 +31,7 @@ type appConfig struct {
 	toolsPath    string // ツールの扱いの PC の既定(tools.json。画面で変えたものを aibow が書く)
 	mcpPath      string // 画面から足した MCP のサーバー(mcp.json。aibow が書く。0034)
 	windowPath   string // ウィンドウの位置と大きさ(window.json。閉じるときに aibow が書く。windowstate.go)
-	placesPath   string // 画面で足したモデルの置き場所(model-places.json。直接の形のときだけ使う。config/modelplaces.go)
+	placesPath   string // 画面で足したモデルの置き場所(model-places.json。アプリモードのときだけ使う。config/modelplaces.go)
 	connPath     string // 画面で決めた aibow-server のつなぎ先とログイン(connection.json。aibow が書く。0019)
 	wsPath       string // ワークスペース(workspaces.json。PC のフォルダの組。aibow が書く。0035)
 	initialModel string // AIBOW_MODEL。空なら最後に使ったモデル → 一覧の先頭(書式に対応している最初のモデル)
@@ -43,7 +43,7 @@ type appConfig struct {
 	// 空なら今までどおりアプリの中で llama.cpp を動かす。書けば llama.cpp を読み込まず、aibow-server につなぎに行く(0015 の 1・20)
 	serverURL string
 	// serverKey・serverCert は、aibow-server の API キーと証明書のファイル(settings.json の serverKey・serverCert > 環境変数 AIBOW_SERVER_KEY・AIBOW_SERVER_CERT。0017 の 10-2)。
-	// 画面で決めたつなぎ先なら、serverKey はアプリ用のトークン、serverPin は信頼した証明書の指紋(0019)
+	// 画面で決めたつなぎ先なら、serverKey はアプリ用のトークン、serverPin は信頼した証明書のフィンガープリント(0019)
 	serverKey, serverCert, serverPin string
 	// serverSource はつなぎ先をどこで決めたか(serverSettings・serverEnv・serverScreen。つながないなら空)。
 	// 手で書いた値(settings.json・環境変数)が画面の値より強い(0019 の決定事項 5)
@@ -118,19 +118,19 @@ func loadConfig() (appConfig, error) {
 	return c, env.Err()
 }
 
-// libMissing は、lib が無く、つなぐ先も無いので起動できないときのエラー。
-// 信頼したつなぎ先(connection.json の known)があれば、aibow-server を使うつもりでまだログインしていない(信頼だけした・ログアウトした)だけなので、
-// llama.cpp の話ではなくログインを促す(2026-10-29、ユーザーの指摘)。相対パスのままだと「どこを探したのか」が分からないので、絶対パスで出す
+// libMissing は、lib が無く、つなぐ先も無いので起動できないときのエラー。相対パスのままだと「どこを探したのか」が分からないので、絶対パスで出す。
+// 信頼したつなぎ先(connection.json の known)があるのは、ログインの画面の設定からアプリモードに戻した・「接続」したが起動し直す前に戻したとき。
+// 戻すのは自分で選んだことなので、ログインを促さず、llama.cpp が要ることと、aibow-server を使うときの道を出す(0047 の決定事項 17)
 func (c appConfig) libMissing() error {
 	lib := absPath(c.engine.LibPath)
 	if k := c.conn.Trusted(); k.URL != "" {
-		return fmt.Errorf("aibow-server(%s)にはまだログインしていません。設定の画面の「サーバー」のタブで「確かめる」からログインし、起動し直してください"+
-			"(アプリの中で動かすなら、llama.cpp のフォルダ %s が要ります)", k.URL, lib)
+		return fmt.Errorf("llama.cpp のフォルダが見つかりません: %s(アプリモードで動かすのに要ります)。"+
+			"aibow-server を使うときは、設定の画面の「サーバー」で「接続」してください(前に信頼した aibow-server(%s)を覚えています)", lib, k.URL)
 	}
 	return fmt.Errorf("llama.cpp のフォルダが見つかりません: %s\n"+
 		"(相対パスはカレントフォルダが基準です。_cmd/aibow で起動するか、AIBOW_LIB で場所を指定してください。"+
 		"取得方法は README.md の「llama.cpp の取得」を参照。"+
-		"aibow-server につないで使うなら llama.cpp は要りません。設定の画面の「サーバー」のタブでつなぎ、起動し直してください)", lib)
+		"aibow-server につないで使うなら llama.cpp は要りません。設定の画面の「サーバー」のタブで「接続」し、起動し直してください)", lib)
 }
 
 // つなぎ先をどこで決めたか(appConfig.serverSource)。
@@ -141,7 +141,7 @@ const (
 )
 
 // loadServer は aibow-server のつなぎ先を決める。強い順に settings.json の serverUrl > 環境変数 AIBOW_SERVER_URL(0015 の 20)> 画面で決めたもの(connection.json)。
-// 手で書いた値があれば、画面の値は使わない(書いたのに効かない、が起きないように。0019 の決定事項 5)。どれも無ければアプリの中で動かす。
+// 手で書いた値があれば、画面の値は使わない(書いたのに効かない、が起きないように。0019 の決定事項 5)。どれも無ければアプリモード。
 func (c *appConfig) loadServer(env *config.Env) {
 	envURL := os.Getenv("AIBOW_SERVER_URL")
 	if err := config.CheckServerURL(envURL); err != nil {
@@ -167,7 +167,7 @@ func (c *appConfig) loadServer(env *config.Env) {
 		}
 		c.serverKey = token
 		if conn.Token != "" && !conn.TokenProtected() {
-			log.Warnf("aibow-server のアプリ用のトークンを、包まずに保存しています(この OS では包めません): %s", absPath(c.connPath))
+			log.Warnf("aibow-server のログイン(アプリ用のトークン)を、暗号化せずに保存しています(この OS では暗号化できません): %s", absPath(c.connPath))
 		}
 		return
 	default:

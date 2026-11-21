@@ -115,7 +115,7 @@ func (r *recorder) who(ctx context.Context, route string) (uuid.UUID, string) {
 		}
 		return u.ID, u.Name
 	}
-	log.Warnf("生成を呼んだ人が分かりません(道: %s)。使用量は利用者を空にして記録します", route)
+	log.Warnf("生成を呼んだ人が分かりません(呼び出し元: %s)。使用量は利用者を空にして記録します", route)
 	return uuid.UUID{}, ""
 }
 

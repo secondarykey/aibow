@@ -2,8 +2,8 @@ package main
 
 // proxy.go: リバースプロキシの後ろに置いたとき、プロキシが付けたヘッダーから元の相手を取り出す(0044)。
 //
-// aibow-server は「どこから来たか」を接続の相手のアドレス(r.RemoteAddr)で見ている(サーバーの PC の上からだけの操作・
-// ログインを続けて間違えたときの制限・ログ)。プロキシの後ろでは、相手はいつもプロキシになってしまう。
+// aibow-server は「どこから来たか」を接続の相手のアドレス(r.RemoteAddr)で見ている(ログインなしの形で外の人を断る・
+// ログインを続けて間違えたときの制限・ログ。サーバーの PC の事情を変える操作は、0046 から「誰か」で決め、ここは関わらない)。プロキシの後ろでは、相手はいつもプロキシになってしまう。
 //
 // ここで学べること:
 //   - ヘッダーは誰でも書ける。X-Forwarded-For: 127.0.0.1 は curl からでも付けられるので、「付いていたら信じる」は危ない。
@@ -25,7 +25,8 @@ import (
 )
 
 // loopbackProxies は、書かなくてもいつも信頼する「サーバーの PC の上」(0044 の決定事項 2)。
-// サーバーの PC の上から来た呼び出しは、もともとサーバーの PC の上からだけの操作までできる相手なので、そのヘッダーを信じても信頼の範囲は広がらない。
+// 同じ PC のプロキシを何も書かずに使えるようにするため。0046 からは、偽ってできるのは「ログインの制限のすり抜け」と「ログの相手を変える」だけで、
+// どちらも同じ PC の上の人にしかできない(0046 の未決事項 2 で、残すと決めた)。
 var loopbackProxies = []netip.Prefix{netip.MustParsePrefix("127.0.0.0/8"), netip.MustParsePrefix("::1/128")}
 
 // proxyTrust は、信頼するプロキシの一覧と、元の相手を読むヘッダー。
@@ -172,8 +173,8 @@ func fromProxy(p proxyTrust, login bool, h http.Handler) http.Handler {
 			r = r2
 		}
 		if !login && !a.IsLoopback() {
-			log.Warnf("ログインなし(login: false)の形で、サーバーの PC の外(%s)から来たので断りました: %s %s", a, r.Method, r.URL.Path)
-			http.Error(w, "この aibow-server はログインなし(login: false)で動いているので、サーバーの PC の上からだけ使えます", http.StatusForbidden)
+			log.Warnf("ログインなし(login: false)で動いているので、この PC の外(%s)からの呼び出しを断りました: %s %s", a, r.Method, r.URL.Path)
+			http.Error(w, "この aibow-server は、aibow-server の PC からだけ使えます(ログインなしで動いているため)", http.StatusForbidden)
 			return
 		}
 		h.ServeHTTP(w, r)
@@ -182,7 +183,7 @@ func fromProxy(p proxyTrust, login bool, h http.Handler) http.Handler {
 
 // describe は、起動のときに出す信頼するプロキシの一覧(0044 の決定事項 13)。サーバーの PC の上は「この PC の上」とまとめる。
 func (p proxyTrust) describe() string {
-	names := []string{"この PC の上"}
+	names := []string{"この PC"}
 	for _, n := range p.nets[len(loopbackProxies):] {
 		if n.IsSingleIP() {
 			names = append(names, n.Addr().String())

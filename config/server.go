@@ -12,7 +12,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -31,7 +30,7 @@ type ServerFile struct {
 	Model     string `json:"model"`     // 起動のときに読み込むモデル(ID・名前・GGUF のパス)
 	Lib       string `json:"lib"`       // llama.cpp の DLL のフォルダ
 	ModelsDir string `json:"modelsDir"` // GGUF を置くフォルダ(Ollama の保存先は別に探す)
-	LogLevel  string `json:"logLevel"`  // ログのレベル(LogLevels の名前)。-debug があればそちら(_cmd/aibow-server の log.go の logLevel)
+	LogLevel  string `json:"logLevel"`  // ログのレベル(log.LevelNames の名前)。-debug があればそちら(_cmd/aibow-server の log.go の logLevel)
 	// Login は、ブラウザの画面にログインを要るようにするか(0017 の 10-1)。書いていなければ環境変数か既定(要る。0020)。
 	// false と書いて環境変数より強くできるよう、ポインタにする(ほかの欄は 0 を「書いていない」にしているが、真偽値では false も値なので)
 	Login *bool `json:"login"`
@@ -60,15 +59,6 @@ type ServerFile struct {
 	ProxyHeader string `json:"proxyHeader"`
 }
 
-// LogLevels は、設定ファイルの logLevel に書ける値。
-var LogLevels = map[string]slog.Level{
-	"debug":  log.LevelDebug,
-	"info":   log.LevelInfo,
-	"notice": log.LevelNotice,
-	"warn":   log.LevelWarn,
-	"error":  log.LevelError,
-}
-
 // LoadServerFile は server.json を読む。無ければ found が false(エラーにしない)。
 // 知らない欄はエラーにする(書き間違えた欄が黙って効かないと、理由が分からないため)。
 func LoadServerFile(path string) (file ServerFile, found bool, err error) {
@@ -84,8 +74,8 @@ func LoadServerFile(path string) (file ServerFile, found bool, err error) {
 	if err := dec.Decode(&file); err != nil {
 		return ServerFile{}, false, fmt.Errorf("設定ファイル %s を読めません(%s): %w", path, JSONErrorLine(data, err), err)
 	}
-	if _, ok := LogLevels[file.LogLevel]; file.LogLevel != "" && !ok {
-		return ServerFile{}, false, fmt.Errorf("設定ファイル %s の logLevel は debug・info・notice・warn・error のどれかにしてください: %q", path, file.LogLevel)
+	if _, ok := log.ParseLevel(file.LogLevel); file.LogLevel != "" && !ok {
+		return ServerFile{}, false, fmt.Errorf("設定ファイル %s の logLevel は %s のどれかにしてください: %q", path, strings.Join(log.LevelNames, "・"), file.LogLevel)
 	}
 	if file.Port < 0 || file.Ctx < 0 {
 		return ServerFile{}, false, fmt.Errorf("設定ファイル %s の port と ctx は 1 以上にしてください: %d / %d", path, file.Port, file.Ctx)

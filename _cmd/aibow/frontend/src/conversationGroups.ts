@@ -131,7 +131,7 @@ export function groupByWorkspace(list: Conversation[], workspaces: WorkspaceView
   if (missing.length > 0) {
     groups.push({
       key: "missing", label: "この PC に無いワークスペース", workspace: "", list: missing,
-      title: "別の PC で選んだか、消したワークスペースの会話。この PC ではフォルダのツールを使えない",
+      title: "別の PC で選んだか、削除したワークスペースの会話。この PC ではフォルダのツールを使えない",
     });
   }
   return groups;

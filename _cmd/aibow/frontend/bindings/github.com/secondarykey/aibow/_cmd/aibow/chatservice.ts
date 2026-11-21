@@ -115,8 +115,8 @@ export function CheckFile(id: uuid$0.UUID, draft: aibow$0.ConversationSettings |
 }
 
 /**
- * CheckServer は、つなぎ先 url を確かめる(つながるか・ログインが要るか・証明書)。fingerprint は、人が画面で確かめて信頼した指紋(まだなら空)。
- * 自己署名の証明書で、まだ信頼していなければ、指紋だけを返す(trusted が false。画面が指紋を見せ、人が確かめる)。
+ * CheckServer は、つなぎ先 url を確かめる(つながるか・ログインが要るか・証明書)。fingerprint は、人が画面で確かめて信頼したフィンガープリント(まだなら空)。
+ * 自己署名の証明書で、まだ信頼していなければ、フィンガープリントだけを返す(trusted が false。画面がフィンガープリントを見せ、人が確かめる)。
  * 信頼できたら、信頼したつなぎ先として覚える(ログインせずに閉じても、次は信頼し直さずに続けられるように。次の起動でつなぐ先にはしない)。
  */
 export function CheckServer(url: string, fingerprint: string): $CancellablePromise<client$1.Probe> {
@@ -124,7 +124,7 @@ export function CheckServer(url: string, fingerprint: string): $CancellablePromi
 }
 
 /**
- * ChooseModelPlace は、置き場所を選ぶダイアログを出し(アプリの中で動かすときだけ使う。置き場所はモデルを読み込む PC のパスなので)、選んだフォルダ(kind が "dir")か GGUF のファイル(kind が "file")の
+ * ChooseModelPlace は、置き場所を選ぶダイアログを出し(アプリモードのときだけ使う。置き場所はモデルを読み込む PC のパスなので)、選んだフォルダ(kind が "dir")か GGUF のファイル(kind が "file")の
  * 絶対パスを返す。取り消したら空。足すのは AddModelPlace(選んだだけでは足さない)。
  */
 export function ChooseModelPlace(kind: string): $CancellablePromise<string> {
@@ -150,17 +150,22 @@ export function Compact(id: uuid$0.UUID): $CancellablePromise<void> {
 /**
  * ConfirmTool は、実行前の確認を待っているツールに答える(カードの「実行する」「拒否」)。
  * reqID は confirm イベントの ID。拒否するときの reason は空でもよい(モデルには「理由: (書かれていません)」と渡る)。
- * remember は、このツールのこの会話でのこれから先の扱い(空ならこの1回だけ。allow = この会話では今後聞かない、off = 今後許可しない。0010)。
+ * remember は、このツールのこれから先の扱い(空ならこの1回だけ。allow = 聞かずに実行する、off = 聞かずに断る。0010)。
+ * forReply なら、remember はこの返事の間だけ(会話の設定には書かない)。false ならこの会話の間(会話の設定に書く。0051 の決定事項 10・11)。
  */
-export function ConfirmTool(id: uuid$0.UUID, reqID: string, approved: boolean, reason: string, remember: config$0.ToolPolicy): $CancellablePromise<void> {
-    return $Call.ByID(665849895, id, reqID, approved, reason, remember);
+export function ConfirmTool(id: uuid$0.UUID, reqID: string, approved: boolean, reason: string, remember: config$0.ToolPolicy, forReply: boolean): $CancellablePromise<void> {
+    return $Call.ByID(665849895, id, reqID, approved, reason, remember, forReply);
 }
 
 /**
- * ConnectServer は aibow-server につなぐように決める:もう一度確かめ、ログインが要ればアプリ用のトークンをもらって、connection.json に書く。
- * 起動し直すと切り替わる。確かめられないつなぎ先は書かない(起動し直してから「つながりません」となるのを避ける。決定事項 8)。
+ * ConnectServer は aibow-server につなぐように決める(画面の「接続」):もう一度確かめ、つなぐ先と証明書のフィンガープリントを connection.json に書く。
+ * トークンはもらわない。起動し直すとサーバーモードになり、ログインが要る aibow-server なら、ログインの画面でログインする(0047 の決定事項 1・4)。
+ * 確かめられないつなぎ先は書かない(起動し直してから「つながりません」となるのを避ける。0019 の決定事項 8)。
+ * 
+ * 「ログインする」と「つなぐ」を分けたのは、ログインの入口をブラウザと同じログインの画面の1つにそろえるため。
+ * つなぐ(どこのサーバーか)はその PC の人が決めることなので PC のファイルに書き、ログイン(誰か)はサーバーとのやり取りなのでログインの画面で行う。
  */
-export function ConnectServer(req: $models.ConnectRequest): $CancellablePromise<void> {
+export function ConnectServer(req: $models.ConnectRequest): $CancellablePromise<$models.ConnectResult> {
     return $Call.ByID(768792652, req);
 }
 
@@ -207,11 +212,12 @@ export function CreateProfile(name: string, values: aibow$0.ProfileValues, rules
 }
 
 /**
- * CreateWorkspace は、フォルダ path 1つのワークスペースを作る(入力欄の上の「フォルダから新しく作る」・設定の画面)。
- * 同じフォルダ1つだけのワークスペースがあれば、それを返す。
+ * CreateWorkspace は、フォルダ path 1つのワークスペースを作る。
+ * reuse なら、同じフォルダ1つだけのワークスペースがあればそれを返す(入力欄の上の「フォルダから新しく作る」)。
+ * reuse でなければ、同じフォルダでも新しく作る(設定の画面の「フォルダから作る」。0049)。
  */
-export function CreateWorkspace(path: string): $CancellablePromise<config$0.Workspace> {
-    return $Call.ByID(1897882904, path);
+export function CreateWorkspace(path: string, reuse: boolean): $CancellablePromise<ui$0.CreatedWorkspace> {
+    return $Call.ByID(1897882904, path, reuse);
 }
 
 /**
@@ -272,7 +278,7 @@ export function DiscardWorktree(id: uuid$0.UUID): $CancellablePromise<void> {
 }
 
 /**
- * DisconnectServer はアプリの中で動かす形に戻すように決める:トークンを aibow-server で消し(つながらなければ手元だけ)、
+ * DisconnectServer はアプリモードに戻すように決める:トークンを aibow-server で消し(つながらなければ手元だけ)、
  * つなぐ先とトークンを connection.json から消す。信頼したつなぎ先(Known)は残す(次につなぐときに、信頼し直さずにログインから続けられるように)。
  * 起動し直すと切り替わる。
  */
@@ -282,7 +288,7 @@ export function DisconnectServer(): $CancellablePromise<void> {
 
 /**
  * Folders は aibow-server の資料のフォルダの名前(名前の順。パスは返さない)。配るプロファイルで選ぶ(0024 の 12-2)。
- * 名前は誰でも見られる(どのフォルダを使えるかは、配られたプロファイルで決まる)。アプリの中で動かすときは空。
+ * 名前は誰でも見られる(どのフォルダを使えるかは、配られたプロファイルで決まる)。アプリモードのときは空。
  */
 export function Folders(): $CancellablePromise<string[] | null> {
     return $Call.ByID(2760372572);
@@ -294,6 +300,21 @@ export function Folders(): $CancellablePromise<string[] | null> {
  */
 export function LoadToolList(server: string): $CancellablePromise<void> {
     return $Call.ByID(4133085097, server);
+}
+
+/**
+ * LogFile は、アプリの今日のログファイルの絶対パス(画面に出してコピーする。0052 の決定事項 21)。ファイルに書いていなければ空。
+ * 日ごとに切り替わるので、画面は開くたびに呼ぶ。
+ */
+export function LogFile(): $CancellablePromise<string> {
+    return $Call.ByID(589043037);
+}
+
+/**
+ * LogLevel は、アプリの今のログのレベル(log.LevelNames の名前。trace・debug・info・notice・warn・error)。
+ */
+export function LogLevel(): $CancellablePromise<string> {
+    return $Call.ByID(1468793011);
 }
 
 /**
@@ -471,10 +492,25 @@ export function Send(id: uuid$0.UUID, text: string, files: aibow$0.File[] | null
 }
 
 /**
- * ServerConnection は今の形を返す。
+ * ServerConnection は今のモードを返す。
  */
 export function ServerConnection(): $CancellablePromise<$models.ServerConnection> {
     return $Call.ByID(3197122296);
+}
+
+/**
+ * ServerLogFile は、aibow-server の今日のログファイルの絶対パス(サーバーの PC のパス。管理の画面に出してコピーする。0052 の決定事項 21)。
+ * ファイルに書いていなければ空。サーバーの PC のパスなので、レベルと同じく管理者だけに見せる。
+ */
+export function ServerLogFile(): $CancellablePromise<string> {
+    return $Call.ByID(4231543972);
+}
+
+/**
+ * ServerLogLevel は、aibow-server の今のログのレベル(log.LevelNames の名前)。管理者だけ(画面で隠すだけにしない)。
+ */
+export function ServerLogLevel(): $CancellablePromise<string> {
+    return $Call.ByID(2792991696);
 }
 
 /**
@@ -541,6 +577,13 @@ export function SetGroupPolicy(group: string, policy: config$0.ToolPolicy): $Can
 }
 
 /**
+ * SetLogLevel は、アプリのログのレベルを変えて、変えたあとのレベルを返す。変えたことは Notice で残る。
+ */
+export function SetLogLevel(name: string): $CancellablePromise<string> {
+    return $Call.ByID(3578678533, name);
+}
+
+/**
  * SetModelEnabled は、モデルを使えるかを決める(aibow-server の管理者がモデルのタブで。0018 の決定事項 13)。
  * 使えないモデルは一覧に出さず、頼まれても読み込まない。使えなくしたのが読み込み中のモデルなら降ろすので、席を取ってから行う。
  */
@@ -582,6 +625,13 @@ export function SetProfileArchived(id: uuid$0.UUID, archived: boolean): $Cancell
  */
 export function SetProfileShare(id: uuid$0.UUID, share: string, $with: string[] | null, groups: string[] | null): $CancellablePromise<void> {
     return $Call.ByID(2853156393, id, share, $with, groups);
+}
+
+/**
+ * SetServerLogLevel は、aibow-server のログのレベルを変えて、変えたあとのレベルを返す。変えたことは Notice で残り、誰が変えたかも添える。
+ */
+export function SetServerLogLevel(name: string): $CancellablePromise<string> {
+    return $Call.ByID(4172485490, name);
 }
 
 /**

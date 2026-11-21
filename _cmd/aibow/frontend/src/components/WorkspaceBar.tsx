@@ -4,6 +4,7 @@
 // どのフォルダを触らせているかがいつも見えるよう、設定の画面ではなく入力欄の上に出す。
 // 決めていないときはフォルダのアイコンだけ、決めたら名前。押すとワークスペースの一覧が上に開き、
 // 「フォルダから新しく作る」で、フォルダを選ぶダイアログ(Go の ChatService.ChooseWorkDir)から1つ作って選ぶ。
+// 同じフォルダ1つのワークスペースが既にあれば、作らずにそれを選び、そのことをトーストで知らせる(0049 の決定事項 2)。
 // 外すのは一覧の最後の「なし」(以前は名前の右の ×。隣の worktree の切り替えを押すつもりで外してしまうので、一覧に移した。2026-11-04、ユーザーの指示)。
 // 会話の ID のワークスペースがこの PC に無い(別の PC で選んだ・消した)ときは、そのことを出して選び直せるようにする。
 import { useEffect, useRef, useState } from "react";
@@ -17,10 +18,11 @@ interface Props {
   selected: string; // 会話のワークスペースの ID。空なら決めていない
   onChange(id: string): void;
   onCreated(): void; // 新しく作った(一覧を読み直す)
+  onNotice(text: string): void; // 既にあるワークスペースを選んだときのお知らせ(トースト)
   onError(text: string): void;
 }
 
-export function WorkspaceBar({ workspaces, selected, onChange, onCreated, onError }: Props) {
+export function WorkspaceBar({ workspaces, selected, onChange, onCreated, onNotice, onError }: Props) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -38,17 +40,18 @@ export function WorkspaceBar({ workspaces, selected, onChange, onCreated, onErro
   const missing = selected !== "" && !current;
   const create = () => {
     setOpen(false);
-    createFromFolder().then(
-      id => {
-        if (!id) return; // 取り消した
-        onCreated();
-        onChange(id);
+    createFromFolder(true).then(
+      r => {
+        if (!r) return; // 取り消した
+        if (r.existing) onNotice(`既にあるワークスペース「${r.name}」を選びました`);
+        else onCreated();
+        onChange(r.id);
       },
       err => onError(errorMessage(err)),
     );
   };
   const title = current ? current.folders?.map(f => f.path).join("\n") ?? current.name
-    : missing ? "別の PC で選んだか、消したワークスペース。この PC ではフォルダのツールを使えない" : "ワークスペースを選ぶ";
+    : missing ? "別の PC で選んだか、削除したワークスペース。この PC ではフォルダのツールを使えない" : "ワークスペースを選ぶ";
 
   return (
     <div className={"workdir-bar" + (selected ? " set" : "") + (missing ? " missing" : "")} ref={ref}>
@@ -67,9 +70,9 @@ export function WorkspaceBar({ workspaces, selected, onChange, onCreated, onErro
             </button>
           ))}
           {workspaces.length > 0 && <div className="workspace-menu-sep" />}
-          <button type="button" className="conv-tools-item" onClick={create} title="フォルダを選んで、そのフォルダ1つのワークスペースを作る">
+          <button type="button" className="conv-tools-item" onClick={create} title="フォルダを選んで、そのフォルダ1つのワークスペースを作成する(同じフォルダのものがあれば、それを選ぶ)">
             <span className="conv-tools-check"><LuFolderPlus /></span>
-            フォルダから新しく作る
+            フォルダから作成
           </button>
           <button type="button" className="conv-tools-item" onClick={() => { setOpen(false); if (selected) onChange(""); }} title="ワークスペースを外す">
             <span className="conv-tools-check">{!selected && <LuCheck />}</span>
@@ -86,7 +89,7 @@ export function WorkspaceBar({ workspaces, selected, onChange, onCreated, onErro
 export function FolderBar({ name }: { name: string }) {
   return (
     <div className="workdir-bar set">
-      <span className="workdir folder-fixed" title="資料のフォルダ(aibow-server の PC。管理者が配ったプロファイルで決まる)。この会話のツールは、このフォルダの中を読み書きする">
+      <span className="workdir folder-fixed" title="資料のフォルダ(aibow-server の PC。管理者が配布したプロファイルで決まる)。この会話のツールは、このフォルダの中を読み書きする">
         <LuFolder />
         <span className="workdir-name">{name}</span>
       </span>

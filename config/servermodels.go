@@ -46,7 +46,7 @@ func LoadServerModels(path string) (*ServerModels, error) {
 		return nil, fmt.Errorf("%s を読めません: %w", path, err)
 	}
 	if err := json.Unmarshal(data, &s.data); err != nil {
-		return nil, fmt.Errorf("%s を読めません(aibow-server が書くファイルです。壊れているなら消すと、覚えた GPU の層数を忘れて起動します): %w", path, err)
+		return nil, fmt.Errorf("%s を読めません(aibow-server が書くファイルです。壊れているなら削除すると、覚えた GPU の層数を忘れて起動します): %w", path, err)
 	}
 	// 以前の形のモデルの ID(file:<パス>)で覚えた層の数を、今の形(file:<ファイル名>)に書き換える(0018 の決定事項 14・15)
 	if layers := models.LayersByID(s.data.GPULayers); !maps.Equal(layers, s.data.GPULayers) {

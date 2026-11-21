@@ -25,7 +25,8 @@ type Options struct {
 	// 圧縮するのも消すのと同じ時(SetCompressAfter)。KeepDays より古いものは、圧縮したものも消える
 	CompressDays int
 	// Root は出すレベル(これより下は出さない)。ゼロ値は Info。名前は ikkyoku の log に揃えた。
-	// アプリは dev で Info(開発中・学習で観察するもの)、配る exe で Notice(常に残したいもの)を渡す
+	// アプリは dev で Info(開発中・学習で観察するもの)、配る exe で Notice(常に残したいもの)を渡す。
+	// 起動したときのレベルで、あとから SetLevel で変えられる(保存はしないので、次に起動したときはまたこの値。0052)
 	Root slog.Level
 	// Console は標準エラー出力にも出すか。wails3 dev や go run で動かすとき(ターミナルで見るとき)に立てる。
 	// ⚠️ リリース版(-H windowsgui)には標準エラー出力の行き先が無いので、立てても見えない
@@ -42,6 +43,10 @@ const FilePrefix = "aibow"
 // prefix は Init で決めたログファイルの名前の頭(FilePath・CatchCrash が使う)。Init はアプリの main で 1 回だけ呼ぶので、そこで決めて変えない
 var prefix = FilePrefix
 
+// fileDir は Init でファイルを書くと決まったフォルダ(CurrentFile が使う)。空ならファイルには書いていない(Dir が空・フォルダを作れなかった)。
+// prefix と同じく Init で 1 回だけ決める
+var fileDir string
+
 // Init はログの出口を組み、slog.Default() をそこへ向ける。**アプリの main の最初に 1 回だけ呼ぶ**。
 // aibow をライブラリとして使う人は呼ばなくてよい(自分の slog.SetDefault の出口に出る)。
 //
@@ -52,8 +57,12 @@ var prefix = FilePrefix
 func Init(opts Options) (io.Closer, error) {
 	var sinks []slog.Handler
 	var closer io.Closer = nopCloser{}
+	// 出口のレベルは、あとから SetLevel で変えられるように slog.LevelVar で渡す(level.go。0052)
+	level := new(slog.LevelVar)
+	level.Set(opts.Root)
 	var err error
 	prefix = FilePrefix
+	fileDir = ""
 	if opts.Prefix != "" {
 		prefix = opts.Prefix
 	}
@@ -69,20 +78,22 @@ func Init(opts Options) (io.Closer, error) {
 			w.SetErrorHandler(func(err error) {
 				Warnf("古いログファイルを片付けられませんでした(%s): %v", opts.Dir, err)
 			})
-			sinks = append(sinks, wlog.NewSimpleHandler(w, opts.Root))
+			sinks = append(sinks, wlog.NewSimpleHandler(w, level))
 			closer = w
+			fileDir = opts.Dir
 		} else {
 			err = fmt.Errorf("ログのフォルダ %s を作れないので、ログはファイルに残りません: %w", opts.Dir, err)
 		}
 	}
 	if opts.Console {
-		sinks = append(sinks, wlog.NewSimpleHandler(os.Stderr, opts.Root))
+		sinks = append(sinks, wlog.NewSimpleHandler(os.Stderr, level))
 	}
 	if len(sinks) == 0 {
 		// どこにも出せないときは標準エラー出力にする(slog.Default() のまま残すと、標準の log の書式で出る)
-		sinks = append(sinks, wlog.NewSimpleHandler(os.Stderr, opts.Root))
+		sinks = append(sinks, wlog.NewSimpleHandler(os.Stderr, level))
 	}
 	slog.SetDefault(slog.New(slog.NewMultiHandler(sinks...)))
+	levelVar.Store(level)
 	// 標準の log で書かれたもの(Wails の中の WebView2 の [WebView2] … など)は、SetDefault のあと slog の出口に流れる。
 	// 標準の log はレベルを持たないので、出すレベル(Root)で記録する(既定の Info のままだと、Root が Notice の exe で
 	// WebView2 の失敗の記録まで捨ててしまう)
@@ -94,6 +105,20 @@ func Init(opts Options) (io.Closer, error) {
 // ファイルは最初に書いたときに作られ、日付が変わると次のファイルに切り替わる。
 func FilePath(dir string) string {
 	return filepath.Join(dir, prefix+"_"+time.Now().Format("20060102")+".log")
+}
+
+// CurrentFile は、今日のログファイルの絶対パス(画面に出してコピーするため。0052 の決定事項 21)。
+// Init でファイルに書くと決まっていなければ false(Dir が空・フォルダを作れなかった・Init を呼んでいない)。
+// ファイルは日ごとに切り替わるので、出すたびに呼ぶ。最初に書くまではファイルがまだ無いこともある(どの exe も起動のときに Notice を書くので、ふだんはある)
+func CurrentFile() (string, bool) {
+	if fileDir == "" {
+		return "", false
+	}
+	p := FilePath(fileDir)
+	if abs, err := filepath.Abs(p); err == nil {
+		p = abs
+	}
+	return p, true
 }
 
 type nopCloser struct{}

@@ -138,7 +138,7 @@ func (s *SQLite) DeleteUser(ctx context.Context, id uuid.UUID) error {
 		"DELETE FROM sessions WHERE user_id = ?",
 	} {
 		if _, err := tx.ExecContext(ctx, q, owner); err != nil {
-			return fmt.Errorf("利用者 %s のものを消せません(%s): %w", owner, q, err)
+			return fmt.Errorf("利用者 %s のものを削除できません(%s): %w", owner, q, err)
 		}
 	}
 	res, err := tx.ExecContext(ctx, "DELETE FROM users WHERE id = ?", owner)

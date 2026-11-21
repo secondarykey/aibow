@@ -18,6 +18,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -30,8 +31,9 @@ import (
 func main() {
 	showVersion := flag.Bool("version", false, "バージョンを表示して終わる")
 	fetch = flag.Bool("fetch", false, "URL のページを読むツール(fetch_url)も出す(PC の中・社内のアドレスは読まない)")
+	logLevel := flag.String("log-level", "info", "ログのレベル("+strings.Join(log.LevelNames, "・")+")")
 	flag.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(), "使い方: %s [-version] [-fetch] [作業フォルダ]\n\n", filepath.Base(os.Args[0]))
+		fmt.Fprintf(flag.CommandLine.Output(), "使い方: %s [-version] [-fetch] [-log-level <レベル>] [作業フォルダ]\n\n", filepath.Base(os.Args[0]))
 		fmt.Fprintln(flag.CommandLine.Output(), "aibow のツールを MCP のサーバー(標準入出力)として出します。")
 		fmt.Fprintln(flag.CommandLine.Output(), "作業フォルダを渡すと、その中のファイルを扱うツールとコマンドのツールも出します。")
 		flag.PrintDefaults()
@@ -43,9 +45,17 @@ func main() {
 		return
 	}
 
-	// ログは標準エラー出力とファイルに書く(標準出力に何か書くと、クライアントが MCP のメッセージとして読もうとして壊れる)
-	closer := startLog()
+	// ログは標準エラー出力とファイルに書く(標準出力に何か書くと、クライアントが MCP のメッセージとして読もうとして壊れる)。
+	// レベルは -log-level で決める(書かなければ Info。0052 の決定事項 19)。知らない名前なら、Info で組んで理由を残してから止める
+	// (黙って Info で動くと、書き間違えたことに気づけない)
+	level, ok := log.ParseLevel(*logLevel)
+	closer := startLog(level)
 	defer closer.Close()
+	if !ok {
+		log.Errorf("-log-level は %s のどれかにしてください: %q", strings.Join(log.LevelNames, "・"), *logLevel)
+		closer.Close()
+		os.Exit(2)
+	}
 
 	if err := run(); err != nil {
 		log.Error(err.Error())

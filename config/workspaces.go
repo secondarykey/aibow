@@ -178,38 +178,58 @@ func (w *Workspaces) Get(id string) (Workspace, bool) {
 }
 
 // CreateFromFolder は、フォルダ path 1つ(メイン・書く)のワークスペースを作る。名前はフォルダ名。
-// 同じフォルダ1つだけのワークスペースがすでにあれば、新しく作らずにそれを返す(同じものが一覧に並ばないように。
-// 今ある会話の作業フォルダを移すときも、パスごとに1つにする。MigrateWorkDirs)。
-func (w *Workspaces) CreateFromFolder(path string) (Workspace, error) {
+// reuse なら、同じフォルダ1つだけのワークスペースがすでにあれば、新しく作らずにそれを返す(existing = true)。
+// 入力欄の上の「フォルダから新しく作る」で同じものが一覧に並ばないように・今ある会話の作業フォルダを移すときにパスごとに1つにするため(MigrateWorkDirs)。
+// reuse でなければ、同じフォルダでも毎回新しく作る(設定の画面の「フォルダから作る」。同じフォルダを別のワークスペースにしたいときの入口。0049 の決定事項 3)。
+// 新しく作るとき、ほかのワークスペースと名前が重なるなら「名前 (2)」のように番号を付ける(一覧で見分けられるように)。
+// モデルが呼ぶフォルダの名前は、ワークスペースの中で重ならなければよいので、そのままフォルダ名にする。
+func (w *Workspaces) CreateFromFolder(path string, reuse bool) (ws Workspace, existing bool, err error) {
 	if w == nil {
-		return Workspace{}, errors.New("ワークスペースを使っていません")
+		return Workspace{}, false, errors.New("ワークスペースを使っていません")
 	}
 	if !filepath.IsAbs(path) {
-		return Workspace{}, fmt.Errorf("フォルダは絶対パスで指定してください(%s)", path)
+		return Workspace{}, false, fmt.Errorf("フォルダは絶対パスで指定してください(%s)", path)
 	}
 	path = filepath.Clean(path)
 	if st, err := os.Stat(path); err != nil || !st.IsDir() {
-		return Workspace{}, fmt.Errorf("フォルダ %s が見つかりません", path)
+		return Workspace{}, false, fmt.Errorf("フォルダ %s が見つかりません", path)
 	}
-	w.mu.Lock()
-	for _, ws := range w.list {
-		if len(ws.Folders) == 1 && samePath(ws.Folders[0].Path, path) {
-			w.mu.Unlock()
-			return ws.clone(), nil
+	if reuse {
+		w.mu.Lock()
+		for _, ws := range w.list {
+			if len(ws.Folders) == 1 && samePath(ws.Folders[0].Path, path) {
+				w.mu.Unlock()
+				return ws.clone(), true, nil
+			}
 		}
+		w.mu.Unlock()
 	}
-	w.mu.Unlock()
 	name := folderName(path)
-	ws := Workspace{
+	ws = Workspace{
 		ID:      uuid.NewV7().String(),
-		Name:    name,
 		Folders: []WorkspaceFolder{{Path: path, Name: name, Main: true, Writable: true}},
 	}
-	err := w.update(func(list *[]Workspace) error {
+	err = w.update(func(list *[]Workspace) error {
+		ws.Name = uniqueName(*list, name)
 		*list = append(*list, ws)
 		return nil
 	})
-	return ws, err
+	return ws, false, err
+}
+
+// uniqueName は、list のワークスペースと重ならない名前。重なるなら「name (2)」「name (3)」…と、重ならなくなるまで番号を上げる。
+func uniqueName(list []Workspace, name string) string {
+	taken := func(n string) bool {
+		return slices.ContainsFunc(list, func(ws Workspace) bool { return ws.Name == n })
+	}
+	if !taken(name) {
+		return name
+	}
+	for i := 2; ; i++ {
+		if n := fmt.Sprintf("%s (%d)", name, i); !taken(n) {
+			return n
+		}
+	}
 }
 
 // Update は、ワークスペース ws.ID の名前とフォルダの組を ws のものにする(設定の画面の「ワークスペース」)。
@@ -255,14 +275,14 @@ func (w *Workspaces) Delete(id string) error {
 			return errWorkspaceNotFound
 		}
 		if n := len((*list)[i].Worktrees); n > 0 {
-			return fmt.Errorf("このワークスペースでは %d 個の会話が worktree で作業しています。その会話の差分の画面で worktree を捨てるか、会話を消してから、ワークスペースを消してください", n)
+			return fmt.Errorf("このワークスペースでは %d 個の会話が worktree で作業しています。その会話の差分の画面で worktree を破棄するか、会話を削除してから、ワークスペースを削除してください", n)
 		}
 		*list = slices.Delete(*list, i, i+1)
 		return nil
 	})
 }
 
-var errWorkspaceNotFound = errors.New("ワークスペースが見つかりません(ほかの画面で消したかもしれません)")
+var errWorkspaceNotFound = errors.New("ワークスペースが見つかりません(ほかの画面で削除したかもしれません)")
 
 func (w *Workspaces) index(id string) int {
 	return slices.IndexFunc(w.list, func(ws Workspace) bool { return ws.ID == id })
@@ -276,7 +296,7 @@ func (w *Workspaces) update(change func(*[]Workspace) error) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.readOnly {
-		return fmt.Errorf("ワークスペースのファイル %s を読めなかったので、書き換えません(直すか消してから、アプリを起動し直してください)", w.path)
+		return fmt.Errorf("ワークスペースのファイル %s を読めなかったので、書き換えません(直すか削除してから、アプリを起動し直してください)", w.path)
 	}
 	list := make([]Workspace, 0, len(w.list)+1)
 	for _, ws := range w.list {

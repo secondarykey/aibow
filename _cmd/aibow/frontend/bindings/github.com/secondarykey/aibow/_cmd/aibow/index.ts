@@ -9,5 +9,6 @@ export {
 export type {
     AccountInfo,
     ConnectRequest,
+    ConnectResult,
     ServerConnection
 } from "./models.js";

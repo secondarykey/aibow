@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"os"
@@ -72,6 +74,64 @@ func TestModelPlaces(t *testing.T) {
 	if l := m2.List(); len(l) != 0 {
 		t.Errorf("外したあとの一覧: %+v", l)
 	}
+}
+
+// モデルが見つからないときは、探した置き場所を絶対パスで書く(別のユーザー・別のカレントフォルダで起動したときに気づけるように)
+func TestFirstModelTellsPlaces(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	s, _ := config.LoadServerModels(filepath.Join(dir, stateFileName))
+	m := &modelManager{catalog: models.Catalog{ModelsDir: "models", OllamaDir: filepath.Join(dir, "ollama")}, state: s}
+	for _, arg := range []string{"", "qwen3.5:4b"} {
+		_, err := firstModel(m, arg)
+		if err == nil {
+			t.Fatalf("%q: モデルが無いのに見つかった", arg)
+		}
+		for _, want := range []string{filepath.Join(dir, "models"), filepath.Join(dir, "ollama"), "フォルダが見つかりません", "相対パス"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("%q: エラーに %q が無い: %v", arg, want, err)
+			}
+		}
+	}
+}
+
+// 指定したモデルが見つからないときは、止めずに使える最初のモデルで起動する(0051 の決定事項 1)。
+// 見つかったが書式に未対応のモデルは、今までどおりエラー
+func TestFirstModelFallback(t *testing.T) {
+	dir := t.TempDir()
+	mdir := filepath.Join(dir, "models")
+	os.MkdirAll(mdir, 0o755)
+	if err := os.WriteFile(filepath.Join(mdir, "q.gguf"), ggufOf("qwen35"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(mdir, "x.gguf"), ggufOf("unknown-arch"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, _ := config.LoadServerModels(filepath.Join(dir, stateFileName))
+	m := &modelManager{catalog: models.Catalog{ModelsDir: mdir, OllamaDir: filepath.Join(dir, "ollama")}, state: s}
+
+	e, err := firstModel(m, "qwen3.5:4b")
+	if err != nil || e.ID != "file:q.gguf" {
+		t.Errorf("見つからないモデルの代わり: %+v %v", e, err)
+	}
+	if _, err := firstModel(m, "file:x.gguf"); err == nil || !strings.Contains(err.Error(), "未対応") {
+		t.Errorf("未対応のモデルはエラーのはず: %v", err)
+	}
+}
+
+// ggufOf は general.architecture だけを持つ GGUF の頭(書式の判定に足りるだけ)
+func ggufOf(arch string) []byte {
+	var b bytes.Buffer
+	w := func(v any) { binary.Write(&b, binary.LittleEndian, v) }
+	str := func(s string) { w(uint64(len(s))); b.WriteString(s) }
+	b.WriteString("GGUF")
+	w(uint32(3)) // 版
+	w(uint64(0)) // テンソルの数
+	w(uint64(1)) // メタデータの数
+	str("general.architecture")
+	w(uint32(8)) // 文字列
+	str(arch)
+	return b.Bytes()
 }
 
 // 管理者が使えないようにしたモデルは一覧に出さず、探しても DisabledError。パスでは読み込ませない。

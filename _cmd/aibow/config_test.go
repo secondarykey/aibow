@@ -28,8 +28,9 @@ func TestLibMissingMessage(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err = loadConfig()
-	if err == nil || !strings.Contains(err.Error(), "aibow-server(https://192.168.11.4:8089)にはまだログインしていません") ||
-		strings.Contains(err.Error(), "見つかりません") {
+	// 戻すのは自分で選んだことなので、ログインを促さず、llama.cpp が要ることと「接続」の道を出す(0047 の決定事項 17)
+	if err == nil || !strings.Contains(err.Error(), "llama.cpp のフォルダが見つかりません") ||
+		!strings.Contains(err.Error(), "前に信頼した aibow-server(https://192.168.11.4:8089)を覚えています") || strings.Contains(err.Error(), "ログインしていません") {
 		t.Fatalf("信頼したつなぎ先だけがあるとき: %v", err)
 	}
 }

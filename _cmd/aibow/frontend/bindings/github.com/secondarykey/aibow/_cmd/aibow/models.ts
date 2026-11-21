@@ -6,7 +6,7 @@
  */
 export interface AccountInfo {
     /**
-     * Login は、aibow-server につないでいて、そこがログインの要る形か(要らない形・アプリの中で動かすときは false)
+     * Login は、aibow-server につないでいて、そこがログインの要る形か(要らない形・アプリモードのときは false)
      */
     "login": boolean;
     "name": string;
@@ -32,33 +32,43 @@ export interface AccountInfo {
 
 /**
  * ConnectRequest は ConnectServer に渡すもの。
+ * 名前とパスワードは持たない。ログインは、起動し直したあとのログインの画面で行う(Login。0047 の決定事項 5)
  */
 export interface ConnectRequest {
     "url": string;
 
     /**
-     * Fingerprint は、人が確かめて信頼した証明書の指紋(自己署名の証明書のとき。CheckServer が返したもの)
+     * Fingerprint は、人が確かめて信頼した証明書のフィンガープリント(自己署名の証明書のとき。CheckServer が返したもの)
      */
     "fingerprint": string;
-
-    /**
-     * Name・Password はログイン(ログインの要る aibow-server のとき)。パスワードはトークンをもらうのに使うだけで、覚えない
-     */
-    "name": string;
-    "password": string;
 }
 
 /**
- * ServerConnection は、設定の画面の「サーバー」のタブに出す今の形。
+ * ConnectResult は ConnectServer の結果。
+ */
+export interface ConnectResult {
+    /**
+     * Same は、今つないでいるのと同じ aibow-server だったので、何も変えなかったか(0047 の決定事項 7)
+     */
+    "same": boolean;
+
+    /**
+     * URL は確かめたつなぎ先(後ろの / などをそろえたもの)
+     */
+    "url": string;
+}
+
+/**
+ * ServerConnection は、設定の画面の「サーバー」のタブに出す今のモード。
  */
 export interface ServerConnection {
     /**
-     * Mode は "direct"(アプリの中で動かす)か "server"(aibow-server につなぐ)
+     * Mode は "direct"(アプリモード)か "server"(サーバーモード。aibow-server につなぐ)
      */
     "mode": string;
 
     /**
-     * Source はつなぎ先をどこで決めたか("settings"・"env"・"screen"。アプリの中で動かすなら空)。"settings" と "env" は画面では変えられない
+     * Source はつなぎ先をどこで決めたか("settings"・"env"・"screen"。アプリモードなら空)。"settings" と "env" は画面では変えられない
      */
     "source": string;
 
@@ -69,7 +79,7 @@ export interface ServerConnection {
     "url": string;
 
     /**
-     * Fingerprint は信頼した証明書の指紋(画面でつないだ自己署名の証明書のとき)
+     * Fingerprint は信頼した証明書のフィンガープリント(画面でつないだ自己署名の証明書のとき)
      */
     "fingerprint": string;
 
@@ -94,6 +104,11 @@ export interface ServerConnection {
      */
     "pending": string;
     "pendingUrl": string;
+
+    /**
+     * PendingLogin は、保存したつなぐ先がログインの要る aibow-server か(起動し直したら、ログインの画面でログインする。0047)
+     */
+    "pendingLogin": boolean;
 
     /**
      * KnownURL・KnownUser は、信頼した最後のつなぎ先と、そこに最後にログインした名前(タブの入力欄に入れておく。つないでいなくても残る)

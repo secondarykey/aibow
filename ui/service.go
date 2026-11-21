@@ -98,6 +98,10 @@ type Options struct {
 	Browser bool
 	// Folders は aibow-server の資料のフォルダ(server.json の folders。名前 → 絶対パス。Browser のときだけ使う。0024 の 12-2)
 	Folders map[string]string
+	// WaitLogin は、ログインするまで aibow-server を呼ばないか(デスクトップのアプリが、ログインの要る aibow-server にトークンなしで起動したとき。0051 の決定事項 6)。
+	// 起動のときの引き継ぎ(プロファイル・会話の上限とモデル・作業フォルダの移し)をせず、ログインしたあと(Lifecycle.LoggedIn)に行う。
+	// 呼べば断られるだけで、aibow-server のログに「…断りました」が並ぶため
+	WaitLogin bool
 }
 
 // noCommand は、組み込みのツールからコマンドのツール(run_command)を外す係(aibow.LocalTools)。
@@ -141,6 +145,10 @@ type Service struct {
 	// notices は起動時に画面のトーストで伝えること(使われなくなった環境変数など)
 	notices []string
 
+	// prepareOnce は、起動のときの引き継ぎ(prepare)を1回だけ行うため。waitLogin ならログインしたあと(Lifecycle.LoggedIn)に行う
+	prepareOnce sync.Once
+	waitLogin   bool
+
 	// initial は起動時に読み込むモデル。nil なら読み込まない(画面で選ぶ)。
 	initial *models.Entry
 	// loading は起動時に読み込み中のモデルの名前。読み込み中でなければ nil。
@@ -171,10 +179,10 @@ func New(o Options) (*Service, Lifecycle) {
 	s := &Service{
 		host: o.Host, app: o.App, initial: o.Initial, notices: o.Notices, startupErr: o.StartupErr, notify: o.Notify, seat: o.Seat,
 		quit: quit, cancelQuit: cancel, mcp: o.MCP, prefs: o.Prefs, mcpConfig: o.MCPConfig, workspaces: o.Workspaces, version: o.Version,
-		browser: o.Browser, waits: map[string]*time.Timer{}, folders: slices.Sorted(maps.Keys(o.Folders)),
+		browser: o.Browser, waits: map[string]*time.Timer{}, folders: slices.Sorted(maps.Keys(o.Folders)), waitLogin: o.WaitLogin,
 	}
 	if d, ok := o.Host.(*DirectHost); ok {
-		d.s = s // 直接の形は、GPU の層数をアプリの DB(Service が持つ設定)に覚える
+		d.s = s // アプリモードは、GPU の層数をアプリの DB(Service が持つ設定)に覚える
 	}
 	if o.StartupErr == nil {
 		st, app := o.Store, o.App
@@ -202,34 +210,45 @@ func New(o Options) (*Service, Lifecycle) {
 		s.convs.SetToolPrefs(o.Prefs)
 		// 送信の前に会話のモデルを読み込む係(0014 の 3)。モデルごとの GPU の層数で読み込む
 		s.convs.SetModelLoader(modelLoader{s})
-		// ここから下の引き継ぎは、利用者を分ける前に作った会話・プロファイルのためのもの。それはログインなしの形の利用者のもの(DB の版 6)なので、その人として行う(0017)
-		ctx := aibow.WithUser(context.Background(), aibow.LocalUser)
-		// 新しい会話の既定はプロファイルの値。プロファイルより前の DB なら、今の既定からプロファイル「既定」を作り、今ある会話を紐づける(0014)。
-		// ツールのグループを引き継ぐので、MCP のサーバーとツールの扱いを渡したあとに呼ぶ
-		if notes, err := s.convs.PrepareProfiles(ctx); err != nil {
-			log.Error(err.Error())
-		} else {
-			for _, n := range notes {
-				log.Notice(n)
-			}
+		if !o.WaitLogin {
+			s.prepareOnce.Do(s.prepare)
 		}
-		// 会話の上限・返事の上限を会話ごとにする前に作った会話には、今の既定の値を写す(既定を変えても今ある会話は変わらない、の約束。0009)
-		if n, err := s.convs.FillMissingLimits(ctx); err != nil {
-			log.Error(err.Error())
-		} else if n > 0 {
-			d := app.Defaults
-			log.Noticef("会話の上限・返事の上限を持たない %d 個の会話に、今の既定(%d + %d)を入れました", n, d.HistoryTokens, d.ReplyTokens)
-		}
-		// 会話ごとのモデルにする前に作った会話には、最後に使ったモデルを写す(0014 の 10)
-		if n, err := s.convs.FillMissingModels(ctx, app.Workspace.Model); err != nil {
-			log.Error(err.Error())
-		} else if n > 0 {
-			log.Noticef("モデルを持たない %d 個の会話に、最後に使ったモデル %s を入れました", n, app.Workspace.Model)
-		}
-		// ワークスペースより前の会話の作業フォルダを、この PC にあるものだけワークスペースに移す(0035 の段1)
-		s.migrateWorkDirs(ctx)
 	}
 	return s, Lifecycle{s}
+}
+
+// prepare は起動のときの引き継ぎ(前の版の DB のプロファイル・会話の上限とモデル・作業フォルダ)。
+// ログインの要る aibow-server にトークンなしで起動したときは、ログインしたあとに行う(Options.WaitLogin)。
+func (s *Service) prepare() {
+	s.appMu.Lock()
+	app := s.app
+	s.appMu.Unlock()
+	// ここから下の引き継ぎは、利用者を分ける前に作った会話・プロファイルのためのもの。それはログインなしの形の利用者のもの(DB の版 6)なので、その人として行う(0017)
+	ctx := aibow.WithUser(context.Background(), aibow.LocalUser)
+	// 新しい会話の既定はプロファイルの値。プロファイルより前の DB なら、今の既定からプロファイル「既定」を作り、今ある会話を紐づける(0014)。
+	// ツールのグループを引き継ぐので、MCP のサーバーとツールの扱いを渡したあとに呼ぶ
+	if notes, err := s.convs.PrepareProfiles(ctx); err != nil {
+		log.Error(err.Error())
+	} else {
+		for _, n := range notes {
+			log.Notice(n)
+		}
+	}
+	// 会話の上限・返事の上限を会話ごとにする前に作った会話には、今の既定の値を写す(既定を変えても今ある会話は変わらない、の約束。0009)
+	if n, err := s.convs.FillMissingLimits(ctx); err != nil {
+		log.Error(err.Error())
+	} else if n > 0 {
+		d := app.Defaults
+		log.Noticef("会話の上限・返事の上限を持たない %d 個の会話に、今の既定(%d + %d)を入れました", n, d.HistoryTokens, d.ReplyTokens)
+	}
+	// 会話ごとのモデルにする前に作った会話には、最後に使ったモデルを写す(0014 の 10)
+	if n, err := s.convs.FillMissingModels(ctx, app.Workspace.Model); err != nil {
+		log.Error(err.Error())
+	} else if n > 0 {
+		log.Noticef("モデルを持たない %d 個の会話に、最後に使ったモデル %s を入れました", n, app.Workspace.Model)
+	}
+	// ワークスペースより前の会話の作業フォルダを、この PC にあるものだけワークスペースに移す(0035 の段1)
+	s.migrateWorkDirs(ctx)
 }
 
 // Lifecycle は、起動と終了のときに呼ぶ係。
@@ -246,6 +265,32 @@ func (l Lifecycle) Start() {
 		s.loading.Store(&s.initial.Name)
 		go s.loadInitial(*s.initial)
 	}
+}
+
+// LoggedIn は、ログインするまで待っていた起動のときの処理を行う(Options.WaitLogin。0051 の決定事項 6)。
+// アプリの設定を aibow-server から読み直し、引き継ぎ(prepare)を行う。待っていなければ、何もしない(起動のときに済んでいる)。
+func (l Lifecycle) LoggedIn() {
+	s := l.s
+	if s == nil || !s.waitLogin || s.startupErr != nil {
+		return
+	}
+	s.prepareOnce.Do(func() {
+		s.appMu.Lock()
+		initial := s.app
+		s.appMu.Unlock()
+		app, notes, err := aibow.LoadAppSettings(context.Background(), s.store, initial)
+		if err != nil {
+			log.Warnf("aibow-server から設定を読めません(初期値のまま使います): %v", err)
+		} else {
+			for _, n := range notes {
+				log.Notice(n)
+			}
+			s.appMu.Lock()
+			s.app = app
+			s.appMu.Unlock()
+		}
+		s.prepare()
+	})
 }
 
 // Stop は終了のときに呼ぶ(デスクトップでは Wails の ServiceShutdown から)。生成中なら止める。

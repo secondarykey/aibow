@@ -62,7 +62,7 @@ func Protect(data []byte) ([]byte, error) {
 		cryptProtectUIForbidden,
 		uintptr(unsafe.Pointer(&out)))
 	if r == 0 {
-		return nil, fmt.Errorf("Windows の DPAPI で包めません: %w", err)
+		return nil, fmt.Errorf("ログインを暗号化して保存できません(Windows の DPAPI): %w", err)
 	}
 	return out.bytes(), nil
 }

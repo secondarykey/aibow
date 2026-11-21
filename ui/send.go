@@ -89,8 +89,9 @@ func (s *Service) Compact(ctx context.Context, id uuid.UUID) {
 
 // ConfirmTool は、実行前の確認を待っているツールに答える(カードの「実行する」「拒否」)。
 // reqID は confirm イベントの ID。拒否するときの reason は空でもよい(モデルには「理由: (書かれていません)」と渡る)。
-// remember は、このツールのこの会話でのこれから先の扱い(空ならこの1回だけ。allow = この会話では今後聞かない、off = 今後許可しない。0010)。
-func (s *Service) ConfirmTool(ctx context.Context, id uuid.UUID, reqID string, approved bool, reason string, remember config.ToolPolicy) error {
+// remember は、このツールのこれから先の扱い(空ならこの1回だけ。allow = 聞かずに実行する、off = 聞かずに断る。0010)。
+// forReply なら、remember はこの返事の間だけ(会話の設定には書かない)。false ならこの会話の間(会話の設定に書く。0051 の決定事項 10・11)。
+func (s *Service) ConfirmTool(ctx context.Context, id uuid.UUID, reqID string, approved bool, reason string, remember config.ToolPolicy, forReply bool) error {
 	if s.startupErr != nil {
 		return s.startupErr
 	}
@@ -100,7 +101,7 @@ func (s *Service) ConfirmTool(ctx context.Context, id uuid.UUID, reqID string, a
 			return err
 		}
 	}
-	if err := s.convs.Answer(ctx, id, reqID, aibow.Confirmation{Approved: approved, Reason: reason, Remember: remember}); err != nil {
+	if err := s.convs.Answer(ctx, id, reqID, aibow.Confirmation{Approved: approved, Reason: reason, Remember: remember, ForReply: forReply}); err != nil {
 		return err
 	}
 	s.stopWait(reqID)

@@ -15,7 +15,7 @@
 | 既定の「使わない」 | 既定では使わない（会話で使える） | 同左 | **禁止**（会話でも使えない） | — |
 | 作業フォルダ | 会話ごとに手元のパス | 手元のパス | 管理者の「資料のフォルダ」（名前だけ見える） | — |
 | `run_command` | あり（確認つき） | あり（確認つき） | **出さない** | — |
-| 確認のカード | Wails の中で往復 | Wails の中で往復 | SSE で届き、画面用の口で答える | — |
+| 確認のカード | Wails の中で往復 | Wails の中で往復 | SSE で届き、画面用の API で答える | — |
 
 ---
 
@@ -72,7 +72,7 @@ flowchart LR
 
   subgraph SRV["サーバーの PC：aibow-server"]
     AUTH["aibow/auth（ログイン・アプリ用トークン）"]
-    API["aibow/api（OpenAI 互換＋aibow 専用の口）"] <--> SEAT{{"順番待ちの席 api.Seat"}} <--> ENG["aibow/engine → llama.cpp → GPU"]
+    API["aibow/api（OpenAI 互換＋aibow 専用の API）"] <--> SEAT{{"順番待ちの席 api.Seat"}} <--> ENG["aibow/engine → llama.cpp → GPU"]
     STO["/_aibow/store/"] <--> SDB[("server.db")]
   end
 
@@ -96,10 +96,10 @@ flowchart LR
   BR["ブラウザ<br/>（aibow/web の同じ画面）"]
 
   subgraph SRV["サーバーの PC：aibow-server"]
-    H["画面用の口 ui.Handler<br/>/_aibow/ui/call/{メソッド}・SSE /_aibow/ui/events"]
+    H["画面用の API ui.Handler<br/>/_aibow/ui/call/{メソッド}・SSE /_aibow/ui/events"]
     H <--> SVC["aibow/ui（ServerHost・Browser）"]
     SVC <--> CONV["aibow（会話の仕組み）<br/>IgnoreWorkDir・利用者は ctx"]
-    CONV <--> SEAT{{"api.Seat（OpenAI 互換の口と共有）"}} <--> ENG["engine → llama.cpp → GPU"]
+    CONV <--> SEAT{{"api.Seat（OpenAI 互換の API と共有）"}} <--> ENG["engine → llama.cpp → GPU"]
     CONV <--> SDB[("server.db<br/>会話・利用者・プロファイル")]
     CONV <--> LOC["組み込み（Local）<br/>時刻・計算"]
     CONV <--> FT["作業フォルダのツール<br/>list/read/write/edit_file<br/>（run_command は出さない）"]
@@ -122,7 +122,7 @@ flowchart LR
 ```mermaid
 sequenceDiagram
   participant B as ブラウザ
-  participant H as 画面用の口
+  participant H as 画面用の API
   participant C as 会話の仕組み
   participant T as ツール
   B->>H: Send（長い HTTP の呼び出し）
@@ -131,7 +131,7 @@ sequenceDiagram
   alt 確認する（ask）
     C-->>B: SSE で confirm（差分・引数）
     Note over B,C: 待つのは 5 分まで。タブを閉じたら停止と同じ。<br/>SSE だけ切れたら PendingConfirm で出し直す
-    B->>H: ConfirmTool（許可 / 拒否 / この会話では今後聞かない）
+    B->>H: ConfirmTool（許可 / 拒否 / 今後も同じ：この返事の間・この会話の間）
     H->>C: 答え（Remember なら会話の上書きに書く）
   end
   C->>T: 実行（ログ：誰の・どの会話の・どのツール）
@@ -196,7 +196,7 @@ flowchart LR
     SVJ["server.json：サーバーの MCP・資料のフォルダ"]
     STJ["server-tools.json：ブラウザの扱いの既定（使わない＝禁止）"]
     PROF["配るプロファイル：使えないツール・資料のフォルダ・誰に配るか"]
-    CONVP["会話の上書き：使う / 使わない / 確認する<br/>カードの「この会話では今後聞かない」「今後許可しない」"]
+    CONVP["会話の上書き：使う / 使わない / 確認する<br/>カードの「この会話の間」（今後聞かない・今後許可しない）"]
   end
   PCU --> SJ & TJ
   ADM --> SVJ & STJ & PROF

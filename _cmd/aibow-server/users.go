@@ -121,7 +121,7 @@ func listUsers(ctx context.Context, st *store.SQLite) error {
 			note += "・管理者"
 		}
 		if u.ID == aibow.LocalUser {
-			note += "・ログインなしの形の利用者"
+			note += "・ログインなしで使うときの利用者"
 		}
 		if u.Email != "" {
 			note += "・" + u.Email
@@ -179,7 +179,7 @@ func createUser(ctx context.Context, st *store.SQLite, initial aibow.AppSettings
 	if err != nil {
 		return link{}, err
 	}
-	log.Noticef("利用者 %s を作りました%s(本人がパスワードを決める招待のリンクを出しました。期限 %s)", name, by, exp.Local().Format("15:04"))
+	log.Noticef("利用者 %s を作成しました%s(本人がパスワードを設定する招待のリンクを発行しました。期限 %s)", name, by, exp.Local().Format("15:04"))
 	return link{Token: token, ExpiresAt: exp}, nil
 }
 
@@ -221,12 +221,12 @@ func deleteUser(ctx context.Context, st *store.SQLite, name, by string) error {
 		return fmt.Errorf("利用者 %s: %w", name, err)
 	}
 	if u.ID == aibow.LocalUser {
-		return fmt.Errorf("%s はログインなしの形の利用者なので消せません(ログインなしで使うときの会話の持ち主です)", name)
+		return fmt.Errorf("%s はログインなしで使うときの利用者なので削除できません(ログインなしで使うときの会話の持ち主です)", name)
 	}
 	if err := st.DeleteUser(ctx, u.ID); err != nil {
 		return err
 	}
-	log.Noticef("利用者 %s と、その人の会話・プロファイル・設定を消しました%s", name, by)
+	log.Noticef("利用者 %s と、その人の会話・プロファイル・設定を削除しました%s", name, by)
 	return nil
 }
 
@@ -283,7 +283,7 @@ func setAdmin(ctx context.Context, st *store.SQLite, name string, admin bool) er
 		return err
 	}
 	if !slices.ContainsFunc(list, func(u auth.User) bool { return u.Admin }) {
-		log.Warn("管理者が一人もいなくなりました。サーバーの PC の事情(モデル・層の数・置き場所)は 127.0.0.1 からだけ変えられます。" +
+		log.Warn("管理者が一人もいなくなりました。モデル・GPU の層数・置き場所・ツールの既定は、管理者を決めるまで誰も変えられません(0046)。" +
 			"戻すときは aibow-server user admin <名前> を実行してください")
 	}
 	return nil

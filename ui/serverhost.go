@@ -9,7 +9,7 @@ package ui
 // 見せ方と断り方は、aibow-server につないだ画面のアプリ(RemoteHost)と同じ線にそろえる(0016 の 6)。
 // ブラウザの人はサーバーの PC の持ち主ではないので、降ろす・GPU の層数・置き場所・出どころ・サーバーの PC のパスは見せも変えもしない。
 // 見せるのはモデルの一覧(名前・大きさ・読み込み中か)と作業領域の大きさ。会話のモデルは選べる(席の中で読み直す)。
-// ただし管理者と、サーバーの PC の上から開いた画面には、全部を見せて変えさせる(0018 の決定事項 8。誰かは ctx の Caller。caller.go)。
+// ただし管理者(ログインなしの形ではいつも)には、全部を見せて変えさせる(0046。誰かは ctx の Caller。caller.go)。
 
 import (
 	"context"
@@ -97,7 +97,7 @@ func (h *ServerHost) current() *engine.ModelInfo {
 func (h *ServerHost) server() string { return h.url }
 
 // list は、サーバーの PC の置き方(出どころ・置き場所)と層の数を外した一覧(RemoteHost と同じ)。
-// サーバーの PC の事情を見てよい人には、外さずに層の数も付ける(直接の形と同じ。0018 の決定事項 8)。
+// サーバーの PC の事情を見てよい人には、外さずに層の数も付ける(アプリモードと同じ。0018 の決定事項 8)。
 func (h *ServerHost) list(ctx context.Context) (hostModels, error) {
 	if managesPC(ctx) {
 		l := h.models.ListAll() // 使えないようにしたモデルも、印を付けて見せる(戻せるように)
@@ -137,7 +137,7 @@ func (h *ServerHost) gpuLayers() int {
 // tryContext は、サーバーの作業領域に入るかを確かめるだけ。
 func (h *ServerHost) tryContext(n int) (bool, error) { return h.gen.EnsureContextSize(n) }
 
-// 降ろす・GPU の層数・置き場所は、サーバーの PC の事情なので、管理者とサーバーの PC の上から開いた画面だけ(0016 の 6・0018 の決定事項 8)。
+// 降ろす・GPU の層数・置き場所は、サーバーの PC の事情なので、管理者だけ(ログインなしの形ではいつも。0016 の 6・0046)。
 // 口でも、ほかの人からは呼べないようにしてある(web.go の pcMethods)。ここでも確かめるのは、口の作りを間違えても漏れないように。
 // 基本設定の「GPU の層数」(setGPULayers)は、モデルのタブのモデルごとの層の数で足りるので、ブラウザでは使わない。
 func (h *ServerHost) setGPULayers(int) (*engine.ModelInfo, error) {

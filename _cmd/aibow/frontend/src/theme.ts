@@ -42,6 +42,11 @@ export function initTheme() {
   });
 }
 
+// themeSetting は、今の設定(システム / ライト / ダーク)。ログインの画面の設定で、今の値を選んでおくため
+export function themeSetting(): ThemeSetting {
+  return setting;
+}
+
 // setTheme は、設定(Go から届いた値・設定の画面で選んだ値)を画面に効かせ、次の起動のために写しを覚える
 export function setTheme(v: string) {
   setting = normalize(v);

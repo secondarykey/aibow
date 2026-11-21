@@ -51,7 +51,7 @@ export function ChatView({ items, firstId, conversationId, pinQuestion, readOnly
   exclude: Exclude;
   discard?: Discard;
   retry: Retry;
-  onAnswer(reqId: string, approved: boolean, reason: string, remember: ToolPolicy): void; // ツールの実行前の確認に答える(remember はこれから先の扱い)
+  onAnswer(reqId: string, approved: boolean, reason: string, remember: ToolPolicy, forReply: boolean): void | Promise<boolean>; // ツールの実行前の確認に答える(remember はこれから先の扱い。forReply ならこの返事の間だけ)
 }) {
   const faded = (msgId?: string) => (msgId && firstId && msgId < firstId ? " faded" : "");
   const fadedTitle = (msgId?: string, excluded?: boolean) => (excluded ? EXCLUDED_TITLE : faded(msgId) ? FADED_TITLE : undefined);
@@ -76,6 +76,10 @@ export function ChatView({ items, firstId, conversationId, pinQuestion, readOnly
   // やり直せるのは最後のやり取りだけ: 最後の発言(直す)と、その後ろの最後の返事(作り直す)
   const lastUser = lastIndex(items, it => it.kind === "user");
   const lastAssistant = lastIndex(items, it => it.kind === "assistant");
+  // 横に「作り直す」を出すエラー(0048 の D8): 最後の発言より後ろの、いちばん新しい送信・生成のエラーだけ。
+  // 作り直すのは最後の発言への返事なので、前のやり取りのエラーには出さない。読むだけの会話には出さない
+  const lastRetryError = lastIndex(items, it => it.kind === "error" && !!it.retry && !it.caution);
+  const retryError = !readOnly && lastRetryError > lastUser && lastUser >= 0 ? lastRetryError : -1;
   // 直している発言(吹き出しの中で直す)。会話を切り替えたらやめる
   const [editing, setEditing] = useState<number | null>(null);
   useEffect(() => setEditing(null), [conversationId]);
@@ -107,6 +111,7 @@ export function ChatView({ items, firstId, conversationId, pinQuestion, readOnly
                     {it.files && (
                       <FileChips
                         files={it.files.map(file => ({ file }))}
+                        savable
                         onDiscard={!readOnly && it.msgId && discard && !discard.disabled ? f => discard.onDiscard(f.id) : undefined}
                       />
                     )}
@@ -120,7 +125,7 @@ export function ChatView({ items, firstId, conversationId, pinQuestion, readOnly
                     </div>
                     <UserActions text={it.text} createdAt={it.createdAt}>
                       {!readOnly && i === lastUser && it.msgId && (
-                        <button className="reply-action" disabled={retry.disabled} title="この発言を直して送り直す(この発言と返事は消える)" onClick={() => setEditing(it.id)}>
+                        <button className="reply-action" disabled={retry.disabled} title="この発言を直して再送信する(この発言と返事は削除される)" onClick={() => setEditing(it.id)}>
                           <LuPencil />
                         </button>
                       )}
@@ -130,9 +135,17 @@ export function ChatView({ items, firstId, conversationId, pinQuestion, readOnly
                 );
               case "error":
                 // 注意(理由と対処を書いた断り)は、要約できなかったお知らせと同じ見た目にする
-                return it.caution
-                  ? <div key={it.id} className="compact-note"><LuTriangleAlert className="icon" /><div>{it.text}</div></div>
-                  : <div key={it.id} className="msg error">{it.text}</div>;
+                if (it.caution) return <div key={it.id} className="compact-note"><LuTriangleAlert className="icon" /><div>{it.text}</div></div>;
+                if (i !== retryError) return <div key={it.id} className="msg error">{it.text}</div>;
+                // 押すと、返事の下の ↻ と同じ作り直す。表示から最後の発言の後ろ(このエラーも)を外してから作り直す
+                return (
+                  <div key={it.id} className="error-row">
+                    <div className="msg error">{it.text}</div>
+                    <button className="error-retry" disabled={retry.disabled} title="最後の発言への返事を再生成する(今のモデル・設定で)" onClick={retry.onRegenerate}>
+                      <LuRefreshCw /> 再生成
+                    </button>
+                  </div>
+                );
               case "divider":
                 return <Divider key={it.id} compaction={it.compaction} />;
               case "assistant":
@@ -151,7 +164,7 @@ export function ChatView({ items, firstId, conversationId, pinQuestion, readOnly
                           <button
                             className="reply-action"
                             disabled={retry.disabled}
-                            title="この返事を作り直す(今のモデル・設定で。この返事は消える)"
+                            title="この返事を再生成する(今のモデル・設定で。この返事は削除される)"
                             onClick={retry.onRegenerate}
                           >
                             <LuRefreshCw />
@@ -201,7 +214,7 @@ function AssistantMessage({ view, msgId, faded, onStop, onAnswer, excludeButton,
   onStop(): void;
   excludeButton?: ReactNode; // 「モデルに渡さない」の切り替え(保存済みの返事だけ)
   excluded: boolean;
-  onAnswer(reqId: string, approved: boolean, reason: string, remember: ToolPolicy): void;
+  onAnswer(reqId: string, approved: boolean, reason: string, remember: ToolPolicy, forReply: boolean): void | Promise<boolean>;
 }) {
   // コピーするのは答えの文だけ(ツールを使った送信では、各回の答えをつなげる)
   const answer = [...(view.steps ?? []).map(s => s.content), view.content].filter(Boolean).join("\n\n");
@@ -273,7 +286,7 @@ function ReplyActions({ content, stats, createdAt, msgId, children }: {
         <div className="stats">
           {stats}
           {msgId && (
-            <div className="stats-id" title="発言の ID(UUIDv7)。DB の messages の id と同じ値">
+            <div className="stats-id" title="発言の ID。ログや DB でこの発言を探すときに使います">
               ID: {msgId} <CopyButton text={msgId} />
             </div>
           )}
@@ -308,8 +321,8 @@ function EditUser({ initial, disabled, onCancel, onSend }: {
         <textarea value={text} rows={Math.min(10, Math.max(2, text.split("\n").length))} autoFocus onChange={e => setText(e.target.value)} />
       </div>
       <div className="edit-actions">
-        <button onClick={onCancel}>やめる</button>
-        <button className="primary" disabled={disabled || !text.trim()} onClick={() => onSend(text.trim())}>送り直す</button>
+        <button onClick={onCancel}>キャンセル</button>
+        <button className="primary" disabled={disabled || !text.trim()} onClick={() => onSend(text.trim())}>再送信</button>
       </div>
     </div>
   );

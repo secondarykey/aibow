@@ -45,7 +45,7 @@ func (cs *Conversations) MigrateWorkDirs(ctx context.Context) (moved, kept int, 
 		}
 		// 両方ある(移したあとに古い版で開いて作業フォルダを決めた、など)ときは、今のワークスペースを残して古いほうを捨てる
 		if c.Settings.Workspace == "" {
-			ws, err := cs.workspaces.CreateFromFolder(dir)
+			ws, _, err := cs.workspaces.CreateFromFolder(dir, true)
 			if err != nil {
 				return moved, kept, fmt.Errorf("会話 %s の作業フォルダ %s をワークスペースに移せません: %w", c.ID, dir, err)
 			}

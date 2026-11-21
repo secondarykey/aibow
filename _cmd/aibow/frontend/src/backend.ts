@@ -40,6 +40,8 @@ export interface Backend {
   login(name: string, password: string): Promise<Me>; // 違えば reject(message が理由の文)
   logout(): Promise<void>;
   onUnauthorized(f: () => void): () => void;      // 呼び出しが「ログインしてください」(401)で断られた(ログインの期限が切れた)
+  // 同じブラウザのほかのタブで別の人がログインし、この画面の呼び出しが別の人として受けられた(ブラウザだけ。name は今の人)
+  onUserChanged(f: (name: string) => void): () => void;
   // パスワードは本人が決める(0022)。リンクはブラウザだけ(合言葉は URL の #reset= の後ろ)。変えるのはアプリからも(0031)
   linkUser(token: string): Promise<string>;       // パスワードを決めるリンクの持ち主の名前。使えなければ reject
   applyLink(token: string, password: string): Promise<Me>; // リンクでパスワードを決めて、そのままログインする
@@ -196,6 +198,10 @@ export function logout(): Promise<void> {
 
 export function onUnauthorized(f: () => void): () => void {
   return b.onUnauthorized(f);
+}
+
+export function onUserChanged(f: (name: string) => void): () => void {
+  return b.onUserChanged(f);
 }
 
 export function linkUser(token: string): Promise<string> {

@@ -7,10 +7,10 @@ package main
 //	SetMy…         … 表示名・メールアドレス・パスワードを変える(ブラウザと同じ口を、アプリ用のトークンで呼ぶ)
 //	MyUsage        … 自分の使用量(0033。同じくアプリ用のトークンで呼ぶ)
 //
-// 以前は、ログアウトは「サーバー」のタブの「ログアウトして戻す」(アプリの中で動かす形に戻り、起動し直すと切り替わる)だけだった。
+// 以前は、ログアウトは「サーバー」のタブの「ログアウトして戻す」(アプリモードに戻り、起動し直すと切り替わる)だけだった。
 // ブラウザとそろえ、ログアウトしたらその場でログインの画面になるようにした(2026-11-01、ユーザーの指示)。
 // 生成の口と会話の保存先は同じクライアント(apiclient.Client)を使っているので、そのキーを替えるだけで起動し直さずに切り替わる。
-// アプリの中で動かす形に戻すのは、ログアウトとは別の操作(「サーバー」のタブの DisconnectServer)。
+// アプリモードに戻すのは、ログアウトとは別の操作(「サーバー」のタブの DisconnectServer)。
 
 import (
 	"errors"
@@ -26,7 +26,7 @@ import (
 
 // AccountInfo は、画面のアプリの今のアカウント(設定の画面の「アカウント」のタブと、左下の名前)。
 type AccountInfo struct {
-	// Login は、aibow-server につないでいて、そこがログインの要る形か(要らない形・アプリの中で動かすときは false)
+	// Login は、aibow-server につないでいて、そこがログインの要る形か(要らない形・アプリモードのときは false)
 	Login       bool   `json:"login"`
 	Name        string `json:"name"`
 	DisplayName string `json:"displayName"`
@@ -45,18 +45,20 @@ type AccountInfo struct {
 func (s *ChatService) Account() (AccountInfo, error) {
 	c := s.conn
 	if c.client == nil {
-		return AccountInfo{}, nil // アプリの中で動かしている
+		return AccountInfo{}, nil // アプリモードで動いている
 	}
 	screen := c.source == serverScreen
+	// ログインの要る aibow-server で、トークンを持っていなければ、聞かずにログインの画面にする
+	// (起動したとき・ログアウトしたあと・つなぎ先を変えてトークンを消したあと。呼べば断られて、aibow-server のログに残るだけ。0051 の決定事項 6)
+	if c.needLogin() {
+		return c.loginInfo(), nil
+	}
 	me, err := c.client.Account()
 	if err != nil {
 		// 画面でつないだときの 401(トークンが無い・期限が切れた・消された)は、ログインし直せばよい
 		var ae *apiclient.APIError
 		if screen && errors.As(err, &ae) && ae.Status == http.StatusUnauthorized {
-			c.mu.Lock()
-			last := c.saved.Trusted().User
-			c.mu.Unlock()
-			return AccountInfo{Login: true, NeedLogin: true, LastUser: last}, nil
+			return c.loginInfo(), nil
 		}
 		return AccountInfo{}, err
 	}
@@ -64,6 +66,13 @@ func (s *ChatService) Account() (AccountInfo, error) {
 		Login: me.Login, Name: me.Name, DisplayName: me.DisplayName, Email: me.Email, Admin: me.Admin,
 		CanLogout: screen && auth.IsAppToken(c.client.Key()),
 	}, nil
+}
+
+// loginInfo は、ログインし直してほしいときのアカウント(最後にログインした名前を入れておく)。
+func (c *connection) loginInfo() AccountInfo {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return AccountInfo{Login: true, NeedLogin: true, LastUser: c.saved.Trusted().User}
 }
 
 // Login は、画面でつないだ aibow-server に、名前とパスワードでログインし直す(ログアウトしたあと・期限が切れたあと)。
@@ -79,7 +88,7 @@ func (s *ChatService) Login(name, password string) (AccountInfo, error) {
 		return AccountInfo{}, errors.New("つなぎ先を変えて、まだ起動し直していません。起動し直してからログインしてください")
 	}
 	f := config.ConnectionFile{ServerURL: c.url, Fingerprint: c.file.Fingerprint}
-	token, err := login(&f, ConnectRequest{URL: c.url, Fingerprint: c.file.Fingerprint, Name: name, Password: password})
+	token, err := login(&f, name, password)
 	if err != nil {
 		c.mu.Unlock()
 		return AccountInfo{}, err
@@ -90,9 +99,11 @@ func (s *ChatService) Login(name, password string) (AccountInfo, error) {
 		return AccountInfo{}, err
 	}
 	c.client.SetKey(token)
-	c.saved, c.file, c.key = f, f, token
+	c.saved, c.file, c.key, c.loginRequired = f, f, token, true
 	c.mu.Unlock()
 	log.Noticef("aibow-server にログインしました: %s(%s)", f.ServerURL, f.User)
+	// 起動のときにログインを待っていたなら、待っていた処理(設定を読む・前の版の引き継ぎ)をここで行う(0051 の決定事項 6)
+	s.life.LoggedIn()
 	return s.Account()
 }
 
@@ -101,7 +112,7 @@ func (s *ChatService) Login(name, password string) (AccountInfo, error) {
 func (s *ChatService) Logout() error {
 	c := s.conn
 	if c.source != serverScreen || c.client == nil {
-		return errors.New("ログアウトできるのは、設定の画面の「サーバー」で aibow-server にログインしたときだけです(settings.json に手で書いた API キーは消しません)")
+		return errors.New("ログアウトできるのは、設定の画面の「サーバー」で aibow-server にログインしたときだけです(settings.json に手で書いた API キーは削除しません)")
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()

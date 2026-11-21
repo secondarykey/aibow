@@ -10,6 +10,7 @@ import type { Workspace } from "../../bindings/github.com/secondarykey/aibow/con
 import { ChatService } from "../backend";
 import { errorMessage } from "../errors";
 import { createFromFolder, mainFolder } from "../workspaces";
+import { DeleteButton } from "./DeleteButton";
 
 interface Props {
   list: WorkspaceList;
@@ -25,11 +26,12 @@ export function WorkspaceSettings({ list, reload }: Props) {
 
   const create = () => {
     setError("");
-    createFromFolder().then(
-      id => {
-        if (!id) return;
+    // 同じフォルダでも毎回新しく作る(同じフォルダを別のワークスペースにしたいときの入口。0049 の決定事項 3)
+    createFromFolder(false).then(
+      r => {
+        if (!r) return;
         reload();
-        setSelected(id);
+        setSelected(r.id);
       },
       err => setError(errorMessage(err)),
     );
@@ -39,8 +41,8 @@ export function WorkspaceSettings({ list, reload }: Props) {
     <div className="workspace-settings">
       {(error || list.error) && <div className="msg error">{error || list.error}</div>}
       <div className="user-toolbar">
-        <button type="button" className="user-create" disabled={locked} onClick={create} title="フォルダを選んで、そのフォルダ1つのワークスペースを作る">
-          <LuFolderPlus /> フォルダから作る
+        <button type="button" className="user-create" disabled={locked} onClick={create} title="フォルダを選んで、そのフォルダ1つのワークスペースを作成する(同じフォルダのワークスペースがあっても、別に作成する)">
+          <LuFolderPlus /> フォルダから作成
         </button>
       </div>
 
@@ -109,7 +111,6 @@ function WorkspaceForm({ workspace, locked, onClose, onSaved, onDeleted }: {
   const [folders, setFolders] = useState<Draft[]>(workspace.folders ?? []);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
   const plain = (fs: Draft[]) =>
     fs.map(({ path, name, main, writable, description }) => ({ path, name, main: !!main, writable: !!writable, description: description ?? "" }));
   const changed = name.trim() !== workspace.name || JSON.stringify(plain(folders)) !== JSON.stringify(plain(workspace.folders ?? []));
@@ -167,7 +168,7 @@ function WorkspaceForm({ workspace, locked, onClose, onSaved, onDeleted }: {
       />
       <div className="field-label">
         フォルダ
-        <button type="button" className="place-remove" disabled={locked} onClick={add} title="フォルダを足す"><LuPlus /></button>
+        <button type="button" className="place-remove" disabled={locked} onClick={add} title="フォルダを追加"><LuPlus /></button>
       </div>
       <div className="workspace-folders">
         <span className="model-table-head" title="run_command のカレント・${workdir} の MCP のサーバーに渡すフォルダ。モデルが folder を省いたときもこのフォルダ">メイン</span>
@@ -192,7 +193,7 @@ function WorkspaceForm({ workspace, locked, onClose, onSaved, onDeleted }: {
               {f.missing && <LuTriangleAlert className="workspace-warn" />}
             </span>
             <span><input type="checkbox" checked={!!f.writable} disabled={locked} onChange={e => set(i, { writable: e.target.checked })} title={f.writable ? "書ける" : "読むだけ"} /></span>
-            <button type="button" className="place-remove" disabled={locked || folders.length === 1} onClick={() => remove(i)} title="このフォルダを外す(フォルダそのものは消さない)"><LuX /></button>
+            <button type="button" className="place-remove" disabled={locked || folders.length === 1} onClick={() => remove(i)} title="このフォルダを外す(フォルダそのものは削除しない)"><LuX /></button>
             {/* 説明は名前の下の行に置く(名前・パスと同じ行だと、パスの欄が狭くなる) */}
             <span />
             <input
@@ -211,17 +212,12 @@ function WorkspaceForm({ workspace, locked, onClose, onSaved, onDeleted }: {
       <div className="mcp-actions">
         <button type="button" className="apply" onClick={save} disabled={saving || locked || !changed}>保存</button>
         <span className="spacer" />
-        {confirmDelete ? (
-          <>
-            <span className="confirm-text">消しますか?</span>
-            <button type="button" className="danger" disabled={saving || locked} onClick={() => run(ChatService.DeleteWorkspace(workspace.id), onDeleted)}>消す</button>
-            <button type="button" disabled={saving} onClick={() => setConfirmDelete(false)}>やめる</button>
-          </>
-        ) : (
-          <button type="button" className="danger-outline" disabled={saving || locked} onClick={() => setConfirmDelete(true)} title="workspaces.json から消す(フォルダと会話は消さない)">
-            消す
-          </button>
-        )}
+        <DeleteButton
+          question={`ワークスペース「${workspace.name}」を削除しますか?(フォルダと会話は残ります)`}
+          title="workspaces.json から削除する(フォルダと会話は削除しない)"
+          disabled={saving || locked}
+          onConfirm={() => run(ChatService.DeleteWorkspace(workspace.id), onDeleted)}
+        />
       </div>
     </section>
   );

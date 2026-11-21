@@ -6,13 +6,14 @@
 //
 //	利用者・グループ … ログインした管理者だけ(0032 の決定事項 4)
 //	モデル          … サーバーの PC の事情(読み込む / 降ろす・GPU の層数・置き場所・使える。0015 の 8-4・0018 の決定事項 8)
-//	ツール          … ブラウザの会話のツールの扱いの、aibow-server 全体の既定(0024 の決定事項 21)
+//	ツール          … ブラウザから使う会話のツールの扱いの、aibow-server 全体の既定(0024 の決定事項 21)
 //	配るプロファイル … 配っているプロファイルの値・決まり・配る相手・資料のフォルダ・写して配る(ログインした管理者だけ。0032 の段3)
 //	使用量          … 利用者ごとの生成の回数・GPU の秒数・生成トークン(ログインした管理者と、ログインなしの形のサーバーの PC。0033)
+//	ログ            … aibow-server のログのレベル(起動したあとに変える。保存しない。モデルのタブと同じ人。0052)
 import { useState } from "react";
 import { LuArrowLeft } from "react-icons/lu";
 import type { ServerInfo } from "../../bindings/github.com/secondarykey/aibow/mcp/client";
-import { isBrowser, me } from "../backend";
+import { ChatService, isBrowser, me } from "../backend";
 import { useDirectory } from "../directory";
 import type { Models } from "../useModels";
 import { UserSettings } from "./UserSettings";
@@ -22,19 +23,23 @@ import { ServerTools } from "./ServerTools";
 import { ProfileSettings } from "./ProfileSettings";
 import { UsageAdmin } from "./UsageSettings";
 import type { ConversationSettings } from "../../bindings/github.com/secondarykey/aibow";
+import { ScreenErrors } from "./ScreenErrors";
+import { LogSettings } from "./LogSettings";
 
-type Tab = "users" | "groups" | "models" | "tools" | "profiles" | "usage";
+type Tab = "users" | "groups" | "models" | "tools" | "profiles" | "usage" | "log";
 
 const TABS: { id: Tab; label: string; title: string; admin: boolean }[] = [
-  { id: "users", label: "利用者", title: "aibow-server の利用者(作る・パスワードのリンクと API キー・表示名・消す・その人の会話)", admin: true },
-  { id: "groups", label: "グループ", title: "グループ(作る・名前・メンバーと長・消す)。共有の相手に選べる", admin: true },
-  { id: "models", label: "モデル", title: "サーバーの PC のモデル(読み込む / 降ろす・GPU の層数・置き場所・使える)", admin: false },
-  { id: "tools", label: "ツール", title: "ブラウザの会話のツールの扱い(使わない・確認する・確認しない)。aibow-server 全体の既定", admin: false },
-  { id: "profiles", label: "配るプロファイル", title: "組織に配るプロファイル(値と決まり・配る相手・資料のフォルダ・写して配る)", admin: true },
+  { id: "users", label: "利用者", title: "aibow-server の利用者(作成・パスワードのリンクと API キー・表示名・削除・その人の会話)", admin: true },
+  { id: "groups", label: "グループ", title: "グループ(作成・名前・メンバーと長・削除)。共有の相手に選べる", admin: true },
+  { id: "models", label: "モデル", title: "サーバーの PC のモデル(読み込み / アンロード・GPU の層数・置き場所・使える)", admin: false },
+  { id: "tools", label: "ツール", title: "ブラウザから使う会話のツールの扱い(使わない・確認する・確認しない)。aibow-server 全体の既定", admin: false },
+  { id: "profiles", label: "配布プロファイル", title: "組織に配布するプロファイル(値と決まり・配布する相手・資料のフォルダ・複製して配布)", admin: true },
   { id: "usage", label: "使用量", title: "利用者ごとの生成の回数・GPU の秒数・生成トークン(今日・7日・30日)", admin: true },
+  { id: "log", label: "ログ", title: "aibow-server のログ(ログのレベル)", admin: false },
 ];
 
-// canAdmin は、管理の画面を出すか(歯車の隣の盾を出すか)。ブラウザで、管理者か、サーバーの PC の上から開いた画面(manage。Go の Caller.ManagesPC)。
+// canAdmin は、管理の画面を出すか(歯車の隣の盾を出すか)。ブラウザで、ログインした管理者か、ログインなしの形の画面(manage。Go の Caller.ManagesPC。0046)。
+// サーバーの PC の上から開いても、管理者でなければ出さない。
 // 0032 の決定事項 4。アプリ(serverUrl)からは開かない(決定事項 9)
 export function canAdmin(manage: boolean): boolean {
   return isBrowser && manage;
@@ -69,7 +74,7 @@ export function AdminView({ onClose, errors, onError, onReadConversation, models
           <h1>管理</h1>
           <button className="back" onClick={onClose} title="管理の画面を閉じて、会話に戻る"><LuArrowLeft /> 会話に戻る</button>
         </div>
-        {errors.map(e => <div key={e.id} className="msg error">{e.text}</div>)}
+        <ScreenErrors errors={errors} />
 
         <div className="settings-tabs" role="tablist">
           {tabs.map(t => (
@@ -89,16 +94,30 @@ export function AdminView({ onClose, errors, onError, onReadConversation, models
         {tab === "users" && <UserSettings dir={dir} reloadDir={reloadDir} onError={onError} onRead={onReadConversation} />}
         {tab === "groups" && (
           <>
-            <h2 title="グループは共有の相手に選べる。長はメンバーを足す・外せる(冠を押すと長にする / 外す)">グループ</h2>
+            <h2 title="グループは共有の相手に選べる。長はメンバーを追加・外せる(冠を押すと長にする / 外す)">グループ</h2>
             <GroupAdmin dir={dir} reload={reloadDir} onError={onError} />
           </>
         )}
         {tab === "usage" && <UsageAdmin onError={onError} />}
+        {tab === "log" && (
+          <>
+            <h2 title="aibow-server のログ(ブラウザから使う会話・OpenAI 互換の API の生成など。サーバーの PC の logs のフォルダに書く)">ログ</h2>
+            <LogSettings
+              id="server-log-level"
+              label="ログのレベル"
+              title="選んだレベルより細かいものは書かない。aibow-server を起動し直すと、起動したときのレベル(-debug・server.json の logLevel)に戻る"
+              load={() => ChatService.ServerLogLevel()}
+              save={name => ChatService.SetServerLogLevel(name)}
+              loadFile={() => ChatService.ServerLogFile()}
+              onError={onError}
+            />
+          </>
+        )}
         {tab === "models" && <ModelSettings models={models} disabled={appDisabled} onError={onError} />}
         {tab === "tools" && <ServerTools servers={servers} manage={models.manage} onChanged={onToolsChanged} />}
         {tab === "profiles" && (
           <>
-            <h2 title="組織に配るプロファイル。値と決まりは配った相手の会話に効き、ほかの管理者も変えられる">配るプロファイル</h2>
+            <h2 title="組織に配布するプロファイル。値と決まりは配布した相手の会話に効き、ほかの管理者も変えられる">配布プロファイル</h2>
             <ProfileSettings
               mode="distributed"
               models={models.models}

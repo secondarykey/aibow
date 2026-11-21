@@ -428,9 +428,9 @@ func (cs *Conversations) CopyShared(ctx context.Context, id uuid.UUID) (Conversa
 	s := src.Conversation.Settings.normalized()
 	s.Workspace, s.WorkDir, s.Worktree, s.WorktreeName, s.profile = "", "", false, "", nil // ワークスペースは渡さない(PC のもの。0018・0035・0039)
 	now := time.Now()
-	c := Conversation{ID: uuid.NewV7(), Title: src.Conversation.Title + "(写し)", Settings: s, ProfileID: profile, CreatedAt: now, UpdatedAt: now}
+	c := Conversation{ID: uuid.NewV7(), Title: src.Conversation.Title + "(複製)", Settings: s, ProfileID: profile, CreatedAt: now, UpdatedAt: now}
 	if err := cs.store.CreateConversation(ctx, c); err != nil {
-		return Conversation{}, fmt.Errorf("会話を写せません: %w", err)
+		return Conversation{}, fmt.Errorf("会話を複製できません: %w", err)
 	}
 	// 発言の ID は作った順に並ぶので、古い順に新しい ID を振る(並びが変わらない)
 	ids := map[uuid.UUID]uuid.UUID{}
@@ -441,7 +441,7 @@ func (cs *Conversations) CopyShared(ctx context.Context, id uuid.UUID) (Conversa
 		m.Files = renewFiles(m.Files) // 読み込んだファイルも写す(0030 の決定事項 21。ID は表の主キーなので新しくする)
 		ids[old] = m.ID
 		if err := cs.store.AddMessage(ctx, m); err != nil {
-			return c, fmt.Errorf("会話の発言を写せません: %w", err)
+			return c, fmt.Errorf("会話の発言を複製できません: %w", err)
 		}
 		if m.Excluded {
 			excluded = append(excluded, m.ID)
@@ -455,7 +455,7 @@ func (cs *Conversations) CopyShared(ctx context.Context, id uuid.UUID) (Conversa
 	for _, k := range src.Compactions {
 		k.ID, k.ConversationID, k.UptoMessageID = uuid.NewV7(), c.ID, ids[k.UptoMessageID]
 		if err := cs.store.AddCompaction(ctx, k); err != nil {
-			return c, fmt.Errorf("会話の要約を写せません: %w", err)
+			return c, fmt.Errorf("会話の要約を複製できません: %w", err)
 		}
 	}
 	return c, nil
@@ -648,10 +648,10 @@ func keepAll(history []StoredMessage) ([]StoredMessage, []StoredMessage, error) 
 func dropReply(history []StoredMessage) ([]StoredMessage, []StoredMessage, error) {
 	last := lastUserIndex(history)
 	if last < 0 {
-		return nil, nil, errors.New("作り直す返事がありません")
+		return nil, nil, errors.New("再生成する返事がありません")
 	}
 	if history[last].Excluded {
-		return nil, nil, errors.New("最後の発言を「モデルに渡さない」にしているので、作り直せません。戻してから作り直してください")
+		return nil, nil, errors.New("最後の発言を「モデルに渡さない」にしているので、再生成できません。戻してから再生成してください")
 	}
 	// 残す側は Clip する(あとで append したときに、消す側と同じ配列を書き換えないように)
 	return slices.Clip(history[:last+1]), history[last+1:], nil
@@ -661,7 +661,7 @@ func dropReply(history []StoredMessage) ([]StoredMessage, []StoredMessage, error
 func dropLastTurn(history []StoredMessage) ([]StoredMessage, []StoredMessage, error) {
 	last := lastUserIndex(history)
 	if last < 0 {
-		return nil, nil, errors.New("送り直す発言がありません")
+		return nil, nil, errors.New("再送信する発言がありません")
 	}
 	return slices.Clip(history[:last]), history[last:], nil
 }
@@ -748,10 +748,10 @@ func (cs *Conversations) turn(ctx context.Context, id uuid.UUID, text string, fi
 	}
 	if len(dropped) > 0 {
 		if err := cs.store.DeleteMessages(ctx, ids(dropped)); err != nil {
-			fail(fmt.Errorf("前のやり取りを消せません: %w", err))
+			fail(fmt.Errorf("前のやり取りを削除できません: %w", err))
 			return
 		}
-		log.Infof("会話 %s のやり直し: 発言 %d 件を消しました", id, len(dropped))
+		log.Infof("会話 %s のやり直し: 発言 %d 件を削除しました", id, len(dropped))
 	}
 	if user != nil {
 		if err := cs.save(ctx, *user, titleFrom(userTitle(text, files))); err != nil {

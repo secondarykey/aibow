@@ -176,7 +176,7 @@ func workspaceFor(t *testing.T, cs *Conversations, dir string) string {
 	if cs.workspaces == nil {
 		cs.workspaces, _ = config.LoadWorkspaces("")
 	}
-	ws, err := cs.workspaces.CreateFromFolder(dir)
+	ws, _, err := cs.workspaces.CreateFromFolder(dir, true)
 	if err != nil {
 		t.Fatal(err)
 	}

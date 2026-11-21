@@ -2,14 +2,14 @@ package client
 
 // connect.go: 画面から aibow-server につなぐときの下調べ・ログイン・ログアウト(0019)。
 //
-//	Probe       … つなぎ先を確かめる:つながるか・ログインが要るか・HTTPS なら証明書(OS が信頼しているか、自己署名なら指紋)
-//	PinCert     … 人が指紋で確かめた証明書を信頼する(TOFU。覚えた指紋と違う証明書を出すサーバーにはつながない)
+//	Probe       … つなぎ先を確かめる:つながるか・ログインが要るか・HTTPS なら証明書(OS が信頼しているか、自己署名ならフィンガープリント)
+//	PinCert     … 人がフィンガープリントで確かめた証明書を信頼する(TOFU。覚えたフィンガープリントと違う証明書を出すサーバーにはつながない)
 //	AppLogin    … 名前とパスワードでアプリ用のトークンをもらう(POST /_aibow/auth/token)
 //	RevokeToken … アプリ用のトークンを消す(POST /_aibow/auth/token/revoke)
 //
 // 自己署名の証明書は、どの認証局も保証していないので、ふつうの確かめ方(OS が信頼する認証局までたどる)では断られる。
-// そこで、初めてつなぐときは証明書の中身を確かめずに受け取って指紋だけを見せ(この時点では何も送らない)、
-// 人が aibow-server の出す指紋と同じだと確かめたら、その指紋の証明書だけを信頼する。
+// そこで、初めてつなぐときは証明書の中身を確かめずに受け取ってフィンガープリントだけを見せ(この時点では何も送らない)、
+// 人が aibow-server の出すフィンガープリントと同じだと確かめたら、そのフィンガープリントの証明書だけを信頼する。
 
 import (
 	"context"
@@ -29,26 +29,26 @@ import (
 type Probe struct {
 	URL   string `json:"url"`   // つなぎ先(後ろの / と /v1 を外したもの)
 	HTTPS bool   `json:"https"` // HTTPS か
-	// Fingerprint は、サーバーが出した証明書の SHA-256 の指紋(HTTPS のとき)
+	// Fingerprint は、サーバーが出した証明書の SHA-256 のフィンガープリント(HTTPS のとき)
 	Fingerprint string `json:"fingerprint,omitempty"`
-	// SystemTrusted は、OS が信頼している認証局の証明書か(そうなら指紋を確かめなくてよい)
+	// SystemTrusted は、OS が信頼している認証局の証明書か(そうならフィンガープリントを確かめなくてよい)
 	SystemTrusted bool `json:"systemTrusted,omitempty"`
-	// Trusted は、つないでよい証明書か(HTTP・OS が信頼している・指紋が覚えたものと同じ)。false なら、ほかの欄は調べていない
+	// Trusted は、つないでよい証明書か(HTTP・OS が信頼している・フィンガープリントが覚えたものと同じ)。false なら、ほかの欄は調べていない
 	Trusted bool `json:"trusted"`
 	// Login は、ログインが要る aibow-server か(Trusted のときだけ調べる)
 	Login bool `json:"login"`
 }
 
-// ErrCertChanged は、覚えた指紋と違う証明書をサーバーが出したときのエラー(errors.Is で見分ける)。
+// ErrCertChanged は、覚えたフィンガープリントと違う証明書をサーバーが出したときのエラー(errors.Is で見分ける)。
 var ErrCertChanged = errors.New("aibow-server の証明書が、信頼したときのものと違います")
 
-// certChangedError は、覚えた指紋と、サーバーが出した指紋を持つエラー。
+// certChangedError は、覚えたフィンガープリントと、サーバーが出したフィンガープリントを持つエラー。
 type certChangedError struct {
 	want, got string
 }
 
 func (e *certChangedError) Error() string {
-	return fmt.Sprintf("%v(覚えた指紋: %s・サーバーが出した指紋: %s)。aibow-server で証明書を作り直したなら、設定の画面の「サーバー」でつなぎ直して指紋を確かめてください。"+
+	return fmt.Sprintf("%v(覚えたフィンガープリント: %s・サーバーが出したフィンガープリント: %s)。aibow-server で証明書を作り直したなら、設定の画面の「サーバー」でつなぎ直してフィンガープリントを確かめてください。"+
 		"作り直していないなら、ほかのサーバーがなりすましているかもしれないので、つながないでください", ErrCertChanged, e.want, e.got)
 }
 
@@ -57,7 +57,7 @@ func (e *certChangedError) Is(target error) bool { return target == ErrCertChang
 // HasRemedy は、対処まで書いてあること。
 func (e *certChangedError) HasRemedy() bool { return true }
 
-// PinCert は、指紋が fingerprint の証明書を信頼する(自己署名の証明書。0019 の決定事項 6)。OS が信頼している証明書も、そのまま信頼する。
+// PinCert は、フィンガープリントが fingerprint の証明書を信頼する(自己署名の証明書。0019 の決定事項 6)。OS が信頼している証明書も、そのまま信頼する。
 // 空なら何もしない(OS が信頼している証明書だけ)。使い始める前に呼ぶ。
 func (c *Client) PinCert(fingerprint string) {
 	if fingerprint == "" {
@@ -66,7 +66,7 @@ func (c *Client) PinCert(fingerprint string) {
 	c.hc = &http.Client{Transport: &http.Transport{TLSClientConfig: pinnedTLS(fingerprint)}}
 }
 
-// pinnedTLS は、指紋が fingerprint の証明書か、OS が信頼している証明書だけを受け付ける TLS の設定。
+// pinnedTLS は、フィンガープリントが fingerprint の証明書か、OS が信頼している証明書だけを受け付ける TLS の設定。
 // InsecureSkipVerify はふつうの確かめ方を止めるだけで、代わりに VerifyConnection で確かめる(止めっぱなしにはしない)。
 func pinnedTLS(fingerprint string) *tls.Config {
 	return &tls.Config{
@@ -93,8 +93,8 @@ func systemTrusted(certs []*x509.Certificate, host string) bool {
 	return err == nil
 }
 
-// ProbeServer は、つなぎ先 rawURL を確かめる。pinned は覚えている指紋(無ければ空)。
-// 自己署名で指紋がまだ確かめられていなければ、証明書の指紋だけを返す(Trusted が false。HTTP では何も送らない)。
+// ProbeServer は、つなぎ先 rawURL を確かめる。pinned は覚えているフィンガープリント(無ければ空)。
+// 自己署名でフィンガープリントがまだ確かめられていなければ、証明書のフィンガープリントだけを返す(Trusted が false。HTTP では何も送らない)。
 func ProbeServer(ctx context.Context, rawURL, pinned string) (Probe, error) {
 	c := New(rawURL)
 	p := Probe{URL: c.base}
@@ -111,7 +111,7 @@ func ProbeServer(ctx context.Context, rawURL, pinned string) (Probe, error) {
 		p.Fingerprint = auth.Fingerprint(certs[0].Raw)
 		p.SystemTrusted = systemTrusted(certs, u.Hostname())
 		if !p.SystemTrusted && p.Fingerprint != pinned {
-			return p, nil // 人が指紋を確かめるまで、何も送らない
+			return p, nil // 人がフィンガープリントを確かめるまで、何も送らない
 		}
 		c.PinCert(p.Fingerprint)
 	}
@@ -122,7 +122,7 @@ func ProbeServer(ctx context.Context, rawURL, pinned string) (Probe, error) {
 	if err := c.call(http.MethodGet, "/_aibow/auth/me", nil, &me, shortTimeout); err != nil {
 		var ae *APIError
 		if errors.As(err, &ae) && ae.Status == http.StatusNotFound {
-			return p, fmt.Errorf("%s は aibow-server ではないか、ログインの口の無い古い aibow-server です", c.base)
+			return p, fmt.Errorf("%s につなげませんでした。URL が aibow-server のものか確かめてください(aibow-server が古いなら、アプリと同じ版にしてください)", c.base)
 		}
 		return p, err
 	}
@@ -133,7 +133,7 @@ func ProbeServer(ctx context.Context, rawURL, pinned string) (Probe, error) {
 	return p, nil
 }
 
-// peerCerts は、u のサーバーと TLS でつなぎ、出してきた証明書を受け取る(中身はまだ信頼しない。指紋を見せるため)。
+// peerCerts は、u のサーバーと TLS でつなぎ、出してきた証明書を受け取る(中身はまだ信頼しない。フィンガープリントを見せるため)。
 func peerCerts(ctx context.Context, u *url.URL) ([]*x509.Certificate, error) {
 	host := u.Host
 	if u.Port() == "" {

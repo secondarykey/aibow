@@ -51,7 +51,7 @@ func (s *Service) DeleteGroup(ctx context.Context, id uuid.UUID) error {
 	if err := s.store.DeleteGroup(ctx, id); err != nil {
 		return err
 	}
-	log.Noticef("グループ「%s」を消しました(%s。このグループへの共有と配るも消えました)", name, whoOf(ctx))
+	log.Noticef("グループ「%s」を削除しました(%s。このグループへの共有と配布も外れました)", name, whoOf(ctx))
 	return nil
 }
 
@@ -64,7 +64,7 @@ func (s *Service) SetGroupMember(ctx context.Context, id uuid.UUID, user string,
 		return err
 	}
 	if member {
-		log.Noticef("%s がグループ「%s」に %s を足しました", whoOf(ctx), s.groupName(ctx, id), user)
+		log.Noticef("%s がグループ「%s」に %s を追加しました", whoOf(ctx), s.groupName(ctx, id), user)
 	} else {
 		log.Noticef("%s がグループ「%s」から %s を外しました", whoOf(ctx), s.groupName(ctx, id), user)
 	}

@@ -40,7 +40,7 @@ aibow ── tools/call ──────→ 結果(content)が返る → ツ�
 | `config/mcp.go` | 画面から足した MCP のサーバー `mcp.json` の読み書き(`MCPFile`)・settings.json との合わせ方(`MergeMCPServers`)・画面で変えたものを `Manager` に流す係(`MCPConfig`)・貼った JSON の読み取り(0034) |
 | `ui/mcpedit.go` | 設定の画面の「MCP」から呼ぶメソッド(一覧・足す・変える・消す・試す・JSON を読み取る。デスクトップのアプリだけ) |
 | `config/toolprefs.go` | ツールの扱い(`ToolPolicy`: 使わない / 確認する / 確認しない、会話の上書きだけの「使う」)と、その PC の既定 `tools.json`(`ToolPrefs`) |
-| `tools.go` | `RemoteTools`(会話の仕組みから見た MCP の口)・送信の前にサーバーを起動する(`startRemote`)・組み込みのツールの後ろに並べる(`toolsFor`)・ツールの扱いを決める(`toolPolicy` / `policyOf`)・会話の設定の画面に出す扱い(`ToolStates`)・ツールの一覧を覚える(`rememberTools`) |
+| `tools.go` | `RemoteTools`(会話の仕組みから見た MCP のAPI)・送信の前にサーバーを起動する(`startRemote`)・組み込みのツールの後ろに並べる(`toolsFor`)・ツールの扱いを決める(`toolPolicy` / `policyOf`)・会話の設定の画面に出す扱い(`ToolStates`)・ツールの一覧を覚える(`rememberTools`) |
 | `agent.go` | 実行の前に確かめるか(`needsConfirm`。扱いは `tools.go` の `toolPolicy` で決めたもの) |
 | `internal/proc/` | 子プロセスまでまとめて止める仕組み(`run_command` と共有) |
 
@@ -58,7 +58,7 @@ aibow ── tools/call ──────→ 結果(content)が返る → ツ�
 | `settings.json`(`%APPDATA%\aibow\settings.json`、`AIBOW_SETTINGS`) | 人が手で | その PC でどう起動するか。生成を頼む aibow-server のつなぎ先 `serverUrl`(0015。[usage.md](usage.md) の「画面のアプリを aibow-server につなぐ」)。`mcpServers` を書いたら、起動したときに `mcp.json` へ移して消す | 手元に残る |
 | `mcp.json`(`%APPDATA%\aibow\mcp.json`、`AIBOW_MCP`) | aibow(設定の画面の「MCP」で足したもの・settings.json から移したもの) | MCP のサーバー。形は settings.json と同じ `{"mcpServers": {...}}`(0034。下の「画面から足す」) | 手元に残る |
 | `tools.json`(`%APPDATA%\aibow\tools.json`、`AIBOW_TOOLS`) | aibow(画面で変えたもの) | ツールの扱いの PC の既定と、サーバーを起動したときに見えたツールの一覧 | 手元に残る |
-| `model-places.json`(`%APPDATA%\aibow\model-places.json`、`AIBOW_MODEL_PLACES`) | aibow(画面で変えたもの) | 画面で足したモデルの置き場所(アプリの中で動かすとき。0015 の 24) | 手元に残る |
+| `model-places.json`(`%APPDATA%\aibow\model-places.json`、`AIBOW_MODEL_PLACES`) | aibow(画面で変えたもの) | 画面で足したモデルの置き場所(アプリモードのとき。0015 の 24) | 手元に残る |
 | `window.json`(`%APPDATA%\aibow\window.json`、`AIBOW_WINDOW`) | aibow(閉じるとき) | ウィンドウの位置・大きさ・最大化([ui.md](ui.md) の「次の起動で戻すもの」) | 手元に残る |
 
 MCP のサーバーの起動のしかた(`npx` のパスなど)は「その PC の設定」で、会話のデータとは性格が違うので、DB ではなくファイルにしています。
@@ -94,11 +94,11 @@ MCP のサーバーは、設定の画面の「MCP」のタブ(アプリだけ)�
 - 起動している間に設定が変わったら、つながったあとで捨てる(古い設定のサーバーを動いている一覧に入れない。`startAndKeep`)
 - 名前の順は毎回同じ(名前で並べる)。ツールの並びが変わると KV キャッシュが効かなくなるため。足したり消したりで並びが変わるのは仕方ない
 - `Manager` はサーバーが1つも無くても作る(画面から最初の1つを足せるように)
-- 「試しにつなぐ」は、保存する前の設定で一時的に起動して一覧だけ受け取り、止める(`Manager.TryTools`。`ListTools` と同じ動きで、設定を受け取る形)。何も書かない。
+- 「接続テスト」は、保存する前の設定で一時的に起動して一覧だけ受け取り、止める(`Manager.TryTools`。`ListTools` と同じ動きで、設定を受け取る形)。何も書かない。
   同じ設定のまま保存したら、そのとき受け取った一覧を `tools.json` の `known` に覚える
 - 貼った JSON(`MCPConfig.ParseMCPJSON`)は、`{"mcpServers": {...}}`・`{"名前": {...}}`・`{"command": ...}` だけ、の3つの形と、外側の `{}` を付けずに写したものを読む。
   ほかのツールが足した項目(`disabled`・`autoApprove` など)は捨てる。今ある名前と同じなら足さずに理由を返す(上書きしない)
-- 画面の部品(`McpEditor.tsx`)は、呼ぶ口(一覧・足す・変える・消す・試す・読み取る)を外から受け取る。aibow-server(`server.json`)の分は、あとで口だけ替えて使う見込み
+- 画面の部品(`McpEditor.tsx`)は、呼ぶ API(一覧・足す・変える・消す・試す・読み取る)を外から受け取る。aibow-server(`server.json`)の分は、あとで API だけ替えて使う見込み
 
 - 形は多くのツールで使われている `mcpServers` に合わせています(`command` / `args` / `env`、`url` / `headers`)。`type` は書かなくてよく(`command` か `url` で決まる)、書いてあれば確かめます。
   古い HTTP+SSE のトランスポート(`type: sse`。2025-03-26 版から非推奨)には対応しません。OAuth(ブラウザでのログイン)には、まだ対応していません(TODO.md の「MCP の OAuth」)
@@ -156,7 +156,7 @@ MCP のツールだけでなく、組み込みのツール(aibow の中で動く
 - settings.json からサーバーを消しても、`tools.json` のそのサーバーの扱いは残す(戻したときに設定し直さなくてよいように)。設定の画面には settings.json にあるサーバーだけを出す
 - ツールの名前は、組み込みのツールはそのまま(`write_file`)、MCP のツールはサーバーの名前が前に付く(`Blender__render`)ので、`tools.json` の `tools` の中で重ならない
 - 確認の答え(`Confirmation`)には、これから先の扱い(`Remember`。`ToolPolicy` の値。空ならこの1回だけ)を持たせられる。答えたときに会話の上書きに書く(`Conversations.SetToolPolicy`)。
-  ツールの扱いは呼ぶたびに会話の設定を読み直して決めるので、送信の途中でも次の呼び出しから効く。確認のカードの「この会話では今後聞かない」(allow)・「今後許可しない」(off)がこれを使う
+  ツールの扱いは呼ぶたびに会話の設定を読み直して決めるので、送信の途中でも次の呼び出しから効く。確認のカードの「今後も同じ答えにする」を「この会話の間」にした答え(実行 = allow・拒否 = off)がこれを使う(「この返事の間」は会話の設定に書かず、送信の中で覚える。0051)
 
 ## サーバーの起動と終了
 
@@ -264,7 +264,7 @@ aibow から同じものを使うと、次のことが分かりました。
 | `${workdir}` | 作業フォルダごとに1つ | 資料のフォルダのある会話でだけ。フォルダごとに1つ(12-2。フォルダが1つも無ければ出さない) |
 
 - 「使わない」を禁止にしたのは、利用者が自分のプロファイルを作れるため(配るプロファイルの「使えない」では止められない)。グループごとの「使わない」も禁止として持つ(アプリのように「新しい会話で最初から選ばない」には読み替えない)
-- 既定を変える(`SetToolPolicy`・`SetGroupPolicy`)・一覧を読み直す(`LoadToolList`)は、管理者とサーバーの PC の上から開いた画面だけ(画面用の口の `adminToolMethods` で 403 にし、`ui.Service.canSetTools` でも確かめる)
+- 既定を変える(`SetToolPolicy`・`SetGroupPolicy`)・一覧を読み直す(`LoadToolList`)は、管理者だけ(ログインなしの形ではいつも。0046。画面用の API の `adminToolMethods` で 403 にし、`ui.Service.canSetTools` でも確かめる)
 - 人をまたいで状態が残るサーバー・社内の URL に届く fetch・外に出る検索の語の危うさは [usage.md](usage.md) の「ブラウザの会話のツール」
 - 実際に試したこと(2026-10-26。qwen3.5:4b を CPU で):公式の fetch(`mcp-server-fetch`)を書き、管理者の「ツール」で一覧を読み直すと `fetch__fetch` が出た。
   会話の「この会話のツール」で fetch を選んで https://example.com を頼むと、最初の送信で起動し、確認のカード(サーバー fetch・URL)を許可すると取ってきて答えた。
@@ -324,7 +324,7 @@ MCP のクライアント(Claude Code・aibow など)── 起動する(aibow-m
   ほかのクライアントは書かないので、作業フォルダとシェルをサーバーの `instructions`(つないだときにクライアントに渡す説明)に入れる
 - **ログ**は標準エラー出力と、アプリと同じフォルダのファイル(`%APPDATA%\aibow\logs\aibow-mcp_<日付>.log`。`AIBOW_LOG_DIR`)に書く(`_cmd/aibow-mcp/log.go`。形はアプリの `startLog` にならう)。
   標準出力に何か書くと、クライアントが MCP のメッセージとして読もうとして壊れる。
-  起動(版・作業フォルダ・ツール)は Notice、ツールの実行(名前・秒数・結果の文字数・失敗の理由)は Info。aibow から起動すると、aibow のログにも `MCP <名前> (stderr) …` として入る
+  起動(版・作業フォルダ・ツール)は Notice、ツールの実行(名前・秒数・結果の文字数・失敗の理由)は Info。レベルは `-log-level`(既定は Info。0052)。aibow から起動すると、aibow のログにも `MCP <名前> (stderr) …` として入る
   (ただし aibow の exe は Notice 以上しかファイルに残さないので、サーバーの行はサーバー自身のファイルで見る)。
   作業フォルダごとに複数のプロセスが同じ日のファイルに書くので、各行の終わりに `pid=…` を付けている。異常終了は `aibow-mcp_crash.log` に残る
 - 版(`serverInfo.version`・起動のログ・`aibow-mcp -version`)はアプリと同じ。`_cmd/aibow/version` の写しの `internal/appversion/version` を埋め込む(aibow-server と共通。`go run _cmd/version.go` が書き写す)。
@@ -384,7 +384,7 @@ aibow のクライアントの側(`mcp/client/remote.go` の `RunInteractive`):
   サーバーとの1往復ごとに上限をかけ、確認を待つ時間は数えない
 - 名乗る能力は、確認(`elicitation` のフォーム)だけ。古い版のサーバーがリクエスト(`elicitation/create`)で聞いてくる形には答えない(`ElicitationHandler` を渡していないので、SDK がエラーを返す)
 - 聞くのは会話の仕組み(`tool.Interactive` の `RunInteractive` に、聞く関数 `tool.Ask` を渡す。`agent.go` の `askFor`)。ツールの扱いが「確認しない」なら聞かずに受け入れる。
-  聞いたときは今の確認のカードを出し、ボタン(「この会話では今後聞かない」「今後許可しない」など)も今までどおり効く。カードに残す答えは、サーバーからの確認の答え
+  聞いたときは今の確認のカードを出し、「今後も同じ答えにする」(この返事の間・この会話の間)も今までどおり効く。カードに残す答えは、サーバーからの確認の答え
 - `settings.json` のサーバー(`aibow-mcp.exe` も)は、呼ぶ前の確認(引数)も今までどおり出すので、確認が2回出る(サーバーの名乗りは偽れるので、名乗りでは信頼しない)。
   aibow の中で自作サーバーを動かす 5-4 では、呼ぶ前の確認を省いて1回にする
 - サーバーが送ってきた差分は、サーバーが書いたもの。本当にそのとおりのことをするかは分からないので、信頼していないサーバーの差分をそのまま信じないこと

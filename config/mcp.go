@@ -62,7 +62,7 @@ func LoadMCPFile(path string) (*MCPFile, error) {
 		err = CheckMCPServers(path, d.MCPServers)
 	}
 	if err != nil {
-		f.broken = fmt.Errorf("画面から足した MCP のサーバーのファイル %s を読めません(このファイルのサーバーは使わず、書き換えません。直すか消してから、アプリを起動し直してください): %w", path, err)
+		f.broken = fmt.Errorf("画面から追加した MCP のサーバーのファイル %s を読めません(このファイルのサーバーは使わず、書き換えません。直すか削除してから、アプリを起動し直してください): %w", path, err)
 		return f, f.broken
 	}
 	if d.MCPServers != nil {
@@ -87,7 +87,7 @@ func (f *MCPFile) Err() error { return f.broken }
 // save は servers を mcp.json に書く。書きかけのファイルが残らないよう、一時ファイルに書いてから名前を変える(tools.json と同じ)。
 func (f *MCPFile) save(servers map[string]client.ServerConfig) error {
 	if f.broken != nil {
-		return errors.New("画面から足した MCP のサーバーのファイルを読めなかったので、書き換えません(直すか消してから、アプリを起動し直してください)")
+		return errors.New("画面から追加した MCP のサーバーのファイルを読めなかったので、書き換えません(直すか削除してから、アプリを起動し直してください)")
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -143,12 +143,12 @@ func (f *MCPFile) MoveFromSettings(settingsPath string, hand map[string]client.S
 	}
 	if err := RemoveSettingsKey(settingsPath, "mcpServers"); err != nil {
 		// mcp.json には書けた。settings.json にも残るので、settings.json の分として持ち続ける(画面で変えても、次の起動で戻ってしまうため)
-		n := fmt.Sprintf("MCP のサーバー %s を mcp.json(%s)に写しましたが、settings.json から mcpServers を消せませんでした(settings.json のものとして使います。mcpServers を手で消して、アプリを起動し直してください): %v",
+		n := fmt.Sprintf("MCP のサーバー %s を mcp.json(%s)にコピーしましたが、settings.json から mcpServers を削除できませんでした(settings.json のものとして使います。mcpServers を手で削除して、アプリを起動し直してください): %v",
 			names, f.path, err)
 		log.Warn(n)
 		return hand, []string{n}
 	}
-	n := fmt.Sprintf("settings.json の MCP のサーバー %s を mcp.json(%s)に移しました。これからは設定の画面の「MCP」で変える・消すができます", names, f.path)
+	n := fmt.Sprintf("settings.json の MCP のサーバー %s を mcp.json(%s)に移しました。これからは設定の画面の「MCP」で変更・削除できます", names, f.path)
 	if len(replaced) > 0 {
 		n += fmt.Sprintf("(%s は mcp.json にもあったので、使っていた settings.json の設定にしました)", strings.Join(replaced, ", "))
 	}
@@ -235,7 +235,7 @@ func (c *MCPConfig) Notices() []string {
 		out = append(out, err.Error())
 	}
 	if _, dup := MergeMCPServers(c.hand, c.file.Servers()); len(dup) > 0 {
-		out = append(out, fmt.Sprintf("MCP のサーバー %s は、settings.json と画面から足した分(%s)の両方にあります。settings.json のほうを使います",
+		out = append(out, fmt.Sprintf("MCP のサーバー %s は、settings.json と画面から追加した分(%s)の両方にあります。settings.json のほうを使います",
 			strings.Join(dup, ", "), c.file.Path()))
 	}
 	return out
@@ -330,7 +330,7 @@ type MCPServerInput struct {
 // 足したサーバーは、新しい会話で最初から使わない(NoteServers。2026-10-15 の決まり。0034 の決定事項 12)。お知らせの文を返す。
 func (c *MCPConfig) Add(servers []MCPServerInput) ([]string, error) {
 	if len(servers) == 0 {
-		return nil, errors.New("足すサーバーがありません")
+		return nil, errors.New("追加するサーバーがありません")
 	}
 	var names []string
 	notices, err := c.change(func(next map[string]client.ServerConfig) error {
@@ -350,9 +350,9 @@ func (c *MCPConfig) Add(servers []MCPServerInput) ([]string, error) {
 	if _, err := c.prefs.NoteServers(slices.Sorted(maps.Keys(c.Servers()))); err != nil {
 		log.Error(err.Error())
 	}
-	n := fmt.Sprintf("MCP のサーバー %s を足しました。新しい会話では最初から使いません(会話の「ツール」で選ぶと使えます。最初から使うなら、プロファイルの「ツール」で選びます)",
+	n := fmt.Sprintf("MCP のサーバー %s を追加しました。新しい会話では最初から使いません(会話の「ツール」で選ぶと使えます。最初から使うなら、プロファイルの「ツール」で選びます)",
 		strings.Join(names, ", "))
-	log.Noticef("MCP のサーバー %s を足しました(%s)", strings.Join(names, ", "), c.file.Path())
+	log.Noticef("MCP のサーバー %s を追加しました(%s)", strings.Join(names, ", "), c.file.Path())
 	return append([]string{n}, notices...), nil
 }
 
@@ -362,7 +362,7 @@ func (c *MCPConfig) checkName(name string, screen map[string]client.ServerConfig
 	case name == "":
 		return errors.New("サーバーの名前を入れてください")
 	case hasKey(c.hand, name):
-		return fmt.Errorf("MCP のサーバー %s は settings.json にあります(画面からは足せません。別の名前にしてください)", name)
+		return fmt.Errorf("MCP のサーバー %s は settings.json にあります(画面からは追加できません。別の名前にしてください)", name)
 	case hasKey(screen, name):
 		return fmt.Errorf("MCP のサーバー %s はもうあります(上書きはしません。変えるときは一覧から選んでください)", name)
 	}
@@ -405,7 +405,7 @@ func (c *MCPConfig) Delete(name string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	log.Noticef("MCP のサーバー %s を消しました(%s)", name, c.file.Path())
+	log.Noticef("MCP のサーバー %s を削除しました(%s)", name, c.file.Path())
 	return notices, nil
 }
 
@@ -429,7 +429,7 @@ func (c *MCPConfig) change(edit func(next map[string]client.ServerConfig) error)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if err := c.file.Err(); err != nil {
-		return nil, errors.New("画面から足した MCP のサーバーのファイルを読めなかったので、書き換えません(直すか消してから、アプリを起動し直してください)")
+		return nil, errors.New("画面から追加した MCP のサーバーのファイルを読めなかったので、書き換えません(直すか削除してから、アプリを起動し直してください)")
 	}
 	next := c.file.Servers()
 	if err := edit(next); err != nil {
@@ -472,7 +472,7 @@ func stopNotices(stopped []string, now map[string]client.ServerConfig) []string 
 		out = append(out, fmt.Sprintf("動いていた MCP のサーバー %s を止めました(次に使う送信で、新しい設定で起動します)", strings.Join(changed, ", ")))
 	}
 	if len(removed) > 0 {
-		out = append(out, fmt.Sprintf("動いていた MCP のサーバー %s を、消したので止めました", strings.Join(removed, ", ")))
+		out = append(out, fmt.Sprintf("動いていた MCP のサーバー %s を、削除したので止めました", strings.Join(removed, ", ")))
 	}
 	return out
 }
@@ -495,7 +495,7 @@ func (c *MCPConfig) Try(ctx context.Context, name string, cfg client.ServerConfi
 	mgr := c.mgr
 	c.mu.Unlock()
 	if mgr == nil {
-		return nil, errors.New("MCP のサーバーの係がありません")
+		return nil, errors.New("MCP のサーバーを使えません(MCP のサーバーを動かす準備ができていません)")
 	}
 	tools, err := mgr.TryTools(ctx, name, cfg)
 	if err != nil {
@@ -565,7 +565,7 @@ func (c *MCPConfig) ParseMCPJSON(text string) ([]ParsedMCPServer, error) {
 		case err != nil:
 			p.Error = fmt.Sprintf("サーバーの設定の形が違います: %v", err)
 		case hasKey(c.hand, name):
-			p.Error = "settings.json に同じ名前のサーバーがあります(足すなら別の名前にしてください)"
+			p.Error = "settings.json に同じ名前のサーバーがあります(追加するなら別の名前にしてください)"
 		case name != "" && hasKey(current, name):
 			p.Error = "同じ名前のサーバーがあります(上書きはしません。変えるときは一覧から選んでください)"
 		default:

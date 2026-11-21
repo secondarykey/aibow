@@ -12,7 +12,7 @@ const notInApp = async (): Promise<never> => {
   throw new Error("利用者の管理は、aibow-server の画面をブラウザで開いて、管理者でログインして行います");
 };
 const linkInBrowser = async (): Promise<never> => {
-  throw new Error("パスワードを決めるリンクは、ブラウザで開いてください");
+  throw new Error("パスワードを設定するリンクは、ブラウザで開いてください");
 };
 
 // asMe は、Go の AccountInfo(アプリのアカウント。account.go)を画面の Me にする。
@@ -55,6 +55,7 @@ export const backend: Backend = {
   // 自分の使用量は、aibow-server の口をアプリ用のトークンで呼ぶ(0033)。Go の usage.Mine と同じ形
   myUsage: async () => (await ChatService.MyUsage()) as unknown as MyUsage,
   onUnauthorized: () => () => {},
+  onUserChanged: () => () => {}, // アプリは1つのウィンドウに1人。cookie を分け合うタブが無い
   // 利用者の管理はブラウザの管理者だけ(0018 の 11-0)。デスクトップには「利用者」のタブを出さないので、呼ばれない
   admin: {
     users: notInApp,

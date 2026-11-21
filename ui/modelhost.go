@@ -95,7 +95,7 @@ type DirectHost struct {
 	lib, initialModel string
 }
 
-// NewDirectHost は直接の形の係を作る。catalog は手で決めた置き場所、added は画面で足した置き場所(model-places.json)、
+// NewDirectHost はアプリモードの係を作る。catalog は手で決めた置き場所、added は画面で足した置き場所(model-places.json)、
 // lib と initialModel は表示だけの設定(AIBOW_LIB・AIBOW_MODEL)。
 func NewDirectHost(eng *engine.Engine, catalog models.Catalog, added *config.PlacesFile, lib, initialModel string) *DirectHost {
 	return &DirectHost{eng: eng, catalog: catalog, added: added, lib: lib, initialModel: initialModel}
@@ -212,7 +212,7 @@ func (h *DirectHost) addPlace(ctx context.Context, path string) ([]models.Place,
 	if err := h.added.Set(append(c.Added, abs)); err != nil {
 		return nil, err
 	}
-	log.Noticef("モデルの置き場所を足しました: %s", abs)
+	log.Noticef("モデルの置き場所を追加しました: %s", abs)
 	return h.places(ctx)
 }
 
@@ -221,7 +221,7 @@ func (h *DirectHost) removePlace(ctx context.Context, path string) ([]models.Pla
 	c := h.catalogNow()
 	p, ok := c.IsAdded(path)
 	if !ok {
-		return nil, fmt.Errorf("%s は画面で足した置き場所ではないので外せません(models フォルダと Ollama の保存先は環境変数 AIBOW_MODELS_DIR・OLLAMA_MODELS で変えます)", path)
+		return nil, fmt.Errorf("%s は画面で追加した置き場所ではないので外せません(models フォルダと Ollama の保存先は環境変数 AIBOW_MODELS_DIR・OLLAMA_MODELS で変えます)", path)
 	}
 	if err := h.added.Set(slices.DeleteFunc(c.Added, func(s string) bool { return s == p })); err != nil {
 		return nil, err
@@ -230,15 +230,15 @@ func (h *DirectHost) removePlace(ctx context.Context, path string) ([]models.Pla
 	return h.places(ctx)
 }
 
-// usable は、直接の形では確かめない(使えるモデルを決めるのは aibow-server の管理者。手元で配ることも無い)。
+// usable は、アプリモードでは確かめない(使えるモデルを決めるのは aibow-server の管理者。手元で配ることも無い)。
 func (h *DirectHost) usable(string) error { return nil }
 
-// setModelEnabled は、直接の形ではしない(使えるモデルを決めるのは aibow-server の管理者。手元のモデルは置き場所で決める)。
+// setModelEnabled は、アプリモードではしない(使えるモデルを決めるのは aibow-server の管理者。手元のモデルは置き場所で決める)。
 func (h *DirectHost) setModelEnabled(context.Context, string, bool) error {
-	return errors.New("使えるモデルを決めるのは aibow-server の管理者です(アプリの中で動かしているときは、置き場所で決めます)")
+	return errors.New("使えるモデルを決めるのは aibow-server の管理者です(アプリモードのときは、置き場所で決めます)")
 }
 
-// settings は、直接の形の表示だけの設定。作業領域は会話ごと(会話の上限 + 返事の上限)なので 0、ポートは無い(待ち受けない)。
+// settings は、アプリモードの表示だけの設定。作業領域は会話ごと(会話の上限 + 返事の上限)なので 0、ポートは無い(待ち受けない)。
 func (h *DirectHost) settings() (apiclient.ServerSettings, error) {
 	return apiclient.ServerSettings{
 		Model: h.initialModel, Lib: absPath(h.lib),
@@ -263,7 +263,7 @@ type RemoteHost struct {
 	c *apiclient.Client
 }
 
-// NewRemoteHost は aibow-server 越しの形の係を作る。
+// NewRemoteHost はサーバーモードの係を作る。
 func NewRemoteHost(c *apiclient.Client) *RemoteHost {
 	return &RemoteHost{c: c}
 }
@@ -297,10 +297,10 @@ func (h *RemoteHost) gpuLayers() int {
 	return 0
 }
 
-// errServerSide は、サーバーの PC の事情を、つないでいる画面から変えようとしたときのエラー(0015 の 21。2026-10-22 に変えた)。
+// errServerSide は、サーバーの PC の事情を、つないでいる画面から変えようとしたときのエラー(0015 の 21。2026-10-22 に変えた。0046・0048 で文を直した)。
 func errServerSide(what string) error {
-	return fmt.Errorf("aibow-server につないでいるときは、画面から%sを変えられません(サーバーの PC で決めることなので)。"+
-		"サーバーの PC で aibow-server の設定(server.json)か口(curl など)で変えてください", what)
+	return fmt.Errorf("サーバーモードでは、この画面から%sを変えられません。aibow-server の管理者が、ブラウザの管理の画面で変えます"+
+		"(モデルは aibow-server の PC で動いているため)", what)
 }
 
 // setGPULayers・setModelGPULayers は、HTTP 越しではしない(層の数はサーバーの PC の VRAM に合わせる調整なので)。
