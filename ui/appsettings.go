@@ -81,7 +81,7 @@ func (s *Service) SetGPULayers(n int) (*engine.ModelInfo, error) {
 }
 
 // SetDisplay は画面の設定(質問を右上に出すか・明るさ)を変える。生成には関わらないので、モデルは読み直さない。
-// 設定は ctx の利用者のもの(0017 の 6)。変わった項目だけ保存し、ログに残す。
+// 設定は ctx の利用者のもの(0017 の 6)。変わった項目だけ保存する(ログは Debug だけ。0053 の決定事項 22)。
 func (s *Service) SetDisplay(ctx context.Context, d aibow.DisplaySettings) error {
 	if s.startupErr != nil {
 		return s.startupErr
@@ -97,13 +97,14 @@ func (s *Service) SetDisplay(ctx context.Context, d aibow.DisplaySettings) error
 		if err := aibow.SaveUserSetting(ctx, s.store, aibow.SettingPinQuestion, d.PinQuestion); err != nil {
 			return err
 		}
-		log.Noticef("スクロールしたときに質問を右上に出す: %v", d.PinQuestion)
+		// 表示の設定は自分の見た目だけで、すぐ見える。後から追う出来事ではないので Debug(0053 の決定事項 22)
+		log.Debugf("スクロールしたときに質問を右上に出す: %s", map[bool]string{true: "出す", false: "出さない"}[d.PinQuestion])
 	}
 	if d.Theme != old.Theme {
 		if err := aibow.SaveUserSetting(ctx, s.store, aibow.SettingTheme, d.Theme); err != nil {
 			return err
 		}
-		log.Noticef("画面の明るさ: %s", d.Theme)
+		log.Debugf("画面の明るさ: %s", d.Theme)
 	}
 	return nil
 }

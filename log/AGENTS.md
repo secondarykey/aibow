@@ -31,6 +31,9 @@
   aibow-server はブラウザの管理の画面の「ログ」(`ui/loglevel.go` の `ServerLogLevel` / `SetServerLogLevel`。管理者だけ)。aibow-mcp は起動の引数 `-log-level`。
   `Init` を呼んでいなければ(ライブラリとして使う人)`SetLevel` は何もしない
 
+- **何をどのレベルで出すか**はトップの `AGENTS.md` の「コードの書き方」(0053):ログは後から追いたい出来事に出し、編集のたびの保存には出さない。
+  構造体・スライス・map を `%v` / `%+v` でそのまま出さない(読む人には `{Builtin:false ...}` は分からない)。名前を書き、ID は括弧に
+
 ## ⚠️ 崩さないこと
 
 - ⚠️ **aibow を使う人に wenteasy/log の型を求めないこと。** レベルは `slog.Level`、出し先は `*slog.Logger` のまま。

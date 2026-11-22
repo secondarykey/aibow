@@ -67,15 +67,57 @@ func (s *Service) ToolDefaults() ([]aibow.ToolGroupState, error) {
 // SetGroupPolicy は、グループ(空なら組み込み、そうでなければ MCP のサーバー)の全部のツールの確認の扱いの PC の既定を変える
 // (確認する ask / 確認しない allow / 決めていない 空。tools.json に書く)。
 // ブラウザでは aibow-server の管理者だけが変えられ(server-tools.json に書く)、使わない(off。禁止)も決められる(0024 の決定事項 21・22)。
+// 画面の「保存」は SetToolPolicies(1回の保存でまとめて書き、ログも1行。0053)。これは1つだけ変える形。
 func (s *Service) SetGroupPolicy(ctx context.Context, group string, policy config.ToolPolicy) error {
-	if err := s.canSetTools(ctx); err != nil {
+	return s.SetToolPolicies(ctx, []ToolPolicyChange{{Group: true, Name: group, Policy: policy}})
+}
+
+// ToolPolicyChange は、ツールの扱いの既定の変更1つ(画面の「保存」でまとめて送る。0053 の決定事項 7)。
+// Group ならグループ(Name が空なら組み込み、そうでなければ MCP のサーバーの名前)、そうでなければツール(モデルに見せる名前)。
+// Policy が空なら、決めていない状態に戻す。
+type ToolPolicyChange struct {
+	Group  bool              `json:"group"`
+	Name   string            `json:"name"`
+	Policy config.ToolPolicy `json:"policy"`
+}
+
+// SetToolPolicies は、ツールの扱いの既定をまとめて変える(管理の画面の「ツール」の「保存」)。ログは1回の保存で1行(0053 の決定事項 21)。
+// ブラウザでは全員の会話に効く aibow-server の既定なので Notice で、誰が変えたかも添える。アプリはこの PC の既定。
+func (s *Service) SetToolPolicies(ctx context.Context, changes []ToolPolicyChange) error {
+	items, err := s.applyToolPolicies(ctx, changes)
+	if err != nil || len(items) == 0 {
 		return err
 	}
-	if err := s.prefs.SetGroupPolicy(group, policy); err != nil {
-		return err
-	}
-	log.Noticef("ツールのグループ %s の扱いの%s: %s", cmp.Or(group, "組み込み"), s.prefsName(ctx), policyLabel(policy))
+	log.Noticef("ツールの扱いの%sを保存しました(%s%s)", s.prefsName(), strings.Join(items, "・"), byWhom(ctx))
 	return nil
+}
+
+// applyToolPolicies は、ツールの扱いの既定の変更を順に書き、ログに書く項目(「組み込み: 使わない」の形)を返す。
+// プロファイルの保存(SaveProfile)からも呼ぶ(この PC の「確認しない」。ログはプロファイルの1行に入れる)。
+// 途中で書けなければ、そこで止めてエラーを返す(画面は下書きを残す。書けた分は tools.json に残るので、画面は読み直す)。
+func (s *Service) applyToolPolicies(ctx context.Context, changes []ToolPolicyChange) ([]string, error) {
+	if len(changes) == 0 {
+		return nil, nil
+	}
+	if err := s.canSetTools(ctx); err != nil {
+		return nil, err
+	}
+	var items []string
+	for _, c := range changes {
+		var err error
+		name := c.Name
+		if c.Group {
+			err = s.prefs.SetGroupPolicy(c.Name, c.Policy)
+			name = cmp.Or(c.Name, "組み込み")
+		} else {
+			err = s.prefs.SetToolPolicy(c.Name, c.Policy)
+		}
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, name+": "+policyLabel(c.Policy))
+	}
+	return items, nil
 }
 
 // ToolStates は、会話 id の設定 settings でのツールの扱い(会話の設定の画面に出す)。
@@ -156,14 +198,7 @@ func (s *Service) LoadToolList(ctx context.Context, server string) error {
 // 次の送信から効く(プロンプトに入るツールが変わるので、画面はメーターを数え直す)。
 // ブラウザでは aibow-server の管理者だけが変えられる(server-tools.json に書く。使わないは禁止。0024 の決定事項 21・22)。
 func (s *Service) SetToolPolicy(ctx context.Context, name string, policy config.ToolPolicy) error {
-	if err := s.canSetTools(ctx); err != nil {
-		return err
-	}
-	if err := s.prefs.SetToolPolicy(name, policy); err != nil {
-		return err
-	}
-	log.Noticef("ツール %s の扱いの%s: %s", name, s.prefsName(ctx), policyLabel(policy))
-	return nil
+	return s.SetToolPolicies(ctx, []ToolPolicyChange{{Name: name, Policy: policy}})
 }
 
 // canSetTools は、ツールの扱いの既定を変えてよいか。ブラウザでは管理者(ログインなしの形ではいつも。0046)だけ。
@@ -175,12 +210,12 @@ func (s *Service) canSetTools(ctx context.Context) error {
 	return nil
 }
 
-// prefsName は、ログに出す既定の名前(アプリなら PC の既定、ブラウザなら誰が変えた aibow-server の既定か)。
-func (s *Service) prefsName(ctx context.Context) string {
+// prefsName は、ログに出す既定の名前(アプリなら PC の既定、ブラウザなら aibow-server の既定。誰が変えたかは byWhom で添える)。
+func (s *Service) prefsName() string {
 	if s.browser {
-		return fmt.Sprintf(" aibow-server の既定(%s が変えた)", whoOf(ctx))
+		return " aibow-server の既定"
 	}
-	return " PC の既定"
+	return "この PC の既定"
 }
 
 func policyLabel(p config.ToolPolicy) string {

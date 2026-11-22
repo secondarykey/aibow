@@ -3,7 +3,13 @@
 // 入力欄の下(メーターの右)の歯車で開き、チャットの代わりに会話の場所に出す(設定の画面と同じく別の画面として扱う)。
 // 会話は「新しい会話の既定」(設定の画面)の写しから始まり、ここで変えた設定はこの会話にだけ効く。
 // 「会話に戻る」・一覧で会話を選ぶ・「+ 新規」・一覧の下の歯車で閉じる。
+//
+// 設定とツールは下書きで、画面の下の「保存」で確定する(0053 の決定事項 7。打ちかけの system のまま送られないように)。
+// 保存していない変更があるときに閉じようとしたら、先に知らせる(unsaved.tsx)。会話の名前・worktree の名前・共有は今のまま
+// (名前は Enter か欄を離れたら確定。共有は選んでから確定)。入力欄の上の切り替え(ワークスペース・worktree・この会話のツール)は即時のまま
 import { useEffect, useRef, useState } from "react";
+import { SaveBar, sameValue, useUnsavedEntry } from "../unsaved";
+import { errorMessage } from "../errors";
 import { LuArrowLeft, LuGitBranch } from "react-icons/lu";
 import type { ConversationSettings, Profile, WorktreeState } from "../../bindings/github.com/secondarykey/aibow";
 import type { ServerInfo } from "../../bindings/github.com/secondarykey/aibow/mcp/client";
@@ -22,11 +28,12 @@ interface Props {
   id: string;                             // 会話の ID(UUIDv7。ログや DB を調べるときの手がかり)
   title: string;                          // 会話の名前
   onRename(title: string): void;          // 名前を変える(一覧のダブルクリック・F2 と同じ)
-  settings: ConversationSettings;
+  settings: ConversationSettings;         // 保存した値(下書きはこの画面の中に持つ)
   models: ModelEntry[]; // 選べるモデル
   errors: { id: number; text: string }[]; // この画面を開いてから出たエラー(ふだんは会話の表示に出るもの)
   onClose(): void;                        // 会話に戻る
-  onChange(patch: Partial<ConversationSettings>): void;
+  onSave(settings: ConversationSettings): Promise<void>; // 「保存」。できなければ reject
+  onError(text: string): void;
   profile: Profile | null;              // この会話のプロファイル(どのプロファイルから作ったか・決まり。0014)
   folder: string;                       // ブラウザの会話の資料のフォルダの名前(無ければ空。0024 の 12-2)
   workDir: string;                      // ツールが使うフォルダ(アプリはワークスペースのメインのフォルダ、ブラウザは資料のフォルダの名前。無ければ空)
@@ -35,8 +42,8 @@ interface Props {
   lastPrompt: string;
   lastPromptFormat: string; // その文字列を組み立てた書式の名前(0026 の決定事項 17)
   servers: ServerInfo[]; // settings.json の MCP のサーバー
-  limitsDisabled: boolean; // 生成中・読み込み中は上限を変えられない(作業領域を作り直すため)
-  onApplyLimits(history: number, reply: number): void;
+  limitsDisabled: boolean; // 生成中・読み込み中は上限を変えて保存できない(作業領域を作り直すため)
+  onTryLimits(history: number, reply: number): Promise<void>; // 上限を変えて保存する前に、作業領域を作り直してみる(入らなければ reject)
   share: string;            // 共有の範囲(0018 の 11-2。"" 非公開 / all / users)
   shareWith: string[];      // 共有の相手(名前)
   shareGroups: string[];    // 共有の相手のグループ(名前。0031)
@@ -144,10 +151,48 @@ function WorktreeName({ state, onRename }: { state: WorktreeState; onRename(name
   );
 }
 
-export function ConversationSettingsView({ id, title, onRename, settings, models, errors, onClose, onChange, profile, folder, workDir, onSaveToProfile, onSaveAsProfile, lastPrompt, lastPromptFormat, servers, limitsDisabled, onApplyLimits,
+export function ConversationSettingsView({ id, title, onRename, settings, models, errors, onClose, onSave, onError, profile, folder, workDir, onSaveToProfile, onSaveAsProfile, lastPrompt, lastPromptFormat, servers, limitsDisabled, onTryLimits,
   share, shareWith, shareGroups, onShare, worktree, onRenameWorktree,
 }: Props) {
   const lock = lockOf(profile);
+  // 下書き。保存した値が変わったとき(保存した・Go が書き換えた)は、変えていなければ追いかける
+  const [draft, setDraftState] = useState(settings);
+  const draftRef = useRef(settings);
+  const setDraft = (s: ConversationSettings) => {
+    draftRef.current = s;
+    setDraftState(s);
+  };
+  const prevSaved = useRef(settings);
+  useEffect(() => {
+    if (sameValue(draftRef.current, prevSaved.current)) setDraft(settings);
+    prevSaved.current = settings;
+  }, [settings]);
+  const change = (patch: Partial<ConversationSettings>) => setDraft({ ...draftRef.current, ...patch });
+  const [saving, setSaving] = useState(false);
+  const dirty = !sameValue(draft, settings);
+  const limitsChanged = draft.history_tokens !== settings.history_tokens || draft.reply_tokens !== settings.reply_tokens;
+  const blocked = limitsChanged && limitsDisabled ? "生成中・読み込み中は、会話の上限と返事の上限を変えて保存できません" : undefined;
+  // 保存:上限を変えていれば作業領域を作り直してみてから保存する。できなければ理由を出して下書きを残す(0053 の決定事項 10・13)
+  const save = async (): Promise<boolean> => {
+    const s = draftRef.current;
+    if (blocked) {
+      onError(`設定を保存できません: ${blocked}`);
+      return false;
+    }
+    setSaving(true);
+    try {
+      if (limitsChanged) await onTryLimits(s.history_tokens, s.reply_tokens);
+      await onSave(s);
+    } catch (err) {
+      onError(`設定を保存できません: ${errorMessage(err)}`);
+      setSaving(false);
+      return false;
+    }
+    setSaving(false);
+    return true;
+  };
+  const cancel = () => setDraft(settings);
+  useUnsavedEntry(dirty, save, cancel);
   return (
     <section className="settings-view">
       <div className="settings-inner">
@@ -177,12 +222,13 @@ export function ConversationSettingsView({ id, title, onRename, settings, models
         )}
         {me.login && <ShareField share={share} shareWith={shareWith} shareGroups={shareGroups} onShare={onShare} />}
 
-        <ConversationSettingsForm settings={settings} models={models} lock={lock} onChange={onChange} />
-        <LimitsForm history={settings.history_tokens} reply={settings.reply_tokens} disabled={limitsDisabled} lock={lock} onApply={onApplyLimits} />
-        <SaveToProfile profile={profile} onSave={onSaveToProfile} onSaveAs={onSaveAsProfile} />
+        <ConversationSettingsForm settings={draft} models={models} lock={lock} onChange={change} />
+        <LimitsForm history={draft.history_tokens} reply={draft.reply_tokens} lock={lock} onChange={change} />
+        <SaveToProfile profile={profile} dirty={dirty} onSave={onSaveToProfile} onSaveAs={onSaveAsProfile} />
 
         <h2 className="section" title="この会話で使うツール(入力欄の上の「この会話のツール」と同じ)">ツール</h2>
-        <ConversationTools id={id} settings={settings} workDir={workDir} servers={servers} profile={profile} onChange={onChange} />
+        <ConversationTools id={id} settings={draft} workDir={workDir} servers={servers} profile={profile} onChange={change} />
+        <SaveBar dirty={dirty} saving={saving} blocked={dirty ? blocked : undefined} onSave={() => { save().catch(() => {}); }} onCancel={cancel} />
 
 
         {/* 長くてたまに見るものなので、折りたたんで最初は閉じておく(0056)。開け閉めは覚えず、画面を開くたびに閉じている */}
@@ -224,8 +270,10 @@ function ShareField({ share, shareWith, shareGroups, onShare }: { share: string;
 }
 
 // SaveToProfile は「プロファイルに保存」: この会話の設定で、プロファイルの値を上書きする / 新しいプロファイルとして保存する。
-// 上書きすると、そのプロファイルから新しく作る会話が変わる(今ある会話には効かない)。決まりは変えない
-function SaveToProfile({ profile, onSave, onSaveAs }: { profile: Profile | null; onSave(): void; onSaveAs(name: string): void }) {
+// 上書きすると、そのプロファイルから新しく作る会話が変わる(今ある会話には効かない)。決まりは変えない。
+// 写すのは保存したこの会話の設定なので、保存していない変更があるあいだは押せない(下書きが写ると思って押すと、違う値が写るため)
+function SaveToProfile({ profile, dirty, onSave, onSaveAs }: { profile: Profile | null; dirty: boolean; onSave(): void; onSaveAs(name: string): void }) {
+  const waitSave = dirty ? "先に、画面の下の「保存」でこの会話の設定を保存してください" : undefined;
   const [naming, setNaming] = useState(false);
   const [name, setName] = useState("");
   const submit = () => {
@@ -238,7 +286,7 @@ function SaveToProfile({ profile, onSave, onSaveAs }: { profile: Profile | null;
   return (
     <div className="save-profile">
       {profile && (
-        <button type="button" onClick={onSave} title={`この会話の設定(モデル・使うツールのグループも)で、プロファイル「${profile.name}」の値を上書きする`}>
+        <button type="button" onClick={onSave} disabled={dirty} title={waitSave ?? `この会話の設定(モデル・使うツールのグループも)で、プロファイル「${profile.name}」の値を上書きする`}>
           プロファイル「{profile.name}」に保存
         </button>
       )}
@@ -259,7 +307,7 @@ function SaveToProfile({ profile, onSave, onSaveAs }: { profile: Profile | null;
           <button type="button" onClick={() => setNaming(false)}>キャンセル</button>
         </span>
       ) : (
-        <button type="button" onClick={() => setNaming(true)} title="この会話の設定で、新しいプロファイルを作成する(決まりは無し)">
+        <button type="button" onClick={() => setNaming(true)} disabled={dirty} title={waitSave ?? "この会話の設定で、新しいプロファイルを作成する(決まりは無し)"}>
           新しいプロファイルとして保存
         </button>
       )}

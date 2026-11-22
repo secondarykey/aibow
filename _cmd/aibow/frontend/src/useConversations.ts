@@ -37,8 +37,11 @@ export interface Conversations {
   remove(id: string): Promise<void>;
   rename(id: string, title: string): Promise<void>;
   reloadList(): Promise<void>;
-  updateSettings(patch: Partial<ConversationSettings>): void; // 開いている会話(または draft)の設定を変える
+  // 開いている会話(または draft)の設定を変える(入力欄の上の切り替え・モデルの選択など、即時に効かせるもの。少し待ってまとめて送る)
+  updateSettings(patch: Partial<ConversationSettings>): void;
   flushSettings(): Promise<void>;     // まだ Go に送っていない設定を送る(送信の前に呼ぶ)
+  // 会話の設定の画面(歯車)の「保存」(0053)。すぐ Go に書き、Go が保存した値を読み直す。書けなければ reject(画面は下書きを残す)
+  saveSettings(settings: ConversationSettings): Promise<void>;
   setUsage(id: string, usage: Usage | null): void; // 開いている会話のメーターを書き換える(chat イベントの usage)
   refreshUsage(): Promise<void>;      // メーターを Go に数え直してもらう(モデル・上限・会話の設定を変えたあと)
   reloadSettings(id: string): Promise<void>; // Go が書き換えた会話の設定を読み直す(確認のカードの「この会話では今後聞かない」など)
@@ -211,6 +214,20 @@ export function useConversations(onError: (text: string) => void): Conversations
     setCurrent({ ...cur, conversation: { ...cur.conversation, settings: d.conversation.settings }, profile: d.profile });
   }, [setCurrent]);
 
+  const saveSettings = useCallback(async (settings: ConversationSettings) => {
+    const cur = currentRef.current;
+    if (!cur) return;
+    const id = cur.conversation.id;
+    // 歯車の画面の下書きは、まだ送っていない切り替えも含んだ設定から始まっているので、送っていない分は捨ててよい
+    if (pending.current?.id === id) {
+      window.clearTimeout(pending.current.timer);
+      pending.current = null;
+    }
+    await ChatService.SaveConversationSettings(id, settings);
+    await reloadSettings(id);
+    await refreshUsage().catch(() => {});
+  }, [reloadSettings, refreshUsage]);
+
   const reloadProfiles = useCallback(async () => {
     const list = await loadProfiles();
     const cur = currentRef.current;
@@ -226,7 +243,7 @@ export function useConversations(onError: (text: string) => void): Conversations
 
   return {
     list, current, draft, draftProfile, profiles, selectProfile, reloadProfiles,
-    openCount, init, open, goHome, adopt, unadopt, remove, rename, reloadList, updateSettings, flushSettings,
+    openCount, init, open, goHome, adopt, unadopt, remove, rename, reloadList, updateSettings, flushSettings, saveSettings,
     setUsage, refreshUsage, reloadSettings,
   };
 }

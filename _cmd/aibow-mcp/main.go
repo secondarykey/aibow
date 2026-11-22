@@ -90,7 +90,8 @@ func run() error {
 	if where == "" {
 		where = "なし(作業フォルダのツールは出しません)"
 	}
-	log.Noticef("%s %s を起動しました(作業フォルダ: %s・ツール %d 個: %v)", server.Name, appversion.Version(), where, len(names), names)
+	// ツールの名前は「, 」でつなぐ(スライスを %v で出すと [a b c] になり、区切りが読みにくい。0053 の決定事項 24)
+	log.Noticef("%s %s を起動しました(作業フォルダ: %s・ツール %d 個: %s)", server.Name, appversion.Version(), where, len(names), strings.Join(names, ", "))
 
 	// Ctrl+C で止める(ターミナルで試すとき用)。ふだんはクライアントが標準入力を閉じると Run が返る
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)

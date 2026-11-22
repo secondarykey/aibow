@@ -57,6 +57,10 @@ export interface Backend {
     toggleMaximise(): Promise<void>;
     isMaximised(): Promise<boolean>;
     close(): Promise<void>;
+    // 保存していない変更があるときに、閉じるのを止めて聞く(0053。デスクトップだけ。Go の closeguard.go)。ブラウザは beforeunload に任せる
+    setUnsaved(unsaved: boolean): Promise<void>;            // 保存していない変更があるかを Go に知らせる
+    onCloseRequest(f: () => void): () => void;               // 閉じようとしたのを Go が止めた(画面が知らせを出す)
+    closeNow(): Promise<void>;                               // 知らせで「保存」か「保存しない」を選んだあとに、止めずに閉じる
   };
 }
 
@@ -262,4 +266,7 @@ export const appWindow: Backend["appWindow"] = {
   toggleMaximise: () => b.appWindow.toggleMaximise(),
   isMaximised: () => b.appWindow.isMaximised(),
   close: () => b.appWindow.close(),
+  setUnsaved: unsaved => b.appWindow.setUnsaved(unsaved),
+  onCloseRequest: f => b.appWindow.onCloseRequest(f),
+  closeNow: () => b.appWindow.closeNow(),
 };

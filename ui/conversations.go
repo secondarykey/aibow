@@ -185,6 +185,24 @@ func (s *Service) UpdateConversationSettings(ctx context.Context, id uuid.UUID, 
 	return s.convs.UpdateSettings(ctx, id, settings)
 }
 
+// SaveConversationSettings は、会話の設定の画面(歯車)の「保存」(0053 の決定事項 7)。保存は UpdateConversationSettings と同じで、
+// ログに1行だけ残す(自分の会話にだけ効くので Info。変えた項目を画面の言葉で並べる。決定事項 21・23)。
+// 入力欄の上の切り替え(ワークスペース・worktree・この会話のツール)は即時のままで、UpdateConversationSettings を呼ぶ(ログは出さない)。
+func (s *Service) SaveConversationSettings(ctx context.Context, id uuid.UUID, settings aibow.ConversationSettings) error {
+	if s.startupErr != nil {
+		return s.startupErr
+	}
+	c, _, err := s.convs.Get(ctx, id)
+	if err != nil {
+		return err
+	}
+	if err := s.UpdateConversationSettings(ctx, id, settings); err != nil {
+		return err
+	}
+	log.Infof("会話「%s」(%s)の設定を保存しました(%s)", c.Title, id, aibow.ChangedItems(aibow.SettingsChanges(c.Settings, settings)))
+	return nil
+}
+
 // noNewAllow は、ブラウザの利用者が、会話の設定でツールを「確認しない」にしていないかを確かめる(0024 の決定事項 3・18)。
 // 確認しないで実行するかの既定は管理者が決める。利用者が「確認しない」にできるのは、確認のカードの「この会話では今後聞かない」だけ
 // (そのツールの呼び出しを一度見てから決めることになる)。もう「確認しない」にしてあるツールは、そのまま残せる。

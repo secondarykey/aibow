@@ -133,6 +133,10 @@ func main() {
 	if !built {
 		log.Warn("画面がビルドされていません(web/dist/app が無い)。wails3 build で画面をビルドしてください")
 	}
+	chat := NewChatService(ui.Options{
+		Host: host, Store: st, App: settings, Initial: initial, Local: local, MCP: mcpm, MCPConfig: mcpc, Prefs: prefs, Workspaces: workspaces,
+		Version: appVersion(), Notices: cfg.notices, StartupErr: err, WaitLogin: waitLogin,
+	}, conn)
 	app := application.New(application.Options{
 		Name:        "aibow",
 		Description: "ローカルLLMを自分で動かして仕組みを学ぶチャット",
@@ -141,10 +145,7 @@ func main() {
 		// なお WebView2 の行([WebView2] …)は標準の log で来るが、slog.SetDefault のあとは標準の log も同じ出口に流れる
 		Logger: slog.Default(),
 		Services: []application.Service{
-			application.NewService(NewChatService(ui.Options{
-				Host: host, Store: st, App: settings, Initial: initial, Local: local, MCP: mcpm, MCPConfig: mcpc, Prefs: prefs, Workspaces: workspaces,
-				Version: appVersion(), Notices: cfg.notices, StartupErr: err, WaitLogin: waitLogin,
-			}, conn)),
+			application.NewService(chat),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
@@ -172,6 +173,8 @@ func main() {
 	}
 	window := app.Window.NewWithOptions(opts)
 	tracker := trackWindow(app, window, cfg.windowPath, saved, hasSaved)
+	// 保存していない変更があれば、閉じるのを止めて画面に聞く(closeguard.go。0053)
+	chat.closer.attach(app, window)
 
 	// Windows の WebView2 は、別のウィンドウから戻ってきたときに IME(日本語入力)の状態が
 	// 戻らず、入力欄で変換できなくなることがある。戻ってきたことを画面に知らせ、

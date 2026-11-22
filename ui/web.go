@@ -48,18 +48,18 @@ import (
 // browserMethods は、ブラウザから呼べる Service のメソッド。
 //
 // 出さないもの:基本設定の GPU の層数(モデルのタブのモデルごとの層の数で足りる)。
-// ツールの扱いの既定を変えるもの(SetToolPolicy・SetGroupPolicy・LoadToolList)は、管理者だけ(adminToolMethods)。
+// ツールの扱いの既定を変えるもの(SetToolPolicies・SetToolPolicy・SetGroupPolicy・LoadToolList)は、管理者だけ(adminToolMethods)。
 // ブラウザの会話のツールはサーバーの PC で動き、その既定は管理者が決める(0024 の決定事項 3)。
 // ServerHost も断るが、口そのものにも出さない(断るだけだと、ブラウザの画面がそれを呼ぶ作りになっても気づけないため)。
 var browserMethods = []string{
 	// モデルと設定
 	"Models", "SwitchModel", "AppSettings", "TryLimits", "ModelSettings", "SetDisplay", "Version",
 	// プロファイル
-	"Profiles", "CreateProfile", "UpdateProfile", "SetProfileArchived", "DeleteProfile", "SetDefaultProfile",
+	"Profiles", "CreateProfile", "UpdateProfile", "SaveProfile", "SetProfileArchived", "DeleteProfile", "SetDefaultProfile",
 	"ProfileDefaults", "SaveToProfile", "SaveAsProfile", "CopyProfile", "SetProfileShare", "ShareCopy",
 	// 会話
 	"Conversations", "Conversation", "Usage", "NewConversation", "DeleteConversation", "RenameConversation",
-	"SetExcluded", "UpdateConversationSettings", "SetConversationInactive",
+	"SetExcluded", "UpdateConversationSettings", "SaveConversationSettings", "SetConversationInactive",
 	// 会話の共有と管理者が読む(0018 の 11-2。管理者かは保存先が確かめる)
 	"SetConversationShare", "SharedConversations", "UserConversations", "Directory", "ReadConversation", "CopyShared",
 	// グループ(0031。管理者か、メンバーを変えるならそのグループの長かは保存先が確かめる)
@@ -83,7 +83,7 @@ var pcMethods = []string{"UnloadModel", "SetModelGPULayers", "ModelPlaces", "Add
 
 // adminToolMethods は、ツールの扱いの既定を変えるメソッド(設定の画面の「ツール」。0024 の決定事項 21)。
 // サーバー全体の既定(server-tools.json)を変え、一覧の読み直しはサーバーの PC で MCP のサーバーを起動するので、pcMethods と同じ人だけが呼べる。ほかの人は 403。
-var adminToolMethods = []string{"SetToolPolicy", "SetGroupPolicy", "LoadToolList"}
+var adminToolMethods = []string{"SetToolPolicies", "SetToolPolicy", "SetGroupPolicy", "LoadToolList"}
 
 // adminLogMethods は、aibow-server のログのレベルを見る・変える・ログファイルの場所を見るメソッド(管理の画面の「ログ」。0052)。pcMethods と同じ人だけが呼べる。ほかの人は 403。
 var adminLogMethods = []string{"ServerLogLevel", "SetServerLogLevel", "ServerLogFile"}

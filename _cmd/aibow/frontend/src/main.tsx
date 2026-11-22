@@ -7,6 +7,7 @@ import { initBackend, session } from './backend'
 import { LoginGate } from './components/Login'
 import { UserChangedGate } from './components/UserChanged'
 import { RestartGate } from './components/RestartGate'
+import { UnsavedProvider } from './unsaved'
 
 // 最初の描画の前に明るさを決める(Go から設定が届くまで OS の明るさで描くと、ちらつくため)
 initTheme()
@@ -23,7 +24,10 @@ initBackend().then(async () => {
         {/* モードを変えたら、ログインの画面もアプリの画面も覆う(0051 の決定事項 3。デスクトップのアプリだけ) */}
         <RestartGate>
           <LoginGate>
-            <App />
+            {/* 保存していない変更の見張りと、離れる前の知らせ(0053) */}
+            <UnsavedProvider>
+              <App />
+            </UnsavedProvider>
           </LoginGate>
         </RestartGate>
       </UserChangedGate>

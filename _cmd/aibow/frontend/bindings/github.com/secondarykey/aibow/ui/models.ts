@@ -172,6 +172,17 @@ export interface ModelsResult {
 }
 
 /**
+ * ToolPolicyChange は、ツールの扱いの既定の変更1つ(画面の「保存」でまとめて送る。0053 の決定事項 7)。
+ * Group ならグループ(Name が空なら組み込み、そうでなければ MCP のサーバーの名前)、そうでなければツール(モデルに見せる名前)。
+ * Policy が空なら、決めていない状態に戻す。
+ */
+export interface ToolPolicyChange {
+    "group": boolean;
+    "name": string;
+    "policy": config$0.ToolPolicy;
+}
+
+/**
  * WorkspaceList は、画面に出すワークスペースの一覧。
  */
 export interface WorkspaceList {

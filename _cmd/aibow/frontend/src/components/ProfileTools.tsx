@@ -3,7 +3,8 @@
 // グループ(組み込み / MCP のサーバー)の見出しと、ツールの行は同じ形(2026-10-20、ユーザーの指示でそろえた。前はグループだけ3択の選択):
 //   チェック       … 新しい会話で最初から使う(値。外すと「選べば使える」= 会話で選べば使う)。
 //                    グループは新しい会話で最初から選ぶか、ツールは会話の上書き off として写すか
-//   確認しない     … この PC の既定(tools.json)。どのプロファイルでも同じ(枠の吹き出しにそう書く)
+//   確認しない     … この PC の既定(tools.json)。どのプロファイルでも同じ(枠の吹き出しにそう書く)。
+//                    変えたものは下書き(pc)に入れ、プロファイルの「保存」でまとめて書く(0053 の決定事項 7)
 //   錠             … 使えない(決まり。会話で変えさせない)。錠をかけるとチェックも外れる。グループに錠をかけると、中のツールも押せない
 // チェックの向きは、グループもツールも「使う」にそろえる(チェック = 使う)。
 //
@@ -19,6 +20,7 @@ import { ToolPolicy } from "../../bindings/github.com/secondarykey/aibow/config"
 import type { Profile, ToolState } from "../../bindings/github.com/secondarykey/aibow";
 import type { KnownTool, ToolPrefsView } from "../../bindings/github.com/secondarykey/aibow/config";
 import type { ServerInfo } from "../../bindings/github.com/secondarykey/aibow/mcp/client";
+import type { ToolPolicyChange } from "../../bindings/github.com/secondarykey/aibow/ui";
 import { errorMessage } from "../errors";
 import { FIX, type Lock } from "../profileRules";
 import { TOOL_LABELS } from "../toolLabels";
@@ -29,12 +31,14 @@ import { BUILTIN } from "./ToolBar";
 // 「確認しない」はこの PC の値なので、どのプロファイルでも同じことを吹き出しに添える
 const PC_NOTE = "(この PC の設定。どのプロファイルでも同じ)";
 
-export function ProfileTools({ profile, servers, lock, onChange, onPCChanged }: {
+export function ProfileTools({ profile, servers, lock, onChange, pc, onPc, pcVersion }: {
   profile: Profile;
   servers: ServerInfo[];
   lock: Lock; // 使うツールのグループの固定(錠のボタン)
   onChange(f: (p: Profile) => Profile): void;
-  onPCChanged(): void; // この PC の値(確認しない)を変えた(メーターなどを読み直す)
+  pc: ToolPolicyChange[];                    // この PC の値(確認しない)の下書き
+  onPc(changes: ToolPolicyChange[]): void;
+  pcVersion: number;                         // 保存したら進む(この PC の値を読み直す)
 }) {
   const [builtin, setBuiltin] = useState<KnownTool[]>([]);
   const [prefs, setPrefs] = useState<ToolPrefsView | null>(null);
@@ -53,9 +57,9 @@ export function ProfileTools({ profile, servers, lock, onChange, onPCChanged }: 
     );
   }, []);
   useEffect(() => {
-    reloadPC();
     ChatService.BuiltinTools().then(t => setBuiltin(t ?? []), err => setError(errorMessage(err)));
-  }, [reloadPC]);
+  }, []);
+  useEffect(reloadPC, [reloadPC, pcVersion]);
 
   const loadList = useCallback((name: string) => {
     setLoading(l => ({ ...l, [name]: true }));
@@ -74,13 +78,34 @@ export function ProfileTools({ profile, servers, lock, onChange, onPCChanged }: 
     }
   }, [prefs, servers, loadList, opened]);
 
-  // この PC の値(確認しない)を変える
-  const pc = (p: Promise<unknown>) => {
-    setError("");
-    p.catch(err => setError(errorMessage(err))).finally(() => {
-      reloadPC();
-      onPCChanged();
-    });
+  // この PC の値(確認しない)の下書き。保存した値と同じに戻したら、下書きから外す(変えていないのに「保存」が押せる、にならないように)
+  const pendingOf = (group: boolean, name: string) => pc.find(c => c.group === group && c.name === name);
+  const setPending = (group: boolean, name: string, policy: ToolPolicy, same: boolean) => {
+    const rest = pc.filter(c => !(c.group === group && c.name === name));
+    onPc(same ? rest : [...rest, { group, name, policy }]);
+  };
+  // グループの確認しない:保存した値(なければ決めていない)と比べる
+  const groupAllowOf = (group: string, saved: string | undefined) => {
+    const p = pendingOf(true, group);
+    return p ? p.policy === ToolPolicy.ToolAllow : saved === ToolPolicy.ToolAllow;
+  };
+  const setGroupAllow = (group: string, saved: string | undefined, allow: boolean) => {
+    const want = allow ? ToolPolicy.ToolAllow : ToolPolicy.$zero;
+    setPending(true, group, want, want === (saved ?? ""));
+  };
+  // ツールの確認しない:ツールごとに決めたもの(own)が無ければグループの下書きに従って見せる
+  const toolAllowOf = (group: string, name: string) => {
+    const p = pendingOf(false, name);
+    if (p) return p.policy === ToolPolicy.ToolAllow;
+    const g = pendingOf(true, group);
+    if (g && !prefs?.tools?.[name]) return g.policy === ToolPolicy.ToolAllow;
+    return states[name]?.default === ToolPolicy.ToolAllow;
+  };
+  const setToolAllow = (group: string, name: string, allow: boolean) => {
+    const own = prefs?.tools?.[name] ?? "";
+    const want = allow ? ToolPolicy.ToolAllow : ToolPolicy.ToolAsk;
+    const sameAsSaved = want === own || (own === "" && !pendingOf(true, group) && allow === (states[name]?.default === ToolPolicy.ToolAllow));
+    setPending(false, name, want, sameAsSaved);
   };
 
   const v = profile.values;
@@ -157,7 +182,7 @@ export function ProfileTools({ profile, servers, lock, onChange, onPCChanged }: 
         const shown = !!opened[g.group];
         const isServer = g.group !== "";
         const usable = g.tools.filter(t => !groupOff && !offTools.includes(t.name)).length;
-        const groupAllow = g.pcPolicy === ToolPolicy.ToolAllow;
+        const groupAllow = groupAllowOf(g.group, g.pcPolicy);
         return (
           <div key={g.group} className={"tool-group" + (used ? " on" : "")}>
             <div className="tool-group-head">
@@ -174,7 +199,7 @@ export function ProfileTools({ profile, servers, lock, onChange, onPCChanged }: 
                   title={(groupAllow
                     ? "このグループのツールはまとめて確認しない(押すと戻す。ツールごとに決めたものはそちらが優先)"
                     : "このグループのツールをまとめて確認しないにする(ツールごとに決めたものはそちらが優先)") + PC_NOTE}
-                  onToggle={a => pc(ChatService.SetGroupPolicy(g.group, a ? ToolPolicy.ToolAllow : ToolPolicy.$zero))}
+                  onToggle={a => setGroupAllow(g.group, g.pcPolicy, a)}
                 />
               )}
               <LockChip
@@ -200,7 +225,7 @@ export function ProfileTools({ profile, servers, lock, onChange, onPCChanged }: 
                     const short = t.name.startsWith(g.prefix) ? t.name.slice(g.prefix.length) : t.name;
                     const locked = groupOff || offTools.includes(t.name);
                     const checked = !locked && !toolsOff.includes(t.name);
-                    const allow = states[t.name]?.default === ToolPolicy.ToolAllow;
+                    const allow = toolAllowOf(g.group, t.name);
                     return (
                       <label key={t.name} className={"check tool-item" + (locked ? " unused" : "")} title={`${t.name}\n${t.description}`}>
                         <input
@@ -214,7 +239,7 @@ export function ProfileTools({ profile, servers, lock, onChange, onPCChanged }: 
                           <ConfirmChip
                             allow={allow}
                             title={(allow ? "このツールは確認せずに実行する(押すと確認する)" : "このツールを確認せずに実行するようにする") + PC_NOTE}
-                            onToggle={a => pc(ChatService.SetToolPolicy(t.name, a ? ToolPolicy.ToolAllow : ToolPolicy.ToolAsk))}
+                            onToggle={a => setToolAllow(g.group, t.name, a)}
                           />
                         )}
                         <LockChip

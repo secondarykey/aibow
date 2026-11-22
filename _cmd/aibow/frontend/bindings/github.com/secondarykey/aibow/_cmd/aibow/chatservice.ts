@@ -140,6 +140,13 @@ export function ChooseWorkDir(current: string): $CancellablePromise<string> {
 }
 
 /**
+ * CloseWindow は、保存していない変更の知らせで「保存」か「保存しない」を選んだあとに、止めずにウィンドウを閉じる。
+ */
+export function CloseWindow(): $CancellablePromise<void> {
+    return $Call.ByID(2995125065);
+}
+
+/**
  * Compact は「今すぐ要約」。会話の上限を超えていなくても、古い発言を要約する。
  * Send と同じく、途中経過(要約の文)と終わり(done)は chat イベントで送る。
  */
@@ -468,6 +475,27 @@ export function SaveAsProfile(conv: uuid$0.UUID, name: string): $CancellableProm
 }
 
 /**
+ * SaveConversationSettings は、会話の設定の画面(歯車)の「保存」(0053 の決定事項 7)。保存は UpdateConversationSettings と同じで、
+ * ログに1行だけ残す(自分の会話にだけ効くので Info。変えた項目を画面の言葉で並べる。決定事項 21・23)。
+ * 入力欄の上の切り替え(ワークスペース・worktree・この会話のツール)は即時のままで、UpdateConversationSettings を呼ぶ(ログは出さない)。
+ */
+export function SaveConversationSettings(id: uuid$0.UUID, settings: aibow$0.ConversationSettings): $CancellablePromise<void> {
+    return $Call.ByID(1800918680, id, settings);
+}
+
+/**
+ * SaveProfile は、プロファイルの編集の「保存」(0053 の決定事項 7)。プロファイルの名前・値・決まりと、
+ * 同じ画面で変えたツールの「確認しない」(この PC の tools.json。ブラウザでは出さないので空)をまとめて書く。
+ * 1つの画面の中で、保存されるものとされないものが混ざらないよう、画面は1回の「保存」でここを1回呼ぶ。
+ * 
+ * ログは1回の保存で1行(決定事項 21・23)。配っているプロファイル(ほかの人の会話に効く)は Notice で、誰が変えたかも添える。
+ * 自分のプロファイルは Info。確認しないは先に書く(書けなければ、プロファイルも保存しない。画面は下書きを残してエラーを出す)。
+ */
+export function SaveProfile(p: aibow$0.Profile, tools: ui$0.ToolPolicyChange[] | null): $CancellablePromise<void> {
+    return $Call.ByID(2543531363, p, tools);
+}
+
+/**
  * SaveToProfile は、会話の今の設定でプロファイルの値を上書きする(会話の設定の画面の「プロファイルに保存」)。
  */
 export function SaveToProfile(conv: uuid$0.UUID, profile: uuid$0.UUID): $CancellablePromise<void> {
@@ -537,7 +565,7 @@ export function SetDefaultProfile(id: uuid$0.UUID): $CancellablePromise<void> {
 
 /**
  * SetDisplay は画面の設定(質問を右上に出すか・明るさ)を変える。生成には関わらないので、モデルは読み直さない。
- * 設定は ctx の利用者のもの(0017 の 6)。変わった項目だけ保存し、ログに残す。
+ * 設定は ctx の利用者のもの(0017 の 6)。変わった項目だけ保存する(ログは Debug だけ。0053 の決定事項 22)。
  */
 export function SetDisplay(d: aibow$0.DisplaySettings): $CancellablePromise<void> {
     return $Call.ByID(1355121465, d);
@@ -579,6 +607,7 @@ export function SetGroupMember(id: uuid$0.UUID, user: string, member: boolean): 
  * SetGroupPolicy は、グループ(空なら組み込み、そうでなければ MCP のサーバー)の全部のツールの確認の扱いの PC の既定を変える
  * (確認する ask / 確認しない allow / 決めていない 空。tools.json に書く)。
  * ブラウザでは aibow-server の管理者だけが変えられ(server-tools.json に書く)、使わない(off。禁止)も決められる(0024 の決定事項 21・22)。
+ * 画面の「保存」は SetToolPolicies(1回の保存でまとめて書き、ログも1行。0053)。これは1つだけ変える形。
  */
 export function SetGroupPolicy(group: string, policy: config$0.ToolPolicy): $CancellablePromise<void> {
     return $Call.ByID(2609014370, group, policy);
@@ -643,12 +672,27 @@ export function SetServerLogLevel(name: string): $CancellablePromise<string> {
 }
 
 /**
+ * SetToolPolicies は、ツールの扱いの既定をまとめて変える(管理の画面の「ツール」の「保存」)。ログは1回の保存で1行(0053 の決定事項 21)。
+ * ブラウザでは全員の会話に効く aibow-server の既定なので Notice で、誰が変えたかも添える。アプリはこの PC の既定。
+ */
+export function SetToolPolicies(changes: ui$0.ToolPolicyChange[] | null): $CancellablePromise<void> {
+    return $Call.ByID(2805899897, changes);
+}
+
+/**
  * SetToolPolicy は、ツールの扱いの PC の既定を変える(tools.json に書く)。policy が空なら決めていない状態に戻す。
  * 次の送信から効く(プロンプトに入るツールが変わるので、画面はメーターを数え直す)。
  * ブラウザでは aibow-server の管理者だけが変えられる(server-tools.json に書く。使わないは禁止。0024 の決定事項 21・22)。
  */
 export function SetToolPolicy(name: string, policy: config$0.ToolPolicy): $CancellablePromise<void> {
     return $Call.ByID(1851266373, name, policy);
+}
+
+/**
+ * SetUnsaved は、画面に保存していない変更があるかを知らせる(変わるたびに画面が呼ぶ)。
+ */
+export function SetUnsaved(unsaved: boolean): $CancellablePromise<void> {
+    return $Call.ByID(1798691765, unsaved);
 }
 
 /**
@@ -767,6 +811,7 @@ export function UpdateMCPServer(name: string, config: client$0.ServerConfig): $C
 /**
  * UpdateProfile は、プロファイルの名前・値・決まりを変える。値は今ある会話に効かず、決まりは今ある会話にもすぐ効く。
  * 配っているプロファイルなら、モデルは使えるモデルの中から(0018 の決定事項 13)。
+ * 画面の「保存」は SaveProfile(この PC の確認しないも一緒に書く)。これはツールの扱いを変えない保存。
  */
 export function UpdateProfile(p: aibow$0.Profile): $CancellablePromise<void> {
     return $Call.ByID(2462467583, p);
