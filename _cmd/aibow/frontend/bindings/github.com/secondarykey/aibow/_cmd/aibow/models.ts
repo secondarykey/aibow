@@ -115,4 +115,12 @@ export interface ServerConnection {
      */
     "knownUrl": string;
     "knownUser": string;
+
+    /**
+     * ServerVersion は今つないでいる aibow-server のバージョン、MinAppVersion はそのサーバーが対応できるアプリの最低バージョン
+     * (最後の返事の見出しで知った値。アプリモード・まだ返事を受けていない・この機能より古い aibow-server なら空。0054 の決定事項 19)。
+     * 画面にどう出すかは、サーバーのアイコンの UI の仕様で決める
+     */
+    "serverVersion": string;
+    "minAppVersion": string;
 }

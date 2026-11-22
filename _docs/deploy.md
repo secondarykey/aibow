@@ -7,11 +7,20 @@
 | `_cmd/aibow/version` | バージョンの唯一の正。`//go:embed` で exe に入る |
 | `_cmd/version.go` | `version` を config.yml / package.json / `internal/appversion/version` に書き写すスクリプト(リポジトリのルートで `go run _cmd/version.go`) |
 | `internal/appversion/version` / `appversion.go` | MCP のサーバー(aibow-mcp)と OpenAI 互換 API(aibow-server)のバージョン(2つの exe で1つを使う)。`_cmd/aibow/version` の写しで、手で書き換えない(`//go:embed` は自分のフォルダの下しか埋め込めないため写しを置く)。exe(`go build`・`go install`)は `version` のまま、`go run` で起動したものは patch を1つ上げて `+dev`(自分の exe が `go-build…` の一時フォルダにあるかで見分ける) |
+| `internal/appversion` の `MinApp` | aibow-server が対応できる画面のアプリの最低バージョン(0054。返事の見出し `X-Aibow-Min-App-Version` で知らせる。[api.md](api.md) の「バージョンの受け渡し」)。`version` の写しではなく**手で書く定数**で、`go run _cmd/version.go` は書き換えず、`go run` でも `+dev` を付けない。下の「対応するアプリの最低バージョンを上げる」 |
 | `_cmd/aibow/appversion.go` / `build_dev.go` / `build_production.go` | 画面・ウィンドウの名前・ログに出すバージョン。`wails3 dev` で起動したものは patch を1つ上げて `+dev` を付ける(`0.3.1` なら `0.3.2+dev`。まだデプロイしていない次のバージョンを作っている途中のため)。リリースのビルドは `version` のまま。見分けは、Taskfile がリリースのビルドにだけ付ける `production` のビルドタグ(Taskfile は変えない) |
 | `_cmd/aibow/Taskfile.local.yml` | ローカルデプロイ(`wails3 task local:deploy`)。各自が持つ個人用のファイルで、**Git に入れない(ひな形もコミットしない)**。`Taskfile.yml` から optional で読む |
 | `.github/workflows/versionup.yml` | 正式なリリース。`main` への PR のマージで版を決め、ビルド情報が変われば PR(`chore: version …`)を作ってマージし、`v`+バージョンのタグを PAT で push する |
 | `.github/workflows/release.yml` | `v` のタグの push で動き、3つの OS で aibow・aibow-server・aibow-mcp を作って zip にし、GitHub のリリースの**下書き**を作る |
 | `.github/variables` | CI が使う Go の版(`GO_VERSION`)と Wails の CLI の版(`WAILS_VERSION`)。Go は手元の `go version` と、Wails は `_cmd/aibow/go.mod` と同じ版にする(手元で Go や Wails を上げたら、ここも上げる)。`KEY=VALUE` の行だけを書く(コメントがあると CI が落ちる) |
+
+### 対応するアプリの最低バージョンを上げる(`MinApp`)
+
+- **アプリとサーバーのあいだのやり取り(`api/client` と aibow-server の API・欄・見出し)を、古いアプリが使えない形に変えたときに**、`MinApp` をその変更が入る版に手で上げる
+  (入る版の決め方は下の「ローカルデプロイと正式なリリースの分け方」と同じ:`v`+今のバージョンのタグがあれば patch を1つ上げた版、無ければ今の版)
+- 足すだけの変更(新しい API・古いアプリが読み捨てる欄)では上げない。ブラウザの画面は aibow-server が配るので同じ版で、`MinApp` に関係しない
+- 初めの値は `0.9.3`(見出しを送り始めた版。それより古いアプリは版を送ってこないので、比べる相手にならない)
+- 今は値を受け渡すだけで、版を比べて止めることはしない(判定のルールは将来決める。0054)
 
 ### ローカルデプロイと正式なリリースの分け方
 

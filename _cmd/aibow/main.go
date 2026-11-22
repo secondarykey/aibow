@@ -72,6 +72,8 @@ func main() {
 	// 起動に失敗しても(lib が無いなど)ウィンドウは出し、理由を画面に表示する。
 	// リリース版(wails3 build)はコンソールが無く、ログだけでは何も見えずに終わってしまうため。
 	cfg, err := loadConfig()
+	// aibow-server へのリクエストに、このアプリのバージョンを付ける(0054)。クライアントはあちこちで作るので、作る前に1回だけ決める
+	apiclient.SetAppVersion(appVersion())
 	conn := newConnection(cfg)
 	// ログが書けない・前回は異常終了した、などは起動を止めず、画面のお知らせで伝える
 	cfg.notices = append(cfg.notices, logNotices...)
@@ -341,6 +343,8 @@ func loadWorkspaces(cfg *appConfig) *config.Workspaces {
 func newServerClient(cfg appConfig) (*apiclient.Client, error) {
 	c := apiclient.New(cfg.serverURL)
 	c.SetKey(cfg.serverKey)
+	// サーバーのバージョンは返事の見出しで分かる。初めて知ったとき・変わったとき(サーバーを入れ替えたなど)だけログに残す(0054 の決定事項 17)
+	c.OnServerVersion(func(server, minApp string) { logServerVersion(c.URL(), server, minApp) })
 	if cfg.serverCert != "" {
 		if err := c.TrustCert(cfg.serverCert); err != nil {
 			return nil, err

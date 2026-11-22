@@ -33,7 +33,6 @@ aibow に残っている課題の一覧(入口)。ルールと全体の構成は
 
 | | 課題 | 資料 |
 |---|---|---|
-| ⬜ | 画面のアプリと aibow-server でバージョンを受け渡す(今は記録だけ。合わないときの判定は将来) | [0054-version-exchange.md](_docs/features/0054-version-exchange.md)(未決事項あり) |
 | ⬜ | 共有された会話を通常の一覧にまとめる(検索ボックス・共有のされ方の表示・会話の非アクティブ) | [0055-shared-in-list.md](_docs/features/0055-shared-in-list.md) |
 | ⬜ | 共有の再検討(アプリからの閲覧・プロジェクトの概念・利用者同士の会話) | [検討メモ](_docs/backlog.md#共有の再検討アプリからの閲覧プロジェクトの概念)・[0018-sharing.md](_docs/features/0018-sharing.md) |
 | ⬜ | aibow-server の中央の制御の残り(上限の上限・順番待ちの優先度・自動で降ろす・server.json を画面で) | [検討メモ](_docs/backlog.md#aibow-server-の中央の制御の残り) |
@@ -73,6 +72,7 @@ aibow に残っている課題の一覧(入口)。ルールと全体の構成は
 | ⬜ | 画面のアプリ(serverUrl)での共有・配られたプロファイル・共有の相手の選択・アカウントのタブの使用量 | [0018](_docs/features/0018-sharing.md) の「11-3」・[0031](_docs/features/0031-users-ui.md)・[0033](_docs/features/0033-usage.md) |
 | ⬜ | aibow-server を GPU の 9B で:2人同時の生成(ブラウザの画面を2つ並べて。`parallel` 2)・資料のフォルダのツール | [0023-parallel.md](_docs/features/0023-parallel.md)・[0024-server-tools.md](_docs/features/0024-server-tools.md) |
 | ⬜ | ほかの PC からつなぐ:本物の Cline・HTTPS・資料のフォルダの見え方 | [0018](_docs/features/0018-sharing.md) の「11-3」・[0024](_docs/features/0024-server-tools.md) |
+| ⬜ | サーバーモードのアプリと aibow-server を動かして、両方のログに相手のバージョンが1回だけ出る・設定の画面の「サーバー」で確かめたときも出る | [0054-version-exchange.md](_docs/features/0054-version-exchange.md) |
 | ⬜ | アプリのログイン:トークンの期限切れ・証明書を作り直したときの画面(テストだけ) | [0019-app-login.md](_docs/features/0019-app-login.md) |
 | ⬜ | 同じ呼び出しの繰り返しを止める仕組みを、llama3.2:3b で | [0028-repeated-calls.md](_docs/features/0028-repeated-calls.md) |
 | ⬜ | aibow-mcp の `git_status`・`git_diff` を、Claude Code などほかのクライアントから | [0041-agent-prompt.md](_docs/features/0041-agent-prompt.md) |

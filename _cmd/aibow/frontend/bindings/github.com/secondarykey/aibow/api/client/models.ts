@@ -34,6 +34,13 @@ export interface Probe {
      * Login は、ログインが要る aibow-server か(Trusted のときだけ調べる)
      */
     "login": boolean;
+
+    /**
+     * ServerVersion は aibow-server のバージョン、MinAppVersion はそのサーバーが対応できるアプリの最低バージョン
+     * (/_aibow/auth/me の返事の見出しから。Trusted のときだけ入る。この機能より古い aibow-server なら空。0054 の決定事項 18)
+     */
+    "serverVersion"?: string;
+    "minAppVersion"?: string;
 }
 
 /**

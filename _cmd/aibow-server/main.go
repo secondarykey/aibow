@@ -225,8 +225,9 @@ func run(c serverConfig, notices []string, cfgErr error, env *config.Env) error 
 		StateFile: absPath(c.StatePath),
 	})
 	hs := &http.Server{
-		// 元の相手は mount の外側で1回だけ決める(0044 の決定事項 10)。中の道は書き換えた r.RemoteAddr を見る
-		Handler:           fromProxy(proxies, c.Login, mount(c.Base, routes(apiH, browser, screen()))),
+		// 元の相手は mount の外側で1回だけ決める(0044 の決定事項 10)。中の道は書き換えた r.RemoteAddr を見る。
+		// そのすぐ内側で、全部の返事にバージョンの見出しを付ける(0054)
+		Handler:           fromProxy(proxies, c.Login, withVersion(newAppSeen(), mount(c.Base, routes(apiH, browser, screen())))),
 		ReadHeaderTimeout: 10 * time.Second,
 		TLSConfig:         tlsConfig,
 		// 書き込みの時間の上限(WriteTimeout)は付けない。返事の生成は数十秒〜数分かかることがあるため

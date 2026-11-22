@@ -433,3 +433,25 @@ OpenAI 互換の API(api)──────────┐   付箋:呼び出し
 - **証明書のフィンガープリント**:HTTPS で起動したときと `cert` のコマンドで、証明書の SHA-256 のフィンガープリント(`AB:CD:…`。`auth.Fingerprint`)を出す。画面のアプリは初めてつなぐときに同じ形で出し、人が比べて信頼する(`api/client` の `ProbeServer`・`PinCert`)
 
 - `GET /favicon.ico` は、画面の係が黙って 404 を返す(ブラウザが自分で取りに来るので、OpenAI 互換の API に落として「キーが無い」の警告を出さないように)
+
+## バージョンの受け渡し(画面のアプリ ⇄ aibow-server。0054)
+
+サーバーモードでは、画面のアプリと aibow-server が別々に更新される。どちらの版の組み合わせで起きたことかが分かるよう、お互いの版を HTTP の見出しで受け渡す。
+MCP は最初の `initialize` で `clientInfo` / `serverInfo` を1回だけ交換する(つながりがずっと続くので)が、HTTP はリクエストが1つずつ独立していて「つないだ瞬間」が無い。
+そのため `User-Agent` や `Server` と同じく、**毎回のリクエストと返事**に載せる(専用の API は作らない。アプリが最初に呼ぶ API が1つではないので、どこか1つに足すと、そこを通らない呼び出しが残るため)。
+
+| 向き | 見出し | 値 |
+|---|---|---|
+| アプリ → サーバー(全部のリクエスト) | `X-Aibow-App-Version` | アプリのバージョン(`0.9.3+dev` もそのまま)。`api/client` の `SetAppVersion` で1回だけ決め、`do` で付ける |
+| サーバー → (全部の返事) | `X-Aibow-Server-Version` | aibow-server のバージョン(`appversion.Version()`) |
+| サーバー → (全部の返事) | `X-Aibow-Min-App-Version` | 対応できるアプリの最低バージョン(`appversion.MinApp`。[deploy.md](deploy.md)) |
+
+- 見出しの名前は `internal/appversion` の `AppHeader`・`ServerHeader`・`MinAppHeader`(今ある `X-Aibow-User` にそろえた)
+- サーバーは、信頼するプロキシの書き換え(`fromProxy`)のすぐ内側・`mount` の外の1か所(`_cmd/aibow-server/version.go` の `withVersion`)で、
+  `/v1/`・`/_aibow/`・画面・404 のどれにも付ける。Cline などは知らない見出しを読み捨てるので害が無い
+- `X-Aibow-App-Version` を送ってきたリクエストは画面のアプリとみなし、(相手のアドレス, 版)の組を起動してから初めて見たときだけ Notice のログを出す(メモリの中だけ。覚える組は 1024 まで)。
+  送ってこないもの(Cline・ブラウザ・この機能より古いアプリ)は記録しない。送られてきた値は SemVer に使う文字だけ・64 文字までにしてから出す(誰でも好きな値を送れるため)
+- アプリ(`api/client`)は、返事の見出し(エラーの返事も)から最後に知ったサーバーの版を覚える(`ServerVersion()`)。初めて知ったとき・変わったときに `OnServerVersion` で知らせ、画面のアプリが Notice のログに残す。
+  `ProbeServer` の結果(`Probe`)の `serverVersion`・`minAppVersion`、デスクトップのアプリの `ServerConnection` の `serverVersion`・`minAppVersion` にも入る。見出しの無い古い aibow-server なら空
+- **今は版を比べない**(受け渡しと記録だけ。最低バージョンより古いアプリも今までどおり使える)。合わないときに知らせる・更新を促す・断る、の判定のルールは将来決める。
+  比べるときは `+` の後ろ(ビルドの情報)を外す(SemVer の決まり)
