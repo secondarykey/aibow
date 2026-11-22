@@ -15,6 +15,7 @@ package main
 // デスクトップのアプリだけのメソッドなので ui ではなくここに置く(ブラウザの画面用の口からは呼べない)。
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -122,6 +123,11 @@ type ServerConnection struct {
 	// KnownURL・KnownUser は、信頼した最後のつなぎ先と、そこに最後にログインした名前(タブの入力欄に入れておく。つないでいなくても残る)
 	KnownURL  string `json:"knownUrl"`
 	KnownUser string `json:"knownUser"`
+	// ServerVersion は今つないでいる aibow-server のバージョン、MinAppVersion はそのサーバーが対応できるアプリの最低バージョン
+	// (最後の返事の見出しで知った値。アプリモード・まだ返事を受けていない・この機能より古い aibow-server なら空。0054 の決定事項 19)。
+	// 画面にどう出すかは、サーバーのアイコンの UI の仕様で決める
+	ServerVersion string `json:"serverVersion"`
+	MinAppVersion string `json:"minAppVersion"`
 }
 
 // ServerConnection は今のモードを返す。
@@ -135,7 +141,11 @@ func (s *ChatService) ServerConnection() ServerConnection {
 	v.Pending, v.PendingURL, v.PendingLogin = c.pending, c.saved.ServerURL, c.pendingLogin
 	known := c.saved.Trusted()
 	v.KnownURL, v.KnownUser = known.URL, known.User
+	cl := c.client
 	c.mu.Unlock()
+	if cl != nil {
+		v.ServerVersion, v.MinAppVersion = cl.ServerVersion()
+	}
 	switch c.source {
 	case serverSettings:
 		v.SourcePath = absPath(c.settingsPath)
@@ -167,8 +177,16 @@ func (s *ChatService) CheckServer(url, fingerprint string) (apiclient.Probe, err
 	p, err := apiclient.ProbeServer(context.Background(), url, fingerprint)
 	if err == nil && p.Trusted {
 		c.remember(p)
+		if p.ServerVersion != "" {
+			logServerVersion(p.URL, p.ServerVersion, p.MinAppVersion) // 設定の画面で確かめたサーバーの版もログに残す(0054 の決定事項 18)
+		}
 	}
 	return p, err
+}
+
+// logServerVersion は、aibow-server のバージョンをログに残す(0054)。今は比べない(最低バージョンより古くても同じ文。判定のルールは将来決める)。
+func logServerVersion(url, server, minApp string) {
+	log.Noticef("aibow-server(%s)のバージョンは %s です(このアプリは %s、サーバーが対応するアプリは %s から)", url, server, appVersion(), cmp.Or(minApp, "不明"))
 }
 
 // remember は、信頼できたつなぎ先を connection.json の Known に覚える。書けなくても確かめた結果は返す(覚えないだけ)。

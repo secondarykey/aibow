@@ -64,3 +64,18 @@ func nextPatch(v string) string {
 	parts[2] = strconv.Itoa(n + 1)
 	return strings.Join(parts, ".")
 }
+
+// MinApp は、この aibow-server が対応できる画面のアプリの最低バージョン(0054)。返事の見出し X-Aibow-Min-App-Version で知らせる。
+// Version と違って _cmd/aibow/version の写しではなく、手で書く(go run _cmd/version.go は書き換えない。go run でも +dev を付けない)。
+// アプリとサーバーのあいだのやり取り(api/client と aibow-server の口)を、古いアプリが使えない形に変えたときに、手で上げる。
+// 初めの値は、この見出しを送り始めた版(それより古いアプリは自分の版を送ってこないので、比べる相手にならない)。
+// 今は値を受け渡すだけで、比べて止めることはしない(判定のルールは将来決める)。
+const MinApp = "0.9.3"
+
+// 画面のアプリと aibow-server がバージョンを受け渡す見出し(0054。今ある X-Aibow-User にそろえた)。
+// HTTP には「つないだ瞬間」が無いので、毎回のリクエストと返事に載せる。aibow-server(付ける側)と api/client(読む側)で使う。
+const (
+	AppHeader    = "X-Aibow-App-Version"     // アプリ → サーバー(全部のリクエスト): アプリのバージョン
+	ServerHeader = "X-Aibow-Server-Version"  // サーバー → (全部の返事): aibow-server のバージョン
+	MinAppHeader = "X-Aibow-Min-App-Version" // サーバー → (全部の返事): 対応できるアプリの最低バージョン(MinApp)
+)

@@ -130,6 +130,23 @@ func (s *Service) DeleteConversation(ctx context.Context, id uuid.UUID) error {
 	return s.convs.Delete(ctx, id)
 }
 
+// SetConversationInactive は、会話の一覧で会話を非アクティブにする / 戻す(0055)。自分の会話にも、自分に共有された会話にも付けられ、
+// 付けた人の一覧だけが変わる。送信しても外れない(戻すのは自分で。決定事項 19)
+func (s *Service) SetConversationInactive(ctx context.Context, id uuid.UUID, inactive bool) error {
+	if s.startupErr != nil {
+		return s.startupErr
+	}
+	if err := s.store.SetConversationInactive(ctx, id, inactive); err != nil {
+		return err
+	}
+	if inactive {
+		log.Infof("会話 %s を非アクティブにしました", id)
+	} else {
+		log.Infof("会話 %s をアクティブに戻しました", id)
+	}
+	return nil
+}
+
 // RenameConversation は会話のタイトルを変える。空にはできない。
 func (s *Service) RenameConversation(ctx context.Context, id uuid.UUID, title string) error {
 	if s.startupErr != nil {
@@ -166,6 +183,24 @@ func (s *Service) UpdateConversationSettings(ctx context.Context, id uuid.UUID, 
 		}
 	}
 	return s.convs.UpdateSettings(ctx, id, settings)
+}
+
+// SaveConversationSettings は、会話の設定の画面(歯車)の「保存」(0053 の決定事項 7)。保存は UpdateConversationSettings と同じで、
+// ログに1行だけ残す(自分の会話にだけ効くので Info。変えた項目を画面の言葉で並べる。決定事項 21・23)。
+// 入力欄の上の切り替え(ワークスペース・worktree・この会話のツール)は即時のままで、UpdateConversationSettings を呼ぶ(ログは出さない)。
+func (s *Service) SaveConversationSettings(ctx context.Context, id uuid.UUID, settings aibow.ConversationSettings) error {
+	if s.startupErr != nil {
+		return s.startupErr
+	}
+	c, _, err := s.convs.Get(ctx, id)
+	if err != nil {
+		return err
+	}
+	if err := s.UpdateConversationSettings(ctx, id, settings); err != nil {
+		return err
+	}
+	log.Infof("会話「%s」(%s)の設定を保存しました(%s)", c.Title, id, aibow.ChangedItems(aibow.SettingsChanges(c.Settings, settings)))
+	return nil
 }
 
 // noNewAllow は、ブラウザの利用者が、会話の設定でツールを「確認しない」にしていないかを確かめる(0024 の決定事項 3・18)。

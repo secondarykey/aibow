@@ -77,6 +77,9 @@ type Store interface {
 	UserConversations(ctx context.Context, name string) ([]ConversationRef, error)
 	// ReadConversation は、ほかの人の会話を読む(共有されているか、管理者)。読めなければ ErrNotFound(あることも見せない)
 	ReadConversation(ctx context.Context, id uuid.UUID) (SharedRead, error)
+	// SetConversationInactive は、会話の一覧での「非アクティブ」の印を付ける / 外す(0055)。印は付けた人の一覧にだけ効く。
+	// 付けられるのは自分の会話と、自分に共有された会話。ほかは ErrNotFound。ListConversations と SharedConversations が印を載せる
+	SetConversationInactive(ctx context.Context, id uuid.UUID, inactive bool) error
 	// Directory は、共有の相手に選べる人(名前と表示名)とグループ(メンバーと長。0031)。ログインした人なら誰でも。ログインなしの形の利用者は入れない
 	Directory(ctx context.Context) (Directory, error)
 
@@ -129,6 +132,9 @@ type Conversation struct {
 	ShareWith []string `json:"share_with,omitempty"`
 	// ShareGroups は相手のグループの名前(0031。ShareWith と同じく会話1つを読んだときだけ入る)
 	ShareGroups []string `json:"share_groups,omitempty"`
+	// Inactive は、一覧を見ている人がこの会話を非アクティブにしたか(0055。会話の一覧で読んだときだけ入る)。
+	// 会話の中身ではなく一覧での見せ方の属性なので、UpdateConversation では変わらない(変えるのは SetConversationInactive)
+	Inactive bool `json:"inactive,omitempty"`
 }
 
 // ConversationRef は、ほかの人の会話の一覧の1件(共有された会話・管理者が見る人の会話。0018 の 11-2)。中身は ReadConversation で読む。
@@ -140,8 +146,15 @@ type ConversationRef struct {
 	OwnerDisplay string    `json:"owner_display,omitempty"`
 	UpdatedAt    time.Time `json:"updated_at"`
 	// Share はその会話の共有の範囲(0031 の決定事項 17)。共有された会話の一覧では、ShareUsers なら自分あて(指定した人に入っている)、
-	// ShareAll なら全員に共有されたもの。画面はこれで「自分に共有」と「全員に共有」に分ける
+	// ShareAll なら全員に共有されたもの
 	Share string `json:"share,omitempty"`
+	// ToMe・Groups は、自分に見えている理由(0055 の決定事項 23。共有された会話の一覧だけで入る)。
+	// ToMe は自分が直接の相手、Groups は自分がメンバーで相手に入っているグループの名前(名前の順)。両方あてはまれば両方入る。
+	// 範囲が ShareAll のときは Share で分かるので入れない
+	ToMe   bool     `json:"to_me,omitempty"`
+	Groups []string `json:"groups,omitempty"`
+	// Inactive は、自分がこの会話を非アクティブにしたか(0055。共有された会話の一覧だけで入る)
+	Inactive bool `json:"inactive,omitempty"`
 }
 
 // UserRef は、共有の相手に選べる利用者1人(0031)。DisplayName は表示名(空ならログインの名前を出す)
@@ -178,6 +191,9 @@ type SharedRead struct {
 	OwnerDisplay string          `json:"owner_display,omitempty"` // 持ち主の表示名(0031)
 	// ByAdmin は、共有されていないが管理者として読んだ(読んだことをログに残す。決定事項 1)
 	ByAdmin bool `json:"by_admin"`
+	// ToMe・Groups は、自分に見えている理由(ConversationRef と同じ。0055)。管理者として読んだときは入れない(共有されていないので)
+	ToMe   bool     `json:"to_me,omitempty"`
+	Groups []string `json:"groups,omitempty"`
 	// ReaderName は読んだ人(ctx の利用者)の名前(ログに書くため)
 	ReaderName string `json:"reader_name"`
 }

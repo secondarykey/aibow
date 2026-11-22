@@ -72,6 +72,8 @@ func main() {
 	// 起動に失敗しても(lib が無いなど)ウィンドウは出し、理由を画面に表示する。
 	// リリース版(wails3 build)はコンソールが無く、ログだけでは何も見えずに終わってしまうため。
 	cfg, err := loadConfig()
+	// aibow-server へのリクエストに、このアプリのバージョンを付ける(0054)。クライアントはあちこちで作るので、作る前に1回だけ決める
+	apiclient.SetAppVersion(appVersion())
 	conn := newConnection(cfg)
 	// ログが書けない・前回は異常終了した、などは起動を止めず、画面のお知らせで伝える
 	cfg.notices = append(cfg.notices, logNotices...)
@@ -131,6 +133,10 @@ func main() {
 	if !built {
 		log.Warn("画面がビルドされていません(web/dist/app が無い)。wails3 build で画面をビルドしてください")
 	}
+	chat := NewChatService(ui.Options{
+		Host: host, Store: st, App: settings, Initial: initial, Local: local, MCP: mcpm, MCPConfig: mcpc, Prefs: prefs, Workspaces: workspaces,
+		Version: appVersion(), Notices: cfg.notices, StartupErr: err, WaitLogin: waitLogin,
+	}, conn)
 	app := application.New(application.Options{
 		Name:        "aibow",
 		Description: "ローカルLLMを自分で動かして仕組みを学ぶチャット",
@@ -139,10 +145,7 @@ func main() {
 		// なお WebView2 の行([WebView2] …)は標準の log で来るが、slog.SetDefault のあとは標準の log も同じ出口に流れる
 		Logger: slog.Default(),
 		Services: []application.Service{
-			application.NewService(NewChatService(ui.Options{
-				Host: host, Store: st, App: settings, Initial: initial, Local: local, MCP: mcpm, MCPConfig: mcpc, Prefs: prefs, Workspaces: workspaces,
-				Version: appVersion(), Notices: cfg.notices, StartupErr: err, WaitLogin: waitLogin,
-			}, conn)),
+			application.NewService(chat),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
@@ -170,6 +173,8 @@ func main() {
 	}
 	window := app.Window.NewWithOptions(opts)
 	tracker := trackWindow(app, window, cfg.windowPath, saved, hasSaved)
+	// 保存していない変更があれば、閉じるのを止めて画面に聞く(closeguard.go。0053)
+	chat.closer.attach(app, window)
 
 	// Windows の WebView2 は、別のウィンドウから戻ってきたときに IME(日本語入力)の状態が
 	// 戻らず、入力欄で変換できなくなることがある。戻ってきたことを画面に知らせ、
@@ -341,6 +346,8 @@ func loadWorkspaces(cfg *appConfig) *config.Workspaces {
 func newServerClient(cfg appConfig) (*apiclient.Client, error) {
 	c := apiclient.New(cfg.serverURL)
 	c.SetKey(cfg.serverKey)
+	// サーバーのバージョンは返事の見出しで分かる。初めて知ったとき・変わったとき(サーバーを入れ替えたなど)だけログに残す(0054 の決定事項 17)
+	c.OnServerVersion(func(server, minApp string) { logServerVersion(c.URL(), server, minApp) })
 	if cfg.serverCert != "" {
 		if err := c.TrustCert(cfg.serverCert); err != nil {
 			return nil, err

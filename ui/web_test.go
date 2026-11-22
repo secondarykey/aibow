@@ -414,6 +414,7 @@ func TestWebCall(t *testing.T) {
 		{"UnloadModel", nil}, {"SetModelGPULayers", []any{"ollama:a", 10}}, {"ModelPlaces", nil},
 		{"AddModelPlace", []any{"/data"}}, {"RemoveModelPlace", []any{"/data"}}, {"SetModelEnabled", []any{"ollama:a", false}},
 		{"SetToolPolicy", []any{"calculate", "allow"}}, {"SetGroupPolicy", []any{"", "allow"}}, {"LoadToolList", []any{"web"}},
+		{"SetToolPolicies", []any{[]map[string]any{{"group": false, "name": "calculate", "policy": "allow"}}}},
 	} {
 		if status, body := w.call(t, context.Background(), c.name, c.args...); status != http.StatusForbidden {
 			t.Errorf("%s は 403 のはず: %d %s", c.name, status, body)

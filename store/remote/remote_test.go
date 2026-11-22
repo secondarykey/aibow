@@ -133,8 +133,19 @@ func TestGroupsOverHTTP(t *testing.T) {
 		t.Fatal(err)
 	}
 	*user = carol
-	if refs, err := c.SharedConversations(ctx); err != nil || len(refs) != 1 || refs[0].ID != conv.ID {
-		t.Errorf("グループのメンバーに見える: %+v %v", refs, err)
+	if refs, err := c.SharedConversations(ctx); err != nil || len(refs) != 1 || refs[0].ID != conv.ID || refs[0].ToMe || len(refs[0].Groups) != 1 {
+		t.Errorf("グループのメンバーに見える(見えている理由は 営業 グループ): %+v %v", refs, err)
+	}
+	// 非アクティブの印(0055)も HTTP 越しに付けられ、付けた人の一覧にだけ載る
+	if err := c.SetConversationInactive(ctx, conv.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if refs, err := c.SharedConversations(ctx); err != nil || len(refs) != 1 || !refs[0].Inactive {
+		t.Errorf("非アクティブにした: %+v %v", refs, err)
+	}
+	*user = bob
+	if list, err := c.ListConversations(ctx); err != nil || len(list) != 1 || list[0].Inactive {
+		t.Errorf("持ち主の一覧は変わらない: %+v %v", list, err)
 	}
 }
 

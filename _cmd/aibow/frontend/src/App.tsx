@@ -49,7 +49,8 @@ import { LuSettings } from "react-icons/lu";
 import { ChatService, isBrowser, me, onReconnect, onWindowFocus } from "./backend";
 import { showName } from "./directory";
 import type { ServerInfo } from "../bindings/github.com/secondarykey/aibow/mcp/client";
-import type { ConversationRef, ConversationSettings, SharedRead } from "../bindings/github.com/secondarykey/aibow";
+import type { ConversationRef, SharedRead } from "../bindings/github.com/secondarykey/aibow";
+import { useUnsaved } from "./unsaved";
 import { ImeFocusRelay } from "./imeFocus";
 import { errorMessage, isUnreachable, operationEvents } from "./errors";
 import { setTheme } from "./theme";
@@ -120,6 +121,8 @@ export default function App() {
 
   const transcript = useTranscript();
   const toasts = useToasts();
+  // 画面を離れる操作(会話を選ぶ・「+ 新規」・設定や管理の画面を開け閉めする)は、保存していない変更があれば先に知らせる(0053 の決定事項 16)
+  const { guard } = useUnsaved();
   const models = useModels(toasts, transcript, setBusy);
   // 起動に失敗したあと(lib が無いなど)は、Go のメソッドがどれも同じ理由で断る。タブを移る・ウィンドウに戻るたびに
   // 同じエラーが積み上がって設定の画面のタブが下に押し出されるので、その理由を含むエラーは出さない(理由は useModels が「起動できません」で1回だけ出す)
@@ -282,7 +285,8 @@ export default function App() {
 
   // 「+ 新規」: 新しい会話の画面に移る。会話そのものは、そこで最初に送信したときに作る
   const home = convs.current === null;
-  const onNew = () => {
+  const onNew = () => guard(onNewNow);
+  const onNewNow = () => {
     // 設定の画面・管理の画面から戻ってきたときは、新しい会話の画面で選んでいたワークスペースを残す(0049 の決定事項 1。
     // 設定を見に行っただけで、選んだものが消えないように)。新しい会話の画面にいて押したときだけ、下で外す
     const fromSettings = settingsOpen || adminOpen;
@@ -309,7 +313,8 @@ export default function App() {
   // 一覧のまとまりの「+」(並べ方がワークスペースごとのとき。0038): そのワークスペースを選んだ新しい会話の画面に移る。
   // 上の「+ 新規」と違い、利用者がワークスペースを選んで押しているので、選んでおいてよい(0035 の「前回のワークスペースを選ばない」とは別)。
   // 「ワークスペースなし」の「+」は workspace が "" で、設定の画面から戻ったときも含めて必ず外す(0051 の決定事項 2)
-  const onNewIn = (workspace: string) => {
+  const onNewIn = (workspace: string) => guard(() => onNewInNow(workspace));
+  const onNewInNow = (workspace: string) => {
     closeOverlay();
     setSettingsOpen(false);
     setConvSettingsOpen(false);
@@ -462,7 +467,8 @@ export default function App() {
 
   // 画面を開くときは、前に開いていたときのエラーを持ち越さない
   const markSettingsFrom = clearScreenErrors;
-  const toggleSettings = () => {
+  const toggleSettings = () => guard(toggleSettingsNow);
+  const toggleSettingsNow = () => {
     closeOverlay();
     if (!settingsOpen) markSettingsFrom();
     setConvSettingsOpen(false); // 会話の設定の画面からは、設定の画面に切り替える
@@ -471,7 +477,8 @@ export default function App() {
     setSettingsOpenState(o => !o);
   };
   // 歯車の隣の盾: 管理の画面を開く / 閉じる(0032 の決定事項 5)
-  const toggleAdmin = () => {
+  const toggleAdmin = () => guard(toggleAdminNow);
+  const toggleAdminNow = () => {
     closeOverlay();
     if (!adminOpen) markSettingsFrom();
     setConvSettingsOpen(false);
@@ -479,7 +486,8 @@ export default function App() {
     setAdminOpen(o => !o);
   };
   // 左下の名前のメニューの「アカウント」: 設定の画面を「アカウント」のタブで開く(開いていても切り替える。0031 の決定事項 46)
-  const openAccount = () => {
+  const openAccount = () => guard(openAccountNow);
+  const openAccountNow = () => {
     closeOverlay();
     if (!settingsOpen) markSettingsFrom();
     setConvSettingsOpen(false);
@@ -506,7 +514,8 @@ export default function App() {
     reloadShared();
     return onWindowFocus(reloadShared); // ほかの人が共有した・やめたことを、ウィンドウに戻ったときに拾う
   }, [reloadShared]);
-  const onOpenShared = (id: string) => {
+  const onOpenShared = (id: string) => guard(() => onOpenSharedNow(id));
+  const onOpenSharedNow = (id: string) => {
     closeOverlay();
     ChatService.ReadConversation(id).then(
       r => {
@@ -520,6 +529,15 @@ export default function App() {
       },
     );
   };
+  // 会話を非アクティブにする / 戻す(0055)。付けた人の一覧だけが変わるので、変えたほうの一覧を読み直す
+  const onSetInactive = (id: string, isShared: boolean, inactive: boolean) => {
+    ChatService.SetConversationInactive(id, inactive)
+      .then(() => (isShared ? reloadShared() : convs.reloadList()))
+      .catch(err => {
+        addError(errorMessage(err));
+        if (isShared) reloadShared(); // 共有をやめられたなど。一覧から消す
+      });
+  };
   // 写して続ける:写した会話(自分の会話)を開く
   const copyReading = () => {
     if (!reading) return;
@@ -532,7 +550,8 @@ export default function App() {
       .then(focusInput, err => addError(errorMessage(err)));
   };
 
-  const onOpen = (id: string) => {
+  const onOpen = (id: string) => guard(() => onOpenNow(id));
+  const onOpenNow = (id: string) => {
     closeOverlay();
     setSettingsOpen(false);
     setConvSettingsOpen(false);
@@ -577,24 +596,21 @@ export default function App() {
     convs.reloadProfiles().catch(err => addError(errorMessage(err)));
     app.reload().catch(() => {});
   };
-  // 会話の上限・返事の上限の「適用」: 作業領域をその大きさで作り直してみて、確保できたら save で保存する。
-  // VRAM に入らないことを、送信したときではなく変えたときに分かるようにするため(0009)
-  const applyLimits = async (history: number, reply: number, save: (patch: Partial<ConversationSettings>) => void) => {
+  // 会話の上限・返事の上限を変えて保存する前に、作業領域をその大きさで作り直してみる。入らなければ reject し、画面は保存しない(下書きは残る)。
+  // VRAM に入らないことを、送信したときではなく保存したときに分かるようにするため(0009。0053 で「適用」を画面の「保存」に入れた)。
+  // 作り直したときだけトーストで知らせる(作り直さずに済んだときは、保存しただけなので出さない。0053 の決定事項 14)
+  const tryLimits = async (history: number, reply: number) => {
     setBusy("loading");
     try {
-      const changed = await ChatService.TryLimits(history, reply);
-      save({ history_tokens: history, reply_tokens: reply });
-      const size = (history + reply).toLocaleString();
-      toasts.notify(changed
-        ? `会話の上限 ${history.toLocaleString()} + 返事の上限 ${reply.toLocaleString()} = 作業領域 ${size} トークンに作り直しました(モデルは読み直していません)`
-        : models.server
-          ? `会話の上限 ${history.toLocaleString()} + 返事の上限 ${reply.toLocaleString()} にしました(aibow-server の作業領域の中で使います)`
-          : `会話の上限 ${history.toLocaleString()} + 返事の上限 ${reply.toLocaleString()} にしました(作業領域 ${size} トークン)`);
-    } catch (err) {
-      addError(errorMessage(err)); // Go 側で元の大きさに戻している。設定は保存しない
+      const changed = await ChatService.TryLimits(history, reply); // 失敗したら Go 側で元の大きさに戻している
+      if (changed) {
+        const size = (history + reply).toLocaleString();
+        toasts.notify(`会話の上限 ${history.toLocaleString()} + 返事の上限 ${reply.toLocaleString()} = 作業領域 ${size} トークンに作り直しました(モデルは読み直していません)`);
+      }
+    } finally {
+      await models.reload().catch(() => {});
+      setBusy("idle");
     }
-    await models.reload().catch(() => {});
-    setBusy("idle");
   };
 
   // 会話の場所に出すもの: 設定の画面 / 新しい会話の画面 / チャット
@@ -606,13 +622,13 @@ export default function App() {
         key={settingsTab.n}
         initialTab={settingsTab.tab}
         errors={viewErrors}
-        onClose={() => setSettingsOpen(false)}
+        onClose={() => guard(() => setSettingsOpen(false))}
         app={app.settings}
         models={models.models}
         modelState={models}
         servers={mcpServers}
         onProfilesChanged={onProfilesChanged}
-        onApplyLimits={applyLimits}
+        onTryLimits={tryLimits}
         onError={addError}
         appDisabled={busy !== "idle"}
         // 起動に失敗したとき(lib が無いなど)も、aibow-server にはつなげるようにする(つなぐなら lib は要らない)
@@ -631,7 +647,7 @@ export default function App() {
     content = (
       <AdminView
         errors={viewErrors}
-        onClose={() => setAdminOpen(false)}
+        onClose={() => guard(() => setAdminOpen(false))}
         onError={addError}
         onReadConversation={onOpenShared}
         models={models}
@@ -641,7 +657,7 @@ export default function App() {
           reloadMcp();
           convs.refreshUsage().catch(err => addError(errorMessage(err)));
         }}
-        onApplyLimits={applyLimits}
+        onTryLimits={tryLimits}
         onProfilesChanged={onProfilesChanged}
       />
     );
@@ -657,11 +673,12 @@ export default function App() {
         settings={current}
         models={models.models}
         errors={viewErrors}
-        onClose={() => {
+        onClose={() => guard(() => {
           setConvSettingsOpen(false);
           focusInput();
-        }}
-        onChange={convs.updateSettings}
+        })}
+        onSave={convs.saveSettings}
+        onError={addError}
         worktree={worktree.state}
         onRenameWorktree={name =>
           ChatService.SetWorktreeName(convs.current!.conversation.id, name)
@@ -699,7 +716,7 @@ export default function App() {
         lastPromptFormat={chat.lastPromptFormat}
         servers={mcpServers}
         limitsDisabled={busy !== "idle"}
-        onApplyLimits={(h, r) => applyLimits(h, r, convs.updateSettings)}
+        onTryLimits={tryLimits}
         share={convs.current.conversation.share ?? ""}
         shareWith={convs.current.conversation.share_with ?? []}
         shareGroups={convs.current.conversation.share_groups ?? []}
@@ -773,6 +790,8 @@ export default function App() {
   }
 
   const listProps = {
+    server: models.server,
+    serverError: models.serverError,
     list: convs.list,
     currentId,
     generatingId: chat.generatingId,
@@ -802,6 +821,7 @@ export default function App() {
     shared,
     readingId: reading?.conversation.id ?? null,
     onOpenShared,
+    onSetInactive,
     workspaces: workspaces.workspaces ?? [],
     currentWorkspace: convs.current ? convs.current.conversation.settings.workspace ?? "" : null,
     onNewIn,

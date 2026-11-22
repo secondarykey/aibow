@@ -41,6 +41,7 @@ import (
 
 	"github.com/secondarykey/aibow/engine"
 	"github.com/secondarykey/aibow/format"
+	"github.com/secondarykey/aibow/internal/appversion"
 )
 
 // Client は aibow-server につなぐクライアント。
@@ -61,6 +62,32 @@ type Client struct {
 	shown *engine.ModelInfo
 	nCtx  int    // サーバーの作業領域の大きさ(知らなければ 0)
 	model string // 生成で頼むモデルの ID(LoadModel で決める。空ならサーバーが読み込んでいるモデル)
+
+	// server・minApp は、最後に知った aibow-server のバージョンと、対応できるアプリの最低バージョン(返事の見出しから。0054)。
+	// 返事のたびに取り直す(サーバーを入れ替えて版が変わったときも、次の返事で分かる)。この機能より古い aibow-server なら空
+	server, minApp string
+	// onVersion は、サーバーのバージョンを初めて知ったとき・変わったときに呼ぶ(OnServerVersion。無ければ呼ばない)
+	onVersion func(server, minApp string)
+}
+
+// appVersion は、毎回のリクエストに付けるアプリのバージョン(SetAppVersion。0054)。決めていなければ付けない
+var appVersion atomic.Pointer[string]
+
+// SetAppVersion は、aibow-server へのリクエストに付けるアプリのバージョンを決める(X-Aibow-App-Version。0054 の決定事項 15)。
+// Client はあちこちで作られる(起動のとき・つなぎ先を確かめるとき・ログインのときなど)ので、作るたびに渡すと漏れが出る。
+// そのためパッケージで1回だけ決める。画面のアプリが、クライアントを作る前に呼ぶ。
+// 呼ばなければ見出しを付けない(テストや、ほかの人がライブラリとして使うとき。サーバーは「画面のアプリではない」として扱う)。
+func SetAppVersion(v string) {
+	v = strings.TrimSpace(v)
+	appVersion.Store(&v)
+}
+
+// sentAppVersion は、付けるアプリのバージョン(決めていなければ空)。
+func sentAppVersion() string {
+	if v := appVersion.Load(); v != nil {
+		return *v
+	}
+	return ""
 }
 
 // New はクライアントを作る。つなぎ先は http://127.0.0.1:8089 の形(/v1 が付いていてもよい)。ここではまだつながない。
@@ -86,6 +113,31 @@ func (c *Client) Key() string {
 		return *k
 	}
 	return ""
+}
+
+// ServerVersion は、最後に知った aibow-server のバージョンと、そのサーバーが対応できるアプリの最低バージョン(0054 の決定事項 16)。
+// Info と同じく聞きに行かずに、最後の返事の見出しで覚えた値を返す。まだ1回も返事を受けていない・見出しを返さない古い aibow-server なら空。
+func (c *Client) ServerVersion() (server, minApp string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.server, c.minApp
+}
+
+// OnServerVersion は、サーバーのバージョンを初めて知ったとき・変わったとき(対応できるアプリの最低バージョンが変わったときも)に f を呼ぶ。
+// 画面のアプリがログに残すのに使う(0054 の決定事項 17)。見出しの無い返事(古い aibow-server)では呼ばない。使い始める前に呼ぶ。
+func (c *Client) OnServerVersion(f func(server, minApp string)) { c.onVersion = f }
+
+// noteVersion は、返事の見出しからサーバーのバージョンを覚える(do が、エラーの返事も含めて毎回呼ぶ)。
+func (c *Client) noteVersion(h http.Header) {
+	server, minApp := h.Get(appversion.ServerHeader), h.Get(appversion.MinAppHeader)
+	c.mu.Lock()
+	changed := server != "" && (server != c.server || minApp != c.minApp)
+	c.server, c.minApp = server, minApp
+	f := c.onVersion
+	c.mu.Unlock()
+	if changed && f != nil {
+		f(server, minApp)
+	}
 }
 
 // TrustCert は、aibow-server の証明書(PEM のファイル)を信頼する(自己署名の証明書で HTTPS を待ち受けているとき。0017 の 10-2)。
@@ -202,6 +254,10 @@ func (c *Client) do(ctx context.Context, method, path string, body any) (*http.R
 	if key := c.Key(); key != "" {
 		req.Header.Set("Authorization", "Bearer "+key)
 	}
+	// HTTP には「つないだ瞬間」が無いので、版は毎回のリクエストに載せる(0054)
+	if v := sentAppVersion(); v != "" {
+		req.Header.Set(appversion.AppHeader, v)
+	}
 	res, err := c.hc.Do(req)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -215,6 +271,7 @@ func (c *Client) do(ctx context.Context, method, path string, body any) (*http.R
 		}
 		return nil, c.unreachable(err)
 	}
+	c.noteVersion(res.Header) // エラーの返事(ログインが要る・404 など)にも付いてくる
 	if res.StatusCode == http.StatusOK {
 		return res, nil
 	}

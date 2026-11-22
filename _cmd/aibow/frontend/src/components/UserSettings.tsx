@@ -1,8 +1,9 @@
 // 管理の画面の「利用者」のタブ(0018 の決定事項 7。11-0。0031 で一覧 + 詳細にした。0032 で設定の画面から管理の画面に移した)。ブラウザの管理者だけに出す。
 //
 // グループは管理の画面の「グループ」のタブ(GroupSettings.tsx の GroupAdmin。0031 では、このタブの中の [人 | グループ] の切り替えだった)。
-//	[名前で探す…] [すべて | 招待中 | 管理者 | API キーあり | 30日使っていない]   [+ 利用者を作る]
-//	名前                 状態      最後に使った日   作った日      会話   … 見出しを押すと並べ替え。行を押すと一覧の下に詳細(0031 の決定事項 14・35)
+//	[ID・名前で探す…] [すべて | 招待中 | 管理者 | API キーあり | 30日使っていない]   [+ 利用者を作る]
+//	ID      名前         状態      最後に使った日   作った日      会話   … 見出しを押すと並べ替え。行を押すと一覧の下に詳細(0031 の決定事項 14・35)
+//	表では ID(ログインの名前)と名前(表示名)を別の列に出す(0056。並べ替えられるように)。詳細の見出しは「表示名(ログインの名前)」のまま
 //	▼ 詳細: 表示名・メールアドレス・グループ・パスワードのリンク・API キー・その人の会話(新しい順 20 件 + もっと見る)・消す
 //
 // 一覧は一度に取って画面で探す・絞る・並べ替える(サーバーで探す口は作らない。0031 の決定事項 13)。
@@ -72,7 +73,7 @@ function usedLabel(at: string | undefined): string {
 }
 
 // 並べ替え
-type SortKey = "name" | "state" | "used" | "created" | "conversations";
+type SortKey = "id" | "name" | "state" | "used" | "created" | "conversations";
 interface Sort { key: SortKey; desc: boolean }
 
 const invited = (u: AdminUser) => !u.password && !u.local;
@@ -92,11 +93,13 @@ function compare(a: AdminUser, b: AdminUser, key: SortKey): number {
     case "used": return (a.last_used_at ?? "").localeCompare(b.last_used_at ?? "");
     case "created": return a.created_at.localeCompare(b.created_at);
     case "conversations": return a.conversations - b.conversations;
+    case "id": return a.name.localeCompare(b.name);
   }
-  return label(a).localeCompare(label(b));
+  // 名前(表示名)の順。表示名が無い人は ID で比べる(列には「-」と出るが、並びは ID の位置にする)
+  return (a.display_name || a.name).localeCompare(b.display_name || b.name) || a.name.localeCompare(b.name);
 }
 
-// label は一覧の名前(「表示名(ログインの名前)」。0031 の決定事項 18)
+// label は詳細の見出しの名前(「表示名(ログインの名前)」。0031 の決定事項 18)
 const label = (u: AdminUser) => showName(u.name, u.display_name);
 
 export function UserSettings({ dir, reloadDir, onError, onRead }: {
@@ -150,10 +153,11 @@ export function UserSettings({ dir, reloadDir, onError, onRead }: {
   }, [users, query, filter, sort]);
   const user = users.find(u => u.name === selected) ?? null;
 
-  const head = (key: SortKey, label: string, cls = "") => (
+  const head = (key: SortKey, label: string, cls = "", title?: string) => (
     <button
       type="button"
       className={"model-table-head user-sort " + cls + (sort.key === key ? " current" : "")}
+      title={title}
       onClick={() => setSort(s => ({ key, desc: s.key === key ? !s.desc : false }))}
     >
       {label}
@@ -166,7 +170,7 @@ export function UserSettings({ dir, reloadDir, onError, onRead }: {
       <h2 title="管理者の印は、aibow-server の PC で aibow-server user admin / unadmin で付け外しする">利用者</h2>
       {secret && <SecretBox secret={secret} onClose={() => setSecret(null)} />}
       <div className="user-toolbar">
-        <input type="text" className="user-search" value={query} placeholder="名前で探す…" onChange={e => setQuery(e.target.value)} />
+        <input type="text" className="user-search" value={query} placeholder="ID・名前で探す…" onChange={e => setQuery(e.target.value)} />
         <div className="segmented" role="group">
           {FILTERS.map(f => (
             <button key={f.id} type="button" className={filter === f.id ? "current" : ""} title={f.title} aria-pressed={filter === f.id} onClick={() => setFilter(f.id)}>
@@ -179,7 +183,8 @@ export function UserSettings({ dir, reloadDir, onError, onRead }: {
       </div>
       {creating && <AddUser onAdd={create} onCancel={() => setCreating(false)} />}
       <div className="user-table">
-        {head("name", "名前")}
+        {head("id", "ID", "", "ログインの名前")}
+        {head("name", "名前", "", "表示名(アカウントで変えられる)")}
         {head("state", "状態")}
         {head("used", "最後に使った日")}
         {head("created", "作成日")}
@@ -192,7 +197,8 @@ export function UserSettings({ dir, reloadDir, onError, onRead }: {
             aria-expanded={u.name === selected}
             onClick={() => setSelected(s => (s === u.name ? null : u.name))}
           >
-            <span className="model-name">{label(u)}</span>
+            <span className="model-name">{u.name}</span>
+            <span className="user-display">{u.display_name || "-"}</span>
             <span className="user-states">{states(u).map(s => <span key={s} className="origin-chip">{s}</span>)}</span>
             <span className="user-date" title={u.last_used_at ? new Date(u.last_used_at).toLocaleString() : "一度も使っていない"}>{usedLabel(u.last_used_at)}</span>
             <span className="user-date">{u.created_at.slice(0, 10)}</span>

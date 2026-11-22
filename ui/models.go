@@ -179,7 +179,8 @@ func (s *Service) SetModelGPULayers(ctx context.Context, id string, n int) (*eng
 	if i != nil {
 		logModel("GPU に載せる層を変えて読み直しました", i)
 	} else {
-		log.Noticef("モデル %s の GPU に載せる層を %d として覚えました(次に読み込むときから効きます)", id, n)
+		// 層数を覚えただけで、読み込みは起きていない。後から追う出来事ではないので Info(0053 の決定事項 25。E4)
+		log.Infof("モデル %s の GPU に載せる層を %d として覚えました(次に読み込むときから効きます)", id, n)
 	}
 	return i, nil
 }

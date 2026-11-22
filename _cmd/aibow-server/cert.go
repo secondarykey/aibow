@@ -28,6 +28,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/secondarykey/aibow/auth"
@@ -70,7 +71,7 @@ func runCert(c serverConfig, hosts []string) error {
 	if err := os.WriteFile(certPath, certPEM, 0o644); err != nil {
 		return err
 	}
-	log.Noticef("自己署名の証明書を作りました: %s(%d 日有効。ホスト: %v)", certPath, certDays, hosts)
+	log.Noticef("自己署名の証明書を作りました: %s(%d 日有効。ホスト: %s)", certPath, certDays, strings.Join(hosts, ", "))
 	fmt.Printf("証明書: %s\n秘密鍵: %s\n", absPath(certPath), absPath(keyPath))
 	block, _ := pem.Decode(certPEM)
 	fmt.Printf("証明書のフィンガープリント(SHA-256): %s\n", auth.Fingerprint(block.Bytes))

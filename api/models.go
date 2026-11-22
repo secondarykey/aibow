@@ -218,7 +218,8 @@ func (s *Server) handleGPULayers(w http.ResponseWriter, r *http.Request) {
 	if info != nil {
 		log.Noticef("GPU に載せる層を %d にして読み直しました: %s(%.1f 秒)", *req.NGPULayers, info.ID, info.LoadSec)
 	} else {
-		log.Noticef("モデル %s の GPU に載せる層を %d として覚えました(次に読み込むときから効きます)", m.ID, *req.NGPULayers)
+		// 読み直したとき(上)はモデルの読み込みなので Notice のまま。覚えただけのときは Info(0053 の決定事項 25)
+		log.Infof("モデル %s の GPU に載せる層を %d として覚えました(次に読み込むときから効きます)", m.ID, *req.NGPULayers)
 	}
 	writeJSON(w, http.StatusOK, loadResult{Success: true, Model: info})
 }

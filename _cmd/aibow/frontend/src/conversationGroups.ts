@@ -7,11 +7,43 @@
 // ワークスペースは PC のもの(workspaces.json)なので、まとまりの中身も PC によって変わる。人ごと(DB)にすると、
 // ワークスペースの無いほかの PC でも「ワークスペースごと」になってしまうため(0038 の決定事項)。
 // ブラウザ(aibow-server)の会話はワークスペースを使わない(資料のフォルダ。0024)ので、ブラウザではいつも新しい順。
+//
+// 一覧に混ぜる(0055):自分の会話(Conversation)と、ほかの人に共有された会話(ConversationRef)は、保存の形は別のまま、
+// ここで1つの列(ListItem)にして更新の新しい順に並べる。探す(タイトルと持ち主の名前)・非アクティブで分けるのも、この列に対して行う。
 import { useSyncExternalStore } from "react";
-import type { Conversation } from "../bindings/github.com/secondarykey/aibow";
+import type { Conversation, ConversationRef } from "../bindings/github.com/secondarykey/aibow";
 import type { WorkspaceView } from "../bindings/github.com/secondarykey/aibow/ui";
 import { isBrowser } from "./backend";
-import { loadStored, saveStored, STORED_LIST_GROUPING, STORED_LIST_GROUPS_CLOSED } from "./stored";
+import { loadStored, saveStored, STORED_LIST_GROUPING, STORED_LIST_GROUPS_CLOSED, STORED_LIST_INACTIVE_OPEN } from "./stored";
+
+// ListItem は一覧の1行。自分の会話(own)か、ほかの人に共有された会話(shared。押すと読むだけで開く)
+export type ListItem =
+  | { kind: "own"; id: string; updated: number; inactive: boolean; c: Conversation }
+  | { kind: "shared"; id: string; updated: number; inactive: boolean; r: ConversationRef };
+
+// mergeList は、自分の会話と共有された会話を、更新の新しい順の1列にする(0055 の決定事項 10)。
+// 同じ時刻なら ID の大きい(新しく作った)ほうを先にする(保存先の ORDER BY updated_at DESC, id DESC と同じ)
+export function mergeList(own: Conversation[], shared: ConversationRef[]): ListItem[] {
+  const items: ListItem[] = [
+    ...own.map(c => ({ kind: "own" as const, id: c.id, updated: Date.parse(c.updated_at), inactive: !!c.inactive, c })),
+    ...shared.map(r => ({ kind: "shared" as const, id: r.id, updated: Date.parse(r.updated_at), inactive: !!r.inactive, r })),
+  ];
+  return items.sort((a, b) => b.updated - a.updated || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
+}
+
+// itemTitle は、行に出す会話の名前(名前がまだ無ければ「新しい会話」)
+export function itemTitle(it: ListItem): string {
+  return (it.kind === "own" ? it.c.title : it.r.title) || "新しい会話";
+}
+
+// matchItem は、検索ボックスの文字に当たるか(0055 の決定事項 9)。大文字小文字を区別しない部分一致で、
+// 自分の会話はタイトル、共有された会話はタイトルと持ち主の名前(表示名・ログインの名前)に当てる。q は小文字にして渡す
+export function matchItem(it: ListItem, q: string): boolean {
+  if (q === "") return true;
+  if (itemTitle(it).toLowerCase().includes(q)) return true;
+  if (it.kind === "own") return false;
+  return it.r.owner_name.toLowerCase().includes(q) || (it.r.owner_display ?? "").toLowerCase().includes(q);
+}
 
 export type ListGrouping = "flat" | "workspace";
 
@@ -30,7 +62,7 @@ export interface ConversationGroup {
   title: string;
   // workspace は、まとまりの「+」で新しい会話に選んでおくワークスペースの ID。空なら「+」を出さない
   workspace: string;
-  list: Conversation[];
+  list: ListItem[];
 }
 
 // ---- 並べ方と、畳んでいるまとまり ----------------------------------------------------------------
@@ -95,27 +127,59 @@ export function useClosedGroups(): [ReadonlySet<string>, (key: string, close: bo
   return [useSyncExternalStore(subscribe, getClosed), setClosed];
 }
 
+// 一覧の下の「非アクティブ」の折りたたみを開いているか(0055 の決定事項 18。既定は閉じている。PC ごとに覚える)
+let inactiveOpen: boolean | null = null;
+const getInactiveOpen = (): boolean => (inactiveOpen ??= loadStored(STORED_LIST_INACTIVE_OPEN) === "true");
+
+function setInactiveOpen(open: boolean) {
+  if (getInactiveOpen() === open) return;
+  inactiveOpen = open;
+  saveStored(STORED_LIST_INACTIVE_OPEN, open ? "true" : null); // 既定(閉じている)は覚えない
+  emit();
+}
+
+// useInactiveOpen は、非アクティブの折りたたみを開いているかと、開く / 閉じる関数
+export function useInactiveOpen(): [boolean, (open: boolean) => void] {
+  return [useSyncExternalStore(subscribe, getInactiveOpen), setInactiveOpen];
+}
+
+// 検索ボックスの文字(0055)。狭いウィンドウで一覧の部品が2つ描かれても同じ文字を見るよう、部品の外に1つだけ持つ。覚えない(起動し直すと空)
+let query = "";
+const getQuery = () => query;
+
+function setQuery(q: string) {
+  if (q === query) return;
+  query = q;
+  emit();
+}
+
+// useListQuery は、検索ボックスの文字と、それを変える関数
+export function useListQuery(): [string, (q: string) => void] {
+  return [useSyncExternalStore(subscribe, getQuery), setQuery];
+}
+
 // groupByWorkspace は、会話をワークスペースごとにまとめる。list は新しい順に並んでいるので、まとまりの中もその順のまま。
 //
 //   ワークスペース(この PC にあるもの) … 中のいちばん新しい会話の順。会話の無いワークスペースも、「+」で始められるよう名前の順で後ろに出す
-//   ワークスペースなし                   … 決めていない会話(ふつうのチャット)。あるときだけ
+//   ワークスペースなし                   … 決めていない会話(ふつうのチャット)と、ほかの人に共有された会話(ワークスペースは自分の PC のもので、
+//                                          ほかの人の会話には無い。0055 の決定事項 13)。あるときだけ
 //   この PC に無いワークスペース        … 別の PC で選んだ・消したワークスペースの会話(名前はその PC の workspaces.json にしか無いので、1つにまとめる)。あるときだけ
 //
 // override は、一覧を読み直す前の会話の設定(開いている会話で、入力欄の上のワークスペースを変えたとき。すぐに移すため)
-export function groupByWorkspace(list: Conversation[], workspaces: WorkspaceView[], override?: { id: string; workspace: string }): ConversationGroup[] {
+export function groupByWorkspace(list: ListItem[], workspaces: WorkspaceView[], override?: { id: string; workspace: string }): ConversationGroup[] {
   const known = new Map(workspaces.map(w => [w.id, w]));
-  const byWorkspace = new Map<string, Conversation[]>(); // 入れた順 = いちばん新しい会話の順
-  const none: Conversation[] = [];
-  const missing: Conversation[] = [];
+  const byWorkspace = new Map<string, ListItem[]>(); // 入れた順 = いちばん新しい会話の順
+  const none: ListItem[] = [];
+  const missing: ListItem[] = [];
   for (const c of list) {
-    const ws = c.id === override?.id ? override.workspace : c.settings.workspace ?? "";
+    const ws = c.kind === "shared" ? "" : c.id === override?.id ? override.workspace : c.c.settings.workspace ?? "";
     if (ws === "") none.push(c);
     else if (!known.has(ws)) missing.push(c);
     else byWorkspace.set(ws, [...(byWorkspace.get(ws) ?? []), c]);
   }
 
   const groups: ConversationGroup[] = [];
-  const add = (w: WorkspaceView, l: Conversation[]) => groups.push({
+  const add = (w: WorkspaceView, l: ListItem[]) => groups.push({
     key: "ws:" + w.id,
     label: w.name,
     title: w.folders?.map(f => f.path).join("\n") ?? w.name,
@@ -126,7 +190,7 @@ export function groupByWorkspace(list: Conversation[], workspaces: WorkspaceView
   const empty = workspaces.filter(w => !byWorkspace.has(w.id)).sort((a, b) => a.name.localeCompare(b.name));
   for (const w of empty) add(w, []);
   if (none.length > 0) {
-    groups.push({ key: "none", label: "ワークスペースなし", title: "ワークスペースを決めていない会話", workspace: "", list: none });
+    groups.push({ key: "none", label: "ワークスペースなし", title: "ワークスペースを決めていない会話と、共有された会話", workspace: "", list: none });
   }
   if (missing.length > 0) {
     groups.push({

@@ -1,22 +1,27 @@
 // 設定の画面の「会話」の「プロファイル」: プロファイル(名前の付いた新しい会話の既定。0014)の一覧と編集。
 //
-// 一覧で選んだプロファイルの名前・値・決まりを、その下で変える。変えたらすぐ保存する(会話の設定と同じく、まとめて送る)。
+// 一覧で選んだプロファイルの名前・値・決まりを、その下で変える。変えた値は下書きで、画面の下の「保存」で確定する(0053)。
 //   値:会話の設定と同じ入力欄(ConversationSettingsForm)と、使うツールのグループ。新しい会話はこの写しから始まる。今ある会話には効かない
-//   決まり:項目ごとの固定(名前の横の錠)と、使えないツール(グループごと・ツールごと)。今ある会話にもすぐ効く
-// 扱いを決めるのは Go。保存できなかったら(名前が空など)理由を出して、Go の値に戻す。
+//   決まり:項目ごとの固定(名前の横の錠)と、使えないツール(グループごと・ツールごと)。保存すると今ある会話にもすぐ効く
+//   ツールの「確認しない」(この PC の tools.json)も下書きに入れ、同じ「保存」でまとめて書く(Go の SaveProfile。0053 の決定事項 7)
+// 保存していない変更があるときに、一覧で別のプロファイルを選ぶ・作成 / 複製 / アーカイブ / 削除 / 配布をすると、先に知らせる(unsaved.tsx)。
+// 扱いを決めるのは Go。保存できなかったら(名前が空など)理由を出して、下書きはそのまま残す(打ったものが消えないように。決定事項 13)。
 //
 // 画面は一旦作ってから使い方を考える(0014 の 12)。ここは最初の形。
 //
 // 2つの形で使う(mode。0032 の段3):
 //   own         … 設定の画面の「会話」。自分の配っていないプロファイルを変える。配られたもの(管理者が自分で配ったものも)は「配布されたプロファイル」の欄に読むだけで出す。
-//                 一覧の上に「既定のプロファイル」(新しい会話の画面で最初に選ばれるもの)の選択肢を置く(0050 の決定事項 4。以前は各プロファイルの「最初に選ぶ」ボタン)
+//                 既定のプロファイル(新しい会話の画面で最初に選ばれるもの)は、一覧の行の「既定」の札で見せ、選んだプロファイルの操作の行の「既定にする」で変える
+//                 (0056。0050 の決定事項 4 では一覧の上の選択肢にしていたのを、ボタンに戻した。一覧の行は <button role="option"> なので、ボタンは行に置かず編集の欄に置く)
 //   distributed … 管理の画面の「配るプロファイル」(ブラウザの管理者だけ)。配っているプロファイルの値・決まり・配る相手・資料のフォルダを変える。「複製して配布」で、自分のプロファイルを写してそのまま配る
 //
 // 配る(0018 の 11-1・決定事項 22):
 //   - 配る相手は人を選ぶ部品で選ぶ(0031)。一覧に「全員に配っている」「N 人に配っている」の印
 //   - 受け取った人には「配布されたプロファイル」の欄を分けて出す。値は読むだけ(fieldset ごと無効にする)で、「複製」で自分のプロファイルにする
 //   - 配られたものも既定にできる(配られなくなったら、Go が自分のプロファイルに戻す)
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import type { ToolPolicyChange } from "../../bindings/github.com/secondarykey/aibow/ui";
+import { SaveBar, sameValue, useUnsaved, useUnsavedEntry } from "../unsaved";
 import { LuCopy, LuPlus } from "react-icons/lu";
 import { DeleteButton } from "./DeleteButton";
 import { ChatService, isBrowser, me } from "../backend";
@@ -31,14 +36,11 @@ import { asSettings, valuesPatch, type Lock } from "../profileRules";
 import { ConversationSettingsForm, LimitsForm } from "./ConversationSettingsForm";
 import { ProfileTools } from "./ProfileTools";
 
-// 変えてから Go に保存するまで待つ時間(1文字ごとに送らない。useConversations と同じ)
-const SAVE_DELAY_MS = 400;
-
 interface Props {
   models: ModelEntry[];
   servers: ServerInfo[]; // settings.json の MCP のサーバー
-  disabled: boolean;     // 生成中・読み込み中(上限の「適用」で作業領域を作り直すため)
-  onApplyLimits(history: number, reply: number, save: (patch: Partial<ConversationSettings>) => void): void;
+  disabled: boolean;     // 生成中・読み込み中(上限を変えた保存は、作業領域を作り直すのでできない)
+  onTryLimits(history: number, reply: number): Promise<void>; // 上限を変えて保存する前に、作業領域を作り直してみる(入らなければ reject)
   onError(text: string): void;
   onChanged(): void; // プロファイルを変えた(新しい会話の画面の写し・新しい会話の既定を読み直す)
   onToolsChanged(): void; // この PC のツールの扱い(確認しない)を変えた(メーターを読み直す)
@@ -50,19 +52,28 @@ function inMode(i: ProfileInfo, distributed: boolean): boolean {
   return distributed ? !!i.profile.share && !i.profile.read_only : true;
 }
 
-export function ProfileSettings({ models, servers, disabled, onApplyLimits, onError, onChanged, onToolsChanged, mode = "own" }: Props) {
+export function ProfileSettings({ models, servers, disabled, onTryLimits, onError, onChanged, onToolsChanged, mode = "own" }: Props) {
   const distributed = mode === "distributed";
   const [dir] = useDirectory(); // 配っている印の人数(グループをメンバーに広げて数える)
   const [copying, setCopying] = useState(false); // 写して配るの欄を出しているか(distributed)
   const [infos, setInfos] = useState<ProfileInfo[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
-  const [edit, setEditState] = useState<Profile | null>(null); // 選んだプロファイル(画面で変えている途中の値)
+  const [edit, setEditState] = useState<Profile | null>(null); // 選んだプロファイルの下書き(画面で変えている途中の値)
   const editRef = useRef<Profile | null>(null);
-  const timer = useRef<number | undefined>(undefined);
   const setEdit = (p: Profile | null) => {
     editRef.current = p;
     setEditState(p);
   };
+  // この PC のツールの「確認しない」の下書き(まだ tools.json に書いていない変更)。保存したら pcVersion を進めて読み直させる
+  const [pc, setPcState] = useState<ToolPolicyChange[]>([]);
+  const pcRef = useRef<ToolPolicyChange[]>([]);
+  const setPc = (c: ToolPolicyChange[]) => {
+    pcRef.current = c;
+    setPcState(c);
+  };
+  const [pcVersion, setPcVersion] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const { guard } = useUnsaved();
 
   const reload = useCallback(async (select?: string) => {
     const list = (await ChatService.Profiles()) ?? [];
@@ -72,6 +83,7 @@ export function ProfileSettings({ models, servers, disabled, onApplyLimits, onEr
     const id = keep(select) ?? keep(selected) ?? pool.find(i => i.default)?.profile.id ?? pool[0]?.profile.id ?? null;
     setSelected(id);
     setEdit(list.find(i => i.profile.id === id)?.profile ?? null);
+    setPc([]);
   }, [selected, distributed]);
   useEffect(() => {
     reload().catch(err => onError(errorMessage(err)));
@@ -79,54 +91,84 @@ export function ProfileSettings({ models, servers, disabled, onApplyLimits, onEr
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 変えた値は少し待ってからまとめて保存する。保存できなければ理由を出して、Go の値に戻す
-  const save = useCallback((p: Profile) => {
-    window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => {
-      ChatService.UpdateProfile(p).then(
-        () => {
-          onChanged();
-          return ChatService.Profiles().then(list => setInfos(list ?? []));
-        },
-        err => {
-          onError(`プロファイルを保存できません: ${errorMessage(err)}`);
-          reload(p.id).catch(() => {});
-        },
-      );
-    }, SAVE_DELAY_MS);
-  }, [onChanged, onError, reload]);
+  // 変えた値は下書きに入れるだけ(保存は「保存」)
   const change = (f: (p: Profile) => Profile) => {
     const cur = editRef.current;
     if (!cur) return;
-    const next = f(cur);
-    setEdit(next);
-    save(next);
-  };
-
-  // 一覧の操作は、保存していない変更を先に送ってから行う
-  const flush = async () => {
-    window.clearTimeout(timer.current);
-    if (editRef.current) await ChatService.UpdateProfile(editRef.current);
-  };
-  const act = (f: () => Promise<unknown>, select?: string) => {
-    flush()
-      .then(f)
-      .then(() => {
-        onChanged();
-        return reload(select);
-      })
-      .catch(err => onError(errorMessage(err)));
+    setEdit(f(cur));
   };
 
   const info = infos.find(i => i.profile.id === selected);
-  const create = () => {
-    const base = editRef.current ?? infos.find(i => i.default)?.profile;
+  const saved = info?.profile ?? null; // 保存した値(Go が返したもの)
+  const editable = !!edit && !edit.read_only && (distributed || !edit.share);
+  const dirty = editable && !!saved && (!sameValue(edit, saved) || pc.length > 0);
+  const limitsChanged = !!edit && !!saved &&
+    (edit.values.history_tokens !== saved.values.history_tokens || edit.values.reply_tokens !== saved.values.reply_tokens);
+  const blocked = !edit ? undefined
+    : edit.name.trim() === "" ? "名前を入れてください"
+      : limitsChanged && disabled ? "生成中・読み込み中は、会話の上限と返事の上限を変えて保存できません"
+        : undefined;
+
+  // 保存:上限を変えていれば作業領域を作り直してみてから、プロファイルとこの PC の確認しないをまとめて書く。
+  // できなければ理由を出して false(下書きは残す。決定事項 13)。保存できても「保存しました」は出さない(決定事項 14)
+  const save = async (): Promise<boolean> => {
+    const p = editRef.current;
+    if (!p || !saved) return true;
+    if (blocked) {
+      onError(`プロファイルを保存できません: ${blocked}`);
+      return false;
+    }
+    const tools = pcRef.current;
+    setSaving(true);
+    try {
+      if (limitsChanged) await onTryLimits(p.values.history_tokens, p.values.reply_tokens);
+      await ChatService.SaveProfile({ ...p, name: p.name.trim() }, tools);
+    } catch (err) {
+      onError(`プロファイルを保存できません: ${errorMessage(err)}`);
+      if (tools.length > 0) setPcVersion(v => v + 1); // 途中まで書けたかもしれないので、この PC の値を読み直す
+      setSaving(false);
+      return false;
+    }
+    setSaving(false);
+    if (tools.length > 0) {
+      setPcVersion(v => v + 1);
+      onToolsChanged();
+    }
+    onChanged();
+    await reload(p.id).catch(err => onError(errorMessage(err)));
+    return true;
+  };
+  // キャンセル:確かめずに保存した値に戻す(消えるのは保存していない下書きだけ。決定事項 12)
+  const cancel = () => {
+    setEdit(saved);
+    setPc([]);
+  };
+  useUnsavedEntry(dirty, save, cancel);
+
+  // 一覧の操作(作成・複製・アーカイブ・削除・配布)は、保存していない変更があれば先に知らせる(決定事項 18)。
+  // f は選び直すプロファイルの ID を返してもよい(作成・複製で、作ったものを選ぶ)
+  const act = (f: () => Promise<string | void>, select?: string) => {
+    guard(() => {
+      f()
+        .then(id => {
+          onChanged();
+          return reload(id || select);
+        })
+        .catch(err => onError(errorMessage(err)));
+    });
+  };
+
+  const create = () => act(async () => {
+    const base = saved ?? infos.find(i => i.default)?.profile;
     if (!base) return;
-    flush()
-      .then(() => ChatService.CreateProfile(freeName(infos), base.values, {}))
-      .then(p => {
+    return (await ChatService.CreateProfile(freeName(infos), base.values, {})).id;
+  });
+  // 既定にするは、下書きに関わらない人ごとの設定なので、知らせずにそのまま変える(一覧の「既定」の印だけ読み直し、下書きは残す)
+  const setDefault = (id: string) => {
+    ChatService.SetDefaultProfile(id)
+      .then(() => {
         onChanged();
-        return reload(p.id);
+        return ChatService.Profiles().then(list => setInfos(list ?? []));
       })
       .catch(err => onError(errorMessage(err)));
   };
@@ -143,7 +185,9 @@ export function ProfileSettings({ models, servers, disabled, onApplyLimits, onEr
       role="option"
       aria-selected={i.profile.id === selected}
       className={"profile-item" + (i.profile.id === selected ? " current" : "") + (i.profile.archived ? " archived" : "")}
-      onClick={() => flush().catch(() => {}).then(() => reload(i.profile.id))}
+      onClick={() => {
+        if (i.profile.id !== selected) guard(() => { reload(i.profile.id).catch(err => onError(errorMessage(err))); });
+      }}
     >
       <span className="profile-name">{i.profile.name}</span>
       {i.default && <span className="tool-tag" title="既定のプロファイル(新しい会話の画面で最初に選ばれる)">既定</span>}
@@ -165,35 +209,26 @@ export function ProfileSettings({ models, servers, disabled, onApplyLimits, onEr
       distributed={distributed}
       models={models}
       servers={servers}
-      disabled={disabled}
       onChange={change}
-      onApplyLimits={onApplyLimits}
-      onToolsChanged={onToolsChanged}
+      pc={pc}
+      onPc={setPc}
+      pcVersion={pcVersion}
       onArchive={archived => act(() => ChatService.SetProfileArchived(edit.id, archived), edit.id)}
       onDelete={() => act(() => ChatService.DeleteProfile(edit.id), infos.find(i => i.default)?.profile.id)}
-      onCopy={() => {
-        ChatService.CopyProfile(edit.id)
-          .then(p => {
-            onChanged();
-            return reload(p.id);
-          })
-          .catch(err => onError(errorMessage(err)));
-      }}
+      onCopy={() => act(async () => (await ChatService.CopyProfile(edit.id)).id)}
       onShare={(share, users, groups) => act(() => ChatService.SetProfileShare(edit.id, share, users, groups), edit.id)}
+      onSetDefault={distributed ? undefined : () => setDefault(edit.id)}
       onError={onError}
+      saveBar={<SaveBar dirty={dirty} saving={saving} blocked={dirty ? blocked : undefined} onSave={() => { save().catch(() => {}); }} onCancel={cancel} />}
     />
   );
 
-  const editable = !!edit && !edit.read_only && (distributed || !edit.share);
   return (
     <>
-      {!distributed && (
-        <DefaultProfile infos={infos} onChange={id => act(() => ChatService.SetDefaultProfile(id), selected ?? undefined)} />
-      )}
       <div className="profile-list" role="listbox">
         {mine.map(item)}
         {distributed ? (
-          <button type="button" className="profile-item profile-add" onClick={() => setCopying(c => !c)} aria-expanded={copying} title="自分のプロファイルを複製して、そのまま配布する(元は自分のプロファイルとして残る)">
+          <button type="button" className="profile-item profile-add" onClick={() => guard(() => setCopying(c => !c))} aria-expanded={copying} title="自分のプロファイルを複製して、そのまま配布する(元は自分のプロファイルとして残る)">
             <LuPlus /> 複製して配布
           </button>
         ) : (
@@ -228,26 +263,26 @@ export function ProfileSettings({ models, servers, disabled, onApplyLimits, onEr
   );
 }
 
-function ProfileEditor({ profile, info, distributed, models, servers, disabled, onChange, onApplyLimits, onToolsChanged, onArchive, onDelete, onCopy, onShare, onError }: {
-  profile: Profile;
-  info: ProfileInfo;
+function ProfileEditor({ profile, info, distributed, models, servers, onChange, pc, onPc, pcVersion, onArchive, onDelete, onCopy, onShare, onSetDefault, onError, saveBar }: {
+  profile: Profile;                // 下書き
+  info: ProfileInfo;               // 保存した値(一覧の印と、アーカイブ・削除できるか)
   distributed: boolean; // 管理の画面(配るもの)の編集か
   models: ModelEntry[];
   servers: ServerInfo[];
-  disabled: boolean;
   onChange(f: (p: Profile) => Profile): void;
-  onApplyLimits(history: number, reply: number, save: (patch: Partial<ConversationSettings>) => void): void;
-  onToolsChanged(): void;
+  pc: ToolPolicyChange[];          // この PC の確認しないの下書き
+  onPc(changes: ToolPolicyChange[]): void;
+  pcVersion: number;               // この PC の値を読み直す合図(保存したら進む)
   onArchive(archived: boolean): void;
   onDelete(): void;
   onCopy(): void;                                  // 複製して自分のプロファイルにする(配られたもの)
   onShare(share: string, users: string[], groups: string[]): void; // 配る範囲と相手(人とグループ)を変える(管理者)
+  onSetDefault?(): void;                           // 既定にする(設定の画面だけ。既定は人ごとの設定なので、管理の画面には出さない)
   onError(text: string): void;
+  saveBar: ReactNode;                              // 「保存」「キャンセル」(編集の欄のいちばん下に貼り付ける)
 }) {
   // 配られたもの・(設定の画面では)自分で配ったものは読むだけ。配ったものを変えるのは管理の画面(0032 の段3)
-  if (profile.read_only || (!distributed && profile.share)) return <ReceivedProfile profile={profile} models={models} onCopy={onCopy} />;
-  const [name, setName] = useState(profile.name);
-  useEffect(() => setName(profile.name), [profile.name]);
+  if (profile.read_only || (!distributed && profile.share)) return <ReceivedProfile profile={profile} info={info} models={models} onCopy={onCopy} onSetDefault={onSetDefault} />;
   const fixed = profile.rules.fixed ?? [];
   const lock: Lock = {
     fixed,
@@ -260,65 +295,49 @@ function ProfileEditor({ profile, info, distributed, models, servers, disabled, 
   const setValues = (patch: Partial<ConversationSettings>) =>
     onChange(p => ({ ...p, values: { ...p.values, ...valuesPatch(patch) } }));
   const settings = asSettings(profile.values);
+  const archived = info.profile.archived; // アーカイブは保存した値で決める(下書きでは変わらない)
 
-  const commitName = () => {
-    const t = name.trim();
-    if (t === "" || t === profile.name) {
-      setName(profile.name);
-      return;
-    }
-    onChange(p => ({ ...p, name: t }));
-  };
-
+  // 名前も下書き(この画面の「保存」に入る。0053 の決定事項 9b)
   return (
     <div className="profile-editor">
       <label htmlFor="profile-name">名前</label>
       <input
         id="profile-name"
         type="text"
-        value={name}
-        onChange={e => setName(e.target.value)}
-        onBlur={commitName}
-        onKeyDown={e => {
-          if (e.key === "Enter") e.currentTarget.blur();
-          if (e.key === "Escape") {
-            setName(profile.name);
-            e.currentTarget.blur();
-          }
+        value={profile.name}
+        onChange={e => {
+          const v = e.target.value;
+          onChange(p => ({ ...p, name: v }));
         }}
       />
       <div className="profile-actions">
+        {onSetDefault && <SetDefaultButton info={info} onClick={onSetDefault} />}
         <button
           type="button"
-          disabled={info.default && !profile.archived}
-          title={info.default ? "既定のプロファイルはアーカイブできない" : profile.archived ? "新しい会話で選べるようにする" : "新しい会話では選べなくする(決まりは、このプロファイルから作った会話に効き続ける)"}
-          onClick={() => onArchive(!profile.archived)}
+          disabled={info.default && !archived}
+          title={info.default ? "既定のプロファイルはアーカイブできない" : archived ? "新しい会話で選べるようにする" : "新しい会話では選べなくする(決まりは、このプロファイルから作った会話に効き続ける)"}
+          onClick={() => onArchive(!archived)}
         >
-          {profile.archived ? "アーカイブ解除" : "アーカイブ"}
+          {archived ? "アーカイブ解除" : "アーカイブ"}
         </button>
         <DeleteButton
-          question={`プロファイル「${profile.name}」を削除しますか?`}
+          question={`プロファイル「${info.profile.name}」を削除しますか?`}
           disabled={info.default || info.uses > 0}
           title={info.default ? "既定のプロファイルは削除できない" : info.uses > 0 ? `このプロファイルから作った会話が ${info.uses} 個あるので削除できない(アーカイブはできる)` : "このプロファイルを削除する"}
           onConfirm={onDelete}
         />
       </div>
-      {distributed && <ShareForm profile={profile} onShare={onShare} />}
+      {distributed && <ShareForm profile={info.profile} onShare={onShare} />}
       {distributed && <FolderField profile={profile} onChange={onChange} onError={onError} />}
 
       <ConversationSettingsForm settings={settings} models={models} lock={lock} onChange={setValues} />
-      <LimitsForm
-        history={settings.history_tokens}
-        reply={settings.reply_tokens}
-        disabled={disabled}
-        lock={lock}
-        onApply={(h, r) => onApplyLimits(h, r, setValues)}
-      />
+      <LimitsForm history={settings.history_tokens} reply={settings.reply_tokens} lock={lock} onChange={setValues} />
 
       <h2 className="section" title={isBrowser
         ? "このプロファイルでのツールの扱い(最初から使う・選べば使える・使えない)。確認するかは aibow-server の既定(管理の画面の「ツール」)"
         : "このプロファイルでのツールの扱い(最初から使う・選べば使える・使えない)と、確認しない(この PC の設定)"}>ツール</h2>
-      <ProfileTools profile={profile} servers={servers} lock={lock} onChange={onChange} onPCChanged={onToolsChanged} />
+      <ProfileTools profile={profile} servers={servers} lock={lock} onChange={onChange} pc={pc} onPc={onPc} pcVersion={pcVersion} />
+      {saveBar}
     </div>
   );
 }
@@ -423,10 +442,12 @@ function ShareCopyForm({ own, onDone, onCancel, onError }: { own: ProfileInfo[];
 }
 
 // ReceivedProfile は、配られたプロファイル(読むだけ)。値と決まりは見せるが変えられない(fieldset ごと無効)。複製すれば自分のものになる
-function ReceivedProfile({ profile, models, onCopy }: {
+function ReceivedProfile({ profile, info, models, onCopy, onSetDefault }: {
   profile: Profile;
+  info: ProfileInfo;
   models: ModelEntry[];
   onCopy(): void;
+  onSetDefault?(): void;
 }) {
   const settings = asSettings(profile.values);
   const lock: Lock = { fixed: profile.rules.fixed ?? [], profile: profile.name, onToggle: () => {} };
@@ -437,38 +458,32 @@ function ReceivedProfile({ profile, models, onCopy }: {
         {profile.owner_name && <span className="profile-owner" title="配布した人">{profile.owner_name}</span>}
       </div>
       <div className="profile-actions">
+        {onSetDefault && <SetDefaultButton info={info} received onClick={onSetDefault} />}
         <button type="button" className="with-icon" onClick={onCopy} title="値と決まりを複製して、自分のプロファイルを作成する(複製したものは変えられる)">
           <LuCopy /> 複製
         </button>
       </div>
       <fieldset disabled className="profile-readonly">
         <ConversationSettingsForm settings={settings} models={models} lock={lock} onChange={() => {}} />
-        <LimitsForm history={settings.history_tokens} reply={settings.reply_tokens} disabled lock={lock} onApply={() => {}} />
+        <LimitsForm history={settings.history_tokens} reply={settings.reply_tokens} lock={lock} onChange={() => {}} />
       </fieldset>
     </div>
   );
 }
 
-// DefaultProfile は、既定のプロファイル(新しい会話の画面で最初に選ばれるもの)の選択肢(0050 の決定事項 4)。
-// 選べるのは、自分のもの・配られたもの(アーカイブ済みは除く)。配られたものを選んで、配られなくなったら、Go が自分のプロファイルに戻す。
-// 既定は人ごとの設定なので、管理の画面(配るプロファイル)には置かない
-function DefaultProfile({ infos, onChange }: { infos: ProfileInfo[]; onChange(id: string): void }) {
-  const current = infos.find(i => i.default)?.profile.id ?? "";
-  const choices = infos.filter(i => !i.profile.archived || i.default);
-  if (choices.length === 0) return null;
+// SetDefaultButton は、選んだプロファイルを既定(新しい会話の画面で最初に選ばれるもの)にするボタン(0056)。
+// 押すとその場で Go に送る(会話の値の保存とは別の操作)。既定のもの・アーカイブ済みのものは押せない(新しい会話で選べないものは既定にしない)。
+// 配られたものも既定にできる。配られなくなったら、Go が自分のプロファイルに戻す
+function SetDefaultButton({ info, received, onClick }: { info: ProfileInfo; received?: boolean; onClick(): void }) {
+  const title = info.default
+    ? "既定のプロファイル(新しい会話の画面で最初に選ばれる)"
+    : info.profile.archived
+      ? "アーカイブ済みは既定にできない"
+      : "新しい会話の画面で、このプロファイルを最初に選ぶ" + (received ? "(配布されなくなったら、自分のプロファイルに戻る)" : "");
   return (
-    <div className="profile-default">
-      <label htmlFor="profile-default" title="新しい会話の画面で最初に選ばれるプロファイル。配布されたものも選べる(配布されなくなったら、自分のプロファイルに戻る)">
-        既定のプロファイル
-      </label>
-      <select id="profile-default" value={current} onChange={e => onChange(e.target.value)}>
-        {choices.map(i => (
-          <option key={i.profile.id} value={i.profile.id}>
-            {i.profile.name}{i.profile.read_only && i.profile.owner_name ? `(${i.profile.owner_name} が配布)` : ""}
-          </option>
-        ))}
-      </select>
-    </div>
+    <button type="button" disabled={info.default || info.profile.archived} title={title} onClick={onClick}>
+      既定にする
+    </button>
   );
 }
 

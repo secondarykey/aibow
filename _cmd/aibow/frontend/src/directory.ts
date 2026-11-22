@@ -87,6 +87,53 @@ export function listLabels(targets: Target[], dir: Directory, max = 2): string {
   return `${shown} ほか${rest.length}${rest.every(t => t.kind === "user") ? "人" : "件"}`;
 }
 
+// ---- 共有のされ方(0055 の決定事項 25・26) ------------------------------------------------------
+//
+// 共有された会話の一覧の行の説明と、読むだけの画面の上の帯は、同じ言い方にする(ここの1か所で作る)。
+
+// SharedHow は、共有された会話の、自分に見えている理由(Go の ConversationRef・SharedRead と同じ名前)
+export interface SharedHow {
+  owner_name: string;
+  owner_display?: string;
+  share?: string;
+  to_me?: boolean;
+  groups?: string[] | null;
+}
+
+// GROUP_NAMES_MAX は、共有されたグループの名前を並べる数(多ければ「営業・開発 ほか1グループ」)
+const GROUP_NAMES_MAX = 2;
+
+// sharedTo は、誰に共有されたか(「あなた」「営業 グループ」「あなたと 営業 グループ」「全員」)。分からなければ空
+// (理由を返さない古い aibow-server につないだときなど)
+export function sharedTo(h: SharedHow): string {
+  if (h.share === "all") return "全員";
+  const groups = h.groups ?? [];
+  let g = "";
+  if (groups.length > 0) {
+    const shown = groups.slice(0, GROUP_NAMES_MAX).join("・");
+    const rest = groups.length - GROUP_NAMES_MAX;
+    g = rest > 0 ? `${shown} ほか${rest}グループ` : `${shown} グループ`;
+  }
+  if (h.to_me && g) return `あなたと ${g}`;
+  if (h.to_me) return "あなた";
+  return g;
+}
+
+// sharedBanner は、読むだけの画面の帯の文(「佐藤 花子 が 営業 グループに共有した会話」)
+export function sharedBanner(h: SharedHow): string {
+  const owner = showName(h.owner_name, h.owner_display);
+  const to = sharedTo(h);
+  if (!to) return `${owner} が共有した会話`;
+  // グループの名前で始まるときは、持ち主の名前とくっつかないよう間を空ける(「あなた」「全員」は続ける)
+  return `${owner} が${to.startsWith("あなた") || to === "全員" ? "" : " "}${to}に共有した会話`;
+}
+
+// sharedTooltip は、一覧の行にマウスを乗せたときの説明(「見積もり(佐藤 花子 の会話。営業 グループに共有。読むだけ)」)
+export function sharedTooltip(title: string, h: SharedHow): string {
+  const to = sharedTo(h);
+  return `${title}(${showName(h.owner_name, h.owner_display)} の会話。${to ? `${to}に共有。` : ""}読むだけ)`;
+}
+
 // ---- 最近選んだ相手 --------------------------------------------------------------------
 
 const STORED_RECENT = "aibow.recentShareTargets";

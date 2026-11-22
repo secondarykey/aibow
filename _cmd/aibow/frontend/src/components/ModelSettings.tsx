@@ -94,6 +94,8 @@ export function ModelSettings({ models, listOnly, disabled, onError }: Props) {
 
 function ModelTable({ models, disabled, onError }: { models: Models; disabled: boolean; onError(text: string): void }) {
   const { current, loading, manage, reload } = models;
+  // 読み込み中のモデルを使えなくするときだけ確かめる(全員の生成が止まり、アンロードされるため。0053 の決定事項 9a)。ほかは押した瞬間に効く
+  const [confirming, setConfirming] = useState<ModelEntry | null>(null);
   if (!models.allModels.length) return <p className="hint">モデルが見つかりません</p>;
   // 使えるモデルを決める(aibow-server の管理者だけ。0018 の決定事項 13・18)。使えなくした読み込み中のモデルはサーバーが降ろす
   const setEnabled = async (id: string, enabled: boolean) => {
@@ -104,7 +106,21 @@ function ModelTable({ models, disabled, onError }: { models: Models; disabled: b
     }
     await reload().catch(err => onError(errorMessage(err)));
   };
+  const askOrSet = (m: ModelEntry, enabled: boolean) => {
+    if (!enabled && current?.id === m.id) setConfirming(m);
+    else setEnabled(m.id, enabled);
+  };
   return (
+    <>
+    {confirming && (
+      <div className="delete-confirm block model-disable-confirm">
+        <p className="confirm-text">読み込み中の {confirming.name} を使えないようにしますか?生成中の返事は止まり、モデルはアンロードされます。</p>
+        <div className="delete-confirm-row">
+          <button type="button" className="danger" onClick={() => { setConfirming(null); setEnabled(confirming.id, false); }}>使えないようにする</button>
+          <button type="button" onClick={() => setConfirming(null)}>キャンセル</button>
+        </div>
+      </div>
+    )}
     <div className={"model-table" + (manage ? " manage" : "")}>
       {manage && <span className="model-table-head" title="使えないモデルは、ほかの人の一覧に出ず、頼まれても読み込まない">使える</span>}
       <span className="model-table-head">名前</span>
@@ -119,7 +135,7 @@ function ModelTable({ models, disabled, onError }: { models: Models; disabled: b
           m={m}
           format={m.format}
           manage={manage}
-          onEnabled={enabled => setEnabled(m.id, enabled)}
+          onEnabled={enabled => askOrSet(m, enabled)}
           loaded={current?.id === m.id}
           layers={models.gpuLayers[m.id] ?? 999}
           totalLayers={current?.id === m.id ? current.layers : undefined}
@@ -130,6 +146,7 @@ function ModelTable({ models, disabled, onError }: { models: Models; disabled: b
         />
       ))}
     </div>
+    </>
   );
 }
 

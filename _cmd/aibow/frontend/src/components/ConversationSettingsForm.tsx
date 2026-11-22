@@ -6,8 +6,9 @@
 // lock はプロファイルの決まりの「固定」(0014)。プロファイルの編集では、項目の名前の横の錠で固定を付け外しする。
 // 会話の設定では、固定した項目を押せなくして「プロファイルで固定」と添える(保存のときにも Go が断る)。
 //
-// 会話の上限・返事の上限(LimitsForm)だけは、入力しただけでは反映せず「適用」で反映する。
-// 作業領域(会話の上限 + 返事の上限)を作り直して VRAM に入るかを確かめてから保存するため。
+// どちらの画面も、変えた値は下書きで、画面の下の「保存」で確定する(0053)。
+// 会話の上限・返事の上限(LimitsForm)を変えていれば、保存のときに作業領域(会話の上限 + 返事の上限)を作り直して
+// VRAM に入るかを確かめてから保存する(以前の上限だけの「適用」のボタンは無くした。1つの画面に確定のボタンが2つあると迷うため。0053 の決定事項 10)。
 import { useContext, useEffect, useState, type ReactNode } from "react";
 import { LuLock, LuLockOpen } from "react-icons/lu";
 import type { ConversationSettings } from "../../bindings/github.com/secondarykey/aibow";
@@ -162,34 +163,29 @@ function ModelSelect({ value, models, lock, onChange }: { value: string; models:
   );
 }
 
-// LimitsForm は会話の上限・返事の上限。「適用」で onApply を呼ぶ(呼ぶ側が作業領域を作り直してみてから保存する)
-export function LimitsForm({ history, reply, disabled, lock, onApply }: {
+// LimitsForm は会話の上限・返事の上限。変えた値は下書きに入れるだけ(onChange)。
+// 保存するときに、呼ぶ側が作業領域を作り直してみてから保存する(App の tryLimits)
+export function LimitsForm({ history, reply, lock, onChange }: {
   history: number;
   reply: number;
-  disabled: boolean; // 生成中・読み込み中は変えられない(作業領域が1つのため)
   lock?: Lock;
-  onApply(history: number, reply: number): void;
+  onChange(patch: { history_tokens?: number; reply_tokens?: number }): void;
 }) {
-  const [h, setH] = useState(history);
-  const [r, setR] = useState(reply);
+  const h = history;
+  const r = reply;
   const server = useContext(ServerContext);
-  useEffect(() => {
-    setH(history);
-    setR(reply);
-  }, [history, reply]);
-  const changed = h !== history || r !== reply;
 
   return (
     <>
       <FieldLabel htmlFor="history-tokens" item={FIX.historyTokens} lock={lock} title="モデルに渡す文字列(これまでの会話)のトークン数の上限。超えたら compact で収める">
         会話の上限
       </FieldLabel>
-      <NumberInput id="history-tokens" value={h} min={0} step={1024} disabled={locked(lock, FIX.historyTokens)} onChange={setH} />
+      <NumberInput id="history-tokens" value={h} min={1} step={1024} disabled={locked(lock, FIX.historyTokens)} onChange={v => onChange({ history_tokens: v })} />
 
       <FieldLabel htmlFor="reply-tokens" item={FIX.replyTokens} lock={lock} title="1回の返事で生成するトークン数の上限(思考 + 答え)">
         返事の上限
       </FieldLabel>
-      <NumberInput id="reply-tokens" value={r} min={0} step={1024} disabled={locked(lock, FIX.replyTokens)} onChange={setR} />
+      <NumberInput id="reply-tokens" value={r} min={1} step={1024} disabled={locked(lock, FIX.replyTokens)} onChange={v => onChange({ reply_tokens: v })} />
 
       {server ? (
         // aibow-server につないでいるときは、作業領域はサーバーが決めた大きさで固定(0015 の 3)
@@ -203,7 +199,6 @@ export function LimitsForm({ history, reply, disabled, lock, onApply }: {
           会話を上限まで詰めても、返事を上限まで書ける大きさを確保します。変えても、モデルは読み直しません。
         </p>
       )}
-      <button className="apply" disabled={disabled || !changed || h <= 0 || r <= 0} onClick={() => onApply(h, r)}>適用</button>
     </>
   );
 }

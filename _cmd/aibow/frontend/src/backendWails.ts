@@ -85,5 +85,9 @@ export const backend: Backend = {
     toggleMaximise: () => Window.ToggleMaximise(),
     isMaximised: () => Window.IsMaximised(),
     close: () => Window.Close(),
+    setUnsaved: async unsaved => { await ChatService.SetUnsaved(unsaved); },
+    // 名前は closeguard.go の closeRequestEventName と同じ
+    onCloseRequest: f => Events.On("aibow:window:close-request", () => f()),
+    closeNow: async () => { await ChatService.CloseWindow(); },
   },
 };

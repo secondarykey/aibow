@@ -230,5 +230,9 @@ export const backend: Backend = {
     toggleMaximise: async () => {},
     isMaximised: async () => false,
     close: async () => {},
+    // タブを閉じる・再読み込みは、ブラウザの決まった確かめ(beforeunload)に任せる(unsaved.tsx)
+    setUnsaved: async () => {},
+    onCloseRequest: () => () => {},
+    closeNow: async () => {},
   },
 };

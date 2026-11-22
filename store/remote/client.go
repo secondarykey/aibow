@@ -132,6 +132,10 @@ func (c *Client) ReadConversation(ctx context.Context, id uuid.UUID) (out aibow.
 	return out, err
 }
 
+func (c *Client) SetConversationInactive(ctx context.Context, id uuid.UUID, inactive bool) error {
+	return c.call(ctx, "SetConversationInactive", []any{id, inactive})
+}
+
 func (c *Client) Directory(ctx context.Context) (out aibow.Directory, err error) {
 	err = c.call(ctx, "Directory", nil, &out)
 	return out, err

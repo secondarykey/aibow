@@ -89,6 +89,9 @@ func (s *memStore) UserConversations(context.Context, string) ([]ConversationRef
 }
 func (s *memStore) Directory(context.Context) (Directory, error) { return Directory{}, nil }
 
+// 非アクティブの印(0055)も memStore では扱わない(一覧を見る人ごとの印。store の SQLite のテストで確かめる)
+func (s *memStore) SetConversationInactive(context.Context, uuid.UUID, bool) error { return nil }
+
 // グループも memStore では扱わない(管理者だけの操作。誰に見えるかは store の SQLite のテストで確かめる)
 func (s *memStore) CreateGroup(context.Context, string) (Group, error)            { return Group{}, ErrNotAdmin }
 func (s *memStore) RenameGroup(context.Context, uuid.UUID, string) error          { return ErrNotAdmin }

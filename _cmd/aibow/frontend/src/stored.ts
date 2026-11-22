@@ -15,6 +15,8 @@ export const STORED_THEME = "aibow.theme";
 // ワークスペースは PC のものなので、並べ方も PC ごとに覚える
 export const STORED_LIST_GROUPING = "aibow.listGrouping";
 export const STORED_LIST_GROUPS_CLOSED = "aibow.listGroupsClosed";
+// STORED_LIST_INACTIVE_OPEN は、一覧の下の「非アクティブ」の折りたたみを開いているか(0055。既定は閉じている)
+export const STORED_LIST_INACTIVE_OPEN = "aibow.listInactiveOpen";
 
 export function loadStored(key: string): string | null {
   try {

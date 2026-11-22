@@ -7,6 +7,7 @@ export type {
     FolderView,
     ModelSettingsResult,
     ModelsResult,
+    ToolPolicyChange,
     WorkspaceList,
     WorkspaceView
 } from "./models.js";

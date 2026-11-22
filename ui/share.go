@@ -28,13 +28,14 @@ func (s *Service) SetConversationShare(ctx context.Context, id uuid.UUID, share 
 	if err := s.store.SetConversationShare(ctx, id, share, with, groups); err != nil {
 		return err
 	}
+	title := s.conversationTitle(ctx, id)
 	switch share {
 	case aibow.ShareNone:
-		log.Noticef("会話 %s を非公開にしました", id)
+		log.Noticef("会話「%s」を非公開にしました(%s)", title, id)
 	case aibow.ShareAll:
-		log.Noticef("会話 %s を全員に共有しました", id)
+		log.Noticef("会話「%s」を全員に共有しました(%s)", title, id)
 	default:
-		log.Noticef("会話 %s を %s に共有しました", id, targets(with, groups))
+		log.Noticef("会話「%s」を %s に共有しました(%s)", title, targets(with, groups), id)
 	}
 	return nil
 }
@@ -53,6 +54,15 @@ func (s *Service) UserConversations(ctx context.Context, name string) ([]aibow.C
 		return nil, s.startupErr
 	}
 	return s.store.UserConversations(ctx, name)
+}
+
+// conversationTitle は、ログに書く会話の名前(ID だけでは何の会話か分からないため。0053 の決定事項 24)。読めなければ空。
+func (s *Service) conversationTitle(ctx context.Context, id uuid.UUID) string {
+	c, _, err := s.convs.Get(ctx, id)
+	if err != nil {
+		return ""
+	}
+	return c.Title
 }
 
 // targets は、ログに書く共有の相手(人はログインの名前。表示名は変わるので使わない。0031 の決定事項 20)

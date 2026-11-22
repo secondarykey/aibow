@@ -10,7 +10,7 @@
 // 新しい会話は、選んだプロファイル(名前の付いた新しい会話の既定)の写しから始まる(_docs/features/0009-conversation-settings.md・0014)。
 import { useState } from "react";
 import { LuArrowLeft } from "react-icons/lu";
-import type { AppSettings, ConversationSettings, DisplaySettings } from "../../bindings/github.com/secondarykey/aibow";
+import type { AppSettings, DisplaySettings } from "../../bindings/github.com/secondarykey/aibow";
 import type { ServerInfo } from "../../bindings/github.com/secondarykey/aibow/mcp/client";
 import { ProfileSettings } from "./ProfileSettings";
 import { ModelSettings } from "./ModelSettings";
@@ -27,6 +27,7 @@ import type { Models } from "../useModels";
 import type { Entry as ModelEntry } from "../../bindings/github.com/secondarykey/aibow/models/index";
 import { ScreenErrors } from "./ScreenErrors";
 import { LogSettings } from "./LogSettings";
+import { useUnsaved } from "../unsaved";
 
 interface Props {
   onClose(): void;                        // 会話に戻る
@@ -36,8 +37,8 @@ interface Props {
   modelState: Models;    // モデルの一覧・読み込み・降ろす・層の数(「モデル」のタブ)
   servers: ServerInfo[]; // settings.json の MCP のサーバー(プロファイルの使うツールのグループ)
   onProfilesChanged(): void; // プロファイルを変えた(新しい会話の画面の写しを合わせ直す)
-  // プロファイルの会話の上限・返事の上限(作業領域を作り直してみてから save で保存する)
-  onApplyLimits(history: number, reply: number, save: (patch: Partial<ConversationSettings>) => void): void;
+  // プロファイルの会話の上限・返事の上限を変えて保存する前に、作業領域を作り直してみる(入らなければ reject)
+  onTryLimits(history: number, reply: number): Promise<void>;
   onError(text: string): void;
   appDisabled: boolean; // 生成中・読み込み中は変えられない(エンジンが1つのため)
   // 「サーバー」のタブだけは、起動に失敗していても操作できる(lib の無い PC から初めてつなぐため。0019)。生成中・読み込み中だけ止める
@@ -79,12 +80,14 @@ const appMcpAPI: McpEditorAPI = {
   parse: text => ChatService.ParseMCPJSON(text),
 };
 
-export function SettingsView({ onClose, errors, app, models, modelState, servers, onProfilesChanged, onApplyLimits, onError, appDisabled, connectDisabled, onDisplayChange, onToolsChanged, onNotice, initialTab, workspaces, onWorkspacesChanged }: Props) {
+export function SettingsView({ onClose, errors, app, models, modelState, servers, onProfilesChanged, onTryLimits, onError, appDisabled, connectDisabled, onDisplayChange, onToolsChanged, onNotice, initialTab, workspaces, onWorkspacesChanged }: Props) {
   // 開くたびに「基本設定」から(開いている間だけ覚える)。左下の名前のメニューから開いたときは「アカウント」
   const [tab, setTab] = useState<Tab>(initialTab ?? "basic");
   // グループの長かは、共有の相手の一覧(グループの長も入っている)で決める。ブラウザでログインしているときだけ
   const [dir, reloadDir] = useDirectory();
   const leader = isBrowser && me.login && !me.admin && dir.groups.some(g => g.leaders.includes(me.name));
+  // タブを替えるときは、保存していない変更があれば先に知らせる(0053 の決定事項 16)
+  const { guard } = useUnsaved();
   return (
     <section className="settings-view">
       <div className="settings-inner">
@@ -102,7 +105,7 @@ export function SettingsView({ onClose, errors, app, models, modelState, servers
               aria-selected={tab === t.id}
               className={"settings-tab" + (tab === t.id ? " current" : "")}
               title={t.title}
-              onClick={() => setTab(t.id)}
+              onClick={() => { if (t.id !== tab) guard(() => setTab(t.id)); }}
             >
               {t.label}
             </button>
@@ -151,7 +154,7 @@ export function SettingsView({ onClose, errors, app, models, modelState, servers
               models={models}
               servers={servers}
               disabled={appDisabled}
-              onApplyLimits={onApplyLimits}
+              onTryLimits={onTryLimits}
               onError={onError}
               onChanged={onProfilesChanged}
               onToolsChanged={onToolsChanged}

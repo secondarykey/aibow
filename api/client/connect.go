@@ -37,6 +37,10 @@ type Probe struct {
 	Trusted bool `json:"trusted"`
 	// Login は、ログインが要る aibow-server か(Trusted のときだけ調べる)
 	Login bool `json:"login"`
+	// ServerVersion は aibow-server のバージョン、MinAppVersion はそのサーバーが対応できるアプリの最低バージョン
+	// (/_aibow/auth/me の返事の見出しから。Trusted のときだけ入る。この機能より古い aibow-server なら空。0054 の決定事項 18)
+	ServerVersion string `json:"serverVersion,omitempty"`
+	MinAppVersion string `json:"minAppVersion,omitempty"`
 }
 
 // ErrCertChanged は、覚えたフィンガープリントと違う証明書をサーバーが出したときのエラー(errors.Is で見分ける)。
@@ -119,7 +123,9 @@ func ProbeServer(ctx context.Context, rawURL, pinned string) (Probe, error) {
 	var me struct {
 		Login *bool `json:"login"`
 	}
-	if err := c.call(http.MethodGet, "/_aibow/auth/me", nil, &me, shortTimeout); err != nil {
+	err = c.call(http.MethodGet, "/_aibow/auth/me", nil, &me, shortTimeout)
+	p.ServerVersion, p.MinAppVersion = c.ServerVersion()
+	if err != nil {
 		var ae *APIError
 		if errors.As(err, &ae) && ae.Status == http.StatusNotFound {
 			return p, fmt.Errorf("%s につなげませんでした。URL が aibow-server のものか確かめてください(aibow-server が古いなら、アプリと同じ版にしてください)", c.base)

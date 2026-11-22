@@ -90,9 +90,9 @@ func (s *Service) CreateWorkspace(path string, reuse bool) (CreatedWorkspace, er
 		return CreatedWorkspace{}, err
 	}
 	if existing {
-		log.Infof("同じフォルダのワークスペース %s(%s)を選びました", ws.Name, ws.MainFolder().Path)
+		log.Infof("同じフォルダのワークスペース「%s」を選びました(%s)", ws.Name, ws.MainFolder().Path)
 	} else {
-		log.Noticef("ワークスペース %s(%s)", ws.Name, ws.MainFolder().Path)
+		log.Noticef("ワークスペース「%s」を作成しました(%s)", ws.Name, ws.MainFolder().Path)
 	}
 	return CreatedWorkspace{Workspace: ws, Existing: existing}, nil
 }
@@ -104,7 +104,12 @@ func (s *Service) UpdateWorkspace(ws config.Workspace) error {
 	if err != nil {
 		return err
 	}
-	return w.Update(ws)
+	if err := w.Update(ws); err != nil {
+		return err
+	}
+	// 変更は自分の PC のことなので Info。削除は Notice(0053 の決定事項 25)
+	log.Infof("ワークスペース「%s」を変更しました(%s)", ws.Name, ws.ID)
+	return nil
 }
 
 // DeleteWorkspace は、ワークスペースを消す。そのワークスペースを選んでいた会話は消さない(見つからないワークスペースになる)。
@@ -113,7 +118,12 @@ func (s *Service) DeleteWorkspace(id string) error {
 	if err != nil {
 		return err
 	}
-	return w.Delete(id)
+	old, _ := w.Get(id)
+	if err := w.Delete(id); err != nil {
+		return err
+	}
+	log.Noticef("ワークスペース「%s」を削除しました(%s)", old.Name, id)
+	return nil
 }
 
 // migrateWorkDirs は、ワークスペースより前の会話の作業フォルダを、この PC にあるものだけワークスペースに移す(起動したとき)。

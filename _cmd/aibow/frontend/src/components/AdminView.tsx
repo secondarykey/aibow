@@ -22,9 +22,9 @@ import { ModelSettings } from "./ModelSettings";
 import { ServerTools } from "./ServerTools";
 import { ProfileSettings } from "./ProfileSettings";
 import { UsageAdmin } from "./UsageSettings";
-import type { ConversationSettings } from "../../bindings/github.com/secondarykey/aibow";
 import { ScreenErrors } from "./ScreenErrors";
 import { LogSettings } from "./LogSettings";
+import { useUnsaved } from "../unsaved";
 
 type Tab = "users" | "groups" | "models" | "tools" | "profiles" | "usage" | "log";
 
@@ -50,7 +50,7 @@ function adminUser(): boolean {
   return me.login && !!me.admin;
 }
 
-export function AdminView({ onClose, errors, onError, onReadConversation, models, servers, appDisabled, onToolsChanged, onApplyLimits, onProfilesChanged }: {
+export function AdminView({ onClose, errors, onError, onReadConversation, models, servers, appDisabled, onToolsChanged, onTryLimits, onProfilesChanged }: {
   onClose(): void;                        // 会話に戻る
   errors: { id: number; text: string }[]; // 管理の画面を開いてから出たエラー
   onError(text: string): void;
@@ -59,14 +59,16 @@ export function AdminView({ onClose, errors, onError, onReadConversation, models
   servers: ServerInfo[];                  // server.json の MCP のサーバー(ツールのタブ)
   appDisabled: boolean;                   // 生成中・読み込み中は、読み込む / 降ろす・層の数を変えられない
   onToolsChanged(): void;                 // ツールの扱いを変えた(メーターと、会話で選べる MCP のサーバーを読み直す)
-  // 配るプロファイルの会話の上限・返事の上限(作業領域を作り直してみてから save で保存する。設定の画面のプロファイルと同じ)
-  onApplyLimits(history: number, reply: number, save: (patch: Partial<ConversationSettings>) => void): void;
+  // 配るプロファイルの会話の上限・返事の上限を変えて保存する前に、作業領域を作り直してみる(設定の画面のプロファイルと同じ)
+  onTryLimits(history: number, reply: number): Promise<void>;
   onProfilesChanged(): void;              // プロファイルを変えた(新しい会話の画面の写しを合わせ直す)
 }) {
   // 使用量は、ログインなしの形(利用者は local だけ)でも出す(管理の画面を開けるのはサーバーの PC の上の画面。0033 の決定事項 13)
   const tabs = TABS.filter(t => !t.admin || adminUser() || (t.id === "usage" && !me.login));
   const [tab, setTab] = useState<Tab>(tabs[0]?.id ?? "models");
   const [dir, reloadDir] = useDirectory(); // 利用者の詳細のグループと、グループのタブで分け合う
+  // タブを替えるときは、保存していない変更があれば先に知らせる(0053 の決定事項 16)
+  const { guard } = useUnsaved();
   return (
     <section className="settings-view">
       <div className="settings-inner">
@@ -84,7 +86,7 @@ export function AdminView({ onClose, errors, onError, onReadConversation, models
               aria-selected={tab === t.id}
               className={"settings-tab" + (tab === t.id ? " current" : "")}
               title={t.title}
-              onClick={() => setTab(t.id)}
+              onClick={() => { if (t.id !== tab) guard(() => setTab(t.id)); }}
             >
               {t.label}
             </button>
@@ -123,7 +125,7 @@ export function AdminView({ onClose, errors, onError, onReadConversation, models
               models={models.models}
               servers={servers}
               disabled={appDisabled}
-              onApplyLimits={onApplyLimits}
+              onTryLimits={onTryLimits}
               onError={onError}
               onChanged={onProfilesChanged}
               onToolsChanged={onToolsChanged}

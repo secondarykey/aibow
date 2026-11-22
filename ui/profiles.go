@@ -3,9 +3,9 @@ package ui
 // profiles.go: 画面から呼ぶ、プロファイルのメソッド(0014)。
 
 import (
-	"cmp"
 	"context"
 	"fmt"
+	"strings"
 	"uuid"
 
 	"github.com/secondarykey/aibow"
@@ -35,14 +35,26 @@ func (s *Service) CreateProfile(ctx context.Context, name string, values aibow.P
 	}
 	p, err := s.convs.CreateProfile(ctx, name, values, rules)
 	if err == nil {
-		log.Noticef("プロファイル「%s」を作りました", p.Name)
+		// 自分のプロファイル(配っていない)は自分にだけ効くので Info(0053 の決定事項 21)
+		log.Infof("プロファイル「%s」を作成しました(%s)", p.Name, p.ID)
 	}
 	return p, err
 }
 
 // UpdateProfile は、プロファイルの名前・値・決まりを変える。値は今ある会話に効かず、決まりは今ある会話にもすぐ効く。
 // 配っているプロファイルなら、モデルは使えるモデルの中から(0018 の決定事項 13)。
+// 画面の「保存」は SaveProfile(この PC の確認しないも一緒に書く)。これはツールの扱いを変えない保存。
 func (s *Service) UpdateProfile(ctx context.Context, p aibow.Profile) error {
+	return s.SaveProfile(ctx, p, nil)
+}
+
+// SaveProfile は、プロファイルの編集の「保存」(0053 の決定事項 7)。プロファイルの名前・値・決まりと、
+// 同じ画面で変えたツールの「確認しない」(この PC の tools.json。ブラウザでは出さないので空)をまとめて書く。
+// 1つの画面の中で、保存されるものとされないものが混ざらないよう、画面は1回の「保存」でここを1回呼ぶ。
+//
+// ログは1回の保存で1行(決定事項 21・23)。配っているプロファイル(ほかの人の会話に効く)は Notice で、誰が変えたかも添える。
+// 自分のプロファイルは Info。確認しないは先に書く(書けなければ、プロファイルも保存しない。画面は下書きを残してエラーを出す)。
+func (s *Service) SaveProfile(ctx context.Context, p aibow.Profile, tools []ToolPolicyChange) error {
 	if s.startupErr != nil {
 		return s.startupErr
 	}
@@ -58,14 +70,31 @@ func (s *Service) UpdateProfile(ctx context.Context, p aibow.Profile) error {
 	if err := s.checkFolder(ctx, old.Rules.Folder, p.Rules.Folder); err != nil {
 		return err
 	}
-	if p.Rules.Folder != old.Rules.Folder {
-		log.Noticef("プロファイル「%s」の資料のフォルダ: %s(%s が変えた)", p.Name, cmp.Or(p.Rules.Folder, "なし"), whoOf(ctx))
+	toolItems, err := s.applyToolPolicies(ctx, tools)
+	if err != nil {
+		return err
 	}
 	if err := s.convs.UpdateProfile(ctx, p); err != nil {
 		return err
 	}
-	log.Noticef("プロファイル「%s」を変えました(固定 %v・使えない %+v)", p.Name, p.Rules.Fixed, p.Rules.Off)
+	items := aibow.ProfileChanges(old, p)
+	if len(toolItems) > 0 {
+		items = append(items, "この PC の確認の扱い("+strings.Join(toolItems, "・")+")")
+	}
+	if old.Share != aibow.ShareNone {
+		log.Noticef("プロファイル「%s」を保存しました(%s%s)", p.Name, aibow.ChangedItems(items), byWhom(ctx))
+	} else {
+		log.Infof("プロファイル「%s」を保存しました(%s)", p.Name, aibow.ChangedItems(items))
+	}
 	return nil
+}
+
+// byWhom は、ログの括弧の後ろに添える「誰が変えたか」(aibow-server のときだけ。アプリは1人なので書かない)。
+func byWhom(ctx context.Context) string {
+	if w := whoOf(ctx); w != "" {
+		return "・" + w + " が変えた"
+	}
+	return ""
 }
 
 // usableModel は、配るプロファイルのモデルが使えるか(管理者が使えないようにしたモデルでは配らない。0018 の決定事項 13)。
@@ -140,7 +169,7 @@ func (s *Service) CopyProfile(ctx context.Context, id uuid.UUID) (aibow.Profile,
 	}
 	p, err := s.convs.CopyProfile(ctx, id)
 	if err == nil {
-		log.Noticef("プロファイルを複製して「%s」を作成しました", p.Name)
+		log.Infof("プロファイルを複製して「%s」を作成しました(%s)", p.Name, p.ID)
 	}
 	return p, err
 }
@@ -150,10 +179,11 @@ func (s *Service) SetProfileArchived(ctx context.Context, id uuid.UUID, archived
 	if s.startupErr != nil {
 		return s.startupErr
 	}
+	name := s.profileName(ctx, id)
 	if err := s.convs.SetProfileArchived(ctx, id, archived); err != nil {
 		return err
 	}
-	log.Noticef("プロファイル %s を%s", id, map[bool]string{true: "アーカイブしました", false: "アーカイブ解除しました"}[archived])
+	log.Noticef("プロファイル「%s」を%s(%s%s)", name, map[bool]string{true: "アーカイブしました", false: "アーカイブ解除しました"}[archived], id, byWhom(ctx))
 	return nil
 }
 
@@ -162,11 +192,21 @@ func (s *Service) DeleteProfile(ctx context.Context, id uuid.UUID) error {
 	if s.startupErr != nil {
 		return s.startupErr
 	}
+	name := s.profileName(ctx, id)
 	if err := s.convs.DeleteProfile(ctx, id); err != nil {
 		return err
 	}
-	log.Noticef("プロファイル %s を削除しました", id)
+	log.Noticef("プロファイル「%s」を削除しました(%s%s)", name, id, byWhom(ctx))
 	return nil
+}
+
+// profileName は、ログに書くプロファイルの名前(ID だけでは何のことか分からないため。0053 の決定事項 24)。読めなければ空。
+func (s *Service) profileName(ctx context.Context, id uuid.UUID) string {
+	p, err := s.store.Profile(ctx, id)
+	if err != nil {
+		return ""
+	}
+	return p.Name
 }
 
 // SetDefaultProfile は、新しい会話で最初に選ばれるプロファイルを変える。
@@ -178,7 +218,7 @@ func (s *Service) SetDefaultProfile(ctx context.Context, id uuid.UUID) error {
 		return err
 	}
 	if p, err := s.convs.DefaultProfile(ctx); err == nil {
-		log.Noticef("既定のプロファイル: %s", p.Name)
+		log.Infof("既定のプロファイルを「%s」にしました", p.Name)
 	}
 	return nil
 }
@@ -199,7 +239,7 @@ func (s *Service) SaveToProfile(ctx context.Context, conv, profile uuid.UUID) er
 	if err := s.convs.SaveToProfile(ctx, conv, profile); err != nil {
 		return err
 	}
-	log.Noticef("会話 %s の設定を、プロファイル %s に保存しました", conv, profile)
+	log.Infof("会話「%s」の設定を、プロファイル「%s」に保存しました(%s)", s.conversationTitle(ctx, conv), s.profileName(ctx, profile), conv)
 	return nil
 }
 
@@ -210,7 +250,7 @@ func (s *Service) SaveAsProfile(ctx context.Context, conv uuid.UUID, name string
 	}
 	p, err := s.convs.SaveAsProfile(ctx, conv, name)
 	if err == nil {
-		log.Noticef("会話 %s の設定から、プロファイル「%s」を作りました", conv, p.Name)
+		log.Infof("会話「%s」の設定から、プロファイル「%s」を作成しました(%s)", s.conversationTitle(ctx, conv), p.Name, conv)
 	}
 	return p, err
 }

@@ -24,13 +24,15 @@ type ChatService struct {
 	life ui.Lifecycle
 	// conn は aibow-server のつなぎ先を画面で決める係(connection.go。0019)
 	conn *connection
+	// closer は、保存していない変更があるときにウィンドウを閉じるのを止める係(closeguard.go。0053)
+	closer *closeGuard
 }
 
 // NewChatService は ChatService を作る。画面に知らせる係は、ここで Wails のイベントにする。
 func NewChatService(o ui.Options, conn *connection) *ChatService {
 	o.Notify = wailsNotifier{}
 	s, life := ui.New(o)
-	return &ChatService{Service: s, life: life, conn: conn}
+	return &ChatService{Service: s, life: life, conn: conn, closer: &closeGuard{}}
 }
 
 // ServiceStartup はアプリの起動時に Wails から呼ばれる(画面からは呼べない特別な名前)。起動時のモデルを裏で読み込む。
