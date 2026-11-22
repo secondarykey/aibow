@@ -70,7 +70,19 @@ func (s *SQLite) ListConversations(ctx context.Context) ([]aibow.Conversation, e
 		}
 		out = append(out, c)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	rows.Close() // 接続が1本なので、非アクティブの印を読む前に閉じる
+	// 一覧での非アクティブの印(0055)。自分が付けたものだけ
+	inactive, err := s.inactiveSet(ctx, owner)
+	if err != nil {
+		return nil, err
+	}
+	for i := range out {
+		out[i].Inactive = inactive[out[i].ID.String()]
+	}
+	return out, nil
 }
 
 func (s *SQLite) Conversation(ctx context.Context, id uuid.UUID) (aibow.Conversation, []aibow.StoredMessage, error) {

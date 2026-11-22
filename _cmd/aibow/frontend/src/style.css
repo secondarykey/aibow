@@ -441,6 +441,20 @@ nav.conversations .new {
 }
 nav.conversations .new:hover:not(:disabled) { background: var(--bg); }
 nav.conversations .new svg { font-size: 15px; flex-shrink: 0; }
+/* 新規(+)と検索ボックスの行(0055)。新規はアイコンだけにして、残りの幅を検索ボックスにする */
+nav.conversations .new-row { flex-shrink: 0; display: flex; align-items: center; gap: 4px; margin: 0 6px 6px; }
+nav.conversations .new-row .new { margin: 0; }
+.list-search {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px; padding: 0 6px;
+  border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--muted);
+}
+.list-search:focus-within { border-color: var(--accent); }
+.list-search svg { flex-shrink: 0; font-size: 13px; }
+.list-search input {
+  flex: 1; min-width: 0; padding: 5px 0; border: none; background: transparent; outline: none;
+  font: inherit; font-size: 12px; color: var(--text);
+}
+.list-empty { padding: 8px; color: var(--muted); font-size: 12px; }
 nav.conversations.collapsed { width: 48px; align-items: center; padding: 2px 0 10px; gap: 6px; }
 nav.conversations.collapsed .spacer { flex: 1; }
 .icon-btn {
@@ -490,6 +504,16 @@ nav.conversations.collapsed .admin.active { color: var(--accent); }
 .conversation .delete:hover:not(:disabled) { color: var(--error); }
 .conversation:hover .delete, .conversation.current .delete { visibility: visible; }
 .conversation .delete .dot, .conversation .running-mark .dot { margin: 0; }
+/* 非アクティブにする / 戻す(0055)。削除の左。削除と同じく、マウスを乗せた行と開いている行だけに出す */
+.conversation .inactive-toggle {
+  flex-shrink: 0; width: 24px; padding: 4px 0; display: inline-flex; align-items: center; justify-content: center;
+  color: var(--muted); visibility: hidden;
+}
+.conversation .inactive-toggle:hover:not(:disabled) { color: var(--text); }
+.conversation:hover .inactive-toggle, .conversation.current .inactive-toggle { visibility: visible; }
+/* 一覧の一番下の「非アクティブ(n)」の折りたたみ。中の会話は、ワークスペースのまとまりと同じく少し下げる */
+.conv-group-head.inactive-head { margin-top: 10px; }
+nav.conversations .inactive-head ~ .conversation { margin-left: 12px; }
 /* 送信している間の印は、いつも出す(削除できない間なので、ゴミ箱の代わり) */
 /* 終わったあとの印も、いつも出す。マウスを乗せたときだけゴミ箱に替える */
 .conversation .delete.has-mark { visibility: visible; }
@@ -1097,19 +1121,13 @@ footer { border-top: 1px solid var(--border); background: var(--panel); padding:
 }
 .restart-note .icon { flex-shrink: 0; margin-top: 4px; color: var(--warn); }
 
-/* 会話の共有と管理者が読む(0018 の 11-2) */
+/* 会話の共有と管理者が読む(0018 の 11-2)。ほかの人に共有された会話は自分の会話と同じ一覧に混ぜ、同じ共有のアイコンを強調の色にして見分ける(0055) */
 .share-mark { flex-shrink: 0; margin-left: 4px; color: var(--muted); font-size: 12px; vertical-align: -1px; }
-.shared-list { border-top: 1px solid var(--border); padding-top: 4px; max-height: 40%; overflow-y: auto; }
-.shared-head { display: flex; align-items: center; gap: 4px; width: 100%; padding: 4px 10px; border: none; background: transparent; color: var(--muted); font-size: 12px; text-align: left; }
-.shared-owner { margin-left: 6px; color: var(--muted); font-size: 11px; }
-.shared-filter { display: flex; gap: 4px; padding: 2px 8px 4px; }
-.shared-filter input, .shared-filter select {
-  min-width: 0; font: inherit; font-size: 12px; padding: 2px 6px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);
-}
-.shared-filter input { flex: 1; }
-.shared-filter select { max-width: 40%; }
-.shared-sub { padding: 4px 12px 0; color: var(--muted); font-size: 11px; }
-.shared-more { margin: 2px 12px 4px; font-size: 11px; padding: 1px 8px; }
+.share-mark.received, .read-banner .received { color: var(--accent); }
+/* 共有された会話の行:名前は省略して縮め、持ち主の名前は右に残す(0055 の未決事項 2) */
+.conversation.shared .title { display: flex; align-items: center; }
+.conversation.shared .title-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.shared-owner { flex-shrink: 0; max-width: 45%; margin-left: 6px; color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; }
 .admin-notice { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: var(--muted); white-space: nowrap; cursor: help; }
 .admin-notice.icon { justify-content: center; padding: 6px 0; }
 .admin-notice.row { padding: 4px 12px 0; border-top: 1px solid var(--border); }

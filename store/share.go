@@ -156,7 +156,107 @@ func (s *SQLite) SharedConversations(ctx context.Context) ([]aibow.ConversationR
 	if err != nil {
 		return nil, err
 	}
-	return s.conversationRefs(ctx, conversationShared, sql.Named("me", me))
+	refs, err := s.conversationRefs(ctx, conversationShared, sql.Named("me", me))
+	if err != nil {
+		return nil, err
+	}
+	// 見えている理由と非アクティブの印は、一覧を読み終えてから別に読む(接続が1本なので、rows を閉じてから)。
+	// 見えるかの判定(conversationShared)はそのまま使い、理由は同じ条件を分けて読む(判定の1か所を崩さない。0055 の決定事項 23)
+	toMe, groups, err := s.shareReasons(ctx, me, "")
+	if err != nil {
+		return nil, err
+	}
+	inactive, err := s.inactiveSet(ctx, me)
+	if err != nil {
+		return nil, err
+	}
+	for i := range refs {
+		id := refs[i].ID.String()
+		if refs[i].Share == aibow.ShareUsers {
+			refs[i].ToMe, refs[i].Groups = toMe[id], groups[id]
+		}
+		refs[i].Inactive = inactive[id]
+	}
+	return refs, nil
+}
+
+// shareReasons は、範囲が users の会話について、:me が直接の相手か(toMe)と、:me がメンバーで相手に入っているグループの名前(groups。名前の順)を読む。
+// conv が空でなければ、その会話だけを読む。conversationShared の users の2つの EXISTS を、分けて読んだもの
+func (s *SQLite) shareReasons(ctx context.Context, me, conv string) (toMe map[string]bool, groups map[string][]string, err error) {
+	only := ""
+	args := []any{sql.Named("me", me)}
+	if conv != "" {
+		only = " AND c.id = :conv"
+		args = append(args, sql.Named("conv", conv))
+	}
+	toMe = map[string]bool{}
+	ids, err := s.names(ctx, `SELECT c.id FROM conversation_shares s JOIN conversations c ON c.id = s.conversation_id
+		WHERE s.user_id = :me AND c.share = 'users' AND c.owner <> :me`+only, args...)
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, id := range ids {
+		toMe[id] = true
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT c.id, ug.name FROM conversation_group_shares g
+		JOIN conversations c ON c.id = g.conversation_id
+		JOIN user_group_members m ON m.group_id = g.group_id
+		JOIN user_groups ug ON ug.id = g.group_id
+		WHERE m.user_id = :me AND c.share = 'users' AND c.owner <> :me`+only+` ORDER BY ug.name`, args...)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+	groups = map[string][]string{}
+	for rows.Next() {
+		var id, name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return nil, nil, err
+		}
+		groups[id] = append(groups[id], name)
+	}
+	return toMe, groups, rows.Err()
+}
+
+// ---- 会話の一覧の非アクティブ(0055) ----------------------------------------------------------
+//
+// 非アクティブは会話の中身ではなく、一覧での見せ方の属性。一覧を見る人ごとに表 conversation_inactive に覚える
+// (共有された会話に付けても、持ち主やほかの相手の一覧は変わらない。決定事項 16)。
+
+// inactiveSet は、:me が非アクティブにした会話の ID。
+func (s *SQLite) inactiveSet(ctx context.Context, me string) (map[string]bool, error) {
+	ids, err := s.names(ctx, "SELECT conversation_id FROM conversation_inactive WHERE user_id = ?", me)
+	if err != nil {
+		return nil, err
+	}
+	set := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		set[id] = true
+	}
+	return set, nil
+}
+
+func (s *SQLite) SetConversationInactive(ctx context.Context, id uuid.UUID, inactive bool) error {
+	me, err := s.owner(ctx)
+	if err != nil {
+		return err
+	}
+	// 付けられるのは、一覧に出る会話(自分の会話か、自分に共有された会話)だけ。ほかの人の会話はあることも見せない
+	var visible bool
+	err = s.db.QueryRowContext(ctx, "SELECT conversations.owner = :me OR "+conversationShared+" FROM conversations WHERE conversations.id = :id",
+		sql.Named("me", me), sql.Named("id", id.String())).Scan(&visible)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && !visible) {
+		return aibow.ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if inactive {
+		_, err = s.db.ExecContext(ctx, "INSERT OR IGNORE INTO conversation_inactive (conversation_id, user_id) VALUES (?, ?)", id.String(), me)
+	} else {
+		_, err = s.db.ExecContext(ctx, "DELETE FROM conversation_inactive WHERE conversation_id = ? AND user_id = ?", id.String(), me)
+	}
+	return err
 }
 
 func (s *SQLite) UserConversations(ctx context.Context, name string) ([]aibow.ConversationRef, error) {
@@ -206,6 +306,13 @@ func (s *SQLite) ReadConversation(ctx context.Context, id uuid.UUID) (aibow.Shar
 		return r, err
 	}
 	r.ByAdmin = !shared
+	if shared && r.Conversation.Share == aibow.ShareUsers {
+		toMe, groups, err := s.shareReasons(ctx, me, id.String())
+		if err != nil {
+			return r, err
+		}
+		r.ToMe, r.Groups = toMe[id.String()], groups[id.String()]
+	}
 	return r, nil
 }
 

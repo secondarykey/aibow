@@ -8,7 +8,7 @@
 | `sqlite.go` | `Store` の SQLite 実装(`modernc.org/sqlite`)の土台。開く(`Open`)・ctx の利用者(`owner`・`isAdmin`)・値の変換と、ファイルをまたいで使う小さな部品 |
 | `migrate.go` | マイグレーション(`migrations` と `migrate`。版の一覧は下) |
 | `conversations.go` | 会話の読み書きと「生成中」の印(`LockConversation`)。発言と要約の持ち主の条件 `ownConversation`・`ownMessage` もここ |
-| `share.go` | 会話の共有とほかの人の会話を読む(0018 の 11-2)。誰に見えるかの条件 `conversationShared`・共有の相手を覚える `setShareTargets`(プロファイルを配るのにも使う)・共有の相手を選ぶ一覧 `Directory` |
+| `share.go` | 会話の共有とほかの人の会話を読む(0018 の 11-2)。誰に見えるかの条件 `conversationShared`・共有の相手を覚える `setShareTargets`(プロファイルを配るのにも使う)・共有の相手を選ぶ一覧 `Directory`・見えている理由 `shareReasons`・一覧の非アクティブの印(0055) |
 | `messages.go` | 発言と、発言に付けた読み込んだファイル(`files`。0030) |
 | `compactions.go` | 要約(compact) |
 | `profiles.go` | プロファイルとプロファイルを配る(0018 の 11-1)。見える・変えられるの条件 `profileVisible`・`profileUsed`・`profileEditable` |
@@ -59,8 +59,11 @@
     読み書きは `usage.go`(書くのは記録付きの engine、読むのは使用量の API。持ち主では絞らない)。集計は SQL(日の区切りはサーバーの PC の時刻のずれを date() に足す)
   - 版 21: `messages` に `elided`(今の組の中の compact で、省略して渡す発言の印。0 / 1。[_docs/features/0040-compact-in-turn.md](../_docs/features/0040-compact-in-turn.md))。
     `SetMessagesElided` で付けるだけで、外すメソッドは無い。`AddMessage` も印をそのまま入れる(会話を写すときに付いていく)
+  - 版 22: 会話の一覧の「非アクティブ」の印 `conversation_inactive`(会話 + 一覧を見る利用者。0055)。印は付けた人の一覧にだけ効く(共有された会話にも付けられるので、会話の列にしない)。
+    会話か利用者を消すと一緒に消える。付けられるのは自分の会話と、自分に共有された会話(`conversationShared`)だけ。読み書きは `share.go`(`inactiveSet`・`SetConversationInactive`)
 - 会話の共有:ほかの人の会話を読むのは `ReadConversation` だけ(条件 `conversationShared` と管理者か)。書くメソッドは持ち主の行だけなので、共有された人も管理者も書き込めない。
-  自分の会話を読むときは `share`(と1つ読むときは `ShareWith`)を入れる
+  自分の会話を読むときは `share`(と1つ読むときは `ShareWith`)を入れる。共有された会話の一覧と `ReadConversation` には、見えている理由(`ToMe`・`Groups`)を
+  `shareReasons` で別に読んで入れる(見えるかの判定は `conversationShared` のまま。0055)
 - プロファイルの読み書き:見える・変えられるの判定は `profiles.go` の `profileVisible`・`profileUsed`・`profileEditable`(名前付きの引数 `:me`・`:admin`)の1か所だけ。
   `Profile` / `ListProfiles` は読むときに `Owner`・`OwnerName`・`ReadOnly`・`Withdrawn` を入れ、`ShareWith` は変えられる人にだけ入れる。
   利用者を消しても、配ったプロファイルと、ほかの人の会話が使っているプロファイルは残す(`DeleteUser`)。接続は1本(`SetMaxOpenConns(1)`)なので、トランザクションの途中でほかの読み出しをしない(閉じてから読む)

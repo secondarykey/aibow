@@ -2,12 +2,13 @@
 //
 // 吹き出しはいつもの会話と同じ(ChatView)だが、操作(直す・作り直す・モデルに渡さない)を出さない(readOnly)。
 // 入力欄の代わりに「写して続ける」(写して自分の会話にする。決定事項 2・24)。
-// 上の帯で、誰の会話か・管理者として読んでいるか(記録が残る。決定事項 25)を出す。
+// 上の帯で、誰の会話か・どう共有されたか(自分あて・グループ・全員。0055 の決定事項 25)・管理者として読んでいるか(記録が残る。決定事項 25)を出す。
+// 帯の文は、一覧の行の説明と同じ言い方にする(directory.ts の sharedTo)。
 import { useMemo } from "react";
 import { LuCopy, LuEye, LuShare2 } from "react-icons/lu";
 import type { SharedRead } from "../../bindings/github.com/secondarykey/aibow";
 import { messageItems, type Item } from "../transcript";
-import { showName } from "../directory";
+import { sharedBanner, showName } from "../directory";
 import { ChatView } from "./ChatView";
 
 const noop = () => {};
@@ -23,7 +24,7 @@ export function ReadView({ read, pinQuestion, onCopy }: { read: SharedRead; pinQ
       <div className={"read-banner" + (read.by_admin ? " admin" : "")}>
         {read.by_admin
           ? <><LuEye /> 管理者として {owner} の会話を読んでいます(記録が残ります)</>
-          : <><LuShare2 /> {owner} が共有した会話</>}
+          : <><LuShare2 className="received" /> {sharedBanner(read)}</>}
       </div>
       <ChatView
         items={items}

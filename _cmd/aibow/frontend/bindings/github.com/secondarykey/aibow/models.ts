@@ -301,6 +301,12 @@ export interface Conversation {
      * ShareGroups は相手のグループの名前(0031。ShareWith と同じく会話1つを読んだときだけ入る)
      */
     "share_groups"?: string[] | null;
+
+    /**
+     * Inactive は、一覧を見ている人がこの会話を非アクティブにしたか(0055。会話の一覧で読んだときだけ入る)。
+     * 会話の中身ではなく一覧での見せ方の属性なので、UpdateConversation では変わらない(変えるのは SetConversationInactive)
+     */
+    "inactive"?: boolean;
 }
 
 /**
@@ -319,9 +325,22 @@ export interface ConversationRef {
 
     /**
      * Share はその会話の共有の範囲(0031 の決定事項 17)。共有された会話の一覧では、ShareUsers なら自分あて(指定した人に入っている)、
-     * ShareAll なら全員に共有されたもの。画面はこれで「自分に共有」と「全員に共有」に分ける
+     * ShareAll なら全員に共有されたもの
      */
     "share"?: string;
+
+    /**
+     * ToMe・Groups は、自分に見えている理由(0055 の決定事項 23。共有された会話の一覧だけで入る)。
+     * ToMe は自分が直接の相手、Groups は自分がメンバーで相手に入っているグループの名前(名前の順)。両方あてはまれば両方入る。
+     * 範囲が ShareAll のときは Share で分かるので入れない
+     */
+    "to_me"?: boolean;
+    "groups"?: string[] | null;
+
+    /**
+     * Inactive は、自分がこの会話を非アクティブにしたか(0055。共有された会話の一覧だけで入る)
+     */
+    "inactive"?: boolean;
 }
 
 /**
@@ -770,6 +789,12 @@ export interface SharedRead {
      * ByAdmin は、共有されていないが管理者として読んだ(読んだことをログに残す。決定事項 1)
      */
     "by_admin": boolean;
+
+    /**
+     * ToMe・Groups は、自分に見えている理由(ConversationRef と同じ。0055)。管理者として読んだときは入れない(共有されていないので)
+     */
+    "to_me"?: boolean;
+    "groups"?: string[] | null;
 
     /**
      * ReaderName は読んだ人(ctx の利用者)の名前(ログに書くため)

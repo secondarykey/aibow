@@ -273,6 +273,16 @@ CREATE INDEX generation_log_user ON generation_log(user_id, at);
 	`
 ALTER TABLE messages ADD COLUMN elided INTEGER NOT NULL DEFAULT 0;
 `,
+	// 版 22: 会話の一覧の「非アクティブ」の印(0055)。一覧を見る人 + 会話。印は付けた人の一覧にだけ効く。
+	// 会話の列にしないのは、共有された会話にも付けるため(持ち主の列にすると、相手全員の一覧が変わってしまう)。会話か利用者を消すと一緒に消える
+	`
+CREATE TABLE conversation_inactive (
+	conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+	user_id         TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	PRIMARY KEY (conversation_id, user_id)
+);
+CREATE INDEX conversation_inactive_by_user ON conversation_inactive(user_id);
+`,
 }
 
 func migrate(db *sql.DB) error {

@@ -59,7 +59,7 @@ var browserMethods = []string{
 	"ProfileDefaults", "SaveToProfile", "SaveAsProfile", "CopyProfile", "SetProfileShare", "ShareCopy",
 	// 会話
 	"Conversations", "Conversation", "Usage", "NewConversation", "DeleteConversation", "RenameConversation",
-	"SetExcluded", "UpdateConversationSettings",
+	"SetExcluded", "UpdateConversationSettings", "SetConversationInactive",
 	// 会話の共有と管理者が読む(0018 の 11-2。管理者かは保存先が確かめる)
 	"SetConversationShare", "SharedConversations", "UserConversations", "Directory", "ReadConversation", "CopyShared",
 	// グループ(0031。管理者か、メンバーを変えるならそのグループの長かは保存先が確かめる)

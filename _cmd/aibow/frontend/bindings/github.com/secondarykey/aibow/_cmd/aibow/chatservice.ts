@@ -514,6 +514,14 @@ export function ServerLogLevel(): $CancellablePromise<string> {
 }
 
 /**
+ * SetConversationInactive は、会話の一覧で会話を非アクティブにする / 戻す(0055)。自分の会話にも、自分に共有された会話にも付けられ、
+ * 付けた人の一覧だけが変わる。送信しても外れない(戻すのは自分で。決定事項 19)
+ */
+export function SetConversationInactive(id: uuid$0.UUID, inactive: boolean): $CancellablePromise<void> {
+    return $Call.ByID(302287455, id, inactive);
+}
+
+/**
  * SetConversationShare は、自分の会話の共有の範囲(""・all・users)と相手(利用者の名前とグループの名前。0031)を変える。
  */
 export function SetConversationShare(id: uuid$0.UUID, share: string, $with: string[] | null, groups: string[] | null): $CancellablePromise<void> {

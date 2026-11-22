@@ -520,6 +520,15 @@ export default function App() {
       },
     );
   };
+  // 会話を非アクティブにする / 戻す(0055)。付けた人の一覧だけが変わるので、変えたほうの一覧を読み直す
+  const onSetInactive = (id: string, isShared: boolean, inactive: boolean) => {
+    ChatService.SetConversationInactive(id, inactive)
+      .then(() => (isShared ? reloadShared() : convs.reloadList()))
+      .catch(err => {
+        addError(errorMessage(err));
+        if (isShared) reloadShared(); // 共有をやめられたなど。一覧から消す
+      });
+  };
   // 写して続ける:写した会話(自分の会話)を開く
   const copyReading = () => {
     if (!reading) return;
@@ -804,6 +813,7 @@ export default function App() {
     shared,
     readingId: reading?.conversation.id ?? null,
     onOpenShared,
+    onSetInactive,
     workspaces: workspaces.workspaces ?? [],
     currentWorkspace: convs.current ? convs.current.conversation.settings.workspace ?? "" : null,
     onNewIn,

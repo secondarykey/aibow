@@ -130,6 +130,23 @@ func (s *Service) DeleteConversation(ctx context.Context, id uuid.UUID) error {
 	return s.convs.Delete(ctx, id)
 }
 
+// SetConversationInactive は、会話の一覧で会話を非アクティブにする / 戻す(0055)。自分の会話にも、自分に共有された会話にも付けられ、
+// 付けた人の一覧だけが変わる。送信しても外れない(戻すのは自分で。決定事項 19)
+func (s *Service) SetConversationInactive(ctx context.Context, id uuid.UUID, inactive bool) error {
+	if s.startupErr != nil {
+		return s.startupErr
+	}
+	if err := s.store.SetConversationInactive(ctx, id, inactive); err != nil {
+		return err
+	}
+	if inactive {
+		log.Infof("会話 %s を非アクティブにしました", id)
+	} else {
+		log.Infof("会話 %s をアクティブに戻しました", id)
+	}
+	return nil
+}
+
 // RenameConversation は会話のタイトルを変える。空にはできない。
 func (s *Service) RenameConversation(ctx context.Context, id uuid.UUID, title string) error {
 	if s.startupErr != nil {
