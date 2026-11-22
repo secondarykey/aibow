@@ -773,6 +773,8 @@ export default function App() {
   }
 
   const listProps = {
+    server: models.server,
+    serverError: models.serverError,
     list: convs.list,
     currentId,
     generatingId: chat.generatingId,

@@ -36,11 +36,11 @@ function details(t: UsageTotal): string {
   return lines.join("\n");
 }
 
-// Head は表の見出し(名前の列の見出しと、数字の3列)
-function Head({ first }: { first: string }) {
+// Head は表の見出し(名前の列の見出しと、数字の3列)。people は利用者ごとの表で、名前の列を ID と名前の2列にする(0056)
+function Head({ first, people }: { first?: string; people?: boolean }) {
   return (
     <>
-      <span className="model-table-head">{first}</span>
+      {people ? <PeopleHead /> : <span className="model-table-head">{first}</span>}
       <span className="model-table-head num" title="生成の回数(返事・ツールのループの1回・要約のどれも1回)">回数</span>
       <span className="model-table-head num" title="GPU を使った秒数(プロンプトの読み込み + 生成 + 画像のエンコード。モデルの読み込みは入れない)">GPU の秒数</span>
       <span className="model-table-head num" title="生成したトークン数(思考 + 答え)">生成トークン</span>
@@ -71,7 +71,18 @@ function Periods({ days, onChange }: { days: number; onChange(days: number): voi
   );
 }
 
-// personOf は、利用者の行の名前(表示名があれば表示名(名前)。だれでもない生成は、作りの抜けなのでそう出す)
+// PeopleHead は、利用者の ID と名前の列の見出し(利用者の表と同じ。0056)
+function PeopleHead() {
+  return (
+    <>
+      <span className="model-table-head" title="ログインの名前">ID</span>
+      <span className="model-table-head" title="表示名(アカウントで変えられる)">名前</span>
+    </>
+  );
+}
+
+// personOf は、内訳の見出しの名前(表示名があれば表示名(名前)。だれでもない生成は、作りの抜けなのでそう出す)。
+// 表の行は ID と名前を別の列に出す(0056)。見出しは1人の名前を1か所に出すだけなので、今の形のまま
 function personOf(t: UsageTotal): string {
   if (t.key === "") return "(だれでもない)";
   return showName(t.name || t.key, t.display_name);
@@ -92,8 +103,8 @@ export function UsageAdmin({ onError }: { onError(text: string): void }) {
       <h2 title="aibow-server の生成1回ごとの記録をまとめたもの。会話の中身は記録しない">使用量</h2>
       <Periods days={days} onChange={setDays} />
       {rows && (
-        <div className="usage-table">
-          <Head first="利用者" />
+        <div className="usage-table people">
+          <Head people />
           {rows.map(t => (
             <button
               key={t.key}
@@ -104,9 +115,10 @@ export function UsageAdmin({ onError }: { onError(text: string): void }) {
               onClick={() => setSelected(s => (s === t.key ? null : t.key))}
             >
               <span className="model-name">
-                {personOf(t)}
+                {t.key === "" ? "(だれでもない)" : t.name || t.key}
                 {t.deleted && <span className="origin-chip" title="削除された利用者(記録は残す)">削除された人</span>}
               </span>
+              <span className="user-display">{(t.key !== "" && t.display_name) || "-"}</span>
               <Numbers t={t} />
             </button>
           ))}

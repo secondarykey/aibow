@@ -1,4 +1,4 @@
-// 会話の設定の画面: 会話の名前と ID / 開いている会話だけの設定 / この会話のツール / モデルに渡した文字列
+// 会話の設定の画面: 会話の名前と ID / 開いている会話だけの設定 / この会話のツール / モデルに渡した文字列(折りたたみ。0056)
 //
 // 入力欄の下(メーターの右)の歯車で開き、チャットの代わりに会話の場所に出す(設定の画面と同じく別の画面として扱う)。
 // 会話は「新しい会話の既定」(設定の画面)の写しから始まり、ここで変えた設定はこの会話にだけ効く。
@@ -185,13 +185,18 @@ export function ConversationSettingsView({ id, title, onRename, settings, models
         <ConversationTools id={id} settings={settings} workDir={workDir} servers={servers} profile={profile} onChange={onChange} />
 
 
-        <h2 className="section">モデルに渡した文字列{lastPromptFormat && <span className="prompt-format">(書式: {lastPromptFormat})</span>}</h2>
-        <p className="hint">
-          モデルは会話を覚えていません。送信のたびに、これまでの会話をモデルの書式の1本の文字列にして読ませています
-          (会話の上限を超えたら、compact で収めたもの。要約があれば system の後ろに入ります)。
-          最後の「返事の書き出し」の続きを書かせることで返事になります。
-        </p>
-        <pre className="last-prompt">{lastPrompt || "(まだ送信していません)"}</pre>
+        {/* 長くてたまに見るものなので、折りたたんで最初は閉じておく(0056)。開け閉めは覚えず、画面を開くたびに閉じている */}
+        <details className="last-prompt-box">
+          <summary>
+            <h2>モデルに渡した文字列{lastPromptFormat && <span className="prompt-format">(書式: {lastPromptFormat})</span>}</h2>
+          </summary>
+          <p className="hint">
+            モデルは会話を覚えていません。送信のたびに、これまでの会話をモデルの書式の1本の文字列にして読ませています
+            (会話の上限を超えたら、compact で収めたもの。要約があれば system の後ろに入ります)。
+            最後の「返事の書き出し」の続きを書かせることで返事になります。
+          </p>
+          <pre className="last-prompt">{lastPrompt || "(まだ送信していません)"}</pre>
+        </details>
       </div>
     </section>
   );

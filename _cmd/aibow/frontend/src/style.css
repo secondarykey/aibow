@@ -105,7 +105,9 @@ button {
 }
 button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
 /* 削除・破棄(0050)。どの画面でも同じに効くよう、親の class で絞らずにここ1か所で書く。
-   danger-outline は最初のボタン(赤い枠)、danger は確かめる段の「削除」(赤く塗る) */
+   danger-outline は最初のボタン(赤い枠)、danger は確かめる段の「削除」(赤く塗る)。
+   詳細度が同じなら後に書いた規則が勝つので、親で絞ったボタンの規則(.conversation button など)は
+   :not(.danger) で危険のボタンを外し、ここの色を上書きしないようにする(0056。!important は使わない) */
 button.danger { color: #fff; background: var(--error); border-color: var(--error); }
 button.danger-outline { color: var(--error); border-color: var(--error); background: transparent; }
 /* アイコンと文字を並べるボタン(「+ 追加」「ゴミ箱 削除」) */
@@ -452,6 +454,9 @@ nav.conversations .footer { border-top: 1px solid var(--border); padding: 6px 10
 nav.conversations .footer .settings { margin-left: auto; }
 .app-name { font-size: 13px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .app-version { margin-left: 6px; font-weight: 400; font-size: 12px; color: var(--muted); }
+/* サーバーモードのときの aibow-server のアイコン(0056)。バージョンの文字に合わせた大きさ。つながらないときは警告の色 */
+.app-server { display: inline-flex; vertical-align: -1px; margin-left: 5px; font-size: 12px; color: var(--muted); }
+.app-server.down { color: var(--warn); }
 /* 一覧の下の、ログインしている人の名前(ブラウザでログインが要るときだけ)。押すと上にメニュー(ログアウト)を出す */
 .user-menu { position: relative; min-width: 0; }
 .user-btn {
@@ -471,7 +476,8 @@ nav.conversations.collapsed .admin.active { color: var(--accent); }
 .conversation { display: flex; align-items: center; border-radius: 6px; margin-bottom: 2px; }
 .conversation:hover, .conversation.current { background: var(--bg); }
 .conversation.current .title { font-weight: 600; }
-.conversation button { border: none; background: transparent; }
+/* 行の中のボタンは枠も背景も無し。確かめる段の「削除」(danger)は外す(赤く塗るのは button.danger の1か所。0056) */
+.conversation button:not(.danger) { border: none; background: transparent; }
 .conversation .title {
   flex: 1; min-width: 0; text-align: left; padding: 7px 8px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -538,7 +544,8 @@ nav.conversations ul.grouped .conversation { margin-left: 12px; }
 }
 .conversation.confirming { padding: 4px 6px; gap: 4px; background: var(--bg); }
 .conversation .confirm-text { flex: 1; color: var(--error); }
-.conversation.confirming button { border: 1px solid var(--border); padding: 3px 8px; }
+.conversation.confirming button { padding: 3px 8px; }
+.conversation.confirming button:not(.danger) { border: 1px solid var(--border); }
 
 /* 設定・管理・会話の設定の画面を包む箱(エラーを次の操作で消すための受け口。App.tsx)。並べ方には入らない */
 .op-scope { display: contents; }
@@ -563,6 +570,13 @@ nav.conversations ul.grouped .conversation { margin-left: 12px; }
 .settings-view h2 { font-size: 14px; margin: 8px 0 6px; display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .settings-view h2.section { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border); }
 /* 「モデルに渡した文字列」の見出しの後ろの書式の名前(0026) */
+/* 会話の設定の「モデルに渡した文字列」(0056)。見出しの区切りは h2.section と同じ形。見出しを押すと開け閉め */
+.last-prompt-box { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border); }
+.last-prompt-box > summary { cursor: pointer; display: flex; align-items: baseline; gap: 6px; }
+.last-prompt-box > summary::-webkit-details-marker { display: none; }
+.last-prompt-box > summary::before { content: "▸"; color: var(--muted); font-size: 12px; }
+.last-prompt-box[open] > summary::before { content: "▾"; }
+.last-prompt-box > summary h2 { margin: 0; }
 .prompt-format { margin-left: 8px; color: var(--muted); font-size: 13px; font-weight: normal; }
 .settings-target {
   font-weight: normal; font-size: 12.5px; color: var(--muted); min-width: 0;
@@ -693,7 +707,9 @@ nav.conversations ul.grouped .conversation { margin-left: 12px; }
 .segmented button:first-child { border-radius: 6px 0 0 6px; margin-left: 0; }
 .segmented button:last-child { border-radius: 0 6px 6px 0; }
 .segmented button.current { background: var(--accent); color: #fff; border-color: var(--accent); position: relative; }
-.user-table { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto auto; column-gap: 12px; align-items: center; }
+/* 列は ID / 名前 / 状態 / 最後に使った日 / 作成日 / 会話(0056 で ID と名前を分けた)。ID は短いので中身の幅、名前が残りを使う */
+.user-table { display: grid; grid-template-columns: minmax(0, max-content) minmax(0, 1fr) auto auto auto auto; column-gap: 12px; align-items: center; }
+.user-display { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .settings-view input.display-name { width: 240px; }
 /* アカウントのタブ(AccountSettings.tsx。0031) */
 .account-rows { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 16px; row-gap: 8px; align-items: center; }
@@ -702,6 +718,8 @@ nav.conversations ul.grouped .conversation { margin-left: 12px; }
 .segmented.user-view { margin-bottom: 8px; }
 /* 使用量(UsageSettings.tsx。0033)。表は利用者の一覧と同じ形(名前 / 回数 / GPU の秒数 / 生成トークン) */
 .usage-table { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; column-gap: 16px; align-items: center; }
+/* 利用者ごとの表は、名前の列を ID と名前の2列にする(利用者の表と同じ。0056) */
+.usage-table.people { grid-template-columns: minmax(0, max-content) minmax(0, 1fr) auto auto auto; }
 .segmented.usage-periods { margin-bottom: 8px; }
 /* グループ(GroupSettings.tsx。0031 の段4)。一覧は利用者の一覧と同じ形(名前 / 長 / 人数 / 共有) */
 .group-table { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; column-gap: 12px; align-items: center; margin-top: 8px; }
@@ -1007,8 +1025,6 @@ footer { border-top: 1px solid var(--border); background: var(--panel); padding:
 .settings-view textarea:disabled, .settings-view select:disabled, .settings-view input:disabled { opacity: .6; }
 /* プロファイルの一覧。選んでいるものに枠、しまってあるものは薄く */
 .profile-list { display: flex; flex-direction: column; gap: 2px; margin-bottom: 8px; }
-/* 既定のプロファイルの選択肢(0050)。一覧の上 */
-.profile-default { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 13px; }
 .profile-item {
   display: flex; align-items: center; gap: 8px; text-align: left;
   border-color: transparent; background: transparent; padding: 5px 8px;

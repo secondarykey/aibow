@@ -2,6 +2,7 @@
 // 名前の変更はダブルクリックか F2(F2 は App.tsx が受けて renamingId を決める)。
 // 会話の設定の歯車は、一覧を畳んでいても開けるよう、入力欄の下(メーターの右)に置く(App.tsx)。
 // 下にアプリの名前とバージョン、右に設定の画面の開閉ボタン(アイコンだけ)。管理できる人には、その左に管理の画面の盾(0032)。
+// デスクトップのアプリがサーバーモードのときは、バージョンの後ろにサーバーのアイコン(説明はつなぎ先。つながらないときは警告の色。0056)。
 // ウィンドウの上から下までの列。上のハンバーガーで一覧を畳める。畳んだときもアイコンだけの細い列を残し、
 // ハンバーガー・新規・設定はそこに集める。上の空いているところはタイトルバーと同じくドラッグでウィンドウを動かせる。
 // 「+ 新規」は一覧の一番上の行に置く(スクロールしても隠れないよう、一覧の外に固定する)。
@@ -27,7 +28,7 @@ import { ChatService, isBrowser, me } from "../backend";
 import { canLogout, signedIn, signOut } from "./AccountSettings";
 import { showName } from "../directory";
 import type { KeyboardEvent } from "react";
-import { LuCheck, LuChevronDown, LuChevronRight, LuEye, LuFolderTree, LuList, LuMenu, LuPlus, LuSettings, LuShare2, LuShield, LuTrash2, LuUser } from "react-icons/lu";
+import { LuCheck, LuChevronDown, LuChevronRight, LuEye, LuFolderTree, LuList, LuMenu, LuPlus, LuServer, LuServerOff, LuSettings, LuShare2, LuShield, LuTrash2, LuUser } from "react-icons/lu";
 import { useMenuDismiss } from "./SplitButton";
 import { toggleMaximiseOnDoubleClick } from "./TitleBar";
 import type { Conversation, ConversationRef } from "../../bindings/github.com/secondarykey/aibow";
@@ -66,12 +67,14 @@ interface Props {
   workspaces: WorkspaceView[]; // この PC のワークスペース(並べ方がワークスペースごとのとき。0038)
   currentWorkspace: string | null; // 開いている会話のワークスペース(一覧を読み直す前に変えたときも、すぐにまとまりを移すため)
   onNewIn(workspace: string): void; // まとまりの「+」:そのワークスペースを選んだ新しい会話の画面に移る(「ワークスペースなし」は "" で、必ず外す)
+  server: string;      // サーバーモードのときの aibow-server のつなぎ先(アプリモードとブラウザでは空。useModels)
+  serverError: string; // aibow-server につながらない理由(つながっていれば空)
 }
 
 export function ConversationList({
   list, currentId, generatingId, waitingId, ended, disabled, onOpen, onNew, onDelete, onRename, renamingId, onStartRename, onEndRename,
   settingsOpen, onToggleSettings, onOpenAccount, adminOpen, canAdmin, onToggleAdmin, open, onToggleOpen, width, shared, readingId, onOpenShared,
-  workspaces, currentWorkspace, onNewIn,
+  workspaces, currentWorkspace, onNewIn, server, serverError,
 }: Props) {
   const [sharedOpen, setSharedOpen] = useState(true);
   // 削除の確認を出している会話。消すと戻せないので、もう一度押してもらう
@@ -251,7 +254,7 @@ export function ConversationList({
       )}
       {me.login && <div className="admin-notice row" title={ADMIN_NOTICE}><LuEye /> 管理者が読めます</div>}
       <div className="footer">
-        <AppName />
+        <AppName server={server} serverError={serverError} />
         <UserMenu onOpenAccount={onOpenAccount} />
         {adminBtn}
         <button className={"icon-btn " + settingsCls} title="設定" onClick={onToggleSettings}><LuSettings /></button>
@@ -391,12 +394,23 @@ const MARK_BADGE_LABEL: Record<Mark, string> = {
 const ADMIN_NOTICE = "会話(ツールの結果も)は管理者が読め、読んだことは記録に残ります";
 
 // AppName はアプリの名前とバージョン(Go の _cmd/aibow/version)。
-function AppName() {
+// サーバーモードのときは、後ろに aibow-server のアイコン(0056)。状態は useModels が Models() を取り直したとき(ウィンドウに戻ったときなど)に変わる。
+// つながらないときは形(LuServerOff)と色(警告)の両方を変える(色だけだと見分けにくい人がいるため)。理由の全文はエラーのカードに出ているので、説明には入れない。
+// サーバーのバージョンは、0054 で aibow-server の版を受け取るようになったら説明に足す
+function AppName({ server, serverError }: { server: string; serverError: string }) {
   const [version, setVersion] = useState("");
   useEffect(() => {
     ChatService.Version().then(setVersion, () => setVersion(""));
   }, []);
-  return <span className="app-name">AIBow{version && <span className="app-version">{version}</span>}</span>;
+  const showServer = !isBrowser && server !== "";
+  return (
+    <span className="app-name">
+      AIBow{version && <span className="app-version">{version}</span>}
+      {showServer && (serverError
+        ? <span className="app-server down" title={`aibow-server(${server})につながりません`}><LuServerOff /></span>
+        : <span className="app-server" title={`aibow-server: ${server}`}><LuServer /></span>)}
+    </span>
+  );
 }
 
 // UserMenu は、ログインしている人の名前(表示名)。押すと上に「アカウント」(設定の画面の「アカウント」のタブ)と「ログアウト」を出す。

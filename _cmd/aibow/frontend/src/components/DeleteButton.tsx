@@ -4,6 +4,7 @@
 // 重い削除の追加の確認(利用者の削除の、ログインの名前を打つ欄など)は extra と confirmDisabled で足す。
 // worktree の「破棄」も同じ形(label を「破棄」にする)。
 // 会話の一覧(行ごと確かめる段に変わる)と読み込んだファイル(ファイル名の表示の中)は、置き場所が違うので部品は使わず、言葉と見た目だけそろえている
+// 赤くするのは style.css の button.danger / button.danger-outline の1か所。親で絞ったボタンの規則は :not(.danger) で外し、赤を上書きしない(0056)
 import { useState, type ReactNode } from "react";
 import { LuTrash2 } from "react-icons/lu";
 

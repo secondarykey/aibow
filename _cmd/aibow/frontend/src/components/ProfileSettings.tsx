@@ -9,7 +9,8 @@
 //
 // 2つの形で使う(mode。0032 の段3):
 //   own         … 設定の画面の「会話」。自分の配っていないプロファイルを変える。配られたもの(管理者が自分で配ったものも)は「配布されたプロファイル」の欄に読むだけで出す。
-//                 一覧の上に「既定のプロファイル」(新しい会話の画面で最初に選ばれるもの)の選択肢を置く(0050 の決定事項 4。以前は各プロファイルの「最初に選ぶ」ボタン)
+//                 既定のプロファイル(新しい会話の画面で最初に選ばれるもの)は、一覧の行の「既定」の札で見せ、選んだプロファイルの操作の行の「既定にする」で変える
+//                 (0056。0050 の決定事項 4 では一覧の上の選択肢にしていたのを、ボタンに戻した。一覧の行は <button role="option"> なので、ボタンは行に置かず編集の欄に置く)
 //   distributed … 管理の画面の「配るプロファイル」(ブラウザの管理者だけ)。配っているプロファイルの値・決まり・配る相手・資料のフォルダを変える。「複製して配布」で、自分のプロファイルを写してそのまま配る
 //
 // 配る(0018 の 11-1・決定事項 22):
@@ -180,6 +181,7 @@ export function ProfileSettings({ models, servers, disabled, onApplyLimits, onEr
           .catch(err => onError(errorMessage(err)));
       }}
       onShare={(share, users, groups) => act(() => ChatService.SetProfileShare(edit.id, share, users, groups), edit.id)}
+      onSetDefault={distributed ? undefined : () => act(() => ChatService.SetDefaultProfile(edit.id), edit.id)}
       onError={onError}
     />
   );
@@ -187,9 +189,6 @@ export function ProfileSettings({ models, servers, disabled, onApplyLimits, onEr
   const editable = !!edit && !edit.read_only && (distributed || !edit.share);
   return (
     <>
-      {!distributed && (
-        <DefaultProfile infos={infos} onChange={id => act(() => ChatService.SetDefaultProfile(id), selected ?? undefined)} />
-      )}
       <div className="profile-list" role="listbox">
         {mine.map(item)}
         {distributed ? (
@@ -228,7 +227,7 @@ export function ProfileSettings({ models, servers, disabled, onApplyLimits, onEr
   );
 }
 
-function ProfileEditor({ profile, info, distributed, models, servers, disabled, onChange, onApplyLimits, onToolsChanged, onArchive, onDelete, onCopy, onShare, onError }: {
+function ProfileEditor({ profile, info, distributed, models, servers, disabled, onChange, onApplyLimits, onToolsChanged, onArchive, onDelete, onCopy, onShare, onSetDefault, onError }: {
   profile: Profile;
   info: ProfileInfo;
   distributed: boolean; // 管理の画面(配るもの)の編集か
@@ -242,10 +241,11 @@ function ProfileEditor({ profile, info, distributed, models, servers, disabled, 
   onDelete(): void;
   onCopy(): void;                                  // 複製して自分のプロファイルにする(配られたもの)
   onShare(share: string, users: string[], groups: string[]): void; // 配る範囲と相手(人とグループ)を変える(管理者)
+  onSetDefault?(): void;                           // 既定にする(設定の画面だけ。既定は人ごとの設定なので、管理の画面には出さない)
   onError(text: string): void;
 }) {
   // 配られたもの・(設定の画面では)自分で配ったものは読むだけ。配ったものを変えるのは管理の画面(0032 の段3)
-  if (profile.read_only || (!distributed && profile.share)) return <ReceivedProfile profile={profile} models={models} onCopy={onCopy} />;
+  if (profile.read_only || (!distributed && profile.share)) return <ReceivedProfile profile={profile} info={info} models={models} onCopy={onCopy} onSetDefault={onSetDefault} />;
   const [name, setName] = useState(profile.name);
   useEffect(() => setName(profile.name), [profile.name]);
   const fixed = profile.rules.fixed ?? [];
@@ -288,6 +288,7 @@ function ProfileEditor({ profile, info, distributed, models, servers, disabled, 
         }}
       />
       <div className="profile-actions">
+        {onSetDefault && <SetDefaultButton info={info} onClick={onSetDefault} />}
         <button
           type="button"
           disabled={info.default && !profile.archived}
@@ -423,10 +424,12 @@ function ShareCopyForm({ own, onDone, onCancel, onError }: { own: ProfileInfo[];
 }
 
 // ReceivedProfile は、配られたプロファイル(読むだけ)。値と決まりは見せるが変えられない(fieldset ごと無効)。複製すれば自分のものになる
-function ReceivedProfile({ profile, models, onCopy }: {
+function ReceivedProfile({ profile, info, models, onCopy, onSetDefault }: {
   profile: Profile;
+  info: ProfileInfo;
   models: ModelEntry[];
   onCopy(): void;
+  onSetDefault?(): void;
 }) {
   const settings = asSettings(profile.values);
   const lock: Lock = { fixed: profile.rules.fixed ?? [], profile: profile.name, onToggle: () => {} };
@@ -437,6 +440,7 @@ function ReceivedProfile({ profile, models, onCopy }: {
         {profile.owner_name && <span className="profile-owner" title="配布した人">{profile.owner_name}</span>}
       </div>
       <div className="profile-actions">
+        {onSetDefault && <SetDefaultButton info={info} received onClick={onSetDefault} />}
         <button type="button" className="with-icon" onClick={onCopy} title="値と決まりを複製して、自分のプロファイルを作成する(複製したものは変えられる)">
           <LuCopy /> 複製
         </button>
@@ -449,26 +453,19 @@ function ReceivedProfile({ profile, models, onCopy }: {
   );
 }
 
-// DefaultProfile は、既定のプロファイル(新しい会話の画面で最初に選ばれるもの)の選択肢(0050 の決定事項 4)。
-// 選べるのは、自分のもの・配られたもの(アーカイブ済みは除く)。配られたものを選んで、配られなくなったら、Go が自分のプロファイルに戻す。
-// 既定は人ごとの設定なので、管理の画面(配るプロファイル)には置かない
-function DefaultProfile({ infos, onChange }: { infos: ProfileInfo[]; onChange(id: string): void }) {
-  const current = infos.find(i => i.default)?.profile.id ?? "";
-  const choices = infos.filter(i => !i.profile.archived || i.default);
-  if (choices.length === 0) return null;
+// SetDefaultButton は、選んだプロファイルを既定(新しい会話の画面で最初に選ばれるもの)にするボタン(0056)。
+// 押すとその場で Go に送る(会話の値の保存とは別の操作)。既定のもの・アーカイブ済みのものは押せない(新しい会話で選べないものは既定にしない)。
+// 配られたものも既定にできる。配られなくなったら、Go が自分のプロファイルに戻す
+function SetDefaultButton({ info, received, onClick }: { info: ProfileInfo; received?: boolean; onClick(): void }) {
+  const title = info.default
+    ? "既定のプロファイル(新しい会話の画面で最初に選ばれる)"
+    : info.profile.archived
+      ? "アーカイブ済みは既定にできない"
+      : "新しい会話の画面で、このプロファイルを最初に選ぶ" + (received ? "(配布されなくなったら、自分のプロファイルに戻る)" : "");
   return (
-    <div className="profile-default">
-      <label htmlFor="profile-default" title="新しい会話の画面で最初に選ばれるプロファイル。配布されたものも選べる(配布されなくなったら、自分のプロファイルに戻る)">
-        既定のプロファイル
-      </label>
-      <select id="profile-default" value={current} onChange={e => onChange(e.target.value)}>
-        {choices.map(i => (
-          <option key={i.profile.id} value={i.profile.id}>
-            {i.profile.name}{i.profile.read_only && i.profile.owner_name ? `(${i.profile.owner_name} が配布)` : ""}
-          </option>
-        ))}
-      </select>
-    </div>
+    <button type="button" disabled={info.default || info.profile.archived} title={title} onClick={onClick}>
+      既定にする
+    </button>
   );
 }
 
