@@ -230,6 +230,7 @@ func run(c serverConfig, notices []string, cfgErr error, env *config.Env) error 
 		Handler:           fromProxy(proxies, c.Login, withVersion(newAppSeen(), mount(c.Base, routes(apiH, browser, screen())))),
 		ReadHeaderTimeout: 10 * time.Second,
 		TLSConfig:         tlsConfig,
+		ErrorLog:          httpErrorLog(), // TLS のハンドシェイクの失敗だけ Debug に落とす(httplog.go)
 		// 書き込みの時間の上限(WriteTimeout)は付けない。返事の生成は数十秒〜数分かかることがあるため
 		BaseContext: func(net.Listener) context.Context { return ctx },
 	}

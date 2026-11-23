@@ -159,7 +159,7 @@ func main() {
 	// Title は画面には出ないが、タスクバーや Alt+Tab に出る。
 	// 前に閉じたときの位置と大きさがあれば、そこに開く(windowstate.go)
 	opts := application.WebviewWindowOptions{
-		Title:     "aibow " + appVersion(),
+		Title:     "AIBow " + appVersion(),
 		Width:     720, // 初めて起動したときの大きさ(広げたいときは最大化かリサイズ)
 		Height:    820,
 		MinWidth:  windowMinWidth,

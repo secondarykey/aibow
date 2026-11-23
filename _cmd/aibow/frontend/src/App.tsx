@@ -449,7 +449,7 @@ export default function App() {
   // ブラウザのタブの題名は、開いている会話の名前(タブが並んでも見分けられるように。0016 の 9-3)。
   // デスクトップのウィンドウの名前は Go が決める(タスクバーに出る。main.go)ので変えない
   useEffect(() => {
-    if (isBrowser) document.title = currentId ? `${convTitle} - aibow` : "aibow";
+    if (isBrowser) document.title = currentId ? `${convTitle} - AIBow` : "AIBow";
   }, [currentId, convTitle]);
 
   // 知らせ(SSE)のつながりが切れて、つなぎ直したら、切れている間のことを取り直す(ブラウザだけ。0016 の 9-3)。
