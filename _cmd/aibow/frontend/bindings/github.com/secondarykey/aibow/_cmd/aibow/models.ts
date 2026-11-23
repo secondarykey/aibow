@@ -111,6 +111,11 @@ export interface ServerConnection {
     "pendingLogin": boolean;
 
     /**
+     * PendingCert は、今つないでいるのと同じ aibow-server に、新しい証明書でつなぎ直すように決めたか(証明書を作り直したとき。0057 の段2)
+     */
+    "pendingCert": boolean;
+
+    /**
      * KnownURL・KnownUser は、信頼した最後のつなぎ先と、そこに最後にログインした名前(タブの入力欄に入れておく。つないでいなくても残る)
      */
     "knownUrl": string;

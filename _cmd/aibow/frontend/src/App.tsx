@@ -52,7 +52,7 @@ import type { ServerInfo } from "../bindings/github.com/secondarykey/aibow/mcp/c
 import type { ConversationRef, SharedRead } from "../bindings/github.com/secondarykey/aibow";
 import { useUnsaved } from "./unsaved";
 import { ImeFocusRelay } from "./imeFocus";
-import { errorMessage, isUnreachable, operationEvents } from "./errors";
+import { errorMessage, operationEvents } from "./errors";
 import { setTheme } from "./theme";
 import { FIX, fixedTitle, grantedFolder, lockOf, locked } from "./profileRules";
 import { NARROW_QUERY, useMediaQuery } from "./mediaQuery";
@@ -126,24 +126,31 @@ export default function App() {
   const models = useModels(toasts, transcript, setBusy);
   // 起動に失敗したあと(lib が無いなど)は、Go のメソッドがどれも同じ理由で断る。タブを移る・ウィンドウに戻るたびに
   // 同じエラーが積み上がって設定の画面のタブが下に押し出されるので、その理由を含むエラーは出さない(理由は useModels が「起動できません」で1回だけ出す)
-  const { startupError } = models;
+  const { startupError, noteServerDown } = models;
   const addTranscriptError = transcript.addError;
+  const startupFailure = useCallback((text: string) => startupError !== "" && text.includes(startupError), [startupError]);
   // 会話の表示に出すエラー(会話の中で起きたことの記録。0043 の決定事項 5)。
-  // retry(横に「再生成」を出してよいか。0048 の D8)も渡す(以前は落としていて、「再生成」が出なかった。2026-11-21)
+  // retry(横に「再生成」を出してよいか。0048 の D8)も渡す(以前は落としていて、「再生成」が出なかった。2026-11-21)。
+  // aibow-server につながらないことをもう伝えた理由のエラーは出さない(つながらない間に会話を選ぶたびに、同じ「aibow-server につながりません」が
+  // 積み重なっていた。記録は消さないので、重ねて出さない。つながらないことは、最初の1回と左下のサーバーのアイコンで分かる。0057 の決定事項 11)
   const addRecordError = useCallback((text: string, caution?: boolean, retry?: boolean) => {
-    if (startupError && text.includes(startupError)) return;
+    if (startupFailure(text) || !noteServerDown(text)) return;
     addTranscriptError(text, caution, retry);
-  }, [addTranscriptError, startupError]);
-  // 画面の操作のエラー。設定・管理・会話の設定の画面を開いていればその画面に、そうでなければ会話の表示に出す
+  }, [addTranscriptError, startupFailure, noteServerDown]);
+  // 画面の操作のエラー。設定・管理・会話の設定の画面を開いていればその画面に、そうでなければ会話の表示に出す。
+  // 設定などの画面のエラーは次の操作で消える(0043)ので、つながらないエラーも操作のたびに出す(押しても何も起きないように見えないように)。
+  // 印だけは立てる(同じ理由で会話の表示とカードに重ねないため)
   const addError = useCallback((text: string, caution?: boolean) => {
-    if (startupError && text.includes(startupError)) return;
+    if (startupFailure(text)) return;
     if (inOpScope.current) {
+      noteServerDown(text);
       const id = ++screenErrorId.current;
       setScreenErrors(e => [...e, { id, text }]);
       return;
     }
+    if (!noteServerDown(text)) return;
     addTranscriptError(text, caution);
-  }, [addTranscriptError, startupError]);
+  }, [addTranscriptError, startupFailure, noteServerDown]);
   const convs = useConversations(addError);
   // 送信・生成のエラーは、設定の画面を開いている間に届いても会話の表示に残す(記録なので、次の操作で消さない)
   const chat = useChat({ ...transcript, addError: addRecordError }, setBusy, convs, toasts, models.reload);
@@ -176,16 +183,12 @@ export default function App() {
         return false;
       });
       if (!ok) return; // 起動に失敗している。理由は useModels が出している
-      // aibow-server につながらないときは、useModels がカードを1回出している。会話と設定も同じ理由で読めないので、
-      // 同じ理由のカードを重ねて出さない(つながったら読み直す。下の effect)
-      const report = (what: string, err: unknown) => {
-        if (models.serverDown() && isUnreachable(err)) return;
-        addError(`${what}: ${errorMessage(err)}`);
-      };
-      if (initErr) report("会話を読み込めません", initErr);
-      await app.reload().catch(err => report("設定を読み込めません", err));
+      // aibow-server につながらないときは、useModels がカードを1回出している。会話と設定も同じ理由で読めないが、
+      // 同じ理由のカードは addError が重ねて出さない(つながったら読み直す。下の effect)
+      if (initErr) addError(`会話を読み込めません: ${errorMessage(initErr)}`);
+      await app.reload().catch(err => addError(`設定を読み込めません: ${errorMessage(err)}`));
     })();
-  }, [convs.init, models.reload, models.serverDown, app.reload, addError]);
+  }, [convs.init, models.reload, app.reload, addError]);
 
   // aibow-server につながったら(起動したときに止まっていた・途中で止まった)、読めなかった設定と会話の一覧を読み直す
   const serverError = models.serverError;

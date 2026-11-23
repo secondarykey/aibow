@@ -54,7 +54,9 @@ export const backend: Backend = {
   setEmail: async email => asMe(await ChatService.SetMyEmail(email)),
   // 自分の使用量は、aibow-server の口をアプリ用のトークンで呼ぶ(0033)。Go の usage.Mine と同じ形
   myUsage: async () => (await ChatService.MyUsage()) as unknown as MyUsage,
-  onUnauthorized: () => () => {},
+  // 使っている途中で aibow-server に 401 で断られた(ログインの期限が切れた)。名前は main.go の unauthorizedEventName と同じ。
+  // Go(connection.go)がトークンを手放してから出すので、ログインの画面に戻る(ブラウザの 401 と同じ。0057 の決定事項 1)
+  onUnauthorized: f => Events.On("aibow:unauthorized", () => f()),
   onUserChanged: () => () => {}, // アプリは1つのウィンドウに1人。cookie を分け合うタブが無い
   // 利用者の管理はブラウザの管理者だけ(0018 の 11-0)。デスクトップには「利用者」のタブを出さないので、呼ばれない
   admin: {

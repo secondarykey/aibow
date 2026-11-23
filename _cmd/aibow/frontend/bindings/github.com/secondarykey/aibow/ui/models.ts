@@ -165,6 +165,12 @@ export interface ModelsResult {
     "server_error"?: string;
 
     /**
+     * LoginRequired は、aibow-server に 401(ログインしてください)で断られたか。つながらないのとは違い、ログインし直せば直るので
+     * ServerError には入れない(画面はログインの画面に移る。0057 の決定事項 5)。画面は一覧を前のままにしておく
+     */
+    "login_required"?: boolean;
+
+    /**
      * Manage は、aibow-server の中で、サーバーの PC の事情(読み込む / 降ろす・層の数・置き場所・出どころ)を見せて変えてよい人か
      * (管理者か、ログインなしの形の画面。0046)。画面はモデルのタブを、アプリモードのときと同じに出す
      */

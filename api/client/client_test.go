@@ -488,6 +488,51 @@ func TestKey(t *testing.T) {
 	}
 }
 
+// 401 で断られたら、送ったキーとエラーを添えて受け口を呼ぶ(0057 の決定事項 1)。ほかのエラー・つながらないときは呼ばない
+func TestOnUnauthorized(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/models":
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte(`{"error":{"message":"アプリのログインの期限(10 日)が切れました。もう一度ログインしてください","type":"invalid_request_error","code":"token_expired"}}`))
+		default:
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte(`{"error":{"message":"だめでした","type":"server_error"}}`))
+		}
+	}))
+	defer srv.Close()
+	c := New(srv.URL)
+	c.SetKey("aibowapp_old")
+	var keys []string
+	var codes []string
+	c.OnUnauthorized(func(key string, err *APIError) {
+		keys = append(keys, key)
+		codes = append(codes, err.Code)
+	})
+	if _, err := c.Models(); err == nil {
+		t.Fatal("401 なのにエラーにならない")
+	}
+	if !slices.Equal(keys, []string{"aibowapp_old"}) || !slices.Equal(codes, []string{"token_expired"}) {
+		t.Errorf("401 で、送ったキーと code を添えて呼ぶはず: %v %v", keys, codes)
+	}
+	// 401 でないエラーでは呼ばない
+	if err := c.Post(context.Background(), "/_aibow/store/Conversation", nil, nil); err == nil {
+		t.Fatal("500 なのにエラーにならない")
+	}
+	if len(keys) != 1 {
+		t.Errorf("401 でないエラーでは呼ばないはず: %v", keys)
+	}
+	// つながらないときも呼ばない
+	srv.Close()
+	if _, err := c.Models(); !errors.Is(err, ErrUnreachable) {
+		t.Fatalf("つながらないはず: %v", err)
+	}
+	if len(keys) != 1 {
+		t.Errorf("つながらないときは呼ばないはず: %v", keys)
+	}
+}
+
 // 画像の付いた会話(0030)も、会話 → JSON(image_url の data: URL)→ 会話 で変わらない。
 // サーバーは中身の SHA-256 を ID にするので、会話の仕組みが付けた ID(File.Hash)と同じになる(サーバーの KV キャッシュで同じ画像と分かる)
 func TestRoundTripImages(t *testing.T) {

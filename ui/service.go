@@ -120,8 +120,10 @@ type Service struct {
 	store aibow.Store          // 起動に失敗したときは nil
 	convs *aibow.Conversations // 起動に失敗したときは nil
 
-	// serverDown は、aibow-server につながらなかったか(つながらない間、一覧を取るたびにログを出さないため)
-	serverDown atomic.Bool
+	// serverDown は、aibow-server につながらないことをログに書いたときの理由の種類(serverDownReason。つながっていれば nil)。
+	// つながらない間、一覧を取るたびにログを出さないため。true / false だけで持つと、理由が変わっても(つながらない → 証明書が違う)
+	// 黙ってしまうので、理由ごとに持つ(0057 の決定事項 6)
+	serverDown atomic.Pointer[string]
 
 	// startupErr は起動に失敗した理由(lib が無いなど)。画面に表示する
 	startupErr error

@@ -1139,6 +1139,9 @@ footer { border-top: 1px solid var(--border); background: var(--panel); padding:
   background: color-mix(in srgb, var(--warn) 12%, transparent); border-left: 3px solid var(--warn);
 }
 .restart-note .icon { flex-shrink: 0; margin-top: 4px; color: var(--warn); }
+/* ログインの期限が切れてログインの画面に戻ったときの1行(0057)。同じ警告の形を、ログインの箱に合わせて小さく */
+.restart-note.login-expired { padding: 8px 10px; font-size: 13px; }
+.restart-note.login-expired .icon { margin-top: 3px; }
 
 /* 会話の共有と管理者が読む(0018 の 11-2)。ほかの人に共有された会話は自分の会話と同じ一覧に混ぜ、同じ共有のアイコンを強調の色にして見分ける(0055) */
 .share-mark { flex-shrink: 0; margin-left: 4px; color: var(--muted); font-size: 12px; vertical-align: -1px; }

@@ -31,7 +31,8 @@ const (
 )
 
 // ErrTokenExpired は、アプリ用のトークンの期限が切れたときのエラー(401。code は token_expired)。
-var ErrTokenExpired = errors.New("アプリのログインの期限(10 日)が切れました。設定の画面の「サーバー」で、もう一度ログインしてください")
+// 文は、アプリがログインの画面に戻ったあとに読むので、どこでログインするかは書かない(0047 からログインの入口はログインの画面だけ。0057 の決定事項 3)
+var ErrTokenExpired = errors.New("アプリのログインの期限(10 日)が切れました。もう一度ログインしてください")
 
 // AppLogin は、アプリでログインしたときの返事(POST /_aibow/auth/token)。
 type AppLogin struct {
@@ -72,15 +73,18 @@ func (s *Sessions) RevokeAppToken(ctx context.Context, token string) error {
 // IsAppToken は、key がアプリ用のトークンの形か(API キーではなく)。
 func IsAppToken(key string) bool { return strings.HasPrefix(key, appTokenPrefix) }
 
-// appTokenUser はアプリ用のトークンの持ち主。無ければ ErrBadKey、期限が切れていれば ErrTokenExpired(切れたものは消す)。
+// appTokenUser はアプリ用のトークンの持ち主。無ければ ErrBadKey、期限が切れていれば ErrTokenExpired。
+//
+// 切れたトークンは、断るときに消さない(何度呼ばれても ErrTokenExpired で断る。0057 の決定事項 4)。
+// 以前は最初に断ったときに消していたので、2回目からは「API キーが無いか、違います」になり、期限切れだと分かるのが最初の1回だけだった
+// (アプリは一覧の取り直しなどで何本も同時に呼ぶので、どの呼び出しが最初になるかは決まらない)。
+// 同じ PC で次にログインすれば置き換わり(利用者と PC ごとに1本)、ログアウトで消えるので、溜まらない。
 func (k *Keys) appTokenUser(ctx context.Context, token string) (User, error) {
-	id := tokenID(token)
-	t, err := k.store.AppToken(ctx, id)
+	t, err := k.store.AppToken(ctx, tokenID(token))
 	if err != nil {
 		return User{}, err
 	}
 	if !k.now().Before(t.ExpiresAt) {
-		k.store.DeleteAppToken(ctx, id)
 		return User{}, ErrTokenExpired
 	}
 	u, err := k.store.UserByID(ctx, t.UserID)

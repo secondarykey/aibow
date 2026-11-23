@@ -8,7 +8,7 @@
 // 設定でモードを変えたら、ログインの画面ではなく「起動し直してください」の画面(RestartGate)に移る(0051 の決定事項 3。Go の Login も断る。0047 の決定事項 14)。
 import { useEffect, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
-import { LuSettings } from "react-icons/lu";
+import { LuSettings, LuTriangleAlert } from "react-icons/lu";
 import { isBrowser, linkUser, login, me, onUnauthorized, applyLink } from "../backend";
 import { errorMessage } from "../errors";
 import { TitleBar } from "./TitleBar";
@@ -34,7 +34,7 @@ export function LoginGate({ children }: { children: ReactNode }) {
   }
 
   if (needed || expired) {
-    return <WithTitleBar><LoginScreen onDone={() => (expired ? location.reload() : setNeeded(false))} /></WithTitleBar>;
+    return <WithTitleBar><LoginScreen expired={expired} onDone={() => (expired ? location.reload() : setNeeded(false))} /></WithTitleBar>;
   }
   return <>{children}</>;
 }
@@ -107,13 +107,15 @@ function SetPassword({ token, onDone, onCancel }: { token: string; onDone(): voi
 }
 
 // LoginScreen は、ログインの画面と、そこから開く設定(デスクトップのアプリだけ)を切り替える
-function LoginScreen({ onDone }: { onDone(): void }) {
+function LoginScreen({ expired, onDone }: { expired: boolean; onDone(): void }) {
   const [settings, setSettings] = useState(false);
   if (settings) return <LoginSettings onClose={() => setSettings(false)} />;
-  return <Login onDone={onDone} onOpenSettings={isBrowser ? undefined : () => setSettings(true)} />;
+  return <Login expired={expired} onDone={onDone} onOpenSettings={isBrowser ? undefined : () => setSettings(true)} />;
 }
 
-function Login({ onDone, onOpenSettings }: { onDone(): void; onOpenSettings?(): void }) {
+// expired は、使っている途中でログインの期限が切れて戻ってきたか。そのときだけ、タイトルの下に1行出す
+// (何も出さないと、なぜログインの画面になったのか分からない。0057 の決定事項 2。文と場所はユーザーと決めた)
+function Login({ expired, onDone, onOpenSettings }: { expired: boolean; onDone(): void; onOpenSettings?(): void }) {
   const [name, setName] = useState(me.lastUser ?? ""); // アプリは最後にログインした名前を入れておく(ブラウザは空)
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -136,6 +138,12 @@ function Login({ onDone, onOpenSettings }: { onDone(): void; onOpenSettings?(): 
     <div className="login">
       <form className={"login-box" + (onOpenSettings ? " with-settings" : "")} onSubmit={submit}>
         <h1 className="login-title">AIBow</h1>
+        {expired && (
+          <div className="restart-note login-expired" role="status">
+            <LuTriangleAlert className="icon" />
+            <span>もう一度ログインしてください(ログインの期限が切れました)</span>
+          </div>
+        )}
         <input
           type="text" placeholder="名前" aria-label="名前" autoComplete="username" autoFocus
           value={name} onChange={e => setName(e.target.value)}

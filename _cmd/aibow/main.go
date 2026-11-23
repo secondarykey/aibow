@@ -52,6 +52,10 @@ import (
 // windowFocusEventName は、ウィンドウがアクティブに戻ったことを画面に知らせるイベントの名前。
 const windowFocusEventName = "aibow:window:focus"
 
+// unauthorizedEventName は、使っている途中で aibow-server に 401 で断られた(ログインの期限が切れた)ことを画面に知らせるイベント。
+// 画面(backendWails.ts の onUnauthorized)はログインの画面に戻る(ブラウザの 401 と同じ。0057 の決定事項 1)
+const unauthorizedEventName = "aibow:unauthorized"
+
 // version はアプリのバージョン。_cmd/aibow/version(唯一の正)を埋め込む。
 // 上げ方は _cmd/version.go を参照。
 //
@@ -109,6 +113,7 @@ func main() {
 	if err == nil && cfg.serverURL != "" {
 		server, err = newServerClient(cfg)
 		conn.client = server
+		conn.watchUnauthorized()
 		// ログインの要る aibow-server にトークンなしで起動したときは、ログインするまで aibow-server を呼ばない(0051 の決定事項 6)
 		waitLogin = err == nil && conn.checkLogin(cfg.serverPin)
 	}
@@ -143,7 +148,8 @@ func main() {
 		// Wails 自身のログも aibow と同じ出口(startLog が組んだ slog.Default())に出す。
 		// 渡さないと、Wails は dev では自分の書式で標準エラー出力に出し、リリース版では捨てる(exe でエラーが残らない)。
 		// なお WebView2 の行([WebView2] …)は標準の log で来るが、slog.SetDefault のあとは標準の log も同じ出口に流れる
-		Logger: slog.Default(),
+		// ただし、aibow-server につながらない・証明書が違う・401 による「Binding call failed」は Debug に落とす(wailslog.go。0057)
+		Logger: wailsLogger(slog.Default()),
 		Services: []application.Service{
 			application.NewService(chat),
 		},
@@ -172,6 +178,9 @@ func main() {
 		applyWindowState(&opts, saved)
 	}
 	window := app.Window.NewWithOptions(opts)
+	conn.mu.Lock()
+	conn.onSignedOut = func() { app.Event.Emit(unauthorizedEventName) }
+	conn.mu.Unlock()
 	tracker := trackWindow(app, window, cfg.windowPath, saved, hasSaved)
 	// 保存していない変更があれば、閉じるのを止めて画面に聞く(closeguard.go。0053)
 	chat.closer.attach(app, window)

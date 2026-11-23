@@ -42,6 +42,8 @@ export function RestartGate({ children }: { children: ReactNode }) {
 // restartText は、起動し直してほしいことのお知らせ。することを先に書き、起動し直したらどうなるかを後ろに(0048)
 function restartText(conn: ServerConnection): string {
   if (conn.pending === "direct") return "aibow を起動し直してください。起動し直すと、アプリモードに戻ります";
-  const base = `aibow を起動し直してください。起動し直すと、aibow-server(${conn.pendingUrl})につなぎます`;
+  // 同じ aibow-server で証明書だけが変わったときは、何が変わるのかを書く(0057 の段2。ユーザーと決めた)
+  const how = conn.pendingCert ? "新しい証明書で " : "";
+  const base = `aibow を起動し直してください。起動し直すと、${how}aibow-server(${conn.pendingUrl})につなぎます`;
   return conn.pendingLogin ? base + "(つないだら、ログインの画面でログインします)" : base;
 }
