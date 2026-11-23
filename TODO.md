@@ -40,7 +40,6 @@ aibow に残っている課題の一覧(入口)。ルールと全体の構成は
 | ⬜ | API キーを消す・期限を付ける(既定 90 日)、利用者を無効にする(消さずに止める) | [0060-disable-key-and-user.md](_docs/features/0060-disable-key-and-user.md) |
 | ⬜ | 利用者をまとめて作る(インポート) | [検討メモ](_docs/backlog.md#利用者をまとめて作るインポート) |
 | ⬜ | 複数のモデルを同時に動かす | [検討メモ](_docs/backlog.md#複数のモデルを同時に動かす) |
-| ⬜ | 証明書を作ったら、server.json に貼る tlsCert・tlsKey をコンソールに出す(今の設定と違えば一言添える) | [0058-cert-server-json.md](_docs/features/0058-cert-server-json.md) |
 | ⬜ | 配布プロファイルを管理の画面の「新規」で最初から作る・停止する・削除する(複製して配布と、個人プロファイルに戻す動きはなくす) | [0059-distributed-profile-new.md](_docs/features/0059-distributed-profile-new.md) |
 
 ## モデルの対応
@@ -78,3 +77,4 @@ C(0040)と I(0028)は OK / NG を決めずに**確認済み扱い**にした(再
 | | 確かめること | 資料 |
 |---|---|---|
 | ⬜ | (任意。プロキシを実際に使うときに)信頼するプロキシ:ユーザーのリバースプロキシで X-Forwarded-For を書き、ほかの PC から開くとログの相手がその PC になる(管理の操作の断りは 0046 でどこからでも同じ) | [0044-trusted-proxies.md](_docs/features/0044-trusted-proxies.md) の完了の条件 2 |
+| ⬜ | 証明書の作り直しのあと、cert が出した2行を貼った server.json で aibow-server が HTTPS で起動する(出力と貼った server.json が読めることは確かめた) | [0058-cert-server-json.md](_docs/features/0058-cert-server-json.md) の完了の条件 3 |

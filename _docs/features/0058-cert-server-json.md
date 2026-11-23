@@ -1,6 +1,6 @@
 # 0058: 証明書を作ったら、server.json に貼る TLS の設定を出す
 
-- 状態: ⬜ 未着手(仕様)
+- 状態: ✅ 完了(2026-11-24。貼った server.json で HTTPS で起動するところは、まだユーザーが確かめていない。完了の条件 3)
 - ロードマップ: ロードマップの外(使い勝手の直し。0017 の 10-2 の続き)
 - 決めた日: 2026-11-23(Chat でユーザーと決めた。Chat がコード(`_cmd/aibow-server/cert.go`・`config.go`・`config/server.go`)を読んで、今の作りを確かめた)
 - 前提: 0017(`aibow-server cert`・`tlsCert`・`tlsKey`。決定事項 2)、0057(証明書を作り直したあとにアプリで信頼し直す)
@@ -33,7 +33,7 @@ JSON の形(欄の名前・`\` の書き方)を自分で組み立てる必要が
 2. server.json にすでに TLS の設定があり、作った証明書と違うファイルを指していれば、**「今の設定と違います」と一言添える**
 3. **server.json には書き込まない**。将来、引数を付けたとき(たとえば `cert -write`)だけ書き込む形を足せる余地は残す(今回は作らない)
 
-### 話の流れから Chat が決めて書いたこと(ユーザーに確認してもらう)
+### 話の流れから Chat が決めて書いたこと(2026-11-24、着手の前にユーザーが「仕様どおりでよい」と確認した)
 
 4. **パスは絶対パスで、区切りは `/`**(`filepath.ToSlash`)。JSON の文字列にするのは `encoding/json` で行う(`"` などが入っても壊れないように。`SetEscapeHTML(false)` で `&` などを `\u0026` にしない)
 5. **貼る形**:2行を、行末のカンマを `tlsCert` の行だけに付けて出す(最後の欄に置いても JSON として正しいように。Go の JSON は最後のカンマを許さない)。
@@ -104,3 +104,16 @@ JSON の形(欄の名前・`\` の書き方)を自分で組み立てる必要が
 2. `runCert` に組み込み(出力先を `io.Writer` に。今の `TestRunCert` も合わせる)
 3. usage.md・setup.md・cert.go の頭のコメント
 4. 一時フォルダで実際に動かして、出力を確かめる
+
+## 経過
+
+- 2026-11-24(Code):着手の前に、決定事項 4〜9(Chat が決めて書いたこと)をユーザーに確かめた(仕様どおりでよい)。作業の順番 1〜4 を作った。
+  - `cert.go`:`runCert(w io.Writer, c, hosts)` にし(`run` からは `os.Stdout`)、`compareTLS`(状態 `tlsNoFile`・`tlsNotSet`・`tlsSame`・`tlsDifferent`)・`tlsSnippet`・`samePath`・`jsonField`・`writeTLSGuide`・`writeListenGuide` を足した。
+    server.json を読み直せなかったときは `tlsUnknown` にして Warn を出し、「書いていない」と同じ2行だけを出す(決定事項 7)
+  - 仕様に書いていなかった細かいところ(Code が決めた):「違う」のときも2行の前に「書いていない」と同じ前置き(server.json のパスと貼り方)を出す。
+    片方だけ書いてあるときの「今:」は、書いていないほうを「(なし)」と出す。待ち受けの添え書きには今の待ち受け(`今: 127.0.0.1:8089`)を添え、addr の例のポートは今のポートにする
+  - `cert_test.go`:`TestTLSSnippetLoads`(`\`・`"`・`&` の入ったパスでも `{ }` に入れて `LoadServerFile` で読める。ほかの欄の後ろに置いても読める)・
+    `TestCompareTLS`(4つの状態・片方だけ同じ・片方だけ書いてある・Windows の大文字小文字)・`TestRunCertGuide`(状態ごとの出力・addr / host の例・PC の外なら添えない・並び)
+  - usage.md の「ほかの PC から使う」の 1・2、setup.md の「ほかの PC から使えるようにする」の 1・2、`cert.go` の頭のコメントに書いた
+  - 確かめたこと:`gofmt -l .`・`go test ./...`・`go vet`。一時フォルダの server.json(`-config`)で `aibow-server cert 192.168.1.10` を、TLS なし → 出た2行を貼る → pem を消して作り直す(「もうこの証明書を指しています」)→ 違う値と `addr` の順に動かし、出力が決定事項 5・6・10 のとおりになることを見た。
+    貼った server.json は `aibow-server -config … user list` で読めた。aibow-server を起動して HTTPS で待ち受けるところは、モデルを GPU に読み込むので試していない(完了の条件 3。ユーザーの確認)
