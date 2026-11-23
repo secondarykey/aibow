@@ -34,10 +34,14 @@ aibow に残っている課題の一覧(入口)。ルールと全体の構成は
 | | 課題 | 資料 |
 |---|---|---|
 | ⬜ | 共有の再検討(アプリからの閲覧・プロジェクトの概念・利用者同士の会話) | [検討メモ](_docs/backlog.md#共有の再検討アプリからの閲覧プロジェクトの概念)・[0018-sharing.md](_docs/features/0018-sharing.md) |
-| ⬜ | aibow-server の中央の制御の残り(上限の上限・順番待ちの優先度・自動で降ろす・server.json を画面で) | [検討メモ](_docs/backlog.md#aibow-server-の中央の制御の残り) |
+| ⬜ | aibow-server の中央の制御の残り(上限の上限・順番待ちの優先度・自動で降ろす・server.json のほかの項目を画面で) | [検討メモ](_docs/backlog.md#aibow-server-の中央の制御の残り) |
+| ⬜ | 並列数・作業領域・資料のフォルダを管理の画面で変える(server.json に書き戻す) | [0061-server-settings-on-screen.md](_docs/features/0061-server-settings-on-screen.md) |
 | ⬜ | aibow-server の起動のときのモデル(指定が無い・見つからないときに、最後に読み込んだモデルか既定の印で選ぶ。今は一覧の名前順の先頭) | [検討メモ](_docs/backlog.md#aibow-server-の起動のときのモデル指定が無いとき見つからないとき) |
+| ⬜ | API キーを消す・期限を付ける(既定 90 日)、利用者を無効にする(消さずに止める) | [0060-disable-key-and-user.md](_docs/features/0060-disable-key-and-user.md) |
 | ⬜ | 利用者をまとめて作る(インポート) | [検討メモ](_docs/backlog.md#利用者をまとめて作るインポート) |
 | ⬜ | 複数のモデルを同時に動かす | [検討メモ](_docs/backlog.md#複数のモデルを同時に動かす) |
+| ⬜ | 証明書を作ったら、server.json に貼る tlsCert・tlsKey をコンソールに出す(今の設定と違えば一言添える) | [0058-cert-server-json.md](_docs/features/0058-cert-server-json.md) |
+| ⬜ | 配布プロファイルを管理の画面の「新規」で最初から作る・停止する・削除する(複製して配布と、個人プロファイルに戻す動きはなくす) | [0059-distributed-profile-new.md](_docs/features/0059-distributed-profile-new.md) |
 
 ## モデルの対応
 
@@ -59,18 +63,18 @@ aibow に残っている課題の一覧(入口)。ルールと全体の構成は
 | | 課題 | 資料 |
 |---|---|---|
 | ⬜ | ログの続き(パッケージごとのレベル・llama.cpp のログ・画面からログを見るなど) | [0008-log.md](_docs/features/0008-log.md) の「やり残し」 |
-| ⬜ | aibow-server につながらないときに、同じ ERROR(`Binding call failed: … つながりません`)が画面の取り直しのたびに6件ずつ出る | [検討メモ](_docs/backlog.md#aibow-server-につながらないときに同じ-error-が繰り返し出る) |
+| ⬜ | ログインの期限切れが画面に出ない・証明書を作り直したあと同じつなぎ先で信頼し直せない・つながらないときのエラーが積み重なる(確認の H2・H9 で見つかった) | [0057-login-expiry-and-retrust.md](_docs/features/0057-login-expiry-and-retrust.md) |
 | ⬜ | パッケージの分け方(手元に残る設定のファイルをルートから分けるか) | [検討メモ](_docs/backlog.md#パッケージの分け方) |
 
 ## 確かめていないこと(作ったもの)
 
 完了にしたが、実際の画面・環境では確かめていないもの。確かめたら仕様に書き、ここからは行を消す。
 
+**2026-11-23:確認の手順書(`checklist-unverified-11.md`・`checklist-remaining-2026-11-21.md`)は全部終わった**(A〜N・N2・S)。結果は各仕様の「2026-11-23 確認」などに書いた。
+C(0040)と I(0028)は OK / NG を決めずに**確認済み扱い**にした(再確認はしない。おかしな動きが出たら課題にする)。H で見つかった不具合は 0057 で直す。
+**ここに無いものは確認済みなので、改めて確認を頼まない。** 残っているのは下の行だけ。
+下の 0044 の行(手順書の K6)は「できれば」の任意の項目として飛ばしたもの。リバースプロキシを実際に使うときに確かめればよく、それまで確認を頼まない。
+
 | | 確かめること | 資料 |
 |---|---|---|
-| ⬜ | aibow-server を GPU の 9B で:2人同時の生成(ブラウザの画面を2つ並べて。`parallel` 2)・資料のフォルダのツール | [0023-parallel.md](_docs/features/0023-parallel.md)・[0024-server-tools.md](_docs/features/0024-server-tools.md) |
-| ⬜ | ほかの PC からつなぐ:本物の Cline・HTTPS・資料のフォルダの見え方 | [0018](_docs/features/0018-sharing.md) の「11-3」・[0024](_docs/features/0024-server-tools.md) |
-| ⬜ | アプリのログイン:トークンの期限切れ・証明書を作り直したときの画面(テストだけ) | [0019-app-login.md](_docs/features/0019-app-login.md) |
-| ⬜ | 同じ呼び出しの繰り返しを止める仕組みを、llama3.2:3b で | [0028-repeated-calls.md](_docs/features/0028-repeated-calls.md) |
-| ⬜ | 返事の途中で前のツールの結果を省く compact の画面(吹き出しの「…を省いてモデルに渡しました」・ツールのカードの「省略して渡した」)と、省いても目安を下回らないときに省かない形を 4B で | [0040-compact-in-turn.md](_docs/features/0040-compact-in-turn.md) |
-| ⬜ | 信頼するプロキシ:ユーザーのリバースプロキシで X-Forwarded-For を書き、ほかの PC から開くとログの相手がその PC になる(管理の操作の断りは 0046 でどこからでも同じ) | [0044-trusted-proxies.md](_docs/features/0044-trusted-proxies.md) の完了の条件 2 |
+| ⬜ | (任意。プロキシを実際に使うときに)信頼するプロキシ:ユーザーのリバースプロキシで X-Forwarded-For を書き、ほかの PC から開くとログの相手がその PC になる(管理の操作の断りは 0046 でどこからでも同じ) | [0044-trusted-proxies.md](_docs/features/0044-trusted-proxies.md) の完了の条件 2 |

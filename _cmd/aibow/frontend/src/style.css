@@ -1128,7 +1128,7 @@ footer { border-top: 1px solid var(--border); background: var(--panel); padding:
 /* ログインの画面の設定(デスクトップのアプリだけ。0047)。箱の右下の歯車(2026-11-21、ユーザーの指示)。
    箱の下の余白を広げ、ログインのボタンやお知らせと重ならないようにする */
 .login-box.with-settings { padding-bottom: 40px; }
-.login-box .login-settings { position: absolute; bottom: 8px; right: 8px; padding: 4px; }
+.login-box .login-settings { position: absolute; bottom: 4px; right: 8px; padding: 4px; } /* 少し下へ(2026-11-23、ユーザーの指示) */
 .login-error { color: var(--error); font-size: 13px; }
 .login-note { color: var(--muted); font-size: 12.5px; line-height: 1.6; }
 .login-note code { display: block; margin-top: 4px; font-family: ui-monospace, Consolas, monospace; font-size: 12px; white-space: nowrap; overflow-x: auto; color: var(--text); }
