@@ -74,3 +74,4 @@ aibow に残っている課題の一覧(入口)。ルールと全体の構成は
 | ⬜ | 同じ呼び出しの繰り返しを止める仕組みを、llama3.2:3b で | [0028-repeated-calls.md](_docs/features/0028-repeated-calls.md) |
 | ⬜ | 返事の途中で前のツールの結果を省く compact の画面(吹き出しの「…を省いてモデルに渡しました」・ツールのカードの「省略して渡した」)と、省いても目安を下回らないときに省かない形を 4B で | [0040-compact-in-turn.md](_docs/features/0040-compact-in-turn.md) |
 | ⬜ | 信頼するプロキシ:ユーザーのリバースプロキシで X-Forwarded-For を書き、ほかの PC から開くとログの相手がその PC になる(管理の操作の断りは 0046 でどこからでも同じ) | [0044-trusted-proxies.md](_docs/features/0044-trusted-proxies.md) の完了の条件 2 |
+| ⬜ | 証明書の作り直しのあと、cert が出した2行を貼った server.json で aibow-server が HTTPS で起動する(出力と貼った server.json が読めることは確かめた) | [0058-cert-server-json.md](_docs/features/0058-cert-server-json.md) の完了の条件 3 |

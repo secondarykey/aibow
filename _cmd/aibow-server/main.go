@@ -81,7 +81,7 @@ func run(c serverConfig, notices []string, cfgErr error, env *config.Env) error 
 		if cfgErr != nil {
 			return cfgErr
 		}
-		return runCert(c, flag.Args()[1:])
+		return runCert(os.Stdout, c, flag.Args()[1:])
 	}
 	if flag.Arg(0) == "user" {
 		if cfgErr != nil {
