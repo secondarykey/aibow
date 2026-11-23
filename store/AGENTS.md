@@ -61,6 +61,8 @@
     `SetMessagesElided` で付けるだけで、外すメソッドは無い。`AddMessage` も印をそのまま入れる(会話を写すときに付いていく)
   - 版 22: 会話の一覧の「非アクティブ」の印 `conversation_inactive`(会話 + 一覧を見る利用者。0055)。印は付けた人の一覧にだけ効く(共有された会話にも付けられるので、会話の列にしない)。
     会話か利用者を消すと一緒に消える。付けられるのは自分の会話と、自分に共有された会話(`conversationShared`)だけ。読み書きは `share.go`(`inactiveSet`・`SetConversationInactive`)
+  - 版 23: `api_keys` に期限 `expires_at`(空は無期限。今あるキーも空)と、`users` に無効の印 `disabled`(0 / 1)。0060。
+    期限を過ぎているかは `auth.Keys` が見る(`APIKeyOwner` は期限を返すだけ)。`SetDisabled` は印を付けるとき、その人のセッション・アプリ用のトークン・パスワードを決めるリンクを同じトランザクションで消す(API キーは残す)
 - 会話の共有:ほかの人の会話を読むのは `ReadConversation` だけ(条件 `conversationShared` と管理者か)。書くメソッドは持ち主の行だけなので、共有された人も管理者も書き込めない。
   自分の会話を読むときは `share`(と1つ読むときは `ShareWith`)を入れる。共有された会話の一覧と `ReadConversation` には、見えている理由(`ToMe`・`Groups`)を
   `shareReasons` で別に読んで入れる(見えるかの判定は `conversationShared` のまま。0055)

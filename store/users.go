@@ -18,12 +18,12 @@ import (
 
 var _ auth.Store = (*SQLite)(nil)
 
-const userColumns = "id, name, password, admin, created_at, updated_at, display_name, last_used_at, email"
+const userColumns = "id, name, password, admin, created_at, updated_at, display_name, last_used_at, email, disabled"
 
 func scanUser(r rowScanner) (auth.User, error) {
 	var u auth.User
 	var id, created, updated, used string
-	if err := r.Scan(&id, &u.Name, &u.Password, &u.Admin, &created, &updated, &u.DisplayName, &used, &u.Email); err != nil {
+	if err := r.Scan(&id, &u.Name, &u.Password, &u.Admin, &created, &updated, &u.DisplayName, &used, &u.Email, &u.Disabled); err != nil {
 		return u, err
 	}
 	var err error
@@ -48,8 +48,8 @@ func (s *SQLite) CreateUser(ctx context.Context, u auth.User) error {
 	if !u.LastUsedAt.IsZero() {
 		used = formatTime(u.LastUsedAt)
 	}
-	_, err := s.db.ExecContext(ctx, "INSERT INTO users ("+userColumns+") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-		u.ID.String(), u.Name, u.Password, u.Admin, formatTime(u.CreatedAt), formatTime(u.UpdatedAt), u.DisplayName, used, u.Email)
+	_, err := s.db.ExecContext(ctx, "INSERT INTO users ("+userColumns+") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		u.ID.String(), u.Name, u.Password, u.Admin, formatTime(u.CreatedAt), formatTime(u.UpdatedAt), u.DisplayName, used, u.Email, u.Disabled)
 	// 名前は UNIQUE。SQLite のエラーの文で見分ける(ドライバーの型を使うと、このパッケージの外にドライバーの事情が漏れるため)
 	if err != nil && strings.Contains(err.Error(), "UNIQUE constraint failed: users.name") {
 		return auth.ErrUserExists
@@ -98,6 +98,32 @@ func (s *SQLite) SetPassword(ctx context.Context, id uuid.UUID, hash string, at 
 func (s *SQLite) SetAdmin(ctx context.Context, id uuid.UUID, admin bool, at time.Time) error {
 	res, err := s.db.ExecContext(ctx, "UPDATE users SET admin = ?, updated_at = ? WHERE id = ?", admin, formatTime(at), id.String())
 	return notFoundIfNone(res, err, auth.ErrUserNotFound)
+}
+
+// SetDisabled は無効の印を付ける / 外す(0060)。付けるときは、その人のセッション・アプリ用のトークン・パスワードを決めるリンクを同じトランザクションで消す
+// (ログイン中の画面とアプリをすぐ切るため。リンクは使うとそのままログインになるため)。API キー・会話・プロファイルには触らない(外せば元どおり使える)。
+func (s *SQLite) SetDisabled(ctx context.Context, id uuid.UUID, disabled bool, at time.Time) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	res, err := tx.ExecContext(ctx, "UPDATE users SET disabled = ?, updated_at = ? WHERE id = ?", disabled, formatTime(at), id.String())
+	if err := notFoundIfNone(res, err, auth.ErrUserNotFound); err != nil {
+		return err
+	}
+	if disabled {
+		for _, q := range []string{
+			"DELETE FROM sessions WHERE user_id = ?",
+			"DELETE FROM app_tokens WHERE user_id = ?",
+			"DELETE FROM password_links WHERE user_id = ?",
+		} {
+			if _, err := tx.ExecContext(ctx, q, id.String()); err != nil {
+				return err
+			}
+		}
+	}
+	return tx.Commit()
 }
 
 func (s *SQLite) SetDisplayName(ctx context.Context, id uuid.UUID, name string, at time.Time) error {
@@ -208,24 +234,69 @@ func (s *SQLite) DeleteExpiredSessions(ctx context.Context, now time.Time) (int,
 
 // ---- API キー ---------------------------------------------------------------------------
 
-func (s *SQLite) SetAPIKey(ctx context.Context, user uuid.UUID, id string, at time.Time) error {
+// SetAPIKey は API キーを置き換える。expires がゼロなら無期限(列は空。0060)。
+func (s *SQLite) SetAPIKey(ctx context.Context, user uuid.UUID, id string, at, expires time.Time) error {
 	if _, err := s.UserByID(ctx, user); err != nil {
 		return err
 	}
-	// UPSERT: 1人1本なので、あれば置き換える
-	_, err := s.db.ExecContext(ctx, `INSERT INTO api_keys (user_id, id, created_at) VALUES (?, ?, ?)
-		ON CONFLICT(user_id) DO UPDATE SET id = excluded.id, created_at = excluded.created_at`, user.String(), id, formatTime(at))
+	// UPSERT: 1人1本なので、あれば置き換える(期限も新しいキーのものにする)
+	_, err := s.db.ExecContext(ctx, `INSERT INTO api_keys (user_id, id, created_at, expires_at) VALUES (?, ?, ?, ?)
+		ON CONFLICT(user_id) DO UPDATE SET id = excluded.id, created_at = excluded.created_at, expires_at = excluded.expires_at`,
+		user.String(), id, formatTime(at), keyExpires(expires))
 	return err
 }
 
-func (s *SQLite) UserByAPIKey(ctx context.Context, id string) (auth.User, error) {
-	return s.user(ctx, "id = (SELECT user_id FROM api_keys WHERE id = ?)", id)
+// DeleteAPIKey は API キーを消す(0060)。キーが無ければ auth.ErrNoAPIKey(いない人も同じ。呼ぶ側が先に人を引いている)。
+func (s *SQLite) DeleteAPIKey(ctx context.Context, user uuid.UUID) error {
+	res, err := s.db.ExecContext(ctx, "DELETE FROM api_keys WHERE user_id = ?", user.String())
+	return notFoundIfNone(res, err, auth.ErrNoAPIKey)
 }
 
-func (s *SQLite) HasAPIKey(ctx context.Context, user uuid.UUID) (bool, error) {
-	var n int
-	err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM api_keys WHERE user_id = ?", user.String()).Scan(&n)
-	return n > 0, err
+// APIKeyOwner は API キーの持ち主と、キーの期限(無期限ならゼロ)。期限を過ぎているかは見ない(見るのは auth.Keys)。
+func (s *SQLite) APIKeyOwner(ctx context.Context, id string) (auth.User, time.Time, error) {
+	var user, expires string
+	err := s.db.QueryRowContext(ctx, "SELECT user_id, expires_at FROM api_keys WHERE id = ?", id).Scan(&user, &expires)
+	if errors.Is(err, sql.ErrNoRows) {
+		return auth.User{}, time.Time{}, auth.ErrUserNotFound
+	}
+	if err != nil {
+		return auth.User{}, time.Time{}, err
+	}
+	exp, err := parseKeyExpires(expires)
+	if err != nil {
+		return auth.User{}, time.Time{}, err
+	}
+	u, err := s.user(ctx, "id = ?", user)
+	return u, exp, err
+}
+
+// HasAPIKey は、API キーを持っているかと、その期限(無期限ならゼロ)。
+func (s *SQLite) HasAPIKey(ctx context.Context, user uuid.UUID) (bool, time.Time, error) {
+	var expires string
+	err := s.db.QueryRowContext(ctx, "SELECT expires_at FROM api_keys WHERE user_id = ?", user.String()).Scan(&expires)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, time.Time{}, nil
+	}
+	if err != nil {
+		return false, time.Time{}, err
+	}
+	exp, err := parseKeyExpires(expires)
+	return true, exp, err
+}
+
+// keyExpires は API キーの期限を列の形にする(無期限は空。版 23 より前のキーも空なので、同じく無期限)。
+func keyExpires(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return formatTime(t)
+}
+
+func parseKeyExpires(s string) (time.Time, error) {
+	if s == "" {
+		return time.Time{}, nil
+	}
+	return parseTime(s)
 }
 
 // ---- パスワードを決めるリンク(0022) ------------------------------------------------------

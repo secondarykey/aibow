@@ -5,7 +5,10 @@ package main
 //	GET    /_aibow/admin/users                  利用者の一覧([]adminUser)
 //	POST   /_aibow/admin/users                  本文 {"name"}。作って {"name", "token", "expiresAt"} を返す(招待のリンクの合言葉。0022)
 //	POST   /_aibow/admin/users/{name}/password  今のパスワードを使えなくし、{"name", "token", "expiresAt"} を返す(再設定のリンク。その人のログインは切れる)。自分には使えない
-//	POST   /_aibow/admin/users/{name}/key       API キーを作り直して {"name", "key"} を返す(前のキーは使えなくなる)
+//	POST   /_aibow/admin/users/{name}/key       本文 {"days"}(30・90・365・0 = 無期限。本文が無ければ 90)。API キーを作り直して {"name", "key", "expiresAt"} を返す
+//	                                            (前のキーは使えなくなる。無期限なら expiresAt を省く。0060)
+//	DELETE /_aibow/admin/users/{name}/key       API キーを削除する(作り直さずに止める。無ければ 404。0060)
+//	POST   /_aibow/admin/users/{name}/disabled  本文 {"disabled"}。無効にする / 有効に戻す(0060)。自分と local は無効にできない
 //	POST   /_aibow/admin/users/{name}/display   本文 {"display_name"}。表示名を変える(空なら無し。0031)
 //	POST   /_aibow/admin/users/{name}/email     本文 {"email"}。メールアドレスを変える(空なら無し。重なれば 409。0031)
 //	DELETE /_aibow/admin/users/{name}           利用者と、その人の会話・プロファイル・設定を消す
@@ -32,11 +35,15 @@ import (
 
 // adminUser は一覧の1人(パスワードと API キーそのものは渡さない。あるかだけ)。
 type adminUser struct {
-	Name      string    `json:"name"`
-	Admin     bool      `json:"admin"`
-	Password  bool      `json:"password"` // パスワードがあるか(無ければログインできない)
-	Key       bool      `json:"key"`      // API キーがあるか
-	Local     bool      `json:"local"`    // ログインなしの形の利用者(消せない)
+	Name     string `json:"name"`
+	Admin    bool   `json:"admin"`
+	Password bool   `json:"password"` // パスワードがあるか(無ければログインできない)
+	Key      bool   `json:"key"`      // API キーがあるか
+	// KeyExpiresAt は API キーの期限(0060。無期限か、キーが無ければ省く)。過ぎていても省かない(画面が「期限切れ」と出す)
+	KeyExpiresAt *time.Time `json:"key_expires_at,omitempty"`
+	// Disabled は無効にされたか(0060)
+	Disabled  bool      `json:"disabled"`
+	Local     bool      `json:"local"` // ログインなしの形の利用者(消せない)
 	CreatedAt time.Time `json:"created_at"`
 	// DisplayName は表示名(0031。空ならログインの名前を出す)
 	DisplayName string `json:"display_name,omitempty"`
@@ -95,12 +102,55 @@ func adminHandler(st *store.SQLite, initial aibow.AppSettings) http.Handler {
 	})
 	mux.HandleFunc("POST /_aibow/admin/users/{name}/key", func(w http.ResponseWriter, r *http.Request) {
 		name := r.PathValue("name")
-		key, err := renewKey(r.Context(), st, name, by(r))
+		// 期限は本文で選ぶ。本文が無ければ既定の 90 日(以前の画面・呼び出しと同じに使えるように)
+		days := auth.DefaultKeyDays
+		if r.ContentLength != 0 {
+			var req struct {
+				Days *int `json:"days"`
+			}
+			if !readAdminJSON(w, r, &req) {
+				return
+			}
+			if req.Days != nil {
+				days = *req.Days
+			}
+		}
+		if _, err := auth.KeyExpires(time.Now(), days); err != nil {
+			writeAdminError(w, http.StatusBadRequest, err)
+			return
+		}
+		key, exp, err := renewKey(r.Context(), st, name, days, by(r))
 		if err != nil {
 			writeAdminError(w, statusOf(err), err)
 			return
 		}
-		writeAdminJSON(w, map[string]string{"name": name, "key": key})
+		out := map[string]any{"name": name, "key": key}
+		if !exp.IsZero() {
+			out["expiresAt"] = exp
+		}
+		writeAdminJSON(w, out)
+	})
+	mux.HandleFunc("DELETE /_aibow/admin/users/{name}/key", func(w http.ResponseWriter, r *http.Request) {
+		if err := removeKey(r.Context(), st, r.PathValue("name"), by(r)); err != nil {
+			writeAdminError(w, statusOf(err), err)
+			return
+		}
+		writeAdminJSON(w, struct{}{})
+	})
+	mux.HandleFunc("POST /_aibow/admin/users/{name}/disabled", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Disabled bool `json:"disabled"`
+		}
+		if !readAdminJSON(w, r, &req) {
+			return
+		}
+		me, _ := auth.UserFrom(r.Context())
+		err := setDisabled(r.Context(), st, r.PathValue("name"), req.Disabled, me.Name, by(r))
+		if err != nil {
+			writeAdminError(w, statusOf(err), err)
+			return
+		}
+		writeAdminJSON(w, struct{}{})
 	})
 	mux.HandleFunc("POST /_aibow/admin/users/{name}/display", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
@@ -175,12 +225,15 @@ func adminUsers(ctx context.Context, st *store.SQLite) ([]adminUser, error) {
 	}
 	out := make([]adminUser, 0, len(list))
 	for _, u := range list {
-		has, err := st.HasAPIKey(ctx, u.ID)
+		has, exp, err := st.HasAPIKey(ctx, u.ID)
 		if err != nil {
 			return nil, err
 		}
-		a := adminUser{Name: u.Name, Admin: u.Admin, Password: u.Password != "", Key: has, Local: u.ID == aibow.LocalUser, CreatedAt: u.CreatedAt,
+		a := adminUser{Name: u.Name, Admin: u.Admin, Password: u.Password != "", Key: has, Disabled: u.Disabled, Local: u.ID == aibow.LocalUser, CreatedAt: u.CreatedAt,
 			DisplayName: u.DisplayName, Email: u.Email, Conversations: counts[u.ID]}
+		if has && !exp.IsZero() {
+			a.KeyExpiresAt = &exp
+		}
 		if !u.LastUsedAt.IsZero() {
 			a.LastUsedAt = &u.LastUsedAt
 		}
@@ -229,13 +282,15 @@ func readAdminJSON(w http.ResponseWriter, r *http.Request, v any) bool {
 }
 
 // statusOf は、利用者の処理のエラーの HTTP の状態。いない人は 404、名前の重なりは 409、ほかは 500
-// (使えない名前・消せない人は、処理の前に 400 で断っている)。
+// (使えない名前・消せない人は、処理の前に 400 で断っている。無効にできない人は 400)。
 func statusOf(err error) int {
 	switch {
-	case errors.Is(err, auth.ErrUserNotFound):
+	case errors.Is(err, auth.ErrUserNotFound), errors.Is(err, auth.ErrNoAPIKey):
 		return http.StatusNotFound
 	case errors.Is(err, auth.ErrUserExists), errors.Is(err, auth.ErrEmailExists):
 		return http.StatusConflict
+	case errors.As(err, new(cannotDisable)):
+		return http.StatusBadRequest
 	}
 	return http.StatusInternalServerError
 }

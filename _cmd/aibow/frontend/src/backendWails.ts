@@ -64,6 +64,8 @@ export const backend: Backend = {
     create: notInApp,
     resetPassword: notInApp,
     renewKey: notInApp,
+    removeKey: notInApp,
+    setDisabled: notInApp,
     setDisplayName: notInApp,
     setEmail: notInApp,
     remove: notInApp,

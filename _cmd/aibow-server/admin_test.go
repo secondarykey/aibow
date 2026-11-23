@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/secondarykey/aibow/auth"
 	"github.com/secondarykey/aibow/config"
@@ -165,6 +166,56 @@ func TestAdminUsers(t *testing.T) {
 	}
 	if code, _ := do(alice, "POST", "/_aibow/admin/users/nobody/key", ""); code != http.StatusNotFound {
 		t.Errorf("いない人: %d", code)
+	}
+	// 本文が無ければ 90 日(0060)
+	if exp, err := time.Parse(time.RFC3339, key["expiresAt"]); err != nil || exp.Sub(time.Now()) < 89*24*time.Hour || exp.Sub(time.Now()) > 91*24*time.Hour {
+		t.Errorf("既定の期限は 90 日: %s", body)
+	}
+	// 期限を選ぶ(0 は無期限で、expiresAt を省く)。選べない日数は 400
+	if code, body := do(alice, "POST", "/_aibow/admin/users/carol/key", `{"days":0}`); code != http.StatusOK || strings.Contains(body, "expiresAt") {
+		t.Errorf("無期限: %d %s", code, body)
+	}
+	if _, body := do(alice, "GET", "/_aibow/admin/users", ""); strings.Contains(body, "key_expires_at") {
+		t.Errorf("無期限なら一覧に期限を出さない: %s", body)
+	}
+	if code, body := do(alice, "POST", "/_aibow/admin/users/carol/key", `{"days":30}`); code != http.StatusOK || !strings.Contains(body, "expiresAt") {
+		t.Errorf("30 日: %d %s", code, body)
+	}
+	if _, body := do(alice, "GET", "/_aibow/admin/users", ""); !strings.Contains(body, "key_expires_at") {
+		t.Errorf("一覧に期限を出す: %s", body)
+	}
+	if code, _ := do(alice, "POST", "/_aibow/admin/users/carol/key", `{"days":7}`); code != http.StatusBadRequest {
+		t.Errorf("選べない日数: %d", code)
+	}
+	// 削除(0060)。無ければ 404
+	if code, body := do(alice, "DELETE", "/_aibow/admin/users/carol/key", ""); code != http.StatusOK {
+		t.Errorf("API キーの削除: %d %s", code, body)
+	}
+	if code, _ := do(alice, "DELETE", "/_aibow/admin/users/carol/key", ""); code != http.StatusNotFound {
+		t.Errorf("無い API キーの削除: %d", code)
+	}
+
+	// 無効にする(0060)。自分と local は無効にできない
+	for _, name := range []string{"alice", "local"} {
+		if code, _ := do(alice, "POST", "/_aibow/admin/users/"+name+"/disabled", `{"disabled":true}`); code != http.StatusBadRequest {
+			t.Errorf("%s は無効にできないはず: %d", name, code)
+		}
+	}
+	carol := login("carol", "carol-password")
+	if code, body := do(alice, "POST", "/_aibow/admin/users/carol/disabled", `{"disabled":true}`); code != http.StatusOK {
+		t.Errorf("無効にする: %d %s", code, body)
+	}
+	if _, _, err := sessions.User(ctx, carol); err == nil {
+		t.Error("無効にしたら、ログイン中の画面は切れる")
+	}
+	if _, body := do(alice, "GET", "/_aibow/admin/users", ""); !strings.Contains(body, `"disabled":true`) {
+		t.Errorf("一覧に無効を出す: %s", body)
+	}
+	if code, _ := do(alice, "POST", "/_aibow/admin/users/carol/disabled", `{"disabled":false}`); code != http.StatusOK {
+		t.Errorf("有効に戻す: %d", code)
+	}
+	if _, _, err := sessions.Login(ctx, "carol", "carol-password"); err != nil {
+		t.Errorf("有効に戻したらログインできる: %v", err)
 	}
 
 	for _, name := range []string{"alice", "local"} {

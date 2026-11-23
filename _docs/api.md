@@ -289,6 +289,12 @@ Cline・画面のアプリ ─ Authorization: Bearer aibow_… ─→ auth.Keys.
 
 - **API キー**:利用者ごとに1本(`aibow-server user key <名前>`)。server.db には SHA-256 だけ。OpenAI の API と同じく `Authorization: Bearer <キー>` で毎回送る(サーバーは覚えない。ステートレス)。
   無い・違うは 401(`{"error": {"code": "invalid_api_key", …}}`)
+- **API キーの期限**(0060):作るときに 30 日・90 日・1 年・無期限から選ぶ(既定 90 日。`user key <名前> [日数]`・管理の画面)。期限は `api_keys.expires_at`(空は無期限)に持ち、使うときに今と比べる。
+  過ぎたキーは 401 で `code` が `key_expired`(違うキーの `invalid_api_key` と分ける)。切れたキーは消さず、管理の画面に「期限切れ」と出す(作り直すか削除するかは管理者が決める)。
+  作り直さずに止めるときは削除(`user unkey <名前>`・`DELETE /_aibow/admin/users/{名前}/key`)
+- **無効の利用者**(0060):管理者が利用者を無効にすると、その人の API キーとアプリ用のトークンは 401 で `code` が `user_disabled`。
+  ログインの API(`/_aibow/auth/login`・`/_aibow/auth/token`)は、パスワードが合っていたときだけ 401 で「この利用者は無効にされています」(違えば今までどおり「名前かパスワードが違います」)。
+  ブラウザのセッションは切れてログインの画面に戻り、パスワードを決めるリンクは 400。断る場所は `auth` の入口(`Sessions.check`・`Sessions.User`・`Keys.User`・`appTokenUser`・`LinkUser`)の5つ
 - **要るとき**:`127.0.0.1` の外で待ち受けるとき、または `127.0.0.1` でもログインが要る設定のとき。OpenAI 互換の API と aibow 専用の API の全部(`_cmd/aibow-server` の `KeysRequired`)。
   ログインなし(`login: false`)の `127.0.0.1` だけなら、キーなしで通す
 - **管理者だけの API**:`POST /models/unload`・`/_aibow/gpu-layers`・`/_aibow/places/add`・`/_aibow/places/remove` は、
@@ -328,10 +334,13 @@ aibow-server user admin <名前>(コマンドだけ)→ server.db の users.admi
   `Caller.ManagesPC()`(管理者か、ログインなしの形)でなければ 403 で断り、`ServerHost` も同じことを確かめる(API の作りを間違えても漏れないように)
 - **管理者の API**(`_cmd/aibow-server/admin.go`。ブラウザでログインした管理者だけ。ほかは 401 / 403):
   `GET /_aibow/admin/users`(一覧。パスワードと API キーは、あるかだけ)・`POST /_aibow/admin/users`(本文 `{"name"}`。返事にパスワード)・
-  `POST /_aibow/admin/users/{名前}/password`・`POST /_aibow/admin/users/{名前}/key`(返事に新しいパスワード / キー。一度だけ)・`DELETE /_aibow/admin/users/{名前}`(自分と `local` は消せない)・
+  `POST /_aibow/admin/users/{名前}/password`・`POST /_aibow/admin/users/{名前}/key`(本文 `{"days"}` で期限。30・90・365・0 = 無期限、本文が無ければ 90。返事に新しいパスワード / キーと `expiresAt`(無期限なら無い)。一度だけ。0060)・
+  `DELETE /_aibow/admin/users/{名前}/key`(API キーの削除。無ければ 404。0060)・`POST /_aibow/admin/users/{名前}/disabled`(本文 `{"disabled"}`。無効にする / 有効に戻す。自分と `local` は無効にできない。0060)・
+  `DELETE /_aibow/admin/users/{名前}`(自分と `local` は消せない)・
   `POST /_aibow/admin/users/{名前}/display`(本文 `{"display_name"}`。表示名。空なら無し。0031)・`POST /_aibow/admin/users/{名前}/email`(本文 `{"email"}`。空なら無し。重なれば 409)。
   一覧の1人には、表示名 `display_name`・メールアドレス `email`・最後に使った時刻 `last_used_at`(一度も使っていなければ無い)・会話の数 `conversations`・まだ使っていないリンクの期限 `link_expires_at` も入る(0031。並べ替えと絞り込みは画面がする)。
-  処理は user コマンドと同じ関数(`createUser`・`renewPassword`・`renewKey`・`deleteUser`)。返事は `Cache-Control: no-store`
+  API キーの期限 `key_expires_at`(無期限かキーが無ければ無い。過ぎていても入る)と無効か `disabled` も入る(0060)。
+  処理は user コマンドと同じ関数(`createUser`・`renewPassword`・`renewKey`・`removeKey`・`setDisabled`・`deleteUser`)。返事は `Cache-Control: no-store`
 - **モデルの ID**:GGUF は `file:<ファイル名>`(以前は `file:<パス>`。サーバーの PC のパスが `/v1/models` や共有した会話に出ないように。0018 の決定事項 15)。
   同じ名前のファイルは先の置き場所だけを出し、後ろは Warn のログ(`models.Catalog.Hidden`)。以前の形の ID は `models.IDOf` で読み替える
   (会話・プロファイル・アプリの設定は読むときだけで DB は書き換えない。`server-models.json` の層の数のキーは、読み込むときに書き換える)

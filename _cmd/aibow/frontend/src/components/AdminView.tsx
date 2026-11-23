@@ -29,7 +29,7 @@ import { useUnsaved } from "../unsaved";
 type Tab = "users" | "groups" | "models" | "tools" | "profiles" | "usage" | "log";
 
 const TABS: { id: Tab; label: string; title: string; admin: boolean }[] = [
-  { id: "users", label: "利用者", title: "aibow-server の利用者(作成・パスワードのリンクと API キー・表示名・削除・その人の会話)", admin: true },
+  { id: "users", label: "利用者", title: "aibow-server の利用者(作成・パスワードのリンクと API キー・表示名・無効にする・削除・その人の会話)", admin: true },
   { id: "groups", label: "グループ", title: "グループ(作成・名前・メンバーと長・削除)。共有の相手に選べる", admin: true },
   { id: "models", label: "モデル", title: "サーバーの PC のモデル(読み込み / アンロード・GPU の層数・置き場所・使える)", admin: false },
   { id: "tools", label: "ツール", title: "ブラウザから使う会話のツールの扱い(使わない・確認する・確認しない)。aibow-server 全体の既定", admin: false },

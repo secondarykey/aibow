@@ -6,7 +6,11 @@ package main
 //	aibow-server [-config 設定ファイル] user add <名前>      … 利用者を作り、本人がパスワードを決める招待のリンクを表示する(0022)
 //	aibow-server [-config 設定ファイル] user passwd <名前>   … 今のパスワードを使えなくし、再設定のリンクを表示する(ログイン中の画面とアプリは切れる)
 //	aibow-server [-config 設定ファイル] user remove <名前>   … 利用者と、その人の会話・プロファイル・設定を消す
-//	aibow-server [-config 設定ファイル] user key <名前>      … API キーを作って表示する(1人1本。作り直すと前のキーは使えなくなる。10-2)
+//	aibow-server [-config 設定ファイル] user key <名前> [日数] … API キーを作って表示する(1人1本。作り直すと前のキーは使えなくなる。10-2)。
+//	                                                         日数は期限で 30・90・365・0(無期限)。省けば 90(0060)
+//	aibow-server [-config 設定ファイル] user unkey <名前>    … API キーを削除する(作り直さずに止める。0060)
+//	aibow-server [-config 設定ファイル] user disable <名前>  … 利用者を無効にする(消さずに止める。ログイン中の画面とアプリは切れる。会話と API キーは残す。0060)
+//	aibow-server [-config 設定ファイル] user enable <名前>   … 無効にした利用者を有効に戻す
 //	aibow-server [-config 設定ファイル] user admin <名前>    … 管理者にする(0018 の 11-0)
 //	aibow-server [-config 設定ファイル] user unadmin <名前>  … 管理者から外す
 //	aibow-server [-config 設定ファイル] user display <名前> [表示名] … 表示名を決める(表示名を省くと無しにする。0031)
@@ -20,8 +24,8 @@ package main
 // 本人がパスワードを決めるリンク(1 時間・一度だけ。auth の links.go)を出す。リンクは標準出力にだけ出し、ログには残さない。
 // 入れなくなったら(管理者が自分のパスワードを忘れたなど)、サーバーの PC で passwd を打ってリンクを出し直す。
 //
-// 作る・再設定のリンクと API キーを作り直す・消すは、管理者の画面(admin.go。0018 の決定事項 7)からも同じ処理を使う
-// (createUser・resetPassword・renewKey・deleteUser。by はログに足す「誰が」)。コマンドはその結果を標準出力に出すだけ。
+// 作る・再設定のリンクと API キーを作り直す・消す・無効にするは、管理者の画面(admin.go。0018 の決定事項 7)からも同じ処理を使う
+// (createUser・resetPassword・renewKey・removeKey・setDisabled・deleteUser。by はログに足す「誰が」)。コマンドはその結果を標準出力に出すだけ。
 
 import (
 	"context"
@@ -48,7 +52,10 @@ const userUsage = `使い方:
   aibow-server [-config 設定ファイル] user add <名前>
   aibow-server [-config 設定ファイル] user passwd <名前>
   aibow-server [-config 設定ファイル] user remove <名前>
-  aibow-server [-config 設定ファイル] user key <名前>
+  aibow-server [-config 設定ファイル] user key <名前> [日数(30・90・365・0 = 無期限。省けば 90)]
+  aibow-server [-config 設定ファイル] user unkey <名前>
+  aibow-server [-config 設定ファイル] user disable <名前>
+  aibow-server [-config 設定ファイル] user enable <名前>
   aibow-server [-config 設定ファイル] user admin <名前>
   aibow-server [-config 設定ファイル] user unadmin <名前>
   aibow-server [-config 設定ファイル] user display <名前> [表示名]
@@ -67,6 +74,16 @@ func runUser(c serverConfig, env *config.Env, args []string) error {
 	// display は表示名を省ける(省くと無しにする)。空白を含む表示名は引用符で囲む
 	if (cmd == "display" || cmd == "email") && len(rest) == 2 {
 		want = 2
+	}
+	// key は期限の日数を省ける(省くと 90 日)
+	days := auth.DefaultKeyDays
+	if cmd == "key" && len(rest) == 2 {
+		want = 2
+		n, err := strconv.Atoi(rest[1])
+		if err != nil {
+			return fmt.Errorf("期限は日数(30・90・365・0 = 無期限)で書いてください: %q", rest[1])
+		}
+		days = n
 	}
 	if len(rest) != want {
 		return fmt.Errorf("引数の数が違います\n%s", userUsage)
@@ -88,7 +105,17 @@ func runUser(c serverConfig, env *config.Env, args []string) error {
 	case "remove":
 		return deleteUser(ctx, st, rest[0], "")
 	case "key":
-		return newKey(ctx, st, rest[0])
+		return newKey(ctx, st, rest[0], days)
+	case "unkey":
+		if err := removeKey(ctx, st, rest[0], ""); err != nil {
+			return err
+		}
+		fmt.Println(rest[0], "の API キーを削除しました(そのキーはもう使えません)")
+		return nil
+	case "disable":
+		return setDisabled(ctx, st, rest[0], true, "", "")
+	case "enable":
+		return setDisabled(ctx, st, rest[0], false, "", "")
 	case "admin":
 		return setAdmin(ctx, st, rest[0], true)
 	case "unadmin":
@@ -112,10 +139,13 @@ func listUsers(ctx context.Context, st *store.SQLite) error {
 			pw = "パスワードなし(ログインできない)"
 		}
 		note := ""
-		if has, err := st.HasAPIKey(ctx, u.ID); err != nil {
+		if u.Disabled {
+			note = "・無効"
+		}
+		if has, exp, err := st.HasAPIKey(ctx, u.ID); err != nil {
 			return err
 		} else if has {
-			note = "・API キーあり"
+			note += "・API キーあり(" + keyState(exp, time.Now()) + ")"
 		}
 		if u.Admin {
 			note += "・管理者"
@@ -231,29 +261,104 @@ func deleteUser(ctx context.Context, st *store.SQLite, name, by string) error {
 }
 
 // newKey は API キーを作って表示する(コマンド)。表示はこのときだけ(保存するのはハッシュだけなので、あとからは見られない)。
-func newKey(ctx context.Context, st *store.SQLite, name string) error {
-	key, err := renewKey(ctx, st, name, "")
+func newKey(ctx context.Context, st *store.SQLite, name string, days int) error {
+	key, exp, err := renewKey(ctx, st, name, days, "")
 	if err != nil {
 		return err
 	}
-	fmt.Printf("名前: %s\nAPI キー: %s\n", name, key)
+	fmt.Printf("名前: %s\nAPI キー: %s\n期限: %s\n", name, key, keyUntil(exp))
 	fmt.Println("API キーは今だけ表示します。Cline などは API Key の欄に書きます(デスクトップのアプリは設定の画面の「サーバー」でログインすれば要りません。settings.json に手で書いてつなぐときだけ serverKey に書きます)。" +
 		"忘れたら aibow-server user key " + name + " で作り直してください(前のキーは使えなくなります)")
 	return nil
 }
 
-// renewKey は API キーを作り(前のキーは使えなくなる)、新しいキーを返す。
-func renewKey(ctx context.Context, st *store.SQLite, name, by string) (string, error) {
+// renewKey は、期限が days 日(0 なら無期限)の API キーを作り(前のキーは使えなくなる)、新しいキーと期限(無期限ならゼロ)を返す。
+func renewKey(ctx context.Context, st *store.SQLite, name string, days int, by string) (string, time.Time, error) {
+	now := time.Now()
+	exp, err := auth.KeyExpires(now, days)
+	if err != nil {
+		return "", time.Time{}, err
+	}
 	u, err := st.UserByName(ctx, name)
 	if err != nil {
-		return "", fmt.Errorf("利用者 %s: %w", name, err)
+		return "", time.Time{}, fmt.Errorf("利用者 %s: %w", name, err)
 	}
 	key := auth.NewAPIKey()
-	if err := st.SetAPIKey(ctx, u.ID, auth.KeyID(key), time.Now()); err != nil {
-		return "", err
+	if err := st.SetAPIKey(ctx, u.ID, auth.KeyID(key), now, exp); err != nil {
+		return "", time.Time{}, err
 	}
-	log.Noticef("利用者 %s の API キーを作りました%s(前のキーは使えなくなりました)", name, by)
-	return key, nil
+	log.Noticef("利用者 %s の API キーを作りました%s(期限: %s。前のキーは使えなくなりました)", name, by, keyUntil(exp))
+	return key, exp, nil
+}
+
+// removeKey は API キーを削除する(作り直さずに止める。0060)。キーが無ければ auth.ErrNoAPIKey。
+func removeKey(ctx context.Context, st *store.SQLite, name, by string) error {
+	u, err := st.UserByName(ctx, name)
+	if err != nil {
+		return fmt.Errorf("利用者 %s: %w", name, err)
+	}
+	if err := st.DeleteAPIKey(ctx, u.ID); err != nil {
+		return fmt.Errorf("利用者 %s: %w", name, err)
+	}
+	log.Noticef("利用者 %s の API キーを削除しました%s", name, by)
+	return nil
+}
+
+// keyUntil は API キーの期限の見せ方(「2027-02-21 まで」/「無期限」)。
+func keyUntil(exp time.Time) string {
+	if exp.IsZero() {
+		return "無期限"
+	}
+	return exp.Local().Format("2006-01-02") + " まで"
+}
+
+// keyState は一覧に出す API キーの様子(期限が過ぎていれば「期限切れ」)。
+func keyState(exp, now time.Time) string {
+	if !exp.IsZero() && !now.Before(exp) {
+		return "期限切れ"
+	}
+	return keyUntil(exp)
+}
+
+// cannotDisable は、無効にできない人(自分と local。0060 の決定事項 19)を無効にしようとしたときのエラー(管理の画面は 400 で返す)
+type cannotDisable string
+
+func (e cannotDisable) Error() string { return string(e) }
+
+// setDisabled は利用者を無効にする / 有効に戻す(0060)。self は呼んだ管理者の名前(コマンドなら空)で、自分は無効にできない。
+// ログインなしで使うときの利用者(local)も無効にできない(ログインなしで使うときの会話の持ち主なので)。管理者を無効にするのは止めない(0018 の決定事項 16 と同じ考え方)。
+// 無効にすると、その人のログイン中の画面とアプリはすぐ切れる(store がセッションなどを消す)。会話・プロファイル・API キーは残す。
+func setDisabled(ctx context.Context, st *store.SQLite, name string, disabled bool, self, by string) error {
+	u, err := st.UserByName(ctx, name)
+	if err != nil {
+		return fmt.Errorf("利用者 %s: %w", name, err)
+	}
+	if disabled && u.ID == aibow.LocalUser {
+		return cannotDisable(name + " はログインなしで使うときの利用者なので無効にできません(ログインなしで使うときの会話の持ち主です)")
+	}
+	if disabled && name == self {
+		// 自分を無効にすると、そのまま画面から締め出される
+		return cannotDisable("自分は無効にできません")
+	}
+	if u.Disabled == disabled {
+		if by == "" {
+			if disabled {
+				fmt.Println(name, "はもう無効です")
+			} else {
+				fmt.Println(name, "は無効ではありません")
+			}
+		}
+		return nil
+	}
+	if err := st.SetDisabled(ctx, u.ID, disabled, time.Now()); err != nil {
+		return err
+	}
+	if disabled {
+		log.Noticef("利用者 %s を無効にしました%s(ログイン中の画面とアプリは切れました。会話・プロファイル・API キーは残しています)", name, by)
+	} else {
+		log.Noticef("利用者 %s を有効に戻しました%s", name, by)
+	}
+	return nil
 }
 
 // setAdmin は管理者の印を付ける / 外す。外して一人もいなくなったら知らせる(止めはしない。0018 の決定事項 16)。

@@ -73,7 +73,8 @@ func (s *Sessions) RevokeAppToken(ctx context.Context, token string) error {
 // IsAppToken は、key がアプリ用のトークンの形か(API キーではなく)。
 func IsAppToken(key string) bool { return strings.HasPrefix(key, appTokenPrefix) }
 
-// appTokenUser はアプリ用のトークンの持ち主。無ければ ErrBadKey、期限が切れていれば ErrTokenExpired。
+// appTokenUser はアプリ用のトークンの持ち主。無ければ ErrBadKey、期限が切れていれば ErrTokenExpired、
+// 持ち主が無効にされていれば ErrUserDisabled(0060。持ち主も返す。無効にしたときにトークンは消えるので、ふつうは来ない)。
 //
 // 切れたトークンは、断るときに消さない(何度呼ばれても ErrTokenExpired で断る。0057 の決定事項 4)。
 // 以前は最初に断ったときに消していたので、2回目からは「API キーが無いか、違います」になり、期限切れだと分かるのが最初の1回だけだった
@@ -93,6 +94,9 @@ func (k *Keys) appTokenUser(ctx context.Context, token string) (User, error) {
 	}
 	if err != nil {
 		return User{}, err
+	}
+	if u.Disabled {
+		return u, ErrUserDisabled
 	}
 	markUsed(ctx, k.store, &u, k.now())
 	return u, nil

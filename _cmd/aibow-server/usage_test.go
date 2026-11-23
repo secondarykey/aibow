@@ -95,7 +95,7 @@ func TestRecorder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	key, err := renewKey(ctx, st, "alice", "")
+	key, _, err := renewKey(ctx, st, "alice", auth.DefaultKeyDays, "")
 	if err != nil {
 		t.Fatal(err)
 	}

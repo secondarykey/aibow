@@ -1,10 +1,14 @@
 // 管理の画面の「利用者」のタブ(0018 の決定事項 7。11-0。0031 で一覧 + 詳細にした。0032 で設定の画面から管理の画面に移した)。ブラウザの管理者だけに出す。
 //
 // グループは管理の画面の「グループ」のタブ(GroupSettings.tsx の GroupAdmin。0031 では、このタブの中の [人 | グループ] の切り替えだった)。
-//	[ID・名前で探す…] [すべて | 招待中 | 管理者 | API キーあり | 30日使っていない]   [+ 利用者を作る]
+//	[ID・名前で探す…] [すべて | 招待中 | 管理者 | API キーあり | 無効 | 30日使っていない]   [+ 利用者を作る]
 //	ID      名前         状態      最後に使った日   作った日      会話   … 見出しを押すと並べ替え。行を押すと一覧の下に詳細(0031 の決定事項 14・35)
 //	表では ID(ログインの名前)と名前(表示名)を別の列に出す(0056。並べ替えられるように)。詳細の見出しは「表示名(ログインの名前)」のまま
-//	▼ 詳細: 表示名・メールアドレス・グループ・パスワードのリンク・API キー・その人の会話(新しい順 20 件 + もっと見る)・消す
+//	▼ 詳細: 表示名・メールアドレス・グループ・パスワードのリンク・API キー(期限・発行・削除)・状態(無効にする / 有効に戻す)・その人の会話(新しい順 20 件 + もっと見る)・消す
+//
+// API キーの期限は、発行・再発行を押したあとに行の中で選ぶ(30 日・90 日・1 年・無期限。最初は 90 日。0060 の未決事項 1)。
+// 再発行は前のキーが使えなくなるので、押してすぐには発行せず、期限を選ぶ段で一度止まる(パスワードの再設定と同じ形)。
+// 無効の人は行を薄くし、期限切れの API キーは札を注意の色にする(0060 の未決事項 2。2026-11-24 にユーザーが選んだ)
 //
 // 一覧は一度に取って画面で探す・絞る・並べ替える(サーバーで探す口は作らない。0031 の決定事項 13)。
 // 作る・パスワードと API キーの作り直し・消すは、aibow-server の user コマンドと同じ処理(_cmd/aibow-server の admin.go)。
@@ -41,12 +45,13 @@ function timeOf(at: string): string {
 }
 
 // 絞り込み
-type Filter = "all" | "invited" | "admin" | "key" | "idle";
+type Filter = "all" | "invited" | "admin" | "key" | "disabled" | "idle";
 const FILTERS: { id: Filter; label: string; title: string; match(u: AdminUser): boolean }[] = [
   { id: "all", label: "すべて", title: "全員", match: () => true },
   { id: "invited", label: "招待中", title: "本人がリンクでパスワードを設定していない人(ログインできない)", match: u => invited(u) },
   { id: "admin", label: "管理者", title: "管理者の印のある人", match: u => u.admin },
-  { id: "key", label: "API キーあり", title: "API キーを持っている人", match: u => u.key },
+  { id: "key", label: "API キーあり", title: "API キーを持っている人(期限が切れたキーも含む)", match: u => u.key },
+  { id: "disabled", label: "無効", title: "無効にした人(ログインも API キーも使えない)", match: u => u.disabled },
   { id: "idle", label: "30日使っていない", title: "最後に使ってから 30 日以上たった人(一度も使っていない人は、作ってから 30 日以上たった人)", match: u => idleDays(u) >= 30 },
 ];
 
@@ -78,18 +83,52 @@ interface Sort { key: SortKey; desc: boolean }
 
 const invited = (u: AdminUser) => !u.password && !u.local;
 
-// states は、状態の文字の印(アイコンではなく文字。0031 の決定事項 14)
-function states(u: AdminUser): string[] {
-  const out: string[] = [];
-  if (u.admin) out.push("管理者");
-  if (invited(u)) out.push("招待中");
-  if (u.local) out.push("ログインなし");
+// keyExpired は、API キーの期限が過ぎているか(期限切れのキーは消さずに残る。0060)
+function keyExpired(u: AdminUser): boolean {
+  return u.key && !!u.key_expires_at && new Date(u.key_expires_at).getTime() <= Date.now();
+}
+
+// dateOf は、期限の日付(2027-02-21 の形。この PC の日付で)
+function dateOf(at: string): string {
+  const d = new Date(at);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+// keyLabel は、詳細の API キーの様子(0060 の決定事項 12)
+function keyLabel(u: AdminUser): string {
+  if (!u.key) return "なし";
+  if (!u.key_expires_at) return "無期限";
+  if (keyExpired(u)) return `期限切れ(${dateOf(u.key_expires_at)} まで)`;
+  return `${dateOf(u.key_expires_at)} まで`;
+}
+
+// State は、状態の文字の印(アイコンではなく文字。0031 の決定事項 14)。warn は注意の色にする札
+interface State { label: string; warn?: boolean }
+
+function states(u: AdminUser): State[] {
+  const out: State[] = [];
+  if (u.disabled) out.push({ label: "無効" });
+  if (u.admin) out.push({ label: "管理者" });
+  if (invited(u)) out.push({ label: "招待中" });
+  if (u.local) out.push({ label: "ログインなし" });
+  if (keyExpired(u)) out.push({ label: "キー期限切れ", warn: true });
   return out;
+}
+
+const stateText = (u: AdminUser) => states(u).map(s => s.label).join();
+
+function StateChips({ user }: { user: AdminUser }) {
+  return (
+    <span className="user-states">
+      {states(user).map(s => <span key={s.label} className={"origin-chip" + (s.warn ? " warn" : "")}>{s.label}</span>)}
+    </span>
+  );
 }
 
 function compare(a: AdminUser, b: AdminUser, key: SortKey): number {
   switch (key) {
-    case "state": return states(a).join().localeCompare(states(b).join()) || a.name.localeCompare(b.name);
+    // 無効の人は最後に並べる(0060 の決定事項 23)
+    case "state": return Number(a.disabled) - Number(b.disabled) || stateText(a).localeCompare(stateText(b)) || a.name.localeCompare(b.name);
     case "used": return (a.last_used_at ?? "").localeCompare(b.last_used_at ?? "");
     case "created": return a.created_at.localeCompare(b.created_at);
     case "conversations": return a.conversations - b.conversations;
@@ -193,13 +232,13 @@ export function UserSettings({ dir, reloadDir, onError, onRead }: {
           <button
             key={u.name}
             type="button"
-            className={"model-row user-row" + (u.name === selected ? " current" : "")}
+            className={"model-row user-row" + (u.name === selected ? " current" : "") + (u.disabled ? " user-disabled" : "")}
             aria-expanded={u.name === selected}
             onClick={() => setSelected(s => (s === u.name ? null : u.name))}
           >
             <span className="model-name">{u.name}</span>
             <span className="user-display">{u.display_name || "-"}</span>
-            <span className="user-states">{states(u).map(s => <span key={s} className="origin-chip">{s}</span>)}</span>
+            <StateChips user={u} />
             <span className="user-date" title={u.last_used_at ? new Date(u.last_used_at).toLocaleString() : "一度も使っていない"}>{usedLabel(u.last_used_at)}</span>
             <span className="user-date">{u.created_at.slice(0, 10)}</span>
             <span className="num">{u.conversations}</span>
@@ -226,9 +265,18 @@ export function UserSettings({ dir, reloadDir, onError, onRead }: {
             return null;
           })}
           onResetLink={label => run(async () => linkSecret(label, await admin.resetPassword(user.name)))}
-          onRenewKey={() => run(async () => {
-            const r = await admin.renewKey(user.name);
-            return { name: r.name, label: "API キー", value: r.key };
+          onRenewKey={days => run(async () => {
+            const r = await admin.renewKey(user.name, days);
+            return { name: r.name, label: `API キー(${r.expiresAt ? `${dateOf(r.expiresAt)} まで` : "無期限"})`, value: r.key };
+          })}
+          onRemoveKey={() => run(async () => {
+            await admin.removeKey(user.name);
+            if (secret?.name === user.name) setSecret(null);
+            return null;
+          })}
+          onDisabled={disabled => run(async () => {
+            await admin.setDisabled(user.name, disabled);
+            return null;
           })}
           onRemove={() => run(async () => {
             await admin.remove(user.name);
@@ -246,7 +294,7 @@ export function UserSettings({ dir, reloadDir, onError, onRead }: {
 const PAGE = 20;
 
 // UserDetail は、一覧で押した人の詳細(一覧の下に出す。0031 の決定事項 14・35)
-function UserDetail({ user, dir, onGroupsChanged, onClose, onRead, onError, onDisplayName, onEmail, onResetLink, onRenewKey, onRemove }: {
+function UserDetail({ user, dir, onGroupsChanged, onClose, onRead, onError, onDisplayName, onEmail, onResetLink, onRenewKey, onRemoveKey, onDisabled, onRemove }: {
   user: AdminUser;
   dir: Directory;
   onGroupsChanged(): void;
@@ -256,7 +304,9 @@ function UserDetail({ user, dir, onGroupsChanged, onClose, onRead, onError, onDi
   onDisplayName(display: string): Promise<boolean>;
   onEmail(email: string): Promise<boolean>;
   onResetLink(label: string): Promise<boolean>;
-  onRenewKey(): Promise<boolean>;
+  onRenewKey(days: number): Promise<boolean>;
+  onRemoveKey(): Promise<boolean>;
+  onDisabled(disabled: boolean): Promise<boolean>;
   onRemove(): Promise<boolean>;
 }) {
   const self = user.name === me.name;
@@ -272,7 +322,7 @@ function UserDetail({ user, dir, onGroupsChanged, onClose, onRead, onError, onDi
     <section className="user-detail">
       <div className="user-detail-head">
         <h2 className="section">{label(user)}</h2>
-        <span className="user-states">{states(user).map(s => <span key={s} className="origin-chip">{s}</span>)}</span>
+        <StateChips user={user} />
         <span className="spacer" />
         <button className="place-remove" onClick={onClose} title="閉じる" aria-label="閉じる"><LuX /></button>
       </div>
@@ -298,7 +348,7 @@ function UserDetail({ user, dir, onGroupsChanged, onClose, onRead, onError, onDi
         </div>
       )}
 
-      {!user.local && !self && (
+      {!user.local && !self && !user.disabled && (
         <div className="user-field">
           <span className="user-field-label">パスワード</span>
           {invited(user) ? (
@@ -318,11 +368,9 @@ function UserDetail({ user, dir, onGroupsChanged, onClose, onRead, onError, onDi
         </div>
       )}
 
-      <div className="user-field">
-        <span className="user-field-label">API キー</span>
-        <span className="user-field-value">{user.key ? "あり" : "なし"}</span>
-        <button onClick={onRenewKey} title={user.key ? "新しい API キーを発行する(前のキーは使えなくなる)" : "API キーを発行する"}>{user.key ? "再発行" : "発行"}</button>
-      </div>
+      <KeyField user={user} onRenew={onRenewKey} onRemove={onRemoveKey} />
+
+      {!user.local && !self && <DisableField user={user} onDisabled={onDisabled} />}
 
       {!self && (
         <>
@@ -347,6 +395,83 @@ function UserDetail({ user, dir, onGroupsChanged, onClose, onRead, onError, onDi
         <RemoveUser user={user} onRemove={onRemove} />
       )}
     </section>
+  );
+}
+
+// KEY_DAYS は、API キーの期限として選べるもの(Go の auth.KeyTTLs と同じ4つ。0060 の決定事項 2)
+const KEY_DAYS: { days: number; label: string }[] = [
+  { days: 30, label: "30 日" },
+  { days: 90, label: "90 日" },
+  { days: 365, label: "1 年" },
+  { days: 0, label: "無期限" },
+];
+const DEFAULT_KEY_DAYS = 90;
+
+// KeyField は API キーの欄(期限・発行 / 再発行・削除。0060)。発行・再発行を押すと、行の中で期限を選ぶ段になる(最初は 90 日)
+function KeyField({ user, onRenew, onRemove }: { user: AdminUser; onRenew(days: number): Promise<boolean>; onRemove(): Promise<boolean> }) {
+  const [issuing, setIssuing] = useState(false);
+  const [days, setDays] = useState(DEFAULT_KEY_DAYS);
+  if (issuing) {
+    return (
+      <div className="user-field">
+        <span className="user-field-label">API キー</span>
+        <span className="user-field-value">期限</span>
+        <div className="segmented" role="group" aria-label="API キーの期限">
+          {KEY_DAYS.map(k => (
+            <button key={k.days} type="button" className={days === k.days ? "current" : ""} aria-pressed={days === k.days} onClick={() => setDays(k.days)}>{k.label}</button>
+          ))}
+        </div>
+        {user.key && <span className="confirm-text">前のキーは使えなくなります</span>}
+        <button className={user.key ? "danger" : "primary"} onClick={() => { setIssuing(false); void onRenew(days); }}>発行</button>
+        <button onClick={() => setIssuing(false)}>キャンセル</button>
+      </div>
+    );
+  }
+  return (
+    <div className="user-field">
+      <span className="user-field-label">API キー</span>
+      <span className={"user-field-value" + (keyExpired(user) ? " expired" : "")}>{keyLabel(user)}</span>
+      <button
+        onClick={() => { setDays(DEFAULT_KEY_DAYS); setIssuing(true); }}
+        title={user.key ? "新しい API キーを発行する(期限を選ぶ。前のキーは使えなくなる)" : "API キーを発行する(期限を選ぶ)"}
+      >
+        {user.key ? "再発行" : "発行"}
+      </button>
+      {user.key && (
+        <DeleteButton
+          title="API キーを削除する(再発行せずに止める)"
+          question={`${user.name} の API キーを削除しますか?このキーを使っている Cline などは、すぐにつながらなくなります。`}
+          onConfirm={() => void onRemove()}
+        />
+      )}
+    </div>
+  );
+}
+
+// DisableField は、無効にする / 有効に戻す(0060 の決定事項 23)。無効にするのは確かめる段を挟む
+function DisableField({ user, onDisabled }: { user: AdminUser; onDisabled(disabled: boolean): Promise<boolean> }) {
+  const [confirming, setConfirming] = useState(false);
+  return (
+    <div className="user-field">
+      <span className="user-field-label">状態</span>
+      {user.disabled ? (
+        <>
+          <span className="user-field-value">無効</span>
+          <button onClick={() => void onDisabled(false)} title="ログインと API キーを使えるように戻す(会話・プロファイル・API キーは元のまま)">有効に戻す</button>
+        </>
+      ) : confirming ? (
+        <>
+          <span className="confirm-text">{user.name} を無効にしますか?ログイン中の画面とアプリは切れます。会話と API キーは残ります</span>
+          <button className="danger" onClick={() => { setConfirming(false); void onDisabled(true); }}>無効にする</button>
+          <button onClick={() => setConfirming(false)}>キャンセル</button>
+        </>
+      ) : (
+        <>
+          <span className="user-field-value">有効</span>
+          <button onClick={() => setConfirming(true)} title="削除せずに止める。ログイン・アプリ・API キーが使えなくなる。有効に戻せば元どおり">無効にする</button>
+        </>
+      )}
+    </div>
   );
 }
 

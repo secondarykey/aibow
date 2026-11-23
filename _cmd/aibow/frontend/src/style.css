@@ -780,6 +780,8 @@ nav.conversations ul.grouped .conversation { margin-left: 12px; }
 .user-row { width: 100%; border: none; border-top: 1px solid var(--border); border-radius: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .user-row:hover { background: rgba(127, 127, 127, .08); }
 .user-row.current { background: rgba(127, 127, 127, .15); }
+/* 無効の人は行ごと薄くする(0060 の未決事項 2) */
+.user-row.user-disabled > * { opacity: 0.5; }
 .user-states { display: flex; gap: 4px; flex-wrap: wrap; }
 .user-date { color: var(--muted); font-size: 12px; }
 .user-detail { margin-top: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; }

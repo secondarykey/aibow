@@ -58,6 +58,8 @@ func (s *Sessions) Login(ctx context.Context, name, password string) (token stri
 }
 
 // check は名前とパスワードを確かめる(ブラウザのログインとアプリのログインで同じ)。違っていれば ErrLogin。
+// 無効にされた利用者は、パスワードが合っていたときだけ ErrUserDisabled(0060 の決定事項 5。違えば ErrLogin のままにして、
+// どの名前がいるか・無効かを、パスワードを知らない人に探られないようにする)。ログに名前を書けるよう、このときは利用者も返す。
 func (s *Sessions) check(ctx context.Context, name, password string) (User, error) {
 	u, err := s.store.UserByName(ctx, strings.TrimSpace(name))
 	if errors.Is(err, ErrUserNotFound) {
@@ -70,6 +72,9 @@ func (s *Sessions) check(ctx context.Context, name, password string) (User, erro
 	if !CheckPassword(u.Password, password) {
 		return User{}, ErrLogin
 	}
+	if u.Disabled {
+		return u, ErrUserDisabled
+	}
 	return u, nil
 }
 
@@ -78,7 +83,8 @@ func (s *Sessions) Logout(ctx context.Context, token string) error {
 	return s.store.DeleteSession(ctx, tokenID(token))
 }
 
-// User は合言葉の持ち主。期限が切れていれば ErrNoSession。
+// User は合言葉の持ち主。期限が切れていれば ErrNoSession。持ち主が無効にされていても ErrNoSession にしてセッションを消す
+// (0060。無効にしたときにセッションは消えるので、ふつうは来ない。ブラウザはログインの画面に戻り、ログインすると無効だと分かる)。
 // 前に延ばしてから extendEvery 以上たっていれば期限を延ばし、extended=true(cookie の期限も延ばすため)。
 func (s *Sessions) User(ctx context.Context, token string) (u User, extended bool, err error) {
 	if token == "" {
@@ -100,6 +106,10 @@ func (s *Sessions) User(ctx context.Context, token string) (u User, extended boo
 	}
 	if err != nil {
 		return User{}, false, err
+	}
+	if u.Disabled {
+		s.store.DeleteSession(ctx, id)
+		return User{}, false, ErrNoSession
 	}
 	markUsed(ctx, s.store, &u, now)
 	// 期限を延ばすのは、前に延ばしてから1日以上たったとき(期限 = 最後に延ばした時刻 + 30 日 なので、残りで見る)

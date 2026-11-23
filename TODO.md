@@ -37,7 +37,6 @@ aibow に残っている課題の一覧(入口)。ルールと全体の構成は
 | ⬜ | aibow-server の中央の制御の残り(上限の上限・順番待ちの優先度・自動で降ろす・server.json のほかの項目を画面で) | [検討メモ](_docs/backlog.md#aibow-server-の中央の制御の残り) |
 | ⬜ | 並列数・作業領域・資料のフォルダを管理の画面で変える(server.json に書き戻す) | [0061-server-settings-on-screen.md](_docs/features/0061-server-settings-on-screen.md) |
 | ⬜ | aibow-server の起動のときのモデル(指定が無い・見つからないときに、最後に読み込んだモデルか既定の印で選ぶ。今は一覧の名前順の先頭) | [検討メモ](_docs/backlog.md#aibow-server-の起動のときのモデル指定が無いとき見つからないとき) |
-| ⬜ | API キーを消す・期限を付ける(既定 90 日)、利用者を無効にする(消さずに止める) | [0060-disable-key-and-user.md](_docs/features/0060-disable-key-and-user.md) |
 | ⬜ | 利用者をまとめて作る(インポート) | [検討メモ](_docs/backlog.md#利用者をまとめて作るインポート) |
 | ⬜ | 複数のモデルを同時に動かす | [検討メモ](_docs/backlog.md#複数のモデルを同時に動かす) |
 | 🔧 | 配布プロファイルを管理の画面の「新規」で最初から作る・停止する・削除する(複製して配布と、個人プロファイルに戻す動きはなくす) | [0059-distributed-profile-new.md](_docs/features/0059-distributed-profile-new.md) |
@@ -78,3 +77,4 @@ C(0040)と I(0028)は OK / NG を決めずに**確認済み扱い**にした(再
 | ⬜ | (任意。プロキシを実際に使うときに)信頼するプロキシ:ユーザーのリバースプロキシで X-Forwarded-For を書き、ほかの PC から開くとログの相手がその PC になる(管理の操作の断りは 0046 でどこからでも同じ) | [0044-trusted-proxies.md](_docs/features/0044-trusted-proxies.md) の完了の条件 2 |
 | ⬜ | 0057 の直し(期限切れでログインの画面に戻る・同じつなぎ先で証明書を信頼し直す・つながらないエラーを重ねない)を実際の画面で(手順書の H2・H9 のやり直し) | [0057-login-expiry-and-retrust.md](_docs/features/0057-login-expiry-and-retrust.md) の完了の条件 2 |
 | ⬜ | 証明書の作り直しのあと、cert が出した2行を貼った server.json で aibow-server が HTTPS で起動する(出力と貼った server.json が読めることは確かめた) | [0058-cert-server-json.md](_docs/features/0058-cert-server-json.md) の完了の条件 3 |
+| ⬜ | 0060 の管理の画面(API キーの期限を選んで発行・削除、無効にする / 有効に戻す、一覧の札と薄い行・絞り込み「無効」)と、無効にしたときにブラウザとアプリが切れること | [0060-disable-key-and-user.md](_docs/features/0060-disable-key-and-user.md) の完了の条件 1〜6 |

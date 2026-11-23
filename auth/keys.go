@@ -14,7 +14,9 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -26,6 +28,30 @@ const keyPrefix = "aibow_"
 
 // ErrBadKey は、API キーが無い・違うときのエラー。
 var ErrBadKey = errors.New("API キーが無いか、違います。aibow-server の PC で aibow-server user key <名前> を実行して作ったキーを、Authorization: Bearer <キー> で送ってください")
+
+// ErrKeyExpired は、API キーの期限が切れたときのエラー(401。code は key_expired。0060)。
+// 切れたキーは消さない(管理の画面で「期限切れ」と見え、作り直すか消すかは管理者が決める)
+var ErrKeyExpired = errors.New("API キーの期限が切れました。管理者に作り直してもらってください")
+
+// ErrNoAPIKey は、消す API キーが無いときのエラー(0060)
+var ErrNoAPIKey = errors.New("API キーはありません")
+
+// KeyTTLs は、API キーの期限として選べる日数(0060 の決定事項 2。0 は無期限)。画面とコマンドで同じ4つ
+var KeyTTLs = []int{30, 90, 365, 0}
+
+// DefaultKeyDays は、API キーの期限の既定(日数)。Cline などに貼ったまま忘れて使い続けるのを防ぐため(0060 の決定事項 2)
+const DefaultKeyDays = 90
+
+// KeyExpires は、now に作るキーの期限(days が 0 なら無期限でゼロの時刻)。days が KeyTTLs に無ければエラー。
+func KeyExpires(now time.Time, days int) (time.Time, error) {
+	if !slices.Contains(KeyTTLs, days) {
+		return time.Time{}, fmt.Errorf("API キーの期限は 30・90・365 日か、0(無期限)から選んでください(%d は選べません)", days)
+	}
+	if days == 0 {
+		return time.Time{}, nil
+	}
+	return now.AddDate(0, 0, days), nil
+}
 
 // NewAPIKey は API キーを作る(aibow_ + 32 バイトのでたらめな値)。
 func NewAPIKey() string {
@@ -45,7 +71,8 @@ type Keys struct {
 
 func NewKeys(st Store) *Keys { return &Keys{store: st, now: time.Now} }
 
-// User は API キーかアプリ用のトークンの持ち主。違えば ErrBadKey、トークンの期限が切れていれば ErrTokenExpired。
+// User は API キーかアプリ用のトークンの持ち主。違えば ErrBadKey、トークンの期限が切れていれば ErrTokenExpired、
+// API キーの期限が切れていれば ErrKeyExpired、持ち主が無効にされていれば ErrUserDisabled(0060。ログに名前を書けるよう、このときだけ持ち主も返す)。
 // どちらも同じ口(Authorization: Bearer)で受け付け、使える口も同じ(0019 の決定事項 11)。
 func (k *Keys) User(ctx context.Context, key string) (User, error) {
 	if IsAppToken(key) {
@@ -54,14 +81,22 @@ func (k *Keys) User(ctx context.Context, key string) (User, error) {
 	if !strings.HasPrefix(key, keyPrefix) {
 		return User{}, ErrBadKey
 	}
-	u, err := k.store.UserByAPIKey(ctx, KeyID(key))
+	u, expires, err := k.store.APIKeyOwner(ctx, KeyID(key))
 	if errors.Is(err, ErrUserNotFound) {
 		return User{}, ErrBadKey
 	}
 	if err != nil {
 		return User{}, err
 	}
-	markUsed(ctx, k.store, &u, k.now())
+	// 無効を先に見る(期限も切れていたら、作り直してもらっても使えないので、無効のほうを伝える)
+	if u.Disabled {
+		return u, ErrUserDisabled
+	}
+	now := k.now()
+	if !expires.IsZero() && !now.Before(expires) {
+		return User{}, ErrKeyExpired
+	}
+	markUsed(ctx, k.store, &u, now)
 	return u, nil
 }
 
@@ -75,6 +110,17 @@ func (k *Keys) RequireKey(next http.Handler) http.Handler {
 			// 期限切れは、キーの間違いと分けて知らせる(アプリが「もう一度ログインして」と出せるように)
 			log.Warnf("アプリのログインの期限が切れていたので断りました: %s %s(%s)", r.Method, r.URL.Path, remote(r))
 			writeAPIError(w, http.StatusUnauthorized, "token_expired", err.Error())
+			return
+		}
+		if ok && errors.Is(err, ErrKeyExpired) {
+			// API キーの期限切れも、違うキーと分けて知らせる(Cline などの画面に「管理者に作り直してもらう」と出るように。0060)
+			log.Warnf("API キーの期限が切れていたので断りました: %s %s(%s)", r.Method, r.URL.Path, remote(r))
+			writeAPIError(w, http.StatusUnauthorized, "key_expired", err.Error())
+			return
+		}
+		if ok && errors.Is(err, ErrUserDisabled) {
+			log.Warnf("無効にされた利用者 %s の API キーかアプリのログインのトークンなので断りました: %s %s(%s)", u.Name, r.Method, r.URL.Path, remote(r))
+			writeAPIError(w, http.StatusUnauthorized, "user_disabled", err.Error())
 			return
 		}
 		if !ok || errors.Is(err, ErrBadKey) {

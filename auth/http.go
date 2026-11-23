@@ -146,6 +146,12 @@ func Handler(s *Sessions, required bool) http.Handler {
 			writeError(w, http.StatusUnauthorized, err.Error())
 			return
 		}
+		if errors.Is(err, ErrUserDisabled) {
+			// パスワードは合っていたので、間違いの回数には数えない(0060)
+			log.Warnf("無効にされた利用者 %s がログインしようとしたので断りました(%s)", strings.TrimSpace(req.Name), addr)
+			writeError(w, http.StatusUnauthorized, err.Error())
+			return
+		}
 		if err != nil {
 			log.Errorf("ログインの途中で失敗しました: %v", err)
 			writeError(w, http.StatusInternalServerError, "ログインの途中で失敗しました: "+err.Error())
@@ -194,6 +200,11 @@ func Handler(s *Sessions, required bool) http.Handler {
 		if errors.Is(err, ErrLogin) {
 			lim.fail(addr)
 			log.Warnf("アプリのログインができませんでした: 名前 %q(%s)", req.Name, addr)
+			writeError(w, http.StatusUnauthorized, err.Error())
+			return
+		}
+		if errors.Is(err, ErrUserDisabled) {
+			log.Warnf("無効にされた利用者 %s がアプリでログインしようとしたので断りました(%s)", strings.TrimSpace(req.Name), addr)
 			writeError(w, http.StatusUnauthorized, err.Error())
 			return
 		}
@@ -380,6 +391,9 @@ func linkError(w http.ResponseWriter, err error) bool {
 	case err == nil:
 		return false
 	case errors.Is(err, ErrBadLink), errors.Is(err, ErrLinkExpired):
+		writeError(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, ErrUserDisabled):
+		log.Warn("無効にされた利用者のパスワードを決めるリンクなので断りました")
 		writeError(w, http.StatusBadRequest, err.Error())
 	case isPasswordRule(err):
 		writeError(w, http.StatusBadRequest, err.Error())
