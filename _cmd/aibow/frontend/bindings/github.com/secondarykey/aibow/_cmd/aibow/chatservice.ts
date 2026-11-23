@@ -651,14 +651,15 @@ export function SetMyEmail(email: string): $CancellablePromise<$models.AccountIn
 }
 
 /**
- * SetProfileArchived は、プロファイルをしまう / 戻す。
+ * SetProfileArchived は、プロファイルをしまう / 戻す。配布プロファイルなら、配布の停止 / 再開(0059 の決定事項 12)。
  */
 export function SetProfileArchived(id: uuid$0.UUID, archived: boolean): $CancellablePromise<void> {
     return $Call.ByID(3292539556, id, archived);
 }
 
 /**
- * SetProfileShare は、プロファイルを配る範囲(""・all・users)と相手(利用者の名前とグループの名前。0031)を変える(0018 の 11-1)。管理者だけ。
+ * SetProfileShare は、配布プロファイルを配る範囲(all・users)と相手(利用者の名前とグループの名前。0031)を変える(0018 の 11-1)。管理者だけ。
+ * 配布をやめる("")と、個人プロファイルを配るのは断る(aibow が断る。0059 の決定事項 10)。やめるときは停止(SetProfileArchived)か削除。
  */
 export function SetProfileShare(id: uuid$0.UUID, share: string, $with: string[] | null, groups: string[] | null): $CancellablePromise<void> {
     return $Call.ByID(2853156393, id, share, $with, groups);
@@ -703,11 +704,11 @@ export function SetWorktreeName(id: uuid$0.UUID, name: string): $CancellableProm
 }
 
 /**
- * ShareCopy は、プロファイルを写して、そのまま配る(管理の画面の「写して配る」。0032 の段3)。管理者だけ(保存先が確かめる)。
+ * ShareNew は、配布プロファイルを最初から作って、そのまま配る(管理の画面の「新規」。0059 の決定事項 9)。管理者だけ(保存先が確かめる)。
  * 配るプロファイルのモデルは、使えるモデルから(0018 の決定事項 13。SetProfileShare と同じ)。
  */
-export function ShareCopy(id: uuid$0.UUID, share: string, $with: string[] | null, groups: string[] | null): $CancellablePromise<aibow$0.Profile> {
-    return $Call.ByID(3279875687, id, share, $with, groups);
+export function ShareNew(name: string, model: string, share: string, $with: string[] | null, groups: string[] | null): $CancellablePromise<aibow$0.Profile> {
+    return $Call.ByID(2363196580, name, model, share, $with, groups);
 }
 
 /**

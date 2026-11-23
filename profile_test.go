@@ -355,6 +355,103 @@ func TestSharedProfiles(t *testing.T) {
 	}
 }
 
+// 配布プロファイル(0059):最初から作って配る・個人プロファイルと行き来させない・管理者の既定でも停止と削除ができる
+func TestShareNewAndStop(t *testing.T) {
+	cs, _ := newTestConversations(t, &fakeGen{})
+	def, err := cs.DefaultProfile(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 相手を決めずには作らない
+	if _, err := cs.ShareNew(ctx, "配布用", "m", ShareNone, nil, nil); err == nil {
+		t.Error("配る範囲を選ばずに作れる")
+	}
+	if _, err := cs.ShareNew(ctx, "配布用", "m", ShareUsers, nil, nil); err == nil {
+		t.Error("相手を選ばずに指定した人で作れる")
+	}
+	p, err := cs.ShareNew(ctx, " 配布用 ", "m", ShareAll, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 値は管理者の既定のプロファイルから写し、モデルだけ選んだもの。決まりは空
+	if p.Name != "配布用" || p.Share != ShareAll || p.Values.Model != "m" || p.Values.HistoryTokens != def.Values.HistoryTokens ||
+		len(p.Rules.Fixed) != 0 || p.Rules.Folder != "" {
+		t.Errorf("作った配布プロファイル: %+v", p)
+	}
+	if _, err := cs.ShareNew(ctx, "配布用", "m", ShareAll, nil, nil); err == nil {
+		t.Error("配布プロファイル同士で同じ名前になる")
+	}
+
+	// 個人プロファイルと行き来させない(配布をやめる・個人プロファイルを配る)
+	if err := cs.SetProfileShare(ctx, p.ID, ShareNone, nil, nil); err == nil {
+		t.Error("配布をやめて個人プロファイルに戻せる")
+	}
+	if err := cs.SetProfileShare(ctx, def.ID, ShareAll, nil, nil); err == nil {
+		t.Error("個人プロファイルを配れる")
+	}
+	if err := cs.SetProfileShare(ctx, p.ID, ShareUsers, []string{"bob"}, nil); err != nil {
+		t.Errorf("範囲は変えられる: %v", err)
+	}
+
+	// 全員の会話の数は配布プロファイルだけに入る
+	c, err := cs.CreateIn(ctx, p.ID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	list, err := cs.Profiles(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, info := range list {
+		want := 0
+		if info.Profile.ID == p.ID {
+			want = 1
+		}
+		if info.UsesAll != want {
+			t.Errorf("全員の会話の数 %s: %d(期待 %d)", info.Profile.Name, info.UsesAll, want)
+		}
+	}
+
+	// 管理者が自分の既定にしていても止められ、止めたら自分のプロファイルが選ばれる。再開すると戻る(印は残す)
+	if err := cs.SetDefaultProfile(ctx, p.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := cs.SetProfileArchived(ctx, p.ID, true); err != nil {
+		t.Fatalf("既定の配布プロファイルを停止できない: %v", err)
+	}
+	if d, _ := cs.DefaultProfile(ctx); d.ID != def.ID {
+		t.Errorf("停止したら自分のプロファイルが選ばれる: %+v", d)
+	}
+	if _, err := cs.DefaultsOf(ctx, p.ID); err == nil {
+		t.Error("停止したものは新しい会話で選べない")
+	}
+	if err := cs.SetProfileArchived(ctx, p.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	if d, _ := cs.DefaultProfile(ctx); d.ID != p.ID {
+		t.Errorf("再開したら既定に戻る: %+v", d)
+	}
+
+	// 会話があれば消せない。会話が無くなれば、既定でも消せる
+	if err := cs.DeleteProfile(ctx, p.ID); err == nil {
+		t.Error("会話のある配布プロファイルを消せる")
+	}
+	if err := cs.Delete(ctx, c.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := cs.DeleteProfile(ctx, p.ID); err != nil {
+		t.Errorf("既定の配布プロファイルを削除できない: %v", err)
+	}
+	if d, _ := cs.DefaultProfile(ctx); d.ID != def.ID {
+		t.Errorf("消したら自分のプロファイルが選ばれる: %+v", d)
+	}
+	// 個人プロファイルは今までどおり、既定ならしまえない
+	if err := cs.SetProfileArchived(ctx, def.ID, true); err == nil {
+		t.Error("既定の個人プロファイルをアーカイブできる")
+	}
+}
+
 // toolPrefsFrom は、tools.json に body を書いて読んだ扱いの既定(中身は config パッケージの中なので、ファイルを通して作る)。
 func toolPrefsFrom(t *testing.T, body string) *config.ToolPrefs {
 	t.Helper()

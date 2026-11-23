@@ -40,7 +40,7 @@ aibow に残っている課題の一覧(入口)。ルールと全体の構成は
 | ⬜ | API キーを消す・期限を付ける(既定 90 日)、利用者を無効にする(消さずに止める) | [0060-disable-key-and-user.md](_docs/features/0060-disable-key-and-user.md) |
 | ⬜ | 利用者をまとめて作る(インポート) | [検討メモ](_docs/backlog.md#利用者をまとめて作るインポート) |
 | ⬜ | 複数のモデルを同時に動かす | [検討メモ](_docs/backlog.md#複数のモデルを同時に動かす) |
-| ⬜ | 配布プロファイルを管理の画面の「新規」で最初から作る・停止する・削除する(複製して配布と、個人プロファイルに戻す動きはなくす) | [0059-distributed-profile-new.md](_docs/features/0059-distributed-profile-new.md) |
+| 🔧 | 配布プロファイルを管理の画面の「新規」で最初から作る・停止する・削除する(複製して配布と、個人プロファイルに戻す動きはなくす) | [0059-distributed-profile-new.md](_docs/features/0059-distributed-profile-new.md) |
 
 ## モデルの対応
 

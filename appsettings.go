@@ -204,11 +204,12 @@ func storedDefaultProfile(ctx context.Context, s Store) (Profile, bool, error) {
 	if mark == "" {
 		return Profile{}, false, nil // 印が無ければ、PrepareProfiles が付け直す
 	}
-	if i := slices.IndexFunc(list, func(p Profile) bool { return p.ID.String() == mark }); i >= 0 {
+	if i := slices.IndexFunc(list, func(p Profile) bool { return p.ID.String() == mark }); i >= 0 && !list[i].Archived {
 		return list[i], true, nil
 	}
-	// 印のプロファイルが見えない(配られたものを選んでいて、配られなくなった。0018 の決定事項 22)なら、自分のしまっていないプロファイルに戻る。
-	// 印は書き換えない(また配られたら、それに戻る)
+	// 印のプロファイルが見えない(配られたものを選んでいて、配られなくなった。0018 の決定事項 22)か、
+	// 管理者が配布を停止した・削除した(0059 の決定事項 14)なら、自分のしまっていないプロファイルに戻る。
+	// 印は書き換えない(また配られたら・再開したら、それに戻る)
 	if i := slices.IndexFunc(list, func(p Profile) bool { return p.Share == ShareNone && !p.Archived }); i >= 0 {
 		return list[i], true, nil
 	}

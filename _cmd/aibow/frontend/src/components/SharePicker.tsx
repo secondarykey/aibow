@@ -16,14 +16,15 @@ import { countPeople, listLabels, loadRecent, personLabel, rememberRecent, targe
 
 // ShareWords は、会話の共有とプロファイルの配るで違う言葉
 export interface ShareWords {
-  none: string;                          // 範囲の「非公開」/「配らない」
+  none: string;                          // 範囲の「非公開」。範囲を外せない(noneAllowed が false)ときは、まだ選んでいないときの見出し
   commitUsers(n: number): string;        // 確定のボタン(指定した人)
   commitAll: string;                     // 確定のボタン(全員)
-  commitNone: string;                    // 確定のボタン(非公開)
+  commitNone?: string;                   // 確定のボタン(非公開)。範囲を外せるときだけ
   willUsers(names: string): string;      // 確かめの文(指定した人)
   willAll: string;
-  willNone: string;
-  becomesNone: string;                   // 相手を全員外したとき(決定事項 11)
+  willNone?: string;
+  becomesNone?: string;                  // 相手を全員外したとき(決定事項 11)。範囲を外せるときだけ
+  needUsers?: string;                    // 範囲を外せないときに、相手を全員外したときの断り(0059 の決定事項 11)
   nowUsers(n: number, names: string): string; // 閉じているときの1行
   nowAll: string;
   nowNone: string;
@@ -43,15 +44,14 @@ export const CONVERSATION_WORDS: ShareWords = {
   nowNone: "",
 };
 
+// 配布プロファイルは配布をやめて個人プロファイルに戻さない(0059 の決定事項 3・11)。範囲を外す言葉は持たない
 export const PROFILE_WORDS: ShareWords = {
-  none: "配布しない",
+  none: "範囲を選ぶ",
   commitUsers: n => `配布(${n}人)`,
   commitAll: "全員に配布",
-  commitNone: "配布を停止",
   willUsers: names => `${names} に配布します。`,
   willAll: "全員に配布します。",
-  willNone: "配布を停止します。",
-  becomesNone: "相手がいないので、配布を停止します。",
+  needUsers: "1人以上選んでください。配布をやめるときは、停止か削除を使ってください。",
   nowUsers: (n, names) => `${n}人に配布中:${names}`,
   nowAll: "全員に配布中",
   nowNone: "",
@@ -74,12 +74,15 @@ interface Props {
   dir: Directory;
   self: string;       // 自分(候補に出さず、人数にも数えない)
   notes?(next: Next): string[]; // 確かめの文に足すこと(ツールの結果も見える、など)
+  // noneAllowed は、範囲を外せる(非公開に戻せる)か。既定は true(会話の共有)。
+  // false(配布プロファイル。0059 の決定事項 11)なら、範囲の選択肢に「外す」を出さず、指定した人を全員外したら確定できない
+  noneAllowed?: boolean;
   onCommit(share: string, users: string[], groups: string[]): void;
 }
 
 const same = (a: Target, b: Target) => a.kind === b.kind && a.name === b.name;
 
-export function SharePicker({ id, label, labelTitle, words, share, users, groups, dir, self, notes, onCommit }: Props) {
+export function SharePicker({ id, label, labelTitle, words, share, users, groups, dir, self, notes, noneAllowed = true, onCommit }: Props) {
   const current = useMemo<Target[]>(
     () => [...groups.map(name => ({ kind: "group" as const, name })), ...users.map(name => ({ kind: "user" as const, name }))],
     [users, groups],
@@ -100,7 +103,8 @@ export function SharePicker({ id, label, labelTitle, words, share, users, groups
       <div className="share-line">
         <label htmlFor={id} title={labelTitle}>{label}</label>
         <select id={id} value={shownShare} onChange={e => start(e.target.value)}>
-          <option value="">{words.none}</option>
+          {/* 範囲を外せないときは、まだ選んでいない(新しく作る)ときだけ見出しとして出す(選べない) */}
+          {(noneAllowed || share === "") && <option value="" disabled={!noneAllowed}>{words.none}</option>}
           <option value="all">全員</option>
           <option value="users" disabled={!anyone}>指定した人</option>
         </select>
@@ -115,6 +119,7 @@ export function SharePicker({ id, label, labelTitle, words, share, users, groups
           self={self}
           words={words}
           notes={notes}
+          noneAllowed={noneAllowed}
           onChange={targets => setDraft({ ...draft, targets })}
           onCancel={cancel}
           onCommit={next => {
@@ -146,7 +151,7 @@ function ShareNow({ share, targets, dir, self, words, onEdit }: { share: string;
   );
 }
 
-function ShareEditor({ draft, share, current, dir, self, words, notes, onChange, onCancel, onCommit }: {
+function ShareEditor({ draft, share, current, dir, self, words, notes, noneAllowed, onChange, onCancel, onCommit }: {
   draft: { share: string; targets: Target[] };
   share: string;
   current: Target[];
@@ -154,6 +159,7 @@ function ShareEditor({ draft, share, current, dir, self, words, notes, onChange,
   self: string;
   words: ShareWords;
   notes?(next: Next): string[];
+  noneAllowed: boolean;
   onChange(targets: Target[]): void;
   onCancel(): void;
   onCommit(next: Next): void;
@@ -162,19 +168,22 @@ function ShareEditor({ draft, share, current, dir, self, words, notes, onChange,
   // 相手を全員外すと非公開(配らない)。もとから指定した人のときだけ確定できる(新しく切り替えて、だれも選ばずに確定はできない。決定事項 7・11)
   const next: Next = { share: draft.share === "users" && targets.length === 0 ? "" : draft.share, targets };
   const changed = next.share !== share || (share === "users" && (targets.length !== current.length || targets.some(t => !current.some(c => same(c, t)))));
-  const blocked = draft.share === "users" && targets.length === 0 && share !== "users";
+  // 範囲を外せないときは、もとから指定した人でも、相手を全員外したら確定できない
+  const blocked = draft.share === "users" && targets.length === 0 && (share !== "users" || !noneAllowed);
   const n = countPeople(targets, dir, self);
 
   let will = "";
-  if (draft.share === "users" && targets.length === 0) will = share === "users" ? words.becomesNone : "";
+  if (draft.share === "users" && targets.length === 0) will = share === "users" ? (noneAllowed ? words.becomesNone : words.needUsers) ?? "" : "";
   else if (next.share === "users") will = words.willUsers(listLabels(targets, dir));
   else if (next.share === "all") will = words.willAll;
-  else will = words.willNone;
+  else will = words.willNone ?? "";
   // グループに共有するときは、相手がこれから変わりうることを出す(0031 の決定事項 33)
   const groupNote = next.share === "users" && targets.some(t => t.kind === "group") ? "グループの長と管理者は、メンバーを変えられます。" : "";
-  const sentences = changed && !blocked ? [will, groupNote, ...(notes?.(next) ?? [])].filter(Boolean) : [];
+  const sentences = changed && !blocked ? [will, groupNote, ...(notes?.(next) ?? [])].filter(Boolean)
+    : changed && blocked && share === "users" && !noneAllowed ? [will] // 全員外したときの断りは、押せない理由として出す
+      : [];
 
-  const button = next.share === "users" ? words.commitUsers(n) : next.share === "all" ? words.commitAll : words.commitNone;
+  const button = next.share === "users" ? words.commitUsers(n) : next.share === "all" ? words.commitAll : words.commitNone ?? "";
   return (
     <div className="share-editor">
       {draft.share === "users" && (

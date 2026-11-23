@@ -372,8 +372,11 @@ func (cs *Conversations) SetDefaultGroup(ctx context.Context, group string, on b
 // ProfileInfo は、設定の画面に出すプロファイル1つ。
 type ProfileInfo struct {
 	Profile Profile `json:"profile"`
-	Uses    int     `json:"uses"`    // このプロファイルから作った会話の数(0 なら本当に消せる)
-	Default bool    `json:"default"` // 新しい会話で最初に選ばれる(しまえない・消せない)
+	Uses    int     `json:"uses"` // ctx の利用者がこのプロファイルから作った会話の数(自分のプロファイルは 0 なら本当に消せる)
+	// UsesAll は、全員がこのプロファイルから作った会話の数(0059 の決定事項 15)。管理者に見える配布プロファイル(変えられるもの)だけに入れ、ほかは 0。
+	// 配ったプロファイルは受け取った人の会話にも使われるので、消せるかは全員の会話で決まる(自分の会話だけ数えると、押せるのに断られる)
+	UsesAll int  `json:"uses_all"`
+	Default bool `json:"default"` // 新しい会話で最初に選ばれる(自分のプロファイルなら、しまえない・消せない)
 }
 
 // Profiles は、プロファイルを作った順に返す(しまったものも含む)。
@@ -394,11 +397,27 @@ func (cs *Conversations) Profiles(ctx context.Context) ([]ProfileInfo, error) {
 	if err != nil {
 		return nil, err
 	}
+	// 全員の会話の数は、変えられる配布プロファイルがあるとき(管理者のとき)だけ数える(管理者でない人に、ほかの人の使い方を見せない)
+	var all map[uuid.UUID]int
+	if slices.ContainsFunc(list, managedShared) {
+		if all, err = cs.store.ProfileUseCounts(ctx); err != nil {
+			return nil, err
+		}
+	}
 	out := make([]ProfileInfo, 0, len(list))
 	for _, p := range list {
-		out = append(out, ProfileInfo{Profile: p, Uses: uses[p.ID], Default: p.ID == def.ID})
+		info := ProfileInfo{Profile: p, Uses: uses[p.ID], Default: p.ID == def.ID}
+		if managedShared(p) {
+			info.UsesAll = all[p.ID]
+		}
+		out = append(out, info)
 	}
 	return out, nil
+}
+
+// managedShared は、ctx の利用者(管理者)が変えられる配布プロファイルか(管理の画面の「配るプロファイル」に出るもの)。
+func managedShared(p Profile) bool {
+	return p.Share != ShareNone && !p.ReadOnly
 }
 
 // validate は、保存する前にプロファイルを確かめる。
@@ -497,30 +516,41 @@ func (cs *Conversations) isDefault(ctx context.Context, id uuid.UUID) (bool, err
 }
 
 // SetProfileArchived は、プロファイルをしまう / 戻す。しまったプロファイルは新しい会話では選べないが、決まりは残る(0014 の 11)。
-// 新しい会話で最初に選ばれるプロファイルはしまえない(新しい会話を作れなくなるため)。
+// 配布プロファイルをしまうのは、配布の停止(0059 の決定事項 4。列は同じ archived を使い、全員に効く)。
+//
+// 自分のプロファイルは、新しい会話で最初に選ばれるものならしまえない(新しい会話を作れなくなるため)。
+// 配布プロファイルは、管理者が自分の既定にしていても止められる(決定事項 14)。止めたあとは、受け取った人と同じく
+// 自分のしまっていないプロファイルが既定として選ばれる(storedDefaultProfile)。
 func (cs *Conversations) SetProfileArchived(ctx context.Context, id uuid.UUID, archived bool) error {
-	if archived {
+	p, err := cs.store.Profile(ctx, id)
+	if err != nil {
+		return err
+	}
+	if archived && p.Share == ShareNone {
 		if def, err := cs.isDefault(ctx, id); err != nil {
 			return err
 		} else if def {
 			return errors.New("既定のプロファイルはアーカイブできません。先にほかのプロファイルを既定にしてください")
 		}
 	}
-	p, err := cs.store.Profile(ctx, id)
-	if err != nil {
-		return err
-	}
 	p.Archived, p.UpdatedAt = archived, time.Now()
 	return cs.saveProfile(ctx, p)
 }
 
 // DeleteProfile は、プロファイルを本当に消す。使っている会話があれば消せない(しまうことはできる。ErrProfileInUse)。
-// 新しい会話で最初に選ばれるプロファイルも消せない(プロファイルは必ず1つ以上あるように)。
+// 配布プロファイルなら、受け取った人の会話も数える(保存先が全員の会話を数える。0059 の決定事項 5)。
+// 自分のプロファイルは、新しい会話で最初に選ばれるものなら消せない(プロファイルは必ず1つ以上あるように)。配布プロファイルは消せる(決定事項 14)。
 func (cs *Conversations) DeleteProfile(ctx context.Context, id uuid.UUID) error {
-	if def, err := cs.isDefault(ctx, id); err != nil {
+	p, err := cs.store.Profile(ctx, id)
+	if err != nil {
 		return err
-	} else if def {
-		return errors.New("既定のプロファイルは削除できません。先にほかのプロファイルを既定にしてください")
+	}
+	if p.Share == ShareNone {
+		if def, err := cs.isDefault(ctx, id); err != nil {
+			return err
+		} else if def {
+			return errors.New("既定のプロファイルは削除できません。先にほかのプロファイルを既定にしてください")
+		}
 	}
 	return cs.store.DeleteProfile(ctx, id)
 }
@@ -603,26 +633,33 @@ func (cs *Conversations) CopyProfile(ctx context.Context, id uuid.UUID) (Profile
 	return cs.CreateProfile(ctx, name, p.Values, rules)
 }
 
-// ShareCopy は、プロファイル id を写して、そのまま配る(管理の画面の「写して配る」。0032 の段3)。
-// 名前は元と同じ(配ったもの同士で重なれば断る)。資料のフォルダは写さない(配ったものに管理者が決める。CopyProfile と同じ)。
-// 写したあとは元と関係を持たない(元を変えても、配ったものは変わらない)。
-// 写すと配るを続けて行い、配れなかったら(管理者でない・いない相手など)写したものを消す。配る前の写しが自分の一覧に残らないように。
-func (cs *Conversations) ShareCopy(ctx context.Context, id uuid.UUID, share string, with, groups []string) (Profile, error) {
+// ShareNew は、配布プロファイルを最初から作って、そのまま配る(管理の画面の「新規」。0059 の決定事項 7〜9)。管理者だけ(保存先が確かめる)。
+// 値は、ctx の利用者(管理者)の今の既定のプロファイルの値を写し、モデルだけ model にする(決定事項 8。自分の画面の「作成」と同じ考え方)。
+// 決まり(固定・使えないもの)と資料のフォルダは空から始める。どこから写したかの関係は持たない(このあと編集の欄で変える)。
+//
+// 配布プロファイルは配布プロファイルとして生まれる(決定事項 3)。相手の無い配布プロファイルは作らない(管理者の自分のプロファイルと同じ見え方になるため)。
+func (cs *Conversations) ShareNew(ctx context.Context, name, model, share string, with, groups []string) (Profile, error) {
+	def, err := cs.DefaultProfile(ctx)
+	if err != nil {
+		return Profile{}, err
+	}
+	values := def.Values
+	values.MCPServers = slices.Clone(values.MCPServers)
+	values.Model = model
+	return cs.createShared(ctx, strings.TrimSpace(name), values, share, with, groups)
+}
+
+// createShared は、名前と値から配布プロファイルを作って配る(ShareNew の中身)。
+// 作ると配るを続けて行い、配れなかったら(管理者でない・いない相手など)作ったものを消す。配る前のものが管理者の自分の一覧に残らないように。
+func (cs *Conversations) createShared(ctx context.Context, name string, values ProfileValues, share string, with, groups []string) (Profile, error) {
 	if share == ShareNone {
 		return Profile{}, errors.New("配布する範囲(全員か指定した人)を選んでください")
 	}
 	if share == ShareUsers && len(with) == 0 && len(groups) == 0 {
 		return Profile{}, errors.New("配布する相手を1人以上選んでください")
 	}
-	src, err := cs.store.Profile(ctx, id)
-	if err != nil {
-		return Profile{}, err
-	}
 	now := time.Now()
-	rules := src.Rules
-	rules.Fixed = slices.Clone(rules.Fixed)
-	rules.Folder = ""
-	p := Profile{ID: uuid.NewV7(), Name: src.Name, Values: valuesOf(src.Values.settings()), Rules: rules, CreatedAt: now, UpdatedAt: now}
+	p := Profile{ID: uuid.NewV7(), Name: name, Values: valuesOf(values.settings()), CreatedAt: now, UpdatedAt: now}
 	if err := p.validate(); err != nil {
 		return Profile{}, err
 	}
@@ -633,23 +670,32 @@ func (cs *Conversations) ShareCopy(ctx context.Context, id uuid.UUID, share stri
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 	if err := cs.store.CreateProfile(ctx, p); err != nil {
-		return Profile{}, fmt.Errorf("プロファイル「%s」を複製できません: %w", p.Name, err)
+		return Profile{}, fmt.Errorf("プロファイル「%s」を作れません: %w", p.Name, err)
 	}
 	if err := cs.store.SetProfileShare(ctx, p.ID, share, with, groups); err != nil {
 		if derr := cs.store.DeleteProfile(ctx, p.ID); derr != nil {
-			return Profile{}, fmt.Errorf("%w(複製したプロファイル「%s」も削除できませんでした: %v)", err, p.Name, derr)
+			return Profile{}, fmt.Errorf("%w(作ったプロファイル「%s」も削除できませんでした: %v)", err, p.Name, derr)
 		}
 		return Profile{}, err
 	}
 	return cs.store.Profile(ctx, p.ID)
 }
 
-// SetProfileShare は、プロファイルを配る範囲と相手(利用者の名前とグループの名前。0031)を変える(0018 の 11-1)。管理者だけ(保存先が確かめる)。
+// SetProfileShare は、配布プロファイルを配る範囲と相手(利用者の名前とグループの名前。0031)を変える(0018 の 11-1)。管理者だけ(保存先が確かめる)。
 // 配るときは、配られたもの同士で名前が重ならないかを確かめる。
+//
+// 個人プロファイルと配布プロファイルは行き来させない(0059 の決定事項 3・10):配布をやめる("")も、個人プロファイルを配るのも断る。
+// 断るのはこの層だけ。保存先(store)は "" も受け付ける(誰に見えて誰が変えられるかの1か所は、保存先の SQL のまま)。
 func (cs *Conversations) SetProfileShare(ctx context.Context, id uuid.UUID, share string, with, groups []string) error {
+	if share == ShareNone {
+		return errors.New("配布をやめるときは、停止か削除を使ってください")
+	}
 	p, err := cs.store.Profile(ctx, id)
 	if err != nil {
 		return err
+	}
+	if p.Share == ShareNone {
+		return errors.New("個人プロファイルは配布できません。管理の画面の「新規」で作ってください")
 	}
 	if share == ShareUsers && len(with) == 0 && len(groups) == 0 {
 		return errors.New("配布する相手を1人以上選んでください")

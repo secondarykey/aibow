@@ -66,6 +66,9 @@ type Store interface {
 	UpdateProfile(ctx context.Context, p Profile) error
 	// DeleteProfile はプロファイルを消す。そのプロファイルから作った会話があれば消さずに ErrProfileInUse。
 	DeleteProfile(ctx context.Context, id uuid.UUID) error
+	// ProfileUseCounts は、プロファイルごとの、全員がそこから作った会話の数(0059 の決定事項 15。管理の画面で配布プロファイルを消せるかを見せる)。
+	// 管理者でなければ空(ほかの人の会話の使い方は見せない)。0 のプロファイルは入らない
+	ProfileUseCounts(ctx context.Context) (map[uuid.UUID]int, error)
 	// ---- 会話の共有(0018 の 11-2)。ほかの人の会話は、ここの読むだけのメソッドでだけ読める
 	// (上の会話のメソッドは、今までどおり自分の会話だけを読み書きする。書き込めないことを、メソッドの分け方で守る)。
 	//

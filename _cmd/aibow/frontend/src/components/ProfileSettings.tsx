@@ -13,7 +13,9 @@
 //   own         … 設定の画面の「会話」。自分の配っていないプロファイルを変える。配られたもの(管理者が自分で配ったものも)は「配布されたプロファイル」の欄に読むだけで出す。
 //                 既定のプロファイル(新しい会話の画面で最初に選ばれるもの)は、一覧の行の「既定」の札で見せ、選んだプロファイルの操作の行の「既定にする」で変える
 //                 (0056。0050 の決定事項 4 では一覧の上の選択肢にしていたのを、ボタンに戻した。一覧の行は <button role="option"> なので、ボタンは行に置かず編集の欄に置く)
-//   distributed … 管理の画面の「配るプロファイル」(ブラウザの管理者だけ)。配っているプロファイルの値・決まり・配る相手・資料のフォルダを変える。「複製して配布」で、自分のプロファイルを写してそのまま配る
+//   distributed … 管理の画面の「配るプロファイル」(ブラウザの管理者だけ)。配っているプロファイルの値・決まり・配る相手・資料のフォルダを変える。
+//                 「新規」で配布プロファイルを最初から作る(0059。以前の「複製して配布」はなくした)。配布プロファイルは個人プロファイルと行き来させない。
+//                 アーカイブは「停止」「再開」と呼ぶ(列は同じ archived。止めると受け取った人の新しい会話で選べない)。削除できるかは全員の会話で決める(uses_all)
 //
 // 配る(0018 の 11-1・決定事項 22):
 //   - 配る相手は人を選ぶ部品で選ぶ(0031)。一覧に「全員に配っている」「N 人に配っている」の印
@@ -55,7 +57,7 @@ function inMode(i: ProfileInfo, distributed: boolean): boolean {
 export function ProfileSettings({ models, servers, disabled, onTryLimits, onError, onChanged, onToolsChanged, mode = "own" }: Props) {
   const distributed = mode === "distributed";
   const [dir] = useDirectory(); // 配っている印の人数(グループをメンバーに広げて数える)
-  const [copying, setCopying] = useState(false); // 写して配るの欄を出しているか(distributed)
+  const [creating, setCreating] = useState(false); // 配布プロファイルを作る欄を出しているか(distributed の「新規」。0059)
   const [infos, setInfos] = useState<ProfileInfo[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [edit, setEditState] = useState<Profile | null>(null); // 選んだプロファイルの下書き(画面で変えている途中の値)
@@ -161,7 +163,7 @@ export function ProfileSettings({ models, servers, disabled, onTryLimits, onErro
   const create = () => act(async () => {
     const base = saved ?? infos.find(i => i.default)?.profile;
     if (!base) return;
-    return (await ChatService.CreateProfile(freeName(infos), base.values, {})).id;
+    return (await ChatService.CreateProfile(freeName(own), base.values, {})).id;
   });
   // 既定にするは、下書きに関わらない人ごとの設定なので、知らせずにそのまま変える(一覧の「既定」の印だけ読み直し、下書きは残す)
   const setDefault = (id: string) => {
@@ -191,12 +193,14 @@ export function ProfileSettings({ models, servers, disabled, onTryLimits, onErro
     >
       <span className="profile-name">{i.profile.name}</span>
       {i.default && <span className="tool-tag" title="既定のプロファイル(新しい会話の画面で最初に選ばれる)">既定</span>}
-      {i.profile.archived && <span className="tool-tag" title="新しい会話では選べない。決まりは、このプロファイルから作った会話に効く">アーカイブ済み</span>}
+      {i.profile.archived && <ArchivedTag profile={i.profile} distributed={distributed} />}
       {!i.profile.read_only && i.profile.share && <ShareTag profile={i.profile} dir={dir} />}
       {i.profile.owner_name && i.profile.owner_name !== me.name && (
         <span className="profile-owner" title="配布した人">{i.profile.owner_name}</span>
       )}
-      <span className="profile-uses" title="このプロファイルから作った会話の数">会話 {i.uses}</span>
+      {distributed
+        ? <span className="profile-uses" title="このプロファイルから作った会話の数(受け取った人の会話も数える)">会話 {i.uses_all}</span>
+        : <span className="profile-uses" title="このプロファイルから作った会話の数">会話 {i.uses}</span>}
     </button>
   );
 
@@ -228,8 +232,8 @@ export function ProfileSettings({ models, servers, disabled, onTryLimits, onErro
       <div className="profile-list" role="listbox">
         {mine.map(item)}
         {distributed ? (
-          <button type="button" className="profile-item profile-add" onClick={() => guard(() => setCopying(c => !c))} aria-expanded={copying} title="自分のプロファイルを複製して、そのまま配布する(元は自分のプロファイルとして残る)">
-            <LuPlus /> 複製して配布
+          <button type="button" className="profile-item profile-add" onClick={() => guard(() => setCreating(c => !c))} aria-expanded={creating} title="配布プロファイルを作成して、そのまま配布する">
+            <LuPlus /> 新規
           </button>
         ) : (
           <button type="button" className="profile-item profile-add" onClick={create} title="選んでいるプロファイルの値を複製して、新しいプロファイルを作成する">
@@ -237,20 +241,21 @@ export function ProfileSettings({ models, servers, disabled, onTryLimits, onErro
           </button>
         )}
       </div>
-      {distributed && mine.length === 0 && !copying && <p className="hint">配布しているプロファイルはありません</p>}
-      {copying && (
-        <ShareCopyForm
-          own={own}
+      {distributed && mine.length === 0 && !creating && <p className="hint">配布しているプロファイルはありません。「新規」で作ります</p>}
+      {creating && (
+        <ShareNewForm
+          name={freeName(mine)}
+          models={models.filter(m => !m.disabled)}
           onDone={id => {
-            setCopying(false);
+            setCreating(false);
             onChanged();
             reload(id).catch(err => onError(errorMessage(err)));
           }}
-          onCancel={() => setCopying(false)}
+          onCancel={() => setCreating(false)}
           onError={onError}
         />
       )}
-      {editable && !copying && editor}
+      {editable && !creating && editor}
       {received.length > 0 && (
         <>
           <h2 className="section" title="管理者が配布したプロファイル。新しい会話で選べるが、値と決まりは変えられない(変えたいときは複製する)">配布されたプロファイル</h2>
@@ -296,6 +301,9 @@ function ProfileEditor({ profile, info, distributed, models, servers, onChange, 
     onChange(p => ({ ...p, values: { ...p.values, ...valuesPatch(patch) } }));
   const settings = asSettings(profile.values);
   const archived = info.profile.archived; // アーカイブは保存した値で決める(下書きでは変わらない)
+  // 配布プロファイル(管理の画面)は、管理者自身の既定でも停止・削除できる(0059 の決定事項 14)。消せるかは全員の会話の数で決める(決定事項 15)
+  const isDefault = !distributed && info.default;
+  const uses = distributed ? info.uses_all : info.uses;
 
   // 名前も下書き(この画面の「保存」に入る。0053 の決定事項 9b)
   return (
@@ -312,18 +320,34 @@ function ProfileEditor({ profile, info, distributed, models, servers, onChange, 
       />
       <div className="profile-actions">
         {onSetDefault && <SetDefaultButton info={info} onClick={onSetDefault} />}
-        <button
-          type="button"
-          disabled={info.default && !archived}
-          title={info.default ? "既定のプロファイルはアーカイブできない" : archived ? "新しい会話で選べるようにする" : "新しい会話では選べなくする(決まりは、このプロファイルから作った会話に効き続ける)"}
-          onClick={() => onArchive(!archived)}
-        >
-          {archived ? "アーカイブ解除" : "アーカイブ"}
-        </button>
+        {distributed ? (
+          <button
+            type="button"
+            title={archived ? "受け取った人の新しい会話で、また選べるようにする" : "受け取った人の新しい会話で選べなくする(今ある会話は続けられ、決まりも効き続ける)"}
+            onClick={() => onArchive(!archived)}
+          >
+            {archived ? "再開" : "停止"}
+          </button>
+        ) : (
+          <button
+            type="button"
+            disabled={isDefault && !archived}
+            title={isDefault ? "既定のプロファイルはアーカイブできない" : archived ? "新しい会話で選べるようにする" : "新しい会話では選べなくする(決まりは、このプロファイルから作った会話に効き続ける)"}
+            onClick={() => onArchive(!archived)}
+          >
+            {archived ? "アーカイブ解除" : "アーカイブ"}
+          </button>
+        )}
         <DeleteButton
-          question={`プロファイル「${info.profile.name}」を削除しますか?`}
-          disabled={info.default || info.uses > 0}
-          title={info.default ? "既定のプロファイルは削除できない" : info.uses > 0 ? `このプロファイルから作った会話が ${info.uses} 個あるので削除できない(アーカイブはできる)` : "このプロファイルを削除する"}
+          question={distributed
+            ? `配布プロファイル「${info.profile.name}」を削除しますか? 受け取った人の一覧からも消えます。元に戻せません`
+            : `プロファイル「${info.profile.name}」を削除しますか?`}
+          disabled={isDefault || uses > 0}
+          title={isDefault ? "既定のプロファイルは削除できない"
+            : uses > 0 ? (distributed
+              ? `このプロファイルから作った会話が全員で ${uses} 個あるので削除できない(停止はできる)`
+              : `このプロファイルから作った会話が ${uses} 個あるので削除できない(アーカイブはできる)`)
+              : "このプロファイルを削除する"}
           onConfirm={onDelete}
         />
       </div>
@@ -402,26 +426,36 @@ function ShareForm({ profile, onShare }: { profile: Profile; onShare(share: stri
       groups={profile.share_groups ?? []}
       dir={dir}
       self={me.name}
-      notes={next => (next.share === "" ? [`配布を停止すると、作った人(${profile.owner_name || me.name})の自分のプロファイルに戻り、管理の画面の一覧から外れます。`] : [])}
+      noneAllowed={false}
       onCommit={onShare}
     />
   );
 }
 
-// ShareCopyForm は「複製して配布」(0032 の段3)。元にする自分のプロファイルと配る相手を選び、確定したときに写してそのまま配る(Go の ShareCopy)。
-// 名前は元と同じ(配ったもの同士で重なれば Go が断る)。資料のフォルダは写さない。写したあとは元と関係を持たない
-function ShareCopyForm({ own, onDone, onCancel, onError }: { own: ProfileInfo[]; onDone(id: string): void; onCancel(): void; onError(text: string): void }) {
-  const [source, setSource] = useState(own.find(i => i.default)?.profile.id ?? own[0]?.profile.id ?? "");
+// ShareNewForm は、配布プロファイルを最初から作る欄(管理の画面の「新規」。0059 の決定事項 7)。名前・モデル・配布を決め、
+// 配布の確定のボタンで、作ると配るを一度に行う(Go の ShareNew)。相手を決めずには作らない(管理者の自分のプロファイルと見分けがつかなくなるため)。
+// モデル以外の値は、管理者の今の既定のプロファイルの値を Go が写す。決まりと資料のフォルダは空から始め、作ったあと編集の欄で変える
+function ShareNewForm({ name: initialName, models, onDone, onCancel, onError }: {
+  name: string;          // 名前の初期値(配布プロファイル同士で重ならないもの)
+  models: ModelEntry[];  // 使えるモデル(管理者が使えないようにしたものは除いてある)
+  onDone(id: string): void;
+  onCancel(): void;
+  onError(text: string): void;
+}) {
+  const [name, setName] = useState(initialName);
+  const [model, setModel] = useState(models[0]?.id ?? "");
   const [dir] = useDirectory();
-  if (own.length === 0) return <p className="hint">複製できる自分のプロファイルがありません</p>;
   return (
-    <div className="profile-editor share-copy">
-      <label htmlFor="copy-source" title="値と決まりを複製する(資料のフォルダは複製しない)。元は自分のプロファイルとして残り、あとで変えても配布したものは変わらない">元にするもの</label>
-      <select id="copy-source" value={source} onChange={e => setSource(e.target.value)}>
-        {own.map(i => <option key={i.profile.id} value={i.profile.id}>{i.profile.name}</option>)}
+    <div className="profile-editor share-new">
+      <label htmlFor="new-profile-name">名前</label>
+      <input id="new-profile-name" type="text" value={name} onChange={e => setName(e.target.value)} />
+      <label htmlFor="new-profile-model" title="配布プロファイルで使うモデル。使えるモデルから選ぶ">モデル</label>
+      <select id="new-profile-model" value={model} onChange={e => setModel(e.target.value)}>
+        {models.length === 0 && <option value="">使えるモデルがありません</option>}
+        {models.map(m => <option key={m.id} value={m.id}>{`${m.name}(${m.size_gb.toFixed(1)} GB)`}</option>)}
       </select>
       <SharePicker
-        id="copy-share"
+        id="new-profile-share"
         label="配布"
         labelTitle="配布したプロファイルは、受け取った人の新しい会話で選べる"
         words={PROFILE_WORDS}
@@ -430,8 +464,13 @@ function ShareCopyForm({ own, onDone, onCancel, onError }: { own: ProfileInfo[];
         groups={[]}
         dir={dir}
         self={me.name}
+        noneAllowed={false}
         onCommit={(share, users, groups) => {
-          ChatService.ShareCopy(source, share, users, groups).then(p => onDone(p.id), err => onError(errorMessage(err)));
+          if (name.trim() === "") {
+            onError("配布プロファイルを作成できません: 名前を入れてください");
+            return;
+          }
+          ChatService.ShareNew(name.trim(), model, share, users, groups).then(p => onDone(p.id), err => onError(`配布プロファイルを作成できません: ${errorMessage(err)}`));
         }}
       />
       <div className="profile-actions">
@@ -439,6 +478,15 @@ function ShareCopyForm({ own, onDone, onCancel, onError }: { own: ProfileInfo[];
       </div>
     </div>
   );
+}
+
+// ArchivedTag は、一覧の行のアーカイブの札。配布プロファイル(管理の画面・受け取った人の欄)は「停止中」と呼ぶ(0059 の決定事項 12・13)
+function ArchivedTag({ profile, distributed }: { profile: Profile; distributed: boolean }) {
+  if (distributed) return <span className="tool-tag" title="受け取った人の新しい会話では選べない。今ある会話は続けられ、決まりも効き続ける">停止中</span>;
+  if (profile.read_only || profile.share) {
+    return <span className="tool-tag" title="管理者が配布を停止した。新しい会話では選べない。今ある会話は続けられる">停止中</span>;
+  }
+  return <span className="tool-tag" title="新しい会話では選べない。決まりは、このプロファイルから作った会話に効く">アーカイブ済み</span>;
 }
 
 // ReceivedProfile は、配られたプロファイル(読むだけ)。値と決まりは見せるが変えられない(fieldset ごと無効)。複製すれば自分のものになる
@@ -478,7 +526,7 @@ function SetDefaultButton({ info, received, onClick }: { info: ProfileInfo; rece
   const title = info.default
     ? "既定のプロファイル(新しい会話の画面で最初に選ばれる)"
     : info.profile.archived
-      ? "アーカイブ済みは既定にできない"
+      ? (received ? "停止中は既定にできない" : "アーカイブ済みは既定にできない")
       : "新しい会話の画面で、このプロファイルを最初に選ぶ" + (received ? "(配布されなくなったら、自分のプロファイルに戻る)" : "");
   return (
     <button type="button" disabled={info.default || info.profile.archived} title={title} onClick={onClick}>
@@ -487,10 +535,11 @@ function SetDefaultButton({ info, received, onClick }: { info: ProfileInfo; rece
   );
 }
 
-// freeName は、新しいプロファイルの名前。ほかのプロファイルと重ならないよう、重なれば番号を付ける(Go は重なる名前を断る)
+// freeName は、新しいプロファイルの名前。同じまとまりのプロファイルと重ならないよう、重なれば番号を付ける(Go は重なる名前を断る)。
+// infos は比べる相手(自分の画面は自分のプロファイル、管理の画面は配布プロファイル。名前は同じまとまりの中で重ならなければよい)
 function freeName(infos: ProfileInfo[]): string {
   const base = "新しいプロファイル";
-  const used = new Set(infos.filter(i => !i.profile.share).map(i => i.profile.name)); // 名前は自分のもの同士で重ならなければよい
+  const used = new Set(infos.map(i => i.profile.name));
   if (!used.has(base)) return base;
   for (let n = 2; ; n++) {
     if (!used.has(`${base} ${n}`)) return `${base} ${n}`;

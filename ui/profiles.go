@@ -108,7 +108,8 @@ func (s *Service) usableModel(id string) error {
 	return nil
 }
 
-// SetProfileShare は、プロファイルを配る範囲(""・all・users)と相手(利用者の名前とグループの名前。0031)を変える(0018 の 11-1)。管理者だけ。
+// SetProfileShare は、配布プロファイルを配る範囲(all・users)と相手(利用者の名前とグループの名前。0031)を変える(0018 の 11-1)。管理者だけ。
+// 配布をやめる("")と、個人プロファイルを配るのは断る(aibow が断る。0059 の決定事項 10)。やめるときは停止(SetProfileArchived)か削除。
 func (s *Service) SetProfileShare(ctx context.Context, id uuid.UUID, share string, with, groups []string) error {
 	if s.startupErr != nil {
 		return s.startupErr
@@ -125,40 +126,32 @@ func (s *Service) SetProfileShare(ctx context.Context, id uuid.UUID, share strin
 	if err := s.convs.SetProfileShare(ctx, id, share, with, groups); err != nil {
 		return err
 	}
-	switch share {
-	case aibow.ShareNone:
-		log.Noticef("プロファイル「%s」の配布を停止しました", p.Name)
-	case aibow.ShareAll:
-		log.Noticef("プロファイル「%s」を全員に配りました", p.Name)
-	default:
-		log.Noticef("プロファイル「%s」を %s に配りました", p.Name, targets(with, groups))
-	}
+	log.Noticef("プロファイル「%s」の配布先を%sにしました(%s%s)", p.Name, shareTargets(share, with, groups), id, byWhom(ctx))
 	return nil
 }
 
-// ShareCopy は、プロファイルを写して、そのまま配る(管理の画面の「写して配る」。0032 の段3)。管理者だけ(保存先が確かめる)。
+// shareTargets は、ログに書く配る相手(「全員」か、人とグループの名前)。
+func shareTargets(share string, with, groups []string) string {
+	if share == aibow.ShareAll {
+		return "全員"
+	}
+	return targets(with, groups)
+}
+
+// ShareNew は、配布プロファイルを最初から作って、そのまま配る(管理の画面の「新規」。0059 の決定事項 9)。管理者だけ(保存先が確かめる)。
 // 配るプロファイルのモデルは、使えるモデルから(0018 の決定事項 13。SetProfileShare と同じ)。
-func (s *Service) ShareCopy(ctx context.Context, id uuid.UUID, share string, with, groups []string) (aibow.Profile, error) {
+func (s *Service) ShareNew(ctx context.Context, name, model, share string, with, groups []string) (aibow.Profile, error) {
 	if s.startupErr != nil {
 		return aibow.Profile{}, s.startupErr
 	}
-	src, err := s.store.Profile(ctx, id)
-	if err != nil {
+	if err := s.usableModel(model); err != nil {
 		return aibow.Profile{}, err
 	}
-	if err := s.usableModel(src.Values.Model); err != nil {
-		return aibow.Profile{}, err
-	}
-	p, err := s.convs.ShareCopy(ctx, id, share, with, groups)
+	p, err := s.convs.ShareNew(ctx, name, model, share, with, groups)
 	if err != nil {
 		return p, err
 	}
-	switch share {
-	case aibow.ShareAll:
-		log.Noticef("プロファイル「%s」を複製して、全員に配布しました(%s)", p.Name, whoOf(ctx))
-	default:
-		log.Noticef("プロファイル「%s」を複製して、%s に配布しました(%s)", p.Name, targets(with, groups), whoOf(ctx))
-	}
+	log.Noticef("プロファイル「%s」を作成して、%sに配布しました(%s%s)", p.Name, shareTargets(share, with, groups), p.ID, byWhom(ctx))
 	return p, nil
 }
 
@@ -174,16 +167,23 @@ func (s *Service) CopyProfile(ctx context.Context, id uuid.UUID) (aibow.Profile,
 	return p, err
 }
 
-// SetProfileArchived は、プロファイルをしまう / 戻す。
+// SetProfileArchived は、プロファイルをしまう / 戻す。配布プロファイルなら、配布の停止 / 再開(0059 の決定事項 12)。
 func (s *Service) SetProfileArchived(ctx context.Context, id uuid.UUID, archived bool) error {
 	if s.startupErr != nil {
 		return s.startupErr
 	}
-	name := s.profileName(ctx, id)
+	p, err := s.store.Profile(ctx, id)
+	if err != nil {
+		return err
+	}
 	if err := s.convs.SetProfileArchived(ctx, id, archived); err != nil {
 		return err
 	}
-	log.Noticef("プロファイル「%s」を%s(%s%s)", name, map[bool]string{true: "アーカイブしました", false: "アーカイブ解除しました"}[archived], id, byWhom(ctx))
+	done := map[bool]string{true: "をアーカイブしました", false: "をアーカイブ解除しました"}[archived]
+	if p.Share != aibow.ShareNone {
+		done = map[bool]string{true: "の配布を停止しました", false: "の配布を再開しました"}[archived]
+	}
+	log.Noticef("プロファイル「%s」%s(%s%s)", p.Name, done, id, byWhom(ctx))
 	return nil
 }
 

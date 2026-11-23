@@ -245,6 +245,37 @@ func (s *SQLite) UpdateProfile(ctx context.Context, p aibow.Profile) error {
 	return nil
 }
 
+// ProfileUseCounts は、プロファイルごとの全員の会話の数(aibow.Store の約束の説明を参照)。管理者でなければ空。
+// DeleteProfile が数えるのと同じ数(全員の会話)にそろえる。画面で押せるのに、押すと断られる、をなくすため(0059 の決定事項 15)。
+func (s *SQLite) ProfileUseCounts(ctx context.Context) (map[uuid.UUID]int, error) {
+	args, _, err := s.profileArgs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := map[uuid.UUID]int{}
+	if args[1].(sql.NamedArg).Value.(int) != 1 {
+		return out, nil
+	}
+	rows, err := s.db.QueryContext(ctx, "SELECT profile_id, COUNT(*) FROM conversations WHERE profile_id IS NOT NULL AND profile_id <> '' GROUP BY profile_id")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		var n int
+		if err := rows.Scan(&id, &n); err != nil {
+			return nil, err
+		}
+		pid, err := parseID(id)
+		if err != nil {
+			return nil, err
+		}
+		out[pid] = n
+	}
+	return out, rows.Err()
+}
+
 // DeleteProfile は、使っている会話が無いときだけプロファイルを消す。
 // 外部キーでも消せないようになっているが、SQLite の制約のエラーは何が理由か読みにくいので、先に数えて ErrProfileInUse を返す。
 // 数えてから消すまでの間に会話が増えないよう、1つのトランザクションで行う。
