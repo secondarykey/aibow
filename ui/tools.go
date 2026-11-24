@@ -169,7 +169,7 @@ func (s *Service) checkFolder(ctx context.Context, old, folder string) error {
 		return errors.New("資料のフォルダを選べるのは、aibow-server の管理者だけです")
 	}
 	if names := s.folderNames(); !slices.Contains(names, folder) {
-		return fmt.Errorf("資料のフォルダ %s はありません(管理の画面のプロファイルのタブにあるもの: %s)", folder, strings.Join(names, "・"))
+		return fmt.Errorf("資料のフォルダ %s はありません(管理の画面の「資料のフォルダ」のタブにあるもの: %s)", folder, strings.Join(names, "・"))
 	}
 	return nil
 }

@@ -1,7 +1,7 @@
 // 管理の画面で、aibow-server の並列数・作業領域・資料のフォルダを見て変える(0061)。どれも server.json に書き戻す(Go の ui/serverconfig.go)。
 //
 //	ServerRunSettings … 並列数と作業領域(「モデル」のタブ)。確定式の保存(0053)。起動し直すと切り替わる(その場ではモデルを読み直さない。決定事項 2)
-//	ServerFolders     … 資料のフォルダ(「配布プロファイル」のタブ。未決事項 1 で、ユーザーがプロファイルのタブを選んだ)。追加・パスの変更・削除はその場で効く
+//	ServerFolders     … 資料のフォルダ(「資料のフォルダ」のタブ。未決事項 1 で、ユーザーが別のタブを選んだ)。追加・パスの変更・削除はその場で効く
 //
 // 起動の引数・環境変数で決めている値は、変えられないようにして錠の吹き出しに理由を出す(決定事項 6。理由の文は Go が作る)。
 // 呼べるのは管理者だけ(Go が断る。画面は出し分けるだけ)。
@@ -13,16 +13,6 @@ import { errorMessage } from "../errors";
 import { SaveBar, useUnsavedEntry } from "../unsaved";
 import { NumberInput } from "./ConversationSettingsForm";
 import { DeleteButton } from "./DeleteButton";
-
-// ---- 資料のフォルダが変わったことを、プロファイルの資料のフォルダの選択に知らせる ----------------
-
-const folderListeners = new Set<() => void>();
-
-// onFoldersChanged は、資料のフォルダを足した・消したときに呼ばれる(プロファイルの選択肢を取り直すため)。戻り値を呼ぶと受け取るのをやめる
-export function onFoldersChanged(f: () => void): () => void {
-  folderListeners.add(f);
-  return () => { folderListeners.delete(f); };
-}
 
 // ---- 並列数と作業領域 ------------------------------------------------------------------
 
@@ -110,15 +100,15 @@ function RunValue({ lock, children }: { lock?: string; children: ReactNode }) {
 
 // ---- 資料のフォルダ --------------------------------------------------------------------
 
-// ServerFolders は資料のフォルダの一覧。version が変わったら取り直す(プロファイルを保存して、選んでいるプロファイルが変わったとき)
-export function ServerFolders({ version, onError }: { version: number; onError(text: string): void }) {
+// ServerFolders は資料のフォルダの一覧。タブを開くたびに取り直す(配布プロファイルのタブで選んだものが「使用中」に出るように)
+export function ServerFolders({ onError }: { onError(text: string): void }) {
   const [folders, setFolders] = useState<ServerFolder[] | null>(null);
   const [editing, setEditing] = useState<string | null>(null); // パスを変えている行の名前
   useEffect(() => {
     ChatService.ServerSettings().then(v => setFolders(v.folders ?? []), err => onError(errorMessage(err)));
-  }, [version, onError]);
+  }, [onError]);
 
-  // 変えたら一覧を差し替え、プロファイルの選択肢にも知らせる。断られたら理由を出して false
+  // 変えたら一覧を差し替える。断られたら理由を出して false
   const change = async (f: () => Promise<ServerFolder[] | null>): Promise<boolean> => {
     try {
       setFolders((await f()) ?? []);
@@ -126,7 +116,6 @@ export function ServerFolders({ version, onError }: { version: number; onError(t
       onError(errorMessage(err));
       return false;
     }
-    folderListeners.forEach(l => l());
     return true;
   };
   if (!folders) return null;
