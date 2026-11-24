@@ -7,8 +7,8 @@
 //	利用者・グループ … ログインした管理者だけ(0032 の決定事項 4)
 //	モデル          … サーバーの PC の事情(読み込む / 降ろす・GPU の層数・置き場所・使える。0015 の 8-4・0018 の決定事項 8)
 //	ツール          … ブラウザから使う会話のツールの扱いの、aibow-server 全体の既定(0024 の決定事項 21)
-//	配るプロファイル … 配っているプロファイルの値・決まり・配る相手・資料のフォルダ・写して配る(ログインした管理者だけ。0032 の段3)。
-//	                  下に資料のフォルダそのもの(名前とパス・追加・パスの変更・削除。0061)
+//	配るプロファイル … 配っているプロファイルの値・決まり・配る相手・資料のフォルダ・写して配る(ログインした管理者だけ。0032 の段3)
+//	資料のフォルダ  … 配布プロファイルで選ぶ資料のフォルダそのもの(名前とパス・追加・パスの変更・削除。ログインした管理者だけ。0061)
 //	使用量          … 利用者ごとの生成の回数・GPU の秒数・生成トークン(ログインした管理者と、ログインなしの形のサーバーの PC。0033)
 //	ログ            … aibow-server のログのレベル(起動したあとに変える。保存しない。モデルのタブと同じ人。0052)
 import { useState } from "react";
@@ -28,14 +28,15 @@ import { LogSettings } from "./LogSettings";
 import { ServerFolders } from "./ServerConfig";
 import { useUnsaved } from "../unsaved";
 
-type Tab = "users" | "groups" | "models" | "tools" | "profiles" | "usage" | "log";
+type Tab = "users" | "groups" | "models" | "tools" | "profiles" | "folders" | "usage" | "log";
 
 const TABS: { id: Tab; label: string; title: string; admin: boolean }[] = [
   { id: "users", label: "利用者", title: "aibow-server の利用者(作成・パスワードのリンクと API キー・表示名・無効にする・削除・その人の会話)", admin: true },
   { id: "groups", label: "グループ", title: "グループ(作成・名前・メンバーと長・削除)。共有の相手に選べる", admin: true },
   { id: "models", label: "モデル", title: "サーバーの PC のモデル(読み込み / アンロード・GPU の層数・置き場所・使える)", admin: false },
   { id: "tools", label: "ツール", title: "ブラウザから使う会話のツールの扱い(使わない・確認する・確認しない)。aibow-server 全体の既定", admin: false },
-  { id: "profiles", label: "配布プロファイル", title: "組織に配布するプロファイル(値と決まり・配布する相手・資料のフォルダ・複製して配布)と、資料のフォルダ(名前とパス)", admin: true },
+  { id: "profiles", label: "配布プロファイル", title: "組織に配布するプロファイル(値と決まり・配布する相手・資料のフォルダ・複製して配布)", admin: true },
+  { id: "folders", label: "資料のフォルダ", title: "配布プロファイルで選ぶ、aibow-server の PC のフォルダ(名前とパス)", admin: true },
   { id: "usage", label: "使用量", title: "利用者ごとの生成の回数・GPU の秒数・生成トークン(今日・7日・30日)", admin: true },
   { id: "log", label: "ログ", title: "aibow-server のログ(ログのレベル)", admin: false },
 ];
@@ -71,8 +72,6 @@ export function AdminView({ onClose, errors, onError, onReadConversation, models
   const [dir, reloadDir] = useDirectory(); // 利用者の詳細のグループと、グループのタブで分け合う
   // タブを替えるときは、保存していない変更があれば先に知らせる(0053 の決定事項 16)
   const { guard } = useUnsaved();
-  // プロファイルを保存したら、資料のフォルダの「使用中」を取り直す
-  const [folderVersion, setFolderVersion] = useState(0);
   return (
     <section className="settings-view">
       <div className="settings-inner">
@@ -131,12 +130,12 @@ export function AdminView({ onClose, errors, onError, onReadConversation, models
               disabled={appDisabled}
               onTryLimits={onTryLimits}
               onError={onError}
-              onChanged={() => { onProfilesChanged(); setFolderVersion(n => n + 1); }}
+              onChanged={onProfilesChanged}
               onToolsChanged={onToolsChanged}
             />
-            <ServerFolders version={folderVersion} onError={onError} />
           </>
         )}
+        {tab === "folders" && <ServerFolders onError={onError} />}
       </div>
     </section>
   );

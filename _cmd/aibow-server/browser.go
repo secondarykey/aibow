@@ -88,7 +88,7 @@ func startBrowser(c serverConfig, initial aibow.AppSettings, st *store.SQLite, g
 		},
 	})
 	if len(c.Folders) > 0 {
-		log.Noticef("資料のフォルダ: %s(server.json の folders。管理者が配布プロファイルで選ぶと、その会話で読み書きできます。管理の画面のプロファイルのタブで足す・変える・消せます)",
+		log.Noticef("資料のフォルダ: %s(server.json の folders。管理者が配布プロファイルで選ぶと、その会話で読み書きできます。管理の画面の「資料のフォルダ」のタブで足す・変える・消せます)",
 			strings.Join(slices.Sorted(maps.Keys(c.Folders)), ", "))
 	}
 	life.Start() // 起動のときのモデルは main が読み込んだので、ここでは読み込まない(Initial を渡していない)
