@@ -328,7 +328,7 @@ aibow-server [-config 設定ファイル] user list|add|passwd|remove|unkey|disa
 aibow-server [-config 設定ファイル] user key <名前> [日数(30・90・365・0 = 無期限。省けば 90)]
 aibow-server [-config 設定ファイル] user display <名前> [表示名]
 aibow-server [-config 設定ファイル] user email <名前> [アドレス]
-aibow-server [-config 設定ファイル] cert <ホスト名か IP アドレス>...
+aibow-server [-config 設定ファイル] cert [-f] <ホスト名か IP アドレス>...
 ```
 
 以前の名前は `aibow-api` でした(ステップ8で、モデルの一覧や切り替えも持つ「aibow のサーバー」になるので名前を変えた)。
@@ -691,7 +691,7 @@ aibow-server は、生成1回ごとに「だれが・いつ・どのモデルで
    ```bash
    aibow-server cert 192.168.1.10 my-pc.local
    ```
-   ほかの PC からつなぐときのアドレス(IP アドレスか名前)を書きます。設定ファイルの隣に `server-cert.pem`(証明書)と `server-key.pem`(秘密鍵)ができます。有効なのは 397 日で、切れたら消して作り直します。
+   ほかの PC からつなぐときのアドレス(IP アドレスか名前)を書きます。設定ファイルの隣に `server-cert.pem`(証明書)と `server-key.pem`(秘密鍵)ができます。有効なのは 397 日で、切れたら `cert -f <アドレス>` で作り直します(`-f` が無いと、もうあるときは止まります。前のファイルは `server-cert.pem.20261124153000` のように名前の後ろに日時を付けて残ります。要らなければ削除します)。
    作ったあと、`server.json` にそのまま貼れる `tlsCert`・`tlsKey` の2行が出ます(パスは `/` 区切り。server.json がまだ無ければ `{ }` で囲んだ全体、もうこの証明書を指していればその旨、違うファイルを指していれば今の値も出ます。
    待ち受けが `127.0.0.1` のままなら、`host`(か `addr`)の書き方の例も添えます)。`server.json` はコマンドが書き換えないので、出たものを自分で貼ります(0058)
 

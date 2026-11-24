@@ -64,8 +64,85 @@ func TestRunCert(t *testing.T) {
 	if _, err := tls.LoadX509KeyPair(filepath.Join(dir, certFileName), filepath.Join(dir, keyFileName)); err != nil {
 		t.Errorf("作ったファイルを読めない: %v", err)
 	}
-	if err := runCert(io.Discard, c, []string{"my-pc.local"}); err == nil || !strings.Contains(err.Error(), "もうあります") {
-		t.Errorf("上書きしない: %v", err)
+	if err := runCert(io.Discard, c, []string{"my-pc.local"}); err == nil || !strings.Contains(err.Error(), "もうあります") || !strings.Contains(err.Error(), "-f") {
+		t.Errorf("-f が無ければ上書きせず、-f を案内する: %v", err)
+	}
+	if err := runCert(io.Discard, c, []string{"-x", "my-pc.local"}); err == nil || !strings.Contains(err.Error(), "使い方") {
+		t.Errorf("知らない引数は使い方を添えて断る: %v", err)
+	}
+}
+
+// -f なら作り直し、今のファイルは名前の後ろに日時(yyyymmddhhmmss)を付けて残す
+func TestRunCertForce(t *testing.T) {
+	dir := t.TempDir()
+	c := serverConfig{StatePath: filepath.Join(dir, stateFileName)}
+	certPath, keyPath := filepath.Join(dir, certFileName), filepath.Join(dir, keyFileName)
+	if err := runCert(io.Discard, c, []string{"-f", "my-pc.local"}); err != nil {
+		t.Fatalf("まだ無いときに -f を付けても作れる: %v", err)
+	}
+	oldCert, _ := os.ReadFile(certPath)
+	oldKey, _ := os.ReadFile(keyPath)
+
+	var out strings.Builder
+	if err := runCert(&out, c, []string{"-f", "my-pc.local"}); err != nil {
+		t.Fatal(err)
+	}
+	newCert, _ := os.ReadFile(certPath)
+	if string(newCert) == string(oldCert) {
+		t.Error("作り直していない")
+	}
+	if _, err := tls.LoadX509KeyPair(certPath, keyPath); err != nil {
+		t.Errorf("作り直したファイルを読めない: %v", err)
+	}
+	backups, _ := filepath.Glob(filepath.Join(dir, "*.pem.*"))
+	if len(backups) != 2 {
+		t.Fatalf("今のファイルを2つとも残す: %v", backups)
+	}
+	for _, b := range backups {
+		stamp := b[strings.LastIndex(b, ".")+1:]
+		if _, err := time.ParseInLocation(backupStamp, stamp, time.Local); err != nil || len(stamp) != 14 {
+			t.Errorf("名前の後ろは yyyymmddhhmmss: %s", b)
+		}
+		got, _ := os.ReadFile(b)
+		want := oldCert
+		if strings.Contains(filepath.Base(b), "key") {
+			want = oldKey
+		}
+		if string(got) != string(want) {
+			t.Errorf("%s の中身が前のファイルと違う", b)
+		}
+	}
+	if !strings.Contains(out.String(), "名前を変えて残しました") {
+		t.Errorf("残したことを出す:\n%s", out.String())
+	}
+
+	// 片方(秘密鍵)だけ残っているときも、-f が無ければ止め、-f ならあるほうだけ残す
+	dir2 := t.TempDir()
+	c2 := serverConfig{StatePath: filepath.Join(dir2, stateFileName)}
+	os.WriteFile(filepath.Join(dir2, keyFileName), oldKey, 0o600)
+	if err := runCert(io.Discard, c2, []string{"my-pc.local"}); err == nil {
+		t.Error("秘密鍵だけでもあれば止める")
+	}
+	if err := runCert(io.Discard, c2, []string{"-f", "my-pc.local"}); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := filepath.Glob(filepath.Join(dir2, "*.pem.*")); len(b) != 1 || !strings.Contains(b[0], keyFileName) {
+		t.Errorf("あったほうだけ残す: %v", b)
+	}
+}
+
+// 同じ秒に残す先がもうあれば、上書きせずに止める(今のファイルはそのまま)
+func TestBackupFilesExists(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, certFileName)
+	os.WriteFile(p, []byte("now"), 0o644)
+	now := time.Now()
+	os.WriteFile(p+"."+now.Format(backupStamp), []byte("before"), 0o644)
+	if _, err := backupFiles([]string{p}, now); err == nil || !strings.Contains(err.Error(), "もうあります") {
+		t.Errorf("残す先があれば止める: %v", err)
+	}
+	if b, _ := os.ReadFile(p); string(b) != "now" {
+		t.Error("今のファイルを動かさない")
 	}
 }
 

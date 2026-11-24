@@ -2,7 +2,7 @@ package main
 
 // cert.go: 自己署名の証明書を作るコマンド(0017 の決定事項 2。10-2)。
 //
-//	aibow-server [-config 設定ファイル] cert <ホスト名か IP アドレス>...
+//	aibow-server [-config 設定ファイル] cert [-f] <ホスト名か IP アドレス>...
 //
 // HTTPS では、サーバーが「自分は本当にこのアドレスのサーバーだ」という証明書を見せ、通信を暗号化する鍵を決める。
 // ふつうの証明書は、ブラウザや OS が信頼している認証局に保証(署名)してもらう。社内の PC などでは手間がかかるので、
@@ -14,6 +14,8 @@ package main
 //
 // 標準ライブラリ(crypto/x509)だけで作る(openssl などの道具を入れなくてよいように)。
 // 証明書(server-cert.pem)と秘密鍵(server-key.pem)は設定ファイルの隣に書く。秘密鍵は人に渡さない。
+// もうあれば止める。-f を付けると作り直し、今のファイルは名前の後ろに日時を付けて残す(server-cert.pem.20261124153000。
+// 消してしまうと、古い証明書に戻せず、どの証明書をいつまで使っていたかも分からなくなるため。2026-11-24、ユーザーと決めた)。
 //
 // 作ったあと、server.json に貼る tlsCert・tlsKey の2行をコンソールに出す(0058)。server.json は人が手で書くファイルなので、
 // コマンドは書き換えず「見せる」だけにする(並び順やほかの欄の書き方を崩さないため)。今の設定と違うときだけ一言添える。
@@ -27,6 +29,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"math/big"
@@ -48,30 +51,50 @@ const (
 	keyFileName  = "server-key.pem"
 	// certDays は証明書の有効な日数。ブラウザが受け付ける長さ(398 日まで)に収める。切れたら作り直す
 	certDays = 397
+	// backupStamp は、-f で作り直すときに今のファイルの名前の後ろに付ける日時の形(yyyymmddhhmmss)
+	backupStamp = "20060102150405"
 )
 
 const certUsage = `使い方:
-  aibow-server [-config 設定ファイル] cert <ホスト名か IP アドレス>...
-  例: aibow-server cert 192.168.1.10 my-pc.local`
+  aibow-server [-config 設定ファイル] cert [-f] <ホスト名か IP アドレス>...
+  例: aibow-server cert 192.168.1.10 my-pc.local
+  -f  証明書と秘密鍵がもうあっても作り直す(今のファイルは server-cert.pem.20261124153000 のように日時を付けて残す)`
 
-// runCert は cert のコマンドを実行する。hosts はほかの PC からつなぐときに使う名前とアドレス(127.0.0.1 と localhost は足す)。
-// 案内は w に書く(run からは標準出力。テストでは中身を確かめる)。
-func runCert(w io.Writer, c serverConfig, hosts []string) error {
+// runCert は cert のコマンドを実行する。args は cert の後ろの引数(-f と、ほかの PC からつなぐときに使う名前とアドレス。
+// 127.0.0.1 と localhost は足す)。案内は w に書く(run からは標準出力。テストでは中身を確かめる)。
+func runCert(w io.Writer, c serverConfig, args []string) error {
+	fs := flag.NewFlagSet("cert", flag.ContinueOnError)
+	fs.SetOutput(io.Discard) // 使い方は下のエラーに付ける(flag の英語の説明を出さない)
+	force := fs.Bool("f", false, "")
+	if err := fs.Parse(args); err != nil {
+		return fmt.Errorf("cert の引数が読めません(%v)\n%s", err, certUsage)
+	}
+	hosts := fs.Args()
 	if len(hosts) == 0 {
 		return errors.New("証明書に書くホスト名か IP アドレスを1つ以上書いてください(ほかの PC からつなぐときのアドレス)\n" + certUsage)
 	}
 	dir := filepath.Dir(c.StatePath)
 	certPath, keyPath := filepath.Join(dir, certFileName), filepath.Join(dir, keyFileName)
+	var existing []string
 	for _, p := range []string{certPath, keyPath} {
 		if _, err := os.Stat(p); err == nil {
-			return fmt.Errorf("%s はもうあります。作り直すときは、先に削除してください(使っているアプリの serverCert も、新しいものに替えます)", p)
+			existing = append(existing, p)
 		}
 	}
-	certPEM, keyPEM, err := selfSigned(append(hosts, "127.0.0.1", "localhost"), time.Now())
+	if len(existing) > 0 && !*force {
+		return fmt.Errorf("%s はもうあります。作り直すときは、-f を付けて実行してください(今のファイルは名前の後ろに日時を付けて残します。使っているアプリは、新しい証明書を信頼し直します)", strings.Join(existing, "・"))
+	}
+	now := time.Now()
+	certPEM, keyPEM, err := selfSigned(append(hosts, "127.0.0.1", "localhost"), now)
 	if err != nil {
 		return err
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	// 新しい証明書が作れてから、今のファイルを退ける(作れなかったときに、今の証明書を無くさないように)
+	backups, err := backupFiles(existing, now)
+	if err != nil {
 		return err
 	}
 	if err := os.WriteFile(keyPath, keyPEM, 0o600); err != nil { // 秘密鍵はほかの人に読ませない
@@ -87,6 +110,13 @@ func runCert(w io.Writer, c serverConfig, hosts []string) error {
 	fmt.Fprintf(w, "証明書: %s\n秘密鍵: %s\n", certAbs, keyAbs)
 	block, _ := pem.Decode(certPEM)
 	fmt.Fprintf(w, "証明書のフィンガープリント(SHA-256): %s\n", auth.Fingerprint(block.Bytes))
+	if len(backups) > 0 {
+		abs := make([]string, len(backups))
+		for i, b := range backups {
+			abs[i] = absPath(b)
+		}
+		fmt.Fprintf(w, "前のファイルは %s に名前を変えて残しました(要らなければ削除してください。古い秘密鍵も人に渡さない)。\n", strings.Join(abs, "・"))
+	}
 
 	// server.json は resolve でもう読めているが、何と書いてあったか(引数・環境変数と混ざる前の値)は残していないので読み直す。
 	// cert のためだけに起動の設定(serverConfig)を広げないため
@@ -112,6 +142,25 @@ func runCert(w io.Writer, c serverConfig, hosts []string) error {
 	fmt.Fprintln(w, "画面のアプリからつなぐときは、初めてつなぐときに出るフィンガープリントがこのフィンガープリントと同じかを確かめて、信頼します(起動のときのログにも出ます)。")
 	fmt.Fprintln(w, "settings.json に手で書くときは、アプリの PC に証明書(秘密鍵ではない)だけを写し、serverCert に書きます。")
 	return nil
+}
+
+// backupFiles は、-f で作り直すときに、今のファイルの名前の後ろに日時(yyyymmddhhmmss)を付けて残す。
+// 同じ名前がもうあれば(同じ秒に2回作り直したなど)、上書きせずに止める(Windows の os.Rename は、あるファイルへは名前を変えられない)。
+func backupFiles(paths []string, now time.Time) ([]string, error) {
+	stamp := now.Format(backupStamp)
+	var done []string
+	for _, p := range paths {
+		to := p + "." + stamp
+		if _, err := os.Stat(to); err == nil {
+			return done, fmt.Errorf("%s を残す先 %s がもうあります。少し待ってから実行し直してください", p, to)
+		}
+		if err := os.Rename(p, to); err != nil {
+			return done, fmt.Errorf("%s を %s に名前を変えられません(ほかのアプリが開いていないか確かめてください): %w", p, to, err)
+		}
+		log.Noticef("前の %s を %s に名前を変えて残しました", filepath.Base(p), to)
+		done = append(done, to)
+	}
+	return done, nil
 }
 
 // tlsState は、server.json の TLS の設定が、作った証明書から見てどうなっているか(0058 の決定事項 6)。
