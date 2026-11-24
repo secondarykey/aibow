@@ -1,6 +1,6 @@
 # 0062: ワークスペースごとの一覧で、会話の無いワークスペースを出すかを切り替える
 
-- 状態: ⬜ 未着手
+- 状態: 🔧 作業中(画面での確認待ち)
 - ロードマップ: ロードマップの外(画面の改善。0038 の続き)
 - 決めた日: 2026-11-24(Chat でユーザーと決めた。Chat がコード(`_cmd/aibow/frontend/src/conversationGroups.ts`・`components/ConversationList.tsx`・`stored.ts`)と `_docs/ui.md` を読んで、今の作りを確かめた)
 - 前提: 0035(ワークスペース)、0038(会話の一覧の並べ方。決定事項 4 で「会話の無いワークスペースも、「+」で始められるよう名前の順で後ろに出す」と決めていた)、0055(検索・非アクティブ)
@@ -40,6 +40,15 @@
 ## 未決事項
 
 1. メニューの1行の文言とアイコン(案:「会話の無いワークスペースも出す」にチェック)。Code が画面で案を示してユーザーに確かめる
+
+## 経過
+
+- 2026-11-25:実装した(`stored.ts` の `STORED_LIST_SHOW_EMPTY_WORKSPACES`・`conversationGroups.ts` の `useShowEmptyWorkspaces` と `groupByWorkspace` の `showEmpty`・
+  `ConversationList.tsx` の `GroupingMenu`・`style.css` の `.menu-sep`)。Code が決めたこと:
+  - チェックの行を押しても**メニューは閉じない**(決定事項 2 で任された)。一覧に出る / 消えるのを見ながら続けて戻せるように。並べ方の2行は今までどおり閉じる
+  - 区切りは `.split-menu .menu-sep`(1px の線。`role="separator"`)。チェックは並べ方の行と同じ `LuCheck` を左の欄に出す(アイコンは足さない)
+  - 文言は案のまま「会話の無いワークスペースも出す」(未決事項 1。画面でユーザーに確かめる)
+  - 検索中は `groupByWorkspace` に `showEmpty && q === ""` を渡す。開いている会話のワークスペースを変えた直後(override)は、移った先に会話が入るので切り替えによらず出る(決定事項 6。作りは今のまま)
 
 ## 完了の条件
 

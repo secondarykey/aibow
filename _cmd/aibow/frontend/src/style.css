@@ -254,6 +254,7 @@ footer.home .composer textarea { line-height: 1.5; min-height: calc(3 * 1.5em + 
   font-size: 12.5px; white-space: nowrap;
 }
 .split-menu button:hover { background: var(--bg); }
+.split-menu .menu-sep { height: 1px; margin: 4px 6px; background: var(--border); }
 .mermaid-svg { overflow-x: auto; text-align: center; }
 .mermaid-svg svg { max-width: 100%; height: auto; }
 .mermaid-note { margin: 0 0 4px; font-size: 12.5px; color: var(--muted); }

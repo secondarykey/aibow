@@ -16,7 +16,7 @@ aibow に残っている課題の一覧(入口)。ルールと全体の構成は
 | ⬜ | コマンドの出力を途中から見せる(go test などの実行中に、出力を流して見せる) | [検討メモ](_docs/backlog.md#コマンドの出力を途中から見せる) |
 | ⬜ | 裏で要約する(返事を書き終えたあと、次に備えて2つ目の作業領域で要約しておく) | [検討メモ](_docs/backlog.md#裏で要約する) |
 | 🔧 | ワークスペースの作り方・確認のカード・実行中の表示を見直す | [0049-ui-review.md](_docs/features/0049-ui-review.md) |
-| ⬜ | ワークスペースごとの一覧で、会話の無いワークスペースを出すかを切り替える(既定は出さない) | [0062-hide-empty-workspaces.md](_docs/features/0062-hide-empty-workspaces.md) |
+| 🔧 | ワークスペースごとの一覧で、会話の無いワークスペースを出すかを切り替える(既定は出さない) | [0062-hide-empty-workspaces.md](_docs/features/0062-hide-empty-workspaces.md) |
 | ⬜ | 会話の検索(部分一致・全文検索・意味の近さ) | [0003-search.md](_docs/features/0003-search.md)(検討メモ) |
 | ⬜ | KV キャッシュの使い回しを良くする | [検討メモ](_docs/backlog.md#kv-キャッシュの使い回しを良くする) |
 

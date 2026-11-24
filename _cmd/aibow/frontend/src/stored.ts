@@ -17,6 +17,8 @@ export const STORED_LIST_GROUPING = "aibow.listGrouping";
 export const STORED_LIST_GROUPS_CLOSED = "aibow.listGroupsClosed";
 // STORED_LIST_INACTIVE_OPEN は、一覧の下の「非アクティブ」の折りたたみを開いているか(0055。既定は閉じている)
 export const STORED_LIST_INACTIVE_OPEN = "aibow.listInactiveOpen";
+// STORED_LIST_SHOW_EMPTY_WORKSPACES は、ワークスペースごとのときに会話の無いワークスペースも出すか(0062。既定は出さない)
+export const STORED_LIST_SHOW_EMPTY_WORKSPACES = "aibow.listShowEmptyWorkspaces";
 
 export function loadStored(key: string): string | null {
   try {
