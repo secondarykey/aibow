@@ -1,6 +1,6 @@
 # 0058: 証明書を作ったら、server.json に貼る TLS の設定を出す
 
-- 状態: ✅ 完了(2026-11-24。貼った server.json で HTTPS で起動するところは、まだユーザーが確かめていない。完了の条件 3)
+- 状態: ✅ 完了(2026-11-24。貼った server.json で HTTPS で起動するところも 2026-11-24 にユーザーが確かめた)
 - ロードマップ: ロードマップの外(使い勝手の直し。0017 の 10-2 の続き)
 - 決めた日: 2026-11-23(Chat でユーザーと決めた。Chat がコード(`_cmd/aibow-server/cert.go`・`config.go`・`config/server.go`)を読んで、今の作りを確かめた)
 - 前提: 0017(`aibow-server cert`・`tlsCert`・`tlsKey`。決定事項 2)、0057(証明書を作り直したあとにアプリで信頼し直す)
@@ -127,3 +127,4 @@ JSON の形(欄の名前・`\` の書き方)を自分で組み立てる必要が
 - 2026-11-24(Code):ユーザーの指示で、作り直す `-f` を足した(決定事項 12)。`runCert` は cert の後ろの引数を受け取り、自分の `flag.FlagSet` で `-f` を読む。今のファイルを退けるのは `backupFiles`。
   テストは `TestRunCertForce`(作り直し・日時の形・中身・片方だけあるとき)・`TestBackupFilesExists`(残す先があれば止める)と、`TestRunCert` に「`-f` を案内する」「知らない引数は使い方を添えて断る」を足した。
   一時フォルダで `cert` → `cert`(止まる)→ `cert -f` を動かし、`server-cert.pem.20261124094603`・`server-key.pem.20261124094603` が残ることを見た。usage.md・setup.md に書いた
+- 2026-11-24(ユーザー):完了の条件 3(出した2行を貼った server.json で aibow-server が HTTPS で起動する)を確かめた。TODO.md の「確かめていないこと」の行を消した
