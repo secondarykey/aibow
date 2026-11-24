@@ -41,7 +41,7 @@ import { useMenuDismiss } from "./SplitButton";
 import { toggleMaximiseOnDoubleClick } from "./TitleBar";
 import type { Conversation, ConversationRef } from "../../bindings/github.com/secondarykey/aibow";
 import type { WorkspaceView } from "../../bindings/github.com/secondarykey/aibow/ui";
-import { groupByWorkspace, itemTitle, LIST_GROUPINGS, matchItem, mergeList, useClosedGroups, useInactiveOpen, useListGrouping, useListQuery } from "../conversationGroups";
+import { groupByWorkspace, itemTitle, LIST_GROUPINGS, matchItem, mergeList, useClosedGroups, useInactiveOpen, useListGrouping, useListQuery, useShowEmptyWorkspaces } from "../conversationGroups";
 import { unappliedCount } from "../worktree";
 import type { ConversationGroup, ListGrouping, ListItem } from "../conversationGroups";
 import type { Ended } from "../useChat";
@@ -122,13 +122,18 @@ export function ConversationList({
   const active = useMemo(() => matched.filter(it => !it.inactive), [matched]);
   const inactive = useMemo(() => matched.filter(it => it.inactive), [matched]);
 
-  // 並べ方(0038)。ワークスペースごとのときだけ、まとまりを作る。非アクティブの会話はまとまりから抜き、下の折りたたみに入れる(決定事項 18)
+  // 並べ方(0038)。ワークスペースごとのときだけ、まとまりを作る。非アクティブの会話はまとまりから抜き、下の折りたたみに入れる(決定事項 18)。
+  // 会話の無いワークスペースは、切り替えたときだけ出す。探している間は、当たった会話が埋もれないよう切り替えによらず出さない(0062)
   const [grouping, setGrouping] = useListGrouping();
+  const [showEmpty, setShowEmpty] = useShowEmptyWorkspaces();
   const groups = useMemo(
     () => grouping === "workspace"
-      ? groupByWorkspace(active, workspaces, currentId !== null && currentWorkspace !== null ? { id: currentId, workspace: currentWorkspace } : undefined)
+      ? groupByWorkspace(
+        active, workspaces, showEmpty && q === "",
+        currentId !== null && currentWorkspace !== null ? { id: currentId, workspace: currentWorkspace } : undefined,
+      )
       : [],
-    [grouping, active, workspaces, currentId, currentWorkspace],
+    [grouping, active, workspaces, showEmpty, q, currentId, currentWorkspace],
   );
   const [closed, setClosed] = useClosedGroups();
   useRevealGroups(groups, selectedId, generatingId, renamingId, currentWorkspace, closed, setClosed);
@@ -324,7 +329,7 @@ export function ConversationList({
       <div className="nav-top" onDoubleClick={toggleMaximiseOnDoubleClick}>
         {menu}
         {/* 並べ方はワークスペースでまとめるためのもの。ブラウザの会話はワークスペースを使わないので出さない(0038) */}
-        {!isBrowser && <GroupingMenu value={grouping} onChange={setGrouping} />}
+        {!isBrowser && <GroupingMenu value={grouping} onChange={setGrouping} showEmpty={showEmpty} onShowEmpty={setShowEmpty} />}
       </div>
       {/* 一覧の一番上の行:新規(アイコンだけ)と検索ボックス(0055 の未決事項 3) */}
       <div className="new-row">
@@ -353,8 +358,12 @@ export function ConversationList({
 }
 
 // GroupingMenu は、一覧の並べ方を選ぶメニュー(0038)。ボタンは今の並べ方のアイコン。押すと下に並べ方の一覧を出す
-// (2つだけでも切り替えのボタンにしないのは、プロジェクトごとの表示などを足せるようにするため)
-function GroupingMenu({ value, onChange }: { value: ListGrouping; onChange(g: ListGrouping): void }) {
+// (2つだけでも切り替えのボタンにしないのは、プロジェクトごとの表示などを足せるようにするため)。
+// ワークスペースごとのときは、区切りの下に「会話の無いワークスペースも出す」の切り替えを出す(0062。新しい順では意味が無いので出さない)。
+// 切り替えはメニューを閉じない(押した結果が一覧に出るのを見ながら、続けて戻せるように)
+function GroupingMenu({ value, onChange, showEmpty, onShowEmpty }: {
+  value: ListGrouping; onChange(g: ListGrouping): void; showEmpty: boolean; onShowEmpty(show: boolean): void;
+}) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   useMenuDismiss(open, () => setOpen(false), box);
@@ -372,6 +381,15 @@ function GroupingMenu({ value, onChange }: { value: ListGrouping; onChange(g: Li
               {g.label}
             </button>
           ))}
+          {value === "workspace" && (
+            <>
+              <div className="menu-sep" role="separator" />
+              <button role="menuitemcheckbox" aria-checked={showEmpty} onClick={() => onShowEmpty(!showEmpty)}>
+                <span className="grouping-check">{showEmpty && <LuCheck />}</span>
+                会話の無いワークスペースも出す
+              </button>
+            </>
+          )}
         </div>
       )}
     </div>

@@ -14,7 +14,7 @@ import { useSyncExternalStore } from "react";
 import type { Conversation, ConversationRef } from "../bindings/github.com/secondarykey/aibow";
 import type { WorkspaceView } from "../bindings/github.com/secondarykey/aibow/ui";
 import { isBrowser } from "./backend";
-import { loadStored, saveStored, STORED_LIST_GROUPING, STORED_LIST_GROUPS_CLOSED, STORED_LIST_INACTIVE_OPEN } from "./stored";
+import { loadStored, saveStored, STORED_LIST_GROUPING, STORED_LIST_GROUPS_CLOSED, STORED_LIST_INACTIVE_OPEN, STORED_LIST_SHOW_EMPTY_WORKSPACES } from "./stored";
 
 // ListItem は一覧の1行。自分の会話(own)か、ほかの人に共有された会話(shared。押すと読むだけで開く)
 export type ListItem =
@@ -143,6 +143,23 @@ export function useInactiveOpen(): [boolean, (open: boolean) => void] {
   return [useSyncExternalStore(subscribe, getInactiveOpen), setInactiveOpen];
 }
 
+// ワークスペースごとのときに、会話の無いワークスペースも出すか(0062。既定は出さない。PC ごとに覚える)。
+// ワークスペースが増えると会話の無い見出しだけで一覧が埋まるので、既定は少なく見せる側にし、出したいときだけ並べ方のメニューで出す
+let showEmpty: boolean | null = null;
+const getShowEmpty = (): boolean => (showEmpty ??= loadStored(STORED_LIST_SHOW_EMPTY_WORKSPACES) === "true");
+
+function setShowEmpty(show: boolean) {
+  if (getShowEmpty() === show) return;
+  showEmpty = show;
+  saveStored(STORED_LIST_SHOW_EMPTY_WORKSPACES, show ? "true" : null); // 既定(出さない)は覚えない
+  emit();
+}
+
+// useShowEmptyWorkspaces は、会話の無いワークスペースも出すかと、それを変える関数
+export function useShowEmptyWorkspaces(): [boolean, (show: boolean) => void] {
+  return [useSyncExternalStore(subscribe, getShowEmpty), setShowEmpty];
+}
+
 // 検索ボックスの文字(0055)。狭いウィンドウで一覧の部品が2つ描かれても同じ文字を見るよう、部品の外に1つだけ持つ。覚えない(起動し直すと空)
 let query = "";
 const getQuery = () => query;
@@ -160,13 +177,17 @@ export function useListQuery(): [string, (q: string) => void] {
 
 // groupByWorkspace は、会話をワークスペースごとにまとめる。list は新しい順に並んでいるので、まとまりの中もその順のまま。
 //
-//   ワークスペース(この PC にあるもの) … 中のいちばん新しい会話の順。会話の無いワークスペースも、「+」で始められるよう名前の順で後ろに出す
+//   ワークスペース(この PC にあるもの) … 中のいちばん新しい会話の順。showEmpty なら、会話の無いワークスペースも「+」で始められるよう
+//                                          名前の順で後ろに出す(0062。list はアクティブの会話だけなので、会話が全部非アクティブのものも「会話の無い」側)
 //   ワークスペースなし                   … 決めていない会話(ふつうのチャット)と、ほかの人に共有された会話(ワークスペースは自分の PC のもので、
 //                                          ほかの人の会話には無い。0055 の決定事項 13)。あるときだけ
 //   この PC に無いワークスペース        … 別の PC で選んだ・消したワークスペースの会話(名前はその PC の workspaces.json にしか無いので、1つにまとめる)。あるときだけ
 //
-// override は、一覧を読み直す前の会話の設定(開いている会話で、入力欄の上のワークスペースを変えたとき。すぐに移すため)
-export function groupByWorkspace(list: ListItem[], workspaces: WorkspaceView[], override?: { id: string; workspace: string }): ConversationGroup[] {
+// override は、一覧を読み直す前の会話の設定(開いている会話で、入力欄の上のワークスペースを変えたとき。すぐに移すため。
+// 移った先には会話が1つあるので、showEmpty によらず出る)
+export function groupByWorkspace(
+  list: ListItem[], workspaces: WorkspaceView[], showEmpty: boolean, override?: { id: string; workspace: string },
+): ConversationGroup[] {
   const known = new Map(workspaces.map(w => [w.id, w]));
   const byWorkspace = new Map<string, ListItem[]>(); // 入れた順 = いちばん新しい会話の順
   const none: ListItem[] = [];
@@ -187,8 +208,10 @@ export function groupByWorkspace(list: ListItem[], workspaces: WorkspaceView[], 
     list: l,
   });
   for (const [id, l] of byWorkspace) add(known.get(id)!, l);
-  const empty = workspaces.filter(w => !byWorkspace.has(w.id)).sort((a, b) => a.name.localeCompare(b.name));
-  for (const w of empty) add(w, []);
+  if (showEmpty) {
+    const empty = workspaces.filter(w => !byWorkspace.has(w.id)).sort((a, b) => a.name.localeCompare(b.name));
+    for (const w of empty) add(w, []);
+  }
   if (none.length > 0) {
     groups.push({ key: "none", label: "ワークスペースなし", title: "ワークスペースを決めていない会話と、共有された会話", workspace: "", list: none });
   }
