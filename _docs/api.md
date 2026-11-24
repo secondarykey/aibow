@@ -140,7 +140,7 @@ data: [DONE]
   `/v1/chat/completions` の前の数えるところで失敗したときも同じ code を入れる
 - 画面のアプリ(`api/client` を使う側)は、`/models/unload`・`/_aibow/gpu-layers`・`/_aibow/places/*` を使わない。`/_aibow/settings` も作業領域しか画面に渡さない(2026-10-22、ユーザーと決めた。0015 の 21)。
   これらはサーバーの PC の事情を変える API で、サーバーの PC の人が curl などで呼ぶもの。誰が呼んでよいか(管理者だけにする)はステップ10で決める
-- `/_aibow/settings` は表示だけのサーバーの設定(作業領域・ポート・llama.cpp の場所・最初のモデル・設定ファイルの場所)。変えるのは `server.json` と起動し直し(0015 の 21)
+- `/_aibow/settings` は表示だけのサーバーの設定(作業領域・ポート・llama.cpp の場所・最初のモデル・設定ファイルの場所)。変えるのは `server.json` と起動し直し(0015 の 21。並列数・作業領域はブラウザの管理の画面からも server.json に書ける。0061)
 
 ### `/v1/chat/completions` に足した欄
 
@@ -233,8 +233,13 @@ Cline など ──HTTP──→ /v1/ など → api.Server ──────�
   - MCP のサーバー(`server.json` の `mcpServers`)と管理者の既定(`server-tools.json`)は [mcp.md](mcp.md) の「aibow-server の MCP のサーバー」。
     既定を見る `ToolPrefs`・`ToolDefaults`・`BuiltinTools` は誰でも呼べ(既定のファイルの場所は管理者にだけ返す)、変える `SetToolPolicy`・`SetGroupPolicy`・`LoadToolList` は管理者だけ(ほかの人は 403)
   - 資料のフォルダ(0024 の 12-2):`Folders` は `server.json` の `folders` の名前だけを返す。会話の詳細(`Conversation`)の `folder` はその会話で使えるフォルダの名前。
-    パスはどの返事にも入れない。資料のフォルダのある会話では、コマンドのツール(`run_command`)をモデルにも画面にも出さない(`ui.noCommand`・`forBrowser`)
-- **作業領域**:起動のときに決めた大きさで固定。会話の上限 + 返事の上限が入るかを確かめるだけで、作り直さない(`ui.ServerHost`。aibow-server につないだ画面のアプリと同じ `ContextError`)
+    パスは、下の管理者だけのメソッドのほかはどの返事にも入れない。資料のフォルダのある会話では、コマンドのツール(`run_command`)をモデルにも画面にも出さない(`ui.noCommand`・`forBrowser`)
+- **並列数・作業領域・資料のフォルダ**(0061。`ui/serverconfig.go`。管理者だけ:`adminServerMethods`。ほかの人は 403):
+  `ServerSettings`(並列数と作業領域の今動いている値 `running`・次の起動の値 `next`・変えられない理由 `lock`、今の1本あたりの作業領域 `perSeq`、書き戻す `server.json` の場所、資料のフォルダの名前・パス・選んでいるプロファイル `usedBy`)・
+  `SaveServerSettings(parallel, ctx)`(server.json に書く。次の起動から効く)・`AddServerFolder(name, path)`・`SetServerFolderPath(name, path)`・`RemoveServerFolder(name)`(server.json に書き、その場で効く。選んでいるプロファイルがあれば消せない)。
+  書き方は `config.SaveServerFile`(画面で変えた鍵だけを差し替え、ほかの鍵は並びも値も残す・読めないファイルには書かない・一時ファイルから置き換える・書く前の中身を `server.json.bak` に残す)。
+  `-parallel`・`-ctx` の引数か、`AIBOW_SERVER_PARALLEL`・`AIBOW_SERVER_CTX` で決めた値は、server.json に書いても効かないか環境変数を黙って上書きするので、`lock` に理由を入れて変えさせない(どこから来たかは aibow-server の `resolve` が覚える)
+- **作業領域**:起動のときに決めた大きさで固定(管理の画面で変えても、起動し直すまで変わらない。0061)。会話の上限 + 返事の上限が入るかを確かめるだけで、作り直さない(`ui.ServerHost`。aibow-server につないだ画面のアプリと同じ `ContextError`)
 - **見せるもの**は、aibow-server につないだ画面のアプリと同じ:モデルの一覧(名前・大きさ・読み込み中か)・作業領域の大きさ・つなぎ先(aibow-server のアドレス)。Cline などのためにモデルを入れ替えている途中は、前のモデルを見せ続ける(`ServerHost`。api/client の `Shown` と同じ)。出どころ・置き場所・層の数・サーバーの PC のパスは見せない
 - 実際に動かして確かめたこと(2026-10-22。qwen3.5:4b・9b):Cline の形のリクエストを 9B で送っている間にブラウザから送ると、「待っています」が届き、
   Cline の返事のあとで会話のモデル(4B)を読み直して答えた。aibow-server を起動し直しても会話が残っていた
