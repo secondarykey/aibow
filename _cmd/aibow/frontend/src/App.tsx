@@ -172,11 +172,15 @@ export default function App() {
   // StrictMode では effect が2回呼ばれるので、1回だけにする(2回だと会話が2つ作られることがある)
   const started = useRef(false);
   const restored = useRef(false); // 起動時に最後の会話を開き終えたか(開いている会話を覚え始める合図)
+  // 起動時に会話を読めなかったか(aibow-server が止まっていた)。読めないと、最後の会話も開かず、新しい会話の画面の設定(draft)も無いまま
+  // (送信できず、プロファイルも選べない)になるので、つながったときに起動時の読み込みからやり直す(下の effect)
+  const initFailed = useRef(false);
   useEffect(() => {
     if (started.current) return;
     started.current = true;
     (async () => {
       const initErr = await convs.init(loadStored(STORED_LAST_CONVERSATION)).then(() => null, (err: unknown) => err);
+      initFailed.current = initErr !== null;
       restored.current = true;
       const ok = await models.reload().catch(err => {
         addError(`モデル一覧を取得できません: ${errorMessage(err)}`);
@@ -190,9 +194,13 @@ export default function App() {
     })();
   }, [convs.init, models.reload, app.reload, addError]);
 
-  // aibow-server につながったら(起動したときに止まっていた・途中で止まった)、読めなかった設定と会話の一覧を読み直す
+  // aibow-server につながったら(起動したときに止まっていた・途中で止まった)、読めなかった設定と会話の一覧を読み直す。
+  // 起動時に会話を読めず、まだ何も開いていない(会話も新しい会話の画面の設定も無い)ままなら、起動時と同じく最後の会話を開く
+  // (一覧だけを読み直すと、一覧は出ても送信できない画面のまま残り、「+ 新規」を押すまで抜けられなかった)
   const serverError = models.serverError;
   const wasDown = useRef(false);
+  const emptyScreen = useRef(false);
+  emptyScreen.current = convs.current === null && convs.draft === null;
   useEffect(() => {
     if (serverError) {
       wasDown.current = true;
@@ -201,8 +209,16 @@ export default function App() {
     if (!wasDown.current) return;
     wasDown.current = false;
     app.reload().catch(err => addError(`設定を読み込めません: ${errorMessage(err)}`));
+    if (initFailed.current && emptyScreen.current) {
+      convs.init(loadStored(STORED_LAST_CONVERSATION)).then(
+        () => { initFailed.current = false; },
+        err => addError(`会話を読み込めません: ${errorMessage(err)}`),
+      );
+      return;
+    }
+    initFailed.current = false; // 会話を開いた・新しい会話の画面に移ったあとは、やり直さない(利用者が選んだ画面を変えない)
     convs.reloadList().catch(err => addError(`会話を読み込めません: ${errorMessage(err)}`));
-  }, [serverError, app.reload, convs.reloadList, addError]);
+  }, [serverError, app.reload, convs.init, convs.reloadList, addError]);
 
   // 会話で選べる MCP のサーバー(settings.json に書いたもの全部)。起動したときと、ツールの扱い(確認しない)を変えたときに読む
   const [mcpServers, setMcpServers] = useState<ServerInfo[]>([]);
