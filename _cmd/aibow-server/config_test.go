@@ -38,13 +38,68 @@ func TestResolveOrder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := serverConfig{Port: 9000, Ctx: 16384, Parallel: 2, Model: "env-model", Lib: "arg-lib", ModelsDir: "models", Host: "127.0.0.1", Login: true, ProxyHeader: "X-Forwarded-For",
-		File: path, StatePath: filepath.Join(dir, stateFileName), DBPath: filepath.Join(dir, dbFileName), ToolsPath: filepath.Join(dir, toolsFileName)}
+	want := serverConfig{Port: 9000, Ctx: 16384, Parallel: 2, CtxFrom: fromFile, ParallelFrom: fromFile, CtxFallback: defaultCtx, ParallelFallback: 3,
+		Model: "env-model", Lib: "arg-lib", ModelsDir: "models", Host: "127.0.0.1", Login: true, ProxyHeader: "X-Forwarded-For",
+		File: path, ConfigPath: path, StatePath: filepath.Join(dir, stateFileName), DBPath: filepath.Join(dir, dbFileName), ToolsPath: filepath.Join(dir, toolsFileName)}
 	if !reflect.DeepEqual(c, want) {
 		t.Errorf("設定:\n got  %+v\n want %+v", c, want)
 	}
 	if len(notices) != 1 || !strings.Contains(notices[0], "AIBOW_API_PORT") {
 		t.Errorf("古い環境変数の注意: %q", notices)
+	}
+}
+
+// 並列数・作業領域がどこから来たか(0061 の決定事項 6)。引数・環境変数から来た値は、管理の画面で変えられない
+func TestResolveSource(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, configFileName)
+	os.WriteFile(path, []byte(`{"ctx": 16384}`), 0o644)
+	for _, tc := range []struct {
+		name                  string
+		args                  []string
+		envParallel           string
+		parallel, ctx         source
+		parallelLock, ctxLock string
+	}{
+		{"引数", []string{"-parallel", "2", "-ctx", "8192"}, "", fromArg, fromArg, "-parallel", "-ctx"},
+		{"環境変数(server.json に無い)", nil, "3", fromEnv, fromFile, "AIBOW_SERVER_PARALLEL", ""},
+		{"既定", nil, "", fromDefault, fromFile, "", ""},
+	} {
+		t.Setenv("AIBOW_SERVER_PARALLEL", tc.envParallel)
+		t.Setenv("AIBOW_SERVER_CTX", "4096") // server.json の ctx に負ける
+		fs := flag.NewFlagSet("test", flag.ContinueOnError)
+		f := defineFlags(fs)
+		if err := fs.Parse(append([]string{"-config", path}, tc.args...)); err != nil {
+			t.Fatal(err)
+		}
+		var env config.Env
+		c, _, err := resolve(fs, f, &env)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if c.ParallelFrom != tc.parallel || c.CtxFrom != tc.ctx {
+			t.Errorf("%s: 出どころ %v %v", tc.name, c.ParallelFrom, c.CtxFrom)
+		}
+		pl := lockReason(c.ParallelFrom, "parallel", "AIBOW_SERVER_PARALLEL")
+		cl := lockReason(c.CtxFrom, "ctx", "AIBOW_SERVER_CTX")
+		if (tc.parallelLock == "") != (pl == "") || !strings.Contains(pl, tc.parallelLock) || (tc.ctxLock == "") != (cl == "") || !strings.Contains(cl, tc.ctxLock) {
+			t.Errorf("%s: 変えられない理由 %q %q", tc.name, pl, cl)
+		}
+	}
+	// 設定ファイルが無いときも、書き戻す場所は探した場所
+	t.Setenv("AIBOW_SERVER_PARALLEL", "")
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	f := defineFlags(fs)
+	fs.Parse(nil)
+	t.Setenv("APPDATA", dir)
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	var env config.Env
+	c, _, err := resolve(fs, f, &env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.File != "" || c.ConfigPath != filepath.Join(dir, "aibow", configFileName) {
+		t.Errorf("無いとき: File %q ConfigPath %q", c.File, c.ConfigPath)
 	}
 }
 

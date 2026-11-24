@@ -80,9 +80,15 @@ func startBrowser(c serverConfig, initial aibow.AppSettings, st *store.SQLite, g
 		Host:  ui.NewServerHost(gen, mm, nCtx, url),
 		Store: st, App: app, Version: appversion.Version(),
 		Notify: events, Seat: seat, Local: local, MCP: mcpm, Prefs: prefs, Browser: true, Folders: c.Folders,
+		// 管理の画面で変える並列数・作業領域(0061)。引数・環境変数で決めた値は変えられない(理由の文はここで作る)
+		Server: &ui.ServerConfig{
+			Path:     absPath(c.ConfigPath),
+			Parallel: ui.ServerValue{Running: c.Parallel, Fallback: c.ParallelFallback, Lock: lockReason(c.ParallelFrom, "parallel", "AIBOW_SERVER_PARALLEL")},
+			Ctx:      ui.ServerValue{Running: c.Ctx, Fallback: c.CtxFallback, Lock: lockReason(c.CtxFrom, "ctx", "AIBOW_SERVER_CTX")},
+		},
 	})
 	if len(c.Folders) > 0 {
-		log.Noticef("資料のフォルダ: %s(server.json の folders。管理者が配布するプロファイルで選ぶと、その会話で読み書きできます)",
+		log.Noticef("資料のフォルダ: %s(server.json の folders。管理者が配布プロファイルで選ぶと、その会話で読み書きできます。管理の画面のプロファイルのタブで足す・変える・消せます)",
 			strings.Join(slices.Sorted(maps.Keys(c.Folders)), ", "))
 	}
 	life.Start() // 起動のときのモデルは main が読み込んだので、ここでは読み込まない(Initial を渡していない)

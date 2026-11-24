@@ -178,6 +178,69 @@ export interface ModelsResult {
 }
 
 /**
+ * ServerFolder は資料のフォルダ1つ。パスはサーバーの PC のもので、管理者にだけ返す(決定事項 10)。
+ */
+export interface ServerFolder {
+    "name": string;
+    "path": string;
+
+    /**
+     * Missing は、フォルダが今は無いか(起動したあとに消された・動かされた)
+     */
+    "missing": boolean;
+
+    /**
+     * UsedBy は、このフォルダを選んでいるプロファイルの名前(あれば消せない)
+     */
+    "usedBy": string[] | null;
+}
+
+/**
+ * ServerSettingsView は、管理の画面に出すサーバーの設定(ServerSettings の戻り値)。
+ */
+export interface ServerSettingsView {
+    /**
+     * File は書き戻す server.json の場所(サーバーの PC のパス)。Found はそのファイルが今あるか(無ければ保存したときに作る)
+     */
+    "file": string;
+    "found": boolean;
+
+    /**
+     * FileError は、server.json を読めないときの理由(手で書き間違えたなど)。そのあいだは保存できない
+     */
+    "fileError"?: string;
+
+    /**
+     * Parallel は並列数、Ctx は作業領域の大きさ
+     */
+    "parallel": ServerValueView;
+    "ctx": ServerValueView;
+
+    /**
+     * PerSeq は、今動いている1本あたりの作業領域(1つの会話・リクエストが使えるのはここまで。0023 の決定事項 11)
+     */
+    "perSeq": number;
+
+    /**
+     * Folders は資料のフォルダ(名前の順)
+     */
+    "folders": ServerFolder[] | null;
+}
+
+/**
+ * ServerValueView は、並列数か作業領域の、今動いている値と次の起動の値。
+ */
+export interface ServerValueView {
+    "running": number;
+
+    /**
+     * Next は server.json に書いてある値(次に起動したときの値。書いていなければ環境変数か既定)
+     */
+    "next": number;
+    "lock"?: string;
+}
+
+/**
  * ToolPolicyChange は、ツールの扱いの既定の変更1つ(画面の「保存」でまとめて送る。0053 の決定事項 7)。
  * Group ならグループ(Name が空なら組み込み、そうでなければ MCP のサーバーの名前)、そうでなければツール(モデルに見せる名前)。
  * Policy が空なら、決めていない状態に戻す。

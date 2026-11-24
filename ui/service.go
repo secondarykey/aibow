@@ -96,8 +96,11 @@ type Options struct {
 	//   - 利用者は会話の設定で「確認しない」を足せない(足せるのは確認のカードから。決定事項 3・18)
 	//   - 作業フォルダの代わりに、配るプロファイルで選んだ資料のフォルダ(Folders)を使う。コマンドのツールは出さない(12-2。決定事項 5)
 	Browser bool
-	// Folders は aibow-server の資料のフォルダ(server.json の folders。名前 → 絶対パス。Browser のときだけ使う。0024 の 12-2)
+	// Folders は aibow-server の資料のフォルダ(server.json の folders。名前 → 絶対パス。Browser のときだけ使う。0024 の 12-2)。
+	// 管理の画面で足す・変える・消すと、その場で差し替わる(0061)
 	Folders map[string]string
+	// Server は、管理の画面で変える aibow-server の設定(並列数・作業領域と、書き戻す server.json。0061)。Browser のときだけ
+	Server *ServerConfig
 	// WaitLogin は、ログインするまで aibow-server を呼ばないか(デスクトップのアプリが、ログインの要る aibow-server にトークンなしで起動したとき。0051 の決定事項 6)。
 	// 起動のときの引き継ぎ(プロファイル・会話の上限とモデル・作業フォルダの移し)をせず、ログインしたあと(Lifecycle.LoggedIn)に行う。
 	// 呼べば断られるだけで、aibow-server のログに「…断りました」が並ぶため
@@ -161,9 +164,14 @@ type Service struct {
 	// seat は生成の順番待ちの席(nil なら待たない)
 	seat Seat
 
-	// browser は、aibow-server の中のブラウザの会話か(Options.Browser)。folders はその資料のフォルダの名前(名前の順)
-	browser bool
-	folders []string
+	// browser は、aibow-server の中のブラウザの会話か(Options.Browser)。folders はその資料のフォルダ(名前 → 絶対パス)。
+	// 管理の画面で差し替えるので folderMu で守る。folderEditMu は、読んでから server.json に書くまでを1つにする(serverconfig.go。0061)
+	browser      bool
+	folderMu     sync.RWMutex
+	folders      map[string]string
+	folderEditMu sync.Mutex
+	// server は、管理の画面で変える aibow-server の設定(ブラウザだけ。serverconfig.go)
+	server *ServerConfig
 	// waits は、確認を待っている送信を打ち切るタイマー(確認の ID → タイマー。ブラウザだけ)。答えたら止める
 	waitMu sync.Mutex
 	waits  map[string]*time.Timer
@@ -181,7 +189,7 @@ func New(o Options) (*Service, Lifecycle) {
 	s := &Service{
 		host: o.Host, app: o.App, initial: o.Initial, notices: o.Notices, startupErr: o.StartupErr, notify: o.Notify, seat: o.Seat,
 		quit: quit, cancelQuit: cancel, mcp: o.MCP, prefs: o.Prefs, mcpConfig: o.MCPConfig, workspaces: o.Workspaces, version: o.Version,
-		browser: o.Browser, waits: map[string]*time.Timer{}, folders: slices.Sorted(maps.Keys(o.Folders)), waitLogin: o.WaitLogin,
+		browser: o.Browser, waits: map[string]*time.Timer{}, folders: maps.Clone(o.Folders), server: o.Server, waitLogin: o.WaitLogin,
 	}
 	if d, ok := o.Host.(*DirectHost); ok {
 		d.s = s // アプリモードは、GPU の層数をアプリの DB(Service が持つ設定)に覚える

@@ -62,6 +62,13 @@ export function AddModelPlace(path: string): $CancellablePromise<models$0.Place[
 }
 
 /**
+ * AddServerFolder は、資料のフォルダを足す(その場で効き、配布プロファイルで選べるようになる)。
+ */
+export function AddServerFolder(name: string, path: string): $CancellablePromise<ui$0.ServerFolder[] | null> {
+    return $Call.ByID(1937772417, name, path);
+}
+
+/**
  * AllMCPServers は settings.json に書いた MCP のサーバー全部(設定の画面の「ツール」に出す)。
  */
 export function AllMCPServers(): $CancellablePromise<client$0.ServerInfo[] | null> {
@@ -296,6 +303,7 @@ export function DisconnectServer(): $CancellablePromise<void> {
 /**
  * Folders は aibow-server の資料のフォルダの名前(名前の順。パスは返さない)。配るプロファイルで選ぶ(0024 の 12-2)。
  * 名前は誰でも見られる(どのフォルダを使えるかは、配られたプロファイルで決まる)。アプリモードのときは空。
+ * パスも見る管理の画面は ServerSettings(管理者だけ。0061)。
  */
 export function Folders(): $CancellablePromise<string[] | null> {
     return $Call.ByID(2760372572);
@@ -447,6 +455,13 @@ export function RemoveModelPlace(path: string): $CancellablePromise<models$0.Pla
 }
 
 /**
+ * RemoveServerFolder は、資料のフォルダを消す。選んでいるプロファイルがあれば断る(決定事項 10)。
+ */
+export function RemoveServerFolder(name: string): $CancellablePromise<ui$0.ServerFolder[] | null> {
+    return $Call.ByID(1938866768, name);
+}
+
+/**
  * RenameConversation は会話のタイトルを変える。空にはできない。
  */
 export function RenameConversation(id: uuid$0.UUID, title: string): $CancellablePromise<void> {
@@ -496,6 +511,14 @@ export function SaveProfile(p: aibow$0.Profile, tools: ui$0.ToolPolicyChange[] |
 }
 
 /**
+ * SaveServerSettings は、並列数と作業領域を server.json に書く(管理の画面の「保存」。次の起動から効く。決定事項 2・9)。
+ * 次の起動の値と同じ項目は書かない。変えた項目は Notice のログに1行(0053)。
+ */
+export function SaveServerSettings(parallel: number, nCtx: number): $CancellablePromise<ui$0.ServerSettingsView> {
+    return $Call.ByID(4284655460, parallel, nCtx);
+}
+
+/**
  * SaveToProfile は、会話の今の設定でプロファイルの値を上書きする(会話の設定の画面の「プロファイルに保存」)。
  */
 export function SaveToProfile(conv: uuid$0.UUID, profile: uuid$0.UUID): $CancellablePromise<void> {
@@ -539,6 +562,13 @@ export function ServerLogFile(): $CancellablePromise<string> {
  */
 export function ServerLogLevel(): $CancellablePromise<string> {
     return $Call.ByID(2792991696);
+}
+
+/**
+ * ServerSettings は、並列数・作業領域・資料のフォルダの今の様子を返す。server.json はそのつど読み直す(手で書き換えたときも、次の起動の値が分かるように)。
+ */
+export function ServerSettings(): $CancellablePromise<ui$0.ServerSettingsView> {
+    return $Call.ByID(4118038093);
 }
 
 /**
@@ -663,6 +693,13 @@ export function SetProfileArchived(id: uuid$0.UUID, archived: boolean): $Cancell
  */
 export function SetProfileShare(id: uuid$0.UUID, share: string, $with: string[] | null, groups: string[] | null): $CancellablePromise<void> {
     return $Call.ByID(2853156393, id, share, $with, groups);
+}
+
+/**
+ * SetServerFolderPath は、資料のフォルダのパスを変える(名前はそのまま。そのフォルダを使う会話は、次のツールの実行から新しいパス)。
+ */
+export function SetServerFolderPath(name: string, path: string): $CancellablePromise<ui$0.ServerFolder[] | null> {
+    return $Call.ByID(445168701, name, path);
 }
 
 /**

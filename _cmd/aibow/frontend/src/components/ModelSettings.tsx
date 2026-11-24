@@ -10,6 +10,7 @@
 //
 // ブラウザでは、設定の画面のモデルのタブはだれにも一覧だけを出し(listOnly)、管理者とログインなしの形のブラウザ(models.manage。0046)には、
 // 管理の画面のモデルのタブで、アプリモードのときと同じもの(操作)を出す(0018 の決定事項 8・0032 の決定事項 6)。置き場所はサーバーの PC のパスを書く(ブラウザからはサーバーの PC のフォルダを選べないので、選ぶボタンは出さない)。
+// 管理の画面では、表示だけだった作業領域の欄の代わりに、並列数と作業領域を変える欄を出す(ServerConfig.tsx。0061)。
 import { useCallback, useEffect, useState } from "react";
 import { LuCircleCheck, LuFile, LuFileX, LuFolder, LuFolderX, LuInfo, LuLock, LuPlus, LuX } from "react-icons/lu";
 import { ChatService } from "../backend";
@@ -20,6 +21,7 @@ import type { Models } from "../useModels";
 import { NumberInput } from "./ConversationSettingsForm";
 import { errorMessage } from "../errors";
 import { isBrowser } from "../backend";
+import { ServerRunSettings } from "./ServerConfig";
 
 interface Props {
   models: Models;
@@ -83,9 +85,12 @@ export function ModelSettings({ models, listOnly, disabled, onError }: Props) {
       <PlaceList places={places} server={!!models.server} onRemove={p => changePlaces(() => ChatService.RemoveModelPlace(p))} />
       <AddPlace onAdd={p => changePlaces(() => ChatService.AddModelPlace(p))} onError={onError} />
 
-      {settings && (models.server
-        ? <RemoteSettings server={models.server} nCtx={settings.settings.n_ctx} />
-        : <HostSettings s={settings} />)}
+      {isBrowser
+        // ブラウザの管理の画面では、並列数と作業領域を変えられる(server.json に書き、起動し直すと切り替わる。0061)
+        ? <ServerRunSettings onError={onError} />
+        : settings && (models.server
+          ? <RemoteSettings server={models.server} nCtx={settings.settings.n_ctx} />
+          : <HostSettings s={settings} />)}
     </>
   );
 }

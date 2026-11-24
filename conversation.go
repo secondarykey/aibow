@@ -125,8 +125,9 @@ type Conversations struct {
 	noWorkDir bool
 	// workspaces は、その PC のワークスペース(workspaces.json。0035)。nil なら何も登録していない扱い(SetWorkspaces)
 	workspaces *config.Workspaces
-	// folders は aibow-server の資料のフォルダ(名前 → 絶対パス。SetFolders)
-	folders map[string]string
+	// folders は aibow-server の資料のフォルダ(名前 → 絶対パス。SetFolders)。管理の画面で起動のあとにも差し替えるので、foldersMu で守る(0061)
+	foldersMu sync.RWMutex
+	folders   map[string]string
 }
 
 // pendingConfirm は答えを待っている確認1つ。

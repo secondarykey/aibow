@@ -2,7 +2,9 @@ package config
 
 // server.go: aibow-server の手で書く設定ファイル(server.json)。
 //
-// 形はアプリの settings.json と同じ考え方で、手で書き、aibow-server は書かない。読むのは起動したときだけ。
+// 形はアプリの settings.json と同じ考え方で、手で書く。aibow-server が読むのは起動したときだけ。
+// aibow-server が書くのは、管理の画面で変えた並列数(parallel)・作業領域(ctx)・資料のフォルダ(folders)の3つだけ
+// (ほかの鍵は残したまま差し替える。書く前の中身は server.json.bak に残す。serverwrite.go。0061)。
 // 引数・環境変数と合わせて強さの順(引数 > 設定ファイル > 環境変数 > 既定)で決めるのは aibow-server の側(_cmd/aibow-server の config.go)で、
 // ここは「ファイルに何と書いてあるか」を読んで確かめるところまで。
 // アプリの settings.json と分けているのは、サーバーの PC とアプリの PC が別になりうるため(ステップ10)。

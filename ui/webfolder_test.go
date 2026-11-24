@@ -26,7 +26,7 @@ type folderWeb struct {
 	profile           aibow.Profile // alice が bob に配った、docs を選んだプロファイル
 }
 
-func newFolderWeb(t *testing.T) *folderWeb {
+func newFolderWeb(t *testing.T, opts ...func(*Options)) *folderWeb {
 	t.Helper()
 	// フォルダの名前は、ほかの値(時刻・ID)にたまたま出てこないものにする。パスを画面に見せていないかを、名前が返事に無いことで確かめるため
 	// (t.TempDir の名前は「001」などで、時刻の「39.001909」にたまたま入ってテストが落ちることがあった)
@@ -35,7 +35,8 @@ func newFolderWeb(t *testing.T) *folderWeb {
 		t.Fatal(err)
 	}
 	os.WriteFile(filepath.Join(dir, "README.md"), []byte("# 仕様の置き場\n合言葉は「みかん」\n"), 0o644)
-	w := &folderWeb{testWeb: newTestWeb(t, func(o *Options) { o.Folders = map[string]string{"docs": dir} }), dir: dir}
+	opts = append([]func(*Options){func(o *Options) { o.Folders = map[string]string{"docs": dir} }}, opts...)
+	w := &folderWeb{testWeb: newTestWeb(t, opts...), dir: dir}
 	now := time.Now()
 	add := func(name string, admin bool) *uuid.UUID {
 		u := auth.User{ID: uuid.NewV7(), Name: name, Admin: admin, CreatedAt: now, UpdatedAt: now}

@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"uuid"
 
@@ -253,14 +254,21 @@ func (p *Profile) GrantedFolder() string {
 	return p.Rules.Folder
 }
 
-// SetFolders は、aibow-server の資料のフォルダ(名前 → 絶対パス)を決める(ブラウザの会話。0024 の 12-2)。起動のときに1回。
+// SetFolders は、aibow-server の資料のフォルダ(名前 → 絶対パス)を決める(ブラウザの会話。0024 の 12-2)。
+// 起動のときと、管理の画面でフォルダを足す・パスを変える・消したとき(0061)。渡した map は写して持つ。
+// パスを変えると、そのフォルダを使う会話は、次のツールの実行から新しいパスになる(ツールは呼び出しのたびに toolsFor で引き直すため)。
+// 実行中のツールは前のパスのまま終わる。
 func (cs *Conversations) SetFolders(folders map[string]string) {
-	cs.folders = folders
+	cs.foldersMu.Lock()
+	defer cs.foldersMu.Unlock()
+	cs.folders = maps.Clone(folders)
 }
 
 // folderOf は、会話の設定 set(プロファイルの決まりを当てたもの)で使える資料のフォルダの名前とパス。無ければ空。
 func (cs *Conversations) folderOf(set ConversationSettings) (name, path string) {
 	name = set.profile.GrantedFolder()
+	cs.foldersMu.RLock()
+	defer cs.foldersMu.RUnlock()
 	if p, ok := cs.folders[name]; ok && name != "" {
 		return name, p
 	}

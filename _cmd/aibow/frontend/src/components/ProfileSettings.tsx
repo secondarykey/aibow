@@ -37,6 +37,7 @@ import { errorMessage } from "../errors";
 import { asSettings, valuesPatch, type Lock } from "../profileRules";
 import { ConversationSettingsForm, LimitsForm } from "./ConversationSettingsForm";
 import { ProfileTools } from "./ProfileTools";
+import { onFoldersChanged } from "./ServerConfig";
 
 interface Props {
   models: ModelEntry[];
@@ -371,7 +372,9 @@ function ProfileEditor({ profile, info, distributed, models, servers, onChange, 
 function FolderField({ profile, onChange, onError }: { profile: Profile; onChange(f: (p: Profile) => Profile): void; onError(text: string): void }) {
   const [names, setNames] = useState<string[]>([]);
   useEffect(() => {
-    ChatService.Folders().then(n => setNames(n ?? []), err => onError(errorMessage(err)));
+    const load = () => { ChatService.Folders().then(n => setNames(n ?? []), err => onError(errorMessage(err))); };
+    load();
+    return onFoldersChanged(load); // 管理の画面で資料のフォルダを足した・消したら取り直す(0061)
   }, [onError]);
   const folder = profile.rules.folder ?? "";
   if (names.length === 0 && !folder) return null;
