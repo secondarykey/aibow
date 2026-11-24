@@ -101,6 +101,17 @@ export default function App() {
   useEffect(() => {
     setListOpen(!narrow && wideListOpen());
   }, [narrow]);
+  // 設定・管理の画面を開いている間は、広いときも一覧を畳んだ細い列にする(会話の外にいることを、一覧の出方で見せる。0063 の決定事項 2・9)。
+  // 覚えている開け閉め(listOpen と STORED_LIST_OPEN)は変えず、渡す値だけを変えるので、閉じて会話に戻ると開く前の開け閉めに戻る。
+  // その間にハンバーガーを押したら、そのときだけ一覧を開く(peek。決定事項 10)。設定・管理を閉じた・開き直したら戻す
+  const offChat = settingsOpen || adminOpen;
+  const [peek, setPeek] = useState(false);
+  useEffect(() => setPeek(false), [offChat]);
+  // 広いときに会話の横に出す一覧が開いているか(狭いときは listOpen を overlay で重ねて出すので、今のまま。決定事項 12)
+  const wideOpen = !narrow && (offChat ? peek : listOpen);
+  // shownOpen は、今見えている一覧が開いているか。setShown はそれを開け閉めする(F2 で名前を変えるために開くときなど。覚えない)
+  const shownOpen = narrow ? listOpen : wideOpen;
+  const setShown = (open: boolean) => (!narrow && offChat ? setPeek(open) : setListOpen(open));
   const overlay = narrow && listOpen;
   // 重ねて出している一覧は、会話を選ぶ・「+ 新規」・「設定」を押したら閉じる(選んだものが見えるように)
   const closeOverlay = () => {
@@ -285,20 +296,20 @@ export default function App() {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "F2" || e.isComposing || currentId === null || unavailable || renamingId !== null) return;
       e.preventDefault();
-      if (!listOpen) {
+      if (!shownOpen) {
         openedForRename.current = true;
-        setListOpen(true);
+        setShown(true);
       }
       setRenamingId(currentId);
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [currentId, unavailable, renamingId, listOpen]);
+  }, [currentId, unavailable, renamingId, shownOpen, narrow, offChat]);
   const endRename = () => {
     setRenamingId(null);
     if (openedForRename.current) {
       openedForRename.current = false;
-      setListOpen(false);
+      setShown(false);
     }
   };
 
@@ -831,11 +842,18 @@ export default function App() {
     onToggleAdmin: toggleAdmin,
     onOpenAccount: openAccount,
     onToggleOpen: () => {
+      // 設定・管理の画面を開いている間に開け閉めするのは、そのときだけ(覚えない。0063 の決定事項 10)
+      if (!narrow && offChat) {
+        setPeek(!peek);
+        return;
+      }
       // 自分で開け閉めしたときだけ覚える(狭くなって自動で閉じた・F2 のために開いた、は覚えない)。
       // 狭いときに重ねて出す一覧は、そのときだけのものなので覚えない
       if (!narrow) saveStored(STORED_LIST_OPEN, String(!listOpen));
       setListOpen(!listOpen);
     },
+    // 設定・管理の画面を開いている間は、開いている会話を選んだ色にしない(その会話の設定を触っているように見えないように。決定事項 11)
+    showCurrent: !offChat,
     width: listWidth.width,
     shared,
     readingId: reading?.conversation.id ?? null,
@@ -852,8 +870,8 @@ export default function App() {
   return (
     <ServerContext.Provider value={server}>
       {/* 狭いときは、ここ(会話の横)はいつも畳んだ細い列で、開いた一覧は下の overlay に重ねて出す */}
-      <ConversationList {...listProps} open={listOpen && !narrow} />
-      {listOpen && !narrow && (
+      <ConversationList {...listProps} open={wideOpen} />
+      {wideOpen && (
         <Splitter width={listWidth.width} onResize={listWidth.set} onCommit={listWidth.commit} onReset={listWidth.reset} />
       )}
       <div className="workspace">

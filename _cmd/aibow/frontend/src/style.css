@@ -487,8 +487,8 @@ nav.conversations.collapsed .settings.active { color: var(--accent); }
 /* 管理の画面の盾(0032)。歯車の左に並べ、歯車の代わりに右へ寄せる */
 nav.conversations .footer .admin { margin-left: auto; }
 nav.conversations .footer .admin + .settings { margin-left: 0; }
-nav.conversations .admin.active { background: var(--bg); border-color: var(--accent); }
-nav.conversations.collapsed .admin.active { color: var(--accent); }
+/* 管理の画面を開いている間の盾は、管理の画面と同じ注意の色(0063 の決定事項 15。今どこにいるかを入口でも見せる) */
+nav.conversations .admin.active { background: var(--bg); border-color: var(--warn); color: var(--warn); }
 .conversation { display: flex; align-items: center; border-radius: 6px; margin-bottom: 2px; }
 .conversation:hover, .conversation.current { background: var(--bg); }
 .conversation.current .title { font-weight: 600; }
@@ -584,6 +584,18 @@ nav.conversations ul.grouped .conversation { margin-left: 12px; }
 .settings-header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
 .settings-header h1 { font-size: 16px; margin: 0; flex: 1; display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .settings-header .back { display: flex; align-items: center; gap: 6px; }
+/* 管理の画面(0063 の決定事項 3・14):上の端に注意の色の細い帯と、見出しの前の盾。設定・会話の設定の画面には付けない(色の意味を薄めないため) */
+.settings-view.admin { border-top: 3px solid var(--warn); }
+.settings-header h1 .admin-mark { align-self: center; flex-shrink: 0; color: var(--warn); }
+/* 効く範囲の帯(0063 の決定事項 5・6)。見出し(タブがあればタブ)のすぐ下に、控えめな1行で出す。管理の画面では注意の色 */
+.scope-note {
+  display: flex; gap: 6px; margin: 0 0 12px; padding: 6px 10px; border-radius: 6px;
+  font-size: 12px; line-height: 1.6; color: var(--muted);
+  background: var(--bg); border-left: 3px solid var(--border);
+}
+.scope-note .icon { flex-shrink: 0; margin-top: 3px; }
+.scope-note.admin { background: color-mix(in srgb, var(--warn) 8%, transparent); border-left-color: var(--warn); }
+.scope-note.admin .icon { color: var(--warn); }
 /* 設定の画面のタブ(基本設定 / 会話)。選んでいるタブに下線を引く */
 .settings-tabs { display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 1px solid var(--border); }
 .settings-tab {
@@ -624,6 +636,7 @@ nav.conversations ul.grouped .conversation { margin-left: 12px; }
   position: sticky; bottom: 0; z-index: 5; display: flex; gap: 8px; justify-content: flex-end;
   margin-top: 16px; padding: 10px 0; background: var(--panel); border-top: 1px solid var(--border);
 }
+.save-bar .save-scope { align-self: center; font-size: 12px; color: var(--warn); } /* ほかの人に効く保存の添え書き(0063 の決定事項 8) */
 .save-bar.dirty { box-shadow: 0 -4px 12px rgba(0, 0, 0, .08); border-top-color: var(--accent); }
 /* 保存していない変更の知らせ(0053)。画面全体を覆って、選ぶまでほかを押させない */
 .unsaved-overlay {

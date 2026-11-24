@@ -82,7 +82,7 @@ export function ServerRunSettings({ onError }: { onError(text: string): void }) 
           aibow-server を起動し直すと切り替わります
         </p>
       )}
-      <SaveBar dirty={dirty} saving={saving} blocked={v.fileError ? "設定ファイルを直すまで保存できません" : undefined}
+      <SaveBar dirty={dirty} saving={saving} blocked={v.fileError ? "設定ファイルを直すまで保存できません" : undefined} scope="全員に効きます"
         onSave={() => { save().catch(() => {}); }} onCancel={discard} />
     </>
   );

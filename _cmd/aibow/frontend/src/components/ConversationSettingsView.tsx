@@ -23,6 +23,7 @@ import { useDirectory } from "../directory";
 import { CONVERSATION_WORDS, SharePicker } from "./SharePicker";
 import { CopyButton } from "./CopyButton";
 import { ScreenErrors } from "./ScreenErrors";
+import { ScopeNote } from "./ScopeNote";
 
 interface Props {
   id: string;                             // 会話の ID(UUIDv7。ログや DB を調べるときの手がかり)
@@ -207,6 +208,8 @@ export function ConversationSettingsView({ id, title, onRename, settings, models
           </h1>
           <button className="back" onClick={onClose} title="会話の設定を閉じて、会話に戻る"><LuArrowLeft /> 会話に戻る</button>
         </div>
+        {/* 効く範囲の帯(0063)。同じ入力欄が設定の画面(プロファイル)と管理の画面(配布プロファイル)にもあるので、ここはこの会話だけと書く */}
+        <ScopeNote text={`この会話「${title}」だけに効きます。ほかの会話とプロファイルは変わりません`} />
         <ScreenErrors errors={errors} />
 
         <TitleField title={title} onRename={onRename} />

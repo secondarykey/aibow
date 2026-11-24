@@ -223,7 +223,7 @@ export function ProfileSettings({ models, servers, disabled, onTryLimits, onErro
       onShare={(share, users, groups) => act(() => ChatService.SetProfileShare(edit.id, share, users, groups), edit.id)}
       onSetDefault={distributed ? undefined : () => setDefault(edit.id)}
       onError={onError}
-      saveBar={<SaveBar dirty={dirty} saving={saving} blocked={dirty ? blocked : undefined} onSave={() => { save().catch(() => {}); }} onCancel={cancel} />}
+      saveBar={<SaveBar dirty={dirty} saving={saving} blocked={dirty ? blocked : undefined} scope={distributed ? "配布した相手全員に効きます" : undefined} onSave={() => { save().catch(() => {}); }} onCancel={cancel} />}
     />
   );
 

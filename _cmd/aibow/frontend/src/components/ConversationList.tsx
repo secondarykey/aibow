@@ -67,6 +67,7 @@ interface Props {
   canAdmin: boolean;     // 管理の画面の盾を出すか(ログインした管理者か、ログインなしの形のブラウザ。0046)
   onToggleAdmin(): void; // 歯車の隣の盾で、管理の画面を開く / 閉じる
   open: boolean; // 一覧を開いているか
+  showCurrent: boolean; // 開いている会話の行を選んだ色にするか(設定・管理の画面を開いている間は付けない。0063 の決定事項 11)
   onToggleOpen(): void;
   width: number; // 開いているときの幅(px)。一覧の右の仕切り(Splitter)で変えられる
   shared: ConversationRef[]; // ほかの人に共有された会話(0018 の 11-2。自分の会話と同じ一覧に混ぜる。0055)
@@ -82,7 +83,7 @@ interface Props {
 
 export function ConversationList({
   list, currentId, generatingId, waitingId, ended, disabled, onOpen, onNew, onDelete, onRename, renamingId, onStartRename, onEndRename,
-  settingsOpen, onToggleSettings, onOpenAccount, adminOpen, canAdmin, onToggleAdmin, open, onToggleOpen, width, shared, readingId, onOpenShared,
+  settingsOpen, onToggleSettings, onOpenAccount, adminOpen, canAdmin, onToggleAdmin, open, showCurrent, onToggleOpen, width, shared, readingId, onOpenShared,
   onSetInactive, workspaces, currentWorkspace, onNewIn, server, serverError,
 }: Props) {
   // 削除の確認を出している会話。消すと戻せないので、もう一度押してもらう
@@ -96,6 +97,8 @@ export function ConversationList({
   };
   // 読むだけで開いている間は、その行を選んでいる見た目にする(後ろに残っている自分の会話は選んでいる見た目にしない)
   const selectedId = readingId ?? currentId;
+  // 選んだ色を付ける行(設定・管理の画面を開いている間は無し)。まとまりを開く・非アクティブの折りたたみを開くのは selectedId のまま
+  const markedId = showCurrent ? selectedId : null;
 
   const markOf = (id: string): Mark | null =>
     id === generatingId ? (id === waitingId ? "waiting" : "generating") : ended[id] ?? null;
@@ -153,7 +156,8 @@ export function ConversationList({
   };
 
   const settingsCls = settingsOpen ? "settings active" : "settings";
-  // 管理の画面の入口(盾)。管理できる人にだけ、歯車の隣に出す(0032 の決定事項 5)
+  // 管理の画面の入口(盾)。管理できる人にだけ、歯車の隣に出す(0032 の決定事項 5)。
+  // 管理の画面を開いている間は注意の色にする(ほかの人に効く画面にいることを、入口でも見せる。0063 の決定事項 15。色は style.css)
   const adminBtn = canAdmin && (
     <button className={"icon-btn admin" + (adminOpen ? " active" : "")} title="管理" onClick={onToggleAdmin}><LuShield /></button>
   );
@@ -189,7 +193,7 @@ export function ConversationList({
     const title = itemTitle(it);
     const generating = c.id === generatingId;
     const mark = markOf(c.id);
-    const cls = ["conversation", c.id === selectedId && "current", generating && "generating"].filter(Boolean).join(" ");
+    const cls = ["conversation", c.id === markedId && "current", generating && "generating"].filter(Boolean).join(" ");
     if (renamingId === c.id) {
       return (
         <li key={c.id} className={cls + " editing"}>
@@ -255,7 +259,7 @@ export function ConversationList({
     const r = it.r;
     const title = itemTitle(it);
     return (
-      <li key={r.id} className={"conversation shared" + (r.id === selectedId ? " current" : "")}>
+      <li key={r.id} className={"conversation shared" + (r.id === markedId ? " current" : "")}>
         <button className="title" title={sharedTooltip(title, r)} onClick={() => onOpenShared(r.id)}>
           <span className="title-text">{title}</span>
           <LuShare2 className="share-mark received" />

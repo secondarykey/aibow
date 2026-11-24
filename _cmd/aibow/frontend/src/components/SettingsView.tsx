@@ -28,6 +28,7 @@ import type { Entry as ModelEntry } from "../../bindings/github.com/secondarykey
 import { ScreenErrors } from "./ScreenErrors";
 import { LogSettings } from "./LogSettings";
 import { useUnsaved } from "../unsaved";
+import { ScopeNote } from "./ScopeNote";
 
 interface Props {
   onClose(): void;                        // 会話に戻る
@@ -70,6 +71,30 @@ const TABS: { id: Tab; label: string; title: string }[] = [
   { id: "account", label: "アカウント", title: "自分の表示名・メールアドレス・パスワード・ログアウト" },
 ];
 
+// scopeOf は、タブごとの効く範囲の帯の文(0063 の決定事項 7)。モデルのタブは、一覧だけのとき(ブラウザ・サーバーモード)は変えられないことを書く。
+// 基本設定の画面の設定は利用者ごとに保存する(ブラウザではログインした人のもの)ので、ブラウザでは「このブラウザ」ではなく自分のものと書く
+function scopeOf(tab: Tab, models: Models): string {
+  switch (tab) {
+    case "basic":
+      return isBrowser ? "自分の画面の見た目に効きます(ほかのブラウザで開いても同じです)" : "このアプリの見た目とログに効きます";
+    case "model":
+      return isBrowser || (!!models.server && !models.manage)
+        ? "使えるモデルの一覧です。ここでは変えられません"
+        : "この PC のモデルに効きます。読み込み・アンロードはすぐ効きます";
+    case "conversation":
+      return "これから作る自分の会話の既定です。今ある会話の設定は変わりません(固定・使えないの決まりは、そのプロファイルから作った会話にすぐ効きます)";
+    case "workspace":
+    case "mcp":
+      return "この PC の、全部の会話に効きます";
+    case "server":
+      return "このアプリのつなぎ先です。起動し直すと切り替わります";
+    case "groups":
+      return "自分が長のグループのメンバーに効きます";
+    case "account":
+      return "自分のアカウントに効きます";
+  }
+}
+
 // appMcpAPI は、アプリの「MCP」のタブが呼ぶ口(mcp.json。0034)。aibow-server の分を作るときは、ここを替えた口を McpEditor に渡す
 const appMcpAPI: McpEditorAPI = {
   list: () => ChatService.MCPServerList(),
@@ -111,6 +136,7 @@ export function SettingsView({ onClose, errors, app, models, modelState, servers
             </button>
           ))}
         </div>
+        <ScopeNote text={scopeOf(tab, modelState)} />
 
         {tab === "basic" && (
           <>

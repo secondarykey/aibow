@@ -168,7 +168,7 @@ export function ServerTools({ servers, manage, onChanged }: {
         );
       })}
       {prefs?.path && <p className="hint tool-path" title="ブラウザから使う会話のツールの扱いの保存先(aibow-server の PC)">{prefs.path}</p>}
-      {manage && <SaveBar dirty={dirty} saving={saving} onSave={() => { save().catch(() => {}); }} onCancel={() => setPending([])} />}
+      {manage && <SaveBar dirty={dirty} saving={saving} scope="全員に効きます" onSave={() => { save().catch(() => {}); }} onCancel={() => setPending([])} />}
     </div>
   );
 }
