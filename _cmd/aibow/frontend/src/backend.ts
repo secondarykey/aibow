@@ -79,6 +79,8 @@ export interface Me {
   canLogout?: boolean;
   // lastUser は、アプリがログインし直すときにログインの画面に入れておく名前(最後にログインした名前)
   lastUser?: string;
+  // offline は、アプリが起動したときに aibow-server につながらなかったので、ログインの画面にしたときのつなぎ先(ログインの画面に理由を出す)
+  offline?: string;
 }
 
 // AdminUser は、利用者の管理の一覧の1人(Go の _cmd/aibow-server の adminUser)。パスワードと API キーは、あるかだけ

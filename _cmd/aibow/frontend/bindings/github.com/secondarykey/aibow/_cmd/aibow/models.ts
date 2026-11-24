@@ -25,6 +25,11 @@ export interface AccountInfo {
     "lastUser": string;
 
     /**
+     * Offline は、起動のときに aibow-server につながらなかったのでログインの画面にしたときの、つなぎ先(つながったなら空)
+     */
+    "offline": string;
+
+    /**
      * CanLogout は、ログアウトできるか(画面でログインしたとき。settings.json に手で書いた API キーではログアウトしない)
      */
     "canLogout": boolean;

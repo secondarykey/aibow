@@ -144,6 +144,13 @@ function Login({ expired, onDone, onOpenSettings }: { expired: boolean; onDone()
             <span>もう一度ログインしてください(ログインの期限が切れました)</span>
           </div>
         )}
+        {/* 起動したときに aibow-server につながらず、ログインできているかを確かめられなかったとき(デスクトップのアプリだけ。2026-11-24) */}
+        {!expired && me.offline && (
+          <div className="restart-note login-expired" role="status">
+            <LuTriangleAlert className="icon" />
+            <span>aibow-server が起動しているか確かめてから、ログインしてください({me.offline} につながりません)</span>
+          </div>
+        )}
         <input
           type="text" placeholder="名前" aria-label="名前" autoComplete="username" autoFocus
           value={name} onChange={e => setName(e.target.value)}

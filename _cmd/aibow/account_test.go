@@ -181,3 +181,72 @@ func TestWaitLogin(t *testing.T) {
 		t.Errorf("戻したあと: %+v %v(呼んだ回数 %d)", a, err, keyCalls)
 	}
 }
+
+// 起動のときに aibow-server につながらなければ、ログインできているかを確かめられないので、
+// ログインの要る aibow-server だと分かっていれば(トークンを持っている・前にログインした)、トークンがあってもログインの画面で待つ。
+// 分からなければ(ログインの要らない aibow-server かもしれない)待たない(2026-11-24)
+func TestWaitLoginOffline(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "server.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	hash, _ := auth.HashPassword("bob-password-1")
+	now := time.Now()
+	if err := st.CreateUser(context.Background(), auth.User{ID: uuid.NewV7(), Name: "bob", Password: hash, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	sessions, keys := auth.NewSessions(st), auth.NewKeys(st)
+	mux := http.NewServeMux()
+	mux.Handle("/_aibow/auth/", keys.WithBearer(auth.Handler(sessions, true)))
+	mux.Handle("GET /_aibow/auth/key", keys.MeHandler(true))
+	down := true // aibow-server が止まっている(何を呼んでも断る)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if down {
+			http.Error(w, "止まっています", http.StatusServiceUnavailable)
+			return
+		}
+		mux.ServeHTTP(w, r)
+	}))
+	defer srv.Close()
+
+	start := func(file config.ConnectionFile, key string) *connection {
+		t.Helper()
+		conn := newConnection(appConfig{connPath: filepath.Join(t.TempDir(), "connection.json"), serverSource: serverScreen, serverURL: srv.URL, conn: file})
+		conn.client = apiclient.New(srv.URL)
+		conn.client.SetKey(key)
+		return conn
+	}
+
+	// ログインの要るかが分からない(トークンも、ログインした記録も無い):待たない
+	if start(config.ConnectionFile{ServerURL: srv.URL}, "").checkLogin("") {
+		t.Error("ログインの要る形か分からないのに、ログインを待っている")
+	}
+	// 前にログインした(ログアウトして名前だけが残っている):待つ
+	known := config.ConnectionFile{ServerURL: srv.URL, Known: &config.KnownServer{URL: srv.URL, User: "bob"}}
+	if !start(known, "").checkLogin("") {
+		t.Error("前にログインしたつなぎ先なのに、ログインを待たない")
+	}
+
+	// トークンを持っている:待ち、ログインの画面に、つながらなかったつなぎ先を出す
+	conn := start(config.ConnectionFile{ServerURL: srv.URL}, "前のトークン")
+	if !conn.checkLogin("") {
+		t.Fatal("トークンがあっても、つながらなければログインを待つはず")
+	}
+	s := &ChatService{conn: conn}
+	if a, err := s.Account(); err != nil || !a.NeedLogin || a.Offline != srv.URL {
+		t.Fatalf("つながらないときのログインの画面: %+v %v", a, err)
+	}
+	if _, err := s.Login("bob", "bob-password-1"); err == nil {
+		t.Error("止まっている aibow-server にログインできた")
+	}
+
+	// 起動したら、ログインしてアプリの画面に進む
+	down = false
+	if _, err := s.Login("bob", "bob-password-1"); err != nil {
+		t.Fatal(err)
+	}
+	if a, err := s.Account(); err != nil || a.NeedLogin || a.Offline != "" || a.Name != "bob" {
+		t.Errorf("ログインしたあと: %+v %v", a, err)
+	}
+}

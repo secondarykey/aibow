@@ -18,7 +18,7 @@ const linkInBrowser = async (): Promise<never> => {
 // asMe は、Go の AccountInfo(アプリのアカウント。account.go)を画面の Me にする。
 // 画面でつないだのにログインしていなければ、名前を空にする(LoginGate がログインの画面を出す)
 function asMe(a: AccountInfo): Me {
-  if (a.needLogin) return { login: true, name: "", lastUser: a.lastUser };
+  if (a.needLogin) return { login: true, name: "", lastUser: a.lastUser, offline: a.offline || undefined };
   return { login: a.login, name: a.name, viaKey: a.login, admin: a.admin, display_name: a.displayName, email: a.email, canLogout: a.canLogout };
 }
 

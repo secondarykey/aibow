@@ -51,6 +51,9 @@ type connection struct {
 	// loginRequired は、画面でつないで今動いている aibow-server がログインの要る形か(起動のときに確かめる。ログインしたら true)。
 	// トークンが無いときは、aibow-server を呼ばずにログインの画面にする(呼べば断られるだけ。0051 の決定事項 6)。mu で守る
 	loginRequired bool
+	// offline は、起動のときに aibow-server に確かめられなかった(止まっている・つながらない)ので、ログインの画面で待っているか。
+	// ログインしたら下ろす。mu で守る
+	offline bool
 	// onSignedOut は、使っている途中で aibow-server に 401 で断られ、トークンを手放したときに呼ぶ(画面をログインの画面に戻すイベントを出す。main.go。0057)
 	onSignedOut func()
 }
@@ -87,17 +90,30 @@ func (c *connection) unauthorized(key string, err *apiclient.APIError) {
 
 // checkLogin は、起動のときに、ログインするまで aibow-server を呼ばずに待つかを決める(0051 の決定事項 6)。
 // 画面でつないだ aibow-server で、トークンが無く、そこがログインの要る形のとき true。
-// 確かめるのは、ログインの要らない /_aibow/auth/me だけ(つながらなければ待たない。呼び出しのエラーで伝える今までの形)。
+// 確かめるのは、ログインの要らない /_aibow/auth/me だけ。
+//
+// つながらない(止まっている)ときは、ログインできているか(トークンが生きているか)を確かめられない。
+// そのままアプリの画面を出すと、会話の一覧も設定も読めない画面になる(2026-11-24、ユーザーの指摘)ので、
+// ログインの要る aibow-server だと分かっていれば(トークンを持っている・前にログインした)、ログインの画面で待つ。
+// 分からなければ(ログインの要らない aibow-server かもしれない)、今までどおり呼び出しのエラーで伝える
 func (c *connection) checkLogin(pin string) bool {
 	if c.source != serverScreen || c.client == nil {
 		return false
 	}
-	if c.client.Key() != "" {
+	hasKey := c.client.Key() != ""
+	if hasKey {
 		c.loginRequired = true // トークンはログインの要る aibow-server でしかもらわない
-		return false
 	}
 	p, err := apiclient.ProbeServer(context.Background(), c.url, pin)
-	if err != nil || !p.Trusted {
+	if err != nil {
+		if !hasKey && !c.loggedInBefore() {
+			return false
+		}
+		c.loginRequired, c.offline = true, true
+		log.Warnf("aibow-server(%s)につながらないので、ログインの画面にします。aibow-server が起動しているか確かめてください(%v)", c.url, err)
+		return true
+	}
+	if hasKey || !p.Trusted {
 		return false
 	}
 	c.loginRequired = p.Login
@@ -115,11 +131,18 @@ func (c *connection) forgetKey() {
 	}
 }
 
-// needLogin は、aibow-server を呼ばずにログインの画面にしてよいか(ログインの要る aibow-server で、トークンを持っていない)。
+// loggedInBefore は、今のつなぎ先に前にログインしたことがあるか(connection.json に名前が残っている。ログアウトしても Known に残る)。
+func (c *connection) loggedInBefore() bool {
+	k := c.file.Trusted()
+	return k.User != "" && k.URL == c.url
+}
+
+// needLogin は、aibow-server を呼ばずにログインの画面にしてよいか(ログインの要る aibow-server で、トークンを持っていない。
+// または、起動のときにつながらず、ログインできているかを確かめられなかった)。
 func (c *connection) needLogin() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.source == serverScreen && c.client != nil && c.loginRequired && c.client.Key() == ""
+	return c.source == serverScreen && c.client != nil && c.loginRequired && (c.client.Key() == "" || c.offline)
 }
 
 func newConnection(cfg appConfig) *connection {
