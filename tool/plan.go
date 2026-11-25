@@ -39,6 +39,9 @@ func UpdatePlan() Tool { return updatePlan{} }
 
 type updatePlan struct{}
 
+// ReadOnly は false。確認は要らないが、予定を書き換えるので「読むだけ」の印は付けない(0045 の決定事項 5)。
+func (updatePlan) ReadOnly() bool { return false }
+
 func (updatePlan) Def() Def {
 	return Def{
 		Name: PlanToolName,

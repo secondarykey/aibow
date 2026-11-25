@@ -11,6 +11,7 @@ package tool
 //
 // 古い文字列がファイルの中に1か所だけのときだけ置き換える。2か所以上あると、どれを直したいのか分からないため。
 // そのままでは見つからず、行頭の空白(字下げ)だけが違うときは、字下げを合わせて置き換える(editmatch.go)。
+// 置き換え方そのものはファイルによらない tool.Replace(replace.go)にあり、ほかのアプリからも使える(0045)。
 
 import (
 	"context"
@@ -48,7 +49,7 @@ func (t writeFile) Preview(args Args) (Preview, error) {
 		note = "上書き"
 	}
 	p := tg.path
-	return Preview{Path: p, Folder: t.folders.cardFolder(tg), Note: note, Diff: unifiedDiff(p, before, args.String("content"))}, nil
+	return Preview{Path: p, Folder: t.folders.cardFolder(tg), Note: note, Diff: UnifiedDiff(p, before, args.String("content"))}, nil
 }
 
 func (t writeFile) Run(ctx context.Context, args Args) (string, error) {
@@ -105,7 +106,7 @@ func (t editFile) Preview(args Args) (Preview, error) {
 	if err != nil {
 		return Preview{}, err
 	}
-	return Preview{Path: e.path, Folder: t.folders.cardFolder(e.target), Note: "書き換え", Diff: unifiedDiff(e.path, e.before, e.after)}, nil
+	return Preview{Path: e.path, Folder: t.folders.cardFolder(e.target), Note: "書き換え", Diff: UnifiedDiff(e.path, e.before, e.after)}, nil
 }
 
 func (t editFile) Run(ctx context.Context, args Args) (string, error) {
@@ -128,7 +129,7 @@ type edit struct {
 	target               // 書き換えるフォルダとパス
 	before, after string // 書き換える前と後の、ファイルの中身全体
 	line          int    // 書き換える場所の行番号(1 始まり)
-	reindented    bool   // 行頭の空白を合わせて置き換えたか(looseMatch)
+	reindented    bool   // 行頭の空白を合わせて置き換えたか(Replace の Reindented)
 }
 
 // plan は、引数とファイルの今の中身から、書き換えた後の中身を作る。置き換える場所が1か所に決まらなければエラー。
@@ -151,44 +152,27 @@ func (t editFile) plan(args Args) (edit, error) {
 		return edit{}, fmt.Errorf("%s は見つかりません。新しく作るときは write_file を使ってください%s", p, t.folders.elsewhere(tg, true))
 	}
 
-	old, repl := args.String("old_string"), args.String("new_string")
+	r, err := Replace(before, args.String("old_string"), args.String("new_string"))
+	if err != nil {
+		return edit{}, editError(p, err)
+	}
+	return edit{target: tg, before: before, after: r.Text, line: r.Line, reindented: r.Reindented}, nil
+}
+
+// editError は Replace のエラーを、edit_file の文(パスと read_file の案内つき)にする。モデルに見える文は 0045 の前と同じ。
+func editError(p string, err error) error {
+	var amb *AmbiguousError
 	switch {
-	case old == "":
-		return edit{}, errors.New("old_string が空です。置き換える文字列を、ファイルの中身のとおりに書いてください")
-	case old == repl:
-		return edit{}, errors.New("old_string と new_string が同じです")
+	case errors.Is(err, ErrEmptyOld):
+		return errors.New("old_string が空です。置き換える文字列を、ファイルの中身のとおりに書いてください")
+	case errors.Is(err, ErrSameText):
+		return errors.New("old_string と new_string が同じです")
+	case errors.Is(err, ErrNotFound):
+		return fmt.Errorf("old_string が %s の中に見つかりません(read_file で今の中身を確かめてください。行番号と、その後ろのタブは含めません)", p)
+	case errors.As(err, &amb):
+		return fmt.Errorf("old_string が %s の中に %d か所あります。前後の行を含めて、1か所に決まるようにしてください", p, amb.Count)
 	}
-	// 改行が CRLF のファイル(Windows で作ったものなど)。read_file は CR を見せないので、モデルが書く文字列の改行は LF になる。
-	// ファイルの書き方に合わせてから探す(合わせないと、複数行の old_string がいつまでも見つからない)
-	if strings.Contains(before, "\r\n") && !strings.Contains(old, "\r\n") {
-		old = strings.ReplaceAll(old, "\n", "\r\n")
-		repl = strings.ReplaceAll(repl, "\n", "\r\n")
-	}
-	switch n := strings.Count(before, old); n {
-	case 0:
-		// 小さなモデルは字下げのタブを1つ多く(少なく)写しやすい(read_file の行番号の後ろのタブまで写す。tuning.md)。
-		// 行頭の空白だけが違い、1か所に決まるなら、ファイルの字下げに合わせて置き換える。確認のカードの差分に実際の変更が出る
-		if m, ok := looseMatch(before, old); ok {
-			return edit{
-				target:     tg,
-				before:     before,
-				after:      before[:m.start] + m.reindent(repl) + before[m.end:],
-				line:       strings.Count(before[:m.start], "\n") + 1,
-				reindented: true,
-			}, nil
-		}
-		return edit{}, fmt.Errorf("old_string が %s の中に見つかりません(read_file で今の中身を確かめてください。行番号と、その後ろのタブは含めません)", p)
-	case 1:
-	default:
-		return edit{}, fmt.Errorf("old_string が %s の中に %d か所あります。前後の行を含めて、1か所に決まるようにしてください", p, n)
-	}
-	i := strings.Index(before, old)
-	return edit{
-		target: tg,
-		before: before,
-		after:  before[:i] + repl + before[i+len(old):],
-		line:   strings.Count(before[:i], "\n") + 1,
-	}, nil
+	return err
 }
 
 // filePath は、書き換えるツールの書く先を決めて確かめる(書けるフォルダの中で、フォルダそのものではないこと)。

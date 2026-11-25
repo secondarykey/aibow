@@ -42,21 +42,24 @@ type Preview struct {
 // 上限を超えたら差分を作らない(画面には「大きいため差分は出していません」と出す)
 const diffMaxLines = 5000
 
-// unifiedDiff は before → after の差分を、git diff と同じ unified 形式で返す(前後 3 行の文脈と、行番号の @@ 付き)。
+// UnifiedDiff は before → after の差分を、git diff と同じ unified 形式で返す(前後 3 行の文脈と、行番号の @@ 付き)。
+// 見出しは a/<name> と b/<name>。before が空なら新しく作るものとして /dev/null にする。
+// 前後の行数の合計が 5000 行を超えたら空を返す(差分の計算に時間がかかるため)。
+// 確認の画面に差分を出したい、ほかのアプリの書き換えるツールからも使える(0045 の決定事項 6)。
 //
 // 差分の計算は github.com/pkg/diff(Myers の方法)に任せている。
 // diff.Text は、文字列の代わりに nil を渡すとファイル名からファイルを読むので、必ず文字列を渡す
 // (作業フォルダの外のファイルを読ませないため)。
-func unifiedDiff(path, before, after string) string {
+func UnifiedDiff(name, before, after string) string {
 	if strings.Count(before, "\n")+strings.Count(after, "\n") > diffMaxLines {
 		return ""
 	}
 	var b strings.Builder
-	from := "a/" + path
+	from := "a/" + name
 	if before == "" {
 		from = "/dev/null" // 新しく作るファイル(git diff と同じ書き方)
 	}
-	if err := diff.Text(from, "b/"+path, before, after, &b); err != nil {
+	if err := diff.Text(from, "b/"+name, before, after, &b); err != nil {
 		return ""
 	}
 	return b.String()
