@@ -19,6 +19,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"maps"
@@ -69,7 +70,7 @@ func startBrowser(c serverConfig, initial aibow.AppSettings, st *store.SQLite, g
 
 	events := ui.NewEvents()
 	// 組み込みのツールは、アプリと同じく aibow の中の自作の MCP サーバー越しに呼ぶ(0007 の 5-4)。
-	// 資料のフォルダの無い会話では、時刻・計算と URL を読むツールだけになる(0024 の 12-1a)。
+	// サーバーのワークスペースの無い会話では、時刻・計算と URL を読むツールだけになる(0024 の 12-1a)。
 	// URL を読むツールは、管理者が「ツール」のタブで有効にするまで使えない(server-tools.json。0036 の決定事項 14)
 	if c.FetchAllowPrivate {
 		log.Noticef("fetch_url: サーバーの PC の中・社内のアドレスも読みます(server.json の fetchAllowPrivate)")
@@ -79,7 +80,7 @@ func startBrowser(c serverConfig, initial aibow.AppSettings, st *store.SQLite, g
 	svc, life := ui.New(ui.Options{
 		Host:  ui.NewServerHost(gen, mm, nCtx, url),
 		Store: st, App: app, Version: appversion.Version(),
-		Notify: events, Seat: seat, Local: local, MCP: mcpm, Prefs: prefs, Browser: true, Folders: c.Folders,
+		Notify: events, Seat: seat, Local: local, MCP: mcpm, Prefs: prefs, Browser: true, ServerWorkspaces: c.Workspaces,
 		// 管理の画面で変える並列数・作業領域(0061)。引数・環境変数で決めた値は変えられない(理由の文はここで作る)
 		Server: &ui.ServerConfig{
 			Path:     absPath(c.ConfigPath),
@@ -87,10 +88,7 @@ func startBrowser(c serverConfig, initial aibow.AppSettings, st *store.SQLite, g
 			Ctx:      ui.ServerValue{Running: c.Ctx, Fallback: c.CtxFallback, Lock: lockReason(c.CtxFrom, "ctx", "AIBOW_SERVER_CTX")},
 		},
 	})
-	if len(c.Folders) > 0 {
-		log.Noticef("資料のフォルダ: %s(server.json の folders。管理者が配布プロファイルで選ぶと、その会話で読み書きできます。管理の画面の「資料のフォルダ」のタブで足す・変える・消せます)",
-			strings.Join(slices.Sorted(maps.Keys(c.Folders)), ", "))
-	}
+	logServerWorkspaces(c)
 	life.Start() // 起動のときのモデルは main が読み込んだので、ここでは読み込まない(Initial を渡していない)
 
 	sessions := auth.NewSessions(st)
@@ -277,4 +275,21 @@ func mount(base string, h http.Handler) http.Handler {
 		http.Error(w, "aibow-server は "+base+"/ の下で待ち受けています(-base・設定ファイルの base)。画面は "+base+"/、OpenAI 互換の API は "+base+"/v1 です", http.StatusNotFound)
 	})
 	return mux
+}
+
+// logServerWorkspaces は、起動のときにサーバーのワークスペースの名前とフォルダの数を Notice に出す(0065 の決定事項 22)。
+// server.json が前の形(folders)なら、ワークスペースとして読んだことと、管理の画面で保存すると書き直すことも知らせる(決定事項 10)。
+func logServerWorkspaces(c serverConfig) {
+	if len(c.Workspaces) == 0 {
+		return
+	}
+	var items []string
+	for _, w := range c.Workspaces {
+		items = append(items, fmt.Sprintf("%s(フォルダ %d 個)", w.Name, len(w.Folders)))
+	}
+	log.Noticef("サーバーのワークスペース: %s(管理者が配布プロファイルで選ぶと、その会話で読み書きできます。管理の画面の「サーバーのワークスペース」のタブで足す・変える・消せます)",
+		strings.Join(items, ", "))
+	if c.WorkspacesMigrated {
+		log.Noticef("server.json の folders を、サーバーのワークスペースとして読みました。管理の画面で保存すると workspaces の形で書き直します(%s)", absPath(c.ConfigPath))
+	}
 }

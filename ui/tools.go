@@ -29,7 +29,7 @@ func (s *Service) MCPServers() []client.ServerInfo {
 		return []client.ServerInfo{}
 	}
 	l := s.mcp.Infos()
-	if s.browser && !s.hasFolders() {
+	if s.browser && !s.hasServerWorkspaces() {
 		l = slices.DeleteFunc(l, func(i client.ServerInfo) bool { return i.UsesWorkDir })
 	}
 	return l
@@ -48,9 +48,9 @@ func (s *Service) AllMCPServers() []client.ServerInfo {
 func (s *Service) BuiltinTools() []config.KnownTool {
 	l := aibow.BuiltinTools()
 	if s.browser {
-		hasFolders := s.hasFolders()
+		hasFolders := s.hasServerWorkspaces()
 		l = slices.DeleteFunc(l, func(k config.KnownTool) bool {
-			return k.Name == "run_command" || !hasFolders && tool.Find(tool.Folderless(), k.Name) == nil
+			return browserHides(k.Name) || !hasFolders && tool.Find(tool.Folderless(), k.Name) == nil
 		})
 	}
 	return l
@@ -140,38 +140,63 @@ func (s *Service) forBrowser(groups []aibow.ToolGroupState) []aibow.ToolGroupSta
 		return groups
 	}
 	servers := s.MCPServers()
-	hasFolders := s.hasFolders()
+	hasFolders := s.hasServerWorkspaces()
 	groups = slices.DeleteFunc(groups, func(g aibow.ToolGroupState) bool {
 		return g.Server != "" && !slices.ContainsFunc(servers, func(i client.ServerInfo) bool { return i.Name == g.Server })
 	})
 	for i := range groups {
 		groups[i].Tools = slices.DeleteFunc(groups[i].Tools, func(t aibow.ToolState) bool {
-			return t.Name == "run_command" || t.NeedsWorkDir && !hasFolders
+			return browserHides(t.Name) || t.NeedsWorkDir && !hasFolders
 		})
 	}
 	return groups
 }
 
-// Folders は aibow-server の資料のフォルダの名前(名前の順。パスは返さない)。配るプロファイルで選ぶ(0024 の 12-2)。
-// 名前は誰でも見られる(どのフォルダを使えるかは、配られたプロファイルで決まる)。アプリモードのときは空。
-// パスも見る管理の画面は ServerSettings(管理者だけ。0061)。
-func (s *Service) Folders() []string {
-	return s.folderNames()
+// ServerWorkspaceInfo は、サーバーのワークスペース1つの、誰にでも見せてよいところ(名前とフォルダの名前・印。パスは返さない。0065 の決定事項 19)。
+type ServerWorkspaceInfo struct {
+	Name    string             `json:"name"`
+	Folders []ServerFolderInfo `json:"folders"`
 }
 
-// checkFolder は、プロファイルの資料のフォルダを old から folder に変えてよいか(0024 の決定事項 31)。
-// 選べるのは aibow-server の管理者(ログインなしの形ではいつも。0046)だけで、server.json にあるフォルダだけ。変えないなら確かめない。
-func (s *Service) checkFolder(ctx context.Context, old, folder string) error {
-	if folder == old || folder == "" {
+// ServerFolderInfo は、サーバーのワークスペースのフォルダ1つの名前と印(パスは返さない)。
+type ServerFolderInfo struct {
+	Name     string `json:"name"`
+	Main     bool   `json:"main"`
+	Writable bool   `json:"writable"`
+}
+
+// ServerWorkspaces は aibow-server のサーバーのワークスペース(server.json の並び。パスは返さない)。配るプロファイルで選ぶ(0065)。
+// 名前は誰でも見られる(どのワークスペースを使えるかは、配られたプロファイルで決まる)。入力欄の上でマウスを乗せた説明にフォルダを並べるのにも使う。
+// アプリモードのときは空。パスも見る管理の画面は ServerSettings(管理者だけ。0061)。
+func (s *Service) ServerWorkspaces() []ServerWorkspaceInfo {
+	out := []ServerWorkspaceInfo{}
+	for _, w := range s.serverWorkspaceList() {
+		info := ServerWorkspaceInfo{Name: w.Name, Folders: []ServerFolderInfo{}}
+		for _, f := range w.Folders {
+			info.Folders = append(info.Folders, ServerFolderInfo{Name: f.Name, Main: f.Main, Writable: f.Writable})
+		}
+		out = append(out, info)
+	}
+	return out
+}
+
+// checkWorkspace は、プロファイルのサーバーのワークスペースを old から name に変えてよいか(0024 の決定事項 31・0065 の決定事項 18)。
+// 選べるのは aibow-server の管理者(ログインなしで使うときはいつも。0046)だけで、server.json にあるワークスペースだけ。変えないなら確かめない。
+func (s *Service) checkWorkspace(ctx context.Context, old, name string) error {
+	if name == old || name == "" {
 		return nil
 	}
 	if !s.browser || !managesPC(ctx) {
-		return errors.New("資料のフォルダを選べるのは、aibow-server の管理者だけです")
+		return errors.New("サーバーのワークスペースを選べるのは、aibow-server の管理者だけです")
 	}
-	if names := s.folderNames(); !slices.Contains(names, folder) {
-		return fmt.Errorf("資料のフォルダ %s はありません(管理の画面の「資料のフォルダ」のタブにあるもの: %s)", folder, strings.Join(names, "・"))
+	var names []string
+	for _, w := range s.serverWorkspaceList() {
+		if w.Name == name {
+			return nil
+		}
+		names = append(names, w.Name)
 	}
-	return nil
+	return fmt.Errorf("サーバーのワークスペース %s はありません(管理の画面の「サーバーのワークスペース」のタブにあるもの: %s)", name, strings.Join(names, "・"))
 }
 
 // ToolPrefs は、ツールの扱いの PC の既定(tools.json)と、サーバーを起動したときに見えたツールの一覧。

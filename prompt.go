@@ -96,15 +96,16 @@ func (cs *Conversations) environment(set ConversationSettings) string {
 	command := tool.Find(tools, "run_command") != nil
 	shell := tool.ShellNoteFor(tool.Find(tools, "search_files") != nil) // search_files を「使わない」にしたら、今までの findstr の案内のまま
 	if folders := cs.toolFolders(set); len(folders) > 1 {
-		return foldersEnvironment(folders, command, shell)
+		return foldersEnvironment(folders, command, shell, cs.noWorkDir)
 	}
 	var b strings.Builder
 	b.WriteString("# Environment\n")
-	// 資料のフォルダ(aibow-server)は、サーバーの PC のパスを見せず、名前だけを書く(パスはツールの中だけで使う。0024 の決定事項 32)
+	// サーバーのワークスペース(aibow-server)は、サーバーの PC のパスを見せず、フォルダの名前だけを書く
+	// (パスはツールの中だけで使う。0024 の決定事項 32・0065 の決定事項 13)。名前はファイルのツールが知っている名前(パスの先頭に付けた書き方を見分ける)と同じ
 	name := filepath.Base(cs.mainPath(set, dir)) // worktree でも、本体のフォルダの名前(0039。モデルが呼ぶ名前を変えない)
-	if folder := cs.FolderName(set); folder != "" {
-		name = folder
-		b.WriteString("Working directory: \"" + folder + "\" (a shared folder on the server)\n")
+	if cs.noWorkDir {
+		name = tool.MainFolder(cs.toolFolders(set)).Name
+		b.WriteString("Working directory: \"" + name + "\" (a shared folder on the server)\n")
 	} else {
 		b.WriteString("Working directory: " + dir + "\n")
 	}
@@ -128,10 +129,18 @@ func (cs *Conversations) environment(set ConversationSettings) string {
 // run_command も引数 folder でフォルダを選び、省けばメインで動く(読むだけのフォルダでも動かせる)。
 // 読むだけのフォルダもコマンドからは書けてしまうが、守りは確認なので、ここに書くのは「read-only」の印まで。
 // フォルダが1つのときは今までの形のまま(environment)。4B のプロンプトを変えないため。
-func foldersEnvironment(folders []tool.Folder, command bool, shell string) string {
+//
+// onServer は aibow-server のサーバーのワークスペース(0065 の決定事項 13)。サーバーの PC のパスは見せず、パスの代わりに「on the server」と書く
+// (名前・印・説明は出す)。git の印も付けない(ブラウザの会話には Git のツールを出さないため。決定事項 5)。
+func foldersEnvironment(folders []tool.Folder, command bool, shell string, onServer bool) string {
 	var b strings.Builder
 	b.WriteString("# Environment\nFolders (pass the folder argument; omit it for the main folder):\n")
 	for _, f := range folders {
+		if onServer {
+			f.Path = "on the server"
+			b.WriteString("- " + tool.FolderLine(f, false) + "\n")
+			continue
+		}
 		b.WriteString("- " + tool.FolderLine(f, git.IsRepo(f.Path)) + "\n")
 	}
 	b.WriteString("OS: " + runtime.GOOS + "\n")

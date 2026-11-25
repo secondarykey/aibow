@@ -829,7 +829,7 @@ func TestWebShareNew(t *testing.T) {
 	}
 	var p aibow.Profile
 	w.mustCall(t, &p, "ShareNew", "調べもの", "ollama:a", aibow.ShareUsers, []string{"bob"}, []string{})
-	if p.Name != "調べもの" || p.Share != aibow.ShareUsers || p.Values.Model != "ollama:a" || len(p.Rules.Fixed) != 0 || p.Rules.Folder != "" {
+	if p.Name != "調べもの" || p.Share != aibow.ShareUsers || p.Values.Model != "ollama:a" || len(p.Rules.Fixed) != 0 || p.Rules.Workspace != "" {
 		t.Errorf("作った配布プロファイル: %+v", p)
 	}
 	if status, _ := w.call(t, context.Background(), "ShareNew", "調べもの", "ollama:a", aibow.ShareAll, []string{}, []string{}); status == http.StatusOK {

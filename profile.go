@@ -629,13 +629,13 @@ func (cs *Conversations) CopyProfile(ctx context.Context, id uuid.UUID) (Profile
 	}
 	rules := p.Rules
 	rules.Fixed = slices.Clone(rules.Fixed)
-	rules.Folder = "" // 資料のフォルダは配っているプロファイルだけのもの(0024 の決定事項 31)
+	rules.Workspace = "" // サーバーのワークスペースは配っているプロファイルだけのもの(0024 の決定事項 31)
 	return cs.CreateProfile(ctx, name, p.Values, rules)
 }
 
 // ShareNew は、配布プロファイルを最初から作って、そのまま配る(管理の画面の「新規」。0059 の決定事項 7〜9)。管理者だけ(保存先が確かめる)。
 // 値は、ctx の利用者(管理者)の今の既定のプロファイルの値を写し、モデルだけ model にする(決定事項 8。自分の画面の「作成」と同じ考え方)。
-// 決まり(固定・使えないもの)と資料のフォルダは空から始める。どこから写したかの関係は持たない(このあと編集の欄で変える)。
+// 決まり(固定・使えないもの)とサーバーのワークスペースは空から始める。どこから写したかの関係は持たない(このあと編集の欄で変える)。
 //
 // 配布プロファイルは配布プロファイルとして生まれる(決定事項 3)。相手の無い配布プロファイルは作らない(管理者の自分のプロファイルと同じ見え方になるため)。
 func (cs *Conversations) ShareNew(ctx context.Context, name, model, share string, with, groups []string) (Profile, error) {

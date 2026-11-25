@@ -35,8 +35,8 @@ type ConversationDetail struct {
 	// Profile は、この会話のプロファイル(名前・値・決まり。0014)。画面は、固定した項目を押せなくして理由を添えるのに使う。
 	// プロファイルを持たない会話なら null
 	Profile *aibow.Profile `json:"profile"`
-	// Folder は、この会話で使える aibow-server の資料のフォルダの名前(パスは出さない。無ければ空。0024 の決定事項 26)
-	Folder string `json:"folder,omitempty"`
+	// Workspace は、この会話で使える aibow-server のサーバーのワークスペースの名前(パスは出さない。無ければ空。0024 の決定事項 26・0065 の決定事項 19)
+	Workspace string `json:"workspace,omitempty"`
 }
 
 // Conversation は会話1つと、その発言を古い順に返す。
@@ -62,7 +62,7 @@ func (s *Service) Conversation(ctx context.Context, id uuid.UUID) (ConversationD
 		return ConversationDetail{}, err
 	}
 	return ConversationDetail{Conversation: c, Messages: ms, Compactions: comps, Generating: g != nil && *g == id, Usage: u, Profile: p,
-		Folder: s.convs.FolderName(c.Settings)}, nil
+		Workspace: s.convs.ServerWorkspaceName(c.Settings)}, nil
 }
 
 // Usage は、会話がモデルに渡す文字列で、会話の上限をどれだけ使っているか(メーター)を返す。

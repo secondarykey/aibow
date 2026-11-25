@@ -30,7 +30,7 @@ func (s *Service) CreateProfile(ctx context.Context, name string, values aibow.P
 	if s.startupErr != nil {
 		return aibow.Profile{}, s.startupErr
 	}
-	if err := s.checkFolder(ctx, "", rules.Folder); err != nil {
+	if err := s.checkWorkspace(ctx, "", rules.Workspace); err != nil {
 		return aibow.Profile{}, err
 	}
 	p, err := s.convs.CreateProfile(ctx, name, values, rules)
@@ -67,7 +67,7 @@ func (s *Service) SaveProfile(ctx context.Context, p aibow.Profile, tools []Tool
 			return err
 		}
 	}
-	if err := s.checkFolder(ctx, old.Rules.Folder, p.Rules.Folder); err != nil {
+	if err := s.checkWorkspace(ctx, old.Rules.Workspace, p.Rules.Workspace); err != nil {
 		return err
 	}
 	toolItems, err := s.applyToolPolicies(ctx, tools)

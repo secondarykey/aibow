@@ -1,13 +1,13 @@
 package ui
 
-// serverconfig.go: aibow-server の並列数・作業領域・資料のフォルダを、管理の画面で見て変える(0061)。
+// serverconfig.go: aibow-server の並列数・作業領域・サーバーのワークスペース(0065。以前の資料のフォルダ)を、管理の画面で見て変える(0061)。
 //
 // どれも server.json の値で、画面で変えると起動に使った server.json に書き戻す(config.SaveServerFile。ほかの鍵は残す)。
 // 効き方が2つに分かれる:
 //
 //   - 並列数と作業領域は、モデルを読み込むときの作業領域(KV キャッシュ)の形・順番待ちの席の数・1本あたりの作業領域をまとめて決めるので、
 //     起動し直すまで変わらない。画面は「今動いている値」と「次の起動の値」を並べて出す
-//   - 資料のフォルダは、名前 → パスの表を引くだけなので、その場で差し替える(Conversations.SetFolders)
+//   - サーバーのワークスペースは、名前 → フォルダの組の表を引くだけなので、その場で差し替える(Conversations.SetServerWorkspaces)
 //
 // 起動の引数・環境変数で決めている値は、server.json に書いても効かない(引数のほうが強い)か、黙って環境変数を上書きしてしまうので、
 // 変えられないようにして理由を出す(決定事項 6。理由の文は aibow-server が作って渡す)。
@@ -17,7 +17,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -56,8 +55,8 @@ type ServerSettingsView struct {
 	Ctx      ServerValueView `json:"ctx"`
 	// PerSeq は、今動いている1本あたりの作業領域(1つの会話・リクエストが使えるのはここまで。0023 の決定事項 11)
 	PerSeq int `json:"perSeq"`
-	// Folders は資料のフォルダ(名前の順)
-	Folders []ServerFolder `json:"folders"`
+	// Workspaces はサーバーのワークスペース(server.json の並び。0065)
+	Workspaces []ServerWorkspaceView `json:"workspaces"`
 }
 
 // ServerValueView は、並列数か作業領域の、今動いている値と次の起動の値。
@@ -68,22 +67,27 @@ type ServerValueView struct {
 	Lock string `json:"lock,omitempty"`
 }
 
-// ServerFolder は資料のフォルダ1つ。パスはサーバーの PC のもので、管理者にだけ返す(決定事項 10)。
-type ServerFolder struct {
-	Name string `json:"name"`
-	Path string `json:"path"`
-	// Missing は、フォルダが今は無いか(起動したあとに消された・動かされた)
-	Missing bool `json:"missing"`
-	// UsedBy は、このフォルダを選んでいるプロファイルの名前(あれば消せない)
+// ServerWorkspaceView は、管理の画面に出すサーバーのワークスペース1つ(0065 の決定事項 16)。パスはサーバーの PC のもので、管理者にだけ返す(0061 の決定事項 10)。
+type ServerWorkspaceView struct {
+	Name    string             `json:"name"`
+	Folders []ServerFolderView `json:"folders"`
+	// UsedBy は、このワークスペースを選んでいるプロファイルの名前(あれば消せない)
 	UsedBy []string `json:"usedBy"`
 }
 
-// folderUsers は、資料のフォルダを選んでいるプロファイルを探す係(store.SQLite)。
-type folderUsers interface {
-	ProfilesUsingFolder(ctx context.Context, folder string) ([]string, error)
+// ServerFolderView は、サーバーのワークスペースのフォルダ1つ。
+type ServerFolderView struct {
+	config.WorkspaceFolder
+	// Missing は、フォルダが今は無いか(起動したあとに消された・動かされた)
+	Missing bool `json:"missing"`
 }
 
-// ServerSettings は、並列数・作業領域・資料のフォルダの今の様子を返す。server.json はそのつど読み直す(手で書き換えたときも、次の起動の値が分かるように)。
+// workspaceUsers は、サーバーのワークスペースを選んでいるプロファイルを探す係(store.SQLite)。
+type workspaceUsers interface {
+	ProfilesUsingWorkspace(ctx context.Context, workspace string) ([]string, error)
+}
+
+// ServerSettings は、並列数・作業領域・サーバーのワークスペースの今の様子を返す。server.json はそのつど読み直す(手で書き換えたときも、次の起動の値が分かるように)。
 func (s *Service) ServerSettings(ctx context.Context) (ServerSettingsView, error) {
 	if err := s.checkServerConfig(ctx); err != nil {
 		return ServerSettingsView{}, err
@@ -104,7 +108,7 @@ func (s *Service) serverSettings(ctx context.Context) (ServerSettingsView, error
 	if st, err := s.host.settings(); err == nil {
 		v.PerSeq = st.NCtx
 	}
-	v.Folders, err = s.serverFolders(ctx)
+	v.Workspaces, err = s.serverWorkspaceViews(ctx)
 	return v, err
 }
 
@@ -167,96 +171,171 @@ func (s *Service) SaveServerSettings(ctx context.Context, parallel, nCtx int) (S
 	return s.serverSettings(ctx)
 }
 
-// AddServerFolder は、資料のフォルダを足す(その場で効き、配布プロファイルで選べるようになる)。
-func (s *Service) AddServerFolder(ctx context.Context, name, path string) ([]ServerFolder, error) {
+// AddServerWorkspace は、サーバーのワークスペースを足す(名前と最初のフォルダのパス。その場で効き、配布プロファイルで選べるようになる)。
+// 最初のフォルダはメイン・書ける・名前はフォルダ名(以前の資料のフォルダと同じ動き。0065 の決定事項 16・17)。
+func (s *Service) AddServerWorkspace(ctx context.Context, name, path string) ([]ServerWorkspaceView, error) {
 	name = strings.TrimSpace(name)
-	return s.changeFolders(ctx, func(m map[string]string) (string, error) {
+	return s.changeServerWorkspaces(ctx, func(list []config.ServerWorkspace) ([]config.ServerWorkspace, string, error) {
 		if name == "" {
-			return "", errors.New("資料のフォルダの名前を書いてください")
+			return nil, "", errors.New("サーバーのワークスペースの名前を書いてください")
 		}
-		if _, ok := m[name]; ok {
-			return "", fmt.Errorf("資料のフォルダ %s はもうあります。パスを変えるときは、一覧のその行で変えてください", name)
-		}
-		p, err := checkServerFolderPath(path)
-		if err != nil {
-			return "", err
-		}
-		m[name] = p
-		return fmt.Sprintf("資料のフォルダを足しました: %s(%s", name, p), nil
-	})
-}
-
-// SetServerFolderPath は、資料のフォルダのパスを変える(名前はそのまま。そのフォルダを使う会話は、次のツールの実行から新しいパス)。
-func (s *Service) SetServerFolderPath(ctx context.Context, name, path string) ([]ServerFolder, error) {
-	return s.changeFolders(ctx, func(m map[string]string) (string, error) {
-		old, ok := m[name]
-		if !ok {
-			return "", fmt.Errorf("資料のフォルダ %s はありません", name)
+		if i := serverWorkspaceIndex(list, name); i >= 0 {
+			return nil, "", fmt.Errorf("サーバーのワークスペース %s はもうあります。フォルダを足すときは、一覧のそのワークスペースを開いてください", list[i].Name)
 		}
 		p, err := checkServerFolderPath(path)
 		if err != nil {
-			return "", err
+			return nil, "", err
 		}
-		if p == old {
-			return "", nil
-		}
-		m[name] = p
-		return fmt.Sprintf("資料のフォルダのパスを変えました: %s(%s → %s", name, old, p), nil
+		f := config.WorkspaceFolder{Path: p, Name: config.FolderName(p, nil), Main: true, Writable: true}
+		list = append(list, config.ServerWorkspace{Name: name, Folders: []config.WorkspaceFolder{f}})
+		return list, fmt.Sprintf("サーバーのワークスペースを足しました: %s(%s %s", name, f.Name, folderLabel(f)), nil
 	})
 }
 
-// RemoveServerFolder は、資料のフォルダを消す。選んでいるプロファイルがあれば断る(決定事項 10)。
-func (s *Service) RemoveServerFolder(ctx context.Context, name string) ([]ServerFolder, error) {
-	return s.changeFolders(ctx, func(m map[string]string) (string, error) {
-		old, ok := m[name]
-		if !ok {
-			return "", fmt.Errorf("資料のフォルダ %s はありません", name)
+// SaveServerWorkspace は、サーバーのワークスペース ws.Name のフォルダの組を ws のものにする(管理の画面の「保存」。その場で効く)。
+// フォルダを足す・外す・パスや名前を変える・メインにする・書ける / 読むだけ・説明を、まとめて1回で書く(アプリのワークスペースの設定の画面と同じ形)。
+// ワークスペースの名前は変えられない(配布プロファイルが名前で選ぶため。0061 と同じ)。変えた項目は Notice のログに1行(0053)。
+func (s *Service) SaveServerWorkspace(ctx context.Context, ws config.ServerWorkspace) ([]ServerWorkspaceView, error) {
+	ws = config.NormalizeServerWorkspace(ws)
+	return s.changeServerWorkspaces(ctx, func(list []config.ServerWorkspace) ([]config.ServerWorkspace, string, error) {
+		i := serverWorkspaceIndex(list, ws.Name)
+		if i < 0 {
+			return nil, "", fmt.Errorf("サーバーのワークスペース %s はありません", ws.Name)
 		}
-		users, err := s.folderUsedBy(ctx, name)
+		for _, f := range ws.Folders {
+			if _, err := checkServerFolderPath(f.Path); err != nil {
+				return nil, "", fmt.Errorf("フォルダ %s: %w", f.Name, err)
+			}
+		}
+		ws.Name = list[i].Name
+		items := folderChanges(list[i].Folders, ws.Folders)
+		if len(items) == 0 {
+			return list, "", nil
+		}
+		list[i] = ws
+		return list, fmt.Sprintf("サーバーのワークスペース %s を保存しました(%s", ws.Name, strings.Join(items, "・")), nil
+	})
+}
+
+// RemoveServerWorkspace は、サーバーのワークスペースを消す。選んでいるプロファイルがあれば断る(0061 の決定事項 10)。フォルダの中身は消さない。
+func (s *Service) RemoveServerWorkspace(ctx context.Context, name string) ([]ServerWorkspaceView, error) {
+	return s.changeServerWorkspaces(ctx, func(list []config.ServerWorkspace) ([]config.ServerWorkspace, string, error) {
+		i := serverWorkspaceIndex(list, name)
+		if i < 0 {
+			return nil, "", fmt.Errorf("サーバーのワークスペース %s はありません", name)
+		}
+		users, err := s.workspaceUsedBy(ctx, list[i].Name)
 		if err != nil {
-			return "", err
+			return nil, "", err
 		}
 		if len(users) > 0 {
-			return "", fmt.Errorf("配布プロファイル「%s」が資料のフォルダ %s を使っています。プロファイルで別のフォルダを選んでから消してください",
-				strings.Join(users, "」「"), name)
+			return nil, "", fmt.Errorf("配布プロファイル「%s」がサーバーのワークスペース %s を使っています。プロファイルで別のワークスペースを選んでから削除してください",
+				strings.Join(users, "」「"), list[i].Name)
 		}
-		delete(m, name)
-		return fmt.Sprintf("資料のフォルダを削除しました: %s(%s", name, old), nil
+		var folders []string
+		for _, f := range list[i].Folders {
+			folders = append(folders, f.Name+" "+folderLabel(f))
+		}
+		msg := fmt.Sprintf("サーバーのワークスペースを削除しました: %s(%s", list[i].Name, strings.Join(folders, "・"))
+		return slices.Delete(list, i, i+1), msg, nil
 	})
 }
 
-// changeFolders は、資料のフォルダの表を写して edit で変え、server.json に書いてから、今の表と会話の仕組みに差し替える。
+// changeServerWorkspaces は、サーバーのワークスペースの表を写して edit で変え、確かめて server.json に書いてから、今の表と会話の仕組みに差し替える。
 // edit はログの文(括弧の閉じる前まで)を返す。空なら何も変えていない。書けなかったら、今の表は変えない。
-func (s *Service) changeFolders(ctx context.Context, edit func(m map[string]string) (string, error)) ([]ServerFolder, error) {
+// server.json が前の形(folders)なら、ここで workspaces に書き直して folders を消す(0065 の決定事項 10。SaveServerFile)。
+func (s *Service) changeServerWorkspaces(ctx context.Context, edit func(list []config.ServerWorkspace) ([]config.ServerWorkspace, string, error)) ([]ServerWorkspaceView, error) {
 	if err := s.checkServerConfig(ctx); err != nil {
 		return nil, err
 	}
 	// 読んでから書くまでを1つにする(2人が同時に足しても、片方が消えないように)
-	s.folderEditMu.Lock()
-	defer s.folderEditMu.Unlock()
-	m := s.folderMap()
-	msg, err := edit(m)
+	s.wsEditMu.Lock()
+	defer s.wsEditMu.Unlock()
+	list, msg, err := edit(s.serverWorkspaceList())
 	if err != nil {
 		return nil, err
 	}
 	if msg != "" {
-		if err := config.SaveServerFile(s.server.Path, config.ServerEdit{SetFolders: true, Folders: m}); err != nil {
+		if err := config.CheckServerWorkspaces(list); err != nil {
 			return nil, err
 		}
-		s.setFolders(m)
+		if err := config.SaveServerFile(s.server.Path, config.ServerEdit{SetWorkspaces: true, Workspaces: list}); err != nil {
+			return nil, err
+		}
+		s.setServerWorkspaces(list)
 		log.Noticef("%s%s)", msg, byWhom(ctx))
 	}
-	return s.serverFolders(ctx)
+	return s.serverWorkspaceViews(ctx)
 }
 
-// checkServerFolderPath は、資料のフォルダのパスがサーバーの PC の絶対パスで、フォルダとしてあるかを確かめ、整えたパスを返す。
+// folderChanges は、フォルダの組を old から next にしたときに変えた項目を、画面の言葉で返す(ログの1行に並べる。0053)。
+// 同じフォルダかは、名前か、名前を変えたならパスで見る。
+func folderChanges(old, next []config.WorkspaceFolder) []string {
+	var items []string
+	matched := make([]bool, len(old))
+	find := func(same func(o config.WorkspaceFolder) bool) int {
+		for i, o := range old {
+			if !matched[i] && same(o) {
+				return i
+			}
+		}
+		return -1
+	}
+	for _, n := range next {
+		i := find(func(o config.WorkspaceFolder) bool { return o.Name == n.Name })
+		if i < 0 {
+			i = find(func(o config.WorkspaceFolder) bool { return o.Path == n.Path })
+		}
+		if i < 0 {
+			items = append(items, fmt.Sprintf("フォルダを追加 %s(%s)", n.Name, folderLabel(n)))
+			continue
+		}
+		matched[i] = true
+		o := old[i]
+		if o.Name != n.Name {
+			items = append(items, fmt.Sprintf("フォルダの名前(%s → %s)", o.Name, n.Name))
+		}
+		if o.Path != n.Path {
+			items = append(items, fmt.Sprintf("%s のパス(%s → %s)", n.Name, o.Path, n.Path))
+		}
+		if !o.Main && n.Main {
+			items = append(items, fmt.Sprintf("メイン(%s)", n.Name))
+		}
+		if o.Writable != n.Writable {
+			items = append(items, fmt.Sprintf("%s を%s", n.Name, writableLabel(n.Writable)))
+		}
+		if o.Description != n.Description {
+			items = append(items, fmt.Sprintf("%s の説明", n.Name))
+		}
+	}
+	for i, o := range old {
+		if !matched[i] {
+			items = append(items, fmt.Sprintf("フォルダを外す %s(%s)", o.Name, o.Path))
+		}
+	}
+	return items
+}
+
+// folderLabel は、ログに書くフォルダ1つの中身(「(パス, 書ける / 読むだけ)」の括弧の中)。
+func folderLabel(f config.WorkspaceFolder) string {
+	return f.Path + ", " + writableLabel(f.Writable)
+}
+
+func writableLabel(writable bool) string {
+	if writable {
+		return "書ける"
+	}
+	return "読むだけ"
+}
+
+// checkServerFolderPath は、フォルダのパスがサーバーの PC の絶対パスで、フォルダとしてあるかを確かめ、整えたパスを返す。
 func checkServerFolderPath(path string) (string, error) {
 	p := strings.TrimSpace(path)
 	if p == "" {
-		return "", errors.New("資料のフォルダのパスを書いてください")
+		return "", errors.New("フォルダのパスを書いてください")
 	}
 	if !filepath.IsAbs(p) {
-		return "", fmt.Errorf("資料のフォルダのパスは、サーバーの PC の絶対パスで書いてください: %s", p)
+		return "", fmt.Errorf("フォルダのパスは、サーバーの PC の絶対パスで書いてください: %s", p)
 	}
 	p = filepath.Clean(p)
 	if st, err := os.Stat(p); err != nil || !st.IsDir() {
@@ -265,29 +344,32 @@ func checkServerFolderPath(path string) (string, error) {
 	return p, nil
 }
 
-// serverFolders は、資料のフォルダの一覧(名前の順・パスと、選んでいるプロファイル付き)。
-func (s *Service) serverFolders(ctx context.Context) ([]ServerFolder, error) {
-	m := s.folderMap()
-	out := []ServerFolder{}
-	for _, name := range slices.Sorted(maps.Keys(m)) {
-		users, err := s.folderUsedBy(ctx, name)
+// serverWorkspaceViews は、サーバーのワークスペースの一覧(server.json の並び・パスと、選んでいるプロファイル付き)。
+func (s *Service) serverWorkspaceViews(ctx context.Context) ([]ServerWorkspaceView, error) {
+	out := []ServerWorkspaceView{}
+	for _, w := range s.serverWorkspaceList() {
+		users, err := s.workspaceUsedBy(ctx, w.Name)
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, ServerFolder{Name: name, Path: m[name], Missing: !isDir(m[name]), UsedBy: users})
+		v := ServerWorkspaceView{Name: w.Name, Folders: []ServerFolderView{}, UsedBy: users}
+		for _, f := range w.Folders {
+			v.Folders = append(v.Folders, ServerFolderView{WorkspaceFolder: f, Missing: !isDir(f.Path)})
+		}
+		out = append(out, v)
 	}
 	return out, nil
 }
 
-// folderUsedBy は、資料のフォルダ name を選んでいるプロファイルの名前。
-func (s *Service) folderUsedBy(ctx context.Context, name string) ([]string, error) {
-	fu, ok := s.store.(folderUsers)
+// workspaceUsedBy は、サーバーのワークスペース name を選んでいるプロファイルの名前。
+func (s *Service) workspaceUsedBy(ctx context.Context, name string) ([]string, error) {
+	wu, ok := s.store.(workspaceUsers)
 	if !ok {
-		return nil, errors.New("この保存先では、資料のフォルダを使っているプロファイルを調べられません")
+		return nil, errors.New("この保存先では、サーバーのワークスペースを使っているプロファイルを調べられません")
 	}
-	users, err := fu.ProfilesUsingFolder(ctx, name)
+	users, err := wu.ProfilesUsingWorkspace(ctx, name)
 	if err != nil {
-		return nil, fmt.Errorf("資料のフォルダ %s を使っているプロファイルを調べられません: %w", name, err)
+		return nil, fmt.Errorf("サーバーのワークスペース %s を使っているプロファイルを調べられません: %w", name, err)
 	}
 	if users == nil {
 		users = []string{}
@@ -307,41 +389,36 @@ func (s *Service) checkServerConfig(ctx context.Context) error {
 }
 
 // serverConfigOnly は、管理者でない人に断るときの文(web.go の adminOnly と同じもの)。
-const serverConfigOnly = "aibow-server の並列数・作業領域・資料のフォルダは、管理者だけが変えられます"
+const serverConfigOnly = "aibow-server の並列数・作業領域・サーバーのワークスペースは、管理者だけが変えられます"
 
-// ---- 資料のフォルダの表 -----------------------------------------------------------------
+// ---- サーバーのワークスペースの表 ---------------------------------------------------------
 
-// folderMap は、今の資料のフォルダの表の写し。
-func (s *Service) folderMap() map[string]string {
-	s.folderMu.RLock()
-	defer s.folderMu.RUnlock()
-	m := maps.Clone(s.folders)
-	if m == nil {
-		m = map[string]string{}
-	}
-	return m
+// serverWorkspaceList は、今のサーバーのワークスペースの表の写し。
+func (s *Service) serverWorkspaceList() []config.ServerWorkspace {
+	s.wsMu.RLock()
+	defer s.wsMu.RUnlock()
+	return config.CloneServerWorkspaces(s.serverWs)
 }
 
-// folderNames は、資料のフォルダの名前(名前の順)。
-func (s *Service) folderNames() []string {
-	s.folderMu.RLock()
-	defer s.folderMu.RUnlock()
-	return slices.Sorted(maps.Keys(s.folders))
+// serverWorkspaceIndex は、名前 name のワークスペースの位置(無ければ -1)。
+func serverWorkspaceIndex(list []config.ServerWorkspace, name string) int {
+	name = strings.TrimSpace(name)
+	return slices.IndexFunc(list, func(w config.ServerWorkspace) bool { return strings.EqualFold(w.Name, name) })
 }
 
-// hasFolders は、資料のフォルダが1つでもあるか。
-func (s *Service) hasFolders() bool {
-	s.folderMu.RLock()
-	defer s.folderMu.RUnlock()
-	return len(s.folders) > 0
+// hasServerWorkspaces は、サーバーのワークスペースが1つでもあるか。
+func (s *Service) hasServerWorkspaces() bool {
+	s.wsMu.RLock()
+	defer s.wsMu.RUnlock()
+	return len(s.serverWs) > 0
 }
 
-// setFolders は、資料のフォルダの表を差し替え、会話の仕組みにも渡す(次のツールの実行から効く)。
-func (s *Service) setFolders(m map[string]string) {
-	s.folderMu.Lock()
-	s.folders = maps.Clone(m)
-	s.folderMu.Unlock()
+// setServerWorkspaces は、サーバーのワークスペースの表を差し替え、会話の仕組みにも渡す(次のツールの実行から効く)。
+func (s *Service) setServerWorkspaces(list []config.ServerWorkspace) {
+	s.wsMu.Lock()
+	s.serverWs = config.CloneServerWorkspaces(list)
+	s.wsMu.Unlock()
 	if s.convs != nil {
-		s.convs.SetFolders(m)
+		s.convs.SetServerWorkspaces(list)
 	}
 }

@@ -17,8 +17,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"maps"
 	"slices"
+	"strings"
 	"uuid"
 
 	"github.com/secondarykey/aibow/config"
@@ -44,9 +44,9 @@ type ProfileRules struct {
 	Fixed []string `json:"fixed,omitempty"`
 	// Off は使えないもの。PC の既定(tools.json)や会話の上書きより先に見る
 	Off ProfileOff `json:"off,omitzero"`
-	// Folder は、aibow-server の資料のフォルダの名前(server.json の folders。0024 の 12-2)。
-	// 配っているプロファイルで、その人にまだ配られているときだけ効く(Profile.GrantedFolder)。決まりなので、変えると今ある会話にもすぐ効く
-	Folder string `json:"folder,omitempty"`
+	// Workspace は、aibow-server のサーバーのワークスペースの名前(server.json の workspaces。0065。以前の資料のフォルダ folder。0024 の 12-2)。
+	// 配っているプロファイルで、その人にまだ配られているときだけ効く(Profile.GrantedWorkspace)。決まりなので、変えると今ある会話にもすぐ効く
+	Workspace string `json:"workspace,omitempty"`
 }
 
 // ProfileOff は、プロファイルで使えないツール。
@@ -236,7 +236,7 @@ func (cs *Conversations) load(ctx context.Context, id uuid.UUID) (Conversation, 
 }
 
 // forUse は、使うときの設定の仕上げ。作業フォルダを使わない形(IgnoreWorkDir)なら、ワークスペースを空にする。
-// 資料のフォルダ(SetFolders)のパスも、ここでは入れない(画面に返す設定にパスを載せないため)。ツールを作るときに workDir で引く。
+// サーバーのワークスペース(SetServerWorkspaces)のパスも、ここでは入れない(画面に返す設定にパスを載せないため)。ツールを作るときに toolFolders で引く。
 func (cs *Conversations) forUse(s ConversationSettings) ConversationSettings {
 	if cs.noWorkDir {
 		s.Workspace, s.WorkDir, s.Worktree = "", "", false
@@ -244,50 +244,73 @@ func (cs *Conversations) forUse(s ConversationSettings) ConversationSettings {
 	return s
 }
 
-// GrantedFolder は、このプロファイルで使える資料のフォルダの名前(使えなければ空)。
+// GrantedWorkspace は、このプロファイルで使えるサーバーのワークスペースの名前(使えなければ空)。
 // 配っていて(Share)、ctx の利用者にまだ配られている(Withdrawn でない)ときだけ(0024 の決定事項 31)。
 // 配っていないプロファイル(写したものなど)に名前が書いてあっても使わない。誰が使えるかは、配る相手で決まるため。
-func (p *Profile) GrantedFolder() string {
+func (p *Profile) GrantedWorkspace() string {
 	if p == nil || p.Share == ShareNone || p.Withdrawn {
 		return ""
 	}
-	return p.Rules.Folder
+	return p.Rules.Workspace
 }
 
-// SetFolders は、aibow-server の資料のフォルダ(名前 → 絶対パス)を決める(ブラウザの会話。0024 の 12-2)。
-// 起動のときと、管理の画面でフォルダを足す・パスを変える・消したとき(0061)。渡した map は写して持つ。
-// パスを変えると、そのフォルダを使う会話は、次のツールの実行から新しいパスになる(ツールは呼び出しのたびに toolsFor で引き直すため)。
-// 実行中のツールは前のパスのまま終わる。
-func (cs *Conversations) SetFolders(folders map[string]string) {
-	cs.foldersMu.Lock()
-	defer cs.foldersMu.Unlock()
-	cs.folders = maps.Clone(folders)
+// SetServerWorkspaces は、aibow-server のサーバーのワークスペースを決める(ブラウザの会話。0065)。
+// 起動のときと、管理の画面でワークスペースやフォルダを変えたとき(0061)。渡した一覧は写して持つ。
+// フォルダを変えると、そのワークスペースを使う会話は、次のツールの実行から新しいフォルダの組になる(ツールは呼び出しのたびに toolsFor で引き直すため)。
+// 実行中のツールは前のフォルダのまま終わる。
+func (cs *Conversations) SetServerWorkspaces(list []config.ServerWorkspace) {
+	cs.serverWsMu.Lock()
+	defer cs.serverWsMu.Unlock()
+	cs.serverWs = config.CloneServerWorkspaces(list)
 }
 
-// folderOf は、会話の設定 set(プロファイルの決まりを当てたもの)で使える資料のフォルダの名前とパス。無ければ空。
-func (cs *Conversations) folderOf(set ConversationSettings) (name, path string) {
-	name = set.profile.GrantedFolder()
-	cs.foldersMu.RLock()
-	defer cs.foldersMu.RUnlock()
-	if p, ok := cs.folders[name]; ok && name != "" {
-		return name, p
+// serverWorkspaceOf は、会話の設定 set(プロファイルの決まりを当てたもの)で使えるサーバーのワークスペース。無ければ ok が false。
+func (cs *Conversations) serverWorkspaceOf(set ConversationSettings) (config.ServerWorkspace, bool) {
+	name := set.profile.GrantedWorkspace()
+	if name == "" {
+		return config.ServerWorkspace{}, false
 	}
-	return "", ""
+	cs.serverWsMu.RLock()
+	defer cs.serverWsMu.RUnlock()
+	for _, w := range cs.serverWs {
+		if w.Name == name {
+			return w.Clone(), true
+		}
+	}
+	return config.ServerWorkspace{}, false
 }
 
-// FolderName は、会話の設定 set で使える資料のフォルダの名前(画面に出す。パスは出さない)。
-func (cs *Conversations) FolderName(set ConversationSettings) string {
-	name, _ := cs.folderOf(set)
-	return name
+// ServerWorkspaceName は、会話の設定 set で使えるサーバーのワークスペースの名前(画面に出す。パスは出さない)。
+func (cs *Conversations) ServerWorkspaceName(set ConversationSettings) string {
+	w, _ := cs.serverWorkspaceOf(set)
+	return w.Name
+}
+
+// ServerFolderName は、会話の設定 set のサーバーのワークスペースの名前と、ツールの引数 folder(空ならメイン)で選んだフォルダの名前(ログに出す。0065 の決定事項 23)。
+// ワークスペースが無ければ両方空。folder が見つからなければ、フォルダの名前は folder のまま。
+func (cs *Conversations) ServerFolderName(set ConversationSettings, folder string) (workspace, name string) {
+	w, ok := cs.serverWorkspaceOf(set)
+	if !ok {
+		return "", ""
+	}
+	if folder == "" {
+		return w.Name, w.MainFolder().Name
+	}
+	for _, f := range w.Folders {
+		if strings.EqualFold(f.Name, folder) {
+			return w.Name, f.Name
+		}
+	}
+	return w.Name, folder
 }
 
 // workDir は、ツールを作るときの作業フォルダ。アプリでは会話のワークスペースのメインのフォルダ
-// (この PC に無いワークスペースなら空。0035)、aibow-server のブラウザの会話では、プロファイルで配られた資料のフォルダ(無ければ空)。
+// (この PC に無いワークスペースなら空。0035)、aibow-server のブラウザの会話では、プロファイルで配られたサーバーのワークスペースのメインのフォルダ(無ければ空。0065)。
 // 前の作業フォルダ(WorkDir)は使わない(この PC にあるものは起動したときにワークスペースに移している。MigrateWorkDirs)。
 func (cs *Conversations) workDir(set ConversationSettings) string {
 	if cs.noWorkDir {
-		_, p := cs.folderOf(set)
-		return p
+		w, _ := cs.serverWorkspaceOf(set)
+		return w.MainFolder().Path
 	}
 	if wt, ok := cs.worktreeOf(set); ok {
 		return wt.Path // worktree で作業している会話は、メインのフォルダの代わりに worktree(0039)
@@ -300,23 +323,32 @@ func (cs *Conversations) workDir(set ConversationSettings) string {
 }
 
 // toolFolders は、ファイルのツールが扱うフォルダの組。アプリでは会話のワークスペースのフォルダ全部(0035 の段2)、
-// ブラウザの会話では資料のフォルダ1つ(workDir と同じ)。無ければ空。
+// ブラウザの会話ではサーバーのワークスペースのフォルダ全部(0065 の決定事項 2・12。ツールの中は同じで、フォルダの組を渡すだけ)。無ければ空。
 func (cs *Conversations) toolFolders(set ConversationSettings) []tool.Folder {
 	if cs.noWorkDir {
-		return tool.Single(cs.workDir(set))
+		w, ok := cs.serverWorkspaceOf(set)
+		if !ok {
+			return nil
+		}
+		return toToolFolders(w.Folders, "")
 	}
 	ws, ok := cs.workspaces.Get(set.Workspace)
 	if !ok {
 		return nil
 	}
-	wt, inWorktree := cs.worktreeOf(set)
-	folders := make([]tool.Folder, 0, len(ws.Folders))
-	for _, f := range ws.Folders {
+	// worktree で作業している会話は、メインのフォルダのパスだけを worktree にする(0039)。
+	// 名前(モデルが呼ぶ名前)は変えず、モデルには worktree だと伝えない(プロンプトを変えない)
+	wt, _ := cs.worktreeOf(set)
+	return toToolFolders(ws.Folders, wt.Path)
+}
+
+// toToolFolders は、ワークスペースのフォルダを、ファイルのツールのフォルダにする。mainPath が空でなければ、メインのフォルダのパスをそれにする(worktree)。
+func toToolFolders(list []config.WorkspaceFolder, mainPath string) []tool.Folder {
+	folders := make([]tool.Folder, 0, len(list))
+	for _, f := range list {
 		path := f.Path
-		if f.Main && inWorktree {
-			// worktree で作業している会話は、メインのフォルダのパスだけを worktree にする(0039)。
-			// 名前(モデルが呼ぶ名前)は変えず、モデルには worktree だと伝えない(プロンプトを変えない)
-			path = wt.Path
+		if f.Main && mainPath != "" {
+			path = mainPath
 		}
 		folders = append(folders, tool.Folder{Name: f.Name, Path: path, Main: f.Main, Writable: f.Writable, Description: f.Description})
 	}

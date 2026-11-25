@@ -38,7 +38,7 @@ func SettingsChanges(old, next ConversationSettings) []string {
 }
 
 // ProfileChanges は、プロファイルを old から next に変えたときに、変えた項目を画面の言葉で返す(名前・値・決まり)。
-// 使えないツールと資料のフォルダは、何を変えたかを括弧で添える。
+// 使えないツールとサーバーのワークスペースは、何を変えたかを括弧で添える。
 func ProfileChanges(old, next Profile) []string {
 	var out []string
 	if old.Name != next.Name {
@@ -51,8 +51,8 @@ func ProfileChanges(old, next Profile) []string {
 	if d := Diff(offNames(old.Rules.Off), offNames(next.Rules.Off)); d != "" {
 		out = append(out, "使えないツール("+d+")")
 	}
-	if old.Rules.Folder != next.Rules.Folder {
-		out = append(out, fmt.Sprintf("資料のフォルダ(%s → %s)", cmp.Or(old.Rules.Folder, "なし"), cmp.Or(next.Rules.Folder, "なし")))
+	if old.Rules.Workspace != next.Rules.Workspace {
+		out = append(out, fmt.Sprintf("サーバーのワークスペース(%s → %s)", cmp.Or(old.Rules.Workspace, "なし"), cmp.Or(next.Rules.Workspace, "なし")))
 	}
 	return out
 }

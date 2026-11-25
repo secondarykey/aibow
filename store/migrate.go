@@ -289,6 +289,12 @@ CREATE INDEX conversation_inactive_by_user ON conversation_inactive(user_id);
 ALTER TABLE api_keys ADD COLUMN expires_at TEXT NOT NULL DEFAULT '';
 ALTER TABLE users ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0;
 `,
+	// 版 24: 配布プロファイルの決まりの資料のフォルダ(folder)を、サーバーのワークスペース(workspace)に移す(0065 の決定事項 11)。
+	// server.json の前の形の folders は、同じ名前のワークスペースとして読む(config.ServerFile.ServerWorkspaces)ので、名前はそのまま移せる
+	`
+UPDATE profiles SET rules = json_remove(json_set(rules, '$.workspace', json_extract(rules, '$.folder')), '$.folder')
+WHERE json_extract(rules, '$.folder') IS NOT NULL;
+`,
 }
 
 func migrate(db *sql.DB) error {

@@ -2,7 +2,7 @@ package config
 
 // serverwrite.go: 管理の画面で変えた値を server.json に書き戻す(0061)。
 //
-// server.json は手で書くファイルだが、並列数(parallel)・作業領域(ctx)・資料のフォルダ(folders)の3つだけは、
+// server.json は手で書くファイルだが、並列数(parallel)・作業領域(ctx)・サーバーのワークスペース(workspaces。0065)の3つだけは、
 // 管理の画面からも変えられる(0061 の決定事項 3)。手で書いた形をなるべく壊さないよう、次のように書く(決定事項 8):
 //
 //   - 書く直前にファイルを読み直し、画面で変えた鍵だけを差し替える。ほかの鍵は並びも値もそのまま残す(手で書いた値を画面が消さない)
@@ -22,16 +22,17 @@ import (
 	"sync"
 )
 
-// ServerEdit は、管理の画面から server.json に書く項目。nil(SetFolders が false)の項目は書かない(ファイルの値のまま)。
+// ServerEdit は、管理の画面から server.json に書く項目。nil(SetWorkspaces が false)の項目は書かない(ファイルの値のまま)。
 type ServerEdit struct {
 	Parallel *int
 	Ctx      *int
-	// Folders は資料のフォルダの全部(名前 → 絶対パス)。SetFolders のときだけ書く。空なら folders の鍵を消す
-	Folders    map[string]string
-	SetFolders bool
+	// Workspaces はサーバーのワークスペースの全部。SetWorkspaces のときだけ書く。空なら workspaces の鍵を消す。
+	// 書くときは前の形の folders の鍵を消す(中身は Workspaces に移してあるため。0065 の決定事項 10)
+	Workspaces    []ServerWorkspace
+	SetWorkspaces bool
 }
 
-// serverFileMu は、server.json を書く順番を1つにする(並列数の保存と資料のフォルダの追加が同時に来ても、片方の変更が消えないように)。
+// serverFileMu は、server.json を書く順番を1つにする(並列数の保存とワークスペースの変更が同時に来ても、片方の変更が消えないように)。
 var serverFileMu sync.Mutex
 
 // ReadServerFile は、server.json を読む(無ければ found が false)。
@@ -88,11 +89,12 @@ func SaveServerFile(path string, edit ServerEdit) error {
 	if edit.Ctx != nil {
 		fields = setField(fields, "ctx", *edit.Ctx)
 	}
-	if edit.SetFolders {
-		if len(edit.Folders) == 0 {
-			fields = deleteField(fields, "folders")
+	if edit.SetWorkspaces {
+		fields = deleteField(fields, "folders")
+		if len(edit.Workspaces) == 0 {
+			fields = deleteField(fields, "workspaces")
 		} else {
-			fields = setField(fields, "folders", edit.Folders)
+			fields = setField(fields, "workspaces", edit.Workspaces)
 		}
 	}
 	data, err := writeFields(fields)
@@ -120,8 +122,10 @@ func (e ServerEdit) check(path string) error {
 	if e.Ctx != nil && *e.Ctx < 1 {
 		return fmt.Errorf("作業領域は 1 以上にしてください: %d", *e.Ctx)
 	}
-	if e.SetFolders {
-		return checkFolders(path, e.Folders)
+	if e.SetWorkspaces {
+		if err := CheckServerWorkspaces(e.Workspaces); err != nil {
+			return fmt.Errorf("設定ファイル %s に書けません: %w", path, err)
+		}
 	}
 	return nil
 }
@@ -181,7 +185,7 @@ func readFields(data []byte) ([]jsonField, error) {
 func setField(fields []jsonField, key string, v any) []jsonField {
 	raw, err := json.Marshal(v)
 	if err != nil {
-		panic(err) // int と map[string]string しか渡さない
+		panic(err) // int とワークスペースの一覧しか渡さない
 	}
 	for i := range fields {
 		if fields[i].key == key {
