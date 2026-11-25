@@ -390,7 +390,7 @@ Each command starts in the main folder "aibow" unless you pass folder; a cd does
 
 - `update_plan`:モデルが作業の予定をチェックリストとして書く(Claude Code の TodoWrite に当たる)。引数 `items` は予定の全部(項目ごとに `text` と `status`(`pending` / `in_progress` / `done`))で、毎回まるごと書き直す。
   `in_progress` は1つまで(2つ以上はエラー)。何も実行せず、結果は「予定を覚えました(N 件中 M 件済み)」だけ(予定は呼び出しとして履歴にあるので繰り返さない)
-- 作業フォルダのある会話だけで出す(フォルダのツールと `run_command` の間。`localTools` と `mcp/server` の `Options.Tools`)。aibow-server の資料のフォルダ・aibow-mcp でも出る。確認しない
+- 作業フォルダのある会話だけで出す(フォルダのツールと `run_command` の間。`localTools` と `mcp/server` の `Options.Tools`)。aibow-server のサーバーのワークスペース・aibow-mcp でも出る。確認しない
 - 予定は別に保存しない。「今の予定」は履歴の最後の、成功した `update_plan` の呼び出しの引数(`lastPlan`)。
   compact で呼び出しを含む発言をモデルに渡さなくなったら、渡さない部分の最後の予定を、システムの文の最後(要約の後ろ / truncate なら残した発言の前)に英語で足す(`passFrom` → `withPlan`。[compact.md](compact.md))
 - 画面では、`update_plan` のカードを引数と結果ではなくチェックリストで出す(`PlanCard.tsx`。済みは打ち消し線、取りかかっているものは太字)。エラーの呼び出しはふつうのカード
@@ -491,7 +491,7 @@ Each command starts in the main folder "aibow" unless you pass folder; a cd does
 - **捨てる・消す**:`git worktree remove --force` と `git branch -D`(`git.Remove`。フォルダを手で消してあれば `worktree prune`)。捨てると結び付けを消し、会話の切り替えも外す(本体のフォルダに戻る)。
   会話を消したら一緒に消す(この PC に結び付けの無い会話なら何もしない)。生成中は捨てられない
 - **守り**:作ったあとは切り替えを外せない(捨てるのは差分の画面)・ワークスペースを変えられない(`keepWorktree`)。worktree のある会話が残っているワークスペースは消せない(結び付けが消えると片付けられなくなるため)
-- 作るのは画面のアプリだけ(aibow-server の資料のフォルダでは作らない。`noWorkDir` のときは何もしない)。画面から呼ぶメソッド(`ui/worktree.go`)もブラウザには出さない
+- 作るのは画面のアプリだけ(aibow-server のサーバーのワークスペースでは作らない。`noWorkDir` のときは何もしない)。画面から呼ぶメソッド(`ui/worktree.go`)もブラウザには出さない
 - テスト:`git/worktree_test.go`(一時リポジトリを `git init` で作る。当たらないとき・autocrlf・同じファイルの別の変更・git が無いとき)、`worktree_test.go`(会話から:作る時・確認の既定・取り込む・捨てる・会話を消す)。git が無ければ飛ばす
 
 ## 保存

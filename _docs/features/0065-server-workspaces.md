@@ -1,6 +1,6 @@
 # 0065: 資料のフォルダを「サーバーのワークスペース」にする(フォルダを複数持てる。ブラウザだけ)
 
-- 状態: ⬜ 未着手
+- 状態: 🔧 作業中(段1 の作業の順番 1〜5 は済んだ。未決事項 1・2 を画面で見てもらって決める)
 - ロードマップ: ロードマップの外(0024 の 12-2 の資料のフォルダと、0035 のワークスペースをそろえる)
 - 決めた日: 2026-11-25(Chat でユーザーと決めた。Chat がコード(`rules.go`・`prompt.go`・`ui/serverconfig.go`・`ui/tools.go`・`ui/conversations.go`・`config/server.go`・`config/serverwrite.go`・`config/workspaces.go`・`store/profiles.go`・`changes.go`・`profile.go`・`_cmd/aibow-server/browser.go`・
   `_cmd/aibow/frontend/src/App.tsx`・`components/WorkspaceBar.tsx`・`components/ServerConfig.tsx`・`components/ProfileSettings.tsx`・`profileRules.ts`)を読んで、今の作りを確かめた)
@@ -43,7 +43,7 @@ aibow-server の資料のフォルダは、配布プロファイルで**フォ�
 
 ## 決定事項(話の流れから Chat が決めて書いたこと。2026-11-25)
 
-着手の前に、ユーザーにこのとおりでよいかを確かめる。
+着手の前に、ユーザーにこのとおりでよいかを確かめる。**2026-11-26、ユーザーがこのとおりで進めると決めた**。
 
 ### 呼び名
 
@@ -134,3 +134,33 @@ aibow-server の資料のフォルダは、配布プロファイルで**フォ�
 3. `ui` と `_cmd/aibow-server`:管理の画面の口(`serverconfig.go`)・`checkFolder`・`forBrowser` / `hasFolders`・`ConversationDetail`・起動のログ。テスト
 4. 画面:管理のタブ・配布プロファイルの欄・`FolderBar`・会話の設定の画面・0064 の文。未決事項 1・2 を画面で見せてユーザーに確かめる
 5. ドキュメント(完了の条件 7)
+
+## 経過
+
+### 2026-11-26:段1 の作業の順番 1〜5(Claude Code)
+
+作ったもの(完了の条件 1〜7 にあたるものはテストで確かめた。実際の画面・ブラウザではまだ確かめていない):
+
+- `config`:`ServerWorkspace`(`config/serverworkspaces.go`)と `ServerFile.Workspaces`。確かめ(`CheckServerWorkspaces`)はアプリのワークスペースと同じ決まりを `validateFolders` に切り出して使い、フォルダがあるか・説明の長さを足した。
+  前の形の `folders` は `ServerFile.ServerWorkspaces()` でワークスペースとして読む(`migrated` が true)。`SaveServerFile` は `SetWorkspaces` で `workspaces` を書き、いつも `folders` を消す。両方あれば `LoadServerFile` がエラーにする
+- ルート:`ProfileRules.Workspace`・`GrantedWorkspace`・`SetServerWorkspaces`・`ServerWorkspaceName`・`ServerFolderName`(書いたときのログ用)。`toolFolders` はワークスペースのフォルダ全部、`workDir` はメインのフォルダ。
+  `foldersEnvironment` に `onServer` を足し、パスの代わりに「on the server」、git の印は付けない
+- `store`:版 24 のマイグレーション(`$.folder` → `$.workspace`)と `ProfilesUsingWorkspace`
+- `ui`:`ServerWorkspaces`(誰でも。名前とフォルダの名前・印だけ)・`checkWorkspace`・`ConversationDetail.Workspace`。管理の画面の口は `AddServerWorkspace`・`SaveServerWorkspace`・`RemoveServerWorkspace`
+- `_cmd/aibow-server`:起動のログにワークスペースの名前とフォルダの数、前の形から読んだときの知らせ(Notice)
+- 画面:管理の画面の「サーバーのワークスペース」のタブ・配布プロファイルと会話の設定の画面の欄・`FolderBar` の吹き出し・0064 の知らせの文
+
+作業中に決めたこと(仕様に書いていなかったところ。おかしければ直す):
+
+1. **管理の画面は、フォルダの組を下書きで変えて「保存」で1回に書く形にした**(決定事項 16 の「足す・消す・パスを変える…」を1つずつの操作にせず、アプリの設定の画面の「ワークスペース」と同じ形にそろえた)。
+   ログは保存1回で1行(0053)。例:「サーバーのワークスペース 社内規程 を保存しました(フォルダを追加 議事録(D:\share\minutes, 読むだけ)・規程 のパス(… → …)・alice が変えた)」。
+   決定事項 21 の例の「(管理者 alice)」は、今までの管理の画面のログ(0061)と同じ「・alice が変えた」にそろえた。同じフォルダかは、名前か、名前を変えたならパスで見る
+2. **パスは打って変える欄にした**(ブラウザなので、フォルダを選ぶダイアログが無い)。足すフォルダの名前の既定はフォルダ名(重なれば -2 を付ける)
+3. **フォルダが1つのときの環境の説明の名前は、ワークスペースの名前ではなくフォルダの名前**(`Working directory: "規程" (a shared folder on the server)`)。
+   ファイルのツールがパスの先頭に付けた名前を見分けるのはフォルダの名前なので、モデルに見せる名前をそろえた。前の形から移したものは、フォルダの名前 = 資料のフォルダの名前なので今と同じ
+4. **前の形から移すとき、資料のフォルダの名前がモデルの呼ぶ名前に使えない形(/・\・: を含む)なら、フォルダの名前だけはフォルダ名にする**(ワークスペースの名前はそのまま。配布プロファイルが名前で選ぶため)
+5. **ワークスペースの名前の重なりは、大文字と小文字だけの違いも重なりとみなす**(フォルダの名前と同じ)
+6. **ブラウザの会話では Git のツール(`git_status`・`git_diff`)も出さない**(`ui.noCommand` と `BuiltinTools`・`ToolStates`。`browserHides`)。
+   今まではフォルダがリポジトリなら出ていた(0041 で足したとき、ブラウザで外していなかった)。決定事項 5 のとおりにした
+7. **書いたときのログ(決定事項 23)は「サーバーのワークスペース 社内規程 のフォルダ 規程 に書きました: write_file a.md(bob の会話 …)」**。ワークスペースは、書くたびに会話を引いて決める(書くことはまれなので)
+8. 画面に返すワークスペースの一覧は `ServerWorkspaces`(以前の `Folders` の置き換え)。入力欄の上の吹き出しもこれで引く。管理の画面の一覧は server.json の並び(名前の順に並べ替えない)

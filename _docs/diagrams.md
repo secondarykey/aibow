@@ -13,7 +13,7 @@
 | MCP のサーバーを書く所 | `settings.json` | `settings.json`（手元） | `server.json` の `mcpServers` | — |
 | 扱いの既定 | `tools.json`（PC の人） | `tools.json`（PC の人） | `server-tools.json`（管理者） | — |
 | 既定の「使わない」 | 既定では使わない（会話で使える） | 同左 | **禁止**（会話でも使えない） | — |
-| 作業フォルダ | 会話ごとに手元のパス | 手元のパス | 管理者の「資料のフォルダ」（名前だけ見える） | — |
+| 作業フォルダ | 会話ごとに手元のパス | 手元のパス | 管理者の「サーバーのワークスペース」（名前だけ見える） | — |
 | `run_command` | あり（確認つき） | あり（確認つき） | **出さない** | — |
 | 確認のカード | Wails の中で往復 | Wails の中で往復 | SSE で届き、画面用の API で答える | — |
 
@@ -83,7 +83,7 @@ flowchart LR
 
 ポイント
 - アプリは llama.cpp を読み込まない。会話は `server.db` に置かれ、誰のものかは `ctx`（`aibow.WithUser`）で運ぶ
-- サーバーの MCP や資料のフォルダは **アプリにも Cline にも出さない**（0024 の決定事項 13）
+- サーバーの MCP やサーバーのワークスペースは **アプリにも Cline にも出さない**（0024 の決定事項 13）
 
 ---
 
@@ -104,10 +104,10 @@ flowchart LR
     CONV <--> LOC["組み込み（Local）<br/>時刻・計算"]
     CONV <--> FT["作業フォルダのツール<br/>list/read/write/edit_file<br/>（run_command は出さない）"]
     CONV <--> MCPC["mcp/client：全員で1つの MCP のサーバー"]
-    FT <-->|"os.Root"| FOL[("資料のフォルダ<br/>server.json の folders")]
+    FT <-->|"os.Root"| FOL[("サーバーのワークスペース<br/>server.json の workspaces")]
     MCPC <-->|"${workdir} 付きはフォルダごとに1つ"| FOL
     MCPC <--> NET["fetch・検索など<br/>（社内の URL・外へ）"]
-    CFG[/"server.json（mcpServers・folders）<br/>server-tools.json（管理者の既定）"/] -.-> CONV
+    CFG[/"server.json（mcpServers・workspaces）<br/>server-tools.json（管理者の既定）"/] -.-> CONV
   end
 
   BR <-->|"HTTP(S)・cookie のセッション"| H
@@ -193,9 +193,9 @@ flowchart LR
   subgraph WHAT["決めるもの"]
     SJ["settings.json：どの MCP を起動するか"]
     TJ["tools.json：アプリの扱いの既定"]
-    SVJ["server.json：サーバーの MCP・資料のフォルダ"]
+    SVJ["server.json：サーバーの MCP・サーバーのワークスペース"]
     STJ["server-tools.json：ブラウザの扱いの既定（使わない＝禁止）"]
-    PROF["配るプロファイル：使えないツール・資料のフォルダ・誰に配るか"]
+    PROF["配るプロファイル：使えないツール・サーバーのワークスペース・誰に配るか"]
     CONVP["会話の上書き：使う / 使わない / 確認する<br/>カードの「この会話の間」（今後聞かない・今後許可しない）"]
   end
   PCU --> SJ & TJ
@@ -208,8 +208,8 @@ flowchart LR
 - MCP のツールは中身が見えないので、決まりの既定は **確認する**。`readOnlyHint` は信じない（0007 の決定事項 9）
 - `settings.json` に書いた MCP のサーバーは、名乗りを偽れるので **呼ぶ前の確認も残す**（aibow-mcp でも確認が 2 回出る）。aibow の中の自作サーバー（Local）だけ、サーバーの差分を信頼して確認を 1 回にする
 - ブラウザの会話では、サーバーの MCP は全員で1つ。人をまたいで状態が残らないものを置く・fetch が社内の URL に届く危うさは管理者が判断（aibow は止めない）
-- ツールの実行はログに残す（確認しないで実行したもの・資料のフォルダに書いたものは Notice）
+- ツールの実行はログに残す（確認しないで実行したもの・サーバーのワークスペースに書いたものは Notice）
 
 ---
 
-プロファイルを配る流れ(誰に届くか・決まり・資料のフォルダ・グループ長)の図は [diagrams-profiles.md](diagrams-profiles.md)。
+プロファイルを配る流れ(誰に届くか・決まり・サーバーのワークスペース・グループ長)の図は [diagrams-profiles.md](diagrams-profiles.md)。

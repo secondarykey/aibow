@@ -232,11 +232,14 @@ Cline など ──HTTP──→ /v1/ など → api.Server ──────�
   - ツールの実行のログには、利用者の名前と会話が付く(`ツール calculate(...)(bob の会話 …)`)
   - MCP のサーバー(`server.json` の `mcpServers`)と管理者の既定(`server-tools.json`)は [mcp.md](mcp.md) の「aibow-server の MCP のサーバー」。
     既定を見る `ToolPrefs`・`ToolDefaults`・`BuiltinTools` は誰でも呼べ(既定のファイルの場所は管理者にだけ返す)、変える `SetToolPolicy`・`SetGroupPolicy`・`LoadToolList` は管理者だけ(ほかの人は 403)
-  - 資料のフォルダ(0024 の 12-2):`Folders` は `server.json` の `folders` の名前だけを返す。会話の詳細(`Conversation`)の `folder` はその会話で使えるフォルダの名前。
-    パスは、下の管理者だけのメソッドのほかはどの返事にも入れない。資料のフォルダのある会話では、コマンドのツール(`run_command`)をモデルにも画面にも出さない(`ui.noCommand`・`forBrowser`)
-- **並列数・作業領域・資料のフォルダ**(0061。`ui/serverconfig.go`。管理者だけ:`adminServerMethods`。ほかの人は 403):
-  `ServerSettings`(並列数と作業領域の今動いている値 `running`・次の起動の値 `next`・変えられない理由 `lock`、今の1本あたりの作業領域 `perSeq`、書き戻す `server.json` の場所、資料のフォルダの名前・パス・選んでいるプロファイル `usedBy`)・
-  `SaveServerSettings(parallel, ctx)`(server.json に書く。次の起動から効く)・`AddServerFolder(name, path)`・`SetServerFolderPath(name, path)`・`RemoveServerFolder(name)`(server.json に書き、その場で効く。選んでいるプロファイルがあれば消せない)。
+  - サーバーのワークスペース(0065。以前の資料のフォルダ。0024 の 12-2):`ServerWorkspaces` は `server.json` の `workspaces` の名前と、フォルダの名前・メイン・書けるかだけを返す(誰でも呼べる。入力欄の上の吹き出しにも使う)。
+    会話の詳細(`Conversation`)の `workspace` はその会話で使えるワークスペースの名前。パスは、下の管理者だけのメソッドのほかはどの返事にも入れない。
+    ブラウザの会話では、コマンドのツール(`run_command`)と Git のツール(`git_status`・`git_diff`)をモデルにも画面にも出さない(`ui.noCommand`・`browserHides`・`forBrowser`)
+- **並列数・作業領域・サーバーのワークスペース**(0061・0065。`ui/serverconfig.go`。管理者だけ:`adminServerMethods`。ほかの人は 403):
+  `ServerSettings`(並列数と作業領域の今動いている値 `running`・次の起動の値 `next`・変えられない理由 `lock`、今の1本あたりの作業領域 `perSeq`、書き戻す `server.json` の場所、
+  サーバーのワークスペース `workspaces`(名前・フォルダ(パス・名前・メイン・書ける・説明・見つからない印 `missing`)・選んでいるプロファイル `usedBy`))・
+  `SaveServerSettings(parallel, ctx)`(server.json に書く。次の起動から効く)・`AddServerWorkspace(name, path)`(最初のフォルダはメイン・書ける)・
+  `SaveServerWorkspace(ws)`(フォルダの組をまとめて差し替える。名前は変えられない)・`RemoveServerWorkspace(name)`(選んでいるプロファイルがあれば消せない)。どれも server.json の `workspaces` に書き(前の形の `folders` は消す)、その場で効く。
   書き方は `config.SaveServerFile`(画面で変えた鍵だけを差し替え、ほかの鍵は並びも値も残す・読めないファイルには書かない・一時ファイルから置き換える・書く前の中身を `server.json.bak` に残す)。
   `-parallel`・`-ctx` の引数か、`AIBOW_SERVER_PARALLEL`・`AIBOW_SERVER_CTX` で決めた値は、server.json に書いても効かないか環境変数を黙って上書きするので、`lock` に理由を入れて変えさせない(どこから来たかは aibow-server の `resolve` が覚える)
 - **作業領域**:起動のときに決めた大きさで固定(管理の画面で変えても、起動し直すまで変わらない。0061)。会話の上限 + 返事の上限が入るかを確かめるだけで、作り直さない(`ui.ServerHost`。aibow-server につないだ画面のアプリと同じ `ContextError`)
