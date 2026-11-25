@@ -8,7 +8,7 @@
 // 外すのは一覧の最後の「なし」(以前は名前の右の ×。隣の worktree の切り替えを押すつもりで外してしまうので、一覧に移した。2026-11-04、ユーザーの指示)。
 // 会話の ID のワークスペースがこの PC に無い(別の PC で選んだ・消した)ときは、そのことを出して選び直せるようにする。
 import { useEffect, useRef, useState } from "react";
-import { LuCheck, LuFolder, LuFolderPlus, LuTriangleAlert } from "react-icons/lu";
+import { LuCheck, LuFolder, LuFolderPlus, LuInfo, LuTriangleAlert } from "react-icons/lu";
 import type { WorkspaceView } from "../../bindings/github.com/secondarykey/aibow/ui";
 import { errorMessage } from "../errors";
 import { createFromFolder, mainFolder } from "../workspaces";
@@ -94,5 +94,21 @@ export function FolderBar({ name }: { name: string }) {
         <span className="workdir-name">{name}</span>
       </span>
     </div>
+  );
+}
+
+// BrowserOnlyFolderNote は、アプリで開いた会話のプロファイルに資料のフォルダがあるときの知らせ(0064)。
+// 会話はサーバーモードのアプリとブラウザで共有されるが、ツールが動くのは開いた側の PC(アプリなら手元のワークスペース)。
+// ブラウザで資料のフォルダを使っていた会話をアプリで続けると、同じフォルダのつもりで手元のファイルを読み書きしかねないので、
+// そのフォルダを使おうとする入力欄の上(ワークスペースの隣)で知らせる。選べるものではないので押せない形にする。
+export function BrowserOnlyFolderNote({ name }: { name: string }) {
+  return (
+    <span
+      className="folder-browser-only"
+      title="この会話のツールはこの PC で動くので、aibow-server の資料のフォルダは読み書きできません。資料のフォルダを使うときは、ブラウザで aibow-server を開いてこの会話を続けてください"
+    >
+      <LuInfo className="icon" />
+      <span className="folder-browser-only-text">資料のフォルダ『{name}』はブラウザでだけ使えます(ここでは手元のフォルダ)</span>
+    </span>
   );
 }

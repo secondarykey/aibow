@@ -966,6 +966,14 @@ footer { border-top: 1px solid var(--border); background: var(--panel); padding:
   display: inline-flex; align-items: center; gap: 5px; padding: 2px 7px; border-radius: 6px;
   border: 1px solid var(--border); background: var(--bg); color: var(--text);
 }
+/* 資料のフォルダはブラウザでだけ使える、の知らせ(アプリ。0064)。ワークスペースの隣に、押せない形で出す。
+   選べるものではないので枠を付けず、注意の色の印と控えめな文にする。狭いときは文を省略し、全文はマウスを乗せた説明で読める */
+.folder-browser-only {
+  display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 100%;
+  padding: 2px 4px; font-size: 12.5px; color: var(--muted); cursor: default;
+}
+.folder-browser-only .icon { flex-shrink: 0; color: var(--warn); }
+.folder-browser-only-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* この会話のツール(作業フォルダの隣)。使うものがあればレンチのアイコンの横に名前を枠付きで出す。
    押すと上に一覧が開く(入力欄の上にあるので、下に開くと入力欄に重なる) */
 .conv-tools { position: relative; font-size: 12.5px; color: var(--muted); }

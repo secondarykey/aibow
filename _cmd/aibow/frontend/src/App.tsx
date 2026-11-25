@@ -39,7 +39,7 @@ import { AdminView, canAdmin } from "./components/AdminView";
 import { ConversationSettingsView } from "./components/ConversationSettingsView";
 import { ReadView } from "./components/ReadView";
 import { Composer } from "./components/Composer";
-import { FolderBar, WorkspaceBar } from "./components/WorkspaceBar";
+import { BrowserOnlyFolderNote, FolderBar, WorkspaceBar } from "./components/WorkspaceBar";
 import { mainFolder, useWorkspaces } from "./workspaces";
 import { ToolBar } from "./components/ToolBar";
 import { WorktreeBar } from "./components/WorktreeBar";
@@ -376,6 +376,10 @@ export default function App() {
   const lock = lockOf(profile);
   // ブラウザの会話の資料のフォルダ(名前だけ。0024 の 12-2)。開いている会話は Go が決めたもの、新しい会話の画面は選んだプロファイルのもの
   const folder = !isBrowser ? "" : convs.current ? convs.current.folder ?? "" : grantedFolder(profile);
+  // アプリで開いた会話のプロファイルにある資料のフォルダ(0064)。アプリのツールは手元のワークスペースで動き、資料のフォルダは使えないので、
+  // そのことを知らせるためだけに使う(ツールの作業フォルダにはしない)。Go の会話の詳細の folder はブラウザの会話の値で、アプリではいつも空なので、
+  // 開いている会話でもプロファイルの決まりから決める。アプリモードのプロファイルは配らないので、いつも空になる
+  const browserOnlyFolder = isBrowser ? "" : grantedFolder(profile);
   // ツールが使うフォルダ(アプリはワークスペースのメインのフォルダ、ブラウザは資料のフォルダの名前)。無ければ空。作業フォルダが要るツールの印に使う
   const workDir = isBrowser ? folder : mainFolder(workspaces.workspaces?.find(w => w.id === settings?.workspace))?.path ?? "";
   const input = (
@@ -417,6 +421,7 @@ export default function App() {
                 onError={addError}
               />
             )}
+            {browserOnlyFolder && <BrowserOnlyFolderNote name={browserOnlyFolder} />}
             {!isBrowser && settings.workspace && worktree.state && (
               <WorktreeBar
                 state={worktree.state}
