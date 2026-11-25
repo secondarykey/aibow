@@ -82,3 +82,9 @@ aibow は今、これを受け取っても使っていない(`mcp/client` に `I
 ## 経過
 
 - 2026-11-26:決定事項 1〜4 をユーザーに確かめ、5〜12 を書いて着手した
+- 2026-11-26:作業の順番 1〜4 を作った。完了の条件 1〜4 を満たす(`go test ./...`・`go vet`・`gofmt` は通った。画面は変えていないので `wails3 build` はしていない)
+  - `mcp/client`:`server.instructions`(つないだときに `InitializeResult().Instructions` を `instructionsOf` で前後の空白を落として 4,096 文字で切る)・`Manager.Instructions`。
+    `Tools` と `Instructions` は、起動済みのサーバーを選ぶ部分(`runningFor`)を分け合う。つながったときの Notice の行に「説明 N 文字」
+  - ルート:`RemoteTools.Instructions`・`serverInstructions`(`prompt.go`)。`systemPrompt` は、環境の説明が無くてもサーバーの説明があれば節をつなぐ(どちらも無ければ、今までどおりユーザーが書いたまま)
+  - テスト:`mcp/client` の `TestInstructions`(SDK のサーバーが説明を渡す。新しい版の `server/discover` で届く)・ルートの `TestServerInstructions`(選んだ会話・作業フォルダの無い会話・選んでいない会話・ツールを全部使わない・説明の無いサーバー)
+  - 残り:本物のサーバーとモデルで、説明が「モデルに渡した文字列」に入り、説明どおりに動くかは確かめていない。決定事項 5〜12 をユーザーに確かめたら完了にする

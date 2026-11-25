@@ -328,6 +328,11 @@ Each command starts in the main folder "aibow" unless you pass folder; a cd does
 - 書き換えるツールが無い会話(読むだけ・質問だけ)には付けない。システムプロンプトは決まりを足す前と1文字も変わらない
 - 確かめる行(5行目)は `run_command` があるときだけ。無いときは最後の行も「what you changed.」まで(確かめた結果を求めない)。「You can review your changes with git_diff.」は `git_diff` があるときだけ
 - 送信ごとに、環境の説明と作業の決まりが何トークンかを Info のログに出す(`logSystemParts`)。行は段1・段2 の 4B の試しで直した(tuning.md)
+
+### MCP のサーバーの説明(0066)
+
+会話でツールを渡している MCP のサーバーが、つないだときに使い方の説明(MCP の `instructions`)を渡していれば、作業の決まりの後ろ(システムプロンプトのいちばん後ろ)に `# MCP server instructions` の節を足す(`serverInstructions`)。
+作業フォルダの無い会話でも足す。中身と条件は [mcp.md](mcp.md) の「サーバーの説明(instructions)」
 - aibow-mcp・OpenAI 互換の API(Cline など)には足さない(ほかのクライアントは自分の決まりを持っている)
 
 ### フォルダが複数のワークスペース(0035 の段2)

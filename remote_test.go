@@ -23,6 +23,15 @@ type fakeRemote struct {
 	startErr error
 	started  bool
 	workDirs []string // Start に渡された作業フォルダ
+	// instructions は、サーバー fake がつないだときに渡す説明(MCP の instructions。0066)。空なら渡さない
+	instructions string
+}
+
+func (r *fakeRemote) Instructions(_ string, use []string) map[string]string {
+	if !r.started || !slices.Contains(use, "fake") || r.instructions == "" {
+		return nil
+	}
+	return map[string]string{"fake": r.instructions}
 }
 
 func (r *fakeRemote) Start(_ context.Context, workDir string, use []string) ([]string, []error) {
@@ -889,4 +898,75 @@ func TestServerAsksRememberOff(t *testing.T) {
 	if got, _, _ := cs.Get(ctx, c.ID); got.Settings.ToolPolicies["fake__write"] != config.ToolOff {
 		t.Errorf("会話の上書きに書く: %v", got.Settings.ToolPolicies)
 	}
+}
+
+// サーバーの説明(MCP の instructions。0066)は、そのサーバーのツールを渡している会話のシステムプロンプトのいちばん後ろに入る。
+// 選んでいない会話・ツールを全部「使わない」にした会話には入らない
+func TestServerInstructions(t *testing.T) {
+	const want = "# MCP server instructions\n" +
+		"The following MCP servers have provided instructions for how to use their tools (each tool name starts with the server name and \"__\"):\n\n" +
+		"## fake\nCall remote_done when you finish."
+	newRemote := func() *fakeRemote {
+		return &fakeRemote{tools: []tool.Tool{&remoteTool{name: "remote_list"}}, instructions: "  Call remote_done when you finish.\n"}
+	}
+
+	t.Run("選んだ会話", func(t *testing.T) {
+		g := &fakeGen{content: "はい"}
+		cs, c, _ := newWorkDirConversation(t, g)
+		useFake(t, cs, &c)
+		cs.SetRemoteTools(newRemote())
+		send(t, cs, c, "やあ")
+		sys := systemOf(g.calls[0].messages)
+		if !strings.HasSuffix(sys, "\n\n"+want) {
+			t.Fatalf("システムプロンプトのいちばん後ろに入る:\n%s", sys)
+		}
+		if i := strings.Index(sys, "# Working rules"); i < 0 || i > strings.Index(sys, "# MCP server instructions") {
+			t.Errorf("作業の決まりの後ろに入る:\n%s", sys)
+		}
+	})
+
+	t.Run("作業フォルダの無い会話", func(t *testing.T) {
+		g := &fakeGen{content: "はい"}
+		cs, _ := newTestConversations(t, g)
+		c := mustCreate(t, cs)
+		useFake(t, cs, &c)
+		cs.SetRemoteTools(newRemote())
+		send(t, cs, c, "やあ")
+		if got := systemOf(g.calls[0].messages); got != joinSections(c.Settings.System, want) {
+			t.Errorf("環境の説明が無くても入る:\n%s", got)
+		}
+	})
+
+	t.Run("選んでいない会話", func(t *testing.T) {
+		g := &fakeGen{content: "はい"}
+		cs, c, _ := newWorkDirConversation(t, g)
+		cs.SetRemoteTools(newRemote())
+		send(t, cs, c, "やあ")
+		if sys := systemOf(g.calls[0].messages); strings.Contains(sys, "MCP server instructions") {
+			t.Errorf("選んでいないサーバーの説明は入れない:\n%s", sys)
+		}
+	})
+
+	t.Run("ツールを全部使わない", func(t *testing.T) {
+		g := &fakeGen{content: "はい"}
+		cs, c, _ := newWorkDirConversation(t, g)
+		c.Settings.ToolPolicies = map[string]config.ToolPolicy{"remote_list": config.ToolOff}
+		useFake(t, cs, &c)
+		cs.SetRemoteTools(newRemote())
+		send(t, cs, c, "やあ")
+		if sys := systemOf(g.calls[0].messages); strings.Contains(sys, "MCP server instructions") {
+			t.Errorf("ツールを渡していないサーバーの説明は入れない:\n%s", sys)
+		}
+	})
+
+	t.Run("説明の無いサーバー", func(t *testing.T) {
+		g := &fakeGen{content: "はい"}
+		cs, c, _ := newWorkDirConversation(t, g)
+		useFake(t, cs, &c)
+		cs.SetRemoteTools(&fakeRemote{tools: []tool.Tool{&remoteTool{name: "remote_list"}}})
+		send(t, cs, c, "やあ")
+		if sys := systemOf(g.calls[0].messages); strings.Contains(sys, "MCP server instructions") {
+			t.Errorf("説明が無ければ見出しも出さない:\n%s", sys)
+		}
+	})
 }

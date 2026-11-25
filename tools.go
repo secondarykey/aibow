@@ -257,6 +257,9 @@ type RemoteTools interface {
 	Start(ctx context.Context, workDir string, use []string) (started []string, errs []error)
 	// Tools は、会話で使うサーバー(use)の、起動済みのツール(起動はしない。メーターの計算などからも呼ばれるため)
 	Tools(workDir string, use []string) []tool.Tool
+	// Instructions は、会話で使うサーバー(use)のうち起動済みのものの、使い方の説明(サーバーの名前 → 説明。MCP の instructions。0066)。
+	// 説明の無いサーバーは入れない。起動はしない
+	Instructions(workDir string, use []string) map[string]string
 	// ListTools は、サーバーを一時的に起動してツールの一覧を受け取る(設定の画面で、会話で使う前にツールを選べるように)
 	ListTools(ctx context.Context, server string) ([]tool.Tool, error)
 }
