@@ -9,7 +9,8 @@
 // 会話の ID のワークスペースがこの PC に無い(別の PC で選んだ・消した)ときは、そのことを出して選び直せるようにする。
 import { useEffect, useRef, useState } from "react";
 import { LuCheck, LuFolder, LuFolderPlus, LuInfo, LuTriangleAlert } from "react-icons/lu";
-import type { WorkspaceView } from "../../bindings/github.com/secondarykey/aibow/ui";
+import type { ServerFolderInfo, WorkspaceView } from "../../bindings/github.com/secondarykey/aibow/ui";
+import { ChatService } from "../backend";
 import { errorMessage } from "../errors";
 import { createFromFolder, mainFolder } from "../workspaces";
 
@@ -84,12 +85,20 @@ export function WorkspaceBar({ workspaces, selected, onChange, onCreated, onNoti
   );
 }
 
-// FolderBar は、ブラウザの会話の資料のフォルダ(aibow-server。0024 の決定事項 26)。アプリの作業フォルダと同じ場所に、名前だけを押せない形で出す。
-// フォルダは管理者が配るプロファイルで決めるので、ここでは選べない。
+// FolderBar は、ブラウザの会話のサーバーのワークスペース(aibow-server。0024 の決定事項 26・0065 の決定事項 19)。アプリの作業フォルダと同じ場所に、名前だけを押せない形で出す。
+// ワークスペースは管理者が配るプロファイルで決めるので、ここでは選べない。マウスを乗せた説明に、フォルダの名前と読むだけの印を並べる
+// (パスは出さない。管理者にも出さない。パスは管理の画面で見る)。
 export function FolderBar({ name }: { name: string }) {
+  const [folders, setFolders] = useState<ServerFolderInfo[]>([]);
+  useEffect(() => {
+    // 名前と印だけなので、取れなくても名前は出す(説明がフォルダの一覧なしになるだけ)
+    ChatService.ServerWorkspaces().then(l => setFolders(l?.find(w => w.name === name)?.folders ?? []), () => setFolders([]));
+  }, [name]);
+  const lines = folders.map(f => `・${f.name}${f.main ? "(メイン)" : ""}${f.writable ? "" : "(読むだけ)"}`);
+  const title = ["サーバーのワークスペース(aibow-server の PC。管理者が配布したプロファイルで決まる)。この会話のツールは、次のフォルダの中を読み書きする", ...lines].join("\n");
   return (
     <div className="workdir-bar set">
-      <span className="workdir folder-fixed" title="資料のフォルダ(aibow-server の PC。管理者が配布したプロファイルで決まる)。この会話のツールは、このフォルダの中を読み書きする">
+      <span className="workdir folder-fixed" title={title}>
         <LuFolder />
         <span className="workdir-name">{name}</span>
       </span>
@@ -97,18 +106,18 @@ export function FolderBar({ name }: { name: string }) {
   );
 }
 
-// BrowserOnlyFolderNote は、アプリで開いた会話のプロファイルに資料のフォルダがあるときの知らせ(0064)。
+// BrowserOnlyFolderNote は、アプリで開いた会話のプロファイルにサーバーのワークスペースがあるときの知らせ(0064。言葉は 0065 の決定事項 7)。
 // 会話はサーバーモードのアプリとブラウザで共有されるが、ツールが動くのは開いた側の PC(アプリなら手元のワークスペース)。
-// ブラウザで資料のフォルダを使っていた会話をアプリで続けると、同じフォルダのつもりで手元のファイルを読み書きしかねないので、
+// ブラウザでサーバーのワークスペースを使っていた会話をアプリで続けると、同じフォルダのつもりで手元のファイルを読み書きしかねないので、
 // そのフォルダを使おうとする入力欄の上(ワークスペースの隣)で知らせる。選べるものではないので押せない形にする。
 export function BrowserOnlyFolderNote({ name }: { name: string }) {
   return (
     <span
       className="folder-browser-only"
-      title="この会話のツールはこの PC で動くので、aibow-server の資料のフォルダは読み書きできません。資料のフォルダを使うときは、ブラウザで aibow-server を開いてこの会話を続けてください"
+      title="この会話のツールはこの PC で動くので、aibow-server のサーバーのワークスペースは読み書きできません。サーバーのワークスペースを使うときは、ブラウザで aibow-server を開いてこの会話を続けてください"
     >
       <LuInfo className="icon" />
-      <span className="folder-browser-only-text">資料のフォルダ『{name}』はブラウザでだけ使えます(ここでは手元のフォルダ)</span>
+      <span className="folder-browser-only-text">サーバーのワークスペース『{name}』はブラウザでだけ使えます(ここでは手元のフォルダ)</span>
     </span>
   );
 }

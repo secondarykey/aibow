@@ -760,7 +760,7 @@ nav.conversations ul.grouped .conversation { margin-left: 12px; }
 .server-run-value { display: inline-flex; align-items: center; gap: 6px; }
 .settings-view .server-run input[type=number] { width: 120px; }
 .server-run-pending { margin-top: 8px; }
-/* 資料のフォルダ(配布プロファイルのタブ。0061)。行は置き場所と同じ形に、名前の列を足す */
+/* サーバーのワークスペースを足す欄(0061・0065)。名前の欄は狭く */
 .folder-name { flex-shrink: 0; font-weight: 600; max-width: 30%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .settings-view .place-row .folder-path-input { flex: 1; width: auto; min-width: 0; }
 .place-row button { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
@@ -846,6 +846,9 @@ nav.conversations ul.grouped .conversation { margin-left: 12px; }
 .workspace-folders { display: grid; grid-template-columns: auto 10em minmax(0, 1fr) auto auto; column-gap: 10px; row-gap: 4px; align-items: center; }
 .workspace-folder { display: contents; }
 .settings-view .workspace-folders input.workspace-folder-name { width: 100%; padding: 2px 6px; font-size: 12.5px; }
+/* サーバーのワークスペース(管理の画面。0065)。パスはダイアログで選べない(ブラウザ)ので、打って変える欄にする。一覧は名前 / フォルダの名前 / 使用中 / 印 */
+.settings-view .workspace-folders input.workspace-folder-path-input { flex: 1; width: auto; min-width: 0; padding: 2px 6px; font-size: 12px; font-family: ui-monospace, Consolas, monospace; }
+.server-workspace-table { grid-template-columns: fit-content(30%) minmax(0, 1fr) auto auto; }
 .settings-view .workspace-folders input.workspace-folder-description { grid-column: 2 / -1; width: 100%; padding: 2px 6px; font-size: 12.5px; margin-bottom: 4px; }
 .workspace-folder-path { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .workspace-folder.missing .mcp-summary { text-decoration: line-through; }
@@ -961,12 +964,12 @@ footer { border-top: 1px solid var(--border); background: var(--panel); padding:
 .workdir-bar button:hover { color: var(--text); }
 .workdir-bar.set .workdir { border-color: var(--border); background: var(--bg); color: var(--text); }
 .workdir-name { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* 資料のフォルダ(ブラウザ。押せない)。作業フォルダを決めたときの枠と同じ見た目にする */
+/* サーバーのワークスペース(ブラウザ。押せない)。作業フォルダを決めたときの枠と同じ見た目にする */
 .workdir-bar .folder-fixed {
   display: inline-flex; align-items: center; gap: 5px; padding: 2px 7px; border-radius: 6px;
   border: 1px solid var(--border); background: var(--bg); color: var(--text);
 }
-/* 資料のフォルダはブラウザでだけ使える、の知らせ(アプリ。0064)。ワークスペースの隣に、押せない形で出す。
+/* サーバーのワークスペースはブラウザでだけ使える、の知らせ(アプリ。0064)。ワークスペースの隣に、押せない形で出す。
    選べるものではないので枠を付けず、注意の色の印と控えめな文にする。狭いときは文を省略し、全文はマウスを乗せた説明で読める */
 .folder-browser-only {
   display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 100%;

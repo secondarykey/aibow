@@ -12,6 +12,7 @@ export type {
     MCPServerList,
     NotDefault,
     ParsedMCPServer,
+    ServerWorkspace,
     ToolPrefsView,
     Workspace,
     WorkspaceFolder,

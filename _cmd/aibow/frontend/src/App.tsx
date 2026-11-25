@@ -54,7 +54,7 @@ import { useUnsaved } from "./unsaved";
 import { ImeFocusRelay } from "./imeFocus";
 import { errorMessage, operationEvents } from "./errors";
 import { setTheme } from "./theme";
-import { FIX, fixedTitle, grantedFolder, lockOf, locked } from "./profileRules";
+import { FIX, fixedTitle, grantedWorkspace, lockOf, locked } from "./profileRules";
 import { NARROW_QUERY, useMediaQuery } from "./mediaQuery";
 import { STORED_LAST_CONVERSATION, STORED_LIST_OPEN, loadStored, saveStored } from "./stored";
 
@@ -374,14 +374,14 @@ export default function App() {
   // 開いている会話のプロファイル(新しい会話の画面では、選んだプロファイル)。固定・使えないを画面に出すため(0014)
   const profile = convs.current ? convs.current.profile : convs.profiles.find(i => i.profile.id === convs.draftProfile)?.profile ?? null;
   const lock = lockOf(profile);
-  // ブラウザの会話の資料のフォルダ(名前だけ。0024 の 12-2)。開いている会話は Go が決めたもの、新しい会話の画面は選んだプロファイルのもの
-  const folder = !isBrowser ? "" : convs.current ? convs.current.folder ?? "" : grantedFolder(profile);
-  // アプリで開いた会話のプロファイルにある資料のフォルダ(0064)。アプリのツールは手元のワークスペースで動き、資料のフォルダは使えないので、
-  // そのことを知らせるためだけに使う(ツールの作業フォルダにはしない)。Go の会話の詳細の folder はブラウザの会話の値で、アプリではいつも空なので、
+  // ブラウザの会話のサーバーのワークスペース(名前だけ。0065)。開いている会話は Go が決めたもの、新しい会話の画面は選んだプロファイルのもの
+  const serverWorkspace = !isBrowser ? "" : convs.current ? convs.current.workspace ?? "" : grantedWorkspace(profile);
+  // アプリで開いた会話のプロファイルにあるサーバーのワークスペース(0064)。アプリのツールは手元のワークスペースで動き、サーバーのワークスペースは使えないので、
+  // そのことを知らせるためだけに使う(ツールの作業フォルダにはしない)。Go の会話の詳細の workspace はブラウザの会話の値で、アプリではいつも空なので、
   // 開いている会話でもプロファイルの決まりから決める。アプリモードのプロファイルは配らないので、いつも空になる
-  const browserOnlyFolder = isBrowser ? "" : grantedFolder(profile);
-  // ツールが使うフォルダ(アプリはワークスペースのメインのフォルダ、ブラウザは資料のフォルダの名前)。無ければ空。作業フォルダが要るツールの印に使う
-  const workDir = isBrowser ? folder : mainFolder(workspaces.workspaces?.find(w => w.id === settings?.workspace))?.path ?? "";
+  const browserOnlyWorkspace = isBrowser ? "" : grantedWorkspace(profile);
+  // ツールが使うフォルダ(アプリはワークスペースのメインのフォルダ、ブラウザはサーバーのワークスペースの名前)。無ければ空。作業フォルダが要るツールの印に使う
+  const workDir = isBrowser ? serverWorkspace : mainFolder(workspaces.workspaces?.find(w => w.id === settings?.workspace))?.path ?? "";
   const input = (
     <>
       <Composer
@@ -405,9 +405,9 @@ export default function App() {
         top={settings && (
           // 入力欄の上: ワークスペースと、この会話のツール(どちらも会話ごとの設定)。
           // ブラウザの会話はワークスペースを選ばない(ツールはサーバーの PC で動くため。0024 の決定事項 17)。
-          // 配られたプロファイルに資料のフォルダがあれば、その名前を押せない形で出す(決定事項 26)
+          // 配られたプロファイルにサーバーのワークスペースがあれば、その名前を押せない形で出す(決定事項 26・0065 の決定事項 19)
           <div className="composer-top">
-            {isBrowser && folder && <FolderBar name={folder} />}
+            {isBrowser && serverWorkspace && <FolderBar name={serverWorkspace} />}
             {!isBrowser && (
               <WorkspaceBar
                 workspaces={workspaces.workspaces ?? []}
@@ -421,7 +421,7 @@ export default function App() {
                 onError={addError}
               />
             )}
-            {browserOnlyFolder && <BrowserOnlyFolderNote name={browserOnlyFolder} />}
+            {browserOnlyWorkspace && <BrowserOnlyFolderNote name={browserOnlyWorkspace} />}
             {!isBrowser && settings.workspace && worktree.state && (
               <WorktreeBar
                 state={worktree.state}
@@ -723,7 +723,7 @@ export default function App() {
             })
             .finally(worktree.reload)}
         profile={convs.current.profile}
-        folder={folder}
+        serverWorkspace={serverWorkspace}
         workDir={workDir}
         onSaveToProfile={() => {
           const id = convs.current!.conversation.id;

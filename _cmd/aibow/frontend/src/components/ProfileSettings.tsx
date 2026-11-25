@@ -13,7 +13,7 @@
 //   own         … 設定の画面の「会話」。自分の配っていないプロファイルを変える。配られたもの(管理者が自分で配ったものも)は「配布されたプロファイル」の欄に読むだけで出す。
 //                 既定のプロファイル(新しい会話の画面で最初に選ばれるもの)は、一覧の行の「既定」の札で見せ、選んだプロファイルの操作の行の「既定にする」で変える
 //                 (0056。0050 の決定事項 4 では一覧の上の選択肢にしていたのを、ボタンに戻した。一覧の行は <button role="option"> なので、ボタンは行に置かず編集の欄に置く)
-//   distributed … 管理の画面の「配るプロファイル」(ブラウザの管理者だけ)。配っているプロファイルの値・決まり・配る相手・資料のフォルダを変える。
+//   distributed … 管理の画面の「配るプロファイル」(ブラウザの管理者だけ)。配っているプロファイルの値・決まり・配る相手・サーバーのワークスペースを変える。
 //                 「新規」で配布プロファイルを最初から作る(0059。以前の「複製して配布」はなくした)。配布プロファイルは個人プロファイルと行き来させない。
 //                 アーカイブは「停止」「再開」と呼ぶ(列は同じ archived。止めると受け取った人の新しい会話で選べない)。削除できるかは全員の会話で決める(uses_all)
 //
@@ -352,7 +352,7 @@ function ProfileEditor({ profile, info, distributed, models, servers, onChange, 
         />
       </div>
       {distributed && <ShareForm profile={info.profile} onShare={onShare} />}
-      {distributed && <FolderField profile={profile} onChange={onChange} onError={onError} />}
+      {distributed && <WorkspaceField profile={profile} onChange={onChange} onError={onError} />}
 
       <ConversationSettingsForm settings={settings} models={models} lock={lock} onChange={setValues} />
       <LimitsForm history={settings.history_tokens} reply={settings.reply_tokens} lock={lock} onChange={setValues} />
@@ -366,30 +366,30 @@ function ProfileEditor({ profile, info, distributed, models, servers, onChange, 
   );
 }
 
-// FolderField は、プロファイルの資料のフォルダ(ブラウザだけ。0024 の 12-2)。選べるのは管理者だけで、ほかの人には名前だけを出す。
-// 配っているプロファイルで、配られた人の会話の作業フォルダになる(配っていなければ効かない)。aibow-server にフォルダが無ければ出さない
-function FolderField({ profile, onChange, onError }: { profile: Profile; onChange(f: (p: Profile) => Profile): void; onError(text: string): void }) {
+// WorkspaceField は、プロファイルのサーバーのワークスペース(ブラウザだけ。0065 の決定事項 18)。選べるのは管理者だけで、ほかの人には名前だけを出す。
+// 配っているプロファイルで、配られた人の会話のファイルのツールが扱うフォルダの組になる(配っていなければ効かない)。aibow-server にワークスペースが無ければ出さない
+function WorkspaceField({ profile, onChange, onError }: { profile: Profile; onChange(f: (p: Profile) => Profile): void; onError(text: string): void }) {
   const [names, setNames] = useState<string[]>([]);
   useEffect(() => {
-    ChatService.Folders().then(n => setNames(n ?? []), err => onError(errorMessage(err)));
+    ChatService.ServerWorkspaces().then(l => setNames((l ?? []).map(w => w.name)), err => onError(errorMessage(err)));
   }, [onError]);
-  const folder = profile.rules.folder ?? "";
-  if (names.length === 0 && !folder) return null;
-  const title = "このプロファイルの会話で読み書きする aibow-server の資料のフォルダ。配布しているプロファイルで、配布された人だけが使える";
+  const workspace = profile.rules.workspace ?? "";
+  if (names.length === 0 && !workspace) return null;
+  const title = "このプロファイルの会話で読み書きする aibow-server のフォルダの組。配布しているプロファイルで、配布された人だけが使える";
   if (!me.admin || profile.read_only) {
     return (
       <div className="profile-share">
-        <label title={title}>資料のフォルダ</label>
-        <span>{folder || "なし"}</span>
+        <label title={title}>サーバーのワークスペース</label>
+        <span>{workspace || "なし"}</span>
       </div>
     );
   }
   return (
     <div className="profile-share">
-      <label htmlFor="profile-folder" title={title}>資料のフォルダ</label>
-      <select id="profile-folder" value={folder} onChange={e => {
+      <label htmlFor="profile-workspace" title={title}>サーバーのワークスペース</label>
+      <select id="profile-workspace" value={workspace} onChange={e => {
         const v = e.target.value;
-        onChange(p => ({ ...p, rules: { ...p.rules, folder: v } }));
+        onChange(p => ({ ...p, rules: { ...p.rules, workspace: v } }));
       }}>
         <option value="">なし</option>
         {names.map(n => <option key={n} value={n}>{n}</option>)}
@@ -434,7 +434,7 @@ function ShareForm({ profile, onShare }: { profile: Profile; onShare(share: stri
 
 // ShareNewForm は、配布プロファイルを最初から作る欄(管理の画面の「新規」。0059 の決定事項 7)。名前・モデル・配布を決め、
 // 配布の確定のボタンで、作ると配るを一度に行う(Go の ShareNew)。相手を決めずには作らない(管理者の自分のプロファイルと見分けがつかなくなるため)。
-// モデル以外の値は、管理者の今の既定のプロファイルの値を Go が写す。決まりと資料のフォルダは空から始め、作ったあと編集の欄で変える
+// モデル以外の値は、管理者の今の既定のプロファイルの値を Go が写す。決まりとサーバーのワークスペースは空から始め、作ったあと編集の欄で変える
 function ShareNewForm({ name: initialName, models, onDone, onCancel, onError }: {
   name: string;          // 名前の初期値(配布プロファイル同士で重ならないもの)
   models: ModelEntry[];  // 使えるモデル(管理者が使えないようにしたものは除いてある)

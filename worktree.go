@@ -17,7 +17,7 @@ package aibow
 //  4. 差分の画面で、作ったときのコミット(base)との差分を見て、選んだファイルを本体の作業ツリーに当てる(ApplyWorktree)。コミットはユーザーがする
 //  5. 捨てる(DiscardWorktree)・会話を消す(Delete)と、worktree とブランチを消す
 //
-// 作るのは画面のアプリだけ(aibow-server の資料のフォルダでは作らない。0039 の決定事項 7)。noWorkDir のときは何もしない。
+// 作るのは画面のアプリだけ(aibow-server のサーバーのワークスペースでは作らない。0039 の決定事項 7)。noWorkDir のときは何もしない。
 
 import (
 	"context"

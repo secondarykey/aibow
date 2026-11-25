@@ -1,6 +1,6 @@
 package ui
 
-// tools.go: 画面から呼ぶ、MCP のサーバーとツールの扱いのメソッド(会話で選ぶもの・扱いの既定・資料のフォルダ)。MCP のサーバーを足す・変える・消すのは mcpedit.go。
+// tools.go: 画面から呼ぶ、MCP のサーバーとツールの扱いのメソッド(会話で選ぶもの・扱いの既定・サーバーのワークスペース)。MCP のサーバーを足す・変える・消すのは mcpedit.go。
 
 import (
 	"cmp"
@@ -22,8 +22,8 @@ import (
 
 // MCPServers は、会話ごとに使うものを選ぶ MCP のサーバーの一覧(settings.json に書いたもの全部)。書いてなければ空。
 // 設定の画面の「ツール」のチェックは「新しい会話で最初から選ぶか」だけなので、チェックを外したものもここに出す。
-// ブラウザでは aibow-server の server.json に書いたもの。${workdir} を使うサーバーは、資料のフォルダが無ければ出さない
-// (資料のフォルダのある会話でだけ起動する。0024 の決定事項 8・24)。
+// ブラウザでは aibow-server の server.json に書いたもの。${workdir} を使うサーバーは、サーバーのワークスペースが無ければ出さない
+// (サーバーのワークスペースのある会話でだけ起動する。0024 の決定事項 8・24)。
 func (s *Service) MCPServers() []client.ServerInfo {
 	if s.mcp == nil {
 		return []client.ServerInfo{}
@@ -44,7 +44,7 @@ func (s *Service) AllMCPServers() []client.ServerInfo {
 }
 
 // BuiltinTools は組み込みのツール(aibow の中で動くツール)の一覧(設定の画面の「ツール」に出す)。
-// ブラウザでは、コマンドのツールを出さない。資料のフォルダが無ければ、作業フォルダを使わないツール(時刻・計算・URL を読む)だけ(0024 の決定事項 5・17)。
+// ブラウザでは、コマンドのツールを出さない。サーバーのワークスペースが無ければ、作業フォルダを使わないツール(時刻・計算・URL を読む)だけ(0024 の決定事項 5・17)。
 func (s *Service) BuiltinTools() []config.KnownTool {
 	l := aibow.BuiltinTools()
 	if s.browser {
@@ -133,7 +133,7 @@ func (s *Service) ToolStates(ctx context.Context, id uuid.UUID, settings aibow.C
 }
 
 // forBrowser は、ブラウザに出すツールの一覧から、使えないものを外す。
-// コマンドのツールは出さない(0024 の決定事項 5)。資料のフォルダが1つも無ければ、作業フォルダのツールは「作業フォルダが要る」とも見せない(決定事項 17)。
+// コマンドのツールは出さない(0024 の決定事項 5)。サーバーのワークスペースが1つも無ければ、作業フォルダのツールは「作業フォルダが要る」とも見せない(決定事項 17)。
 // 出さない MCP のサーバー(MCPServers が外したもの)も外す。
 func (s *Service) forBrowser(groups []aibow.ToolGroupState) []aibow.ToolGroupState {
 	if !s.browser {

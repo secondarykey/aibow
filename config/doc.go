@@ -6,7 +6,7 @@
 //	mcp.go          … 画面から足した MCP のサーバー mcp.json と、settings.json に手で書いた分を移す係・画面で変えたものを流す係(MCPConfig)
 //	workspaces.go   … ワークスペース(名前の付いた PC のフォルダの組)と、会話の worktree の結び付け workspaces.json
 //	modelplaces.go  … アプリモードのときに、画面で足したモデルの置き場所 model-places.json(aibow-server の側は servermodels.go)
-//	server.go       … aibow-server の手で書く設定ファイル server.json(ポート・作業領域・資料のフォルダ・mcpServers など)
+//	server.go       … aibow-server の手で書く設定ファイル server.json(ポート・作業領域・サーバーのワークスペース・mcpServers など)
 //	servermodels.go … aibow-server が書く server-models.json(モデルごとの GPU の層数・足した置き場所・使えないモデル)
 //	env.go          … AIBOW_ で始まる環境変数(誤りをまとめて返す)
 //

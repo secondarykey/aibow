@@ -62,10 +62,11 @@ export function AddModelPlace(path: string): $CancellablePromise<models$0.Place[
 }
 
 /**
- * AddServerFolder は、資料のフォルダを足す(その場で効き、配布プロファイルで選べるようになる)。
+ * AddServerWorkspace は、サーバーのワークスペースを足す(名前と最初のフォルダのパス。その場で効き、配布プロファイルで選べるようになる)。
+ * 最初のフォルダはメイン・書ける・名前はフォルダ名(以前の資料のフォルダと同じ動き。0065 の決定事項 16・17)。
  */
-export function AddServerFolder(name: string, path: string): $CancellablePromise<ui$0.ServerFolder[] | null> {
-    return $Call.ByID(1937772417, name, path);
+export function AddServerWorkspace(name: string, path: string): $CancellablePromise<ui$0.ServerWorkspaceView[] | null> {
+    return $Call.ByID(996686754, name, path);
 }
 
 /**
@@ -94,7 +95,7 @@ export function ApplyWorktree(id: uuid$0.UUID, paths: string[] | null): $Cancell
 
 /**
  * BuiltinTools は組み込みのツール(aibow の中で動くツール)の一覧(設定の画面の「ツール」に出す)。
- * ブラウザでは、コマンドのツールを出さない。資料のフォルダが無ければ、作業フォルダを使わないツール(時刻・計算・URL を読む)だけ(0024 の決定事項 5・17)。
+ * ブラウザでは、コマンドのツールを出さない。サーバーのワークスペースが無ければ、作業フォルダを使わないツール(時刻・計算・URL を読む)だけ(0024 の決定事項 5・17)。
  */
 export function BuiltinTools(): $CancellablePromise<config$0.KnownTool[] | null> {
     return $Call.ByID(704771653);
@@ -301,15 +302,6 @@ export function DisconnectServer(): $CancellablePromise<void> {
 }
 
 /**
- * Folders は aibow-server の資料のフォルダの名前(名前の順。パスは返さない)。配るプロファイルで選ぶ(0024 の 12-2)。
- * 名前は誰でも見られる(どのフォルダを使えるかは、配られたプロファイルで決まる)。アプリモードのときは空。
- * パスも見る管理の画面は ServerSettings(管理者だけ。0061)。
- */
-export function Folders(): $CancellablePromise<string[] | null> {
-    return $Call.ByID(2760372572);
-}
-
-/**
  * LoadToolList は、MCP のサーバーを一時的に起動してツールの一覧を受け取り、tools.json に覚える(設定の画面で、一覧が無いときと「読み直す」)。
  * ブラウザでは管理者だけ(サーバーの PC でプロセスを起動するため)。
  */
@@ -358,8 +350,8 @@ export function MCPServerList(): $CancellablePromise<config$0.MCPServerList> {
 /**
  * MCPServers は、会話ごとに使うものを選ぶ MCP のサーバーの一覧(settings.json に書いたもの全部)。書いてなければ空。
  * 設定の画面の「ツール」のチェックは「新しい会話で最初から選ぶか」だけなので、チェックを外したものもここに出す。
- * ブラウザでは aibow-server の server.json に書いたもの。${workdir} を使うサーバーは、資料のフォルダが無ければ出さない
- * (資料のフォルダのある会話でだけ起動する。0024 の決定事項 8・24)。
+ * ブラウザでは aibow-server の server.json に書いたもの。${workdir} を使うサーバーは、サーバーのワークスペースが無ければ出さない
+ * (サーバーのワークスペースのある会話でだけ起動する。0024 の決定事項 8・24)。
  */
 export function MCPServers(): $CancellablePromise<client$0.ServerInfo[] | null> {
     return $Call.ByID(287669679);
@@ -455,10 +447,10 @@ export function RemoveModelPlace(path: string): $CancellablePromise<models$0.Pla
 }
 
 /**
- * RemoveServerFolder は、資料のフォルダを消す。選んでいるプロファイルがあれば断る(決定事項 10)。
+ * RemoveServerWorkspace は、サーバーのワークスペースを消す。選んでいるプロファイルがあれば断る(0061 の決定事項 10)。フォルダの中身は消さない。
  */
-export function RemoveServerFolder(name: string): $CancellablePromise<ui$0.ServerFolder[] | null> {
-    return $Call.ByID(1938866768, name);
+export function RemoveServerWorkspace(name: string): $CancellablePromise<ui$0.ServerWorkspaceView[] | null> {
+    return $Call.ByID(2818057777, name);
 }
 
 /**
@@ -519,6 +511,15 @@ export function SaveServerSettings(parallel: number, nCtx: number): $Cancellable
 }
 
 /**
+ * SaveServerWorkspace は、サーバーのワークスペース ws.Name のフォルダの組を ws のものにする(管理の画面の「保存」。その場で効く)。
+ * フォルダを足す・外す・パスや名前を変える・メインにする・書ける / 読むだけ・説明を、まとめて1回で書く(アプリのワークスペースの設定の画面と同じ形)。
+ * ワークスペースの名前は変えられない(配布プロファイルが名前で選ぶため。0061 と同じ)。変えた項目は Notice のログに1行(0053)。
+ */
+export function SaveServerWorkspace(ws: config$0.ServerWorkspace): $CancellablePromise<ui$0.ServerWorkspaceView[] | null> {
+    return $Call.ByID(712475242, ws);
+}
+
+/**
  * SaveToProfile は、会話の今の設定でプロファイルの値を上書きする(会話の設定の画面の「プロファイルに保存」)。
  */
 export function SaveToProfile(conv: uuid$0.UUID, profile: uuid$0.UUID): $CancellablePromise<void> {
@@ -565,10 +566,19 @@ export function ServerLogLevel(): $CancellablePromise<string> {
 }
 
 /**
- * ServerSettings は、並列数・作業領域・資料のフォルダの今の様子を返す。server.json はそのつど読み直す(手で書き換えたときも、次の起動の値が分かるように)。
+ * ServerSettings は、並列数・作業領域・サーバーのワークスペースの今の様子を返す。server.json はそのつど読み直す(手で書き換えたときも、次の起動の値が分かるように)。
  */
 export function ServerSettings(): $CancellablePromise<ui$0.ServerSettingsView> {
     return $Call.ByID(4118038093);
+}
+
+/**
+ * ServerWorkspaces は aibow-server のサーバーのワークスペース(server.json の並び。パスは返さない)。配るプロファイルで選ぶ(0065)。
+ * 名前は誰でも見られる(どのワークスペースを使えるかは、配られたプロファイルで決まる)。入力欄の上でマウスを乗せた説明にフォルダを並べるのにも使う。
+ * アプリモードのときは空。パスも見る管理の画面は ServerSettings(管理者だけ。0061)。
+ */
+export function ServerWorkspaces(): $CancellablePromise<ui$0.ServerWorkspaceInfo[] | null> {
+    return $Call.ByID(243689258);
 }
 
 /**
@@ -693,13 +703,6 @@ export function SetProfileArchived(id: uuid$0.UUID, archived: boolean): $Cancell
  */
 export function SetProfileShare(id: uuid$0.UUID, share: string, $with: string[] | null, groups: string[] | null): $CancellablePromise<void> {
     return $Call.ByID(2853156393, id, share, $with, groups);
-}
-
-/**
- * SetServerFolderPath は、資料のフォルダのパスを変える(名前はそのまま。そのフォルダを使う会話は、次のツールの実行から新しいパス)。
- */
-export function SetServerFolderPath(name: string, path: string): $CancellablePromise<ui$0.ServerFolder[] | null> {
-    return $Call.ByID(445168701, name, path);
 }
 
 /**
