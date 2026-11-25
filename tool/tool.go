@@ -39,6 +39,15 @@ type TimeLimiter interface {
 	TimeLimit() time.Duration
 }
 
+// Hinted は、何かを書き換えるかどうかを、確認(Confirmable)と分けて宣言するツール(0045 の決定事項 5)。
+//
+// MCP のサーバー(mcp/server)は、これを見てツールに「読むだけ」の印(readOnlyHint)を付ける。
+// 無ければ、組み込みのツールは「確認が要らなければ読むだけ」とみなし、外から渡したツール(Options.Custom)には印を付けない。
+// 確認を自分の画面で行うアプリは、書き換えるツールでも Confirmable にしないので、確認とは別にこれで伝える
+type Hinted interface {
+	ReadOnly() bool
+}
+
 // Remote は、aibow の外のプログラム(MCP のサーバー)が実行するツール。
 // モデルから見ると組み込みのツールと違いは無い(定義を見て呼ぶだけ)。違うのは、実行がどこで起きるかだけ。
 // Server はそのサーバーの名前(settings.json の mcpServers に書いた名前。画面とログに出す)。

@@ -1,6 +1,6 @@
 # 0045: aibow のツールと MCP のサーバーを、ほかのアプリの部品として使えるようにする
 
-- 状態: ⬜ 未着手(仕様は決まった。2026-11-25)
+- 状態: ✅ 完了(2026-11-25)
 - ロードマップ: ロードマップの外(パッケージの分け方の基準「使う相手が現れたときに分ける」(0005 の決定事項 11)を、ツールと MCP のサーバーに当てはめる回)
 - 決めた日: 2026-11-25(2026-11-09 に Chat で相談を始め、11-11 に使う側の事情を足し、11-10 の Code の見直しを 11-25 に採った)
 - 前提: 0005(ツールの形・`tool` は LLM と会話を import しない)、0007(`mcp/server`・確認の MRTR)、0008(`log.SetLogger`)、
@@ -67,7 +67,7 @@ aibow の形は「自分のツールを持つアプリなら誰でも使える�
      入れ子の中身・`enum`・最小値などは確かめないので、それはツールの `Run` で自分で確かめる
    - Go の版:aibow の `go.mod` は `go 1.27.0` なので、import したアプリも 1.27 以上になる(標準の `uuid` を使っているため)
 
-話の流れから Chat が決めて書いたこと(2026-11-25。ユーザーに確かめてもらう):
+話の流れから Chat が決めて書き、2026-11-25 にユーザーが確かめたこと(着手のとき。13 の補足は Code が足し、ユーザーが認めた):
 
 9. **`Custom` とほかの欄の関係**(Code の見直し 3):`Custom` と一緒に `WorkDir`・`Folders`・`Fetch` を渡したら、決定事項 3 の確かめでエラーにする(黙って無視しない。どちらが効いているか分からなくなるため)。
    `Custom` を渡して `Instructions` が空なら、説明は出さない(今の説明はフォルダから作っているので、`Custom` には合わない)。`Custom` を渡さないときの `Instructions` は、空なら今までどおりフォルダの説明
@@ -76,7 +76,8 @@ aibow の形は「自分のツールを持つアプリなら誰でも使える�
     組み込みのツールだけのとき(`Custom` が空)は今までどおり通る
 11. **エラーの形**:`tool.ErrNotFound`・`tool.ErrAmbiguous`・`tool.ErrEmptyOld`・`tool.ErrSameText` の4つの決まったエラーと、何か所あったかを持つ `*tool.AmbiguousError`(`Count int`。`errors.Is(err, tool.ErrAmbiguous)` も真)。名前は Code が実装のときに整えてよい
 12. **`Replaced` の形**:`Text string`(置き換えた後の全体)・`Line int`(置き換えた場所の行番号。1 始まり)・`Reindented bool`(字下げを合わせたか)
-13. **`Hinted` の欄は `ReadOnly` だけ**。MCP のほかの印(destructiveHint・idempotentHint・openWorldHint)は、使う側が求めたときに足す
+13. **`Hinted` の欄は `ReadOnly` だけ**。MCP のほかの印(destructiveHint・idempotentHint・openWorldHint)は、使う側が求めたときに足す。
+    `Hinted` があれば、組み込みのツールでも `Confirmable` よりそちらを優先する(`update_plan` はこれで readOnlyHint を外す)
 14. **`UnifiedDiff` の書き方は今と同じ**:見出しは `a/<name>` と `b/<name>`、`before` が空なら新しく作るものとして `/dev/null`(git diff と同じ)。行数の上限(前後の合計 5000 行)を超えたら空
 15. **`Example` は `mcp/server/example_test.go` の `ExampleNew`**:自分のツールを1つ(`Custom`)持つサーバーを作り、メモリ内のつなぎ方(`mcp.NewInMemoryTransports`)で SDK のクライアントからつないで、
     `tools/list` と `tools/call` の結果を `// Output:` で確かめる(標準入出力で動かす見本だと、テストで出力を確かめられないため)。標準入出力・HTTP で動かす形は `_docs/mcp.md` に書く
@@ -125,3 +126,8 @@ aibow の形は「自分のツールを持つアプリなら誰でも使える�
 - 2026-11-11:やり取りは相手の画面で行うと決まった。部品は特定の使い手に合わせて作らない、と決めた
 - 2026-11-25:確認の場所は (c) を先に通す・Code の見直しを全部採る・`textedit` に分けない、と決めて仕様にした。
   あわせて、TODO の「パッケージの分け方(手元に残る設定のファイルをルートから分けるか)」は 2026-11-08 に `config` パッケージへ移して済んでいると確かめ、TODO と backlog から消した
+- 2026-11-25:Code が実装した。決定事項 9〜15(Chat の案)は着手のときにユーザーが確かめ、13 に「`Hinted` があれば組み込みでも優先する」を足した。
+  `tool/replace.go`(`Replace` と4つのエラー・`AmbiguousError`)・`tool.UnifiedDiff`・`tool.Hinted`(`update_plan` は読むだけではない)・
+  `mcp/server` の `Name`・`Instructions`・`Custom`・`Check`(`New` は誤りがあれば `Check` の文で panic)。`edit_file` は `Replace` のエラーを見て今までの文を作る(`editError`)。
+  完了の条件 1〜5・7 はテスト(`tool/replace_test.go`・`mcp/server/custom_test.go`・`example_test.go`・`server_test.go` の印)で確かめた。
+  6 は `mcp/client`(`Local`)と `mcp/server` の今のテストがそのまま通ることで確かめた。画面に関わる変更は無いので `wails3 build` は流していない

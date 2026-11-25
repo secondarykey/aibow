@@ -68,9 +68,9 @@ func TestListTools(t *testing.T) {
 	if !slices.Equal(names, want) {
 		t.Errorf("ツール = %v, want %v", names, want)
 	}
-	// 読むだけのツールにだけ readOnlyHint を付ける
+	// 読むだけのツールにだけ readOnlyHint を付ける(ほかの組み込みの印は 0045 の前と同じ。完了の条件 5)
 	for name, ro := range readOnly {
-		wantRO := !slices.Contains([]string{"write_file", "edit_file", "run_command"}, name)
+		wantRO := !slices.Contains([]string{"write_file", "edit_file", "run_command", "update_plan"}, name) // update_plan は予定を書き換える(0045)
 		if ro != wantRO {
 			t.Errorf("%s の readOnlyHint = %v, want %v", name, ro, wantRO)
 		}

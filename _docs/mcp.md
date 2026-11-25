@@ -298,7 +298,7 @@ MCP のクライアント(Claude Code・aibow など)── 起動する(aibow-m
 |---|---|
 | `mcp/server/server.go` | サーバーの中身(`server.New`)。`tool` のツールを SDK の `Server.AddTool` に渡し、`tools/call` を `tool.Tool.Run` につなぐ |
 | `mcp/server/confirm.go` | 書き換えるツールを実行する前に、サーバーの側からユーザーに確かめる(MRTR。`confirmed`)。差分を `_meta` と `message` に入れ、送り直しで答えと合言葉(`requestState`)を確かめる |
-| `mcp/server/server_test.go` / `confirm_test.go` | テスト。プロセスを起動せずに(`NewInMemoryTransports`)SDK のクライアントでつなぎ、一覧・呼び出し・エラー・確認(受け入れ・拒否・確認に対応していないクライアント・確認のあとでファイルが変わった)・停止でコマンドの子プロセスまで止まることを確かめる |
+| `mcp/server/server_test.go` / `confirm_test.go` / `custom_test.go` / `example_test.go` | テスト。プロセスを起動せずに(`NewInMemoryTransports`)SDK のクライアントでつなぎ、一覧・呼び出し・エラー・確認(受け入れ・拒否・確認に対応していないクライアント・確認のあとでファイルが変わった)・停止でコマンドの子プロセスまで止まることを確かめる。ほかのアプリのツール(`Custom`)と `Check`、使い方の見本 `ExampleNew`(下の「ほかのアプリから使う」) |
 | `mcp/internal/meta/` | クライアントとサーバーの両方で使う `_meta` の名前(`aibow/preview`) |
 | `mcp/client/local.go` | aibow の中で自作サーバーを動かし、組み込みのツールを MCP 越しに渡す(`Local`。下の「aibow の中で動かす」) |
 | `_cmd/aibow-mcp/main.go` | 標準入出力のサーバーの exe。引数(作業フォルダ)を読んで `server.New` を `StdioTransport` で動かすだけ |
@@ -311,7 +311,7 @@ MCP のクライアント(Claude Code・aibow など)── 起動する(aibow-m
 
 - **ツールの定義は組み込みとまったく同じ**(`tool.Def` の名前・説明・引数の JSON Schema をそのまま `inputSchema` にする)。自分で作るサーバーなので、4B が書きやすい形のまま出せる
 - `tools/list` の並びは SDK が名前の順にする(ここで足した順ではない)
-- **読むだけの印**:確認の要らないツール(`tool.Confirmable` でないもの)に `readOnlyHint` を付ける。クライアントへのヒントで、MCP の仕様でも「信じてはいけない」とされている。aibow はまだ信じない(0007 の決定事項 9)
+- **読むだけの印**:確認の要らないツール(`tool.Confirmable` でないもの)に `readOnlyHint` を付ける。`tool.Hinted` で宣言したツールはそれに従う(`update_plan` は予定を書き換えるので付けない。0045)。クライアントへのヒントで、MCP の仕様でも「信じてはいけない」とされている。aibow はまだ信じない(0007 の決定事項 9)
 - **引数**:MCP では引数が JSON の値(数は数、真偽値は真偽値)で届くが、確かめるのは `tool.CheckArgs` に任せる(知らない引数・足りない引数・型の違いを、組み込みと同じ文で返す)。
   `CheckArgs` は書式によらない `tool.Arg` の形で値を受け取るので、JSON の値を定義の型を見てその形にして渡す(`tool.ArgFromJSON`。文字列の引数は中身、ほかは JSON の書き方のまま)。`null` は書かなかったのと同じ
 - **ツールの失敗は `isError` の結果で返す**(Go の error にしない)。MCP では、error は呼び出しそのものが成り立たなかったとき(知らないツールなど)に使い、
@@ -408,3 +408,40 @@ aibow [ 会話の仕組み ] ⇄ MCP(メモリ内のつなぎ方。SDK の NewIn
 - 送受信のメッセージは `MCP 組み込み → #3 tools/call write_file` / `MCP 組み込み ← #3 tools/call write_file の結果` としてログ(Info)に出る(JSON の中身は Debug)。サーバーのログ(`ツール write_file: ユーザーに確認を求めます` など)は同じプロセスなので、aibow のログにそのまま出る
 - つなげなかったときは、ログに Error を出して `tool` パッケージのツールを直接呼ぶ(予備。この場合は今までどおり呼ぶ前に確認する)。`SetLocalTools` をしない(aibow をライブラリとして使う・テスト)ときも直接呼ぶ
 
+
+### ほかのアプリから使う(0045)
+
+ほかの Go のアプリも、`tool` と `mcp/server` を import して、**自分のツールを出す MCP のサーバー**になれます。
+aibow が組み込みのツールに使っている仕組み(引数の確かめ・時間の上限・失敗を `isError` で返す・書き換えるツールの確認)が、そのまま使えます。
+見本は `mcp/server/example_test.go` の `ExampleNew`(`go test ./mcp/server -run ExampleNew` で動く)。
+
+```go
+s := server.New(server.Options{
+	Name:         "memo",                       // serverInfo.name(空なら aibow-mcp)
+	Version:      "v0.1.0",
+	Instructions: "Edit the user's notes.",     // クライアントに渡す説明(空なら出さない)
+	Custom:       []tool.Tool{getNote{}, editNote{}}, // これだけを出す(組み込みのツールは出さない)
+})
+```
+
+- **ツール**は `tool.Tool`(`Def` と `Run`)を満たす型を書く。`Custom` を決めたら、組み込み・フォルダのツールの**代わりに**それだけを出す。
+  組み込みも出したいときは `append(tool.Builtin(), …)` で渡す。`WorkDir`・`Folders`・`Fetch` と一緒には使えない
+- **誤りは `Options.Check` で先に確かめる**:名前が空・重なる・引数の定義が JSON のオブジェクトとして読めない・`type` が `"object"` でない・`Custom` と `WorkDir` などを一緒に決めた。
+  `New` も中で `Check` を呼び、誤りがあれば何が悪いかを書いて panic する(SDK の `AddTool` の panic と、同じ名前を黙って置き換えるのより先に止める)
+- **読むだけの印**(readOnlyHint)は、`tool.Hinted`(`ReadOnly() bool`)で読むだけと宣言したツールにだけ付く。宣言が無ければ付かない
+- **書き換える前の確認**は2通り:
+  - アプリが自分の画面で確かめる・自分の仕組みで戻せるなら、ツールを `tool.Confirmable` にしない(サーバーはそのまま実行する)
+  - クライアントに確かめてもらうなら `tool.Confirmable`(`Preview` で差分を作る)にする。組み込みと同じに MRTR で聞く(上の「サーバーからの確認」)
+- **置き換えと差分の部品**:`edit_file` の当て方は `tool.Replace(text, old, new)`(1か所に決まらなければエラー・字下げのずれを合わせる・CRLF を合わせる)、
+  差分は `tool.UnifiedDiff(name, before, after)`。エラーは `errors.Is` で `tool.ErrNotFound`・`ErrAmbiguous`・`ErrEmptyOld`・`ErrSameText` を見分け、
+  何か所あったかは `errors.As` で `*tool.AmbiguousError` の `Count` を取り出す。エラーの文はファイルに触れないので、モデルへの案内は使う側が足す
+- **引数の定義の効く範囲**:`tool.CheckArgs` が見るのは、`properties` の直下の `type`(`string`・`integer`・`number`・`boolean`・`array`・`object`)と `required` だけ。
+  入れ子の中身・`enum`・最小値などは確かめないので、それはツールの `Run` で確かめてエラーを返す(エラーの文がモデルに届く)
+- **動かし方**:
+  - exe にするなら標準入出力:`s.Run(ctx, &mcp.StdioTransport{})`(`_cmd/aibow-mcp/main.go` と同じ。標準出力にログを書かない)
+  - 画面のアプリ(Windows の GUI のプログラムは標準入出力を持たない)なら Streamable HTTP で待ち受ける:
+    `http.ListenAndServe("127.0.0.1:7777", mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return s }, nil))`。
+    localhost で待ち受けるときの DNS リバインディングの保護は既定で有効(SDK の `DisableLocalhostProtection` で外せる)。
+    HTTP でつないでの確認(MRTR)は、**実際には確かめていない**(0045 の未決事項 2)
+- **ログ**は `aibow/log` に出る。`log.SetLogger` を呼ばなければ `slog.Default()` に出るので、使う側のログにそのまま混ざる
+- **Go の版**:aibow の `go.mod` は `go 1.27.0`(標準の `uuid` を使っている)ので、import するアプリも 1.27 以上になる。cgo は要らない(yzma・SQLite は `tool` と `mcp/server` から import しないので、ビルドに入らない)

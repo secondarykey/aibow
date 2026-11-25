@@ -164,12 +164,12 @@ func TestEditFileIndent(t *testing.T) {
 // 大きいファイルを丸ごと書き直すときは、差分を作らない(時間がかかるため)
 func TestDiffTooLarge(t *testing.T) {
 	big := strings.Repeat("a\n", diffMaxLines)
-	if d := unifiedDiff("x", big, strings.ReplaceAll(big, "a", "b")); d != "" {
+	if d := UnifiedDiff("x", big, strings.ReplaceAll(big, "a", "b")); d != "" {
 		t.Errorf("差分を作っています(%d 文字)", len(d))
 	}
 	// 共通の行が1つも無いと、pkg/diff は「消す」と「足す」を別の @@ に分けて書く(@@ -1,1 +0,0 @@ と @@ -0,0 +1,1 @@)。
 	// 行の中身は正しいので、そのまま使う
-	if d := unifiedDiff("x", "a\n", "b\n"); !strings.Contains(d, "-a\n") || !strings.Contains(d, "+b\n") {
+	if d := UnifiedDiff("x", "a\n", "b\n"); !strings.Contains(d, "-a\n") || !strings.Contains(d, "+b\n") {
 		t.Errorf("小さい差分: %q", d)
 	}
 }
