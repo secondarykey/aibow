@@ -5,6 +5,7 @@ import (
 	"errors"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/secondarykey/aibow"
 	"github.com/secondarykey/aibow/auth"
@@ -102,4 +103,81 @@ func TestLinkBase(t *testing.T) {
 	if b := linkBase(serverConfig{Host: "127.0.0.1", Port: 8089, Base: "/aibow"}); b.base != "http://127.0.0.1:8089/aibow" {
 		t.Errorf("base: %+v", b)
 	}
+}
+
+// API キーの期限・削除と、無効にする / 有効に戻すコマンド(0060)
+func TestKeyAndDisableCommands(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "server.db")
+	st, err := store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	var env config.Env
+	if _, err := createUser(ctx, st, initialSettings(&env, 0), "bob", ""); err != nil {
+		t.Fatal(err)
+	}
+	u, _ := st.UserByName(ctx, "bob")
+	st.Close()
+	c := serverConfig{DBPath: path}
+	run := func(args ...string) error {
+		t.Helper()
+		return runUser(c, &env, args)
+	}
+	read := func() (*store.SQLite, func()) {
+		st, err := store.Open(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return st, func() { st.Close() }
+	}
+
+	// 日数を省くと 90 日、0 は無期限、選べない日数・数でないものは断る
+	if err := run("key", "bob"); err != nil {
+		t.Fatal(err)
+	}
+	st, done := read()
+	if has, exp, _ := st.HasAPIKey(ctx, u.ID); !has || exp.Sub(time.Now()) < 89*24*time.Hour || exp.Sub(time.Now()) > 91*24*time.Hour {
+		t.Errorf("省くと 90 日: %v %v", has, exp)
+	}
+	done()
+	if err := run("key", "bob", "0"); err != nil {
+		t.Fatal(err)
+	}
+	st, done = read()
+	if has, exp, _ := st.HasAPIKey(ctx, u.ID); !has || !exp.IsZero() {
+		t.Errorf("0 は無期限: %v %v", has, exp)
+	}
+	done()
+	for _, bad := range []string{"7", "x"} {
+		if err := run("key", "bob", bad); err == nil {
+			t.Errorf("選べない日数 %q を受け付けた", bad)
+		}
+	}
+	if err := run("unkey", "bob"); err != nil {
+		t.Fatal(err)
+	}
+	if err := run("unkey", "bob"); !errors.Is(err, auth.ErrNoAPIKey) {
+		t.Errorf("無いキーの削除: %v", err)
+	}
+
+	if err := run("disable", "bob"); err != nil {
+		t.Fatal(err)
+	}
+	st, done = read()
+	if u, _ := st.UserByName(ctx, "bob"); !u.Disabled {
+		t.Error("無効になっていない")
+	}
+	done()
+	if err := run("disable", "local"); err == nil {
+		t.Error("local は無効にできない")
+	}
+	if err := run("enable", "bob"); err != nil {
+		t.Fatal(err)
+	}
+	st, done = read()
+	if u, _ := st.UserByName(ctx, "bob"); u.Disabled {
+		t.Error("有効に戻っていない")
+	}
+	done()
 }

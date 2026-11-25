@@ -165,6 +165,11 @@ func (c *Client) DeleteProfile(ctx context.Context, id uuid.UUID) error {
 	return c.call(ctx, "DeleteProfile", []any{id})
 }
 
+func (c *Client) ProfileUseCounts(ctx context.Context) (out map[uuid.UUID]int, err error) {
+	err = c.call(ctx, "ProfileUseCounts", nil, &out)
+	return out, err
+}
+
 func (c *Client) SetProfileShare(ctx context.Context, id uuid.UUID, share string, with, groups []string) error {
 	return c.call(ctx, "SetProfileShare", []any{id, share, with, groups})
 }

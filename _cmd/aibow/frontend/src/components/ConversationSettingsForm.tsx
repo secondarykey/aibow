@@ -180,12 +180,12 @@ export function LimitsForm({ history, reply, lock, onChange }: {
       <FieldLabel htmlFor="history-tokens" item={FIX.historyTokens} lock={lock} title="モデルに渡す文字列(これまでの会話)のトークン数の上限。超えたら compact で収める">
         会話の上限
       </FieldLabel>
-      <NumberInput id="history-tokens" value={h} min={1} step={1024} disabled={locked(lock, FIX.historyTokens)} onChange={v => onChange({ history_tokens: v })} />
+      <NumberInput id="history-tokens" value={h} min={0} step={1024} disabled={locked(lock, FIX.historyTokens)} onChange={v => onChange({ history_tokens: v })} />
 
       <FieldLabel htmlFor="reply-tokens" item={FIX.replyTokens} lock={lock} title="1回の返事で生成するトークン数の上限(思考 + 答え)">
         返事の上限
       </FieldLabel>
-      <NumberInput id="reply-tokens" value={r} min={1} step={1024} disabled={locked(lock, FIX.replyTokens)} onChange={v => onChange({ reply_tokens: v })} />
+      <NumberInput id="reply-tokens" value={r} min={0} step={1024} disabled={locked(lock, FIX.replyTokens)} onChange={v => onChange({ reply_tokens: v })} />
 
       {server ? (
         // aibow-server につないでいるときは、作業領域はサーバーが決めた大きさで固定(0015 の 3)

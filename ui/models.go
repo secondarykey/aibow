@@ -6,6 +6,7 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"net/http"
 
 	"github.com/secondarykey/aibow"
 	"github.com/secondarykey/aibow/api"
@@ -35,6 +36,9 @@ type ModelsResult struct {
 	Server string `json:"server,omitempty"`
 	// ServerError は aibow-server につながらない理由(と対処)。起動したら、アプリを起動し直さずに使える(一覧を取り直せば消える)
 	ServerError string `json:"server_error,omitempty"`
+	// LoginRequired は、aibow-server に 401(ログインしてください)で断られたか。つながらないのとは違い、ログインし直せば直るので
+	// ServerError には入れない(画面はログインの画面に移る。0057 の決定事項 5)。画面は一覧を前のままにしておく
+	LoginRequired bool `json:"login_required,omitempty"`
 	// Manage は、aibow-server の中で、サーバーの PC の事情(読み込む / 降ろす・層の数・置き場所・出どころ)を見せて変えてよい人か
 	// (管理者か、ログインなしの形の画面。0046)。画面はモデルのタブを、アプリモードのときと同じに出す
 	Manage bool `json:"manage,omitempty"`
@@ -48,14 +52,21 @@ func (s *Service) Models(ctx context.Context) ModelsResult {
 	r := ModelsResult{Models: []models.Entry{}, Notices: s.notices, Server: s.host.server()}
 	l, err := s.host.list(ctx)
 	if err != nil {
-		// つながらない間は、一覧を取るたびにログを出さない(画面はウィンドウに戻るたびに取り直すため)
-		if !s.serverDown.Swap(true) {
+		if unauthorized(err) {
+			// aibow-server には届いている。ログインし直すまで一覧は取れない(断られたことは、ログインの画面に戻すときにログに書く)
+			log.Debugf("aibow-server にログインし直すまで、モデルの一覧を取れません: %v", err)
+			r.LoginRequired = true
+			return r
+		}
+		// つながらない間は、一覧を取るたびにログを出さない(画面はウィンドウに戻るたびに取り直すため)。理由が変わったら、もう一度出す
+		reason := serverDownReason(err)
+		if old := s.serverDown.Swap(&reason); old == nil || *old != reason {
 			log.Warn(err.Error())
 		}
 		r.ServerError = err.Error()
 		return r
 	}
-	if s.serverDown.Swap(false) {
+	if s.serverDown.Swap(nil) != nil {
 		log.Noticef("aibow-server につながりました: %s", s.host.server())
 	}
 	r.Models, r.Current, r.GPU, r.GPULayers, r.Manage = l.models, l.current, l.gpu, l.layers, l.manage
@@ -68,6 +79,24 @@ func (s *Service) Models(ctx context.Context) ModelsResult {
 		r.Loading = *name
 	}
 	return r
+}
+
+// unauthorized は、aibow-server に 401(キーが無い・違う・ログインの期限が切れた)で断られたエラーか。
+func unauthorized(err error) bool {
+	var ae *apiclient.APIError
+	return errors.As(err, &ae) && ae.Status == http.StatusUnauthorized
+}
+
+// serverDownReason は、aibow-server につながらない理由の種類(同じ理由をログに重ねて書かないため)。
+// 文そのものでは比べない:つながらないときの文には、下回りのエラー(呼んだ URL など)が入り、呼ぶたびに変わることがあるため
+func serverDownReason(err error) string {
+	switch {
+	case errors.Is(err, apiclient.ErrUnreachable):
+		return "unreachable"
+	case errors.Is(err, apiclient.ErrCertChanged):
+		return "cert"
+	}
+	return err.Error()
 }
 
 // SwitchModel はモデルを切り替える。読み込み終わるまで返らない。

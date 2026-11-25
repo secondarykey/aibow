@@ -36,6 +36,8 @@ type AccountInfo struct {
 	NeedLogin bool `json:"needLogin"`
 	// LastUser は、最後にログインした名前(ログインの画面に入れておく)
 	LastUser string `json:"lastUser"`
+	// Offline は、起動のときに aibow-server につながらなかったのでログインの画面にしたときの、つなぎ先(つながったなら空)
+	Offline string `json:"offline"`
 	// CanLogout は、ログアウトできるか(画面でログインしたとき。settings.json に手で書いた API キーではログアウトしない)
 	CanLogout bool `json:"canLogout"`
 }
@@ -72,7 +74,11 @@ func (s *ChatService) Account() (AccountInfo, error) {
 func (c *connection) loginInfo() AccountInfo {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return AccountInfo{Login: true, NeedLogin: true, LastUser: c.saved.Trusted().User}
+	a := AccountInfo{Login: true, NeedLogin: true, LastUser: c.saved.Trusted().User}
+	if c.offline {
+		a.Offline = c.url
+	}
+	return a
 }
 
 // Login は、画面でつないだ aibow-server に、名前とパスワードでログインし直す(ログアウトしたあと・期限が切れたあと)。
@@ -99,7 +105,7 @@ func (s *ChatService) Login(name, password string) (AccountInfo, error) {
 		return AccountInfo{}, err
 	}
 	c.client.SetKey(token)
-	c.saved, c.file, c.key, c.loginRequired = f, f, token, true
+	c.saved, c.file, c.key, c.loginRequired, c.offline = f, f, token, true, false
 	c.mu.Unlock()
 	log.Noticef("aibow-server にログインしました: %s(%s)", f.ServerURL, f.User)
 	// 起動のときにログインを待っていたなら、待っていた処理(設定を読む・前の版の引き継ぎ)をここで行う(0051 の決定事項 6)

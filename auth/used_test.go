@@ -62,7 +62,7 @@ func TestLastUsed(t *testing.T) {
 
 	// API キー
 	key := auth.NewAPIKey()
-	if err := st.SetAPIKey(ctx, u.ID, auth.KeyID(key), now); err != nil {
+	if err := st.SetAPIKey(ctx, u.ID, auth.KeyID(key), now, time.Time{}); err != nil {
 		t.Fatal(err)
 	}
 	now = now.Add(25 * time.Hour)

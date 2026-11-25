@@ -68,6 +68,8 @@ type Client struct {
 	server, minApp string
 	// onVersion は、サーバーのバージョンを初めて知ったとき・変わったときに呼ぶ(OnServerVersion。無ければ呼ばない)
 	onVersion func(server, minApp string)
+	// onUnauth は、401(ログインしてください)で断られたときに呼ぶ(OnUnauthorized。無ければ呼ばない。0057)
+	onUnauth func(key string, err *APIError)
 }
 
 // appVersion は、毎回のリクエストに付けるアプリのバージョン(SetAppVersion。0054)。決めていなければ付けない
@@ -126,6 +128,13 @@ func (c *Client) ServerVersion() (server, minApp string) {
 // OnServerVersion は、サーバーのバージョンを初めて知ったとき・変わったとき(対応できるアプリの最低バージョンが変わったときも)に f を呼ぶ。
 // 画面のアプリがログに残すのに使う(0054 の決定事項 17)。見出しの無い返事(古い aibow-server)では呼ばない。使い始める前に呼ぶ。
 func (c *Client) OnServerVersion(f func(server, minApp string)) { c.onVersion = f }
+
+// OnUnauthorized は、aibow-server に 401(キーが無い・違う・期限が切れた)で断られるたびに f を呼ぶ。key はその呼び出しで送ったキー
+// (起動したままログインし直したあとに、前のキーで送った呼び出しの返事が遅れて届くことがあるので、呼ぶ側が今のキーと比べて見分けられるように)。
+// 画面のアプリが、使っている途中でログインの期限が切れたときにログインの画面へ戻すのに使う(0057 の決定事項 1)。使い始める前に呼ぶ。
+//
+// 401 は「つながらない」とは違う:aibow-server には届いていて、断られている。直し方(ログインし直す)が違うので、別の知らせにする。
+func (c *Client) OnUnauthorized(f func(key string, err *APIError)) { c.onUnauth = f }
 
 // noteVersion は、返事の見出しからサーバーのバージョンを覚える(do が、エラーの返事も含めて毎回呼ぶ)。
 func (c *Client) noteVersion(h http.Header) {
@@ -251,7 +260,8 @@ func (c *Client) do(ctx context.Context, method, path string, body any) (*http.R
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	if key := c.Key(); key != "" {
+	key := c.Key()
+	if key != "" {
 		req.Header.Set("Authorization", "Bearer "+key)
 	}
 	// HTTP には「つないだ瞬間」が無いので、版は毎回のリクエストに載せる(0054)
@@ -276,17 +286,26 @@ func (c *Client) do(ctx context.Context, method, path string, body any) (*http.R
 		return res, nil
 	}
 	defer res.Body.Close()
+	ae := readError(res, method, path)
+	if ae.Status == http.StatusUnauthorized && c.onUnauth != nil {
+		c.onUnauth(key, ae)
+	}
+	return nil, ae
+}
+
+// readError は、200 でない返事の本文を APIError にする。
+func readError(res *http.Response, method, path string) *APIError {
 	var eb errorBody
 	data, _ := io.ReadAll(io.LimitReader(res.Body, 1<<20))
 	if json.Unmarshal(data, &eb) == nil && eb.Error != nil {
-		return nil, &APIError{Status: res.StatusCode, Type: eb.Error.Type, Code: eb.Error.Code, Message: eb.Error.Message}
+		return &APIError{Status: res.StatusCode, Type: eb.Error.Type, Code: eb.Error.Code, Message: eb.Error.Message}
 	}
 	// サーバーの返した文を先に、HTTP の状態とメソッド・パス(開発する人向けの詳細)は括弧の後ろに(0048)
 	msg := "aibow-server からエラーが返りました"
 	if body := strings.TrimSpace(string(data)); body != "" {
 		msg += ": " + body
 	}
-	return nil, &APIError{Status: res.StatusCode, Message: fmt.Sprintf("%s(%s・%s %s)", msg, res.Status, method, path)}
+	return &APIError{Status: res.StatusCode, Message: fmt.Sprintf("%s(%s・%s %s)", msg, res.Status, method, path)}
 }
 
 // call は、生成以外のやり取り(JSON を送って JSON を受け取る)。out が nil なら本文を読まない。

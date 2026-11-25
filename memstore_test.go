@@ -109,6 +109,19 @@ func (s *memStore) ReadConversation(ctx context.Context, id uuid.UUID) (SharedRe
 	return SharedRead{Conversation: c, Messages: ms, Compactions: comps, OwnerName: "someone"}, err
 }
 
+// ProfileUseCounts は、memStore の会話をプロファイルごとに数える(利用者の区別はしないので、全部の会話)。
+func (s *memStore) ProfileUseCounts(context.Context) (map[uuid.UUID]int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := map[uuid.UUID]int{}
+	for _, c := range s.convs {
+		if c.ProfileID != (uuid.UUID{}) {
+			out[c.ProfileID]++
+		}
+	}
+	return out, nil
+}
+
 // SetProfileShare は、配る範囲だけを覚える(利用者の区別はしない。誰に見えるかは store の SQLite のテストで確かめる)。
 func (s *memStore) SetProfileShare(_ context.Context, id uuid.UUID, share string, with, _ []string) error {
 	s.mu.Lock()

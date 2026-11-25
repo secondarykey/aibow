@@ -251,7 +251,7 @@ func TestAPIKeys(t *testing.T) {
 	if !strings.HasPrefix(key, "aibow_") || len(key) < 40 {
 		t.Errorf("キーの形: %q", key)
 	}
-	if err := st.SetAPIKey(ctx, u.ID, auth.KeyID(key), time.Now()); err != nil {
+	if err := st.SetAPIKey(ctx, u.ID, auth.KeyID(key), time.Now(), time.Time{}); err != nil {
 		t.Fatal(err)
 	}
 	srv := httptest.NewServer(k.RequireKey(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -285,11 +285,11 @@ func TestAPIKeys(t *testing.T) {
 	if code, body := get("Bearer " + key); code != http.StatusOK || body != "bob" {
 		t.Errorf("合っているキー: %d %s", code, body)
 	}
-	if has, _ := st.HasAPIKey(ctx, u.ID); !has {
+	if has, _, _ := st.HasAPIKey(ctx, u.ID); !has {
 		t.Error("キーを持っているはず")
 	}
 	again := auth.NewAPIKey()
-	st.SetAPIKey(ctx, u.ID, auth.KeyID(again), time.Now())
+	st.SetAPIKey(ctx, u.ID, auth.KeyID(again), time.Now(), time.Time{})
 	if code, _ := get("Bearer " + key); code != http.StatusUnauthorized {
 		t.Errorf("作り直す前のキーは使えない: %d", code)
 	}
@@ -335,7 +335,7 @@ func TestKeyMe(t *testing.T) {
 	st := openStore(t)
 	u := addUser(t, st, "bob", "pw")
 	key := auth.NewAPIKey()
-	st.SetAPIKey(ctx, u.ID, auth.KeyID(key), time.Now())
+	st.SetAPIKey(ctx, u.ID, auth.KeyID(key), time.Now(), time.Time{})
 	k := auth.NewKeys(st)
 	for _, c := range []struct {
 		required bool

@@ -635,7 +635,8 @@ func TestWebModelsWhileLoading(t *testing.T) {
 
 // 誰の呼び出しかは aibow-server の who で決まり、会話・プロファイル・表示の設定・生成の途中経過はその人のものだけが見える(0017)。
 // 決められなければ 401
-// 管理者がプロファイルを配り、受け取った人は読むだけで、写す・新しい会話で選べる。配るのをやめたら選べない(0018 の 11-1)
+// 管理者がプロファイルを配り、受け取った人は読むだけで、写す・新しい会話で選べる(0018 の 11-1)。
+// 停止したら選べず、今ある会話は続けられる。受け取った人の会話があれば消せない(全員の会話を数える。0059)
 func TestWebSharedProfile(t *testing.T) {
 	w := newTestWeb(t)
 	now := time.Now()
@@ -649,14 +650,16 @@ func TestWebSharedProfile(t *testing.T) {
 	alice, bob := add("alice", true), add("bob", false)
 
 	w.user.Store(alice)
-	var p aibow.Profile
-	w.mustCall(t, &p, "CreateProfile", "調べもの",
-		aibow.ProfileValues{Model: "ollama:a", HistoryTokens: 4096, ReplyTokens: 1024}, aibow.ProfileRules{Fixed: []string{"system"}})
 	w.mm.disabled = map[string]bool{"ollama:a": true}
-	if status, body := w.call(t, context.Background(), "SetProfileShare", p.ID, aibow.ShareAll, []string{}, []string{}); status == http.StatusOK || !strings.Contains(string(body), "使えるモデル") {
+	if status, body := w.call(t, context.Background(), "ShareNew", "調べもの", "ollama:a", aibow.ShareAll, []string{}, []string{}); status == http.StatusOK || !strings.Contains(string(body), "使えるモデル") {
 		t.Errorf("使えないモデルのプロファイルは配れない: %d %s", status, body)
 	}
 	w.mm.disabled = nil
+	var p aibow.Profile
+	w.mustCall(t, &p, "ShareNew", "調べもの", "ollama:a", aibow.ShareAll, []string{}, []string{})
+	p.Values.HistoryTokens, p.Values.ReplyTokens = 4096, 1024
+	p.Rules.Fixed = []string{"system"}
+	w.mustCall(t, nil, "UpdateProfile", p)
 	w.mustCall(t, nil, "SetProfileShare", p.ID, aibow.ShareUsers, []string{"bob"}, []string{})
 
 	w.user.Store(bob)
@@ -682,18 +685,41 @@ func TestWebSharedProfile(t *testing.T) {
 		t.Errorf("配られたプロファイルの会話: %+v", c)
 	}
 
+	// 管理者:配布をやめて個人プロファイルに戻すことはできない。会話の数は受け取った人の分も数える(自分の会話は 0)
 	w.user.Store(alice)
-	w.mustCall(t, nil, "SetProfileShare", p.ID, aibow.ShareNone, []string{}, []string{})
+	if status, _ := w.call(t, context.Background(), "SetProfileShare", p.ID, aibow.ShareNone, []string{}, []string{}); status == http.StatusOK {
+		t.Error("配布をやめて個人プロファイルに戻せる")
+	}
+	w.mustCall(t, &list, "Profiles")
+	if i := slices.IndexFunc(list, func(i aibow.ProfileInfo) bool { return i.Profile.ID == p.ID }); i < 0 || list[i].Uses != 0 || list[i].UsesAll != 1 {
+		t.Errorf("管理者から見た会話の数: %+v", list)
+	}
+	if status, _ := w.call(t, context.Background(), "DeleteProfile", p.ID); status == http.StatusOK {
+		t.Error("受け取った人の会話がある配布プロファイルを消せる")
+	}
+	w.mustCall(t, nil, "SetProfileArchived", p.ID, true)
+
+	// 受け取った人:停止中として一覧に残り、新しい会話では選べない。今ある会話は開ける
 	w.user.Store(bob)
 	w.mustCall(t, &list, "Profiles")
-	if len(list) != 1 || list[0].Profile.ID != cp.ID {
-		t.Errorf("配るのをやめたら一覧から消える: %+v", list)
+	if i := slices.IndexFunc(list, func(i aibow.ProfileInfo) bool { return i.Profile.ID == p.ID }); i < 0 || !list[i].Profile.Archived || list[i].UsesAll != 0 {
+		t.Errorf("停止したものの見え方: %+v", list)
 	}
 	if status, _ := w.call(t, context.Background(), "ProfileDefaults", p.ID); status == http.StatusOK {
-		t.Error("配るのをやめたものは新しい会話で選べない")
+		t.Error("停止したものは新しい会話で選べない")
 	}
 	if status, body := w.call(t, context.Background(), "Conversation", c.ID); status != http.StatusOK {
 		t.Errorf("もう作った会話は開ける: %d %s", status, body)
+	}
+
+	// 配る相手から外れたら、一覧から消える
+	w.user.Store(alice)
+	w.mustCall(t, nil, "SetProfileArchived", p.ID, false)
+	w.mustCall(t, nil, "SetProfileShare", p.ID, aibow.ShareUsers, []string{"alice"}, []string{})
+	w.user.Store(bob)
+	w.mustCall(t, &list, "Profiles")
+	if len(list) != 1 || list[0].Profile.ID != cp.ID {
+		t.Errorf("配る相手から外れたら一覧から消える: %+v", list)
 	}
 }
 
@@ -765,9 +791,9 @@ func TestWebSharedConversation(t *testing.T) {
 	}
 }
 
-// 写して配る(管理の画面。0032 の段3):写すと配るを1回で行い、名前は元と同じ・資料のフォルダは写さない。
-// 配れなかったら(管理者でない)写したものは残さない
-func TestWebShareCopy(t *testing.T) {
+// 配布プロファイルを最初から作る(管理の画面の「新規」。0059):作ると配るを1回で行う。
+// 配れなかったら(管理者でない)作ったものは残さない。個人プロファイルは配れない
+func TestWebShareNew(t *testing.T) {
 	w := newTestWeb(t)
 	now := time.Now()
 	add := func(name string, admin bool) *uuid.UUID {
@@ -786,35 +812,34 @@ func TestWebShareCopy(t *testing.T) {
 	}
 
 	w.user.Store(bob)
-	var own aibow.Profile
-	w.mustCall(t, &own, "CreateProfile", "営業用", aibow.ProfileValues{HistoryTokens: 4096, ReplyTokens: 1024}, aibow.ProfileRules{})
 	before := count()
-	if status, _ := w.call(t, context.Background(), "ShareCopy", own.ID, aibow.ShareAll, []string{}, []string{}); status == http.StatusOK {
-		t.Error("管理者でない人が写して配れる")
+	if status, _ := w.call(t, context.Background(), "ShareNew", "営業用", "ollama:a", aibow.ShareAll, []string{}, []string{}); status == http.StatusOK {
+		t.Error("管理者でない人が配布プロファイルを作れる")
 	}
 	if n := count(); n != before {
-		t.Errorf("配れなかった写しが残っている: %d → %d", before, n)
+		t.Errorf("配れなかったものが残っている: %d → %d", before, n)
 	}
 
 	w.user.Store(alice)
-	var src aibow.Profile
-	w.mustCall(t, &src, "CreateProfile", "調べもの", aibow.ProfileValues{HistoryTokens: 4096, ReplyTokens: 1024}, aibow.ProfileRules{Fixed: []string{"system"}})
-	if status, _ := w.call(t, context.Background(), "ShareCopy", src.ID, aibow.ShareNone, []string{}, []string{}); status == http.StatusOK {
-		t.Error("配る範囲を選ばずに写して配れる")
+	if status, _ := w.call(t, context.Background(), "ShareNew", "調べもの", "ollama:a", aibow.ShareNone, []string{}, []string{}); status == http.StatusOK {
+		t.Error("配る範囲を選ばずに作れる")
+	}
+	if status, _ := w.call(t, context.Background(), "ShareNew", "調べもの", "ollama:a", aibow.ShareUsers, []string{}, []string{}); status == http.StatusOK {
+		t.Error("相手を選ばずに作れる")
 	}
 	var p aibow.Profile
-	w.mustCall(t, &p, "ShareCopy", src.ID, aibow.ShareUsers, []string{"bob"}, []string{})
-	if p.ID == src.ID || p.Name != "調べもの" || p.Share != aibow.ShareUsers || len(p.Rules.Fixed) != 1 || p.Rules.Folder != "" {
-		t.Errorf("写して配ったもの: %+v", p)
+	w.mustCall(t, &p, "ShareNew", "調べもの", "ollama:a", aibow.ShareUsers, []string{"bob"}, []string{})
+	if p.Name != "調べもの" || p.Share != aibow.ShareUsers || p.Values.Model != "ollama:a" || len(p.Rules.Fixed) != 0 || p.Rules.Folder != "" {
+		t.Errorf("作った配布プロファイル: %+v", p)
 	}
-	if status, _ := w.call(t, context.Background(), "ShareCopy", src.ID, aibow.ShareAll, []string{}, []string{}); status == http.StatusOK {
+	if status, _ := w.call(t, context.Background(), "ShareNew", "調べもの", "ollama:a", aibow.ShareAll, []string{}, []string{}); status == http.StatusOK {
 		t.Error("配ったもの同士で同じ名前になる")
 	}
-	// 元は自分のプロファイルのまま残る
-	var mine []aibow.ProfileInfo
-	w.mustCall(t, &mine, "Profiles")
-	if i := slices.IndexFunc(mine, func(i aibow.ProfileInfo) bool { return i.Profile.ID == src.ID }); i < 0 || mine[i].Profile.Share != aibow.ShareNone {
-		t.Errorf("元のプロファイルが配られた・消えた: %+v", mine)
+	// 自分のプロファイルは配れない
+	var own aibow.Profile
+	w.mustCall(t, &own, "CreateProfile", "自分用", aibow.ProfileValues{HistoryTokens: 4096, ReplyTokens: 1024}, aibow.ProfileRules{})
+	if status, body := w.call(t, context.Background(), "SetProfileShare", own.ID, aibow.ShareAll, []string{}, []string{}); status == http.StatusOK || !strings.Contains(string(body), "新規") {
+		t.Errorf("個人プロファイルを配れる: %d %s", status, body)
 	}
 
 	w.user.Store(bob)

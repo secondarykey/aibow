@@ -12,7 +12,7 @@ import type { Entry as ModelEntry } from "../bindings/github.com/secondarykey/ai
 import type { ModelInfo } from "../bindings/github.com/secondarykey/aibow/engine";
 import type { Transcript } from "./transcript";
 import type { Notifier } from "./toast";
-import { errorMessage } from "./errors";
+import { errorMessage, serverDownReason, serverDownText } from "./errors";
 
 // 起動時のお知らせ(使われなくなった環境変数など)を出しておく時間。文が長いので普通のトーストより長くする
 const NOTICE_MS = 20000;
@@ -38,9 +38,10 @@ export interface Models {
   unload(): Promise<void>;                   // 読み込み中のモデルを降ろす(VRAM を空ける)
   setLayers(id: string, n: number): Promise<void>; // モデルの GPU の層数を変える(読み込み中のモデルなら読み直す)
   reload(): Promise<boolean>; // 一覧を取り直す。起動に失敗していたら false
-  // aibow-server につながらないことをカードで伝えたままか。serverError(state)と違い、呼んだときの値を返す
-  // (reload を待った直後に、同じ理由のエラーを重ねて出さないかを決めるため)
-  serverDown(): boolean;
+  // noteServerDown は、操作で aibow-server につながらないと分かったときに呼ぶ(0057 の決定事項 12)。
+  // その理由をまだ伝えていなければ印を立てて true(呼んだ側がエラーを1回出す)、もう伝えていれば false(出さない)。
+  // つながらないエラーでなければ、何もせず true
+  noteServerDown(text: string): boolean;
 }
 
 // formatWarning は、書式(チャットテンプレート)に対応していない種類のモデルのときのお知らせ。対応していれば null
@@ -63,7 +64,9 @@ export function useModels(n: Notifier, t: Pick<Transcript, "addError">, setBusy:
   const [manage, setManage] = useState(false);
   const [gpuLayers, setGpuLayers] = useState<{ [id: string]: number | undefined }>({});
   const [lastModel, setLastModel] = useState("");
-  const serverDown = useRef(false); // つながらないことをカードで伝えたか(取り直すたびに出さないため)
+  // つながらないことをカードで伝えたときの理由の種類(serverDownReason。伝えていなければ空)。取り直すたびに出さないため。
+  // true / false だけで持つと、理由が変わっても(つながらない → 証明書が違う)黙ってしまうので、理由ごとに持つ(0057 の決定事項 6)
+  const serverDown = useRef("");
 
   // 起動直後は Go がモデルを裏で読み込んでいる最中のことがある。終わると models イベントが来る。
   // Models の戻り値とイベントは別の経路で届くので、イベントが先に着いても大丈夫なように覚えておく。
@@ -74,6 +77,8 @@ export function useModels(n: Notifier, t: Pick<Transcript, "addError">, setBusy:
 
   const reload = useCallback(async () => {
     const d = await ChatService.Models();
+    // ログインし直すまで一覧は取れない。Go がログインの画面に戻す知らせを出すので、ここでは何も変えない(0057 の決定事項 5)
+    if (d.login_required) return true;
     if (d.error) {
       // リリース版はコンソールが無いので、起動に失敗した理由はここでしか見えない
       if (!unavailable.current) {
@@ -101,14 +106,15 @@ export function useModels(n: Notifier, t: Pick<Transcript, "addError">, setBusy:
     setServerError(d.server_error ?? "");
     setManage(!!d.manage);
     if (d.server_error) {
-      if (!serverDown.current) {
-        serverDown.current = true;
+      const reason = serverDownReason(d.server_error) || d.server_error;
+      if (serverDown.current !== reason) {
+        serverDown.current = reason;
         addError(d.server_error);
       }
       return true;
     }
     if (serverDown.current) {
-      serverDown.current = false;
+      serverDown.current = "";
       notify(`aibow-server につながりました(${d.server})`);
     }
     if (d.loading && !startupLoading.current && !startupDone.current) {
@@ -203,7 +209,16 @@ export function useModels(n: Notifier, t: Pick<Transcript, "addError">, setBusy:
     setBusy("idle");
   }, [current, models, reload, notify, dismissKey, addError, setBusy]);
 
-  const isServerDown = useCallback(() => serverDown.current, []);
+  const noteServerDown = useCallback((text: string) => {
+    const reason = serverDownReason(text);
+    if (!reason) return true;
+    if (serverDown.current === reason) return false;
+    // 一覧の取り直しで同じ理由のカードを重ねないよう、印を立てる。モデルの欄にも、つながらないことを出す
+    // (つながったら、一覧の取り直しで印を下ろし「つながりました」と知らせる。今までと同じ)
+    serverDown.current = reason;
+    setServerError(serverDownText(text));
+    return true;
+  }, []);
 
-  return { models, allModels, current, gpu, loading, server, serverError, startupError, manage, gpuLayers, lastModel, switchModel, unload, setLayers, reload, serverDown: isServerDown };
+  return { models, allModels, current, gpu, loading, server, serverError, startupError, manage, gpuLayers, lastModel, switchModel, unload, setLayers, reload, noteServerDown };
 }

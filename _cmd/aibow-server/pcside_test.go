@@ -29,7 +29,7 @@ func TestAPIAdminOnly(t *testing.T) {
 		if _, err := createUser(ctx, st, initialSettings(&env, 0), name, ""); err != nil {
 			t.Fatal(err)
 		}
-		if key[name], err = renewKey(ctx, st, name, ""); err != nil {
+		if key[name], _, err = renewKey(ctx, st, name, auth.DefaultKeyDays, ""); err != nil {
 			t.Fatal(err)
 		}
 	}

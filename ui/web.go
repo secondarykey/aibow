@@ -56,7 +56,7 @@ var browserMethods = []string{
 	"Models", "SwitchModel", "AppSettings", "TryLimits", "ModelSettings", "SetDisplay", "Version",
 	// プロファイル
 	"Profiles", "CreateProfile", "UpdateProfile", "SaveProfile", "SetProfileArchived", "DeleteProfile", "SetDefaultProfile",
-	"ProfileDefaults", "SaveToProfile", "SaveAsProfile", "CopyProfile", "SetProfileShare", "ShareCopy",
+	"ProfileDefaults", "SaveToProfile", "SaveAsProfile", "CopyProfile", "SetProfileShare", "ShareNew",
 	// 会話
 	"Conversations", "Conversation", "Usage", "NewConversation", "DeleteConversation", "RenameConversation",
 	"SetExcluded", "UpdateConversationSettings", "SaveConversationSettings", "SetConversationInactive",
@@ -88,6 +88,10 @@ var adminToolMethods = []string{"SetToolPolicies", "SetToolPolicy", "SetGroupPol
 // adminLogMethods は、aibow-server のログのレベルを見る・変える・ログファイルの場所を見るメソッド(管理の画面の「ログ」。0052)。pcMethods と同じ人だけが呼べる。ほかの人は 403。
 var adminLogMethods = []string{"ServerLogLevel", "SetServerLogLevel", "ServerLogFile"}
 
+// adminServerMethods は、aibow-server の並列数・作業領域・資料のフォルダを見る・変えるメソッド(管理の画面。0061)。
+// server.json に書き、資料のフォルダはサーバーの PC の任意のフォルダをモデルに読み書きさせる設定なので、pcMethods と同じ人だけが呼べる。ほかの人は 403。
+var adminServerMethods = []string{"ServerSettings", "SaveServerSettings", "AddServerFolder", "SetServerFolderPath", "RemoveServerFolder"}
+
 // adminOnly は、管理者だけが呼べるメソッドと、ほかの人に断るときの文。
 var adminOnly = map[string]string{}
 
@@ -101,6 +105,9 @@ func init() {
 	for _, name := range adminLogMethods {
 		adminOnly[name] = serverLogOnly
 	}
+	for _, name := range adminServerMethods {
+		adminOnly[name] = serverConfigOnly
+	}
 }
 
 // Who は、リクエストを送ってきた人を決める係(aibow-server が渡す)。決められなければエラー(401 で断る)。
@@ -110,10 +117,10 @@ type Who func(r *http.Request) (Caller, error)
 func Handler(s *Service, ev *Events, who Who) http.Handler {
 	methods := map[string]reflect.Value{}
 	v := reflect.ValueOf(s)
-	for _, name := range slices.Concat(browserMethods, pcMethods, adminToolMethods, adminLogMethods) {
+	for _, name := range slices.Concat(browserMethods, pcMethods, adminToolMethods, adminLogMethods, adminServerMethods) {
 		m := v.MethodByName(name)
 		if !m.IsValid() {
-			panic("ui.Service に " + name + " がありません(browserMethods・pcMethods・adminToolMethods・adminLogMethods を直してください)")
+			panic("ui.Service に " + name + " がありません(browserMethods・pcMethods・adminToolMethods・adminLogMethods・adminServerMethods を直してください)")
 		}
 		methods[name] = m
 	}

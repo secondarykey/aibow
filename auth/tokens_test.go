@@ -59,8 +59,15 @@ func TestAppTokens(t *testing.T) {
 	if _, err := k.User(ctx, again.Token); !errors.Is(err, auth.ErrTokenExpired) {
 		t.Errorf("使っていても 10 日で切れる: %v", err)
 	}
+	if _, err := k.User(ctx, again.Token); !errors.Is(err, auth.ErrTokenExpired) {
+		t.Errorf("切れたトークンは、2回目も期限切れとして断る(違うキーにしない。0057 の決定事項 4): %v", err)
+	}
+	renewed, _ := s.IssueAppToken(ctx, "bob", "pw", "pc1")
 	if _, err := k.User(ctx, again.Token); !errors.Is(err, auth.ErrBadKey) {
-		t.Errorf("切れたトークンは消える: %v", err)
+		t.Errorf("同じ PC でログインし直したら、切れたトークンは置き換わる: %v", err)
+	}
+	if _, err := k.User(ctx, renewed.Token); err != nil {
+		t.Errorf("ログインし直したトークンは使える: %v", err)
 	}
 
 	// ログアウトとパスワードの作り直しで消える

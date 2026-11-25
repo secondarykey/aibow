@@ -26,7 +26,7 @@ type folderWeb struct {
 	profile           aibow.Profile // alice が bob に配った、docs を選んだプロファイル
 }
 
-func newFolderWeb(t *testing.T) *folderWeb {
+func newFolderWeb(t *testing.T, opts ...func(*Options)) *folderWeb {
 	t.Helper()
 	// フォルダの名前は、ほかの値(時刻・ID)にたまたま出てこないものにする。パスを画面に見せていないかを、名前が返事に無いことで確かめるため
 	// (t.TempDir の名前は「001」などで、時刻の「39.001909」にたまたま入ってテストが落ちることがあった)
@@ -35,7 +35,8 @@ func newFolderWeb(t *testing.T) *folderWeb {
 		t.Fatal(err)
 	}
 	os.WriteFile(filepath.Join(dir, "README.md"), []byte("# 仕様の置き場\n合言葉は「みかん」\n"), 0o644)
-	w := &folderWeb{testWeb: newTestWeb(t, func(o *Options) { o.Folders = map[string]string{"docs": dir} }), dir: dir}
+	opts = append([]func(*Options){func(o *Options) { o.Folders = map[string]string{"docs": dir} }}, opts...)
+	w := &folderWeb{testWeb: newTestWeb(t, opts...), dir: dir}
 	now := time.Now()
 	add := func(name string, admin bool) *uuid.UUID {
 		u := auth.User{ID: uuid.NewV7(), Name: name, Admin: admin, CreatedAt: now, UpdatedAt: now}
@@ -48,9 +49,10 @@ func newFolderWeb(t *testing.T) *folderWeb {
 
 	w.user.Store(w.alice)
 	w.admin.Store(true)
-	w.mustCall(t, &w.profile, "CreateProfile", "仕様の相談", aibow.ProfileValues{Model: "ollama:a", HistoryTokens: 8192, ReplyTokens: 8192},
-		aibow.ProfileRules{Folder: "docs"})
-	w.mustCall(t, nil, "SetProfileShare", w.profile.ID, aibow.ShareUsers, []string{"bob"}, []string{})
+	w.mustCall(t, &w.profile, "ShareNew", "仕様の相談", "ollama:a", aibow.ShareUsers, []string{"bob"}, []string{})
+	w.profile.Values.HistoryTokens, w.profile.Values.ReplyTokens = 8192, 8192
+	w.profile.Rules.Folder = "docs"
+	w.mustCall(t, nil, "UpdateProfile", w.profile)
 	w.admin.Store(false)
 	return w
 }
@@ -159,10 +161,10 @@ func TestWebFolderAccess(t *testing.T) {
 	var c aibow.Conversation
 	w.mustCall(t, &c, "NewConversation", w.profile.ID, nil)
 
-	// 配るのをやめたら、今ある会話でもフォルダを使えない(決まりなので、すぐ効く)
+	// 配る相手から外れたら、今ある会話でもフォルダを使えない(決まりなので、すぐ効く)
 	w.user.Store(w.alice)
 	w.admin.Store(true)
-	w.mustCall(t, nil, "SetProfileShare", w.profile.ID, aibow.ShareNone, []string{}, []string{})
+	w.mustCall(t, nil, "SetProfileShare", w.profile.ID, aibow.ShareUsers, []string{"carol"}, []string{})
 	w.admin.Store(false)
 	w.user.Store(w.bob)
 	var d ConversationDetail

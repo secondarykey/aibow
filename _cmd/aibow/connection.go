@@ -43,6 +43,7 @@ type connection struct {
 	key          string                // saved のトークン(ログアウトのときに aibow-server で消すため)
 	pending      string                // 保存したが、まだ効いていない形("server"・"direct"。無ければ空)
 	pendingLogin bool                  // 保存したつなぐ先がログインの要る aibow-server か(お知らせの文を分けるため)
+	pendingCert  bool                  // 今つないでいるのと同じ aibow-server に、新しい証明書でつなぎ直すように決めたか(お知らせの文を分けるため。0057)
 
 	// client は、今動いている aibow-server のクライアント(つないでいなければ nil)。生成も保存もこれを使うので、
 	// キーを替えれば起動し直さずにログインし直せる(account.go。0031 の決定事項 44)
@@ -50,21 +51,69 @@ type connection struct {
 	// loginRequired は、画面でつないで今動いている aibow-server がログインの要る形か(起動のときに確かめる。ログインしたら true)。
 	// トークンが無いときは、aibow-server を呼ばずにログインの画面にする(呼べば断られるだけ。0051 の決定事項 6)。mu で守る
 	loginRequired bool
+	// offline は、起動のときに aibow-server に確かめられなかった(止まっている・つながらない)ので、ログインの画面で待っているか。
+	// ログインしたら下ろす。mu で守る
+	offline bool
+	// onSignedOut は、使っている途中で aibow-server に 401 で断られ、トークンを手放したときに呼ぶ(画面をログインの画面に戻すイベントを出す。main.go。0057)
+	onSignedOut func()
+}
+
+// watchUnauthorized は、画面でつないだ aibow-server のクライアントに、401 で断られたときの受け口を付ける(0057 の決定事項 1)。
+// settings.json・環境変数で手で書いた API キーには付けない(ログインの画面では直せないので、今までどおりエラーで伝える)。
+func (c *connection) watchUnauthorized() {
+	if c.source == serverScreen && c.client != nil {
+		c.client.OnUnauthorized(c.unauthorized)
+	}
+}
+
+// unauthorized は、使っている途中で aibow-server に 401 で断られたとき(ログインの期限が切れた・トークンが消された)に呼ばれる。
+// 手元のトークンを手放し(Account が NeedLogin を返すように)、画面にログインの画面へ戻るよう知らせる。
+//
+// 知らせるのは、断られたキーが今のキーのときだけ。一覧の取り直しなどで何本も同時に断られても、最初の1本でキーを手放すので、
+// 残りは「今のキーではない」になり、ログインし直すまで知らせは1回になる。ログインし直したあとに、前のキーで送った呼び出しの返事が
+// 遅れて届いたときも、新しいキーを手放さずに済む。connection.json のトークンは消さない(起動し直しても、断られてログインの画面になる)。
+func (c *connection) unauthorized(key string, err *apiclient.APIError) {
+	c.mu.Lock()
+	if key == "" || c.client == nil || c.client.Key() != key {
+		c.mu.Unlock()
+		return
+	}
+	c.forgetKey()
+	c.loginRequired = true
+	f := c.onSignedOut
+	c.mu.Unlock()
+	log.Warnf("aibow-server(%s)にログインし直してください。ログインの画面に戻ります(%s)", c.url, err.Message)
+	if f != nil {
+		f()
+	}
 }
 
 // checkLogin は、起動のときに、ログインするまで aibow-server を呼ばずに待つかを決める(0051 の決定事項 6)。
 // 画面でつないだ aibow-server で、トークンが無く、そこがログインの要る形のとき true。
-// 確かめるのは、ログインの要らない /_aibow/auth/me だけ(つながらなければ待たない。呼び出しのエラーで伝える今までの形)。
+// 確かめるのは、ログインの要らない /_aibow/auth/me だけ。
+//
+// つながらない(止まっている)ときは、ログインできているか(トークンが生きているか)を確かめられない。
+// そのままアプリの画面を出すと、会話の一覧も設定も読めない画面になる(2026-11-24、ユーザーの指摘)ので、
+// ログインの要る aibow-server だと分かっていれば(トークンを持っている・前にログインした)、ログインの画面で待つ。
+// 分からなければ(ログインの要らない aibow-server かもしれない)、今までどおり呼び出しのエラーで伝える
 func (c *connection) checkLogin(pin string) bool {
 	if c.source != serverScreen || c.client == nil {
 		return false
 	}
-	if c.client.Key() != "" {
+	hasKey := c.client.Key() != ""
+	if hasKey {
 		c.loginRequired = true // トークンはログインの要る aibow-server でしかもらわない
-		return false
 	}
 	p, err := apiclient.ProbeServer(context.Background(), c.url, pin)
-	if err != nil || !p.Trusted {
+	if err != nil {
+		if !hasKey && !c.loggedInBefore() {
+			return false
+		}
+		c.loginRequired, c.offline = true, true
+		log.Warnf("aibow-server(%s)につながらないので、ログインの画面にします。aibow-server が起動しているか確かめてください(%v)", c.url, err)
+		return true
+	}
+	if hasKey || !p.Trusted {
 		return false
 	}
 	c.loginRequired = p.Login
@@ -82,11 +131,18 @@ func (c *connection) forgetKey() {
 	}
 }
 
-// needLogin は、aibow-server を呼ばずにログインの画面にしてよいか(ログインの要る aibow-server で、トークンを持っていない)。
+// loggedInBefore は、今のつなぎ先に前にログインしたことがあるか(connection.json に名前が残っている。ログアウトしても Known に残る)。
+func (c *connection) loggedInBefore() bool {
+	k := c.file.Trusted()
+	return k.User != "" && k.URL == c.url
+}
+
+// needLogin は、aibow-server を呼ばずにログインの画面にしてよいか(ログインの要る aibow-server で、トークンを持っていない。
+// または、起動のときにつながらず、ログインできているかを確かめられなかった)。
 func (c *connection) needLogin() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.source == serverScreen && c.client != nil && c.loginRequired && c.client.Key() == ""
+	return c.source == serverScreen && c.client != nil && c.loginRequired && (c.client.Key() == "" || c.offline)
 }
 
 func newConnection(cfg appConfig) *connection {
@@ -120,6 +176,8 @@ type ServerConnection struct {
 	PendingURL string `json:"pendingUrl"`
 	// PendingLogin は、保存したつなぐ先がログインの要る aibow-server か(起動し直したら、ログインの画面でログインする。0047)
 	PendingLogin bool `json:"pendingLogin"`
+	// PendingCert は、今つないでいるのと同じ aibow-server に、新しい証明書でつなぎ直すように決めたか(証明書を作り直したとき。0057 の段2)
+	PendingCert bool `json:"pendingCert"`
 	// KnownURL・KnownUser は、信頼した最後のつなぎ先と、そこに最後にログインした名前(タブの入力欄に入れておく。つないでいなくても残る)
 	KnownURL  string `json:"knownUrl"`
 	KnownUser string `json:"knownUser"`
@@ -138,7 +196,7 @@ func (s *ChatService) ServerConnection() ServerConnection {
 		v.Mode = "server"
 	}
 	c.mu.Lock()
-	v.Pending, v.PendingURL, v.PendingLogin = c.pending, c.saved.ServerURL, c.pendingLogin
+	v.Pending, v.PendingURL, v.PendingLogin, v.PendingCert = c.pending, c.saved.ServerURL, c.pendingLogin, c.pendingCert && c.pending == "server"
 	known := c.saved.Trusted()
 	v.KnownURL, v.KnownUser = known.URL, known.User
 	cl := c.client
@@ -255,11 +313,26 @@ func (s *ChatService) ConnectServer(req ConnectRequest) (ConnectResult, error) {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	// 今つないで動いているのと同じ aibow-server で、つなぎ先も変えていなければ、何もしない(ログインし直したいときは、ログアウトしてログインの画面で)
-	if c.url != "" && c.pending == "" && sameServer(c.url, p.URL) {
+	fp := pinnedFingerprint(p)
+	// running は、今つないで動いているのと同じ aibow-server か。newCert は、その証明書が起動のときに使ったものと違うか
+	// (aibow-server で証明書を作り直し、新しいフィンガープリントを信頼した。0057 の決定事項 7)
+	running := c.url != "" && sameServer(c.url, p.URL)
+	newCert := running && fp != c.file.Fingerprint
+	// 今つないで動いているのと同じ aibow-server で、つなぎ先も証明書も変えていなければ、何もしない(ログインし直したいときは、ログアウトしてログインの画面で)。
+	// 証明書だけが変わったときは、ここで止めずに保存する。以前はここで止めたので、信頼したつなぎ先(Known)だけが新しくなり、
+	// つなぐ先のフィンガープリントは古いまま残って、起動し直しても「証明書が違います」が続いた(0057 の段2)
+	if running && c.pending == "" && !newCert {
 		return ConnectResult{Same: true, URL: p.URL}, nil
 	}
-	f := config.ConnectionFile{ServerURL: p.URL, Fingerprint: pinnedFingerprint(p)}
+	// 保存してあるつなぐ先と同じ aibow-server で、トークンがあれば残す(証明書だけが変わった。起動し直したらログインせずに使える。0057 の決定事項 8)。
+	// トークンが期限切れなら、起動し直したあとに断られて、ログインの画面になる(段1)
+	keep := sameServer(c.saved.ServerURL, p.URL) && c.saved.Token != ""
+	f := config.ConnectionFile{ServerURL: p.URL}
+	if keep {
+		f = c.saved
+		f.ServerURL = p.URL
+	}
+	f.Fingerprint = fp
 	known := config.KnownServer{URL: f.ServerURL, Fingerprint: f.Fingerprint}
 	if old := c.saved.Trusted(); sameServer(old.URL, known.URL) {
 		known.User = old.User // 同じサーバーなら、最後にログインした名前を残す(ログインの画面の名前の欄に入れる)
@@ -273,16 +346,26 @@ func (s *ChatService) ConnectServer(req ConnectRequest) (ConnectResult, error) {
 	if err := f.Save(c.path); err != nil {
 		return ConnectResult{}, err
 	}
-	c.saved, c.key, c.pendingLogin = f, "", p.Login
+	c.saved, c.pendingLogin, c.pendingCert = f, p.Login && !keep, newCert
+	if !keep {
+		c.key = ""
+	}
 	c.pending = "server"
-	if c.url != "" && sameServer(c.url, f.ServerURL) {
+	if running && !newCert {
 		c.pending = "" // 今動いているのと同じつなぎ先に戻した(戻すのを取りやめた)。起動し直さなくても、ログインの画面でログインできる
 	}
 	how := "ログインなし"
-	if p.Login {
+	switch {
+	case keep:
+		how = "ログインしたまま"
+	case p.Login:
 		how = "ログインが要る。起動し直したら、ログインの画面でログインする"
 	}
-	log.Noticef("aibow-server につなぐように決めました: %s(%s。%s)。起動し直すと切り替わります", f.ServerURL, how, absPath(c.path))
+	if newCert {
+		log.Noticef("aibow-server(%s)に新しい証明書でつなぐように決めました(%s。%s)。起動し直すと切り替わります", f.ServerURL, how, absPath(c.path))
+	} else {
+		log.Noticef("aibow-server につなぐように決めました: %s(%s。%s)。起動し直すと切り替わります", f.ServerURL, how, absPath(c.path))
+	}
 	return ConnectResult{URL: p.URL}, nil
 }
 
@@ -327,7 +410,7 @@ func (s *ChatService) DisconnectServer() error {
 	} else if err := config.RemoveConnectionFile(c.path); err != nil {
 		return err
 	}
-	c.saved, c.key, c.pending, c.pendingLogin = f, "", "direct", false
+	c.saved, c.key, c.pending, c.pendingLogin, c.pendingCert = f, "", "direct", false, false
 	if c.url == "" {
 		c.pending = "" // 今もアプリの中で動いている(起動し直す前につないだのを取りやめた)ので、起動し直さなくてよい
 	}

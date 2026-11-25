@@ -29,7 +29,7 @@ func (s *Service) MCPServers() []client.ServerInfo {
 		return []client.ServerInfo{}
 	}
 	l := s.mcp.Infos()
-	if s.browser && len(s.folders) == 0 {
+	if s.browser && !s.hasFolders() {
 		l = slices.DeleteFunc(l, func(i client.ServerInfo) bool { return i.UsesWorkDir })
 	}
 	return l
@@ -48,8 +48,9 @@ func (s *Service) AllMCPServers() []client.ServerInfo {
 func (s *Service) BuiltinTools() []config.KnownTool {
 	l := aibow.BuiltinTools()
 	if s.browser {
+		hasFolders := s.hasFolders()
 		l = slices.DeleteFunc(l, func(k config.KnownTool) bool {
-			return k.Name == "run_command" || len(s.folders) == 0 && tool.Find(tool.Folderless(), k.Name) == nil
+			return k.Name == "run_command" || !hasFolders && tool.Find(tool.Folderless(), k.Name) == nil
 		})
 	}
 	return l
@@ -139,12 +140,13 @@ func (s *Service) forBrowser(groups []aibow.ToolGroupState) []aibow.ToolGroupSta
 		return groups
 	}
 	servers := s.MCPServers()
+	hasFolders := s.hasFolders()
 	groups = slices.DeleteFunc(groups, func(g aibow.ToolGroupState) bool {
 		return g.Server != "" && !slices.ContainsFunc(servers, func(i client.ServerInfo) bool { return i.Name == g.Server })
 	})
 	for i := range groups {
 		groups[i].Tools = slices.DeleteFunc(groups[i].Tools, func(t aibow.ToolState) bool {
-			return t.Name == "run_command" || t.NeedsWorkDir && len(s.folders) == 0
+			return t.Name == "run_command" || t.NeedsWorkDir && !hasFolders
 		})
 	}
 	return groups
@@ -152,8 +154,9 @@ func (s *Service) forBrowser(groups []aibow.ToolGroupState) []aibow.ToolGroupSta
 
 // Folders は aibow-server の資料のフォルダの名前(名前の順。パスは返さない)。配るプロファイルで選ぶ(0024 の 12-2)。
 // 名前は誰でも見られる(どのフォルダを使えるかは、配られたプロファイルで決まる)。アプリモードのときは空。
+// パスも見る管理の画面は ServerSettings(管理者だけ。0061)。
 func (s *Service) Folders() []string {
-	return slices.Clone(s.folders)
+	return s.folderNames()
 }
 
 // checkFolder は、プロファイルの資料のフォルダを old から folder に変えてよいか(0024 の決定事項 31)。
@@ -165,8 +168,8 @@ func (s *Service) checkFolder(ctx context.Context, old, folder string) error {
 	if !s.browser || !managesPC(ctx) {
 		return errors.New("資料のフォルダを選べるのは、aibow-server の管理者だけです")
 	}
-	if !slices.Contains(s.folders, folder) {
-		return fmt.Errorf("資料のフォルダ %s はありません(server.json の folders に書いたもの: %s)", folder, strings.Join(s.folders, "・"))
+	if names := s.folderNames(); !slices.Contains(names, folder) {
+		return fmt.Errorf("資料のフォルダ %s はありません(管理の画面の「資料のフォルダ」のタブにあるもの: %s)", folder, strings.Join(names, "・"))
 	}
 	return nil
 }

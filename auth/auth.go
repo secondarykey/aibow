@@ -33,8 +33,11 @@ type User struct {
 	// LastUsedAt は最後に使った時刻(ログイン・セッション・API キー・アプリ用のトークン。0031 の決定事項 21)。ゼロなら一度も使っていない。
 	// 使うたびではなく、前に書いてから1日以上たったときだけ書く(used.go)
 	LastUsedAt time.Time `json:"last_used_at"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	// Disabled は無効にされたか(0060)。無効の間は、ログイン・セッション・アプリ用のトークン・API キー・パスワードを決めるリンクのどれでも断る。
+	// 消すのと違い、会話・プロファイル・API キーは残るので、外せば元どおり使える
+	Disabled  bool      `json:"disabled,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // Session はログインしている間の印1つ。
@@ -81,6 +84,9 @@ type Store interface {
 	DeleteUser(ctx context.Context, id uuid.UUID) error
 	// SetAdmin は管理者の印を付ける / 外す。いなければ ErrUserNotFound
 	SetAdmin(ctx context.Context, id uuid.UUID, admin bool, at time.Time) error
+	// SetDisabled は無効の印を付ける / 外す(0060)。付けるときは、その人のセッション・アプリ用のトークン・パスワードを決めるリンクも消す(API キーは残す)。
+	// いなければ ErrUserNotFound
+	SetDisabled(ctx context.Context, id uuid.UUID, disabled bool, at time.Time) error
 	// SetDisplayName は表示名を変える(CheckDisplayName を通したもの。空なら無し)。いなければ ErrUserNotFound
 	SetDisplayName(ctx context.Context, id uuid.UUID, name string, at time.Time) error
 	// SetEmail はメールアドレスを変える(CheckEmail を通したもの。空なら無し)。ほかの人と重なれば ErrEmailExists、いなければ ErrUserNotFound
@@ -98,12 +104,15 @@ type Store interface {
 	// DeleteExpiredSessions は期限の切れたセッションを消し、消した数を返す
 	DeleteExpiredSessions(ctx context.Context, now time.Time) (int, error)
 
-	// SetAPIKey は、利用者の API キー(KeyID の形)を置き換える(1人1本。前のキーは使えなくなる)。いなければ ErrUserNotFound
-	SetAPIKey(ctx context.Context, user uuid.UUID, id string, at time.Time) error
-	// UserByAPIKey は API キー(KeyID の形)の持ち主。無ければ ErrUserNotFound
-	UserByAPIKey(ctx context.Context, id string) (User, error)
-	// HasAPIKey は、利用者が API キーを持っているか(一覧に出すため)
-	HasAPIKey(ctx context.Context, user uuid.UUID) (bool, error)
+	// SetAPIKey は、利用者の API キー(KeyID の形)を置き換える(1人1本。前のキーは使えなくなる)。expires はキーの期限で、ゼロなら無期限(0060)。
+	// いなければ ErrUserNotFound
+	SetAPIKey(ctx context.Context, user uuid.UUID, id string, at, expires time.Time) error
+	// DeleteAPIKey は利用者の API キーを消す(0060)。キーが無ければ ErrNoAPIKey
+	DeleteAPIKey(ctx context.Context, user uuid.UUID) error
+	// APIKeyOwner は API キー(KeyID の形)の持ち主と、キーの期限(無期限ならゼロ)。無ければ ErrUserNotFound(期限は見ない。見るのは Keys)
+	APIKeyOwner(ctx context.Context, id string) (User, time.Time, error)
+	// HasAPIKey は、利用者が API キーを持っているかと、その期限(無期限ならゼロ。一覧に出すため)
+	HasAPIKey(ctx context.Context, user uuid.UUID) (bool, time.Time, error)
 
 	// SetAppToken はアプリ用のトークンを足す。同じ利用者・同じ PC の名前のトークンがあれば置き換える(PC ごとに1本。0019 の決定事項 9)
 	SetAppToken(ctx context.Context, t AppToken) error
@@ -141,4 +150,6 @@ var (
 	ErrNoSession    = errors.New("ログインしていません(ログインの期限が切れたか、ログアウトしました)")
 	// ErrLogin はログインできなかったときのエラー。名前が違うのかパスワードが違うのかは言わない(いる名前を探られないように)
 	ErrLogin = errors.New("名前かパスワードが違います")
+	// ErrUserDisabled は、無効にされた利用者を断るときのエラー(0060)。ログインでは、パスワードが合ったときだけ返す(違えば ErrLogin。いる名前を探られないように)
+	ErrUserDisabled = errors.New("この利用者は無効にされています。管理者に問い合わせてください")
 )

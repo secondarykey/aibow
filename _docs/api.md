@@ -140,7 +140,7 @@ data: [DONE]
   `/v1/chat/completions` の前の数えるところで失敗したときも同じ code を入れる
 - 画面のアプリ(`api/client` を使う側)は、`/models/unload`・`/_aibow/gpu-layers`・`/_aibow/places/*` を使わない。`/_aibow/settings` も作業領域しか画面に渡さない(2026-10-22、ユーザーと決めた。0015 の 21)。
   これらはサーバーの PC の事情を変える API で、サーバーの PC の人が curl などで呼ぶもの。誰が呼んでよいか(管理者だけにする)はステップ10で決める
-- `/_aibow/settings` は表示だけのサーバーの設定(作業領域・ポート・llama.cpp の場所・最初のモデル・設定ファイルの場所)。変えるのは `server.json` と起動し直し(0015 の 21)
+- `/_aibow/settings` は表示だけのサーバーの設定(作業領域・ポート・llama.cpp の場所・最初のモデル・設定ファイルの場所)。変えるのは `server.json` と起動し直し(0015 の 21。並列数・作業領域はブラウザの管理の画面からも server.json に書ける。0061)
 
 ### `/v1/chat/completions` に足した欄
 
@@ -233,8 +233,13 @@ Cline など ──HTTP──→ /v1/ など → api.Server ──────�
   - MCP のサーバー(`server.json` の `mcpServers`)と管理者の既定(`server-tools.json`)は [mcp.md](mcp.md) の「aibow-server の MCP のサーバー」。
     既定を見る `ToolPrefs`・`ToolDefaults`・`BuiltinTools` は誰でも呼べ(既定のファイルの場所は管理者にだけ返す)、変える `SetToolPolicy`・`SetGroupPolicy`・`LoadToolList` は管理者だけ(ほかの人は 403)
   - 資料のフォルダ(0024 の 12-2):`Folders` は `server.json` の `folders` の名前だけを返す。会話の詳細(`Conversation`)の `folder` はその会話で使えるフォルダの名前。
-    パスはどの返事にも入れない。資料のフォルダのある会話では、コマンドのツール(`run_command`)をモデルにも画面にも出さない(`ui.noCommand`・`forBrowser`)
-- **作業領域**:起動のときに決めた大きさで固定。会話の上限 + 返事の上限が入るかを確かめるだけで、作り直さない(`ui.ServerHost`。aibow-server につないだ画面のアプリと同じ `ContextError`)
+    パスは、下の管理者だけのメソッドのほかはどの返事にも入れない。資料のフォルダのある会話では、コマンドのツール(`run_command`)をモデルにも画面にも出さない(`ui.noCommand`・`forBrowser`)
+- **並列数・作業領域・資料のフォルダ**(0061。`ui/serverconfig.go`。管理者だけ:`adminServerMethods`。ほかの人は 403):
+  `ServerSettings`(並列数と作業領域の今動いている値 `running`・次の起動の値 `next`・変えられない理由 `lock`、今の1本あたりの作業領域 `perSeq`、書き戻す `server.json` の場所、資料のフォルダの名前・パス・選んでいるプロファイル `usedBy`)・
+  `SaveServerSettings(parallel, ctx)`(server.json に書く。次の起動から効く)・`AddServerFolder(name, path)`・`SetServerFolderPath(name, path)`・`RemoveServerFolder(name)`(server.json に書き、その場で効く。選んでいるプロファイルがあれば消せない)。
+  書き方は `config.SaveServerFile`(画面で変えた鍵だけを差し替え、ほかの鍵は並びも値も残す・読めないファイルには書かない・一時ファイルから置き換える・書く前の中身を `server.json.bak` に残す)。
+  `-parallel`・`-ctx` の引数か、`AIBOW_SERVER_PARALLEL`・`AIBOW_SERVER_CTX` で決めた値は、server.json に書いても効かないか環境変数を黙って上書きするので、`lock` に理由を入れて変えさせない(どこから来たかは aibow-server の `resolve` が覚える)
+- **作業領域**:起動のときに決めた大きさで固定(管理の画面で変えても、起動し直すまで変わらない。0061)。会話の上限 + 返事の上限が入るかを確かめるだけで、作り直さない(`ui.ServerHost`。aibow-server につないだ画面のアプリと同じ `ContextError`)
 - **見せるもの**は、aibow-server につないだ画面のアプリと同じ:モデルの一覧(名前・大きさ・読み込み中か)・作業領域の大きさ・つなぎ先(aibow-server のアドレス)。Cline などのためにモデルを入れ替えている途中は、前のモデルを見せ続ける(`ServerHost`。api/client の `Shown` と同じ)。出どころ・置き場所・層の数・サーバーの PC のパスは見せない
 - 実際に動かして確かめたこと(2026-10-22。qwen3.5:4b・9b):Cline の形のリクエストを 9B で送っている間にブラウザから送ると、「待っています」が届き、
   Cline の返事のあとで会話のモデル(4B)を読み直して答えた。aibow-server を起動し直しても会話が残っていた
@@ -289,6 +294,12 @@ Cline・画面のアプリ ─ Authorization: Bearer aibow_… ─→ auth.Keys.
 
 - **API キー**:利用者ごとに1本(`aibow-server user key <名前>`)。server.db には SHA-256 だけ。OpenAI の API と同じく `Authorization: Bearer <キー>` で毎回送る(サーバーは覚えない。ステートレス)。
   無い・違うは 401(`{"error": {"code": "invalid_api_key", …}}`)
+- **API キーの期限**(0060):作るときに 30 日・90 日・1 年・無期限から選ぶ(既定 90 日。`user key <名前> [日数]`・管理の画面)。期限は `api_keys.expires_at`(空は無期限)に持ち、使うときに今と比べる。
+  過ぎたキーは 401 で `code` が `key_expired`(違うキーの `invalid_api_key` と分ける)。切れたキーは消さず、管理の画面に「期限切れ」と出す(作り直すか削除するかは管理者が決める)。
+  作り直さずに止めるときは削除(`user unkey <名前>`・`DELETE /_aibow/admin/users/{名前}/key`)
+- **無効の利用者**(0060):管理者が利用者を無効にすると、その人の API キーとアプリ用のトークンは 401 で `code` が `user_disabled`。
+  ログインの API(`/_aibow/auth/login`・`/_aibow/auth/token`)は、パスワードが合っていたときだけ 401 で「この利用者は無効にされています」(違えば今までどおり「名前かパスワードが違います」)。
+  ブラウザのセッションは切れてログインの画面に戻り、パスワードを決めるリンクは 400。断る場所は `auth` の入口(`Sessions.check`・`Sessions.User`・`Keys.User`・`appTokenUser`・`LinkUser`)の5つ
 - **要るとき**:`127.0.0.1` の外で待ち受けるとき、または `127.0.0.1` でもログインが要る設定のとき。OpenAI 互換の API と aibow 専用の API の全部(`_cmd/aibow-server` の `KeysRequired`)。
   ログインなし(`login: false`)の `127.0.0.1` だけなら、キーなしで通す
 - **管理者だけの API**:`POST /models/unload`・`/_aibow/gpu-layers`・`/_aibow/places/add`・`/_aibow/places/remove` は、
@@ -304,7 +315,7 @@ Cline・画面のアプリ ─ Authorization: Bearer aibow_… ─→ auth.Keys.
 - **元の相手(0044)**:`mount` の外側の `fromProxy`(`_cmd/aibow-server/proxy.go`)が、つないできた相手が信頼するプロキシ(サーバーの PC の上と `server.json` の `trustedProxies`)のときだけ、
   `proxyHeader` のヘッダー(既定 `X-Forwarded-For`。右から読む)から元の相手を取り出し、`r.RemoteAddr` を `元の相手:0` に書き換えてから中に渡す。
   なので `api.IsLocal`(ログインなしの形の全員の使用量)・`auth` のログインの制限・ログの相手のアドレス(`api.RemoteHost`)は、中を変えずに元の相手を見る。読めない値は 400、`login: false` で外の元の相手は 403
-- **HTTPS**:`tlsCert`・`tlsKey` を書くと `ServeTLS`(TLS 1.2 以上)。証明書なしで外に出すときは、警告して HTTP で動かす。ログインの cookie には `Secure` が付く
+- **HTTPS**:`tlsCert`・`tlsKey` を書くと `ServeTLS`(TLS 1.2 以上)。証明書なしで外に出すときは、警告して HTTP で動かす。ログインの cookie には `Secure` が付く。ハンドシェイクの失敗(`http: TLS handshake error from …`。自己署名の証明書を信頼していない相手で必ず出る)は Debug でだけログに出す(`_cmd/aibow-server/httplog.go`)
 - **自己署名の証明書**(`aibow-server cert`):誰も保証していない証明書なので、つなぐ側が「この証明書を信頼する」と決める。
   アプリは `serverCert`(`api/client` の `TrustCert`。OS の認証局に足すだけなので、ほかの証明書のサーバーにはつながらない)、curl は `--cacert`、Node.js は `NODE_EXTRA_CA_CERTS`、ブラウザは警告の画面で先へ進む
 
@@ -328,10 +339,13 @@ aibow-server user admin <名前>(コマンドだけ)→ server.db の users.admi
   `Caller.ManagesPC()`(管理者か、ログインなしの形)でなければ 403 で断り、`ServerHost` も同じことを確かめる(API の作りを間違えても漏れないように)
 - **管理者の API**(`_cmd/aibow-server/admin.go`。ブラウザでログインした管理者だけ。ほかは 401 / 403):
   `GET /_aibow/admin/users`(一覧。パスワードと API キーは、あるかだけ)・`POST /_aibow/admin/users`(本文 `{"name"}`。返事にパスワード)・
-  `POST /_aibow/admin/users/{名前}/password`・`POST /_aibow/admin/users/{名前}/key`(返事に新しいパスワード / キー。一度だけ)・`DELETE /_aibow/admin/users/{名前}`(自分と `local` は消せない)・
+  `POST /_aibow/admin/users/{名前}/password`・`POST /_aibow/admin/users/{名前}/key`(本文 `{"days"}` で期限。30・90・365・0 = 無期限、本文が無ければ 90。返事に新しいパスワード / キーと `expiresAt`(無期限なら無い)。一度だけ。0060)・
+  `DELETE /_aibow/admin/users/{名前}/key`(API キーの削除。無ければ 404。0060)・`POST /_aibow/admin/users/{名前}/disabled`(本文 `{"disabled"}`。無効にする / 有効に戻す。自分と `local` は無効にできない。0060)・
+  `DELETE /_aibow/admin/users/{名前}`(自分と `local` は消せない)・
   `POST /_aibow/admin/users/{名前}/display`(本文 `{"display_name"}`。表示名。空なら無し。0031)・`POST /_aibow/admin/users/{名前}/email`(本文 `{"email"}`。空なら無し。重なれば 409)。
   一覧の1人には、表示名 `display_name`・メールアドレス `email`・最後に使った時刻 `last_used_at`(一度も使っていなければ無い)・会話の数 `conversations`・まだ使っていないリンクの期限 `link_expires_at` も入る(0031。並べ替えと絞り込みは画面がする)。
-  処理は user コマンドと同じ関数(`createUser`・`renewPassword`・`renewKey`・`deleteUser`)。返事は `Cache-Control: no-store`
+  API キーの期限 `key_expires_at`(無期限かキーが無ければ無い。過ぎていても入る)と無効か `disabled` も入る(0060)。
+  処理は user コマンドと同じ関数(`createUser`・`renewPassword`・`renewKey`・`removeKey`・`setDisabled`・`deleteUser`)。返事は `Cache-Control: no-store`
 - **モデルの ID**:GGUF は `file:<ファイル名>`(以前は `file:<パス>`。サーバーの PC のパスが `/v1/models` や共有した会話に出ないように。0018 の決定事項 15)。
   同じ名前のファイルは先の置き場所だけを出し、後ろは Warn のログ(`models.Catalog.Hidden`)。以前の形の ID は `models.IDOf` で読み替える
   (会話・プロファイル・アプリの設定は読むときだけで DB は書き換えない。`server-models.json` の層の数のキーは、読み込むときに書き換える)

@@ -52,7 +52,7 @@ import type { ServerInfo } from "../bindings/github.com/secondarykey/aibow/mcp/c
 import type { ConversationRef, SharedRead } from "../bindings/github.com/secondarykey/aibow";
 import { useUnsaved } from "./unsaved";
 import { ImeFocusRelay } from "./imeFocus";
-import { errorMessage, isUnreachable, operationEvents } from "./errors";
+import { errorMessage, operationEvents } from "./errors";
 import { setTheme } from "./theme";
 import { FIX, fixedTitle, grantedFolder, lockOf, locked } from "./profileRules";
 import { NARROW_QUERY, useMediaQuery } from "./mediaQuery";
@@ -101,6 +101,17 @@ export default function App() {
   useEffect(() => {
     setListOpen(!narrow && wideListOpen());
   }, [narrow]);
+  // 設定・管理の画面を開いている間は、広いときも一覧を畳んだ細い列にする(会話の外にいることを、一覧の出方で見せる。0063 の決定事項 2・9)。
+  // 覚えている開け閉め(listOpen と STORED_LIST_OPEN)は変えず、渡す値だけを変えるので、閉じて会話に戻ると開く前の開け閉めに戻る。
+  // その間にハンバーガーを押したら、そのときだけ一覧を開く(peek。決定事項 10)。設定・管理を閉じた・開き直したら戻す
+  const offChat = settingsOpen || adminOpen;
+  const [peek, setPeek] = useState(false);
+  useEffect(() => setPeek(false), [offChat]);
+  // 広いときに会話の横に出す一覧が開いているか(狭いときは listOpen を overlay で重ねて出すので、今のまま。決定事項 12)
+  const wideOpen = !narrow && (offChat ? peek : listOpen);
+  // shownOpen は、今見えている一覧が開いているか。setShown はそれを開け閉めする(F2 で名前を変えるために開くときなど。覚えない)
+  const shownOpen = narrow ? listOpen : wideOpen;
+  const setShown = (open: boolean) => (!narrow && offChat ? setPeek(open) : setListOpen(open));
   const overlay = narrow && listOpen;
   // 重ねて出している一覧は、会話を選ぶ・「+ 新規」・「設定」を押したら閉じる(選んだものが見えるように)
   const closeOverlay = () => {
@@ -126,24 +137,31 @@ export default function App() {
   const models = useModels(toasts, transcript, setBusy);
   // 起動に失敗したあと(lib が無いなど)は、Go のメソッドがどれも同じ理由で断る。タブを移る・ウィンドウに戻るたびに
   // 同じエラーが積み上がって設定の画面のタブが下に押し出されるので、その理由を含むエラーは出さない(理由は useModels が「起動できません」で1回だけ出す)
-  const { startupError } = models;
+  const { startupError, noteServerDown } = models;
   const addTranscriptError = transcript.addError;
+  const startupFailure = useCallback((text: string) => startupError !== "" && text.includes(startupError), [startupError]);
   // 会話の表示に出すエラー(会話の中で起きたことの記録。0043 の決定事項 5)。
-  // retry(横に「再生成」を出してよいか。0048 の D8)も渡す(以前は落としていて、「再生成」が出なかった。2026-11-21)
+  // retry(横に「再生成」を出してよいか。0048 の D8)も渡す(以前は落としていて、「再生成」が出なかった。2026-11-21)。
+  // aibow-server につながらないことをもう伝えた理由のエラーは出さない(つながらない間に会話を選ぶたびに、同じ「aibow-server につながりません」が
+  // 積み重なっていた。記録は消さないので、重ねて出さない。つながらないことは、最初の1回と左下のサーバーのアイコンで分かる。0057 の決定事項 11)
   const addRecordError = useCallback((text: string, caution?: boolean, retry?: boolean) => {
-    if (startupError && text.includes(startupError)) return;
+    if (startupFailure(text) || !noteServerDown(text)) return;
     addTranscriptError(text, caution, retry);
-  }, [addTranscriptError, startupError]);
-  // 画面の操作のエラー。設定・管理・会話の設定の画面を開いていればその画面に、そうでなければ会話の表示に出す
+  }, [addTranscriptError, startupFailure, noteServerDown]);
+  // 画面の操作のエラー。設定・管理・会話の設定の画面を開いていればその画面に、そうでなければ会話の表示に出す。
+  // 設定などの画面のエラーは次の操作で消える(0043)ので、つながらないエラーも操作のたびに出す(押しても何も起きないように見えないように)。
+  // 印だけは立てる(同じ理由で会話の表示とカードに重ねないため)
   const addError = useCallback((text: string, caution?: boolean) => {
-    if (startupError && text.includes(startupError)) return;
+    if (startupFailure(text)) return;
     if (inOpScope.current) {
+      noteServerDown(text);
       const id = ++screenErrorId.current;
       setScreenErrors(e => [...e, { id, text }]);
       return;
     }
+    if (!noteServerDown(text)) return;
     addTranscriptError(text, caution);
-  }, [addTranscriptError, startupError]);
+  }, [addTranscriptError, startupFailure, noteServerDown]);
   const convs = useConversations(addError);
   // 送信・生成のエラーは、設定の画面を開いている間に届いても会話の表示に残す(記録なので、次の操作で消さない)
   const chat = useChat({ ...transcript, addError: addRecordError }, setBusy, convs, toasts, models.reload);
@@ -165,31 +183,35 @@ export default function App() {
   // StrictMode では effect が2回呼ばれるので、1回だけにする(2回だと会話が2つ作られることがある)
   const started = useRef(false);
   const restored = useRef(false); // 起動時に最後の会話を開き終えたか(開いている会話を覚え始める合図)
+  // 起動時に会話を読めなかったか(aibow-server が止まっていた)。読めないと、最後の会話も開かず、新しい会話の画面の設定(draft)も無いまま
+  // (送信できず、プロファイルも選べない)になるので、つながったときに起動時の読み込みからやり直す(下の effect)
+  const initFailed = useRef(false);
   useEffect(() => {
     if (started.current) return;
     started.current = true;
     (async () => {
       const initErr = await convs.init(loadStored(STORED_LAST_CONVERSATION)).then(() => null, (err: unknown) => err);
+      initFailed.current = initErr !== null;
       restored.current = true;
       const ok = await models.reload().catch(err => {
         addError(`モデル一覧を取得できません: ${errorMessage(err)}`);
         return false;
       });
       if (!ok) return; // 起動に失敗している。理由は useModels が出している
-      // aibow-server につながらないときは、useModels がカードを1回出している。会話と設定も同じ理由で読めないので、
-      // 同じ理由のカードを重ねて出さない(つながったら読み直す。下の effect)
-      const report = (what: string, err: unknown) => {
-        if (models.serverDown() && isUnreachable(err)) return;
-        addError(`${what}: ${errorMessage(err)}`);
-      };
-      if (initErr) report("会話を読み込めません", initErr);
-      await app.reload().catch(err => report("設定を読み込めません", err));
+      // aibow-server につながらないときは、useModels がカードを1回出している。会話と設定も同じ理由で読めないが、
+      // 同じ理由のカードは addError が重ねて出さない(つながったら読み直す。下の effect)
+      if (initErr) addError(`会話を読み込めません: ${errorMessage(initErr)}`);
+      await app.reload().catch(err => addError(`設定を読み込めません: ${errorMessage(err)}`));
     })();
-  }, [convs.init, models.reload, models.serverDown, app.reload, addError]);
+  }, [convs.init, models.reload, app.reload, addError]);
 
-  // aibow-server につながったら(起動したときに止まっていた・途中で止まった)、読めなかった設定と会話の一覧を読み直す
+  // aibow-server につながったら(起動したときに止まっていた・途中で止まった)、読めなかった設定と会話の一覧を読み直す。
+  // 起動時に会話を読めず、まだ何も開いていない(会話も新しい会話の画面の設定も無い)ままなら、起動時と同じく最後の会話を開く
+  // (一覧だけを読み直すと、一覧は出ても送信できない画面のまま残り、「+ 新規」を押すまで抜けられなかった)
   const serverError = models.serverError;
   const wasDown = useRef(false);
+  const emptyScreen = useRef(false);
+  emptyScreen.current = convs.current === null && convs.draft === null;
   useEffect(() => {
     if (serverError) {
       wasDown.current = true;
@@ -198,8 +220,16 @@ export default function App() {
     if (!wasDown.current) return;
     wasDown.current = false;
     app.reload().catch(err => addError(`設定を読み込めません: ${errorMessage(err)}`));
+    if (initFailed.current && emptyScreen.current) {
+      convs.init(loadStored(STORED_LAST_CONVERSATION)).then(
+        () => { initFailed.current = false; },
+        err => addError(`会話を読み込めません: ${errorMessage(err)}`),
+      );
+      return;
+    }
+    initFailed.current = false; // 会話を開いた・新しい会話の画面に移ったあとは、やり直さない(利用者が選んだ画面を変えない)
     convs.reloadList().catch(err => addError(`会話を読み込めません: ${errorMessage(err)}`));
-  }, [serverError, app.reload, convs.reloadList, addError]);
+  }, [serverError, app.reload, convs.init, convs.reloadList, addError]);
 
   // 会話で選べる MCP のサーバー(settings.json に書いたもの全部)。起動したときと、ツールの扱い(確認しない)を変えたときに読む
   const [mcpServers, setMcpServers] = useState<ServerInfo[]>([]);
@@ -266,20 +296,20 @@ export default function App() {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "F2" || e.isComposing || currentId === null || unavailable || renamingId !== null) return;
       e.preventDefault();
-      if (!listOpen) {
+      if (!shownOpen) {
         openedForRename.current = true;
-        setListOpen(true);
+        setShown(true);
       }
       setRenamingId(currentId);
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [currentId, unavailable, renamingId, listOpen]);
+  }, [currentId, unavailable, renamingId, shownOpen, narrow, offChat]);
   const endRename = () => {
     setRenamingId(null);
     if (openedForRename.current) {
       openedForRename.current = false;
-      setListOpen(false);
+      setShown(false);
     }
   };
 
@@ -449,7 +479,7 @@ export default function App() {
   // ブラウザのタブの題名は、開いている会話の名前(タブが並んでも見分けられるように。0016 の 9-3)。
   // デスクトップのウィンドウの名前は Go が決める(タスクバーに出る。main.go)ので変えない
   useEffect(() => {
-    if (isBrowser) document.title = currentId ? `${convTitle} - aibow` : "aibow";
+    if (isBrowser) document.title = currentId ? `${convTitle} - AIBow` : "AIBow";
   }, [currentId, convTitle]);
 
   // 知らせ(SSE)のつながりが切れて、つなぎ直したら、切れている間のことを取り直す(ブラウザだけ。0016 の 9-3)。
@@ -812,11 +842,18 @@ export default function App() {
     onToggleAdmin: toggleAdmin,
     onOpenAccount: openAccount,
     onToggleOpen: () => {
+      // 設定・管理の画面を開いている間に開け閉めするのは、そのときだけ(覚えない。0063 の決定事項 10)
+      if (!narrow && offChat) {
+        setPeek(!peek);
+        return;
+      }
       // 自分で開け閉めしたときだけ覚える(狭くなって自動で閉じた・F2 のために開いた、は覚えない)。
       // 狭いときに重ねて出す一覧は、そのときだけのものなので覚えない
       if (!narrow) saveStored(STORED_LIST_OPEN, String(!listOpen));
       setListOpen(!listOpen);
     },
+    // 設定・管理の画面を開いている間は、開いている会話を選んだ色にしない(その会話の設定を触っているように見えないように。決定事項 11)
+    showCurrent: !offChat,
     width: listWidth.width,
     shared,
     readingId: reading?.conversation.id ?? null,
@@ -833,8 +870,8 @@ export default function App() {
   return (
     <ServerContext.Provider value={server}>
       {/* 狭いときは、ここ(会話の横)はいつも畳んだ細い列で、開いた一覧は下の overlay に重ねて出す */}
-      <ConversationList {...listProps} open={listOpen && !narrow} />
-      {listOpen && !narrow && (
+      <ConversationList {...listProps} open={wideOpen} />
+      {wideOpen && (
         <Splitter width={listWidth.width} onResize={listWidth.set} onCommit={listWidth.commit} onReset={listWidth.reset} />
       )}
       <div className="workspace">

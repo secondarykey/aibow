@@ -169,8 +169,17 @@ func TestGroups(t *testing.T) {
 		t.Errorf("管理者に見える配る相手: %+v", got)
 	}
 
+	// グループだけに配ったプロファイル(グループを消すと、受け取る人がいなくなる)
+	only := aibow.Profile{ID: uuid.NewV7(), Name: "営業だけ", Values: aibow.ProfileValues{HistoryTokens: 1, ReplyTokens: 1}, CreatedAt: now, UpdatedAt: now}
+	if err := s.CreateProfile(alice, only); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetProfileShare(alice, only.ID, aibow.ShareUsers, nil, []string{"営業"}); err != nil {
+		t.Fatal(err)
+	}
+
 	// グループを消すと、そのグループへの共有と配るも消え、相手のいなくなった会話は非公開になる(決定事項 28)。
-	// ほかの相手(bob)が残るプロファイルは配ったまま
+	// ほかの相手(bob)が残るプロファイルは配ったまま。相手のいなくなったプロファイルも配布プロファイルのまま残る(0059 の未決事項 3)
 	if err := s.DeleteGroup(alice, sales.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -182,6 +191,12 @@ func TestGroups(t *testing.T) {
 	}
 	if got, _ := s.Profile(alice, p.ID); got.Share != aibow.ShareUsers || len(got.ShareGroups) != 0 || !visible(bob) || visible(erin) {
 		t.Errorf("ほかの相手が残るプロファイル: %+v", got)
+	}
+	if got, err := s.Profile(alice, only.ID); err != nil || got.Share != aibow.ShareUsers || len(got.ShareGroups) != 0 || got.ReadOnly {
+		t.Errorf("相手のいなくなったプロファイルは配布プロファイルのまま管理者に残る: %+v %v", got, err)
+	}
+	if _, err := s.Profile(erin, only.ID); !errors.Is(err, aibow.ErrProfileNotFound) {
+		t.Errorf("消したグループのメンバーに、相手のいなくなったプロファイルが見える: %v", err)
 	}
 	if err := s.DeleteGroup(alice, sales.ID); !errors.Is(err, aibow.ErrNotFound) {
 		t.Errorf("消したグループ: %v", err)

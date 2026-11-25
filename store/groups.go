@@ -151,8 +151,12 @@ func (s *SQLite) RenameGroup(ctx context.Context, id uuid.UUID, name string) err
 }
 
 // DeleteGroup は、グループと、そのグループへの共有・配るを消す(外部キーの ON DELETE CASCADE)。
-// 消したせいで相手がだれもいなくなった会話・プロファイルは、非公開(配らない)にする(決定事項 28)。
+// 消したせいで相手がだれもいなくなった会話は、非公開にする(決定事項 28)。
 // 「指定した人」のまま相手がいないと、持ち主の画面では共有中に見えるのに、だれにも見えない、になるため。
+//
+// 配布プロファイルは、相手がいなくなっても配布プロファイルのまま残す(0059 の未決事項 3。2026-11-24、ユーザーが決めた)。
+// 配らないにすると作った管理者の個人プロファイルに戻ってしまい、配布プロファイルと個人プロファイルを行き来させない決まり(0059 の決定事項 3)と食い違うため。
+// 管理の画面には「0 人に配布」で残り、管理者が相手を選び直すか、停止・削除する。
 func (s *SQLite) DeleteGroup(ctx context.Context, id uuid.UUID) error {
 	if err := s.onlyAdmin(ctx); err != nil {
 		return err
@@ -163,21 +167,13 @@ func (s *SQLite) DeleteGroup(ctx context.Context, id uuid.UUID) error {
 	}
 	defer tx.Rollback()
 	g := id.String()
-	now := formatTime(time.Now())
-	// グループを消す前に、このグループだけが相手のものを非公開にする(消したあとでは、どれがこのグループに共有されていたか分からない)
-	for _, q := range []string{
-		`UPDATE conversations SET share = '' WHERE share = 'users'
+	// グループを消す前に、このグループだけが相手の会話を非公開にする(消したあとでは、どれがこのグループに共有されていたか分からない)
+	if _, err := tx.ExecContext(ctx, `UPDATE conversations SET share = '' WHERE share = 'users'
 			AND id IN (SELECT conversation_id FROM conversation_group_shares WHERE group_id = :g)
 			AND NOT EXISTS (SELECT 1 FROM conversation_shares s WHERE s.conversation_id = conversations.id)
 			AND NOT EXISTS (SELECT 1 FROM conversation_group_shares x WHERE x.conversation_id = conversations.id AND x.group_id <> :g)`,
-		`UPDATE profiles SET share = '', updated_at = :now WHERE share = 'users'
-			AND id IN (SELECT profile_id FROM profile_group_shares WHERE group_id = :g)
-			AND NOT EXISTS (SELECT 1 FROM profile_shares s WHERE s.profile_id = profiles.id)
-			AND NOT EXISTS (SELECT 1 FROM profile_group_shares x WHERE x.profile_id = profiles.id AND x.group_id <> :g)`,
-	} {
-		if _, err := tx.ExecContext(ctx, q, sql.Named("g", g), sql.Named("now", now)); err != nil {
-			return err
-		}
+		sql.Named("g", g)); err != nil {
+		return err
 	}
 	res, err := tx.ExecContext(ctx, "DELETE FROM user_groups WHERE id = ?", g)
 	if err := notFoundIfNone(res, err, aibow.ErrNotFound); err != nil {

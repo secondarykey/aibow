@@ -71,7 +71,8 @@ func (s *Sessions) IssueLink(ctx context.Context, user uuid.UUID) (token string,
 	return token, expires, nil
 }
 
-// LinkUser は、リンクの持ち主(パスワードを決める画面に名前を出すため)。使えなければ ErrBadLink か ErrLinkExpired。
+// LinkUser は、リンクの持ち主(パスワードを決める画面に名前を出すため)。使えなければ ErrBadLink か ErrLinkExpired、
+// 持ち主が無効にされていれば ErrUserDisabled(0060。リンクからパスワードを決めるとそのままログインになるため。無効にしたときにリンクは消えるので、ふつうは来ない)。
 func (s *Sessions) LinkUser(ctx context.Context, token string) (User, error) {
 	l, err := s.link(ctx, token)
 	if err != nil {
@@ -80,6 +81,9 @@ func (s *Sessions) LinkUser(ctx context.Context, token string) (User, error) {
 	u, err := s.store.UserByID(ctx, l.UserID)
 	if errors.Is(err, ErrUserNotFound) {
 		return User{}, ErrBadLink
+	}
+	if err == nil && u.Disabled {
+		return User{}, ErrUserDisabled
 	}
 	return u, err
 }

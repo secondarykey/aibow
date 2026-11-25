@@ -25,6 +25,11 @@ export interface AccountInfo {
     "lastUser": string;
 
     /**
+     * Offline は、起動のときに aibow-server につながらなかったのでログインの画面にしたときの、つなぎ先(つながったなら空)
+     */
+    "offline": string;
+
+    /**
      * CanLogout は、ログアウトできるか(画面でログインしたとき。settings.json に手で書いた API キーではログアウトしない)
      */
     "canLogout": boolean;
@@ -109,6 +114,11 @@ export interface ServerConnection {
      * PendingLogin は、保存したつなぐ先がログインの要る aibow-server か(起動し直したら、ログインの画面でログインする。0047)
      */
     "pendingLogin": boolean;
+
+    /**
+     * PendingCert は、今つないでいるのと同じ aibow-server に、新しい証明書でつなぎ直すように決めたか(証明書を作り直したとき。0057 の段2)
+     */
+    "pendingCert": boolean;
 
     /**
      * KnownURL・KnownUser は、信頼した最後のつなぎ先と、そこに最後にログインした名前(タブの入力欄に入れておく。つないでいなくても残る)

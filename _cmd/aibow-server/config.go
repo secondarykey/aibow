@@ -4,7 +4,8 @@ package main
 //
 // 設定ファイルは2つに分ける(アプリの settings.json と tools.json と同じ分け方。0015 の決定事項 19):
 //
-//	server.json         … 手で書く設定(ポート・作業領域・最初のモデル・llama.cpp とモデルの場所)。aibow-server は書かない
+//	server.json         … 手で書く設定(ポート・作業領域・最初のモデル・llama.cpp とモデルの場所)。aibow-server が書くのは、
+//	                      管理の画面で変えた並列数・作業領域・資料のフォルダだけ(ほかの鍵は残す。0061)
 //	server-models.json  … aibow-server が書く値(モデルごとの GPU の層数など)。手で書かなくてよい
 //	server-tools.json   … ブラウザの会話のツールの扱いの既定(管理者が設定の画面の「ツール」で変える。形はアプリの tools.json と同じ。0024)
 //	server.db           … ブラウザの会話(SQLite。ステップ9。0016 の 13)。画面のアプリの aibow.db とは別のファイル
@@ -21,6 +22,7 @@ package main
 // ここに置くのは、aibow-server の引数と、強さの順で決めること(serverConfig)だけ。
 
 import (
+	"cmp"
 	"errors"
 	"flag"
 	"fmt"
@@ -56,9 +58,15 @@ const (
 
 // serverConfig は、強さの順で決めた設定。
 type serverConfig struct {
-	Port      int
-	Ctx       int
-	Parallel  int
+	Port     int
+	Ctx      int
+	Parallel int
+	// CtxFrom・ParallelFrom は、作業領域・並列数の値がどこから来たか(0061 の決定事項 6)。
+	// 引数・環境変数から来た値は、管理の画面で server.json に書いても効かないので、画面で変えられないようにする
+	CtxFrom, ParallelFrom source
+	// CtxFallback・ParallelFallback は、server.json に書いていないときに使う値(環境変数か既定)。画面に「次の起動の値」を出すため
+	CtxFallback, ParallelFallback int
+
 	Model     string
 	Lib       string
 	ModelsDir string
@@ -82,12 +90,14 @@ type serverConfig struct {
 	TrustedProxies []netip.Prefix
 	ProxyHeader    string
 
-	// File は読んだ設定ファイル(無ければ空)。StatePath は aibow-server が書くファイル(server-models.json)、
+	// File は読んだ設定ファイル(無ければ空)。ConfigPath は、管理の画面で変えた値を書き戻す設定ファイル
+	// (読んだファイルか、無ければ探した場所。0061 の決定事項 3・7)。StatePath は aibow-server が書くファイル(server-models.json)、
 	// DBPath はブラウザの会話の DB(server.db)、ToolsPath はツールの扱いの既定(server-tools.json)。どれも設定ファイルの隣
-	File      string
-	StatePath string
-	DBPath    string
-	ToolsPath string
+	File       string
+	ConfigPath string
+	StatePath  string
+	DBPath     string
+	ToolsPath  string
 }
 
 // flags は起動の引数。書かれたかどうかは set で見る(書かれていない引数は、設定ファイル・環境変数より弱いため)。
@@ -146,6 +156,7 @@ func resolve(fs *flag.FlagSet, f *flags, env *config.Env) (serverConfig, []strin
 	dir := filepath.Dir(path)
 	c := serverConfig{StatePath: filepath.Join(dir, stateFileName), DBPath: filepath.Join(dir, dbFileName), ToolsPath: filepath.Join(dir, toolsFileName),
 		MCPServers: file.MCPServers, Folders: file.Folders, FetchAllowPrivate: file.FetchAllowPrivate}
+	c.ConfigPath = path
 	if found {
 		c.File = path
 	}
@@ -162,8 +173,10 @@ func resolve(fs *flag.FlagSet, f *flags, env *config.Env) (serverConfig, []strin
 		return serverConfig{}, nil, err
 	}
 	c.Port = pick(l[0].portSet, l[0].port, l[1].port, l[2].port, defaultPort)
-	c.Ctx = pick(f.set["ctx"], *f.ctx, file.Ctx, env.Int("AIBOW_SERVER_CTX", 0), defaultCtx)
-	c.Parallel = pick(f.set["parallel"], *f.parallel, file.Parallel, env.Int("AIBOW_SERVER_PARALLEL", 0), defaultParallel)
+	envCtx, envParallel := env.Int("AIBOW_SERVER_CTX", 0), env.Int("AIBOW_SERVER_PARALLEL", 0)
+	c.Ctx, c.CtxFrom = pickFrom(f.set["ctx"], *f.ctx, file.Ctx, envCtx, defaultCtx)
+	c.Parallel, c.ParallelFrom = pickFrom(f.set["parallel"], *f.parallel, file.Parallel, envParallel, defaultParallel)
+	c.CtxFallback, c.ParallelFallback = cmp.Or(envCtx, defaultCtx), cmp.Or(envParallel, defaultParallel)
 	c.Model = pick(f.set["model"], *f.model, file.Model, os.Getenv("AIBOW_MODEL"), "")
 	c.Lib = pick(f.set["lib"], *f.lib, file.Lib, os.Getenv("AIBOW_LIB"), "lib")
 	c.ModelsDir = pick(f.set["models"], *f.modelsDir, file.ModelsDir, os.Getenv("AIBOW_MODELS_DIR"), "models")
@@ -328,16 +341,44 @@ func (c serverConfig) Scheme() string {
 
 // pick は、引数(書かれていれば)> 設定ファイル > 環境変数 > 既定 の順で、最初に決まっている値を返す。空(0)は「決めていない」。
 func pick[T comparable](argSet bool, arg, file, env, def T) T {
+	v, _ := pickFrom(argSet, arg, file, env, def)
+	return v
+}
+
+// source は、設定の値がどこから来たか(0061)。
+type source int
+
+const (
+	fromDefault source = iota
+	fromArg
+	fromFile
+	fromEnv
+)
+
+// pickFrom は pick と同じ順で値を決め、どこから来たかも返す。
+func pickFrom[T comparable](argSet bool, arg, file, env, def T) (T, source) {
 	var zero T
 	switch {
 	case argSet:
-		return arg
+		return arg, fromArg
 	case file != zero:
-		return file
+		return file, fromFile
 	case env != zero:
-		return env
+		return env, fromEnv
 	}
-	return def
+	return def, fromDefault
+}
+
+// lockReason は、管理の画面でその値を変えられない理由(変えられるなら空。0061 の決定事項 6)。
+// 引数・環境変数から来た値は、server.json に書いても効かない(引数のほうが強い)か、黙って環境変数を上書きしてしまうので、変えられないようにする。
+func lockReason(from source, flagName, envName string) string {
+	switch from {
+	case fromArg:
+		return fmt.Sprintf("起動の引数 -%s で決めています(変えるには、引数を外して aibow-server を起動し直してください)", flagName)
+	case fromEnv:
+		return fmt.Sprintf("環境変数 %s で決めています(変えるには、環境変数を外して aibow-server を起動し直してください)", envName)
+	}
+	return ""
 }
 
 // absPath はログに出すためにパスを絶対パスにする(相対パスのままだと、どこを探したのかが分からないため)。

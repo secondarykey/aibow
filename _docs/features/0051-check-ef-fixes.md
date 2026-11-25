@@ -188,6 +188,7 @@
   要るなら `openStore` は設定を読まず、`ui.Options.WaitLogin` で引き継ぎ(プロファイル・会話の上限とモデル・作業フォルダの移し。`ui.Service.prepare` に分けた)をしない。
   ログインしたら `ChatService.Login` が `ui.Lifecycle.LoggedIn` を呼び、設定を読み直して引き継ぎを行う(1回だけ)。`Account` は、ログインの要る aibow-server でトークンが無ければ、聞かずに NeedLogin を返す(ログアウトのあとも同じ)。
   つながらない(aibow-server が止まっている)ときは待たず、今までどおり(呼び出しのエラーで伝える)。テストは `TestWaitLogin`(トークンの要る口を呼んだ回数を数える)
+  (2026-11-24、ユーザーの指摘で改めた:つながらないときも、ログインの要る aibow-server だと分かっていれば(トークンを持っている・前にログインした)ログインの画面で待つ。`connection.checkLogin` の `offline`・[ui.md](../ui.md)・テストは `TestWaitLoginOffline`)
 - 4 ログの文言:「API キーかアプリのログインのトークンが無いか違うので断りました」(Warn のまま)
 - 5 層数:「適用」を常に出し、`disabled={disabled || n === layers}`
 - 6 確認のカード:`Confirmation` に `ForReply`(JSON は `for_reply`)を足した。`Remember` は今までどおり allow / off で、`ForReply` が範囲(この返事の間)を表す。

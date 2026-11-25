@@ -283,6 +283,12 @@ CREATE TABLE conversation_inactive (
 );
 CREATE INDEX conversation_inactive_by_user ON conversation_inactive(user_id);
 `,
+	// 版 23: API キーの期限と、利用者を無効にする印(0060)。期限は「いつまで」の時刻で持ち、使うときに今と比べる(セッション・アプリ用のトークンと同じ)。
+	// 空は無期限なので、今あるキーは無期限のまま使える。無効の印は付けるだけで、会話・プロファイル・API キーには触らない(外せば元どおり)
+	`
+ALTER TABLE api_keys ADD COLUMN expires_at TEXT NOT NULL DEFAULT '';
+ALTER TABLE users ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0;
+`,
 }
 
 func migrate(db *sql.DB) error {

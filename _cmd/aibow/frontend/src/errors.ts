@@ -5,10 +5,26 @@ export function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-// isUnreachable は、aibow-server につながらなかったエラーか。
-// Go の api/client の ErrUnreachable と、ブラウザの backendWeb.ts が出す文は、どちらもこの文で始まる
-export function isUnreachable(err: unknown): boolean {
-  return errorMessage(err).includes("aibow-server につながりません");
+// 文で見分ける、aibow-server につながらない理由。
+// UNREACHABLE は Go の api/client の ErrUnreachable と、ブラウザの backendWeb.ts が出す文の頭。CERT_CHANGED は api/client の ErrCertChanged の文
+const UNREACHABLE = "aibow-server につながりません";
+const CERT_CHANGED = "aibow-server の証明書が、信頼したときのものと違います";
+
+// serverDownReason は、aibow-server につながらないエラーなら、その理由の種類("unreachable"・"cert")を返す。そうでなければ空。
+// 同じ理由のエラーを会話の表示に重ねて出さないために使う(0057 の決定事項 6・11)。
+// 文そのものでは比べない:つながらないときの文には、呼んだ URL などが入り、操作ごとに変わるため
+export function serverDownReason(err: unknown): string {
+  const text = errorMessage(err);
+  if (text.includes(UNREACHABLE)) return "unreachable";
+  if (text.includes(CERT_CHANGED)) return "cert";
+  return "";
+}
+
+// serverDownText は、操作のエラーの文から、aibow-server につながらない理由の部分を取り出す(「会話を読み込めません: 」などの頭を外す)。
+// モデルの欄にマウスを乗せたときの説明に出すため
+export function serverDownText(text: string): string {
+  const i = text.indexOf("aibow-server");
+  return i > 0 ? text.slice(i) : text;
 }
 
 // operationEvents は、エラーを上に並べる画面(設定・管理・会話の設定)を包む要素に付ける受け口。

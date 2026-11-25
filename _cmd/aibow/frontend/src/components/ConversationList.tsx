@@ -41,7 +41,7 @@ import { useMenuDismiss } from "./SplitButton";
 import { toggleMaximiseOnDoubleClick } from "./TitleBar";
 import type { Conversation, ConversationRef } from "../../bindings/github.com/secondarykey/aibow";
 import type { WorkspaceView } from "../../bindings/github.com/secondarykey/aibow/ui";
-import { groupByWorkspace, itemTitle, LIST_GROUPINGS, matchItem, mergeList, useClosedGroups, useInactiveOpen, useListGrouping, useListQuery } from "../conversationGroups";
+import { groupByWorkspace, itemTitle, LIST_GROUPINGS, matchItem, mergeList, useClosedGroups, useInactiveOpen, useListGrouping, useListQuery, useShowEmptyWorkspaces } from "../conversationGroups";
 import { unappliedCount } from "../worktree";
 import type { ConversationGroup, ListGrouping, ListItem } from "../conversationGroups";
 import type { Ended } from "../useChat";
@@ -67,6 +67,7 @@ interface Props {
   canAdmin: boolean;     // 管理の画面の盾を出すか(ログインした管理者か、ログインなしの形のブラウザ。0046)
   onToggleAdmin(): void; // 歯車の隣の盾で、管理の画面を開く / 閉じる
   open: boolean; // 一覧を開いているか
+  showCurrent: boolean; // 開いている会話の行を選んだ色にするか(設定・管理の画面を開いている間は付けない。0063 の決定事項 11)
   onToggleOpen(): void;
   width: number; // 開いているときの幅(px)。一覧の右の仕切り(Splitter)で変えられる
   shared: ConversationRef[]; // ほかの人に共有された会話(0018 の 11-2。自分の会話と同じ一覧に混ぜる。0055)
@@ -82,7 +83,7 @@ interface Props {
 
 export function ConversationList({
   list, currentId, generatingId, waitingId, ended, disabled, onOpen, onNew, onDelete, onRename, renamingId, onStartRename, onEndRename,
-  settingsOpen, onToggleSettings, onOpenAccount, adminOpen, canAdmin, onToggleAdmin, open, onToggleOpen, width, shared, readingId, onOpenShared,
+  settingsOpen, onToggleSettings, onOpenAccount, adminOpen, canAdmin, onToggleAdmin, open, showCurrent, onToggleOpen, width, shared, readingId, onOpenShared,
   onSetInactive, workspaces, currentWorkspace, onNewIn, server, serverError,
 }: Props) {
   // 削除の確認を出している会話。消すと戻せないので、もう一度押してもらう
@@ -96,6 +97,8 @@ export function ConversationList({
   };
   // 読むだけで開いている間は、その行を選んでいる見た目にする(後ろに残っている自分の会話は選んでいる見た目にしない)
   const selectedId = readingId ?? currentId;
+  // 選んだ色を付ける行(設定・管理の画面を開いている間は無し)。まとまりを開く・非アクティブの折りたたみを開くのは selectedId のまま
+  const markedId = showCurrent ? selectedId : null;
 
   const markOf = (id: string): Mark | null =>
     id === generatingId ? (id === waitingId ? "waiting" : "generating") : ended[id] ?? null;
@@ -122,13 +125,18 @@ export function ConversationList({
   const active = useMemo(() => matched.filter(it => !it.inactive), [matched]);
   const inactive = useMemo(() => matched.filter(it => it.inactive), [matched]);
 
-  // 並べ方(0038)。ワークスペースごとのときだけ、まとまりを作る。非アクティブの会話はまとまりから抜き、下の折りたたみに入れる(決定事項 18)
+  // 並べ方(0038)。ワークスペースごとのときだけ、まとまりを作る。非アクティブの会話はまとまりから抜き、下の折りたたみに入れる(決定事項 18)。
+  // 会話の無いワークスペースは、切り替えたときだけ出す。探している間は、当たった会話が埋もれないよう切り替えによらず出さない(0062)
   const [grouping, setGrouping] = useListGrouping();
+  const [showEmpty, setShowEmpty] = useShowEmptyWorkspaces();
   const groups = useMemo(
     () => grouping === "workspace"
-      ? groupByWorkspace(active, workspaces, currentId !== null && currentWorkspace !== null ? { id: currentId, workspace: currentWorkspace } : undefined)
+      ? groupByWorkspace(
+        active, workspaces, showEmpty && q === "",
+        currentId !== null && currentWorkspace !== null ? { id: currentId, workspace: currentWorkspace } : undefined,
+      )
       : [],
-    [grouping, active, workspaces, currentId, currentWorkspace],
+    [grouping, active, workspaces, showEmpty, q, currentId, currentWorkspace],
   );
   const [closed, setClosed] = useClosedGroups();
   useRevealGroups(groups, selectedId, generatingId, renamingId, currentWorkspace, closed, setClosed);
@@ -148,7 +156,8 @@ export function ConversationList({
   };
 
   const settingsCls = settingsOpen ? "settings active" : "settings";
-  // 管理の画面の入口(盾)。管理できる人にだけ、歯車の隣に出す(0032 の決定事項 5)
+  // 管理の画面の入口(盾)。管理できる人にだけ、歯車の隣に出す(0032 の決定事項 5)。
+  // 管理の画面を開いている間は注意の色にする(ほかの人に効く画面にいることを、入口でも見せる。0063 の決定事項 15。色は style.css)
   const adminBtn = canAdmin && (
     <button className={"icon-btn admin" + (adminOpen ? " active" : "")} title="管理" onClick={onToggleAdmin}><LuShield /></button>
   );
@@ -184,7 +193,7 @@ export function ConversationList({
     const title = itemTitle(it);
     const generating = c.id === generatingId;
     const mark = markOf(c.id);
-    const cls = ["conversation", c.id === selectedId && "current", generating && "generating"].filter(Boolean).join(" ");
+    const cls = ["conversation", c.id === markedId && "current", generating && "generating"].filter(Boolean).join(" ");
     if (renamingId === c.id) {
       return (
         <li key={c.id} className={cls + " editing"}>
@@ -250,7 +259,7 @@ export function ConversationList({
     const r = it.r;
     const title = itemTitle(it);
     return (
-      <li key={r.id} className={"conversation shared" + (r.id === selectedId ? " current" : "")}>
+      <li key={r.id} className={"conversation shared" + (r.id === markedId ? " current" : "")}>
         <button className="title" title={sharedTooltip(title, r)} onClick={() => onOpenShared(r.id)}>
           <span className="title-text">{title}</span>
           <LuShare2 className="share-mark received" />
@@ -324,7 +333,7 @@ export function ConversationList({
       <div className="nav-top" onDoubleClick={toggleMaximiseOnDoubleClick}>
         {menu}
         {/* 並べ方はワークスペースでまとめるためのもの。ブラウザの会話はワークスペースを使わないので出さない(0038) */}
-        {!isBrowser && <GroupingMenu value={grouping} onChange={setGrouping} />}
+        {!isBrowser && <GroupingMenu value={grouping} onChange={setGrouping} showEmpty={showEmpty} onShowEmpty={setShowEmpty} />}
       </div>
       {/* 一覧の一番上の行:新規(アイコンだけ)と検索ボックス(0055 の未決事項 3) */}
       <div className="new-row">
@@ -353,8 +362,12 @@ export function ConversationList({
 }
 
 // GroupingMenu は、一覧の並べ方を選ぶメニュー(0038)。ボタンは今の並べ方のアイコン。押すと下に並べ方の一覧を出す
-// (2つだけでも切り替えのボタンにしないのは、プロジェクトごとの表示などを足せるようにするため)
-function GroupingMenu({ value, onChange }: { value: ListGrouping; onChange(g: ListGrouping): void }) {
+// (2つだけでも切り替えのボタンにしないのは、プロジェクトごとの表示などを足せるようにするため)。
+// ワークスペースごとのときは、区切りの下に「会話の無いワークスペースも出す」の切り替えを出す(0062。新しい順では意味が無いので出さない)。
+// 切り替えはメニューを閉じない(押した結果が一覧に出るのを見ながら、続けて戻せるように)
+function GroupingMenu({ value, onChange, showEmpty, onShowEmpty }: {
+  value: ListGrouping; onChange(g: ListGrouping): void; showEmpty: boolean; onShowEmpty(show: boolean): void;
+}) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   useMenuDismiss(open, () => setOpen(false), box);
@@ -372,6 +385,15 @@ function GroupingMenu({ value, onChange }: { value: ListGrouping; onChange(g: Li
               {g.label}
             </button>
           ))}
+          {value === "workspace" && (
+            <>
+              <div className="menu-sep" role="separator" />
+              <button role="menuitemcheckbox" aria-checked={showEmpty} onClick={() => onShowEmpty(!showEmpty)}>
+                <span className="grouping-check">{showEmpty && <LuCheck />}</span>
+                会話の無いワークスペースも出す
+              </button>
+            </>
+          )}
         </div>
       )}
     </div>

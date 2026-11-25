@@ -254,6 +254,7 @@ footer.home .composer textarea { line-height: 1.5; min-height: calc(3 * 1.5em + 
   font-size: 12.5px; white-space: nowrap;
 }
 .split-menu button:hover { background: var(--bg); }
+.split-menu .menu-sep { height: 1px; margin: 4px 6px; background: var(--border); }
 .mermaid-svg { overflow-x: auto; text-align: center; }
 .mermaid-svg svg { max-width: 100%; height: auto; }
 .mermaid-note { margin: 0 0 4px; font-size: 12.5px; color: var(--muted); }
@@ -486,8 +487,8 @@ nav.conversations.collapsed .settings.active { color: var(--accent); }
 /* 管理の画面の盾(0032)。歯車の左に並べ、歯車の代わりに右へ寄せる */
 nav.conversations .footer .admin { margin-left: auto; }
 nav.conversations .footer .admin + .settings { margin-left: 0; }
-nav.conversations .admin.active { background: var(--bg); border-color: var(--accent); }
-nav.conversations.collapsed .admin.active { color: var(--accent); }
+/* 管理の画面を開いている間の盾は、管理の画面と同じ注意の色(0063 の決定事項 15。今どこにいるかを入口でも見せる) */
+nav.conversations .admin.active { background: var(--bg); border-color: var(--warn); color: var(--warn); }
 .conversation { display: flex; align-items: center; border-radius: 6px; margin-bottom: 2px; }
 .conversation:hover, .conversation.current { background: var(--bg); }
 .conversation.current .title { font-weight: 600; }
@@ -583,6 +584,18 @@ nav.conversations ul.grouped .conversation { margin-left: 12px; }
 .settings-header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
 .settings-header h1 { font-size: 16px; margin: 0; flex: 1; display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .settings-header .back { display: flex; align-items: center; gap: 6px; }
+/* 管理の画面(0063 の決定事項 3・14):上の端に注意の色の細い帯と、見出しの前の盾。設定・会話の設定の画面には付けない(色の意味を薄めないため) */
+.settings-view.admin { border-top: 3px solid var(--warn); }
+.settings-header h1 .admin-mark { align-self: center; flex-shrink: 0; color: var(--warn); }
+/* 効く範囲の帯(0063 の決定事項 5・6)。見出し(タブがあればタブ)のすぐ下に、控えめな1行で出す。管理の画面では注意の色 */
+.scope-note {
+  display: flex; gap: 6px; margin: 0 0 12px; padding: 6px 10px; border-radius: 6px;
+  font-size: 12px; line-height: 1.6; color: var(--muted);
+  background: var(--bg); border-left: 3px solid var(--border);
+}
+.scope-note .icon { flex-shrink: 0; margin-top: 3px; }
+.scope-note.admin { background: color-mix(in srgb, var(--warn) 8%, transparent); border-left-color: var(--warn); }
+.scope-note.admin .icon { color: var(--warn); }
 /* 設定の画面のタブ(基本設定 / 会話)。選んでいるタブに下線を引く */
 .settings-tabs { display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 1px solid var(--border); }
 .settings-tab {
@@ -623,6 +636,7 @@ nav.conversations ul.grouped .conversation { margin-left: 12px; }
   position: sticky; bottom: 0; z-index: 5; display: flex; gap: 8px; justify-content: flex-end;
   margin-top: 16px; padding: 10px 0; background: var(--panel); border-top: 1px solid var(--border);
 }
+.save-bar .save-scope { align-self: center; font-size: 12px; color: var(--warn); } /* ほかの人に効く保存の添え書き(0063 の決定事項 8) */
 .save-bar.dirty { box-shadow: 0 -4px 12px rgba(0, 0, 0, .08); border-top-color: var(--accent); }
 /* 保存していない変更の知らせ(0053)。画面全体を覆って、選ぶまでほかを押させない */
 .unsaved-overlay {
@@ -740,6 +754,17 @@ nav.conversations ul.grouped .conversation { margin-left: 12px; }
 .place-add { display: flex; gap: 6px; margin-top: 8px; }
 .settings-view .place-add input[type=text] { flex: 1; width: auto; min-width: 0; }
 .place-add button { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+/* 管理の画面の並列数と作業領域(ServerConfig.tsx。0061)。名前と入力欄の2列。変えられない値は錠(理由は吹き出し) */
+.server-run { display: grid; grid-template-columns: auto auto; justify-content: start; align-items: center; column-gap: 16px; row-gap: 6px; }
+.server-run > label, .server-run-key { color: var(--muted); }
+.server-run-value { display: inline-flex; align-items: center; gap: 6px; }
+.settings-view .server-run input[type=number] { width: 120px; }
+.server-run-pending { margin-top: 8px; }
+/* 資料のフォルダ(配布プロファイルのタブ。0061)。行は置き場所と同じ形に、名前の列を足す */
+.folder-name { flex-shrink: 0; font-weight: 600; max-width: 30%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.settings-view .place-row .folder-path-input { flex: 1; width: auto; min-width: 0; }
+.place-row button { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.settings-view .place-add input.folder-name-input { flex: 0 1 160px; }
 /* 設定の画面の「利用者」のタブ(UserSettings.tsx。0018 の 11-0・0031)。一覧(行は .model-row の subgrid)+ 行を押すと下に詳細 */
 .user-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 8px; }
 .user-toolbar .spacer { flex: 1; }
@@ -780,6 +805,8 @@ nav.conversations ul.grouped .conversation { margin-left: 12px; }
 .user-row { width: 100%; border: none; border-top: 1px solid var(--border); border-radius: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .user-row:hover { background: rgba(127, 127, 127, .08); }
 .user-row.current { background: rgba(127, 127, 127, .15); }
+/* 無効の人は行ごと薄くする(0060 の未決事項 2) */
+.user-row.user-disabled > * { opacity: 0.5; }
 .user-states { display: flex; gap: 4px; flex-wrap: wrap; }
 .user-date { color: var(--muted); font-size: 12px; }
 .user-detail { margin-top: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; }
@@ -1128,7 +1155,7 @@ footer { border-top: 1px solid var(--border); background: var(--panel); padding:
 /* ログインの画面の設定(デスクトップのアプリだけ。0047)。箱の右下の歯車(2026-11-21、ユーザーの指示)。
    箱の下の余白を広げ、ログインのボタンやお知らせと重ならないようにする */
 .login-box.with-settings { padding-bottom: 40px; }
-.login-box .login-settings { position: absolute; bottom: 8px; right: 8px; padding: 4px; }
+.login-box .login-settings { position: absolute; bottom: 4px; right: 8px; padding: 4px; } /* 少し下へ(2026-11-23、ユーザーの指示) */
 .login-error { color: var(--error); font-size: 13px; }
 .login-note { color: var(--muted); font-size: 12.5px; line-height: 1.6; }
 .login-note code { display: block; margin-top: 4px; font-family: ui-monospace, Consolas, monospace; font-size: 12px; white-space: nowrap; overflow-x: auto; color: var(--text); }
@@ -1139,6 +1166,9 @@ footer { border-top: 1px solid var(--border); background: var(--panel); padding:
   background: color-mix(in srgb, var(--warn) 12%, transparent); border-left: 3px solid var(--warn);
 }
 .restart-note .icon { flex-shrink: 0; margin-top: 4px; color: var(--warn); }
+/* ログインの期限が切れてログインの画面に戻ったときの1行(0057)。同じ警告の形を、ログインの箱に合わせて小さく */
+.restart-note.login-expired { padding: 8px 10px; font-size: 13px; }
+.restart-note.login-expired .icon { margin-top: 3px; }
 
 /* 会話の共有と管理者が読む(0018 の 11-2)。ほかの人に共有された会話は自分の会話と同じ一覧に混ぜ、同じ共有のアイコンを強調の色にして見分ける(0055) */
 .share-mark { flex-shrink: 0; margin-left: 4px; color: var(--muted); font-size: 12px; vertical-align: -1px; }

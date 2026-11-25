@@ -245,6 +245,57 @@ func (s *SQLite) UpdateProfile(ctx context.Context, p aibow.Profile) error {
 	return nil
 }
 
+// ProfileUseCounts は、プロファイルごとの全員の会話の数(aibow.Store の約束の説明を参照)。管理者でなければ空。
+// DeleteProfile が数えるのと同じ数(全員の会話)にそろえる。画面で押せるのに、押すと断られる、をなくすため(0059 の決定事項 15)。
+func (s *SQLite) ProfileUseCounts(ctx context.Context) (map[uuid.UUID]int, error) {
+	args, _, err := s.profileArgs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := map[uuid.UUID]int{}
+	if args[1].(sql.NamedArg).Value.(int) != 1 {
+		return out, nil
+	}
+	rows, err := s.db.QueryContext(ctx, "SELECT profile_id, COUNT(*) FROM conversations WHERE profile_id IS NOT NULL AND profile_id <> '' GROUP BY profile_id")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		var n int
+		if err := rows.Scan(&id, &n); err != nil {
+			return nil, err
+		}
+		pid, err := parseID(id)
+		if err != nil {
+			return nil, err
+		}
+		out[pid] = n
+	}
+	return out, rows.Err()
+}
+
+// ProfilesUsingFolder は、決まりで資料のフォルダ folder を選んでいるプロファイルの名前(名前の順。0061 の決定事項 10)。
+// 管理の画面でフォルダを消す前に確かめる。見えるかどうか(profileVisible)によらず全員のものを見る
+// (呼べるのは管理者だけ。ui が確かめる)。配っていない・停止したプロファイルも入れる(配り直したときに、黙ってフォルダなしにならないように)。
+func (s *SQLite) ProfilesUsingFolder(ctx context.Context, folder string) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, "SELECT name FROM profiles WHERE json_extract(rules, '$.folder') = :folder ORDER BY name", sql.Named("folder", folder))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var names []string
+	for rows.Next() {
+		var n string
+		if err := rows.Scan(&n); err != nil {
+			return nil, err
+		}
+		names = append(names, n)
+	}
+	return names, rows.Err()
+}
+
 // DeleteProfile は、使っている会話が無いときだけプロファイルを消す。
 // 外部キーでも消せないようになっているが、SQLite の制約のエラーは何が理由か読みにくいので、先に数えて ErrProfileInUse を返す。
 // 数えてから消すまでの間に会話が増えないよう、1つのトランザクションで行う。

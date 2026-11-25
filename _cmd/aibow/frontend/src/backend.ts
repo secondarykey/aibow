@@ -79,6 +79,8 @@ export interface Me {
   canLogout?: boolean;
   // lastUser は、アプリがログインし直すときにログインの画面に入れておく名前(最後にログインした名前)
   lastUser?: string;
+  // offline は、アプリが起動したときに aibow-server につながらなかったので、ログインの画面にしたときのつなぎ先(ログインの画面に理由を出す)
+  offline?: string;
 }
 
 // AdminUser は、利用者の管理の一覧の1人(Go の _cmd/aibow-server の adminUser)。パスワードと API キーは、あるかだけ
@@ -87,6 +89,8 @@ export interface AdminUser {
   admin: boolean;
   password: boolean;
   key: boolean;
+  key_expires_at?: string;   // API キーの期限(0060。無期限か、キーが無ければ無い。過ぎていても入る)
+  disabled: boolean;         // 無効にされたか(0060)
   local: boolean; // ログインなしの形の利用者(消せない)
   created_at: string;
   display_name?: string;     // 表示名(0031。空ならログインの名前を出す)
@@ -137,7 +141,10 @@ export interface AdminAPI {
   users(): Promise<AdminUser[]>;
   create(name: string): Promise<Link>;          // 作って、招待のリンク
   resetPassword(name: string): Promise<Link>;   // 今のパスワードを使えなくして、再設定のリンク
-  renewKey(name: string): Promise<{ name: string; key: string }>;
+  // API キーを作り直す。days は期限の日数(30・90・365・0 = 無期限。0060)。無期限なら expiresAt が無い
+  renewKey(name: string, days: number): Promise<{ name: string; key: string; expiresAt?: string }>;
+  removeKey(name: string): Promise<void>;                       // API キーを削除する(0060)
+  setDisabled(name: string, disabled: boolean): Promise<void>;  // 無効にする / 有効に戻す(0060)
   setDisplayName(name: string, display: string): Promise<void>; // 表示名を変える(空なら無し。0031)
   setEmail(name: string, email: string): Promise<void>;         // メールアドレスを変える(空なら無し。0031)
   remove(name: string): Promise<void>;
@@ -245,7 +252,9 @@ export const admin: AdminAPI = {
   users: () => b.admin.users(),
   create: name => b.admin.create(name),
   resetPassword: name => b.admin.resetPassword(name),
-  renewKey: name => b.admin.renewKey(name),
+  renewKey: (name, days) => b.admin.renewKey(name, days),
+  removeKey: name => b.admin.removeKey(name),
+  setDisabled: (name, disabled) => b.admin.setDisabled(name, disabled),
   setDisplayName: (name, display) => b.admin.setDisplayName(name, display),
   setEmail: (name, email) => b.admin.setEmail(name, email),
   remove: name => b.admin.remove(name),
