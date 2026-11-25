@@ -22,6 +22,7 @@ aibow に残っている課題の一覧(入口)。ルールと全体の構成は
 
 | | 課題 | 資料 |
 |---|---|---|
+| 🔧 | MCP のサーバーの説明(instructions)をモデルに渡す | [0066-mcp-instructions.md](_docs/features/0066-mcp-instructions.md) |
 | ⬜ | ツールの信頼の続き(サーバーごとにまとめて確認しない・`readOnlyHint`・自作サーバーの二重の確認) | [0010-tool-trust.md](_docs/features/0010-tool-trust.md) の「3段目以降」 |
 | ⬜ | 確認のカードの「今後も同じ」がツール全体に効くと分かりにくい(git status を許したつもりで run_command が全部通る)。コマンドごとの許可 | [検討メモ](_docs/backlog.md#確認のカードの今後も同じが何に効くか分かりにくいコマンドごとの許可) |
 | ⬜ | MCP の OAuth(ログインが要る url の MCP のサーバー) | [検討メモ](_docs/backlog.md#mcp-の-oauth) |
