@@ -88,9 +88,9 @@
 
 ## 未決事項
 
-1. **`mcp/server` で `run_command`・Git のツールを外す方法**(決定事項 7):`Options` に足すか、`Custom` で `tool.FilesIn` だけを渡すか。`Custom` は `Folders` と一緒に使えない(`Check`)ので、どちらが小さいかを Code が見て決める
-2. **フォルダを変えたときのセッションの作り直し**(決定事項 8):SDK の作りしだい。Code が確かめて経過に書く
-3. **知らせの文**(決定事項 16):画面で見て決める
+1. ~~**`mcp/server` で `run_command`・Git のツールを外す方法**~~ → `Options.FilesOnly` を足した(経過の 2026-11-27)
+2. ~~**フォルダを変えたときのセッションの作り直し**~~ → ステートレスの API にしたので要らない(経過の 2026-11-27)
+3. **知らせの文**(決定事項 16):画面で見て決める(今の案は経過の 2026-11-27)
 
 ## 完了の条件
 
@@ -111,3 +111,35 @@
 3. ルートと `ui`:サーバーモードで、会話のプロファイルの `GrantedWorkspace` があるときのツールの組(手元のファイル・コマンド・Git・`${workdir}` を外す)・環境の説明・ツールの一覧・古いサーバー(404)の扱い。テスト
 4. 画面:アプリの `FolderBar`(吹き出し)・0064 の知らせの出し分けと文(未決事項 3)。ユーザーに見せて確かめる
 5. ドキュメント(完了の条件 7)
+
+## 経過
+
+- 2026-11-27:着手の前に、決定事項 4〜18(Chat が決めて書いたこと)をユーザーに確かめ、このとおりで進めることになった
+- 2026-11-27:作業の順番 1〜5 を作った(画面の確認はまだ)
+  - **未決事項 1**:`mcp/server.Options` に `FilesOnly` を足した(ファイルのツールと `update_plan` だけ。時刻・計算もアプリが手元で出すので出さない)。
+    `Custom` に `tool.FilesIn` を渡す案は、`Custom` だと読むだけの印(readOnlyHint)が付かず、フォルダの説明も出なくなるので選ばなかった。`Fetch`・`Custom` と一緒に使うと `Check` がエラーにする。
+    書いたことをログに残すため、書き換えるツールが認められて成功したあとに呼ぶ `Options.Wrote` も足した(決定事項 9)
+  - **未決事項 2**:SDK v1.8.0 の Streamable HTTP の APIを**ステートレス**(`StreamableHTTPOptions.Stateless`)にした。SDK はリクエストのたびに `getServer` を呼ぶので、
+    `mcp/server.HTTPHandler` がリクエストのたびにそのときのフォルダの組でサーバーを作る。セッションが前の組を持ち続けることが無く、作り直す仕組みが要らない。
+    書く前の確認(MRTR)はもともと「同じ引数 + 答え + 合言葉」の送り直しなので、そのまま動く。MCP の 2026-07-28 版も、SDK ではステートレスの APIでだけ話せる。
+    SDK は1回のリクエストで `getServer` を2回呼ぶので、作ったサーバーを ctx に入れて同じものを使う。返事は SSE でなく JSON 1つ(`JSONResponse`)
+  - **断りの文をモデルに渡す**:SDK のクライアントは、200 番台でない返事の本文が JSON-RPC のエラーなら呼び出しのエラーにしてつながりを残すが、そうでなければ(aibow-server の 401・403 は OpenAI 互換の形)つながりが切れたとみなす。
+    そこで `mcp/client` の `refusalTransport` が 401・403・404 の文を JSON-RPC のエラー(`meta.RefusedCode` = -32042)の返事に書き直し、`remoteTool.call` はその番号なら文だけを返す(決定事項 6 の「次のツールの実行から 403 の文がモデルに返る」)
+  - **DNS リバインディングの守り**:SDK は 127.0.0.1 で受けたリクエストの Host が 127.0.0.1 でないと 403 にする。API キーが要る形では外した(同じ PC のリバースプロキシ越しで Host が外の名前になっても使えるように。キーが守る)。要らない形(127.0.0.1 だけ)では残した
+  - aibow-server:`_cmd/aibow-server/workspaces.go`(`/_aibow/workspaces` の一覧と MCP の API。`routes` に前置きを足した)。使えるかは `ui.Service.GrantedServerWorkspaces`(その人に見える配布プロファイルのうち `GrantedWorkspace` が名前と同じものがあるか)。
+    つないだ(initialize)は Info、断った 403 は Warn、書いたら Notice(決定事項 9)。401 は `RequireKey` が今までどおり Warn に出す
+  - アプリ:`api/client` に `ServerWorkspaces`(404 なら `ErrNoServerWorkspaces`)と `Transport`(毎回今のキーとアプリの版を付ける。401 なら `OnUnauthorized` に知らせる)。
+    `mcp/client.Workspaces`(ワークスペースの名前ごとに1つつなぐ。つなげなかったら `Retry` まで試し直さない。メーターの計算などで何度も HTTP を待たないため)。
+    `ui/serverworkspaces.go` が2つを組み、ルートの `ServerWorkspaceSource` として渡す(`RemoteHost` のときだけ)
+  - ルート:`serverworkspace.go`。`appServerWorkspace`(配られていて aibow-server が新しい版)なら、`workDir` は空(`${workdir}` の MCP を起動しない)・`toolFolders` は aibow-server が知らせたフォルダ(パスは空)・
+    `localTools` は手元の時刻・計算・URL を読む + aibow-server のファイルのツール・worktree を使わない・環境の説明はブラウザと同じ形(`onServer`)。送信の前に一覧を引き直す(`refreshServerWorkspace`。MCP のサーバーを起動する前)
+  - **送信のたびに引く**(決定事項 11):一覧は送信の前に引き直し、次の送信まではその結果を使う(メーターの計算・ツールの一覧の画面など、送信の外でも何度も要るため。決定事項 11 の「覚えておかない」は、送信をまたいで古い一覧を使わない、と読んだ)。
+    入力欄の上の吹き出し(`ServerWorkspaces`)と `ServerWorkspacesUsable` は、呼ぶたびに引き直す
+  - **一覧を引けないとき**(つながらない・ログインの期限切れなど。404 以外):aibow-server は新しい版とみなし、使えるワークスペースは無し(ファイルのツールの無い会話)にした。古い版とみなすと手元のフォルダを触ってしまうため(決定事項 12 の考え方)
+  - ツールの一覧:`ui.Service.ToolStates` が、その会話がサーバーのワークスペースを使うなら `run_command`・Git のツール・`${workdir}` の MCP のサーバーを外す(`ConversationServerWorkspace`・`forServerWorkspace`)。入力欄の上の「この会話のツール」と会話の設定の画面の MCP のサーバーの一覧からも、画面で `${workdir}` のものを外す
+  - 画面:`App.tsx` で `ServerWorkspacesUsable` を会話を開くたびに確かめ、使えるならブラウザと同じ `FolderBar`(手元のワークスペースの選択と worktree の切り替えは出さない)。会話の設定の画面にもワークスペースの名前を出す。
+    0064 の知らせは古い aibow-server のときだけ。**未決事項 3 の今の案**:「サーバーのワークスペース『名前』はブラウザでだけ使えます(ここでは手元のフォルダ。aibow-server を新しくすると、アプリからも使えます)」(吹き出しは「この aibow-server は古い版なので、このアプリからはサーバーのワークスペースを読み書きできません(この会話のツールは手元のフォルダで動きます)。aibow-server を新しくするか、ブラウザで aibow-server を開いてこの会話を続けてください」)
+  - テスト:`mcp/server`(`FilesOnly`・`Wrote`)・`mcp/client`(HTTP の版:組み込みと同じ見せ方・差分で1回聞く・読むだけを断る・403 の文・キーを替える・フォルダを足す・`Retry`)・
+    `_cmd/aibow-server`(401・403・知らない名前も 403・一覧にパスが無い・書ける / 読むだけ・配布をやめたら 403・足したフォルダ・道筋)・`ui`(`GrantedServerWorkspaces`・古いサーバーの 404・引けないとき)・
+    ルート(ツールの組・パスを出さない・worktree を使わない・使えなくなったら手元に戻さない・古いサーバー・送信の前に引き直す・`${workdir}` に手元のフォルダを渡さない)
+  - 確かめたこと:`gofmt`・`go vet`・`go test ./...`・`_cmd/aibow` の `go test`・`wails3 build`。**実際の画面(サーバーモードのアプリと aibow-server)ではまだ見ていない**(完了の条件 1〜5 と未決事項 3)

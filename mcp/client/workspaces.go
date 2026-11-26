@@ -225,7 +225,7 @@ func refusalText(status int, data []byte) string {
 		return text
 	}
 	if status == http.StatusNotFound {
-		return "aibow-server にサーバーのワークスペースの口がありません(aibow-server を新しくすると使えます)"
+		return "aibow-server にサーバーのワークスペースの API がありません(aibow-server を新しくすると使えます)"
 	}
 	return fmt.Sprintf("aibow-server が断りました(%d %s)", status, http.StatusText(status))
 }

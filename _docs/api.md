@@ -424,6 +424,32 @@ OpenAI 互換の API(api)──────────┐   付箋:呼び出し
 - 同じ server.db なので、アプリで作った会話を、同じ人がブラウザで開ける
 - **生成中の印**:同じ会話にブラウザとアプリ(または2台のアプリ)から同時に送ったら、後から来たほうを `busy`(409)で断る。印は送信の間だけ付け、期限 2 分・30 秒ごとに延ばす(`lock.go`)
 
+## サーバーのワークスペースの API(サーバーモードのアプリ。0067)
+
+サーバーモードのアプリは会話の仕組みとツールを手元で動かすが、配布プロファイルで配られたサーバーのワークスペースのファイルのツールだけは、aibow-server に頼む。
+ツールの中身は、ブラウザの会話が aibow-server の中でメモリ内につなぐ自作の MCP のサーバー(`mcp/server`)と同じで、つなぎ方だけを Streamable HTTP に替える。
+
+```
+サーバーモードのアプリ [ 会話の仕組み ] ─┬─ 一覧:api/client.ServerWorkspaces ─→ GET /_aibow/workspaces
+                                        └─ ファイルのツール:mcp/client.Workspaces ─→ POST /_aibow/workspaces/{名前}/mcp ─→ mcp/server(ステートレス)
+```
+
+- `GET /_aibow/workspaces`:キーの持ち主が使えるワークスペース `{"workspaces": [{"name", "folders": [{"name", "main", "writable", "description"}]}]}`。**パスは返さない**。
+  アプリは送信のたびに引き直す(配布をやめた・フォルダを変えたら、その送信から効く)。入力欄の上の吹き出しにも使う
+- `/_aibow/workspaces/{名前}/mcp`:そのワークスペースのファイルのツール(`list_files`・`read_file`・`search_files`・`write_file`・`edit_file`・`update_plan`。`mcp/server` の `FilesOnly`)だけを出す MCP の API。
+  時刻・計算・`fetch_url` はアプリが手元で出し、`run_command` と Git のツールは出さない。説明(instructions)にパスを入れない
+- **守り**:API キーが要る形なら保存の API と同じくキーの持ち主(`keys.RequireKey`)、要らない形ならログインなしの利用者 `local`。キーが無い・違えば 401。
+  使えるのは、その人に配られている(`Share` があり `Withdrawn` でない)配布プロファイルのどれかが選んでいるワークスペースだけ(`ui.Service.GrantedServerWorkspaces`)。
+  ほかは 403(知らない名前も 403。あるかどうかを漏らさない)。会話ごとには確かめない(つながりはワークスペースごとで、会話をまたぐため。アプリは会話のプロファイルで選ばれているときだけつなぐ)
+- **呼び出しのたびに確かめ、サーバーを作り直す**(SDK の `StreamableHTTPOptions.Stateless`):配布をやめたら次のツールの実行から 403、管理の画面でフォルダを変えたら次の実行から新しい組。
+  書く前の確認(MRTR)は「同じ引数 + 答え + 合言葉」の送り直しなのでセッションが要らない。MCP の 2026-07-28 版も、SDK ではステートレスの APIでだけ話せる
+- 返事は SSE でなく JSON 1つ(`JSONResponse`)。API キーが要る形では、SDK の DNS リバインディングの守り(127.0.0.1 で受けて Host が違えば断る)を外す(同じ PC のリバースプロキシ越しでも使えるように。キーが守る)
+- 断り(401・403)は OpenAI 互換と同じ形の `{"error": {"message"}}`。アプリの `mcp/client` が JSON-RPC のエラー(`meta.RefusedCode`)に書き直し、文をそのままツールの結果としてモデルに渡す(つながりは切れたことにしない)
+- ログ:書いたら Notice に「サーバーのワークスペース 社内規程 のフォルダ 規程 に書きました: write_file a.md(bob、アプリから)」(会話はこの API からは分からない)。つないだ(initialize)は Info、断った 403 は Warn
+- **古い aibow-server**:一覧が 404 なら、アプリはサーバーのワークスペースを使わず、今までどおり手元のワークスペースを使う(0064 の知らせに「aibow-server を新しくすると、アプリからも使えます」が付く)。
+  一覧を引けない(つながらない・ログインの期限切れ)ときは新しい版とみなし、使えるワークスペースは無しにする(手元のフォルダを触らないため)
+- 案内はしないが、Claude Code などほかの MCP のクライアントからも、URL と API キー(`Authorization: Bearer`)でつなげてしまう
+
 ## そのほかの API(ステップ10の 10-4)
 
 - `GET /_aibow/auth/key`(10-4):API キーの持ち主の名前(`{"login": true, "name"}`。ブラウザの `/_aibow/auth/me` と同じ形)。画面のアプリが、誰としてつないでいるかを一覧の下に出すのに使う。キーの要らない形なら `{"login": false}`

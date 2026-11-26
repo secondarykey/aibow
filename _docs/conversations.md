@@ -139,6 +139,9 @@
   (管理の画面で変えるとその場で差し替わる。`Conversations.SetServerWorkspaces`。0061)。配っていて、その人にまだ配られているときだけ効く(`Profile.GrantedWorkspace`)。
   ブラウザの会話では、会話に保存した作業フォルダは使わず(`IgnoreWorkDir`)、ファイルのツールにはこのワークスペースのフォルダ全部を渡し(`Conversations.toolFolders`)、メインのフォルダを作業フォルダにする(`workDir`。パスは画面に返す設定には入れない)。
   モデルへの環境の説明にもサーバーのパスを書かない(フォルダが複数なら、パスの代わりに「on the server」。`foldersEnvironment`)。写したプロファイルには写さない。選べるのは管理者だけ(`ui.Service.checkWorkspace`)。
+  **サーバーモードのアプリ**(0067。`serverworkspace.go`):aibow-server が新しい版なら、配られた会話のファイルのツールを aibow-server の MCP の APIに頼む(`ServerWorkspaceSource`。本物は `ui` が `api/client` と `mcp/client` で組む)。
+  フォルダの名前・印・説明は送信のたびに aibow-server に引き直す(`Refresh`。パスは知らない)。その会話では手元のワークスペース・worktree・`run_command`・Git・`${workdir}` の MCP を使わず(`onServer`・`appServerWorkspace`)、環境の説明はブラウザと同じ形。
+  会話に保存した手元のワークスペースは残す。使えなくなったら(配布をやめた・消えた・引けない)手元に戻さず、ファイルのツールの無い会話になる。aibow-server が古い(一覧が 404)ときだけ、今までどおり手元のワークスペースを使う。
   server.db の決まりの `folder` は、版 24 のマイグレーションで `workspace` に移した(server.json の前の形の `folders` は、同じ名前のワークスペースとして読むので名前がそのまま合う)
 - ツールごとの「最初は使わない」(`tools_off`)はプロファイルの値。会話を作るときに会話の上書き(`tool_policies` の off)として写す(値は写し)。
   前はこの PC の既定(tools.json の tools の off)で、起動したときに全部のプロファイルと今ある会話の上書きに移して tools.json から消す(`moveToolsOff`。2026-10-20)

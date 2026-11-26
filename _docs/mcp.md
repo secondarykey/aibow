@@ -435,6 +435,24 @@ aibow [ 会話の仕組み ] ⇄ MCP(メモリ内のつなぎ方。SDK の NewIn
 - 送受信のメッセージは `MCP 組み込み → #3 tools/call write_file` / `MCP 組み込み ← #3 tools/call write_file の結果` としてログ(Info)に出る(JSON の中身は Debug)。サーバーのログ(`ツール write_file: ユーザーに確認を求めます` など)は同じプロセスなので、aibow のログにそのまま出る
 - つなげなかったときは、ログに Error を出して `tool` パッケージのツールを直接呼ぶ(予備。この場合は今までどおり呼ぶ前に確認する)。`SetLocalTools` をしない(aibow をライブラリとして使う・テスト)ときも直接呼ぶ
 
+### aibow-server のサーバーのワークスペースにつなぐ(0067)
+
+サーバーモードのアプリは、配布プロファイルで配られたサーバーのワークスペースのファイルのツールを、aibow-server の MCP の APIに頼む。
+サーバーは上と同じ自作サーバーで、**つなぎ方だけを Streamable HTTP に替える**(ツールの中・差分の確認・引数 `folder`・読むだけのフォルダは同じ)。
+
+```
+アプリ [ 会話の仕組み ] ⇄ MCP(Streamable HTTP。mcp/client の Workspaces) ⇄ aibow-server の /_aibow/workspaces/{名前}/mcp(mcp/server の HTTPHandler) [ ファイルのツール ]
+```
+
+- サーバー:`mcp/server.HTTPHandler`。SDK の `StreamableHTTPOptions.Stateless` で、**リクエストのたびにサーバーを作る**(誰が使えるか・どのフォルダかは呼ぶ側が先に確かめ、ctx で渡す)。
+  往復の間に何も覚えないので、管理の画面でフォルダを変えたら次の呼び出しから新しい組になり、セッションを作り直す仕組みが要らない。書く前の確認(MRTR)も、送り直しの形なのでそのまま動く。
+  出すのは `Options.FilesOnly`(ファイルのツールと `update_plan` だけ。時刻・計算・`fetch_url` はアプリが手元で出し、コマンドと Git は出さない)。書いたあとに呼ぶ `Options.Wrote` で、aibow-server が誰が書いたかを Notice に残す
+- クライアント:`mcp/client.Workspaces`。ワークスペースの名前ごとに1つつなぎ、組み込みと同じに見せる(名前に前置きなし・グループは組み込み・書き換えるツールは `tool.SelfConfirming`)。
+  aibow-server は利用者が `serverUrl` で選んだ自分の組織のサーバーなので、送ってきた差分を信頼する(`settings.json` の url のサーバーとは扱いを分ける)。
+  HTTP のつなぎ方は `api/client` の `Transport`(毎回のリクエストで今の API キーを読み、覚えた証明書で確かめる)。定義(引数の説明)はサーバーが出したものを使う(`folder` の説明にフォルダの名前が入るため)
+- **断りの文をそのままモデルに渡す**:aibow-server は配られていないワークスペースを 403、キーの違いを 401 で断る。SDK は 200 番台でない返事の本文が JSON-RPC のエラーでないと「つながりが切れた」とみなすので、
+  クライアントの `refusalTransport` が断りの文を JSON-RPC のエラー(`meta.RefusedCode`)の返事に書き直す。`remoteTool.call` はその番号なら文だけを返し、つながりは切れたことにしない
+- つなげなかったら空を返し、`Retry`(送信のたび)まで試し直さない(メーターの計算などで何度も HTTP を待たないため)
 
 ### ほかのアプリから使う(0045)
 

@@ -33,7 +33,7 @@ aibow に残っている課題の一覧(入口)。ルールと全体の構成は
 |---|---|---|
 | 🔧 | 資料のフォルダを持つ会話をアプリで開いたら、ブラウザでだけ使えると入力欄の上で知らせる | [0064-folder-browser-only-notice.md](_docs/features/0064-folder-browser-only-notice.md) |
 | 🔧 | 資料のフォルダを「サーバーのワークスペース」にする(フォルダを複数持てる。ブラウザだけ。段1。管理のタブの見た目を確かめる) | [0065-server-workspaces.md](_docs/features/0065-server-workspaces.md) |
-| ⬜ | アプリからサーバーのワークスペースを使う(0065 の段2。aibow-server に MCP の口を作り、アプリが組み込みとしてつなぐ) | [0067-server-workspaces-from-app.md](_docs/features/0067-server-workspaces-from-app.md) |
+| 🔧 | アプリからサーバーのワークスペースを使う(0065 の段2。aibow-server に MCP の APIを作り、アプリが組み込みとしてつなぐ。画面の確認が残り) | [0067-server-workspaces-from-app.md](_docs/features/0067-server-workspaces-from-app.md) |
 | ⬜ | 利用者への制限(「これしかやらせない」:ツール・モデル・使用量。ツールの設定のパターン・配布プロファイルの強制。何に付けるかはプロジェクトと一緒に考える) | [検討メモ](_docs/backlog-user-restrictions.md) |
 | ⬜ | 共有の再検討(アプリからの閲覧・プロジェクトの概念・利用者同士の会話) | [検討メモ](_docs/backlog.md#共有の再検討アプリからの閲覧プロジェクトの概念)・[0018-sharing.md](_docs/features/0018-sharing.md) |
 | ⬜ | aibow-server の中央の制御の残り(上限の上限・順番待ちの優先度・自動で降ろす・server.json のほかの項目を画面で) | [検討メモ](_docs/backlog.md#aibow-server-の中央の制御の残り) |

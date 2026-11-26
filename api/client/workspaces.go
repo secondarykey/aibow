@@ -17,7 +17,7 @@ import (
 
 // ErrNoServerWorkspaces は、aibow-server が古く、サーバーのワークスペースの口が無いとき(404)のエラー(errors.Is で見分ける。0067 の決定事項 16)。
 // アプリはそのとき、サーバーのワークスペースを使わず、今までどおり手元のワークスペースを使う(0064 の知らせを出す)。
-var ErrNoServerWorkspaces = errors.New("この aibow-server には、アプリからサーバーのワークスペースを使う口がありません(aibow-server を新しくすると使えます)")
+var ErrNoServerWorkspaces = errors.New("この aibow-server には、アプリからサーバーのワークスペースを使う API がありません(aibow-server を新しくすると使えます)")
 
 // ServerWorkspace は、サーバーのワークスペース1つ(名前とフォルダ。パスは含まない)。
 type ServerWorkspace struct {
