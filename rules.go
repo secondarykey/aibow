@@ -281,7 +281,11 @@ func (cs *Conversations) serverWorkspaceOf(set ConversationSettings) (config.Ser
 }
 
 // ServerWorkspaceName は、会話の設定 set で使えるサーバーのワークスペースの名前(画面に出す。パスは出さない)。
+// サーバーモードのアプリでは、アプリから使えるときだけ(aibow-server が古ければ空。0067)。
 func (cs *Conversations) ServerWorkspaceName(set ConversationSettings) string {
+	if name, ok := cs.appServerWorkspace(set); ok {
+		return name
+	}
 	w, _ := cs.serverWorkspaceOf(set)
 	return w.Name
 }
@@ -312,6 +316,10 @@ func (cs *Conversations) workDir(set ConversationSettings) string {
 		w, _ := cs.serverWorkspaceOf(set)
 		return w.MainFolder().Path
 	}
+	if _, ok := cs.appServerWorkspace(set); ok {
+		// サーバーモードのアプリのサーバーのワークスペースは、この PC のフォルダが無い(${workdir} の MCP のサーバーも起動しない。0067 の決定事項 3)
+		return ""
+	}
 	if wt, ok := cs.worktreeOf(set); ok {
 		return wt.Path // worktree で作業している会話は、メインのフォルダの代わりに worktree(0039)
 	}
@@ -331,6 +339,9 @@ func (cs *Conversations) toolFolders(set ConversationSettings) []tool.Folder {
 			return nil
 		}
 		return toToolFolders(w.Folders, "")
+	}
+	if name, ok := cs.appServerWorkspace(set); ok {
+		return cs.appServerFolders(name) // サーバーモードのアプリ:aibow-server が知らせたフォルダの名前と印(パスは空。0067)
 	}
 	ws, ok := cs.workspaces.Get(set.Workspace)
 	if !ok {

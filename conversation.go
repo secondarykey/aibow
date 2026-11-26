@@ -128,6 +128,8 @@ type Conversations struct {
 	// serverWs は aibow-server のサーバーのワークスペース(SetServerWorkspaces。0065)。管理の画面で起動のあとにも差し替えるので、serverWsMu で守る(0061)
 	serverWsMu sync.RWMutex
 	serverWs   []config.ServerWorkspace
+	// serverSrc は、サーバーモードのアプリで aibow-server のサーバーのワークスペースを使う係(SetServerWorkspaceSource。0067)。nil なら使わない
+	serverSrc ServerWorkspaceSource
 }
 
 // pendingConfirm は答えを待っている確認1つ。
@@ -734,6 +736,7 @@ func (cs *Conversations) turn(ctx context.Context, id uuid.UUID, text string, fi
 		fail(format.Unsupported(info.Arch))
 		return
 	}
+	cs.refreshServerWorkspace(ctx, conv.Settings) // 使う MCP のサーバー(${workdir} を使うか)も、サーバーのワークスペースを使うかで変わるので先に
 	cs.startRemote(ctx, conv, emit)
 
 	// 1. 会話の上限に収められるかを確かめてから、(やり直しなら前の部分を消して)ユーザーの発言を保存する。

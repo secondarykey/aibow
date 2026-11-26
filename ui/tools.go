@@ -129,7 +129,35 @@ func (s *Service) ToolStates(ctx context.Context, id uuid.UUID, settings aibow.C
 		return nil, s.startupErr
 	}
 	groups, err := s.convs.ConversationToolStates(ctx, id, settings)
-	return s.forBrowser(groups), err
+	if err != nil {
+		return nil, err
+	}
+	name, err := s.convs.ConversationServerWorkspace(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if name != "" {
+		groups = s.forServerWorkspace(groups)
+	}
+	return s.forBrowser(groups), nil
+}
+
+// forServerWorkspace は、サーバーモードのアプリのサーバーのワークスペースの会話で、ツールの一覧から使わないものを外す(0067 の決定事項 13)。
+// ブラウザと同じく run_command と Git のツールを出さず、${workdir} を使う MCP のサーバーも出さない(この PC のフォルダが無いため)。
+func (s *Service) forServerWorkspace(groups []aibow.ToolGroupState) []aibow.ToolGroupState {
+	var workDir []string
+	if s.mcp != nil {
+		for _, i := range s.mcp.Infos() {
+			if i.UsesWorkDir {
+				workDir = append(workDir, i.Name)
+			}
+		}
+	}
+	groups = slices.DeleteFunc(groups, func(g aibow.ToolGroupState) bool { return g.Server != "" && slices.Contains(workDir, g.Server) })
+	for i := range groups {
+		groups[i].Tools = slices.DeleteFunc(groups[i].Tools, func(t aibow.ToolState) bool { return browserHides(t.Name) })
+	}
+	return groups
 }
 
 // forBrowser は、ブラウザに出すツールの一覧から、使えないものを外す。
@@ -170,8 +198,27 @@ type ServerFolderInfo struct {
 // ServerWorkspaces は aibow-server のサーバーのワークスペース(server.json の並び。パスは返さない)。配るプロファイルで選ぶ(0065)。
 // 名前は誰でも見られる(どのワークスペースを使えるかは、配られたプロファイルで決まる)。入力欄の上でマウスを乗せた説明にフォルダを並べるのにも使う。
 // アプリモードのときは空。パスも見る管理の画面は ServerSettings(管理者だけ。0061)。
+// サーバーモードのアプリでは、aibow-server に引いた、その人が使えるもの(配られたもの。0067 の決定事項 15。古い aibow-server なら空)。
 func (s *Service) ServerWorkspaces() []ServerWorkspaceInfo {
+	if s.appWs != nil {
+		list, _ := s.appWs.infos(context.Background())
+		return list
+	}
 	return ServerWorkspaceInfos(s.serverWorkspaceList())
+}
+
+// ServerWorkspacesUsable は、この画面でサーバーのワークスペースを使えるか(0067)。
+// ブラウザはいつも。サーバーモードのアプリは aibow-server がアプリから使える新しい版のとき(古ければ、手元のワークスペースのまま 0064 の知らせを出す)。
+// アプリモードは使わない(配布プロファイルが無い)。
+func (s *Service) ServerWorkspacesUsable() bool {
+	if s.browser {
+		return true
+	}
+	if s.appWs == nil {
+		return false
+	}
+	_, supported := s.appWs.infos(context.Background())
+	return supported
 }
 
 // ServerWorkspaceInfos は、サーバーのワークスペースの一覧から、誰にでも見せてよいところ(名前とフォルダの名前・印・説明)だけを取り出す。

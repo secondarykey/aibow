@@ -177,6 +177,8 @@ type Service struct {
 	wsEditMu sync.Mutex
 	// server は、管理の画面で変える aibow-server の設定(ブラウザだけ。serverconfig.go)
 	server *ServerConfig
+	// appWs は、サーバーモードのアプリで aibow-server のサーバーのワークスペースを使う係(serverworkspaces.go。0067)。ほかでは nil
+	appWs *serverWorkspaces
 	// waits は、確認を待っている送信を打ち切るタイマー(確認の ID → タイマー。ブラウザだけ)。答えたら止める
 	waitMu sync.Mutex
 	waits  map[string]*time.Timer
@@ -218,6 +220,11 @@ func New(o Options) (*Service, Lifecycle) {
 		}
 		if !o.Browser {
 			s.convs.SetWorkspaces(o.Workspaces)
+		}
+		if rh, ok := o.Host.(*RemoteHost); ok && !o.Browser {
+			// サーバーモードのアプリは、配られたサーバーのワークスペースのファイルのツールを aibow-server の MCP の口に頼む(0067)
+			s.appWs = newServerWorkspaces(rh.c, o.Version)
+			s.convs.SetServerWorkspaceSource(s.appWs)
 		}
 		if o.MCP != nil { // nil の *Manager を interface に入れると nil に見えなくなるので、確かめてから渡す
 			s.convs.SetRemoteTools(o.MCP)
@@ -311,6 +318,9 @@ func (l Lifecycle) LoggedIn() {
 // Stop は終了のときに呼ぶ(デスクトップでは Wails の ServiceShutdown から)。生成中なら止める。
 func (l Lifecycle) Stop() {
 	l.s.cancelQuit()
+	if l.s.appWs != nil {
+		l.s.appWs.close()
+	}
 }
 
 // loadInitial は起動時のモデルを読み込み、終わったら models イベントで画面に知らせる。

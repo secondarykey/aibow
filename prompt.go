@@ -133,7 +133,12 @@ func (cs *Conversations) serverInstructions(set ConversationSettings) string {
 // 使うツールに合わせて書く:時刻・計算のほかにツールが無ければ書かない(作業フォルダを使うツールが無い)。
 // シェルと cd の注意は、run_command を使うときだけ書く(使わないツールのことを書かない)。
 func (cs *Conversations) environment(set ConversationSettings) string {
+	onServer := cs.onServer(set)
 	dir := cs.workDir(set)
+	if onServer {
+		// サーバーのワークスペースは、パスを見せないので名前で決める(サーバーモードのアプリは、この PC のフォルダが無く workDir が空。0067)
+		dir = tool.MainFolder(cs.toolFolders(set)).Name
+	}
 	if dir == "" {
 		return ""
 	}
@@ -148,15 +153,15 @@ func (cs *Conversations) environment(set ConversationSettings) string {
 	command := tool.Find(tools, "run_command") != nil
 	shell := tool.ShellNoteFor(tool.Find(tools, "search_files") != nil) // search_files を「使わない」にしたら、今までの findstr の案内のまま
 	if folders := cs.toolFolders(set); len(folders) > 1 {
-		return foldersEnvironment(folders, command, shell, cs.noWorkDir)
+		return foldersEnvironment(folders, command, shell, onServer)
 	}
 	var b strings.Builder
 	b.WriteString("# Environment\n")
 	// サーバーのワークスペース(aibow-server)は、サーバーの PC のパスを見せず、フォルダの名前だけを書く
 	// (パスはツールの中だけで使う。0024 の決定事項 32・0065 の決定事項 13)。名前はファイルのツールが知っている名前(パスの先頭に付けた書き方を見分ける)と同じ
 	name := filepath.Base(cs.mainPath(set, dir)) // worktree でも、本体のフォルダの名前(0039。モデルが呼ぶ名前を変えない)
-	if cs.noWorkDir {
-		name = tool.MainFolder(cs.toolFolders(set)).Name
+	if onServer {
+		name = dir
 		b.WriteString("Working directory: \"" + name + "\" (a shared folder on the server)\n")
 	} else {
 		b.WriteString("Working directory: " + dir + "\n")
