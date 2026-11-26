@@ -46,7 +46,7 @@ import (
 // startBrowser は、ブラウザの会話の会話の仕組みと画面用の口を作る。st は server.db(main が開いて閉じる。使用量の記録にも使うため。0033)。
 // initial は DB にまだ値が無いときの設定、url は aibow-server のアドレス(画面の「つなぎ先」に出す)。
 // gen は生成の係(記録付きの engine。OpenAI 互換の口と同じもの)。
-// 戻り値の handler は /_aibow/ui/・/_aibow/auth/・/_aibow/store/・/_aibow/admin/ の下を受け持つ。keys は API キーの係(利用者は同じ server.db にいるので、ここで作る)。
+// 戻り値の handler は /_aibow/ui/・/_aibow/auth/・/_aibow/store/・/_aibow/workspaces・/_aibow/admin/ の下を受け持つ。keys は API キーの係(利用者は同じ server.db にいるので、ここで作る)。
 // close は終了のときに呼ぶ(生成を止める)。
 func startBrowser(c serverConfig, initial aibow.AppSettings, st *store.SQLite, gen ui.ServerEngine, mm *modelManager, nCtx int, url string, seat *api.Seat) (http.Handler, *auth.Keys, func(), error) {
 	log.Noticef("ブラウザから使う会話の保存先: %s", absPath(c.DBPath))
@@ -103,6 +103,10 @@ func startBrowser(c serverConfig, initial aibow.AppSettings, st *store.SQLite, g
 		storeH = keys.RequireKey(remote.Handler(st, keyUser))
 	}
 	mux.Handle("/_aibow/store/", storeH)
+	// サーバーモードのアプリがサーバーのワークスペースを使う口(一覧と MCP の口。0067)。守りは保存の口と同じ
+	wsH := workspacesHandler(svc, keys, c.KeysRequired())
+	mux.Handle("/_aibow/workspaces", wsH)
+	mux.Handle("/_aibow/workspaces/", wsH)
 	// 画面のアプリが、誰としてつないでいるかを聞く口(API キーの持ち主の名前。ブラウザの /_aibow/auth/me にあたる)
 	mux.Handle("GET /_aibow/auth/key", keys.MeHandler(c.KeysRequired()))
 	// 管理者の画面の口(利用者の管理。0018 の決定事項 7)。ブラウザでログインした管理者だけ
@@ -239,6 +243,7 @@ func screen() http.Handler {
 }
 
 // routes は aibow-server の道筋。画面(/ と /assets/)・画面用の口(/_aibow/ui/)とログインの口(/_aibow/auth/)・保存の口(/_aibow/store/)・
+// サーバーのワークスペースの口(/_aibow/workspaces。0067)・
 // 管理者の口(/_aibow/admin/)・それ以外(OpenAI 互換の口と aibow 専用の口)。
 // 長いほうのパスが先に当たるので、画面の2つ以外はこれまでどおり api が受け取る(知らないパスの 404 も api の形)。
 func routes(apiH, browser, screen http.Handler) http.Handler {
@@ -249,6 +254,8 @@ func routes(apiH, browser, screen http.Handler) http.Handler {
 	mux.Handle("/_aibow/ui/", browser)
 	mux.Handle("/_aibow/auth/", browser)
 	mux.Handle("/_aibow/store/", browser)
+	mux.Handle("/_aibow/workspaces", browser) // サーバーのワークスペースの一覧と MCP の口(0067)
+	mux.Handle("/_aibow/workspaces/", browser)
 	mux.Handle("/_aibow/admin/", browser)
 	mux.Handle("/", apiH)
 	return mux

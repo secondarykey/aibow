@@ -305,3 +305,38 @@ func TestWebServerWorkspaceFolders(t *testing.T) {
 		t.Errorf("設定の画面にも Git とコマンドのツールを出さない: %+v", builtin)
 	}
 }
+
+// アプリが使えるサーバーのワークスペースは、その人に配られている配布プロファイルが選んでいるものだけ(0067 の決定事項 6)。配る相手を変えたら、次の呼び出しから効く
+func TestGrantedServerWorkspaces(t *testing.T) {
+	w := newFolderWeb(t)
+	names := func(id *uuid.UUID) []string {
+		t.Helper()
+		list, err := w.svc.GrantedServerWorkspaces(aibow.WithUser(context.Background(), *id))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, ws := range list {
+			out = append(out, ws.Name)
+			if ws.MainFolder().Path != w.dir {
+				t.Errorf("aibow-server の中ではパスも持つ: %+v", ws)
+			}
+		}
+		return out
+	}
+	if got := names(w.bob); !slices.Equal(got, []string{"docs"}) {
+		t.Errorf("配られた bob: %v", got)
+	}
+	if got := names(w.carol); len(got) != 0 {
+		t.Errorf("配られていない carol: %v", got)
+	}
+	w.user.Store(w.alice)
+	w.admin.Store(true)
+	w.mustCall(t, nil, "SetProfileShare", w.profile.ID, aibow.ShareUsers, []string{"carol"}, []string{})
+	if got := names(w.bob); len(got) != 0 {
+		t.Errorf("配る相手から外れた bob: %v", got)
+	}
+	if got := names(w.carol); !slices.Equal(got, []string{"docs"}) {
+		t.Errorf("配る相手になった carol: %v", got)
+	}
+}

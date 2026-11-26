@@ -158,26 +158,61 @@ type ServerWorkspaceInfo struct {
 	Folders []ServerFolderInfo `json:"folders"`
 }
 
-// ServerFolderInfo は、サーバーのワークスペースのフォルダ1つの名前と印(パスは返さない)。
+// ServerFolderInfo は、サーバーのワークスペースのフォルダ1つの名前と印と説明(パスは返さない)。
+// 説明は、サーバーモードのアプリがモデルへの環境の説明に書く(0067 の決定事項 11)。
 type ServerFolderInfo struct {
-	Name     string `json:"name"`
-	Main     bool   `json:"main"`
-	Writable bool   `json:"writable"`
+	Name        string `json:"name"`
+	Main        bool   `json:"main"`
+	Writable    bool   `json:"writable"`
+	Description string `json:"description,omitempty"`
 }
 
 // ServerWorkspaces は aibow-server のサーバーのワークスペース(server.json の並び。パスは返さない)。配るプロファイルで選ぶ(0065)。
 // 名前は誰でも見られる(どのワークスペースを使えるかは、配られたプロファイルで決まる)。入力欄の上でマウスを乗せた説明にフォルダを並べるのにも使う。
 // アプリモードのときは空。パスも見る管理の画面は ServerSettings(管理者だけ。0061)。
 func (s *Service) ServerWorkspaces() []ServerWorkspaceInfo {
+	return ServerWorkspaceInfos(s.serverWorkspaceList())
+}
+
+// ServerWorkspaceInfos は、サーバーのワークスペースの一覧から、誰にでも見せてよいところ(名前とフォルダの名前・印・説明)だけを取り出す。
+func ServerWorkspaceInfos(list []config.ServerWorkspace) []ServerWorkspaceInfo {
 	out := []ServerWorkspaceInfo{}
-	for _, w := range s.serverWorkspaceList() {
+	for _, w := range list {
 		info := ServerWorkspaceInfo{Name: w.Name, Folders: []ServerFolderInfo{}}
 		for _, f := range w.Folders {
-			info.Folders = append(info.Folders, ServerFolderInfo{Name: f.Name, Main: f.Main, Writable: f.Writable})
+			info.Folders = append(info.Folders, ServerFolderInfo{Name: f.Name, Main: f.Main, Writable: f.Writable, Description: f.Description})
 		}
 		out = append(out, info)
 	}
 	return out
+}
+
+// GrantedServerWorkspaces は、ctx の利用者が使えるサーバーのワークスペース(パスも含む。aibow-server の中だけで使う)。
+// 使えるのは、その人に配られている(Share があり Withdrawn でない)配布プロファイルのどれかが選んでいるもの(0067 の決定事項 6)。
+// 会話ごとには見ない(サーバーモードのアプリのつながりは、ワークスペースごとに1つで会話をまたぐため)。
+// アプリは会話のプロファイルで選ばれているときだけ使うので、決まりはブラウザから使う会話と同じになる。
+// 呼ぶたびにプロファイルと一覧を読み直す(配布をやめた・管理の画面でフォルダを変えたら、次の呼び出しから効く)。
+func (s *Service) GrantedServerWorkspaces(ctx context.Context) ([]config.ServerWorkspace, error) {
+	if s.startupErr != nil {
+		return nil, s.startupErr
+	}
+	profiles, err := s.store.ListProfiles(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("配布プロファイルを読めません: %w", err)
+	}
+	granted := map[string]bool{}
+	for i := range profiles {
+		if name := profiles[i].GrantedWorkspace(); name != "" {
+			granted[name] = true
+		}
+	}
+	out := []config.ServerWorkspace{}
+	for _, w := range s.serverWorkspaceList() {
+		if granted[w.Name] {
+			out = append(out, w)
+		}
+	}
+	return out, nil
 }
 
 // checkWorkspace は、プロファイルのサーバーのワークスペースを old から name に変えてよいか(0024 の決定事項 31・0065 の決定事項 18)。
