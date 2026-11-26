@@ -341,7 +341,7 @@ func (cs *Conversations) toolFolders(set ConversationSettings) []tool.Folder {
 		return toToolFolders(w.Folders, "")
 	}
 	if name, ok := cs.appServerWorkspace(set); ok {
-		return cs.appServerFolders(name) // サーバーモードのアプリ:aibow-server が知らせたフォルダの名前と印(パスは空。0067)
+		return cs.appServerFolders(set, name) // サーバーモードのアプリ:aibow-server が知らせたフォルダの名前と印(パスは空。0067)
 	}
 	ws, ok := cs.workspaces.Get(set.Workspace)
 	if !ok {

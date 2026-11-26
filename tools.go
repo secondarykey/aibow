@@ -252,7 +252,7 @@ func (cs *Conversations) SetLocalTools(l LocalTools) {
 // 作業フォルダを決めた会話だけ、そのフォルダの中を扱うツールを足す(作業フォルダは会話ごとなので、ここで作る)。
 func (cs *Conversations) localTools(set ConversationSettings) []tool.Tool {
 	if name, ok := cs.appServerWorkspace(set); ok {
-		return cs.appServerTools(name) // ファイルのツールは aibow-server の MCP の口越し(0067)
+		return cs.appServerTools(set, name) // ファイルのツールは aibow-server の MCP の口越し(0067)
 	}
 	folders := cs.toolFolders(set)
 	if cs.local != nil {

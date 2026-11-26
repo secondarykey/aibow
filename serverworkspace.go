@@ -40,13 +40,16 @@ func (cs *Conversations) SetServerWorkspaceSource(s ServerWorkspaceSource) {
 	cs.serverSrc = s
 }
 
-// appServerWorkspace は、サーバーモードのアプリで、会話の設定 set がサーバーのワークスペースを使うなら、その名前と true。
-// 会話のプロファイルで配られていて、aibow-server がアプリから使える新しい版のとき(使えるかどうか ok は見ない。使えなくても手元に戻さないため)。
+// appServerWorkspace は、サーバーモードのアプリで、会話の設定 set がサーバーのワークスペースの会話なら、その名前と true。
+// 会話のプロファイルの決まりがワークスペースを選んでいて、aibow-server がアプリから使える新しい版のとき。
+// 配られているか(GrantedWorkspace)はここでは見ない:配布をやめると、その人から見たプロファイルは「配られていない」になるが、
+// そこで手元のワークスペースに戻すと、サーバーのフォルダのつもりで手元のファイルを触ってしまう(決定事項 12)。
+// フォルダとツールを渡すのは、配られている間だけ(appServerFolders)。ワークスペースを選べるのは管理者だけで、写したプロファイルには写らない(0065)
 func (cs *Conversations) appServerWorkspace(set ConversationSettings) (string, bool) {
-	if cs.serverSrc == nil || cs.noWorkDir {
+	if cs.serverSrc == nil || cs.noWorkDir || set.profile == nil {
 		return "", false
 	}
-	name := set.profile.GrantedWorkspace()
+	name := set.profile.Rules.Workspace
 	if name == "" {
 		return "", false
 	}
@@ -65,8 +68,12 @@ func (cs *Conversations) onServer(set ConversationSettings) bool {
 	return ok
 }
 
-// appServerFolders は、サーバーモードのアプリのサーバーのワークスペースのフォルダ(パスは空)。使えなければ空。
-func (cs *Conversations) appServerFolders(name string) []tool.Folder {
+// appServerFolders は、サーバーモードのアプリのサーバーのワークスペース name のフォルダ(パスは空)。使えなければ空。
+// 会話のプロファイルで配られているときだけ(ほかの配布プロファイルで同じワークスペースが配られていても、この会話では使わない。決定事項 6)。
+func (cs *Conversations) appServerFolders(set ConversationSettings, name string) []tool.Folder {
+	if set.profile.GrantedWorkspace() != name {
+		return nil
+	}
 	folders, ok, _ := cs.serverSrc.Workspace(name)
 	if !ok {
 		return nil
@@ -76,14 +83,14 @@ func (cs *Conversations) appServerFolders(name string) []tool.Folder {
 
 // appServerTools は、サーバーモードのアプリのサーバーのワークスペースの会話で使う、手元で動くツール(時刻・計算・URL を読む)と、
 // aibow-server の MCP の口越しのファイルのツール。使えなければ手元のものだけ(手元のフォルダのツールは出さない)。
-func (cs *Conversations) appServerTools(name string) []tool.Tool {
+func (cs *Conversations) appServerTools(set ConversationSettings, name string) []tool.Tool {
 	var tools []tool.Tool
 	if cs.local != nil {
 		tools = cs.local.Tools(nil)
 	} else {
 		tools = cs.tools
 	}
-	if len(cs.appServerFolders(name)) == 0 {
+	if len(cs.appServerFolders(set, name)) == 0 {
 		return tools
 	}
 	out := append([]tool.Tool(nil), tools...)
@@ -97,7 +104,7 @@ func (cs *Conversations) appServerTools(name string) []tool.Tool {
 
 // refreshServerWorkspace は、送信の前に、サーバーのワークスペースの一覧を引き直す(配布をやめた・フォルダを変えたら、この送信から効く)。
 func (cs *Conversations) refreshServerWorkspace(ctx context.Context, set ConversationSettings) {
-	if cs.serverSrc == nil || cs.noWorkDir || set.profile.GrantedWorkspace() == "" {
+	if cs.serverSrc == nil || cs.noWorkDir || set.profile == nil || set.profile.Rules.Workspace == "" {
 		return
 	}
 	cs.serverSrc.Refresh(ctx)

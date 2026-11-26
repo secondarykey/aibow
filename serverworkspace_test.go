@@ -133,6 +133,19 @@ func TestAppServerWorkspaceUnavailable(t *testing.T) {
 		t.Errorf("手元のフォルダを使わない: %+v %q", f, cs.environment(set))
 	}
 
+	// 配る相手から外れた(その人から見たプロファイルは「配られていない」)。ほかの配布プロファイルで同じワークスペースが配られていても使わず、手元にも戻さない
+	src.list["社内規程"] = []tool.Folder{{Name: "規程", Main: true, Writable: true}}
+	withdrawn := set
+	p := *set.profile
+	p.Withdrawn = true
+	withdrawn.profile = &p
+	if names := namesOf(cs.toolsFor(withdrawn)); !slices.Equal(names, []string{"get_current_time", "calculate"}) {
+		t.Errorf("配る相手から外れたら、ファイルのツールを出さない: %v", names)
+	}
+	if f := cs.toolFolders(withdrawn); f != nil || cs.workDir(withdrawn) != "" || cs.worktreeMode(withdrawn) {
+		t.Errorf("配る相手から外れても、手元のフォルダを使わない: %+v", f)
+	}
+
 	src.supported = false
 	if d := cs.workDir(set); d != local {
 		t.Errorf("古い aibow-server なら、今までどおり手元のワークスペース: %q", d)
