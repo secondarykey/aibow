@@ -22,7 +22,6 @@ aibow に残っている課題の一覧(入口)。ルールと全体の構成は
 
 | | 課題 | 資料 |
 |---|---|---|
-| 🔧 | MCP のサーバーの説明(instructions)をモデルに渡す | [0066-mcp-instructions.md](_docs/features/0066-mcp-instructions.md) |
 | ⬜ | ツールの信頼の続き(サーバーごとにまとめて確認しない・`readOnlyHint`・自作サーバーの二重の確認) | [0010-tool-trust.md](_docs/features/0010-tool-trust.md) の「3段目以降」 |
 | ⬜ | 確認のカードの「今後も同じ」がツール全体に効くと分かりにくい(git status を許したつもりで run_command が全部通る)。コマンドごとの許可 | [検討メモ](_docs/backlog.md#確認のカードの今後も同じが何に効くか分かりにくいコマンドごとの許可) |
 | ⬜ | MCP の OAuth(ログインが要る url の MCP のサーバー) | [検討メモ](_docs/backlog.md#mcp-の-oauth) |
@@ -77,3 +76,4 @@ C(0040)と I(0028)は OK / NG を決めずに**確認済み扱い**にした(再
 | | 確かめること | 資料 |
 |---|---|---|
 | ⬜ | (任意。プロキシを実際に使うときに)信頼するプロキシ:ユーザーのリバースプロキシで X-Forwarded-For を書き、ほかの PC から開くとログの相手がその PC になる(管理の操作の断りは 0046 でどこからでも同じ) | [0044-trusted-proxies.md](_docs/features/0044-trusted-proxies.md) の完了の条件 2 |
+| ⬜ | MCP のサーバーの説明:説明を渡す本物のサーバーを会話で選ぶと、会話の設定の画面の「モデルに渡した文字列」のいちばん後ろに「# MCP server instructions」が入り、モデルが説明どおりにツールを使う | [0066-mcp-instructions.md](_docs/features/0066-mcp-instructions.md) |
