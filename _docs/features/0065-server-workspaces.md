@@ -5,7 +5,7 @@
 - 決めた日: 2026-11-25(Chat でユーザーと決めた。Chat がコード(`rules.go`・`prompt.go`・`ui/serverconfig.go`・`ui/tools.go`・`ui/conversations.go`・`config/server.go`・`config/serverwrite.go`・`config/workspaces.go`・`store/profiles.go`・`changes.go`・`profile.go`・`_cmd/aibow-server/browser.go`・
   `_cmd/aibow/frontend/src/App.tsx`・`components/WorkspaceBar.tsx`・`components/ServerConfig.tsx`・`components/ProfileSettings.tsx`・`profileRules.ts`)を読んで、今の作りを確かめた)
 - 前提: 0024(資料のフォルダ・配るプロファイル・ブラウザのツール)、0035(ワークスペース。フォルダの組・メイン・書ける / 読むだけ・説明)、0061(資料のフォルダを管理の画面で変える・server.json に書き戻す)、0053(確定式の保存とログ)、0064(アプリで開いたときの知らせ)
-- 次(段2。この仕様では作らない):アプリからサーバーのワークスペースを使う。TODO.md と [backlog.md](../backlog.md#アプリからサーバーのワークスペースを使う) に残した
+- 次(段2。この仕様では作らない):アプリからサーバーのワークスペースを使う。[0067-server-workspaces-from-app.md](0067-server-workspaces-from-app.md) にした
 
 ## 目的
 
