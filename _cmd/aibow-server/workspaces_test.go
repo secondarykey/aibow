@@ -52,12 +52,12 @@ func (b bearer) RoundTrip(r *http.Request) (*http.Response, error) {
 }
 
 type workspaceServer struct {
-	url        string
-	main, ref  string // 書けるフォルダと読むだけのフォルダのパス
-	bob        uuid.UUID
-	bobKey     string
-	granted    *fakeGranted
-	docs       config.ServerWorkspace
+	url       string
+	main, ref string // 書けるフォルダと読むだけのフォルダのパス
+	bob       uuid.UUID
+	bobKey    string
+	granted   *fakeGranted
+	docs      config.ServerWorkspace
 }
 
 func newWorkspaceServer(t *testing.T) *workspaceServer {
