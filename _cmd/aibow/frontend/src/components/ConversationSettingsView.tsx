@@ -36,7 +36,7 @@ interface Props {
   onSave(settings: ConversationSettings): Promise<void>; // 「保存」。できなければ reject
   onError(text: string): void;
   profile: Profile | null;              // この会話のプロファイル(どのプロファイルから作ったか・決まり。0014)
-  serverWorkspace: string;              // ブラウザの会話のサーバーのワークスペースの名前(無ければ空。0065)
+  serverWorkspace: string;              // 会話のサーバーのワークスペースの名前(ブラウザと、aibow-server が新しい版のサーバーモードのアプリ。無ければ空。0065・0067)
   workDir: string;                      // ツールが使うフォルダ(アプリはワークスペースのメインのフォルダ、ブラウザはサーバーのワークスペースの名前。無ければ空)
   onSaveToProfile(): void;              // この会話の設定で、プロファイルの値を上書きする
   onSaveAsProfile(name: string): void;  // この会話の設定で、新しいプロファイルを作る
@@ -213,11 +213,11 @@ export function ConversationSettingsView({ id, title, onRename, settings, models
         <ScreenErrors errors={errors} />
 
         <TitleField title={title} onRename={onRename} />
-        {!isBrowser && worktree && <WorktreeName state={worktree} onRename={onRenameWorktree} />}
+        {!isBrowser && !serverWorkspace && worktree && <WorktreeName state={worktree} onRename={onRenameWorktree} />}
 
         <label title="この会話を作ったプロファイル。固定した項目と使えないツールは、このプロファイルの決まりで決まる">プロファイル</label>
         <div className="conv-profile">{profile ? profile.name : "(プロファイルを持たない会話)"}</div>
-        {isBrowser && (
+        {(isBrowser || serverWorkspace) && (
           <>
             <label title="この会話のツールが読み書きする aibow-server のフォルダの組。管理者が配布したプロファイルで決まる">サーバーのワークスペース</label>
             <div className="conv-profile">{serverWorkspace || "(なし)"}</div>

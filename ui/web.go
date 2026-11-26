@@ -74,7 +74,7 @@ var browserMethods = []string{
 	// ツールの扱いの既定(設定の画面の「ツール」。0024 の 12-1b)。誰でも見られる(変えるのは adminToolMethods)
 	"ToolPrefs", "ToolDefaults", "BuiltinTools",
 	// サーバーのワークスペースの名前とフォルダの名前(パスは返さない。配るプロファイルで選ぶ。0065)
-	"ServerWorkspaces",
+	"ServerWorkspaces", "ServerWorkspacesUsable",
 }
 
 // pcMethods は、サーバーの PC の事情を変えるメソッド(モデルのタブ。0015 の 8-4)。管理者だけが呼べる

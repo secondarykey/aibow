@@ -178,12 +178,14 @@ export interface ModelsResult {
 }
 
 /**
- * ServerFolderInfo は、サーバーのワークスペースのフォルダ1つの名前と印(パスは返さない)。
+ * ServerFolderInfo は、サーバーのワークスペースのフォルダ1つの名前と印と説明(パスは返さない)。
+ * 説明は、サーバーモードのアプリがモデルへの環境の説明に書く(0067 の決定事項 11)。
  */
 export interface ServerFolderInfo {
     "name": string;
     "main": boolean;
     "writable": boolean;
+    "description"?: string;
 }
 
 /**

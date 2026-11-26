@@ -302,6 +302,17 @@ export function DisconnectServer(): $CancellablePromise<void> {
 }
 
 /**
+ * GrantedServerWorkspaces は、ctx の利用者が使えるサーバーのワークスペース(パスも含む。aibow-server の中だけで使う)。
+ * 使えるのは、その人に配られている(Share があり Withdrawn でない)配布プロファイルのどれかが選んでいるもの(0067 の決定事項 6)。
+ * 会話ごとには見ない(サーバーモードのアプリのつながりは、ワークスペースごとに1つで会話をまたぐため)。
+ * アプリは会話のプロファイルで選ばれているときだけ使うので、決まりはブラウザから使う会話と同じになる。
+ * 呼ぶたびにプロファイルと一覧を読み直す(配布をやめた・管理の画面でフォルダを変えたら、次の呼び出しから効く)。
+ */
+export function GrantedServerWorkspaces(): $CancellablePromise<config$0.ServerWorkspace[] | null> {
+    return $Call.ByID(3832772247);
+}
+
+/**
  * LoadToolList は、MCP のサーバーを一時的に起動してツールの一覧を受け取り、tools.json に覚える(設定の画面で、一覧が無いときと「読み直す」)。
  * ブラウザでは管理者だけ(サーバーの PC でプロセスを起動するため)。
  */
@@ -576,9 +587,19 @@ export function ServerSettings(): $CancellablePromise<ui$0.ServerSettingsView> {
  * ServerWorkspaces は aibow-server のサーバーのワークスペース(server.json の並び。パスは返さない)。配るプロファイルで選ぶ(0065)。
  * 名前は誰でも見られる(どのワークスペースを使えるかは、配られたプロファイルで決まる)。入力欄の上でマウスを乗せた説明にフォルダを並べるのにも使う。
  * アプリモードのときは空。パスも見る管理の画面は ServerSettings(管理者だけ。0061)。
+ * サーバーモードのアプリでは、aibow-server に引いた、その人が使えるもの(配られたもの。0067 の決定事項 15。古い aibow-server なら空)。
  */
 export function ServerWorkspaces(): $CancellablePromise<ui$0.ServerWorkspaceInfo[] | null> {
     return $Call.ByID(243689258);
+}
+
+/**
+ * ServerWorkspacesUsable は、この画面でサーバーのワークスペースを使えるか(0067)。
+ * ブラウザはいつも。サーバーモードのアプリは aibow-server がアプリから使える新しい版のとき(古ければ、手元のワークスペースのまま 0064 の知らせを出す)。
+ * アプリモードは使わない(配布プロファイルが無い)。
+ */
+export function ServerWorkspacesUsable(): $CancellablePromise<boolean> {
+    return $Call.ByID(481383678);
 }
 
 /**

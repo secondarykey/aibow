@@ -85,7 +85,8 @@ export function WorkspaceBar({ workspaces, selected, onChange, onCreated, onNoti
   );
 }
 
-// FolderBar は、ブラウザの会話のサーバーのワークスペース(aibow-server。0024 の決定事項 26・0065 の決定事項 19)。アプリの作業フォルダと同じ場所に、名前だけを押せない形で出す。
+// FolderBar は、会話のサーバーのワークスペース(aibow-server。0024 の決定事項 26・0065 の決定事項 19)。アプリの作業フォルダと同じ場所に、名前だけを押せない形で出す。
+// サーバーモードのアプリでも、aibow-server が新しい版なら同じものを出す(フォルダは aibow-server に引く。0067 の決定事項 2・15)。
 // ワークスペースは管理者が配るプロファイルで決めるので、ここでは選べない。マウスを乗せた説明に、フォルダの名前と読むだけの印を並べる
 // (パスは出さない。管理者にも出さない。パスは管理の画面で見る)。
 export function FolderBar({ name }: { name: string }) {
@@ -107,6 +108,7 @@ export function FolderBar({ name }: { name: string }) {
 }
 
 // BrowserOnlyFolderNote は、アプリで開いた会話のプロファイルにサーバーのワークスペースがあるときの知らせ(0064。言葉は 0065 の決定事項 7)。
+// 0067 からは、aibow-server が古く、アプリからサーバーのワークスペースを使えないときだけ出す(新しくすれば使えることも書く。決定事項 16)。
 // 会話はサーバーモードのアプリとブラウザで共有されるが、ツールが動くのは開いた側の PC(アプリなら手元のワークスペース)。
 // ブラウザでサーバーのワークスペースを使っていた会話をアプリで続けると、同じフォルダのつもりで手元のファイルを読み書きしかねないので、
 // そのフォルダを使おうとする入力欄の上(ワークスペースの隣)で知らせる。選べるものではないので押せない形にする。
@@ -114,10 +116,10 @@ export function BrowserOnlyFolderNote({ name }: { name: string }) {
   return (
     <span
       className="folder-browser-only"
-      title="この会話のツールはこの PC で動くので、aibow-server のサーバーのワークスペースは読み書きできません。サーバーのワークスペースを使うときは、ブラウザで aibow-server を開いてこの会話を続けてください"
+      title="この aibow-server は古い版なので、このアプリからはサーバーのワークスペースを読み書きできません(この会話のツールは手元のフォルダで動きます)。aibow-server を新しくするか、ブラウザで aibow-server を開いてこの会話を続けてください"
     >
       <LuInfo className="icon" />
-      <span className="folder-browser-only-text">サーバーのワークスペース『{name}』はブラウザでだけ使えます(ここでは手元のフォルダ)</span>
+      <span className="folder-browser-only-text">サーバーのワークスペース『{name}』はブラウザでだけ使えます(ここでは手元のフォルダ。aibow-server を新しくすると、アプリからも使えます)</span>
     </span>
   );
 }
