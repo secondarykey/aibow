@@ -1,6 +1,6 @@
 # 0067: アプリからサーバーのワークスペースを使う(0065 の段2)
 
-- 状態: ⬜ 未着手
+- 状態: 🔧 作業中
 - ロードマップ: ロードマップの外(0065 の段2)
 - 決めた日: 2026-11-26(Chat でユーザーと決めた。Chat がコード(`mcp/server/server.go`・`mcp/server/confirm.go`・`mcp/client/local.go`・`mcp/client/remote.go`・`mcp/client/client.go`・`tool/ask.go`・`tool/confirm.go`・`tools.go`・`rules.go`・`ui/service.go`・`ui/tools.go`・`_cmd/aibow-server/browser.go`)を読んで、今の作りを確かめた)
 - 前提: 0007(自作の MCP サーバー・5-3 の確認・5-4 の組み込みのツールを MCP 越しに)、0015・0017(サーバーモード・API キー)、0024(サーバーのツール。決定事項 13「アプリにはサーバーのフォルダを出さない」をここで変える)、0035(ワークスペース)、0054(版の受け渡し)、0064(アプリで開いたときの知らせ)、0065(サーバーのワークスペース。段1)

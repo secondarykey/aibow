@@ -169,6 +169,9 @@ func (t *remoteTool) call(ctx context.Context, params *mcp.CallToolParams) (*mcp
 		return nil, fmt.Errorf("時間の上限(%d 秒)を超えたため止めました(settings.json の callTimeout に秒数を書くと延ばせます)", int(t.limit.Seconds()))
 	case ctx.Err() != nil:
 		return nil, errors.New("停止されました")
+	case err != nil && refused(err) != "":
+		// HTTP の口が断った(aibow-server のサーバーのワークスペースを配布をやめた、など。0067)。断りの文をそのままモデルに渡す
+		return nil, errors.New(refused(err))
 	case err != nil:
 		// サーバーが JSON-RPC のエラーで答えた(知らないツール・引数の形が違う、など)なら、つながりは生きている。
 		// それ以外(HTTP でつなげない・サーバーが落ちた)は、つながりが切れたとみなして、次の送信でつなぎ直す
@@ -237,6 +240,15 @@ func previewOf(server string, ep *mcp.ElicitParams) tool.Preview {
 func firstLine(s string) string {
 	line, _, _ := strings.Cut(s, "\n")
 	return line
+}
+
+// refused は、err が HTTP の口の断り(meta.RefusedCode。refusalTransport が作る)なら、その文。そうでなければ空。
+func refused(err error) string {
+	var e *jsonrpc.Error
+	if errors.As(err, &e) && e.Code == meta.RefusedCode {
+		return e.Message
+	}
+	return ""
 }
 
 // answeredByServer は、エラーがサーバーからの答え(JSON-RPC のエラー)か。

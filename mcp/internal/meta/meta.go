@@ -8,3 +8,10 @@ package meta
 // Preview は、確認(elicitation)の _meta に入れる確認の内容(tool.Preview。差分・コマンドなど)の名前。
 // aibow のクライアントはこれがあれば、今の確認のカード(差分の色付け)で出す。ほかのクライアントは message の文を出す
 const Preview = "aibow/preview"
+
+// RefusedCode は、HTTP の口が断った(401・403・404)ことを、JSON-RPC のエラーとして伝えるときの番号(0067)。
+// aibow-server のサーバーのワークスペースの口は、API キーの違いや配られていないことを HTTP の状態で断る。
+// SDK は HTTP の状態だけでは「つながりが切れた」として扱うので、クライアントの側で断りの文をこの番号の JSON-RPC のエラーにし、
+// ツールの結果として断りの文をそのままモデルに渡す(つながりは切れていないので、つなぎ直さない)。
+// JSON-RPC でサーバーが決めてよい番号(-32000〜-32099)のうち、SDK が使っていないもの
+const RefusedCode = -32042

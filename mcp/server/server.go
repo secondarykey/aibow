@@ -60,6 +60,14 @@ type Options struct {
 	// WorkDir・Folders・Fetch と一緒には使えない(Check がエラーにする)。
 	// 書き換えるツールに「読むだけ」の印を付けないため、印は tool.Hinted で読むだけと宣言したツールにだけ付ける
 	Custom []tool.Tool
+
+	// FilesOnly は、フォルダのファイルのツールと作業の予定(update_plan)だけを出す(0067)。
+	// aibow-server がサーバーモードのアプリにサーバーのワークスペースを出すときに使う:組み込みの時刻・計算と fetch_url はアプリが手元で出し、
+	// コマンドのツールと Git のツールはサーバーのワークスペースでは出さない(0065 の決定事項 5)。Folders と一緒に使い、Custom・Fetch とは一緒に使えない
+	FilesOnly bool
+	// Wrote は、書き換えるツール(tool.Confirmable)が、ユーザーに認められて成功したあとに呼ぶ(nil なら呼ばない)。
+	// 誰がどのフォルダに書いたかを、呼ぶ側がログに残すため(0067 の決定事項 9。ctx はリクエストのもの)
+	Wrote func(ctx context.Context, name string, args tool.Args)
 }
 
 // folders は、ツールが扱うフォルダの組(Folders か、WorkDir 1つ。どちらも無ければ空)。
@@ -93,7 +101,7 @@ func New(opts Options) *mcp.Server {
 	})
 	custom := len(opts.Custom) > 0
 	for _, t := range opts.Tools() {
-		s.AddTool(mcpTool(t, custom), handler(t))
+		s.AddTool(mcpTool(t, custom), handler(t, opts.Wrote))
 	}
 	return s
 }
@@ -104,6 +112,9 @@ func New(opts Options) *mcp.Server {
 //   - ツールの名前が空・重なる
 //   - 引数の定義(Def.Parameters)が JSON のオブジェクトとして読めない・type が "object" でない(MCP のツールの引数はオブジェクトの決まり)
 func (o Options) Check() error {
+	if o.FilesOnly && (len(o.Custom) > 0 || o.Fetch != nil) {
+		return errors.New("FilesOnly と Custom・Fetch は一緒に使えません(FilesOnly はフォルダのファイルのツールだけを出します)")
+	}
 	if len(o.Custom) > 0 {
 		var both []string
 		if o.WorkDir != "" {
@@ -156,6 +167,13 @@ func checkParameters(raw json.RawMessage) error {
 func (o Options) Tools() []tool.Tool {
 	if len(o.Custom) > 0 {
 		return slices.Clone(o.Custom)
+	}
+	if o.FilesOnly {
+		folders := o.folders()
+		if len(folders) == 0 {
+			return nil
+		}
+		return append(tool.FilesIn(folders), tool.UpdatePlan())
 	}
 	tools := tool.Builtin()
 	if o.Fetch != nil {
@@ -243,7 +261,7 @@ func readOnly(t tool.Tool, custom bool) bool {
 // ツールが失敗したとき(ファイルが無い、引数が違う、など)は、Go の error ではなく isError の結果で返す。
 // MCP では、error は「呼び出しそのものが成り立たなかった」(知らないツールなど)ときに使い、
 // ツールの失敗はモデルに読ませて立て直させるため、結果の中身として返す決まり(aibow の「エラー: …」と同じ考え方)
-func handler(t tool.Tool) mcp.ToolHandler {
+func handler(t tool.Tool, wrote func(context.Context, string, tool.Args)) mcp.ToolHandler {
 	def := t.Def()
 	return func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args, err := toArgs(def, req.Params.Arguments)
@@ -251,6 +269,7 @@ func handler(t tool.Tool) mcp.ToolHandler {
 			log.Infof("ツール %s: 引数が違います: %v", def.Name, err)
 			return errorResult(err), nil
 		}
+		_, writes := t.(tool.Confirmable)
 		if ct, ok := t.(tool.Confirmable); ok {
 			// 書き換えるツールは、ユーザーに確かめてから実行する(confirm.go)
 			run, res := confirmed(req, ct, args)
@@ -268,6 +287,9 @@ func handler(t tool.Tool) mcp.ToolHandler {
 			return errorResult(err), nil
 		}
 		log.Infof("ツール %s: 実行しました(%.2f 秒・結果 %d 文字)", def.Name, secs, len([]rune(text)))
+		if writes && wrote != nil {
+			wrote(ctx, def.Name, args)
+		}
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text}}}, nil
 	}
 }
