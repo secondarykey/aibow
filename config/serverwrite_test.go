@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -37,29 +38,66 @@ func TestSaveServerFileKeepsOtherKeys(t *testing.T) {
 	}
 }
 
-// 資料のフォルダは全部を差し替え、空なら鍵を消す。フォルダが無ければ書かない
-func TestSaveServerFileFolders(t *testing.T) {
+// ワークスペースは全部を差し替え、空なら鍵を消す。フォルダが無ければ書かない(0065)
+func TestSaveServerFileWorkspaces(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "server.json")
 	os.WriteFile(path, []byte(`{"port": 8090}`), 0o644)
 	docs := filepath.Join(dir, "docs")
 	os.Mkdir(docs, 0o755)
 
-	if err := SaveServerFile(path, ServerEdit{SetFolders: true, Folders: map[string]string{"社内規程": docs}}); err != nil {
+	ws := []ServerWorkspace{{Name: "社内規程", Folders: []WorkspaceFolder{{Path: docs, Name: "docs", Main: true, Writable: true}}}}
+	if err := SaveServerFile(path, ServerEdit{SetWorkspaces: true, Workspaces: ws}); err != nil {
 		t.Fatal(err)
 	}
-	if f, _, err := LoadServerFile(path); err != nil || f.Folders["社内規程"] != docs || f.Port != 8090 {
+	f, _, err := LoadServerFile(path)
+	if err != nil || len(f.Workspaces) != 1 || f.Workspaces[0].Name != "社内規程" || f.Workspaces[0].Folders[0].Path != docs || f.Port != 8090 {
 		t.Errorf("足したあと: %+v %v", f, err)
 	}
-	if err := SaveServerFile(path, ServerEdit{SetFolders: true}); err != nil {
+	if err := SaveServerFile(path, ServerEdit{SetWorkspaces: true}); err != nil {
 		t.Fatal(err)
 	}
-	if data, _ := os.ReadFile(path); strings.Contains(string(data), "folders") {
-		t.Errorf("空なら folders の鍵を消すはず: %s", data)
+	if data, _ := os.ReadFile(path); strings.Contains(string(data), "workspaces") {
+		t.Errorf("空なら workspaces の鍵を消すはず: %s", data)
 	}
-	err := SaveServerFile(path, ServerEdit{SetFolders: true, Folders: map[string]string{"無い": filepath.Join(dir, "none")}})
-	if err == nil || !strings.Contains(err.Error(), "フォルダがありません") {
+	bad := []ServerWorkspace{{Name: "無い", Folders: []WorkspaceFolder{{Path: filepath.Join(dir, "none"), Name: "none", Main: true}}}}
+	err = SaveServerFile(path, ServerEdit{SetWorkspaces: true, Workspaces: bad})
+	if err == nil || !strings.Contains(err.Error(), "ありません") {
 		t.Errorf("無いフォルダは書かないはず: %v", err)
+	}
+}
+
+// 前の形の folders は、管理の画面で最初に保存したときに workspaces に書き直して消す。ほかの鍵はそのまま(0065 の決定事項 10)
+func TestSaveServerFileMigratesFolders(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "server.json")
+	docs := filepath.Join(dir, "docs")
+	os.Mkdir(docs, 0o755)
+	raw, _ := json.Marshal(map[string]string{"docs": docs})
+	before := `{"port": 8090, "folders": ` + string(raw) + `, "model": "qwen3.5:4b"}`
+	os.WriteFile(path, []byte(before), 0o644)
+
+	f, _, err := LoadServerFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	list, migrated := f.ServerWorkspaces()
+	if !migrated {
+		t.Fatal("folders から移したはず")
+	}
+	if err := SaveServerFile(path, ServerEdit{SetWorkspaces: true, Workspaces: list}); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(path)
+	if strings.Contains(string(data), `"folders": {`) || !strings.Contains(string(data), `"workspaces"`) || !strings.Contains(string(data), `"model"`) {
+		t.Errorf("folders を消して workspaces を書き、ほかの鍵は残すはず: %s", data)
+	}
+	if bak, _ := os.ReadFile(path + ".bak"); string(bak) != before {
+		t.Errorf(".bak は書く前の中身のはず: %s", bak)
+	}
+	f, _, err = LoadServerFile(path)
+	if list2, m := f.ServerWorkspaces(); err != nil || m || len(list2) != 1 || list2[0].Name != "docs" || !list2[0].Folders[0].Writable {
+		t.Errorf("読み直し: %+v %v %v", list2, m, err)
 	}
 }
 

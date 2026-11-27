@@ -30,6 +30,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/secondarykey/aibow/internal/proc"
 	"github.com/secondarykey/aibow/log"
@@ -241,6 +242,9 @@ type server struct {
 	key     serverKey
 	session *mcp.ClientSession
 	tools   []tool.Tool
+	// instructions は、つないだときにサーバーが渡した使い方の説明(MCP の instructions。maxInstructions で切ったもの。0066)。
+	// 止めるまで同じものを使う(MCP には説明が変わった知らせが無い。つなぎ直したら受け取り直す)
+	instructions string
 	// stop は、実行中のツールの呼び出しを打ち切る(理由はツールのエラーになる。remoteTool.stopped)
 	stop context.CancelCauseFunc
 }
@@ -503,17 +507,37 @@ func (m *Manager) connect(ctx context.Context, k serverKey, cfg ServerConfig) (*
 
 	// どの版の MCP で話すことになったか。2026-07-28 版からは最初の挨拶(initialize)が無くなり、
 	// 古い版のサーバーとは、SDK が版を取り決めて挨拶をしてから話す
-	ver, info := "?", "?"
+	ver, info, about := "?", "?", ""
 	if r := session.InitializeResult(); r != nil {
 		ver = r.ProtocolVersion
 		if r.ServerInfo != nil {
 			info = r.ServerInfo.Name + " " + r.ServerInfo.Version
 		}
+		s.instructions = instructionsOf(k.name, r.Instructions)
+		if s.instructions != "" {
+			about = fmt.Sprintf("・説明 %d 文字", utf8.RuneCountInString(s.instructions))
+		}
 	}
-	log.Noticef("MCP %s: つながりました(%.1f 秒。MCP の版 %s・サーバー %s・ツール %d 個: %s)",
-		k.name, time.Since(begin).Seconds(), ver, info, len(tools), tool.Names(tools))
+	log.Noticef("MCP %s: つながりました(%.1f 秒。MCP の版 %s・サーバー %s%s・ツール %d 個: %s)",
+		k.name, time.Since(begin).Seconds(), ver, info, about, len(tools), tool.Names(tools))
 
 	return s, nil
+}
+
+// maxInstructions は、モデルに渡すサーバーの説明の長さの上限(文字数。0066 の決定事項 1)。Claude Code と同じ。
+// 説明は送信のたびにシステムプロンプトに入って会話の上限を使うので、長すぎるものは先頭だけにする
+const maxInstructions = 4096
+
+// instructionsOf は、サーバーが渡した説明(MCP の instructions)を、モデルに渡す形にする(前後の空白を落とし、maxInstructions 文字で切る)。
+func instructionsOf(name, s string) string {
+	s = strings.TrimSpace(s)
+	n := utf8.RuneCountInString(s)
+	if n <= maxInstructions {
+		return s
+	}
+	log.Warnf("MCP %s: サーバーの説明(%d 文字)のうち、先頭の %d 文字だけをモデルに渡します(説明は送信のたびにプロンプトに入り、会話の上限を使うため)",
+		name, n, maxInstructions)
+	return strings.TrimSpace(string([]rune(s)[:maxInstructions]))
 }
 
 // startFailure は、起動に失敗した理由の文を作る(画面のお知らせに出る)。
@@ -589,9 +613,31 @@ func listTools(ctx context.Context, name string, limit time.Duration, session *m
 // Tools は、作業フォルダ workDir の会話で使う(use)、起動済みのサーバーのツール(サーバーの名前の順)。
 // サーバーを起動はしない(画面のメーターの計算などからも呼ばれるため。起動は送信のときの Start)。
 func (m *Manager) Tools(workDir string, use []string) []tool.Tool {
+	var tools []tool.Tool
+	for _, s := range m.runningFor(workDir, use) {
+		tools = append(tools, s.tools...)
+	}
+	return tools
+}
+
+// Instructions は、作業フォルダ workDir の会話で使う(use)、起動済みのサーバーの説明(サーバーの名前 → 説明。0066)。
+// 説明を渡さなかったサーバーは入れない。Tools と同じく、サーバーを起動はしない。
+func (m *Manager) Instructions(workDir string, use []string) map[string]string {
+	out := map[string]string{}
+	for _, s := range m.runningFor(workDir, use) {
+		if s.instructions != "" {
+			out[s.key.name] = s.instructions
+		}
+	}
+	return out
+}
+
+// runningFor は、作業フォルダ workDir の会話で使う(use)、起動済みのサーバー(サーバーの名前の順)。
+// ${workdir} を使うサーバーは、その作業フォルダで起動したもの(作業フォルダが空なら無し)。
+func (m *Manager) runningFor(workDir string, use []string) []*server {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	var tools []tool.Tool
+	var out []*server
 	for _, name := range selected(m.names, use) {
 		k := serverKey{name: name}
 		if m.configs[name].UsesWorkDir() {
@@ -601,10 +647,10 @@ func (m *Manager) Tools(workDir string, use []string) []tool.Tool {
 			k.workDir = workDir
 		}
 		if s, ok := m.running[k]; ok {
-			tools = append(tools, s.tools...)
+			out = append(out, s)
 		}
 	}
-	return tools
+	return out
 }
 
 // Close は起動したサーバーを全部止める(アプリを閉じるとき)。

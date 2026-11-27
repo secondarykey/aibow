@@ -7,9 +7,12 @@ export type {
     FolderView,
     ModelSettingsResult,
     ModelsResult,
-    ServerFolder,
+    ServerFolderInfo,
+    ServerFolderView,
     ServerSettingsView,
     ServerValueView,
+    ServerWorkspaceInfo,
+    ServerWorkspaceView,
     ToolPolicyChange,
     WorkspaceList,
     WorkspaceView

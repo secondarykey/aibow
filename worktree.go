@@ -17,7 +17,7 @@ package aibow
 //  4. 差分の画面で、作ったときのコミット(base)との差分を見て、選んだファイルを本体の作業ツリーに当てる(ApplyWorktree)。コミットはユーザーがする
 //  5. 捨てる(DiscardWorktree)・会話を消す(Delete)と、worktree とブランチを消す
 //
-// 作るのは画面のアプリだけ(aibow-server の資料のフォルダでは作らない。0039 の決定事項 7)。noWorkDir のときは何もしない。
+// 作るのは画面のアプリだけ(aibow-server のサーバーのワークスペースでは作らない。0039 の決定事項 7)。noWorkDir のときは何もしない。
 
 import (
 	"context"
@@ -76,7 +76,7 @@ type WorktreeChange struct {
 
 // worktreeOf は、会話の設定 set の会話の worktree(この PC で作っていれば)。
 func (cs *Conversations) worktreeOf(set ConversationSettings) (config.WorkspaceWorktree, bool) {
-	if cs.noWorkDir || set.conv == (uuid.UUID{}) {
+	if cs.onServer(set) || set.conv == (uuid.UUID{}) {
 		return config.WorkspaceWorktree{}, false
 	}
 	wt, _, ok := cs.workspaces.Worktree(set.conv.String())
@@ -85,7 +85,7 @@ func (cs *Conversations) worktreeOf(set ConversationSettings) (config.WorkspaceW
 
 // mainPath は、会話のワークスペースの本体のメインのフォルダ(worktree に置き換える前のパス)。無ければ fallback。
 func (cs *Conversations) mainPath(set ConversationSettings, fallback string) string {
-	if cs.noWorkDir {
+	if cs.onServer(set) {
 		return fallback
 	}
 	if ws, ok := cs.workspaces.Get(set.Workspace); ok {
@@ -98,6 +98,9 @@ func (cs *Conversations) mainPath(set ConversationSettings, fallback string) str
 func (cs *Conversations) worktreeUsable(set ConversationSettings) error {
 	if cs.noWorkDir {
 		return errors.New("worktree は、デスクトップのアプリでだけ使えます")
+	}
+	if _, ok := cs.appServerWorkspace(set); ok {
+		return errors.New("サーバーのワークスペースの会話では、worktree を使いません(フォルダは aibow-server の PC にあるため)")
 	}
 	if set.Workspace == "" {
 		return errors.New("ワークスペースを選ぶと使えます")

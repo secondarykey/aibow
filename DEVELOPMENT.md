@@ -102,6 +102,15 @@ go run ./_cmd/dev server
 
 exe を作るときは `go run ./_cmd/dev build` です(画面をビルドしてから `go build` する。`go build` だけだと前にビルドした古い画面が入る)。仕組みは [_docs/features/0021-server-dev.md](_docs/features/0021-server-dev.md)。
 
+### 全部をビルドする
+
+```bash
+go run _cmd/install.go
+```
+リポジトリのフォルダで実行すると、画面のアプリ・aibow-server・aibow-mcp の3つを `_cmd/aibow/bin` に作ります。
+画面のパッケージが無ければ `npm install` → `wails3 build`(画面は `web/dist/app` に出る)→ その画面を埋め込む `aibow-server` と、`aibow-mcp` を `go build`、の順です(リリースと同じ付け方)。
+バージョンの反映・コミット・インストール先へのコピーはしません(次の `local:deploy`・`local:install` が行います)。要るのは Go・Node.js・wails3 です。
+
 ## 確かめる
 
 変えたら、最低限これを実行します(何をテストしているかは [AGENTS.md](AGENTS.md) の「確認方法」)。
@@ -132,10 +141,9 @@ wails3 task local:deploy
 2. そのバージョンがリリース済み(`v0.1.0` のタグがある)なら、patch を1つ上げる(0.1.0 → 0.1.1)
 3. `version` の値を、`build/config.yml`・`frontend/package.json`・`frontend/package-lock.json`・exe に焼き込むバージョン情報(`build/windows/info.json` など)に反映する
    (`go run _cmd/version.go` → `npm install --package-lock-only` → `wails3 update build-assets -name aibow -binaryname aibow`)
-4. `wails3 build`(画面も `web/dist/app` にビルドされる)
-5. `aibow-server.exe`(4 の画面を埋め込む)と `aibow-mcp.exe` を `go build` で `bin\` に作る
-6. 3 で変わったファイルだけをコミットする(作業中の他の変更は巻き込まない)
-7. `bin\` の exe(`aibow.exe`・`aibow-server.exe`・`aibow-mcp.exe`)と `lib\` をインストール先へコピーする(`lib\` は変わったファイルだけ)
+4. `go run _cmd/install.go` で `aibow.exe`・`aibow-server.exe`(画面を埋め込む)・`aibow-mcp.exe` を `bin\` に作る(上の「全部をビルドする」)
+5. 3 で変わったファイルだけをコミットする(作業中の他の変更は巻き込まない)
+6. `bin\` の exe(`aibow.exe`・`aibow-server.exe`・`aibow-mcp.exe`)と `lib\` をインストール先へコピーする(`lib\` は変わったファイルだけ)
 
 タグは打ちません。`v0.1.1` のようなタグは、正式にリリースしたときに GitHub Actions が打ちます(次の「リリースする」)。
 
@@ -147,6 +155,12 @@ go run _cmd/version.go -bump
 ```
 patch は自動で上がりますが、minor / major を上げたいときは、**リポジトリのルートで**これを実行してから `local:deploy` します。
 上げ方を選ぶと、`version`・`build/config.yml`・`frontend/package.json` が書き換わります。
+
+```bash
+wails3 task local:install
+```
+版上げ・ビルド情報の反映・コミットをせず、ビルドしてコピーするだけのときはこちらです(上の 1・4・6)。手元で直したものを試しに入れるとき、コピーだけ失敗した deploy をやり直すときに使います。
+exe に焼き込まれる版は、`build/config.yml` などに今ある版のままです。
 
 `Taskfile.local.yml` の変数(インストール先など)を一時的に変えたいときは、`KEY=値` で渡します(`wails3 task` は `--` の後ろの引数を受け取れないため)。
 

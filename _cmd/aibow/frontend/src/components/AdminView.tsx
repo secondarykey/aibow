@@ -7,8 +7,8 @@
 //	利用者・グループ … ログインした管理者だけ(0032 の決定事項 4)
 //	モデル          … サーバーの PC の事情(読み込む / 降ろす・GPU の層数・置き場所・使える。0015 の 8-4・0018 の決定事項 8)
 //	ツール          … ブラウザから使う会話のツールの扱いの、aibow-server 全体の既定(0024 の決定事項 21)
-//	配るプロファイル … 配っているプロファイルの値・決まり・配る相手・資料のフォルダ・写して配る(ログインした管理者だけ。0032 の段3)
-//	資料のフォルダ  … 配布プロファイルで選ぶ資料のフォルダそのもの(名前とパス・追加・パスの変更・削除。ログインした管理者だけ。0061)
+//	配るプロファイル … 配っているプロファイルの値・決まり・配る相手・サーバーのワークスペース・写して配る(ログインした管理者だけ。0032 の段3)
+//	サーバーのワークスペース … 配布プロファイルで選ぶフォルダの組(名前・フォルダのパス・書ける / 読むだけ・追加・保存・削除。ログインした管理者だけ。0061・0065)
 //	使用量          … 利用者ごとの生成の回数・GPU の秒数・生成トークン(ログインした管理者と、ログインなしの形のサーバーの PC。0033)
 //	ログ            … aibow-server のログのレベル(起動したあとに変える。保存しない。モデルのタブと同じ人。0052)
 import { useState } from "react";
@@ -25,11 +25,11 @@ import { ProfileSettings } from "./ProfileSettings";
 import { UsageAdmin } from "./UsageSettings";
 import { ScreenErrors } from "./ScreenErrors";
 import { LogSettings } from "./LogSettings";
-import { ServerFolders } from "./ServerConfig";
+import { ServerWorkspaces } from "./ServerConfig";
 import { useUnsaved } from "../unsaved";
 import { ScopeNote } from "./ScopeNote";
 
-type Tab = "users" | "groups" | "models" | "tools" | "profiles" | "folders" | "usage" | "log";
+type Tab = "users" | "groups" | "models" | "tools" | "profiles" | "workspaces" | "usage" | "log";
 
 // scope は、タブごとの効く範囲の帯の文(0063 の決定事項 7)
 const TABS: { id: Tab; label: string; title: string; admin: boolean; scope: string }[] = [
@@ -37,8 +37,8 @@ const TABS: { id: Tab; label: string; title: string; admin: boolean; scope: stri
   { id: "groups", label: "グループ", title: "グループ(作成・名前・メンバーと長・削除)。共有の相手に選べる", admin: true, scope: "aibow-server の利用者に効きます" },
   { id: "models", label: "モデル", title: "サーバーの PC のモデル(読み込み / アンロード・GPU の層数・置き場所・使える)", admin: false, scope: "aibow-server を使う全員に効きます" },
   { id: "tools", label: "ツール", title: "ブラウザから使う会話のツールの扱い(使わない・確認する・確認しない)。aibow-server 全体の既定", admin: false, scope: "ブラウザから使う全員の会話の既定に効きます" },
-  { id: "profiles", label: "配布プロファイル", title: "組織に配布するプロファイル(値と決まり・配布する相手・資料のフォルダ・複製して配布)", admin: true, scope: "配布した相手の会話にすぐ効きます" },
-  { id: "folders", label: "資料のフォルダ", title: "配布プロファイルで選ぶ、aibow-server の PC のフォルダ(名前とパス)", admin: true, scope: "配布プロファイルで選ぶフォルダです。変えるとすぐ効きます" },
+  { id: "profiles", label: "配布プロファイル", title: "組織に配布するプロファイル(値と決まり・配布する相手・サーバーのワークスペース・複製して配布)", admin: true, scope: "配布した相手の会話にすぐ効きます" },
+  { id: "workspaces", label: "サーバーのワークスペース", title: "配布プロファイルで選ぶ、aibow-server の PC のフォルダの組(名前・フォルダのパス・書ける / 読むだけ)", admin: true, scope: "配布プロファイルで選ぶワークスペースです。変えるとすぐ効きます" },
   { id: "usage", label: "使用量", title: "利用者ごとの生成の回数・GPU の秒数・生成トークン(今日・7日・30日)", admin: true, scope: "見るだけです" },
   { id: "log", label: "ログ", title: "aibow-server のログ(ログのレベル)", admin: false, scope: "aibow-server のログに効きます。起動し直すと元に戻ります" },
 ];
@@ -139,7 +139,7 @@ export function AdminView({ onClose, errors, onError, onReadConversation, models
             />
           </>
         )}
-        {tab === "folders" && <ServerFolders onError={onError} />}
+        {tab === "workspaces" && <ServerWorkspaces onError={onError} />}
       </div>
     </section>
   );

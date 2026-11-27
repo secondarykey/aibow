@@ -5,7 +5,7 @@ package main
 // 設定ファイルは2つに分ける(アプリの settings.json と tools.json と同じ分け方。0015 の決定事項 19):
 //
 //	server.json         … 手で書く設定(ポート・作業領域・最初のモデル・llama.cpp とモデルの場所)。aibow-server が書くのは、
-//	                      管理の画面で変えた並列数・作業領域・資料のフォルダだけ(ほかの鍵は残す。0061)
+//	                      管理の画面で変えた並列数・作業領域・サーバーのワークスペースだけ(ほかの鍵は残す。0061)
 //	server-models.json  … aibow-server が書く値(モデルごとの GPU の層数など)。手で書かなくてよい
 //	server-tools.json   … ブラウザの会話のツールの扱いの既定(管理者が設定の画面の「ツール」で変える。形はアプリの tools.json と同じ。0024)
 //	server.db           … ブラウザの会話(SQLite。ステップ9。0016 の 13)。画面のアプリの aibow.db とは別のファイル
@@ -81,9 +81,12 @@ type serverConfig struct {
 	// Base は全部の道の頭に付けるパス(0042)。"/aibow" の形(最後の / なし)。空なら頭に何も付けない(今までどおり "/" の下)
 	Base string
 
-	// MCPServers は、ブラウザの会話で使う MCP のサーバー、Folders は資料のフォルダ(どちらも設定ファイルにだけ書ける。0024)
+	// MCPServers は、ブラウザの会話で使う MCP のサーバー(設定ファイルにだけ書ける。0024)
 	MCPServers map[string]client.ServerConfig
-	Folders    map[string]string
+	// Workspaces はサーバーのワークスペース(設定ファイルにだけ書け、管理の画面でも変えられる。0065)。
+	// WorkspacesMigrated は、前の形の folders から移したものか(起動のログで、保存すると書き直すことを知らせる。決定事項 10)
+	Workspaces         []config.ServerWorkspace
+	WorkspacesMigrated bool
 	// FetchAllowPrivate は、fetch_url で PC の中・社内のアドレスも読むか(設定ファイルにだけ書ける。0036)
 	FetchAllowPrivate bool
 	// TrustedProxies は信頼するプロキシ(サーバーの PC の上は含まない。newProxyTrust が足す)、ProxyHeader は元の相手を読むヘッダー(設定ファイルにだけ書ける。0044)
@@ -155,7 +158,8 @@ func resolve(fs *flag.FlagSet, f *flags, env *config.Env) (serverConfig, []strin
 
 	dir := filepath.Dir(path)
 	c := serverConfig{StatePath: filepath.Join(dir, stateFileName), DBPath: filepath.Join(dir, dbFileName), ToolsPath: filepath.Join(dir, toolsFileName),
-		MCPServers: file.MCPServers, Folders: file.Folders, FetchAllowPrivate: file.FetchAllowPrivate}
+		MCPServers: file.MCPServers, FetchAllowPrivate: file.FetchAllowPrivate}
+	c.Workspaces, c.WorkspacesMigrated = file.ServerWorkspaces()
 	c.ConfigPath = path
 	if found {
 		c.File = path

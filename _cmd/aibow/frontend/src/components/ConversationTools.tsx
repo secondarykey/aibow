@@ -26,7 +26,7 @@ import { FIX, offGroup } from "../profileRules";
 interface Props {
   id: string; // 会話の ID(プロファイルの決まりを Go が引くため)
   settings: ConversationSettings;
-  workDir: string; // 作業フォルダ(ブラウザでは資料のフォルダの名前)。決めていなければ空。作業フォルダが要るツールの印に使う
+  workDir: string; // 作業フォルダ(ブラウザではサーバーのワークスペースの名前)。決めていなければ空。作業フォルダが要るツールの印に使う
   servers: ServerInfo[]; // settings.json の MCP のサーバー
   profile: Profile | null; // この会話のプロファイル(使うグループの固定・使えないグループ。0014)
   onChange(patch: Partial<ConversationSettings>): void;

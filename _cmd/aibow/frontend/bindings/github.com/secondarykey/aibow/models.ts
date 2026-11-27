@@ -671,10 +671,10 @@ export interface ProfileRules {
     "off"?: ProfileOff;
 
     /**
-     * Folder は、aibow-server の資料のフォルダの名前(server.json の folders。0024 の 12-2)。
-     * 配っているプロファイルで、その人にまだ配られているときだけ効く(Profile.GrantedFolder)。決まりなので、変えると今ある会話にもすぐ効く
+     * Workspace は、aibow-server のサーバーのワークスペースの名前(server.json の workspaces。0065。以前の資料のフォルダ folder。0024 の 12-2)。
+     * 配っているプロファイルで、その人にまだ配られているときだけ効く(Profile.GrantedWorkspace)。決まりなので、変えると今ある会話にもすぐ効く
      */
-    "folder"?: string;
+    "workspace"?: string;
 }
 
 /**

@@ -15,6 +15,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/secondarykey/aibow/log"
 	"github.com/secondarykey/aibow/mcp/internal/meta"
@@ -800,5 +801,72 @@ func TestLineLoggerRPC(t *testing.T) {
 	}
 	if len(w.pending) != 0 {
 		t.Errorf("答えが来たリクエストは忘れる: %v", w.pending)
+	}
+}
+
+// instructionsManager は、サーバーごとに説明(MCP の instructions)を渡すテスト用のサーバーにつなぐ Manager(0066)。
+// ${workdir} を使うサーバーには、起動した作業フォルダを説明に入れる(フォルダごとの説明を見分けるため)。
+func instructionsManager(t *testing.T, configs map[string]ServerConfig, instructions map[string]string) (*Manager, *logs) {
+	t.Helper()
+	l := captureLogs(t)
+	m := New(configs, Options{Version: "test"})
+	m.transport = func(name string, cfg ServerConfig, workDir string, _ io.Writer) (mcp.Transport, error) {
+		text := instructions[name]
+		if cfg.UsesWorkDir() {
+			text += " in " + workDir
+		}
+		s := mcp.NewServer(&mcp.Implementation{Name: name, Version: "0.1"}, &mcp.ServerOptions{Instructions: text})
+		s.AddTool(&mcp.Tool{Name: "note", Description: "Test tool.", InputSchema: json.RawMessage(`{"type": "object"}`)},
+			func(context.Context, *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+				return &mcp.CallToolResult{}, nil
+			})
+		ct, st := mcp.NewInMemoryTransports()
+		if _, err := s.Connect(context.Background(), st, nil); err != nil {
+			return nil, err
+		}
+		return ct, nil
+	}
+	t.Cleanup(m.Close)
+	return m, l
+}
+
+// つないだときにサーバーの説明を受け取り、Instructions で起動済み・会話で選んだサーバーの分だけを返す。
+// 説明の無いサーバーは入れず、長すぎる説明は maxInstructions 文字で切る
+func TestInstructions(t *testing.T) {
+	long := strings.Repeat("あ", maxInstructions+10)
+	m, l := instructionsManager(t, map[string]ServerConfig{
+		"fs":    {Command: "fs-server", Args: []string{workDirVar}},
+		"long":  {Command: "long-server"},
+		"memo":  {URL: "http://memo.example/mcp"},
+		"plain": {Command: "plain-server"},
+	}, map[string]string{"fs": "Files", "long": long, "memo": "  Call memo_done at the end.\n"})
+	ctx := context.Background()
+
+	if got := m.Instructions("D:/a", m.Servers()); len(got) != 0 {
+		t.Fatalf("起動する前は説明が無い: %v", got)
+	}
+	if _, errs := m.Start(ctx, "D:/a", m.Servers()); len(errs) != 0 {
+		t.Fatal(errs)
+	}
+
+	got := m.Instructions("D:/a", m.Servers())
+	if got["memo"] != "Call memo_done at the end." || got["fs"] != "Files in D:/a" {
+		t.Errorf("説明(前後の空白は落とす。フォルダごとのサーバーはその作業フォルダの説明): %q", got)
+	}
+	if _, ok := got["plain"]; ok || len(got) != 3 {
+		t.Errorf("説明の無いサーバーは入れない: %q", got)
+	}
+	if n := utf8.RuneCountInString(got["long"]); n != maxInstructions {
+		t.Errorf("長い説明は %d 文字で切る: %d 文字", maxInstructions, n)
+	}
+	if !l.contains("先頭の 4096 文字だけ") || !l.contains("説明 26 文字") {
+		t.Errorf("切ったこと・説明の文字数をログに出す: %v", l.lines)
+	}
+
+	if got := m.Instructions("D:/a", []string{"memo"}); len(got) != 1 || got["memo"] == "" {
+		t.Errorf("会話で選んだサーバーの分だけ: %q", got)
+	}
+	if got := m.Instructions("D:/b", []string{"fs"}); len(got) != 0 {
+		t.Errorf("別の作業フォルダでは fs はまだ動いていない: %q", got)
 	}
 }

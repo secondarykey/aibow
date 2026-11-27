@@ -23,7 +23,6 @@ package ui
 
 import (
 	"context"
-	"maps"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -94,11 +93,11 @@ type Options struct {
 	//   - 会話に保存した作業フォルダを使わない(サーバーの PC のフォルダに触れさせない。決定事項 17)
 	//   - 確認を待つのは confirmLimit まで(席を持ったまま待つので、ほかの人と Cline をずっと待たせない。決定事項 16)
 	//   - 利用者は会話の設定で「確認しない」を足せない(足せるのは確認のカードから。決定事項 3・18)
-	//   - 作業フォルダの代わりに、配るプロファイルで選んだ資料のフォルダ(Folders)を使う。コマンドのツールは出さない(12-2。決定事項 5)
+	//   - 作業フォルダの代わりに、配るプロファイルで選んだサーバーのワークスペース(ServerWorkspaces。0065)を使う。コマンドと Git のツールは出さない(12-2。決定事項 5)
 	Browser bool
-	// Folders は aibow-server の資料のフォルダ(server.json の folders。名前 → 絶対パス。Browser のときだけ使う。0024 の 12-2)。
+	// ServerWorkspaces は aibow-server のサーバーのワークスペース(server.json の workspaces。前の形の folders を移したものも。Browser のときだけ使う。0065)。
 	// 管理の画面で足す・変える・消すと、その場で差し替わる(0061)
-	Folders map[string]string
+	ServerWorkspaces []config.ServerWorkspace
 	// Server は、管理の画面で変える aibow-server の設定(並列数・作業領域と、書き戻す server.json。0061)。Browser のときだけ
 	Server *ServerConfig
 	// WaitLogin は、ログインするまで aibow-server を呼ばないか(デスクトップのアプリが、ログインの要る aibow-server にトークンなしで起動したとき。0051 の決定事項 6)。
@@ -107,14 +106,20 @@ type Options struct {
 	WaitLogin bool
 }
 
-// noCommand は、組み込みのツールからコマンドのツール(run_command)を外す係(aibow.LocalTools)。
-// ブラウザの会話の資料のフォルダでは、読む・書くだけを出す(コマンドは隔離が要るので 12-3。0024 の決定事項 5)。
+// noCommand は、組み込みのツールからコマンドのツール(run_command)と Git のツールを外す係(aibow.LocalTools)。
+// ブラウザの会話のサーバーのワークスペースでは、読む・書くだけを出す(コマンドは隔離が要るので 12-3。0024 の決定事項 5)。
+// Git は管理者がサーバーで手で行う(aibow は触れない。0024 の決定事項 6・0065 の決定事項 5。フォルダがリポジトリでも git_status などを出さない)。
 // モデルに見せないので、呼ばれても「ツールはありません」になる。
 type noCommand struct{ aibow.LocalTools }
 
 func (n noCommand) Tools(folders []tool.Folder) []tool.Tool {
 	// 写してから外す(Local はつないだサーバーのツールの一覧を覚えていて、同じスライスを返すため)
-	return slices.DeleteFunc(slices.Clone(n.LocalTools.Tools(folders)), func(t tool.Tool) bool { return t.Def().Name == "run_command" })
+	return slices.DeleteFunc(slices.Clone(n.LocalTools.Tools(folders)), func(t tool.Tool) bool { return browserHides(t.Def().Name) })
+}
+
+// browserHides は、ブラウザの会話で出さない組み込みのツールか(run_command と Git のツール)。
+func browserHides(name string) bool {
+	return name == "run_command" || tool.Find(tool.GitTools(), name) != nil
 }
 
 type Service struct {
@@ -164,14 +169,16 @@ type Service struct {
 	// seat は生成の順番待ちの席(nil なら待たない)
 	seat Seat
 
-	// browser は、aibow-server の中のブラウザの会話か(Options.Browser)。folders はその資料のフォルダ(名前 → 絶対パス)。
-	// 管理の画面で差し替えるので folderMu で守る。folderEditMu は、読んでから server.json に書くまでを1つにする(serverconfig.go。0061)
-	browser      bool
-	folderMu     sync.RWMutex
-	folders      map[string]string
-	folderEditMu sync.Mutex
+	// browser は、aibow-server の中のブラウザの会話か(Options.Browser)。serverWs はそのサーバーのワークスペース(0065)。
+	// 管理の画面で差し替えるので wsMu で守る。wsEditMu は、読んでから server.json に書くまでを1つにする(serverconfig.go。0061)
+	browser  bool
+	wsMu     sync.RWMutex
+	serverWs []config.ServerWorkspace
+	wsEditMu sync.Mutex
 	// server は、管理の画面で変える aibow-server の設定(ブラウザだけ。serverconfig.go)
 	server *ServerConfig
+	// appWs は、サーバーモードのアプリで aibow-server のサーバーのワークスペースを使う係(serverworkspaces.go。0067)。ほかでは nil
+	appWs *serverWorkspaces
 	// waits は、確認を待っている送信を打ち切るタイマー(確認の ID → タイマー。ブラウザだけ)。答えたら止める
 	waitMu sync.Mutex
 	waits  map[string]*time.Timer
@@ -189,7 +196,7 @@ func New(o Options) (*Service, Lifecycle) {
 	s := &Service{
 		host: o.Host, app: o.App, initial: o.Initial, notices: o.Notices, startupErr: o.StartupErr, notify: o.Notify, seat: o.Seat,
 		quit: quit, cancelQuit: cancel, mcp: o.MCP, prefs: o.Prefs, mcpConfig: o.MCPConfig, workspaces: o.Workspaces, version: o.Version,
-		browser: o.Browser, waits: map[string]*time.Timer{}, folders: maps.Clone(o.Folders), server: o.Server, waitLogin: o.WaitLogin,
+		browser: o.Browser, waits: map[string]*time.Timer{}, serverWs: config.CloneServerWorkspaces(o.ServerWorkspaces), server: o.Server, waitLogin: o.WaitLogin,
 	}
 	if d, ok := o.Host.(*DirectHost); ok {
 		d.s = s // アプリモードは、GPU の層数をアプリの DB(Service が持つ設定)に覚える
@@ -204,15 +211,20 @@ func New(o Options) (*Service, Lifecycle) {
 			s.convs.SetLocalTools(o.Local)
 		}
 		if o.Browser {
-			// 会話に保存した作業フォルダは使わず、配るプロファイルで選んだ資料のフォルダだけを使う(無ければ組み込みのツールは時刻と計算だけ)
+			// 会話に保存した作業フォルダは使わず、配るプロファイルで選んだサーバーのワークスペースだけを使う(無ければ組み込みのツールは時刻と計算だけ)
 			s.convs.IgnoreWorkDir()
-			s.convs.SetFolders(o.Folders)
+			s.convs.SetServerWorkspaces(o.ServerWorkspaces)
 			if o.Local != nil {
 				s.convs.SetLocalTools(noCommand{o.Local})
 			}
 		}
 		if !o.Browser {
 			s.convs.SetWorkspaces(o.Workspaces)
+		}
+		if rh, ok := o.Host.(*RemoteHost); ok && !o.Browser {
+			// サーバーモードのアプリは、配られたサーバーのワークスペースのファイルのツールを aibow-server の MCP の口に頼む(0067)
+			s.appWs = newServerWorkspaces(rh.c, o.Version)
+			s.convs.SetServerWorkspaceSource(s.appWs)
 		}
 		if o.MCP != nil { // nil の *Manager を interface に入れると nil に見えなくなるので、確かめてから渡す
 			s.convs.SetRemoteTools(o.MCP)
@@ -306,6 +318,9 @@ func (l Lifecycle) LoggedIn() {
 // Stop は終了のときに呼ぶ(デスクトップでは Wails の ServiceShutdown から)。生成中なら止める。
 func (l Lifecycle) Stop() {
 	l.s.cancelQuit()
+	if l.s.appWs != nil {
+		l.s.appWs.close()
+	}
 }
 
 // loadInitial は起動時のモデルを読み込み、終わったら models イベントで画面に知らせる。

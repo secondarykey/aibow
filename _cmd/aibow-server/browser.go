@@ -19,6 +19,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"maps"
@@ -45,7 +46,7 @@ import (
 // startBrowser は、ブラウザの会話の会話の仕組みと画面用の口を作る。st は server.db(main が開いて閉じる。使用量の記録にも使うため。0033)。
 // initial は DB にまだ値が無いときの設定、url は aibow-server のアドレス(画面の「つなぎ先」に出す)。
 // gen は生成の係(記録付きの engine。OpenAI 互換の口と同じもの)。
-// 戻り値の handler は /_aibow/ui/・/_aibow/auth/・/_aibow/store/・/_aibow/admin/ の下を受け持つ。keys は API キーの係(利用者は同じ server.db にいるので、ここで作る)。
+// 戻り値の handler は /_aibow/ui/・/_aibow/auth/・/_aibow/store/・/_aibow/workspaces・/_aibow/admin/ の下を受け持つ。keys は API キーの係(利用者は同じ server.db にいるので、ここで作る)。
 // close は終了のときに呼ぶ(生成を止める)。
 func startBrowser(c serverConfig, initial aibow.AppSettings, st *store.SQLite, gen ui.ServerEngine, mm *modelManager, nCtx int, url string, seat *api.Seat) (http.Handler, *auth.Keys, func(), error) {
 	log.Noticef("ブラウザから使う会話の保存先: %s", absPath(c.DBPath))
@@ -69,7 +70,7 @@ func startBrowser(c serverConfig, initial aibow.AppSettings, st *store.SQLite, g
 
 	events := ui.NewEvents()
 	// 組み込みのツールは、アプリと同じく aibow の中の自作の MCP サーバー越しに呼ぶ(0007 の 5-4)。
-	// 資料のフォルダの無い会話では、時刻・計算と URL を読むツールだけになる(0024 の 12-1a)。
+	// サーバーのワークスペースの無い会話では、時刻・計算と URL を読むツールだけになる(0024 の 12-1a)。
 	// URL を読むツールは、管理者が「ツール」のタブで有効にするまで使えない(server-tools.json。0036 の決定事項 14)
 	if c.FetchAllowPrivate {
 		log.Noticef("fetch_url: サーバーの PC の中・社内のアドレスも読みます(server.json の fetchAllowPrivate)")
@@ -79,7 +80,7 @@ func startBrowser(c serverConfig, initial aibow.AppSettings, st *store.SQLite, g
 	svc, life := ui.New(ui.Options{
 		Host:  ui.NewServerHost(gen, mm, nCtx, url),
 		Store: st, App: app, Version: appversion.Version(),
-		Notify: events, Seat: seat, Local: local, MCP: mcpm, Prefs: prefs, Browser: true, Folders: c.Folders,
+		Notify: events, Seat: seat, Local: local, MCP: mcpm, Prefs: prefs, Browser: true, ServerWorkspaces: c.Workspaces,
 		// 管理の画面で変える並列数・作業領域(0061)。引数・環境変数で決めた値は変えられない(理由の文はここで作る)
 		Server: &ui.ServerConfig{
 			Path:     absPath(c.ConfigPath),
@@ -87,10 +88,7 @@ func startBrowser(c serverConfig, initial aibow.AppSettings, st *store.SQLite, g
 			Ctx:      ui.ServerValue{Running: c.Ctx, Fallback: c.CtxFallback, Lock: lockReason(c.CtxFrom, "ctx", "AIBOW_SERVER_CTX")},
 		},
 	})
-	if len(c.Folders) > 0 {
-		log.Noticef("資料のフォルダ: %s(server.json の folders。管理者が配布プロファイルで選ぶと、その会話で読み書きできます。管理の画面の「資料のフォルダ」のタブで足す・変える・消せます)",
-			strings.Join(slices.Sorted(maps.Keys(c.Folders)), ", "))
-	}
+	logServerWorkspaces(c)
 	life.Start() // 起動のときのモデルは main が読み込んだので、ここでは読み込まない(Initial を渡していない)
 
 	sessions := auth.NewSessions(st)
@@ -105,6 +103,10 @@ func startBrowser(c serverConfig, initial aibow.AppSettings, st *store.SQLite, g
 		storeH = keys.RequireKey(remote.Handler(st, keyUser))
 	}
 	mux.Handle("/_aibow/store/", storeH)
+	// サーバーモードのアプリがサーバーのワークスペースを使う口(一覧と MCP の口。0067)。守りは保存の口と同じ
+	wsH := workspacesHandler(svc, keys, c.KeysRequired())
+	mux.Handle("/_aibow/workspaces", wsH)
+	mux.Handle("/_aibow/workspaces/", wsH)
 	// 画面のアプリが、誰としてつないでいるかを聞く口(API キーの持ち主の名前。ブラウザの /_aibow/auth/me にあたる)
 	mux.Handle("GET /_aibow/auth/key", keys.MeHandler(c.KeysRequired()))
 	// 管理者の画面の口(利用者の管理。0018 の決定事項 7)。ブラウザでログインした管理者だけ
@@ -241,6 +243,7 @@ func screen() http.Handler {
 }
 
 // routes は aibow-server の道筋。画面(/ と /assets/)・画面用の口(/_aibow/ui/)とログインの口(/_aibow/auth/)・保存の口(/_aibow/store/)・
+// サーバーのワークスペースの口(/_aibow/workspaces。0067)・
 // 管理者の口(/_aibow/admin/)・それ以外(OpenAI 互換の口と aibow 専用の口)。
 // 長いほうのパスが先に当たるので、画面の2つ以外はこれまでどおり api が受け取る(知らないパスの 404 も api の形)。
 func routes(apiH, browser, screen http.Handler) http.Handler {
@@ -251,6 +254,8 @@ func routes(apiH, browser, screen http.Handler) http.Handler {
 	mux.Handle("/_aibow/ui/", browser)
 	mux.Handle("/_aibow/auth/", browser)
 	mux.Handle("/_aibow/store/", browser)
+	mux.Handle("/_aibow/workspaces", browser) // サーバーのワークスペースの一覧と MCP の口(0067)
+	mux.Handle("/_aibow/workspaces/", browser)
 	mux.Handle("/_aibow/admin/", browser)
 	mux.Handle("/", apiH)
 	return mux
@@ -277,4 +282,21 @@ func mount(base string, h http.Handler) http.Handler {
 		http.Error(w, "aibow-server は "+base+"/ の下で待ち受けています(-base・設定ファイルの base)。画面は "+base+"/、OpenAI 互換の API は "+base+"/v1 です", http.StatusNotFound)
 	})
 	return mux
+}
+
+// logServerWorkspaces は、起動のときにサーバーのワークスペースの名前とフォルダの数を Notice に出す(0065 の決定事項 22)。
+// server.json が前の形(folders)なら、ワークスペースとして読んだことと、管理の画面で保存すると書き直すことも知らせる(決定事項 10)。
+func logServerWorkspaces(c serverConfig) {
+	if len(c.Workspaces) == 0 {
+		return
+	}
+	var items []string
+	for _, w := range c.Workspaces {
+		items = append(items, fmt.Sprintf("%s(フォルダ %d 個)", w.Name, len(w.Folders)))
+	}
+	log.Noticef("サーバーのワークスペース: %s(管理者が配布プロファイルで選ぶと、その会話で読み書きできます。管理の画面の「サーバーのワークスペース」のタブで足す・変える・消せます)",
+		strings.Join(items, ", "))
+	if c.WorkspacesMigrated {
+		log.Noticef("server.json の folders を、サーバーのワークスペースとして読みました。管理の画面で保存すると workspaces の形で書き直します(%s)", absPath(c.ConfigPath))
+	}
 }

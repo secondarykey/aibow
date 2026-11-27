@@ -276,11 +276,11 @@ func (s *SQLite) ProfileUseCounts(ctx context.Context) (map[uuid.UUID]int, error
 	return out, rows.Err()
 }
 
-// ProfilesUsingFolder は、決まりで資料のフォルダ folder を選んでいるプロファイルの名前(名前の順。0061 の決定事項 10)。
-// 管理の画面でフォルダを消す前に確かめる。見えるかどうか(profileVisible)によらず全員のものを見る
-// (呼べるのは管理者だけ。ui が確かめる)。配っていない・停止したプロファイルも入れる(配り直したときに、黙ってフォルダなしにならないように)。
-func (s *SQLite) ProfilesUsingFolder(ctx context.Context, folder string) ([]string, error) {
-	rows, err := s.db.QueryContext(ctx, "SELECT name FROM profiles WHERE json_extract(rules, '$.folder') = :folder ORDER BY name", sql.Named("folder", folder))
+// ProfilesUsingWorkspace は、決まりでサーバーのワークスペース workspace を選んでいるプロファイルの名前(名前の順。0061 の決定事項 10・0065 の決定事項 11)。
+// 管理の画面でワークスペースを消す前に確かめる。見えるかどうか(profileVisible)によらず全員のものを見る
+// (呼べるのは管理者だけ。ui が確かめる)。配っていない・停止したプロファイルも入れる(配り直したときに、黙ってワークスペースなしにならないように)。
+func (s *SQLite) ProfilesUsingWorkspace(ctx context.Context, workspace string) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, "SELECT name FROM profiles WHERE json_extract(rules, '$.workspace') = :workspace ORDER BY name", sql.Named("workspace", workspace))
 	if err != nil {
 		return nil, err
 	}

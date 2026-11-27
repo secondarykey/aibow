@@ -1,6 +1,6 @@
 package ui
 
-// tools.go: 画面から呼ぶ、MCP のサーバーとツールの扱いのメソッド(会話で選ぶもの・扱いの既定・資料のフォルダ)。MCP のサーバーを足す・変える・消すのは mcpedit.go。
+// tools.go: 画面から呼ぶ、MCP のサーバーとツールの扱いのメソッド(会話で選ぶもの・扱いの既定・サーバーのワークスペース)。MCP のサーバーを足す・変える・消すのは mcpedit.go。
 
 import (
 	"cmp"
@@ -22,14 +22,14 @@ import (
 
 // MCPServers は、会話ごとに使うものを選ぶ MCP のサーバーの一覧(settings.json に書いたもの全部)。書いてなければ空。
 // 設定の画面の「ツール」のチェックは「新しい会話で最初から選ぶか」だけなので、チェックを外したものもここに出す。
-// ブラウザでは aibow-server の server.json に書いたもの。${workdir} を使うサーバーは、資料のフォルダが無ければ出さない
-// (資料のフォルダのある会話でだけ起動する。0024 の決定事項 8・24)。
+// ブラウザでは aibow-server の server.json に書いたもの。${workdir} を使うサーバーは、サーバーのワークスペースが無ければ出さない
+// (サーバーのワークスペースのある会話でだけ起動する。0024 の決定事項 8・24)。
 func (s *Service) MCPServers() []client.ServerInfo {
 	if s.mcp == nil {
 		return []client.ServerInfo{}
 	}
 	l := s.mcp.Infos()
-	if s.browser && !s.hasFolders() {
+	if s.browser && !s.hasServerWorkspaces() {
 		l = slices.DeleteFunc(l, func(i client.ServerInfo) bool { return i.UsesWorkDir })
 	}
 	return l
@@ -44,13 +44,13 @@ func (s *Service) AllMCPServers() []client.ServerInfo {
 }
 
 // BuiltinTools は組み込みのツール(aibow の中で動くツール)の一覧(設定の画面の「ツール」に出す)。
-// ブラウザでは、コマンドのツールを出さない。資料のフォルダが無ければ、作業フォルダを使わないツール(時刻・計算・URL を読む)だけ(0024 の決定事項 5・17)。
+// ブラウザでは、コマンドのツールを出さない。サーバーのワークスペースが無ければ、作業フォルダを使わないツール(時刻・計算・URL を読む)だけ(0024 の決定事項 5・17)。
 func (s *Service) BuiltinTools() []config.KnownTool {
 	l := aibow.BuiltinTools()
 	if s.browser {
-		hasFolders := s.hasFolders()
+		hasFolders := s.hasServerWorkspaces()
 		l = slices.DeleteFunc(l, func(k config.KnownTool) bool {
-			return k.Name == "run_command" || !hasFolders && tool.Find(tool.Folderless(), k.Name) == nil
+			return browserHides(k.Name) || !hasFolders && tool.Find(tool.Folderless(), k.Name) == nil
 		})
 	}
 	return l
@@ -129,49 +129,156 @@ func (s *Service) ToolStates(ctx context.Context, id uuid.UUID, settings aibow.C
 		return nil, s.startupErr
 	}
 	groups, err := s.convs.ConversationToolStates(ctx, id, settings)
-	return s.forBrowser(groups), err
+	if err != nil {
+		return nil, err
+	}
+	name, err := s.convs.ConversationServerWorkspace(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if name != "" {
+		groups = s.forServerWorkspace(groups)
+	}
+	return s.forBrowser(groups), nil
+}
+
+// forServerWorkspace は、サーバーモードのアプリのサーバーのワークスペースの会話で、ツールの一覧から使わないものを外す(0067 の決定事項 13)。
+// ブラウザと同じく run_command と Git のツールを出さず、${workdir} を使う MCP のサーバーも出さない(この PC のフォルダが無いため)。
+func (s *Service) forServerWorkspace(groups []aibow.ToolGroupState) []aibow.ToolGroupState {
+	var workDir []string
+	if s.mcp != nil {
+		for _, i := range s.mcp.Infos() {
+			if i.UsesWorkDir {
+				workDir = append(workDir, i.Name)
+			}
+		}
+	}
+	groups = slices.DeleteFunc(groups, func(g aibow.ToolGroupState) bool { return g.Server != "" && slices.Contains(workDir, g.Server) })
+	for i := range groups {
+		groups[i].Tools = slices.DeleteFunc(groups[i].Tools, func(t aibow.ToolState) bool { return browserHides(t.Name) })
+	}
+	return groups
 }
 
 // forBrowser は、ブラウザに出すツールの一覧から、使えないものを外す。
-// コマンドのツールは出さない(0024 の決定事項 5)。資料のフォルダが1つも無ければ、作業フォルダのツールは「作業フォルダが要る」とも見せない(決定事項 17)。
+// コマンドのツールは出さない(0024 の決定事項 5)。サーバーのワークスペースが1つも無ければ、作業フォルダのツールは「作業フォルダが要る」とも見せない(決定事項 17)。
 // 出さない MCP のサーバー(MCPServers が外したもの)も外す。
 func (s *Service) forBrowser(groups []aibow.ToolGroupState) []aibow.ToolGroupState {
 	if !s.browser {
 		return groups
 	}
 	servers := s.MCPServers()
-	hasFolders := s.hasFolders()
+	hasFolders := s.hasServerWorkspaces()
 	groups = slices.DeleteFunc(groups, func(g aibow.ToolGroupState) bool {
 		return g.Server != "" && !slices.ContainsFunc(servers, func(i client.ServerInfo) bool { return i.Name == g.Server })
 	})
 	for i := range groups {
 		groups[i].Tools = slices.DeleteFunc(groups[i].Tools, func(t aibow.ToolState) bool {
-			return t.Name == "run_command" || t.NeedsWorkDir && !hasFolders
+			return browserHides(t.Name) || t.NeedsWorkDir && !hasFolders
 		})
 	}
 	return groups
 }
 
-// Folders は aibow-server の資料のフォルダの名前(名前の順。パスは返さない)。配るプロファイルで選ぶ(0024 の 12-2)。
-// 名前は誰でも見られる(どのフォルダを使えるかは、配られたプロファイルで決まる)。アプリモードのときは空。
-// パスも見る管理の画面は ServerSettings(管理者だけ。0061)。
-func (s *Service) Folders() []string {
-	return s.folderNames()
+// ServerWorkspaceInfo は、サーバーのワークスペース1つの、誰にでも見せてよいところ(名前とフォルダの名前・印。パスは返さない。0065 の決定事項 19)。
+type ServerWorkspaceInfo struct {
+	Name    string             `json:"name"`
+	Folders []ServerFolderInfo `json:"folders"`
 }
 
-// checkFolder は、プロファイルの資料のフォルダを old から folder に変えてよいか(0024 の決定事項 31)。
-// 選べるのは aibow-server の管理者(ログインなしの形ではいつも。0046)だけで、server.json にあるフォルダだけ。変えないなら確かめない。
-func (s *Service) checkFolder(ctx context.Context, old, folder string) error {
-	if folder == old || folder == "" {
+// ServerFolderInfo は、サーバーのワークスペースのフォルダ1つの名前と印と説明(パスは返さない)。
+// 説明は、サーバーモードのアプリがモデルへの環境の説明に書く(0067 の決定事項 11)。
+type ServerFolderInfo struct {
+	Name        string `json:"name"`
+	Main        bool   `json:"main"`
+	Writable    bool   `json:"writable"`
+	Description string `json:"description,omitempty"`
+}
+
+// ServerWorkspaces は aibow-server のサーバーのワークスペース(server.json の並び。パスは返さない)。配るプロファイルで選ぶ(0065)。
+// 名前は誰でも見られる(どのワークスペースを使えるかは、配られたプロファイルで決まる)。入力欄の上でマウスを乗せた説明にフォルダを並べるのにも使う。
+// アプリモードのときは空。パスも見る管理の画面は ServerSettings(管理者だけ。0061)。
+// サーバーモードのアプリでは、aibow-server に引いた、その人が使えるもの(配られたもの。0067 の決定事項 15。古い aibow-server なら空)。
+func (s *Service) ServerWorkspaces() []ServerWorkspaceInfo {
+	if s.appWs != nil {
+		list, _ := s.appWs.infos(context.Background())
+		return list
+	}
+	return ServerWorkspaceInfos(s.serverWorkspaceList())
+}
+
+// ServerWorkspacesUsable は、この画面でサーバーのワークスペースを使えるか(0067)。
+// ブラウザはいつも。サーバーモードのアプリは aibow-server がアプリから使える新しい版のとき(古ければ、手元のワークスペースのまま 0064 の知らせを出す)。
+// アプリモードは使わない(配布プロファイルが無い)。
+func (s *Service) ServerWorkspacesUsable() bool {
+	if s.browser {
+		return true
+	}
+	if s.appWs == nil {
+		return false
+	}
+	_, supported := s.appWs.infos(context.Background())
+	return supported
+}
+
+// ServerWorkspaceInfos は、サーバーのワークスペースの一覧から、誰にでも見せてよいところ(名前とフォルダの名前・印・説明)だけを取り出す。
+func ServerWorkspaceInfos(list []config.ServerWorkspace) []ServerWorkspaceInfo {
+	out := []ServerWorkspaceInfo{}
+	for _, w := range list {
+		info := ServerWorkspaceInfo{Name: w.Name, Folders: []ServerFolderInfo{}}
+		for _, f := range w.Folders {
+			info.Folders = append(info.Folders, ServerFolderInfo{Name: f.Name, Main: f.Main, Writable: f.Writable, Description: f.Description})
+		}
+		out = append(out, info)
+	}
+	return out
+}
+
+// GrantedServerWorkspaces は、ctx の利用者が使えるサーバーのワークスペース(パスも含む。aibow-server の中だけで使う)。
+// 使えるのは、その人に配られている(Share があり Withdrawn でない)配布プロファイルのどれかが選んでいるもの(0067 の決定事項 6)。
+// 会話ごとには見ない(サーバーモードのアプリのつながりは、ワークスペースごとに1つで会話をまたぐため)。
+// アプリは会話のプロファイルで選ばれているときだけ使うので、決まりはブラウザから使う会話と同じになる。
+// 呼ぶたびにプロファイルと一覧を読み直す(配布をやめた・管理の画面でフォルダを変えたら、次の呼び出しから効く)。
+func (s *Service) GrantedServerWorkspaces(ctx context.Context) ([]config.ServerWorkspace, error) {
+	if s.startupErr != nil {
+		return nil, s.startupErr
+	}
+	profiles, err := s.store.ListProfiles(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("配布プロファイルを読めません: %w", err)
+	}
+	granted := map[string]bool{}
+	for i := range profiles {
+		if name := profiles[i].GrantedWorkspace(); name != "" {
+			granted[name] = true
+		}
+	}
+	out := []config.ServerWorkspace{}
+	for _, w := range s.serverWorkspaceList() {
+		if granted[w.Name] {
+			out = append(out, w)
+		}
+	}
+	return out, nil
+}
+
+// checkWorkspace は、プロファイルのサーバーのワークスペースを old から name に変えてよいか(0024 の決定事項 31・0065 の決定事項 18)。
+// 選べるのは aibow-server の管理者(ログインなしで使うときはいつも。0046)だけで、server.json にあるワークスペースだけ。変えないなら確かめない。
+func (s *Service) checkWorkspace(ctx context.Context, old, name string) error {
+	if name == old || name == "" {
 		return nil
 	}
 	if !s.browser || !managesPC(ctx) {
-		return errors.New("資料のフォルダを選べるのは、aibow-server の管理者だけです")
+		return errors.New("サーバーのワークスペースを選べるのは、aibow-server の管理者だけです")
 	}
-	if names := s.folderNames(); !slices.Contains(names, folder) {
-		return fmt.Errorf("資料のフォルダ %s はありません(管理の画面の「資料のフォルダ」のタブにあるもの: %s)", folder, strings.Join(names, "・"))
+	var names []string
+	for _, w := range s.serverWorkspaceList() {
+		if w.Name == name {
+			return nil
+		}
+		names = append(names, w.Name)
 	}
-	return nil
+	return fmt.Errorf("サーバーのワークスペース %s はありません(管理の画面の「サーバーのワークスペース」のタブにあるもの: %s)", name, strings.Join(names, "・"))
 }
 
 // ToolPrefs は、ツールの扱いの PC の既定(tools.json)と、サーバーを起動したときに見えたツールの一覧。

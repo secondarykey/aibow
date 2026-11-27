@@ -42,6 +42,8 @@ func TestRoutes(t *testing.T) {
 		{"POST", "/_aibow/auth/login", "ui"},              // ログインの口も、ブラウザの会話の係が受け持つ
 		{"POST", "/_aibow/store/ListConversations", "ui"}, // 画面のアプリの保存の口も(同じ server.db)
 		{"GET", "/_aibow/admin/users", "ui"},              // 管理者の口も(0018 の 11-0)
+		{"GET", "/_aibow/workspaces", "ui"},               // サーバーのワークスペースの一覧と MCP の口も(0067)
+		{"POST", "/_aibow/workspaces/docs/mcp", "ui"},
 	} {
 		if _, body := get(c.method, c.path); body != c.want {
 			t.Errorf("%s %s は %s が受け取るはず: %.80q", c.method, c.path, c.want, body)

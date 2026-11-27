@@ -43,7 +43,7 @@ func workingRules(tools []tool.Tool) string {
 		"When a tool returns an error, fix the argument it names. Never repeat a failed call with the same arguments.",
 	}
 	if command {
-		// 確かめずに終える。確かめる道具(run_command)があるときだけ書く(aibow-server の資料のフォルダには無い。決定事項 4)
+		// 確かめずに終える。確かめる道具(run_command)があるときだけ書く(aibow-server のサーバーのワークスペースには無い。決定事項 4)
 		// 「テストが通るか確かめて」と頼まれて go build で済ませた(段2 の試しで 2/8)。頼まれたテストを先に書く
 		check := "After you change files, check your work: run the tests the user asked for (or the usual test or build) with run_command, and fix what fails."
 		if tool.Find(tools, "git_diff") != nil {

@@ -2,7 +2,7 @@
 //
 // 入力欄の上の選ぶ部品(WorkspaceBar)と、設定の画面の「ワークスペース」が同じ一覧を使う。
 // パスは PC のものなので、会話はワークスペースの ID だけを持つ。ID が一覧に無ければ「この PC にはこのワークスペースがありません」。
-// ブラウザ(aibow-server)の会話では使わない(資料のフォルダ。0024)。
+// ブラウザ(aibow-server)の会話では使わない(サーバーのワークスペース。0024)。
 import { useCallback, useEffect, useState } from "react";
 import { ChatService, isBrowser } from "./backend";
 import { errorMessage } from "./errors";

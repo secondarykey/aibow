@@ -63,6 +63,8 @@
     会話か利用者を消すと一緒に消える。付けられるのは自分の会話と、自分に共有された会話(`conversationShared`)だけ。読み書きは `share.go`(`inactiveSet`・`SetConversationInactive`)
   - 版 23: `api_keys` に期限 `expires_at`(空は無期限。今あるキーも空)と、`users` に無効の印 `disabled`(0 / 1)。0060。
     期限を過ぎているかは `auth.Keys` が見る(`APIKeyOwner` は期限を返すだけ)。`SetDisabled` は印を付けるとき、その人のセッション・アプリ用のトークン・パスワードを決めるリンクを同じトランザクションで消す(API キーは残す)
+  - 版 24: `profiles` の決まり(`rules` の JSON)の資料のフォルダ `$.folder` を、サーバーのワークスペース `$.workspace` に移す(0065)。列は変えない。
+    ワークスペースを選んでいるプロファイルは `ProfilesUsingWorkspace`(`json_extract(rules, '$.workspace')`)で探す
 - 会話の共有:ほかの人の会話を読むのは `ReadConversation` だけ(条件 `conversationShared` と管理者か)。書くメソッドは持ち主の行だけなので、共有された人も管理者も書き込めない。
   自分の会話を読むときは `share`(と1つ読むときは `ShareWith`)を入れる。共有された会話の一覧と `ReadConversation` には、見えている理由(`ToMe`・`Groups`)を
   `shareReasons` で別に読んで入れる(見えるかの判定は `conversationShared` のまま。0055)

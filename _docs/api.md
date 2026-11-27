@@ -232,11 +232,14 @@ Cline など ──HTTP──→ /v1/ など → api.Server ──────�
   - ツールの実行のログには、利用者の名前と会話が付く(`ツール calculate(...)(bob の会話 …)`)
   - MCP のサーバー(`server.json` の `mcpServers`)と管理者の既定(`server-tools.json`)は [mcp.md](mcp.md) の「aibow-server の MCP のサーバー」。
     既定を見る `ToolPrefs`・`ToolDefaults`・`BuiltinTools` は誰でも呼べ(既定のファイルの場所は管理者にだけ返す)、変える `SetToolPolicy`・`SetGroupPolicy`・`LoadToolList` は管理者だけ(ほかの人は 403)
-  - 資料のフォルダ(0024 の 12-2):`Folders` は `server.json` の `folders` の名前だけを返す。会話の詳細(`Conversation`)の `folder` はその会話で使えるフォルダの名前。
-    パスは、下の管理者だけのメソッドのほかはどの返事にも入れない。資料のフォルダのある会話では、コマンドのツール(`run_command`)をモデルにも画面にも出さない(`ui.noCommand`・`forBrowser`)
-- **並列数・作業領域・資料のフォルダ**(0061。`ui/serverconfig.go`。管理者だけ:`adminServerMethods`。ほかの人は 403):
-  `ServerSettings`(並列数と作業領域の今動いている値 `running`・次の起動の値 `next`・変えられない理由 `lock`、今の1本あたりの作業領域 `perSeq`、書き戻す `server.json` の場所、資料のフォルダの名前・パス・選んでいるプロファイル `usedBy`)・
-  `SaveServerSettings(parallel, ctx)`(server.json に書く。次の起動から効く)・`AddServerFolder(name, path)`・`SetServerFolderPath(name, path)`・`RemoveServerFolder(name)`(server.json に書き、その場で効く。選んでいるプロファイルがあれば消せない)。
+  - サーバーのワークスペース(0065。以前の資料のフォルダ。0024 の 12-2):`ServerWorkspaces` は `server.json` の `workspaces` の名前と、フォルダの名前・メイン・書けるかだけを返す(誰でも呼べる。入力欄の上の吹き出しにも使う)。
+    会話の詳細(`Conversation`)の `workspace` はその会話で使えるワークスペースの名前。パスは、下の管理者だけのメソッドのほかはどの返事にも入れない。
+    ブラウザの会話では、コマンドのツール(`run_command`)と Git のツール(`git_status`・`git_diff`)をモデルにも画面にも出さない(`ui.noCommand`・`browserHides`・`forBrowser`)
+- **並列数・作業領域・サーバーのワークスペース**(0061・0065。`ui/serverconfig.go`。管理者だけ:`adminServerMethods`。ほかの人は 403):
+  `ServerSettings`(並列数と作業領域の今動いている値 `running`・次の起動の値 `next`・変えられない理由 `lock`、今の1本あたりの作業領域 `perSeq`、書き戻す `server.json` の場所、
+  サーバーのワークスペース `workspaces`(名前・フォルダ(パス・名前・メイン・書ける・説明・見つからない印 `missing`)・選んでいるプロファイル `usedBy`))・
+  `SaveServerSettings(parallel, ctx)`(server.json に書く。次の起動から効く)・`AddServerWorkspace(name, path)`(最初のフォルダはメイン・書ける)・
+  `SaveServerWorkspace(ws)`(フォルダの組をまとめて差し替える。名前は変えられない)・`RemoveServerWorkspace(name)`(選んでいるプロファイルがあれば消せない)。どれも server.json の `workspaces` に書き(前の形の `folders` は消す)、その場で効く。
   書き方は `config.SaveServerFile`(画面で変えた鍵だけを差し替え、ほかの鍵は並びも値も残す・読めないファイルには書かない・一時ファイルから置き換える・書く前の中身を `server.json.bak` に残す)。
   `-parallel`・`-ctx` の引数か、`AIBOW_SERVER_PARALLEL`・`AIBOW_SERVER_CTX` で決めた値は、server.json に書いても効かないか環境変数を黙って上書きするので、`lock` に理由を入れて変えさせない(どこから来たかは aibow-server の `resolve` が覚える)
 - **作業領域**:起動のときに決めた大きさで固定(管理の画面で変えても、起動し直すまで変わらない。0061)。会話の上限 + 返事の上限が入るかを確かめるだけで、作り直さない(`ui.ServerHost`。aibow-server につないだ画面のアプリと同じ `ContextError`)
@@ -420,6 +423,32 @@ OpenAI 互換の API(api)──────────┐   付箋:呼び出し
 - アプリが書く「アプリ全体の設定」(最後に使ったモデルなど)は、その人の設定(`app.` で始まるキー)として置く(サーバー全体の設定を、ほかの人のアプリが書き換えないように)
 - 同じ server.db なので、アプリで作った会話を、同じ人がブラウザで開ける
 - **生成中の印**:同じ会話にブラウザとアプリ(または2台のアプリ)から同時に送ったら、後から来たほうを `busy`(409)で断る。印は送信の間だけ付け、期限 2 分・30 秒ごとに延ばす(`lock.go`)
+
+## サーバーのワークスペースの API(サーバーモードのアプリ。0067)
+
+サーバーモードのアプリは会話の仕組みとツールを手元で動かすが、配布プロファイルで配られたサーバーのワークスペースのファイルのツールだけは、aibow-server に頼む。
+ツールの中身は、ブラウザの会話が aibow-server の中でメモリ内につなぐ自作の MCP のサーバー(`mcp/server`)と同じで、つなぎ方だけを Streamable HTTP に替える。
+
+```
+サーバーモードのアプリ [ 会話の仕組み ] ─┬─ 一覧:api/client.ServerWorkspaces ─→ GET /_aibow/workspaces
+                                        └─ ファイルのツール:mcp/client.Workspaces ─→ POST /_aibow/workspaces/{名前}/mcp ─→ mcp/server(ステートレス)
+```
+
+- `GET /_aibow/workspaces`:キーの持ち主が使えるワークスペース `{"workspaces": [{"name", "folders": [{"name", "main", "writable", "description"}]}]}`。**パスは返さない**。
+  アプリは送信のたびに引き直す(配布をやめた・フォルダを変えたら、その送信から効く)。入力欄の上の吹き出しにも使う
+- `/_aibow/workspaces/{名前}/mcp`:そのワークスペースのファイルのツール(`list_files`・`read_file`・`search_files`・`write_file`・`edit_file`・`update_plan`。`mcp/server` の `FilesOnly`)だけを出す MCP の API。
+  時刻・計算・`fetch_url` はアプリが手元で出し、`run_command` と Git のツールは出さない。説明(instructions)にパスを入れない
+- **守り**:API キーが要る形なら保存の API と同じくキーの持ち主(`keys.RequireKey`)、要らない形ならログインなしの利用者 `local`。キーが無い・違えば 401。
+  使えるのは、その人に配られている(`Share` があり `Withdrawn` でない)配布プロファイルのどれかが選んでいるワークスペースだけ(`ui.Service.GrantedServerWorkspaces`)。
+  ほかは 403(知らない名前も 403。あるかどうかを漏らさない)。会話ごとには確かめない(つながりはワークスペースごとで、会話をまたぐため。アプリは会話のプロファイルで選ばれているときだけつなぐ)
+- **呼び出しのたびに確かめ、サーバーを作り直す**(SDK の `StreamableHTTPOptions.Stateless`):配布をやめたら次のツールの実行から 403、管理の画面でフォルダを変えたら次の実行から新しい組。
+  書く前の確認(MRTR)は「同じ引数 + 答え + 合言葉」の送り直しなのでセッションが要らない。MCP の 2026-07-28 版も、SDK ではステートレスの APIでだけ話せる
+- 返事は SSE でなく JSON 1つ(`JSONResponse`)。API キーが要る形では、SDK の DNS リバインディングの守り(127.0.0.1 で受けて Host が違えば断る)を外す(同じ PC のリバースプロキシ越しでも使えるように。キーが守る)
+- 断り(401・403)は OpenAI 互換と同じ形の `{"error": {"message"}}`。アプリの `mcp/client` が JSON-RPC のエラー(`meta.RefusedCode`)に書き直し、文をそのままツールの結果としてモデルに渡す(つながりは切れたことにしない)
+- ログ:書いたら Notice に「サーバーのワークスペース 社内規程 のフォルダ 規程 に書きました: write_file a.md(bob、アプリから)」(会話はこの API からは分からない)。つないだ(initialize)は Info、断った 403 は Warn
+- **古い aibow-server**:一覧が 404 なら、アプリはサーバーのワークスペースを使わず、今までどおり手元のワークスペースを使う(0064 の知らせに「aibow-server を新しくすると、アプリからも使えます」が付く)。
+  一覧を引けない(つながらない・ログインの期限切れ)ときは新しい版とみなし、使えるワークスペースは無しにする(手元のフォルダを触らないため)
+- 案内はしないが、Claude Code などほかの MCP のクライアントからも、URL と API キー(`Authorization: Bearer`)でつなげてしまう
 
 ## そのほかの API(ステップ10の 10-4)
 

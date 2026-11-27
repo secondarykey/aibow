@@ -206,6 +206,8 @@ type testWeb struct {
 	user atomic.Pointer[uuid.UUID]
 	// admin は、呼んだ人が管理者か(0018 の 11-0)。テストの途中で替える
 	admin atomic.Bool
+	// svc は画面向けの処理そのもの(HTTP の口を通さずに呼ぶメソッドのため)
+	svc *Service
 }
 
 // newTestWeb は、aibow-server の browser.go と同じ組み立てで、画面用の口を httptest で立てる。
@@ -246,7 +248,7 @@ func newTestWeb(t *testing.T, opts ...func(*Options)) *testWeb {
 	}
 	svc, life := New(o)
 	t.Cleanup(life.Stop)
-	w := &testWeb{url: srv.URL, eng: eng, mm: mm, seat: seat, st: st}
+	w := &testWeb{url: srv.URL, eng: eng, mm: mm, seat: seat, st: st, svc: svc}
 	// サーバーの PC の事情を見せる・変えるのは管理者だけ(0046。どこから来たかは見ない)。管理者かだけで、見せるものが変わることを確かめる
 	srv.Config.Handler = Handler(svc, events, func(*http.Request) (Caller, error) {
 		u := w.user.Load()
@@ -829,7 +831,7 @@ func TestWebShareNew(t *testing.T) {
 	}
 	var p aibow.Profile
 	w.mustCall(t, &p, "ShareNew", "調べもの", "ollama:a", aibow.ShareUsers, []string{"bob"}, []string{})
-	if p.Name != "調べもの" || p.Share != aibow.ShareUsers || p.Values.Model != "ollama:a" || len(p.Rules.Fixed) != 0 || p.Rules.Folder != "" {
+	if p.Name != "調べもの" || p.Share != aibow.ShareUsers || p.Values.Model != "ollama:a" || len(p.Rules.Fixed) != 0 || p.Rules.Workspace != "" {
 		t.Errorf("作った配布プロファイル: %+v", p)
 	}
 	if status, _ := w.call(t, context.Background(), "ShareNew", "調べもの", "ollama:a", aibow.ShareAll, []string{}, []string{}); status == http.StatusOK {

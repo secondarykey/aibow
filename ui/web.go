@@ -73,8 +73,8 @@ var browserMethods = []string{
 	"ToolStates", "MCPServers", "ConfirmTool", "PendingConfirm",
 	// ツールの扱いの既定(設定の画面の「ツール」。0024 の 12-1b)。誰でも見られる(変えるのは adminToolMethods)
 	"ToolPrefs", "ToolDefaults", "BuiltinTools",
-	// 資料のフォルダの名前(配るプロファイルで選ぶ。0024 の 12-2)
-	"Folders",
+	// サーバーのワークスペースの名前とフォルダの名前(パスは返さない。配るプロファイルで選ぶ。0065)
+	"ServerWorkspaces", "ServerWorkspacesUsable",
 }
 
 // pcMethods は、サーバーの PC の事情を変えるメソッド(モデルのタブ。0015 の 8-4)。管理者だけが呼べる
@@ -88,9 +88,9 @@ var adminToolMethods = []string{"SetToolPolicies", "SetToolPolicy", "SetGroupPol
 // adminLogMethods は、aibow-server のログのレベルを見る・変える・ログファイルの場所を見るメソッド(管理の画面の「ログ」。0052)。pcMethods と同じ人だけが呼べる。ほかの人は 403。
 var adminLogMethods = []string{"ServerLogLevel", "SetServerLogLevel", "ServerLogFile"}
 
-// adminServerMethods は、aibow-server の並列数・作業領域・資料のフォルダを見る・変えるメソッド(管理の画面。0061)。
-// server.json に書き、資料のフォルダはサーバーの PC の任意のフォルダをモデルに読み書きさせる設定なので、pcMethods と同じ人だけが呼べる。ほかの人は 403。
-var adminServerMethods = []string{"ServerSettings", "SaveServerSettings", "AddServerFolder", "SetServerFolderPath", "RemoveServerFolder"}
+// adminServerMethods は、aibow-server の並列数・作業領域・サーバーのワークスペースを見る・変えるメソッド(管理の画面。0061・0065)。
+// server.json に書き、サーバーのワークスペースはサーバーの PC の任意のフォルダをモデルに読み書きさせる設定なので、pcMethods と同じ人だけが呼べる。ほかの人は 403。
+var adminServerMethods = []string{"ServerSettings", "SaveServerSettings", "AddServerWorkspace", "SaveServerWorkspace", "RemoveServerWorkspace"}
 
 // adminOnly は、管理者だけが呼べるメソッドと、ほかの人に断るときの文。
 var adminOnly = map[string]string{}

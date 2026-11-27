@@ -46,9 +46,9 @@ export interface ConversationDetail {
     "profile": aibow$0.Profile | null;
 
     /**
-     * Folder は、この会話で使える aibow-server の資料のフォルダの名前(パスは出さない。無ければ空。0024 の決定事項 26)
+     * Workspace は、この会話で使える aibow-server のサーバーのワークスペースの名前(パスは出さない。無ければ空。0024 の決定事項 26・0065 の決定事項 19)
      */
-    "folder"?: string;
+    "workspace"?: string;
 }
 
 /**
@@ -178,21 +178,50 @@ export interface ModelsResult {
 }
 
 /**
- * ServerFolder は資料のフォルダ1つ。パスはサーバーの PC のもので、管理者にだけ返す(決定事項 10)。
+ * ServerFolderInfo は、サーバーのワークスペースのフォルダ1つの名前と印と説明(パスは返さない)。
+ * 説明は、サーバーモードのアプリがモデルへの環境の説明に書く(0067 の決定事項 11)。
  */
-export interface ServerFolder {
+export interface ServerFolderInfo {
     "name": string;
+    "main": boolean;
+    "writable": boolean;
+    "description"?: string;
+}
+
+/**
+ * ServerFolderView は、サーバーのワークスペースのフォルダ1つ。
+ */
+export interface ServerFolderView {
+    /**
+     * 絶対パス
+     */
     "path": string;
+
+    /**
+     * Name はモデルが呼ぶ短い名前(ファイルのツールの引数 folder の値。既定はフォルダ名)。ワークスペースの中で重ならない
+     */
+    "name": string;
+
+    /**
+     * Main はメインのフォルダか。run_command のカレント・${workdir} の MCP のサーバーに渡すフォルダ。folder を省いたときもこれ
+     */
+    "main"?: boolean;
+
+    /**
+     * Writable は、ファイルのツールで書けるか(false なら読むだけ。write_file・edit_file を受け付けない)
+     */
+    "writable"?: boolean;
+
+    /**
+     * Description は、フォルダの中身の短い説明(1行。folderDescriptionMax 文字まで)。環境の説明の、そのフォルダの行の末尾に付ける(2026-11-03)。
+     * ユーザーが「マニュアルを直して」のように名前と違う言葉で呼んでも、モデルがどのフォルダかを当てる手がかりにする
+     */
+    "description"?: string;
 
     /**
      * Missing は、フォルダが今は無いか(起動したあとに消された・動かされた)
      */
     "missing": boolean;
-
-    /**
-     * UsedBy は、このフォルダを選んでいるプロファイルの名前(あれば消せない)
-     */
-    "usedBy": string[] | null;
 }
 
 /**
@@ -222,9 +251,9 @@ export interface ServerSettingsView {
     "perSeq": number;
 
     /**
-     * Folders は資料のフォルダ(名前の順)
+     * Workspaces はサーバーのワークスペース(server.json の並び。0065)
      */
-    "folders": ServerFolder[] | null;
+    "workspaces": ServerWorkspaceView[] | null;
 }
 
 /**
@@ -238,6 +267,27 @@ export interface ServerValueView {
      */
     "next": number;
     "lock"?: string;
+}
+
+/**
+ * ServerWorkspaceInfo は、サーバーのワークスペース1つの、誰にでも見せてよいところ(名前とフォルダの名前・印。パスは返さない。0065 の決定事項 19)。
+ */
+export interface ServerWorkspaceInfo {
+    "name": string;
+    "folders": ServerFolderInfo[] | null;
+}
+
+/**
+ * ServerWorkspaceView は、管理の画面に出すサーバーのワークスペース1つ(0065 の決定事項 16)。パスはサーバーの PC のもので、管理者にだけ返す(0061 の決定事項 10)。
+ */
+export interface ServerWorkspaceView {
+    "name": string;
+    "folders": ServerFolderView[] | null;
+
+    /**
+     * UsedBy は、このワークスペースを選んでいるプロファイルの名前(あれば消せない)
+     */
+    "usedBy": string[] | null;
 }
 
 /**

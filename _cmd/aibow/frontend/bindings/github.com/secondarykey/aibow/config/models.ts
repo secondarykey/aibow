@@ -104,6 +104,21 @@ export interface ParsedMCPServer {
 }
 
 /**
+ * ServerWorkspace は、サーバーのワークスペース1つ(名前とフォルダの組)。
+ */
+export interface ServerWorkspace {
+    /**
+     * Name は配布プロファイルで選ぶときの名前(ProfileRules.Workspace)。変えられない
+     */
+    "name": string;
+
+    /**
+     * Folders はフォルダの組。メイン(Main)はちょうど1つ。パスはサーバーの PC のもので、モデルにもブラウザにも見せない(管理者の画面だけ)
+     */
+    "folders": WorkspaceFolder[] | null;
+}
+
+/**
  * ToolPolicy はツールの扱い。真偽値の組み合わせではなく値で持つ(あとで動きを足すときは値を1つ足す。0010)。
  * 決めていないときは空(次の層を見る)。
  */

@@ -231,26 +231,36 @@ func (s *Service) run(ctx context.Context, id uuid.UUID, f func(ctx context.Cont
 			}
 		case "tool_result":
 			logTool(ev.Message, who)
-			s.logWrite(ev.Message, who)
+			s.logWrite(ctx, ev.Message, who)
 		}
 		emit(ev)
 	})
 }
 
-// logWrite は、ブラウザの会話が資料のフォルダに書いたことを、誰が・どの会話で・どのファイルに書いたかと一緒に Notice で残す(0024 の決定事項 34)。
-// 同じファイルを2人が書くことがあるので、あとから追えるように。
-func (s *Service) logWrite(m *aibow.StoredMessage, who string) {
+// logWrite は、ブラウザの会話がサーバーのワークスペースに書いたことを、誰が・どの会話で・どのワークスペースのどのフォルダのどのファイルに書いたかと一緒に
+// Notice で残す(0024 の決定事項 34・0065 の決定事項 23)。同じファイルを2人が書くことがあるので、あとから追えるように。
+func (s *Service) logWrite(ctx context.Context, m *aibow.StoredMessage, who string) {
 	r := m.ToolResult
 	if !s.browser || r == nil || r.Error || r.Call.Name != "write_file" && r.Call.Name != "edit_file" || r.Confirm != nil && !r.Confirm.Approved {
 		return
 	}
-	path := ""
+	path, folder := "", ""
 	for _, a := range r.Call.Args {
-		if a.Name == "path" {
+		switch a.Name {
+		case "path":
 			path = a.Value
+		case "folder":
+			folder = a.Value
 		}
 	}
-	log.Noticef("資料のフォルダに書きました: %s %s(%s の会話 %s)", r.Call.Name, path, who, m.ConversationID)
+	// ワークスペースは会話のプロファイルで決まる(書くことはまれなので、そのつど会話を引く)。引けなくてもログは残す
+	where := "サーバーのワークスペース"
+	if c, _, err := s.convs.Get(ctx, m.ConversationID); err == nil {
+		if ws, name := s.convs.ServerFolderName(c.Settings, strings.TrimSpace(folder)); ws != "" {
+			where = fmt.Sprintf("サーバーのワークスペース %s のフォルダ %s", ws, name)
+		}
+	}
+	log.Noticef("%sに書きました: %s %s(%s の会話 %s)", where, r.Call.Name, path, who, m.ConversationID)
 }
 
 // whoOf は、ログに出す「誰の会話か」(ブラウザの会話なら利用者の名前と会話。0024 の決定事項 11)。

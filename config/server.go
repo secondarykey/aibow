@@ -3,7 +3,7 @@ package config
 // server.go: aibow-server の手で書く設定ファイル(server.json)。
 //
 // 形はアプリの settings.json と同じ考え方で、手で書く。aibow-server が読むのは起動したときだけ。
-// aibow-server が書くのは、管理の画面で変えた並列数(parallel)・作業領域(ctx)・資料のフォルダ(folders)の3つだけ
+// aibow-server が書くのは、管理の画面で変えた並列数(parallel)・作業領域(ctx)・サーバーのワークスペース(workspaces。0065)の3つだけ
 // (ほかの鍵は残したまま差し替える。書く前の中身は server.json.bak に残す。serverwrite.go。0061)。
 // 引数・環境変数と合わせて強さの順(引数 > 設定ファイル > 環境変数 > 既定)で決めるのは aibow-server の側(_cmd/aibow-server の config.go)で、
 // ここは「ファイルに何と書いてあるか」を読んで確かめるところまで。
@@ -48,8 +48,11 @@ type ServerFile struct {
 	// MCPServers は、ブラウザの会話で使う MCP のサーバー(0024 の決定事項 7・23)。形はアプリの settings.json の mcpServers と同じ。
 	// サーバーの PC で動き、全員で1つを使う(決定事項 9)。最初に使われたときに起動する(決定事項 20)
 	MCPServers map[string]client.ServerConfig `json:"mcpServers"`
-	// Folders は資料のフォルダ(名前 → 絶対パス。0024 の 12-2)。管理者が配るプロファイルで1つ選ぶと、そのプロファイルの会話の作業フォルダになる。
-	// ブラウザには名前だけを見せる。git は管理者がサーバーで手で行う(aibow は触れない。決定事項 6)
+	// Workspaces はサーバーのワークスペース(名前とフォルダの組。0065)。管理者が配布プロファイルで1つ選ぶと、そのプロファイルの会話のファイルのツールが、
+	// そのフォルダ全部を扱う。ブラウザには名前だけを見せる。git は管理者がサーバーで手で行う(aibow は触れない。0024 の決定事項 6)
+	Workspaces []ServerWorkspace `json:"workspaces"`
+	// Folders は前の形の資料のフォルダ(名前 → 絶対パス。0024 の 12-2)。読むだけで、ワークスペースとして扱う(ServerWorkspaces)。
+	// 管理の画面で保存すると workspaces の形で書き直し、この鍵を消す(0065 の決定事項 10)
 	Folders map[string]string `json:"folders"`
 	// FetchAllowPrivate は、ブラウザの会話の URL を読むツール(fetch_url)で、サーバーの PC の中・社内のアドレスも読むか(0036 の決定事項 12)。
 	// 既定は読まない(モデルが書いた URL で、社内のサーバーやクラウドのメタデータに届かないように)。fetch_url は管理者が「ツール」のタブで有効にするまで使えない
@@ -85,7 +88,7 @@ func LoadServerFile(path string) (file ServerFile, found bool, err error) {
 	if err := CheckMCPServers(path, file.MCPServers); err != nil {
 		return ServerFile{}, false, err
 	}
-	if err := checkFolders(path, file.Folders); err != nil {
+	if err := checkWorkspaces(path, file); err != nil {
 		return ServerFile{}, false, err
 	}
 	if _, err := ParseTrustedProxies(file.TrustedProxies); err != nil {
@@ -97,8 +100,24 @@ func LoadServerFile(path string) (file ServerFile, found bool, err error) {
 	return file, true, nil
 }
 
-// checkFolders は、設定ファイル path の folders を確かめる。名前が空でなく、パスが絶対パスで、フォルダがあること。
+// checkWorkspaces は、設定ファイル path の workspaces(と前の形の folders)を確かめる(0065 の決定事項 9・10)。
 // 起動のときに分かるようにする(書き間違えたフォルダを、会話で読もうとしたときに初めて知るのでは遅いため)。
+func checkWorkspaces(path string, file ServerFile) error {
+	if len(file.Workspaces) > 0 && len(file.Folders) > 0 {
+		return fmt.Errorf("設定ファイル %s に workspaces と folders の両方が書いてあります。folders は前の形なので、中身を workspaces に移してから folders を消してください"+
+			"(どちらが正しいか分からないため、起動しません)", path)
+	}
+	if err := checkFolders(path, file.Folders); err != nil {
+		return err
+	}
+	list, _ := file.ServerWorkspaces()
+	if err := CheckServerWorkspaces(list); err != nil {
+		return fmt.Errorf("設定ファイル %s の workspaces: %w", path, err)
+	}
+	return nil
+}
+
+// checkFolders は、設定ファイル path の前の形の folders を確かめる。名前が空でなく、パスが絶対パスで、フォルダがあること。
 func checkFolders(path string, folders map[string]string) error {
 	for name, dir := range folders {
 		if strings.TrimSpace(name) == "" {

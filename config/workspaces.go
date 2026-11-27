@@ -393,21 +393,27 @@ func (ws Workspace) validate() error {
 	if strings.TrimSpace(ws.Name) == "" {
 		return fmt.Errorf("ワークスペース %s の名前が空です", ws.ID)
 	}
-	if len(ws.Folders) == 0 {
-		return fmt.Errorf("ワークスペース %s にフォルダがありません", ws.Name)
+	return validateFolders(ws.Name, ws.Folders)
+}
+
+// validateFolders は、ワークスペース name のフォルダの組を確かめる。1つ以上・パスは絶対パス・モデルが呼ぶ名前は使える形で重ならない・メインはちょうど1つ。
+// アプリのワークスペース(workspaces.json)と、aibow-server のサーバーのワークスペース(server.json。0065)で同じ決まりを使う。
+func validateFolders(name string, folders []WorkspaceFolder) error {
+	if len(folders) == 0 {
+		return fmt.Errorf("ワークスペース %s にフォルダがありません", name)
 	}
 	mains := 0
 	var names []string
-	for _, f := range ws.Folders {
+	for _, f := range folders {
 		if !filepath.IsAbs(f.Path) {
-			return fmt.Errorf("ワークスペース %s のフォルダは絶対パスで指定してください(%s)", ws.Name, f.Path)
+			return fmt.Errorf("ワークスペース %s のフォルダは絶対パスで指定してください(%s)", name, f.Path)
 		}
 		if err := checkFolderName(f.Name); err != nil {
-			return fmt.Errorf("ワークスペース %s: %w", ws.Name, err)
+			return fmt.Errorf("ワークスペース %s: %w", name, err)
 		}
 		// モデルは名前でフォルダを選ぶので、大文字と小文字だけの違いも重なりとみなす(4B が書き間違えても別のフォルダに行かないように)
 		if slices.ContainsFunc(names, func(n string) bool { return strings.EqualFold(n, f.Name) }) {
-			return fmt.Errorf("ワークスペース %s に、名前 %s のフォルダが2つあります(モデルが呼ぶ名前は重ならないようにしてください)", ws.Name, f.Name)
+			return fmt.Errorf("ワークスペース %s に、名前 %s のフォルダが2つあります(モデルが呼ぶ名前は重ならないようにしてください)", name, f.Name)
 		}
 		names = append(names, f.Name)
 		if f.Main {
@@ -415,7 +421,7 @@ func (ws Workspace) validate() error {
 		}
 	}
 	if mains != 1 {
-		return fmt.Errorf("ワークスペース %s のメインのフォルダは1つにしてください(今は %d 個)", ws.Name, mains)
+		return fmt.Errorf("ワークスペース %s のメインのフォルダは1つにしてください(今は %d 個)", name, mains)
 	}
 	return nil
 }

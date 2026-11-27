@@ -1,11 +1,12 @@
 package aibow
 
-// prompt.go: モデルに渡す内容を組み立てる。システムプロンプト(会話の設定 + 環境の説明 + 作業の決まり)と、要約と履歴を並べた発言の列と、
+// prompt.go: モデルに渡す内容を組み立てる。システムプロンプト(会話の設定 + 環境の説明 + 作業の決まり + MCP のサーバーの説明)と、要約と履歴を並べた発言の列と、
 // ツールの定義を入れた format.Prompt。書式(チャットテンプレート)を当てるのはエンジンの側(format)で、ここは書式を知らない。
 // 作業の決まりの中身は workrules.go。
 
 import (
 	"errors"
+	"fmt"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -17,13 +18,15 @@ import (
 	"github.com/secondarykey/aibow/tool"
 )
 
-// systemPrompt は、会話の設定のシステムプロンプトに、環境の説明(environment)と作業の決まり(workingRules。0041)を足したもの。
+// systemPrompt は、会話の設定のシステムプロンプトに、環境の説明(environment)と作業の決まり(workingRules。0041)と
+// MCP のサーバーの説明(serverInstructions。0066)を足したもの。
 func (cs *Conversations) systemPrompt(set ConversationSettings) string {
 	env, rules := cs.systemParts(set)
-	if env == "" {
-		return set.System
+	servers := cs.serverInstructions(set)
+	if env == "" && servers == "" {
+		return set.System // コードが足すものが無ければ、ユーザーが書いたまま
 	}
-	return joinSections(set.System, env, rules)
+	return joinSections(set.System, env, rules, servers)
 }
 
 // systemParts は、システムプロンプトにコードが足す部分(環境の説明・作業の決まり)。
@@ -47,12 +50,14 @@ func joinSections(parts ...string) string {
 	return strings.Join(out, "\n\n")
 }
 
-// logSystemParts は、システムプロンプトのうち、環境の説明と作業の決まりがそれぞれ何トークンかをログに出す(学習用。0041 の決定事項 9)。
-// どちらも毎回プロンプトの先頭に入るので、会話の上限をその分だけ使う(_docs/tuning.md に書けるように)
+// logSystemParts は、システムプロンプトのうち、環境の説明と作業の決まり・MCP のサーバーの説明がそれぞれ何トークンかをログに出す
+// (学習用。0041 の決定事項 9・0066 の決定事項 11)。
+// どれも毎回プロンプトの先頭に入るので、会話の上限をその分だけ使う(_docs/tuning.md に書けるように)
 func (cs *Conversations) logSystemParts(conv Conversation) {
 	set := conv.Settings
 	env, rules := cs.systemParts(set)
-	if env == "" {
+	servers := cs.serverInstructions(set)
+	if env == "" && servers == "" {
 		return
 	}
 	count := func(s string) (int, error) {
@@ -61,15 +66,62 @@ func (cs *Conversations) logSystemParts(conv Conversation) {
 	base, err1 := count(set.System)
 	withEnv, err2 := count(joinSections(set.System, env))
 	withRules, err3 := count(joinSections(set.System, env, rules))
-	if err := errors.Join(err1, err2, err3); err != nil {
-		log.Warnf("会話 %s: 環境の説明と作業の決まりのトークン数を数えられません: %v", conv.ID, err)
+	withServers, err4 := count(joinSections(set.System, env, rules, servers))
+	if err := errors.Join(err1, err2, err3, err4); err != nil {
+		log.Warnf("会話 %s: システムプロンプトに足した説明(環境・作業の決まり・MCP のサーバー)のトークン数を数えられません: %v", conv.ID, err)
 		return
 	}
-	if rules == "" {
-		log.Infof("会話 %s: システムプロンプトの環境の説明は約 %d トークン(書き換えるツールが無いので、作業の決まりは付けていません)", conv.ID, withEnv-base)
-		return
+	var parts []string
+	switch {
+	case env == "":
+	case rules == "":
+		parts = append(parts, fmt.Sprintf("環境の説明は約 %d トークン(書き換えるツールが無いので、作業の決まりは付けていません)", withEnv-base))
+	default:
+		parts = append(parts, fmt.Sprintf("環境の説明は約 %d トークン、作業の決まりは約 %d トークン", withEnv-base, withRules-withEnv))
 	}
-	log.Infof("会話 %s: システムプロンプトの環境の説明は約 %d トークン、作業の決まりは約 %d トークン", conv.ID, withEnv-base, withRules-withEnv)
+	if servers != "" {
+		parts = append(parts, fmt.Sprintf("MCP のサーバーの説明は約 %d トークン", withServers-withRules))
+	}
+	log.Infof("会話 %s: システムプロンプトの%s", conv.ID, strings.Join(parts, "、"))
+}
+
+// serverInstructionsHeading は、MCP のサーバーの説明の節の頭(0066 の決定事項 3・7)。
+// ほかの節(環境の説明・作業の決まり)と同じく英語。ツールの名前の頭がサーバーの名前だと添え、見出しの名前とツールを結び付けやすくする
+const serverInstructionsHeading = "# MCP server instructions\n" +
+	"The following MCP servers have provided instructions for how to use their tools (each tool name starts with the server name and \"__\"):"
+
+// serverInstructions は、この会話でツールを渡している MCP のサーバーの、使い方の説明(MCP の instructions。0066)。
+//
+// サーバーは、ツールの説明だけでは伝えきれない前提(データの形・ツールを呼ぶ順番・終わったらすること)を、つないだときの説明に書いてくる。
+// ツールの定義と同じく毎回プロンプトに入って会話の上限を使うので、ツールを1つ以上モデルに渡しているサーバーの説明だけを入れる
+// (選んでいない・起動していない・ツールを全部「使わない」にしたサーバーは入れない。決定事項 5)。
+// 並びはツールと同じサーバーの名前の順。会話の中で変わらないので、システムプロンプトのいちばん後ろに置く(決定事項 2)
+func (cs *Conversations) serverInstructions(set ConversationSettings) string {
+	if cs.remote == nil {
+		return ""
+	}
+	var servers []string
+	for _, t := range cs.toolsFor(set) {
+		if r, ok := t.(tool.Remote); ok && !slices.Contains(servers, r.Server()) {
+			servers = append(servers, r.Server())
+		}
+	}
+	if len(servers) == 0 {
+		return ""
+	}
+	texts := cs.remote.Instructions(cs.workDir(set), servers)
+	var b strings.Builder
+	for _, name := range servers {
+		text := strings.TrimSpace(texts[name])
+		if text == "" {
+			continue
+		}
+		b.WriteString("\n\n## " + name + "\n" + text)
+	}
+	if b.Len() == 0 {
+		return ""
+	}
+	return serverInstructionsHeading + b.String()
 }
 
 // environment は、作業フォルダを決めた会話で、モデルに知らせる環境の説明。
@@ -81,7 +133,12 @@ func (cs *Conversations) logSystemParts(conv Conversation) {
 // 使うツールに合わせて書く:時刻・計算のほかにツールが無ければ書かない(作業フォルダを使うツールが無い)。
 // シェルと cd の注意は、run_command を使うときだけ書く(使わないツールのことを書かない)。
 func (cs *Conversations) environment(set ConversationSettings) string {
+	onServer := cs.onServer(set)
 	dir := cs.workDir(set)
+	if onServer {
+		// サーバーのワークスペースは、パスを見せないので名前で決める(サーバーモードのアプリは、この PC のフォルダが無く workDir が空。0067)
+		dir = tool.MainFolder(cs.toolFolders(set)).Name
+	}
 	if dir == "" {
 		return ""
 	}
@@ -96,15 +153,16 @@ func (cs *Conversations) environment(set ConversationSettings) string {
 	command := tool.Find(tools, "run_command") != nil
 	shell := tool.ShellNoteFor(tool.Find(tools, "search_files") != nil) // search_files を「使わない」にしたら、今までの findstr の案内のまま
 	if folders := cs.toolFolders(set); len(folders) > 1 {
-		return foldersEnvironment(folders, command, shell)
+		return foldersEnvironment(folders, command, shell, onServer)
 	}
 	var b strings.Builder
 	b.WriteString("# Environment\n")
-	// 資料のフォルダ(aibow-server)は、サーバーの PC のパスを見せず、名前だけを書く(パスはツールの中だけで使う。0024 の決定事項 32)
+	// サーバーのワークスペース(aibow-server)は、サーバーの PC のパスを見せず、フォルダの名前だけを書く
+	// (パスはツールの中だけで使う。0024 の決定事項 32・0065 の決定事項 13)。名前はファイルのツールが知っている名前(パスの先頭に付けた書き方を見分ける)と同じ
 	name := filepath.Base(cs.mainPath(set, dir)) // worktree でも、本体のフォルダの名前(0039。モデルが呼ぶ名前を変えない)
-	if folder := cs.FolderName(set); folder != "" {
-		name = folder
-		b.WriteString("Working directory: \"" + folder + "\" (a shared folder on the server)\n")
+	if onServer {
+		name = dir
+		b.WriteString("Working directory: \"" + name + "\" (a shared folder on the server)\n")
 	} else {
 		b.WriteString("Working directory: " + dir + "\n")
 	}
@@ -128,10 +186,18 @@ func (cs *Conversations) environment(set ConversationSettings) string {
 // run_command も引数 folder でフォルダを選び、省けばメインで動く(読むだけのフォルダでも動かせる)。
 // 読むだけのフォルダもコマンドからは書けてしまうが、守りは確認なので、ここに書くのは「read-only」の印まで。
 // フォルダが1つのときは今までの形のまま(environment)。4B のプロンプトを変えないため。
-func foldersEnvironment(folders []tool.Folder, command bool, shell string) string {
+//
+// onServer は aibow-server のサーバーのワークスペース(0065 の決定事項 13)。サーバーの PC のパスは見せず、パスの代わりに「on the server」と書く
+// (名前・印・説明は出す)。git の印も付けない(ブラウザの会話には Git のツールを出さないため。決定事項 5)。
+func foldersEnvironment(folders []tool.Folder, command bool, shell string, onServer bool) string {
 	var b strings.Builder
 	b.WriteString("# Environment\nFolders (pass the folder argument; omit it for the main folder):\n")
 	for _, f := range folders {
+		if onServer {
+			f.Path = "on the server"
+			b.WriteString("- " + tool.FolderLine(f, false) + "\n")
+			continue
+		}
 		b.WriteString("- " + tool.FolderLine(f, git.IsRepo(f.Path)) + "\n")
 	}
 	b.WriteString("OS: " + runtime.GOOS + "\n")

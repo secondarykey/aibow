@@ -13,10 +13,10 @@ func TestProfileChanges(t *testing.T) {
 	next.Values.Model = "b"
 	next.Values.System = "y"
 	next.Rules.Off = ProfileOff{Builtin: true, Tools: []string{"run_command"}}
-	next.Rules.Folder = "docs"
+	next.Rules.Workspace = "docs"
 
 	got := ProfileChanges(old, next)
-	want := []string{"モデル", "システムプロンプト", "使えないツール(run_command・組み込み を追加)", "資料のフォルダ(なし → docs)"}
+	want := []string{"モデル", "システムプロンプト", "使えないツール(run_command・組み込み を追加)", "サーバーのワークスペース(なし → docs)"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("変えた項目 = %q, want %q", got, want)
 	}

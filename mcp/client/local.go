@@ -154,10 +154,14 @@ func (s *localSession) close() {
 // 書き換えるツール(Confirmable)は、確認をサーバーに任せる印(tool.SelfConfirming)を付ける。
 func newLocalTool(orig tool.Tool, session *mcp.ClientSession) tool.Tool {
 	limit := mcpserver.TimeLimit(orig) + localGrace
-	lt := localTool{
-		orig: orig,
-		rt:   &remoteTool{server: localName, session: session, name: orig.Def().Name, limit: limit, stopped: context.Background()},
-	}
+	rt := &remoteTool{server: localName, session: session, name: orig.Def().Name, limit: limit, stopped: context.Background()}
+	return asBuiltin(orig.Def(), orig, rt)
+}
+
+// asBuiltin は、MCP 越しに呼ぶツール rt を、定義 def の組み込みのツールに見せる(aibow の中のサーバーと、aibow-server のサーバーのワークスペース。0067)。
+// orig は同じ名前の tool のツール(書き換えるツールかを見るため)。書き換えるツールは、確認をサーバーに任せる印(tool.SelfConfirming)を付ける。
+func asBuiltin(def tool.Def, orig tool.Tool, rt *remoteTool) tool.Tool {
+	lt := localTool{def: def, rt: rt}
 	if ct, ok := orig.(tool.Confirmable); ok {
 		return &localConfirmTool{localTool: lt, preview: ct}
 	}
@@ -169,8 +173,8 @@ func newLocalTool(orig tool.Tool, session *mcp.ClientSession) tool.Tool {
 // 定義はサーバーが出しているものと同じ(tool のツールそのもの)なので、元のツールの定義を使う(名前に aibow__ を付けない)。
 // tool.Remote にはしない(会話の仕組みから見て、MCP のサーバーのツールではなく組み込みのツールとして扱うため)。
 type localTool struct {
-	orig tool.Tool
-	rt   *remoteTool // 実行は MCP 越し(remoteTool と同じ送り直しの仕組みを使う)
+	def tool.Def
+	rt  *remoteTool // 実行は MCP 越し(remoteTool と同じ送り直しの仕組みを使う)
 }
 
 var (
@@ -179,7 +183,7 @@ var (
 	_ tool.SelfConfirming = (*localConfirmTool)(nil)
 )
 
-func (t *localTool) Def() tool.Def            { return t.orig.Def() }
+func (t *localTool) Def() tool.Def            { return t.def }
 func (t *localTool) TimeLimit() time.Duration { return t.rt.limit }
 
 func (t *localTool) Run(ctx context.Context, args tool.Args) (string, error) {

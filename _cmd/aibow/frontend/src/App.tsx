@@ -39,7 +39,7 @@ import { AdminView, canAdmin } from "./components/AdminView";
 import { ConversationSettingsView } from "./components/ConversationSettingsView";
 import { ReadView } from "./components/ReadView";
 import { Composer } from "./components/Composer";
-import { FolderBar, WorkspaceBar } from "./components/WorkspaceBar";
+import { BrowserOnlyFolderNote, FolderBar, WorkspaceBar } from "./components/WorkspaceBar";
 import { mainFolder, useWorkspaces } from "./workspaces";
 import { ToolBar } from "./components/ToolBar";
 import { WorktreeBar } from "./components/WorktreeBar";
@@ -54,7 +54,7 @@ import { useUnsaved } from "./unsaved";
 import { ImeFocusRelay } from "./imeFocus";
 import { errorMessage, operationEvents } from "./errors";
 import { setTheme } from "./theme";
-import { FIX, fixedTitle, grantedFolder, lockOf, locked } from "./profileRules";
+import { FIX, fixedTitle, grantedWorkspace, lockOf, locked } from "./profileRules";
 import { NARROW_QUERY, useMediaQuery } from "./mediaQuery";
 import { STORED_LAST_CONVERSATION, STORED_LIST_OPEN, loadStored, saveStored } from "./stored";
 
@@ -275,6 +275,13 @@ export default function App() {
   }, [busy, models.reload, convs.reloadList]);
 
   const currentId = convs.current?.conversation.id ?? null;
+  // サーバーのワークスペースをこの画面で使えるか(0067)。ブラウザはいつも。サーバーモードのアプリは aibow-server が新しい版のとき
+  // (古ければ、アプリのツールは手元のワークスペースで動くので、0064 の知らせを出す)。会話を開くたびに確かめ直す(aibow-server を入れ替えたときのため)
+  const [serverWsUsable, setServerWsUsable] = useState(isBrowser);
+  useEffect(() => {
+    if (isBrowser) return;
+    ChatService.ServerWorkspacesUsable().then(u => setServerWsUsable(!!u), () => {});
+  }, [currentId]);
   // 開いている会話を覚えておき、次の起動で開く(新しい会話の画面なら消す)。
   // 起動して最後の会話を開くまで(restored)は、まだ何も開いていない(null)ので覚え直さない
   useEffect(() => {
@@ -374,10 +381,17 @@ export default function App() {
   // 開いている会話のプロファイル(新しい会話の画面では、選んだプロファイル)。固定・使えないを画面に出すため(0014)
   const profile = convs.current ? convs.current.profile : convs.profiles.find(i => i.profile.id === convs.draftProfile)?.profile ?? null;
   const lock = lockOf(profile);
-  // ブラウザの会話の資料のフォルダ(名前だけ。0024 の 12-2)。開いている会話は Go が決めたもの、新しい会話の画面は選んだプロファイルのもの
-  const folder = !isBrowser ? "" : convs.current ? convs.current.folder ?? "" : grantedFolder(profile);
-  // ツールが使うフォルダ(アプリはワークスペースのメインのフォルダ、ブラウザは資料のフォルダの名前)。無ければ空。作業フォルダが要るツールの印に使う
-  const workDir = isBrowser ? folder : mainFolder(workspaces.workspaces?.find(w => w.id === settings?.workspace))?.path ?? "";
+  // 会話のサーバーのワークスペース(名前だけ。0065)。開いている会話は Go が決めたもの、新しい会話の画面は選んだプロファイルのもの。
+  // サーバーモードのアプリも、aibow-server が新しい版ならブラウザと同じ(ファイルのツールは aibow-server の口越し。手元のワークスペースは使わない。0067)
+  const serverWorkspace = !serverWsUsable ? "" : convs.current ? convs.current.workspace ?? "" : grantedWorkspace(profile);
+  // 古い aibow-server につないだアプリで、会話のプロファイルにサーバーのワークスペースがあるとき(0064)。アプリのツールは手元のワークスペースで動くので、
+  // そのことを知らせるためだけに使う(ツールの作業フォルダにはしない)。開いている会話でもプロファイルの決まりから決める
+  // (Go の会話の詳細の workspace は、使えるときだけ入る)。アプリモードのプロファイルは配らないので、いつも空になる
+  const browserOnlyWorkspace = isBrowser || serverWsUsable ? "" : grantedWorkspace(profile);
+  // ツールが使うフォルダ(サーバーのワークスペースならその名前、アプリはワークスペースのメインのフォルダ)。無ければ空。作業フォルダが要るツールの印に使う
+  const workDir = isBrowser || serverWorkspace ? serverWorkspace : mainFolder(workspaces.workspaces?.find(w => w.id === settings?.workspace))?.path ?? "";
+  // 会話で選べる MCP のサーバー。サーバーモードのアプリのサーバーのワークスペースの会話では、${workdir} を使うものを出さない(この PC のフォルダが無いため。0067 の決定事項 3)
+  const convServers = !isBrowser && serverWorkspace ? mcpServers.filter(s => !s.uses_work_dir) : mcpServers;
   const input = (
     <>
       <Composer
@@ -401,10 +415,11 @@ export default function App() {
         top={settings && (
           // 入力欄の上: ワークスペースと、この会話のツール(どちらも会話ごとの設定)。
           // ブラウザの会話はワークスペースを選ばない(ツールはサーバーの PC で動くため。0024 の決定事項 17)。
-          // 配られたプロファイルに資料のフォルダがあれば、その名前を押せない形で出す(決定事項 26)
+          // 配られたプロファイルにサーバーのワークスペースがあれば、その名前を押せない形で出す(決定事項 26・0065 の決定事項 19)。
+          // サーバーモードのアプリも同じで、そのときは手元のワークスペースと worktree を出さない(0067 の決定事項 2)
           <div className="composer-top">
-            {isBrowser && folder && <FolderBar name={folder} />}
-            {!isBrowser && (
+            {serverWorkspace && <FolderBar name={serverWorkspace} />}
+            {!isBrowser && !serverWorkspace && (
               <WorkspaceBar
                 workspaces={workspaces.workspaces ?? []}
                 selected={settings.workspace ?? ""}
@@ -417,7 +432,8 @@ export default function App() {
                 onError={addError}
               />
             )}
-            {!isBrowser && settings.workspace && worktree.state && (
+            {browserOnlyWorkspace && <BrowserOnlyFolderNote name={browserOnlyWorkspace} />}
+            {!isBrowser && !serverWorkspace && settings.workspace && worktree.state && (
               <WorktreeBar
                 state={worktree.state}
                 on={!!settings.worktree}
@@ -431,7 +447,7 @@ export default function App() {
             )}
             <ToolBar
               builtinOn={!settings.builtin_off}
-              servers={mcpServers}
+              servers={convServers}
               selected={settings.mcp_servers ?? []}
               workDir={workDir}
               profile={profile}
@@ -718,7 +734,7 @@ export default function App() {
             })
             .finally(worktree.reload)}
         profile={convs.current.profile}
-        folder={folder}
+        serverWorkspace={serverWorkspace}
         workDir={workDir}
         onSaveToProfile={() => {
           const id = convs.current!.conversation.id;
@@ -744,7 +760,7 @@ export default function App() {
         }}
         lastPrompt={chat.lastPrompt}
         lastPromptFormat={chat.lastPromptFormat}
-        servers={mcpServers}
+        servers={convServers}
         limitsDisabled={busy !== "idle"}
         onTryLimits={tryLimits}
         share={convs.current.conversation.share ?? ""}

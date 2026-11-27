@@ -180,26 +180,42 @@ func (cs *Conversations) ToolStates(set ConversationSettings) []ToolGroupState {
 // ConversationToolStates は、会話 id のプロファイルの決まりを当てて、設定 set でのツールの扱いを返す(ToolStates)。
 // id が空なら、新しい会話(新しい会話で最初に選ばれるプロファイル)。画面から来た set は決まりを持たないので、ここで足す。
 func (cs *Conversations) ConversationToolStates(ctx context.Context, id uuid.UUID, set ConversationSettings) ([]ToolGroupState, error) {
-	var p *Profile
-	if id == (uuid.UUID{}) {
-		d, err := cs.DefaultProfile(ctx)
-		if err != nil {
-			return nil, err
-		}
-		if d.ID != (uuid.UUID{}) {
-			p = &d
-		}
-	} else {
-		c, _, err := cs.store.Conversation(ctx, id)
-		if err != nil {
-			return nil, err
-		}
-		if p, err = cs.profileFor(ctx, c.ProfileID); err != nil {
-			return nil, err
-		}
+	p, err := cs.profileOfConversation(ctx, id)
+	if err != nil {
+		return nil, err
 	}
 	set.profile = p
 	return cs.ToolStates(cs.forUse(set)), nil
+}
+
+// ConversationServerWorkspace は、会話 id(空なら新しい会話)で、サーバーモードのアプリがサーバーのワークスペースを使うなら、その名前(使わなければ空。0067)。
+// 画面のツールの一覧から、その会話で出さないもの(run_command・Git のツール・${workdir} の MCP のサーバー)を外すのに使う。
+func (cs *Conversations) ConversationServerWorkspace(ctx context.Context, id uuid.UUID) (string, error) {
+	if cs.serverSrc == nil {
+		return "", nil
+	}
+	p, err := cs.profileOfConversation(ctx, id)
+	if err != nil {
+		return "", err
+	}
+	name, _ := cs.appServerWorkspace(ConversationSettings{profile: p})
+	return name, nil
+}
+
+// profileOfConversation は、会話 id のプロファイル(id が空なら、新しい会話で最初に選ばれるプロファイル)。無ければ nil。
+func (cs *Conversations) profileOfConversation(ctx context.Context, id uuid.UUID) (*Profile, error) {
+	if id == (uuid.UUID{}) {
+		d, err := cs.DefaultProfile(ctx)
+		if err != nil || d.ID == (uuid.UUID{}) {
+			return nil, err
+		}
+		return &d, nil
+	}
+	c, _, err := cs.store.Conversation(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return cs.profileFor(ctx, c.ProfileID)
 }
 
 // usableServers は、会話で選んだ MCP のサーバーのうち、プロファイルで使えないものでも、PC の既定でサーバーごと「使わない」にしたものでもないもの。
@@ -235,6 +251,9 @@ func (cs *Conversations) SetLocalTools(l LocalTools) {
 // localTools は、aibow の中で動くツール(組み込みと、作業フォルダのツール)。使うかどうかは見ない(toolsFor が見る)。
 // 作業フォルダを決めた会話だけ、そのフォルダの中を扱うツールを足す(作業フォルダは会話ごとなので、ここで作る)。
 func (cs *Conversations) localTools(set ConversationSettings) []tool.Tool {
+	if name, ok := cs.appServerWorkspace(set); ok {
+		return cs.appServerTools(set, name) // ファイルのツールは aibow-server の MCP の口越し(0067)
+	}
 	folders := cs.toolFolders(set)
 	if cs.local != nil {
 		return cs.local.Tools(folders)
@@ -257,6 +276,9 @@ type RemoteTools interface {
 	Start(ctx context.Context, workDir string, use []string) (started []string, errs []error)
 	// Tools は、会話で使うサーバー(use)の、起動済みのツール(起動はしない。メーターの計算などからも呼ばれるため)
 	Tools(workDir string, use []string) []tool.Tool
+	// Instructions は、会話で使うサーバー(use)のうち起動済みのものの、使い方の説明(サーバーの名前 → 説明。MCP の instructions。0066)。
+	// 説明の無いサーバーは入れない。起動はしない
+	Instructions(workDir string, use []string) map[string]string
 	// ListTools は、サーバーを一時的に起動してツールの一覧を受け取る(設定の画面で、会話で使う前にツールを選べるように)
 	ListTools(ctx context.Context, server string) ([]tool.Tool, error)
 }

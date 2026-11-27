@@ -7,7 +7,7 @@ package aibow
 // 古い値と新しい値を比べて項目の名前にするのは、ここ1か所だけにする(ui も aibow-server も同じ言葉で出すため)。
 //
 // ログは「後から追いたい出来事」の記録なので、値の中身は書かない。ただし、ほかの人に効く権限に関わる項目
-// (使えないツール・資料のフォルダ)だけは、何を足して何を外したかを添える(誰がいつ禁止したかを追えるように)。
+// (使えないツール・サーバーのワークスペース)だけは、何を足して何を外したかを添える(誰がいつ禁止したかを追えるように)。
 // 構造体やスライスを %v でそのまま出さない(`{Builtin:false ...}` は読む人には分からない。決定事項 24)。
 
 import (
@@ -38,7 +38,7 @@ func SettingsChanges(old, next ConversationSettings) []string {
 }
 
 // ProfileChanges は、プロファイルを old から next に変えたときに、変えた項目を画面の言葉で返す(名前・値・決まり)。
-// 使えないツールと資料のフォルダは、何を変えたかを括弧で添える。
+// 使えないツールとサーバーのワークスペースは、何を変えたかを括弧で添える。
 func ProfileChanges(old, next Profile) []string {
 	var out []string
 	if old.Name != next.Name {
@@ -51,8 +51,8 @@ func ProfileChanges(old, next Profile) []string {
 	if d := Diff(offNames(old.Rules.Off), offNames(next.Rules.Off)); d != "" {
 		out = append(out, "使えないツール("+d+")")
 	}
-	if old.Rules.Folder != next.Rules.Folder {
-		out = append(out, fmt.Sprintf("資料のフォルダ(%s → %s)", cmp.Or(old.Rules.Folder, "なし"), cmp.Or(next.Rules.Folder, "なし")))
+	if old.Rules.Workspace != next.Rules.Workspace {
+		out = append(out, fmt.Sprintf("サーバーのワークスペース(%s → %s)", cmp.Or(old.Rules.Workspace, "なし"), cmp.Or(next.Rules.Workspace, "なし")))
 	}
 	return out
 }

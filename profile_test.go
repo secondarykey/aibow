@@ -376,7 +376,7 @@ func TestShareNewAndStop(t *testing.T) {
 	}
 	// 値は管理者の既定のプロファイルから写し、モデルだけ選んだもの。決まりは空
 	if p.Name != "配布用" || p.Share != ShareAll || p.Values.Model != "m" || p.Values.HistoryTokens != def.Values.HistoryTokens ||
-		len(p.Rules.Fixed) != 0 || p.Rules.Folder != "" {
+		len(p.Rules.Fixed) != 0 || p.Rules.Workspace != "" {
 		t.Errorf("作った配布プロファイル: %+v", p)
 	}
 	if _, err := cs.ShareNew(ctx, "配布用", "m", ShareAll, nil, nil); err == nil {

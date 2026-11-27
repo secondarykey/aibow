@@ -9,7 +9,8 @@
 | `internal/appversion/version` / `appversion.go` | MCP のサーバー(aibow-mcp)と OpenAI 互換 API(aibow-server)のバージョン(2つの exe で1つを使う)。`_cmd/aibow/version` の写しで、手で書き換えない(`//go:embed` は自分のフォルダの下しか埋め込めないため写しを置く)。exe(`go build`・`go install`)は `version` のまま、`go run` で起動したものは patch を1つ上げて `+dev`(自分の exe が `go-build…` の一時フォルダにあるかで見分ける) |
 | `internal/appversion` の `MinApp` | aibow-server が対応できる画面のアプリの最低バージョン(0054。返事の見出し `X-Aibow-Min-App-Version` で知らせる。[api.md](api.md) の「バージョンの受け渡し」)。`version` の写しではなく**手で書く定数**で、`go run _cmd/version.go` は書き換えず、`go run` でも `+dev` を付けない。下の「対応するアプリの最低バージョンを上げる」 |
 | `_cmd/aibow/appversion.go` / `build_dev.go` / `build_production.go` | 画面・ウィンドウの名前・ログに出すバージョン。`wails3 dev` で起動したものは patch を1つ上げて `+dev` を付ける(`0.3.1` なら `0.3.2+dev`。まだデプロイしていない次のバージョンを作っている途中のため)。リリースのビルドは `version` のまま。見分けは、Taskfile がリリースのビルドにだけ付ける `production` のビルドタグ(Taskfile は変えない) |
-| `_cmd/aibow/Taskfile.local.yml` | ローカルデプロイ(`wails3 task local:deploy`)。各自が持つ個人用のファイルで、**Git に入れない(ひな形もコミットしない)**。`Taskfile.yml` から optional で読む |
+| `_cmd/install.go` | 3つの exe(aibow・aibow-server・aibow-mcp)を `_cmd/aibow/bin` に作るスクリプト(リポジトリのルートで `go run _cmd/install.go`)。npm install(無ければ)→ `wails3 build` → aibow-server・aibow-mcp の `go build`。`Taskfile.local.yml` の deploy と install がビルドに使う |
+| `_cmd/aibow/Taskfile.local.yml` | ローカルデプロイ(`wails3 task local:deploy`)と、ビルドしてコピーするだけの `local:install`。各自が持つ個人用のファイルで、**Git に入れない(ひな形もコミットしない)**。`Taskfile.yml` から optional で読む |
 | `.github/workflows/versionup.yml` | 正式なリリース。`main` への PR のマージで版を決め、ビルド情報が変われば PR(`chore: version …`)を作ってマージし、`v`+バージョンのタグを PAT で push する |
 | `.github/workflows/release.yml` | `v` のタグの push で動き、3つの OS で aibow・aibow-server・aibow-mcp を作って zip にし、GitHub のリリースの**下書き**を作る |
 | `.github/variables` | CI が使う Go の版(`GO_VERSION`)と Wails の CLI の版(`WAILS_VERSION`)。Go は手元の `go version` と、Wails は `_cmd/aibow/go.mod` と同じ版にする(手元で Go や Wails を上げたら、ここも上げる)。`KEY=VALUE` の行だけを書く(コメントがあると CI が落ちる) |
@@ -63,10 +64,13 @@ main の保護(ブランチの保護かルールセット)で「マージの前�
 
 ### ローカルデプロイ
 
-- deploy は画面のアプリ(`aibow.exe`)と一緒に `aibow-server.exe` と `aibow-mcp.exe` も作ってインストールする(`Taskfile.local.yml` の `build-tools`)。
+- deploy は画面のアプリ(`aibow.exe`)と一緒に `aibow-server.exe` と `aibow-mcp.exe` も作ってインストールする(ビルドは `_cmd/install.go`。`Taskfile.local.yml` の `build-all` が呼ぶ)。
   aibow-server は画面(`web/dist/app`)を埋め込むので、`wails3 build` が画面をビルドした後に `go build` する。
+  ビルドの手順を `Taskfile.local.yml` に書かず `_cmd/install.go` に置くのは、Git に入らない個人用のファイルに書くと、手順を変えたときに各自のファイルが古いまま残るため。
+  `_cmd/install.go` の無いブランチでは、deploy と install は `build-all` の確かめで止まる。
   どちらも `CGO_ENABLED=0`・`-trimpath -ldflags="-w -s"` で、コンソールのアプリなので `-H windowsgui` は付けない。`go build` なので版は `version` のまま(`+dev` が付かない)
-- 起動中の exe は上書きできないので、deploy は最初に止める。aibow は名前で、aibow-server と aibow-mcp はインストール先から起動しているものだけを止める(`stop-tools`。`go run` や worktree で動かしているものを巻き込まない)
+- `local:install` は deploy から版上げ・ビルド情報の反映・コミットを抜いたもの(止める → `_cmd/install.go` → コピー)。焼き込まれる版は `build/config.yml` などに今ある版
+- 起動中の exe は上書きできないので、deploy と install は最初に止める。aibow は名前で、aibow-server と aibow-mcp はインストール先から起動しているものだけを止める(`stop-tools`。`go run` や worktree で動かしているものを巻き込まない)
 - バージョンを手で config.yml などに書かない。`_cmd/aibow/version` だけを変え、`go run _cmd/version.go` で書き写す(deploy は自動で行う)
 - `v`+今のバージョンのタグがある(= リリース済み)なら、deploy が patch を自動で上げる。minor / major は `go run _cmd/version.go -bump` で上げてから deploy し、PR を出す
 - `Taskfile.local.yml` とそのひな形・コピーはコミットしない(インストール先などローカルの設定をリポジトリに残さないため。ユーザーの方針)
