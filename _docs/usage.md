@@ -279,6 +279,7 @@ aibow のツール(時刻・計算・ファイルの読み書き・コマンド)
 ```bash
 go build -o aibow-mcp.exe ./_cmd/aibow-mcp
 ```
+画面のアプリ・aibow-server と一緒に作るなら `go run _cmd/install.go` です(3つとも `_cmd/aibow/bin` に入ります)。
 
 ```
 aibow-mcp [-fetch] [-log-level <レベル>] [作業フォルダ]

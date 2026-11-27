@@ -77,6 +77,7 @@ Ollama が保存したファイルを aibow が直接読むので、Ollama は�
 | `_cmd/aibow/build/` / `Taskfile.yml` | `wails3 dev` / `wails3 build` の設定(アプリ名、アイコン、OS ごとのビルド手順) |
 | `_cmd/aibow/version` | アプリのバージョン(唯一の正)。exe に埋め込まれ、タスクバーなどに出るウィンドウ名に入る |
 | `_cmd/version.go` | `version` の値を `build/config.yml` / `frontend/package.json` に書き写す・上げるスクリプト |
+| `_cmd/install.go` | 画面のアプリ・aibow-server・aibow-mcp の3つを、画面から順にビルドして `_cmd/aibow/bin` に置くスクリプト(`go run _cmd/install.go`) |
 | `go.work` | ルートと `_cmd/aibow` の2つのモジュールをまとめる(下の説明を参照) |
 | `_cmd/aibow/lib\` | llama.cpp の DLL(自分で取得。Git には入れない) |
 | `_cmd/aibow/models\` | 自分でダウンロードしたモデル(Git には入れない) |
